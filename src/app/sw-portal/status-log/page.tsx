@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,25 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/firebase';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Printer, Search, Building2, Users, RefreshCw, ClipboardCheck, CheckCircle2, Circle } from 'lucide-react';
-import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
-
-type RosterMember = {
-  id: string;
-  name: string;
-  isNewAssignment?: boolean;
-  isHoldRemoved?: boolean;
-};
-
-type RosterFacility = {
-  id: string;
-  name: string;
-  address: string;
-  city?: string;
-  zip?: string;
-  county?: string;
-  members: RosterMember[];
-};
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Loader2, Printer, CheckCircle2, Circle } from 'lucide-react';
 
 type MonthVisitStatus = {
   visitId: string;
@@ -42,25 +25,48 @@ type MonthVisitStatus = {
   serviceLineId?: string;
 };
 
+type MonthExportRow = {
+  date: string;
+  memberId: string;
+  memberName: string;
+  rcfeName: string;
+  rcfeAddress: string;
+  visitId: string;
+  signedOff: boolean;
+  claimId: string;
+  claimNumber: string;
+  serviceLineId: string;
+  claimStatus: string;
+  claimSubmitted: boolean;
+  claimPaid: boolean;
+  dailyVisitCount: number;
+  dailyVisitFees: number;
+  dailyGas: number;
+  dailyTotal: number;
+};
+
 export default function SWStatusLogPage() {
-  const { user, isSocialWorker, isLoading } = useSocialWorker();
+  const { isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
 
-  const [loadingRoster, setLoadingRoster] = useState(false);
   const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
-
-  const [facilities, setFacilities] = useState<RosterFacility[]>([]);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   const [statusMonth, setStatusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
+  const [monthRows, setMonthRows] = useState<MonthExportRow[]>([]);
 
-  const [claimLookupId, setClaimLookupId] = useState('');
-  const [claimLookupLoading, setClaimLookupLoading] = useState(false);
-  const [claimLookupError, setClaimLookupError] = useState<string | null>(null);
-  const [claimLookupResult, setClaimLookupResult] = useState<any | null>(null);
+  const [showAll, setShowAll] = useState(false);
+
+  const [clientLookupQuery, setClientLookupQuery] = useState('');
+  const [clientLookupLoading, setClientLookupLoading] = useState(false);
+  const [clientLookupError, setClientLookupError] = useState<string | null>(null);
+  const [clientLookupResults, setClientLookupResults] = useState<any[]>([]);
+
+  const [monthSummaryOpen, setMonthSummaryOpen] = useState(false);
+  const [monthSummaryLoading, setMonthSummaryLoading] = useState(false);
+  const [monthSummaryError, setMonthSummaryError] = useState<string | null>(null);
+  const [monthSummary, setMonthSummary] = useState<any | null>(null);
 
   const [claimDetailOpen, setClaimDetailOpen] = useState(false);
   const [claimDetailLoading, setClaimDetailLoading] = useState(false);
@@ -72,28 +78,10 @@ export default function SWStatusLogPage() {
   const [visitDetailError, setVisitDetailError] = useState<string | null>(null);
   const [visitDetailResult, setVisitDetailResult] = useState<any | null>(null);
 
-  const refreshRoster = useCallback(async () => {
-    if (!user?.email) return;
-    setLoadingRoster(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/sw-visits?socialWorkerId=${encodeURIComponent(user.email)}`);
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load roster (HTTP ${res.status})`);
-      const nextFacilities = Array.isArray(data?.rcfeList) ? (data.rcfeList as RosterFacility[]) : [];
-      setFacilities(nextFacilities);
-      setHasLoadedOnce(true);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load roster.');
-      setHasLoadedOnce(true);
-    } finally {
-      setLoadingRoster(false);
-    }
-  }, [user?.email]);
-
   const refreshMonthStatuses = useCallback(async () => {
     if (!auth?.currentUser) {
       setMonthStatuses({});
+      setMonthRows([]);
       return;
     }
     setLoadingMonthStatuses(true);
@@ -106,7 +94,8 @@ export default function SWStatusLogPage() {
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load monthly statuses (${res.status})`);
-      const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
+      const rows: MonthExportRow[] = Array.isArray(data?.rows) ? (data.rows as MonthExportRow[]) : [];
+      setMonthRows(rows);
       const map: Record<string, MonthVisitStatus> = {};
       rows.forEach((r) => {
         const memberId = String(r?.memberId || '').trim();
@@ -124,36 +113,39 @@ export default function SWStatusLogPage() {
         };
       });
       setMonthStatuses(map);
+      setHasLoadedOnce(true);
     } catch {
       // best-effort only
       setMonthStatuses({});
+      setMonthRows([]);
+      setHasLoadedOnce(true);
     } finally {
       setLoadingMonthStatuses(false);
     }
   }, [auth?.currentUser, auth, statusMonth]);
 
-  const lookupClaim = useCallback(async () => {
+  const searchClaimsByClient = useCallback(async () => {
     if (!auth?.currentUser) return;
-    const id = String(claimLookupId || '').trim();
-    if (!id) return;
-    setClaimLookupLoading(true);
-    setClaimLookupError(null);
-    setClaimLookupResult(null);
+    const q = String(clientLookupQuery || '').trim();
+    if (!q) return;
+    setClientLookupLoading(true);
+    setClientLookupError(null);
+    setClientLookupResults([]);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch(`/api/sw-claims/lookup?claimId=${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/sw-claims/search?q=${encodeURIComponent(q)}`, {
         headers: { authorization: `Bearer ${idToken}` },
       });
       const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) throw new Error(data?.error || `Lookup failed (HTTP ${res.status})`);
-      setClaimLookupResult(data?.claim || null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Search failed (HTTP ${res.status})`);
+      setClientLookupResults(Array.isArray(data?.results) ? data.results : []);
     } catch (e: any) {
-      setClaimLookupError(e?.message || 'Claim lookup failed.');
-      setClaimLookupResult(null);
+      setClientLookupError(e?.message || 'Search failed.');
+      setClientLookupResults([]);
     } finally {
-      setClaimLookupLoading(false);
+      setClientLookupLoading(false);
     }
-  }, [auth?.currentUser, auth, claimLookupId]);
+  }, [auth, clientLookupQuery]);
 
   const openClaimDetail = useCallback(
     async (params: { id: string }) => {
@@ -181,6 +173,28 @@ export default function SWStatusLogPage() {
     },
     [auth]
   );
+
+  const openMonthSummary = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    setMonthSummaryOpen(true);
+    setMonthSummaryLoading(true);
+    setMonthSummaryError(null);
+    setMonthSummary(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch(`/api/sw-claims/month-summary?month=${encodeURIComponent(statusMonth)}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load summary (HTTP ${res.status})`);
+      setMonthSummary(data);
+    } catch (e: any) {
+      setMonthSummaryError(e?.message || 'Failed to load month summary.');
+      setMonthSummary(null);
+    } finally {
+      setMonthSummaryLoading(false);
+    }
+  }, [auth, statusMonth]);
 
   const openVisitDetail = useCallback(
     async (params: { visitId: string }) => {
@@ -212,14 +226,28 @@ export default function SWStatusLogPage() {
   useEffect(() => {
     if (isLoading) return;
     if (!isSocialWorker) return;
-    // Auto-load roster on entry; this page's table depends on current assignments.
-    if (!hasLoadedOnce && !loadingRoster) {
-      void refreshRoster();
-      return;
+    void refreshMonthStatuses();
+  }, [isLoading, isSocialWorker, refreshMonthStatuses]);
+
+  const monthOptions = useMemo(() => {
+    // SW claims tracking begins Feb 2026 (testing); don't show earlier months.
+    const start = new Date(2026, 1, 1); // Feb 2026 (local)
+    const now = new Date();
+    const startKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
+    const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const opts: Array<{ value: string; label: string }> = [];
+    if (nowKey < startKey) return opts;
+
+    const monthsDiff = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+    for (let i = 0; i <= monthsDiff; i += 1) {
+      const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+      const label = dt.toLocaleString(undefined, { month: 'short', year: 'numeric' });
+      opts.push({ value, label });
     }
-    // Auto-load statuses once roster has loaded.
-    if (hasLoadedOnce) void refreshMonthStatuses();
-  }, [hasLoadedOnce, isLoading, isSocialWorker, loadingRoster, refreshMonthStatuses, refreshRoster]);
+    return opts;
+  }, []);
 
   useEffect(() => {
     if (isLoading) return;
@@ -242,41 +270,59 @@ export default function SWStatusLogPage() {
     };
   }, [hasLoadedOnce, isLoading, isSocialWorker, refreshMonthStatuses]);
 
-  const filteredFacilities = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return facilities;
-    return facilities
-      .map((f) => {
-        const members = Array.isArray(f.members) ? f.members : [];
-        const matchedMembers = members.filter((m) => String(m?.name || '').toLowerCase().includes(q));
-        const facilityHit =
-          String(f.name || '').toLowerCase().includes(q) ||
-          String(f.address || '').toLowerCase().includes(q) ||
-          String(f.city || '').toLowerCase().includes(q) ||
-          String(f.zip || '').toLowerCase().includes(q) ||
-          String(f.county || '').toLowerCase().includes(q);
-        if (facilityHit) return f;
-        if (matchedMembers.length === 0) return null;
-        return { ...f, members: matchedMembers };
+  const activityRows = useMemo(() => {
+    const rows = Array.isArray(monthRows) ? monthRows : [];
+    const list = rows
+      .map((r) => {
+        const day = String((r as any)?.date || '').trim();
+        const memberName = String((r as any)?.memberName || '').trim();
+        const memberId = String((r as any)?.memberId || '').trim();
+        const visitId = String((r as any)?.visitId || '').trim();
+        const completed = Boolean(visitId);
+        const signedOff = Boolean((r as any)?.signedOff);
+        const claimId = String((r as any)?.claimId || '').trim();
+        const claimNumber = String((r as any)?.claimNumber || '').trim();
+        const serviceLineId = String((r as any)?.serviceLineId || '').trim();
+        const claimStatus = String((r as any)?.claimStatus || '').trim() || 'draft';
+        const claimSubmitted = Boolean((r as any)?.claimSubmitted) || ['submitted', 'approved', 'rejected', 'paid'].includes(claimStatus.toLowerCase());
+        const claimPaid = Boolean((r as any)?.claimPaid) || claimStatus.toLowerCase() === 'paid';
+        const idForOpen = claimId || claimNumber || serviceLineId || '';
+        return { day, memberName, memberId, visitId, completed, signedOff, claimSubmitted, claimPaid, claimStatus, idForOpen };
       })
-      .filter(Boolean) as RosterFacility[];
-  }, [facilities, query]);
+      .filter((r) => Boolean(r.memberName || r.memberId || r.day));
 
-  const totals = useMemo(() => {
-    const facilityCount = facilities.length;
-    const memberCount = facilities.reduce((sum, f) => sum + (Array.isArray(f.members) ? f.members.length : 0), 0);
-    return { facilityCount, memberCount };
-  }, [facilities]);
+    list.sort((a, b) => (b.day || '').localeCompare(a.day || '') || (a.memberName || '').localeCompare(b.memberName || ''));
+    return list;
+  }, [monthRows]);
 
-  const humanServiceLineId = useCallback((params: { claimDay?: string; memberName: string; memberId: string }) => {
-    const day = String(params.claimDay || '').trim();
-    const m = day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    const datePart = m ? `${m[2]}_${m[3]}_${m[1]}` : (day ? day.replace(/-/g, '_') : 'UNKNOWN_DATE');
+  const activityTotals = useMemo(() => {
+    const count = activityRows.length;
+    const completedCount = activityRows.filter((r) => r.completed).length;
+    const signedOffCount = activityRows.filter((r) => r.completed && r.signedOff).length;
+    const submittedCount = activityRows.filter((r) => r.completed && r.claimSubmitted).length;
+    const paidCount = activityRows.filter((r) => r.completed && r.claimPaid).length;
+    return { count, completedCount, signedOffCount, submittedCount, paidCount };
+  }, [activityRows]);
 
-    const name = String(params.memberName || '').trim().replace(/\s+/g, ' ');
-    const parts = name.split(' ').filter(Boolean);
-    const last = parts.length >= 2 ? parts[parts.length - 1] : (parts[0] || 'UNKNOWN_LAST');
-    const first = parts.length >= 2 ? parts.slice(0, -1).join('_') : 'UNKNOWN_FIRST';
+  const visibleActivityRows = useMemo(() => {
+    return showAll ? activityRows : activityRows.slice(0, 10);
+  }, [activityRows, showAll]);
+
+  const money = useCallback((value: any) => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return '$0';
+    return n % 1 === 0 ? `$${n}` : `$${n.toFixed(2)}`;
+  }, []);
+
+  const claimDisplayNumber = useCallback((params: { day?: string; memberName?: string; memberId?: string }) => {
+    const rawDay = String(params.day || '').trim();
+    const m = rawDay.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const y = m ? Number(m[1]) : NaN;
+    const mo = m ? Number(m[2]) : NaN;
+    const d = m ? Number(m[3]) : NaN;
+    const monthNum = m && Number.isFinite(mo) ? String(mo).padStart(2, '0') : '00';
+    const dayNum = m && Number.isFinite(d) ? String(d) : (rawDay ? rawDay.replace(/-/g, '_') : '0');
+    const year = m && Number.isFinite(y) ? String(y) : '0000';
 
     const safe = (s: string) =>
       String(s || '')
@@ -284,8 +330,11 @@ export default function SWStatusLogPage() {
         .replace(/[^a-zA-Z0-9]+/g, '_')
         .replace(/^_+|_+$/g, '');
 
-    const memberId = safe(String(params.memberId || '').trim() || 'UNKNOWN_ID');
-    return `${datePart}_${safe(last)}_${safe(first)}_(${memberId})`;
+    const memberId = safe(String(params.memberId || '').trim() || '');
+
+    // Numeric-only style: 1_03_2026_7891
+    const base = [safe(dayNum), safe(monthNum), safe(year)].filter(Boolean).join('_');
+    return memberId ? `${base}_${memberId}` : base;
   }, []);
 
   const renderStatusIcon = (params: { on: boolean; label: string }) => {
@@ -327,43 +376,32 @@ export default function SWStatusLogPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between print:hidden">
         <div>
           <h1 className="text-3xl font-bold">Status Log</h1>
-          <p className="text-muted-foreground">Month-based status icons for questionnaires, sign-offs, and claims.</p>
+          <p className="text-muted-foreground">Monthly claim status and totals. Auto-updates while open.</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <Badge variant="secondary" className="gap-1">
-              <Building2 className="h-3.5 w-3.5" />
-              {totals.facilityCount} RCFE{totals.facilityCount === 1 ? '' : 's'}
-            </Badge>
-            <Badge variant="secondary" className="gap-1">
-              <Users className="h-3.5 w-3.5" />
-              {totals.memberCount} member{totals.memberCount === 1 ? '' : 's'}
-            </Badge>
-            <span>• Month: {statusMonth}</span>
+            <span>Month: {statusMonth}</span>
+            {loadingMonthStatuses ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Updating…
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Month</span>
-            <Input
-              className="w-[140px]"
-              type="month"
-              value={statusMonth}
-              onChange={(e) => setStatusMonth(String(e.target.value || '').trim())}
-              aria-label="Status month"
-            />
+            <Select value={statusMonth} onValueChange={(v) => setStatusMonth(String(v || '').trim())}>
+              <SelectTrigger className="w-[170px]" aria-label="Status month">
+                <SelectValue placeholder="Select month" />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Button className="w-full sm:w-auto" variant="outline" onClick={() => void refreshRoster()} disabled={loadingRoster}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            {loadingRoster ? 'Refreshing…' : 'Refresh assignments'}
-          </Button>
-          <Button
-            className="w-full sm:w-auto"
-            variant="outline"
-            onClick={() => void refreshMonthStatuses()}
-            disabled={loadingMonthStatuses || !hasLoadedOnce}
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            {loadingMonthStatuses ? 'Refreshing…' : 'Refresh statuses (optional)'}
-          </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
             Print / Save PDF
@@ -373,57 +411,69 @@ export default function SWStatusLogPage() {
 
       <Card className="print:hidden">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Past claim status lookup</CardTitle>
-          <CardDescription>Search any past claim by Claim # or Claim ID to see its current status.</CardDescription>
+          <CardTitle className="text-base">Past claim status lookup (by client name)</CardTitle>
+          <CardDescription>
+            Type a client name to find their most recent submitted claims, then open to see full status details.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Input
-              value={claimLookupId}
-              onChange={(e) => setClaimLookupId(e.target.value)}
-              placeholder="Enter Claim # (e.g., SW-202603-000123) or Claim ID (swClaim_...)"
+              value={clientLookupQuery}
+              onChange={(e) => setClientLookupQuery(e.target.value)}
+              placeholder="Search by client name (e.g., Kendrick)"
             />
             <Button
               className="w-full sm:w-auto"
               variant="outline"
-              onClick={() => void lookupClaim()}
-              disabled={!claimLookupId.trim() || claimLookupLoading || !auth?.currentUser}
+              onClick={() => void searchClaimsByClient()}
+              disabled={!clientLookupQuery.trim() || clientLookupLoading || !auth?.currentUser}
             >
-              {claimLookupLoading ? 'Looking up…' : 'Lookup claim'}
+              {clientLookupLoading ? 'Searching…' : 'Search'}
             </Button>
           </div>
-          {claimLookupError ? <div className="text-sm text-destructive">{claimLookupError}</div> : null}
-          {claimLookupResult ? (
-            <div className="rounded-md border bg-slate-50 p-3 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold">Status:</span>
-                <Badge variant="secondary">{String(claimLookupResult?.status || 'unknown')}</Badge>
-                {claimLookupResult?.paymentStatus ? (
-                  <Badge variant="secondary">Payment: {String(claimLookupResult?.paymentStatus)}</Badge>
-                ) : null}
-                {claimLookupResult?.reviewStatus ? (
-                  <Badge variant="secondary">Review: {String(claimLookupResult?.reviewStatus)}</Badge>
-                ) : null}
-              </div>
-              <div className="mt-2 grid gap-1 text-muted-foreground">
-                <div>
-                  <span className="font-medium text-slate-900">Claim #:</span>{' '}
-                  <span className="font-mono break-all">{String(claimLookupResult?.claimNumber || '—')}</span>
-                  <span className="text-xs text-muted-foreground"> • </span>
-                  <span className="text-xs text-muted-foreground font-mono break-all">{String(claimLookupResult?.claimId || '')}</span>
-                </div>
-                <div>
-                  <span className="font-medium text-slate-900">Month:</span> {String(claimLookupResult?.claimMonth || '—')}
-                  {claimLookupResult?.claimDay ? <span> • Day: {String(claimLookupResult?.claimDay)}</span> : null}
-                </div>
-                <div>
-                  <span className="font-medium text-slate-900">RCFE:</span> {String(claimLookupResult?.rcfeName || '—')}
-                </div>
-                {claimLookupResult?.totalAmount != null ? (
-                  <div>
-                    <span className="font-medium text-slate-900">Total:</span> ${Number(claimLookupResult?.totalAmount || 0).toFixed(2)}
-                  </div>
-                ) : null}
+          {clientLookupError ? <div className="text-sm text-destructive">{clientLookupError}</div> : null}
+
+          {clientLookupResults.length > 0 ? (
+            <div className="rounded-md border bg-white">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[220px]">Client</TableHead>
+                      <TableHead className="min-w-[120px]">Month</TableHead>
+                      <TableHead className="min-w-[120px]">Status</TableHead>
+                      <TableHead className="min-w-[120px] text-right">Total</TableHead>
+                      <TableHead className="min-w-[160px] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {clientLookupResults.map((r, idx) => {
+                      const matched = Array.isArray(r?.matchedMemberNames) ? r.matchedMemberNames : [];
+                      const memberNames = Array.isArray(r?.memberNames) ? r.memberNames : [];
+                      const label = matched[0] || memberNames[0] || '—';
+                      const more = matched.length > 1 ? ` (+${matched.length - 1})` : '';
+                      return (
+                        <TableRow key={String(r?.claimId || idx)}>
+                          <TableCell className="min-w-0">
+                            <div className="truncate font-medium">{label}{more}</div>
+                            <div className="font-mono text-[10px] text-muted-foreground break-all">{String(r?.claimNumber || r?.claimId || '')}</div>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{String(r?.claimMonth || '—')}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{String(r?.status || 'unknown')}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">{r?.totalAmount != null ? money(r.totalAmount) : '—'}</TableCell>
+                          <TableCell className="text-right">
+                            <Button size="sm" variant="outline" onClick={() => void openClaimDetail({ id: String(r?.claimId || '').trim() })}>
+                              Open claim
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </div>
             </div>
           ) : null}
@@ -432,221 +482,92 @@ export default function SWStatusLogPage() {
 
       <Card className="print:hidden">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Search</CardTitle>
-          <CardDescription>Filter by home name, address, or member name.</CardDescription>
+          <CardTitle className="text-base">Most recent claims</CardTitle>
+          <CardDescription>
+            Showing the 10 most recent items for {statusMonth}. Use “Show all” to view the full month.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="flex items-center gap-2">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type to search…" />
-        </CardContent>
-      </Card>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{activityTotals.count} total</Badge>
+            <Badge variant="secondary">{activityTotals.completedCount} Q complete</Badge>
+            <Badge variant="secondary">{activityTotals.signedOffCount} signed off</Badge>
+            <Badge variant="secondary">{activityTotals.submittedCount} claim submitted</Badge>
+            <Badge variant="secondary">{activityTotals.paidCount} paid</Badge>
+            <Button size="sm" variant="outline" onClick={() => void openMonthSummary()} disabled={monthSummaryLoading || !auth?.currentUser}>
+              {monthSummaryLoading ? 'Loading summary…' : 'Monthly claim summary'}
+            </Button>
+            {activityRows.length > 10 ? (
+              <Button size="sm" variant="outline" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? 'Show top 10' : `Show all (${activityRows.length})`}
+              </Button>
+            ) : null}
+          </div>
 
-      {error ? (
-        <Card className="border-destructive/40">
-          <CardHeader>
-            <CardTitle className="text-base">Could not load status log</CardTitle>
-            <CardDescription className="text-destructive">{error}</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : null}
-
-      <div className="space-y-4">
-        {!hasLoadedOnce && !loadingRoster ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Load your roster</CardTitle>
-              <CardDescription>
-                Tap <span className="font-semibold">Refresh roster</span> to load your assigned members.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : null}
-
-        {hasLoadedOnce && filteredFacilities.length === 0 && !loadingRoster && !error ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">No assignments found</CardTitle>
-              <CardDescription>If this seems wrong, your assignments may not be set yet or the cache hasn’t refreshed.</CardDescription>
-            </CardHeader>
-          </Card>
-        ) : null}
-
-        {filteredFacilities.length > 0 ? (
-          <div className="rounded-lg border bg-white print:hidden">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[220px]">Member</TableHead>
-                    <TableHead className="min-w-[92px] text-center">Questionnaire</TableHead>
-                    <TableHead className="min-w-[92px] text-center">Signed off</TableHead>
-                    <TableHead className="min-w-[110px] text-center">Claim submitted</TableHead>
-                    <TableHead className="min-w-[80px] text-center">Paid</TableHead>
-                    <TableHead className="min-w-[180px]">Claim #</TableHead>
-                    <TableHead className="min-w-[210px] text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredFacilities.map((f) => (
-                    <Fragment key={`facility-${String(f.id || '').trim() || f.name}`}>
-                      <TableRow key={`rcfe-${f.id}`} className="bg-slate-50">
-                        <TableCell colSpan={7}>
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="font-semibold truncate">{f.name}</div>
-                              <div className="text-xs text-muted-foreground break-words">{String(f.address || '').trim() || '—'}</div>
-                            </div>
-                            <Badge variant="secondary">{(f.members || []).length} member(s)</Badge>
+          {visibleActivityRows.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No items found for this month yet.</div>
+          ) : (
+            <div className="rounded-md border bg-white">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[110px]">Day</TableHead>
+                      <TableHead className="min-w-[220px]">Client</TableHead>
+                      <TableHead className="min-w-[72px] text-center">Q</TableHead>
+                      <TableHead className="min-w-[72px] text-center">S</TableHead>
+                      <TableHead className="min-w-[150px]">Claim status</TableHead>
+                      <TableHead className="min-w-[72px] text-center">Paid</TableHead>
+                      <TableHead className="min-w-[220px]">Claim #</TableHead>
+                      <TableHead className="min-w-[220px] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleActivityRows.map((r, idx) => (
+                      <TableRow key={`${r.day}-${r.memberId}-${idx}`}>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{r.day || '—'}</TableCell>
+                        <TableCell className="min-w-0">
+                          <div className="truncate font-medium">{r.memberName || '—'}</div>
+                          {r.memberId ? <div className="font-mono text-[10px] text-muted-foreground break-all">{r.memberId}</div> : null}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {renderStatusIcon({ on: r.completed, label: r.completed ? 'Questionnaire completed' : 'Questionnaire not completed' })}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {renderStatusIcon({ on: r.completed && r.signedOff, label: r.signedOff ? 'Signed off' : 'Not signed off' })}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{String(r.claimStatus || 'draft')}</Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {renderStatusIcon({ on: r.completed && r.claimPaid, label: r.claimPaid ? 'Paid' : 'Not paid' })}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <span className="font-mono break-all">{claimDisplayNumber({ day: r.day, memberName: r.memberName, memberId: r.memberId })}</span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {r.idForOpen ? (
+                              <Button size="sm" variant="outline" onClick={() => void openClaimDetail({ id: r.idForOpen })}>
+                                Open claim
+                              </Button>
+                            ) : null}
+                            {r.visitId ? (
+                              <Button size="sm" variant="outline" onClick={() => void openVisitDetail({ visitId: r.visitId })}>
+                                View questionnaire
+                              </Button>
+                            ) : null}
                           </div>
                         </TableCell>
                       </TableRow>
-                      {(f.members || []).map((m) => {
-                        const s = monthStatuses[String(m.id || '').trim()];
-                        const flags = computeSwVisitStatusFlags(s);
-                        return (
-                          <TableRow key={`${f.id}-${m.id}`}>
-                            <TableCell className="min-w-0">
-                              <div className="flex items-center gap-2 min-w-0">
-                                {flags.needsAction ? (
-                                  <span
-                                    className="inline-flex h-2 w-2 shrink-0 rounded-full bg-rose-500"
-                                    aria-label="Needs action"
-                                    title={`Needs action: ${flags.nextAction === 'questionnaire' ? 'Complete questionnaire' : flags.nextAction === 'signoff' ? 'Get sign-off' : 'Submit claim'}`}
-                                  />
-                                ) : (
-                                  <span className="inline-flex h-2 w-2 shrink-0 rounded-full bg-transparent" aria-hidden="true" />
-                                )}
-                                <span className="min-w-0 truncate font-medium">{m.name}</span>
-                                {m.isNewAssignment ? (
-                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
-                                    NEW
-                                  </span>
-                                ) : null}
-                                {m.isHoldRemoved ? (
-                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
-                                    HOLD REMOVED
-                                  </span>
-                                ) : null}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {renderStatusIcon({ on: flags.completed, label: flags.completed ? 'Questionnaire completed' : 'Questionnaire not completed' })}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {renderStatusIcon({
-                                on: flags.completed && flags.signedOff,
-                                label: flags.completed && flags.signedOff ? 'Signed off' : 'Not signed off',
-                              })}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {renderStatusIcon({
-                                on: flags.completed && flags.claimSubmitted,
-                                label: flags.completed && flags.claimSubmitted ? 'Claim submitted' : 'Claim not submitted',
-                              })}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {renderStatusIcon({ on: flags.completed && flags.claimPaid, label: flags.completed && flags.claimPaid ? 'Claim paid' : 'Not paid' })}
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              <div className="grid gap-1">
-                                <span className="font-mono text-xs break-all">
-                                  {String(s?.serviceLineId || '').trim() ||
-                                    humanServiceLineId({
-                                      claimDay: s?.claimDay,
-                                      memberName: String(m.name || '').trim(),
-                                      memberId: String(m.id || '').trim(),
-                                    })}
-                                </span>
-                                {flags.claimId ? (
-                                  <span className="font-mono text-[10px] break-all text-muted-foreground">{flags.claimId}</span>
-                                ) : null}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex flex-wrap justify-end gap-2">
-                                {flags.claimId || flags.claimNumber ? (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => void openClaimDetail({ id: flags.claimId || flags.claimNumber })}
-                                  >
-                                    Open claim
-                                  </Button>
-                                ) : null}
-                                {flags.completed && s?.visitId ? (
-                                  <Button size="sm" variant="outline" onClick={() => void openVisitDetail({ visitId: String(s.visitId) })}>
-                                    View questionnaire
-                                  </Button>
-                                ) : (
-                                  <Button asChild size="sm" variant="outline">
-                                    <Link
-                                      href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id))}&memberId=${encodeURIComponent(
-                                        String(m.id)
-                                      )}`}
-                                    >
-                                      <ClipboardCheck className="h-4 w-4 mr-2" />
-                                      Questionnaire
-                                    </Link>
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </Fragment>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        ) : null}
-      </div>
-
-      <Dialog open={visitDetailOpen} onOpenChange={setVisitDetailOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Questionnaire (view only)</DialogTitle>
-            <DialogDescription>This is the submitted visit record. Editing is disabled.</DialogDescription>
-          </DialogHeader>
-          {visitDetailLoading ? (
-            <div className="text-sm text-muted-foreground">Loading…</div>
-          ) : visitDetailError ? (
-            <div className="text-sm text-destructive">{visitDetailError}</div>
-          ) : visitDetailResult ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 text-sm">
-                <div className="rounded border p-3">
-                  <div className="text-xs text-muted-foreground">Member</div>
-                  <div className="font-semibold break-words">{String(visitDetailResult?.memberName || '—')}</div>
-                </div>
-                <div className="rounded border p-3">
-                  <div className="text-xs text-muted-foreground">RCFE</div>
-                  <div className="font-semibold break-words">{String(visitDetailResult?.rcfeName || '—')}</div>
-                  <div className="text-xs text-muted-foreground break-words">{String(visitDetailResult?.rcfeAddress || '').trim()}</div>
-                </div>
-                <div className="rounded border p-3">
-                  <div className="text-xs text-muted-foreground">Visit date</div>
-                  <div className="font-semibold">{String(visitDetailResult?.visitDate || '').slice(0, 10) || '—'}</div>
-                </div>
-                <div className="rounded border p-3">
-                  <div className="text-xs text-muted-foreground">Status</div>
-                  <div className="font-semibold">{String(visitDetailResult?.status || '—')}</div>
-                </div>
-              </div>
-
-              <div className="rounded border p-3">
-                <div className="text-xs text-muted-foreground">Raw questionnaire (JSON)</div>
-                <pre className="mt-2 max-h-[340px] overflow-auto whitespace-pre-wrap break-words text-xs">
-                  {JSON.stringify(visitDetailResult?.raw || visitDetailResult || {}, null, 2)}
-                </pre>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </div>
-          ) : (
-            <div className="text-sm text-muted-foreground">No visit loaded.</div>
           )}
-        </DialogContent>
-      </Dialog>
+        </CardContent>
+      </Card>
 
       <Dialog open={claimDetailOpen} onOpenChange={setClaimDetailOpen}>
         <DialogContent className="max-w-lg">
@@ -694,6 +615,125 @@ export default function SWStatusLogPage() {
             </div>
           ) : (
             <div className="text-sm text-muted-foreground">No claim loaded.</div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={monthSummaryOpen} onOpenChange={setMonthSummaryOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Monthly claim summary</DialogTitle>
+            <DialogDescription>Totals for {statusMonth}.</DialogDescription>
+          </DialogHeader>
+          {monthSummaryLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : monthSummaryError ? (
+            <div className="text-sm text-destructive">{monthSummaryError}</div>
+          ) : monthSummary ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 text-sm">
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Claims</div>
+                  <div className="text-xl font-bold">{Number(monthSummary?.totals?.claimCount || 0)}</div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Submitted</div>
+                  <div className="text-xl font-bold">{Number(monthSummary?.totals?.submittedCount || 0)}</div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Paid</div>
+                  <div className="text-xl font-bold">{Number(monthSummary?.totals?.paidCount || 0)}</div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Total amount</div>
+                  <div className="text-xl font-bold">{money(monthSummary?.totals?.totalAmount || 0)}</div>
+                </div>
+              </div>
+
+              {Array.isArray(monthSummary?.claims) && monthSummary.claims.length > 0 ? (
+                <div className="rounded-md border bg-white">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-[120px]">Day</TableHead>
+                          <TableHead className="min-w-[160px]">Status</TableHead>
+                          <TableHead className="min-w-[160px]">RCFE</TableHead>
+                          <TableHead className="min-w-[120px] text-right">Total</TableHead>
+                          <TableHead className="min-w-[160px] text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {monthSummary.claims.slice(0, 50).map((c: any, idx: number) => (
+                          <TableRow key={String(c?.claimId || idx)}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{String(c?.claimDay || '—')}</TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{String(c?.status || 'unknown')}</Badge>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{String(c?.rcfeName || '—')}</TableCell>
+                            <TableCell className="text-right">{c?.totalAmount != null ? money(c.totalAmount) : '—'}</TableCell>
+                            <TableCell className="text-right">
+                              <Button size="sm" variant="outline" onClick={() => void openClaimDetail({ id: String(c?.claimId || '').trim() })}>
+                                Open claim
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">No claims found for this month.</div>
+              )}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No summary loaded.</div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={visitDetailOpen} onOpenChange={setVisitDetailOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Questionnaire (view only)</DialogTitle>
+            <DialogDescription>This is the submitted visit record. Editing is disabled.</DialogDescription>
+          </DialogHeader>
+          {visitDetailLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : visitDetailError ? (
+            <div className="text-sm text-destructive">{visitDetailError}</div>
+          ) : visitDetailResult ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 text-sm">
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Member</div>
+                  <div className="font-semibold break-words">{String(visitDetailResult?.memberName || '—')}</div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">RCFE</div>
+                  <div className="font-semibold break-words">{String(visitDetailResult?.rcfeName || '—')}</div>
+                  <div className="text-xs text-muted-foreground break-words">{String(visitDetailResult?.rcfeAddress || '').trim()}</div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Visit date</div>
+                  <div className="font-semibold">{String(visitDetailResult?.visitDate || '').slice(0, 10) || '—'}</div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <div className="font-semibold">{String(visitDetailResult?.status || '—')}</div>
+                </div>
+              </div>
+
+              <div className="rounded border p-3">
+                <div className="text-xs text-muted-foreground">Raw questionnaire (JSON)</div>
+                <pre className="mt-2 max-h-[340px] overflow-auto whitespace-pre-wrap break-words text-xs">
+                  {JSON.stringify(visitDetailResult?.raw || visitDetailResult || {}, null, 2)}
+                </pre>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No visit loaded.</div>
           )}
         </DialogContent>
       </Dialog>

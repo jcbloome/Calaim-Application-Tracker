@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ClipboardCheck, FileBarChart, DollarSign, Users, BookOpenText, CheckCircle2 } from 'lucide-react';
+import { ClipboardCheck, FileBarChart, Users, BookOpenText, CheckCircle2 } from 'lucide-react';
 
 export default function SWPortalPage() {
   return (
@@ -83,20 +83,6 @@ export default function SWPortalPage() {
           <CardContent>
             <Button asChild className="w-full" variant="outline">
               <Link href="/sw-portal/sign-off">Open</Link>
-            </Button>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
-              Submit Claims
-            </CardTitle>
-            <CardDescription>Submit monthly invoices</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild className="w-full" variant="outline">
-              <Link href="/sw-portal/submit-claims">Open</Link>
             </Button>
           </CardContent>
         </Card>

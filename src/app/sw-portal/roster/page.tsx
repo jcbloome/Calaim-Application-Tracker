@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,8 @@ export default function SWRosterPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
   const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
+  const [monthStatusesLoaded, setMonthStatusesLoaded] = useState(false);
+  const [monthStatusesFailed, setMonthStatusesFailed] = useState(false);
 
   const refreshRoster = useCallback(async () => {
     if (!user?.email) return;
@@ -80,9 +83,13 @@ export default function SWRosterPage() {
   const refreshMonthStatuses = useCallback(async () => {
     if (!auth?.currentUser) {
       setMonthStatuses({});
+      setMonthStatusesLoaded(false);
+      setMonthStatusesFailed(false);
       return;
     }
     setLoadingMonthStatuses(true);
+    setMonthStatusesLoaded(false);
+    setMonthStatusesFailed(false);
     try {
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch('/api/sw-visits/monthly-export', {
@@ -107,9 +114,13 @@ export default function SWRosterPage() {
         };
       });
       setMonthStatuses(map);
+      setMonthStatusesLoaded(true);
+      setMonthStatusesFailed(false);
     } catch {
       // best-effort: roster should still work without statuses
       setMonthStatuses({});
+      setMonthStatusesLoaded(false);
+      setMonthStatusesFailed(true);
     } finally {
       setLoadingMonthStatuses(false);
     }
@@ -146,9 +157,38 @@ export default function SWRosterPage() {
   useEffect(() => {
     if (isLoading) return;
     if (!isSocialWorker) return;
+    if (hasLoadedOnce) return;
+    if (loading) return;
+    void refreshRoster();
+  }, [hasLoadedOnce, isLoading, isSocialWorker, loading, refreshRoster]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
     if (!hasLoadedOnce) return;
     void refreshMonthStatuses();
   }, [hasLoadedOnce, isLoading, isSocialWorker, refreshMonthStatuses]);
+
+  const needsQuestionnaire = useMemo(() => {
+    if (!monthStatusesLoaded) return [];
+    const rows: Array<{ memberId: string; memberName: string; rcfeId: string; rcfeName: string }> = [];
+    for (const f of facilities) {
+      for (const m of f.members || []) {
+        const s = monthStatuses[String(m.id || '').trim()];
+        const flags = computeSwVisitStatusFlags(s);
+        if (flags.nextAction === 'questionnaire') {
+          rows.push({
+            memberId: String(m.id || '').trim(),
+            memberName: String(m.name || '').trim(),
+            rcfeId: String(f.id || '').trim(),
+            rcfeName: String(f.name || '').trim(),
+          });
+        }
+      }
+    }
+    rows.sort((a, b) => (a.rcfeName || '').localeCompare(b.rcfeName || '') || (a.memberName || '').localeCompare(b.memberName || ''));
+    return rows;
+  }, [facilities, monthStatuses, monthStatusesLoaded]);
 
   const filteredFacilities = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -295,6 +335,64 @@ export default function SWRosterPage() {
         </CardContent>
       </Card>
 
+      <Card className="print:hidden">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Members needing questionnaires</CardTitle>
+          <CardDescription>
+            Direct links into this month’s questionnaire for anyone not yet completed.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {loadingMonthStatuses ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading monthly statuses…
+            </div>
+          ) : monthStatusesFailed ? (
+            <div className="text-sm text-muted-foreground">
+              Monthly status couldn’t be loaded right now. You can still use the roster below, or open the{' '}
+              <Link className="underline underline-offset-2" href="/sw-visit-verification">
+                Monthly Questionnaire
+              </Link>{' '}
+              page.
+            </div>
+          ) : !monthStatusesLoaded ? (
+            <div className="text-sm text-muted-foreground">
+              Load your roster to populate this list, then refresh statuses if needed.
+            </div>
+          ) : needsQuestionnaire.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No members currently show as needing a questionnaire for {statusMonth}.</div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{needsQuestionnaire.length} member(s)</Badge>
+                <span className="text-xs text-muted-foreground">Month: {statusMonth}</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {needsQuestionnaire.slice(0, 50).map((r) => (
+                  <div key={`${r.rcfeId}-${r.memberId}`} className="flex items-center justify-between gap-3 rounded-md border bg-white p-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{r.memberName}</div>
+                      <div className="truncate text-xs text-muted-foreground">{r.rcfeName}</div>
+                    </div>
+                    <Button asChild size="sm" className="shrink-0">
+                      <Link href={`/sw-visit-verification?rcfeId=${encodeURIComponent(r.rcfeId)}&memberId=${encodeURIComponent(r.memberId)}`}>
+                        Open
+                      </Link>
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              {needsQuestionnaire.length > 50 ? (
+                <div className="text-xs text-muted-foreground">
+                  Showing first 50. Use Search below to find specific members/homes.
+                </div>
+              ) : null}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {error ? (
         <Card className="border-destructive/40">
           <CardHeader>
@@ -369,7 +467,7 @@ export default function SWRosterPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredFacilities.map((f) => (
-                    <>
+                    <React.Fragment key={`group-${f.id}`}>
                       <TableRow key={`rcfe-${f.id}`} className="bg-slate-50">
                         <TableCell colSpan={2}>
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -458,6 +556,15 @@ export default function SWRosterPage() {
                                     <span className="text-[10px] text-muted-foreground">P</span>
                                   </span>
                                 </span>
+                                {flags.nextAction === 'questionnaire' ? (
+                                  <Button asChild size="sm" variant="outline" className="ml-2 shrink-0">
+                                    <Link
+                                      href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id || '').trim())}&memberId=${encodeURIComponent(String(m.id || '').trim())}`}
+                                    >
+                                      Questionnaire
+                                    </Link>
+                                  </Button>
+                                ) : null}
                               </div>
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground min-w-0">
@@ -469,7 +576,7 @@ export default function SWRosterPage() {
                           </TableRow>
                         );
                       })}
-                    </>
+                    </React.Fragment>
                   ))}
                 </TableBody>
               </Table>

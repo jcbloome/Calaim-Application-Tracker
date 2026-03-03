@@ -96,7 +96,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
       <div className="bg-card border-b sticky top-0 z-40">
         <div className="container mx-auto px-4 py-2 sm:px-6">
           <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
-            <Link href="/sw-portal" className="shrink-0">
+            <Link href="/sw-portal/roster" className="shrink-0">
               <Image
                 src="/calaimlogopdf.png"
                 alt="Connect CalAIM Logo"

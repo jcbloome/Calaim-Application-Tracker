@@ -13,6 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertTriangle, Loader2, MapPin, RefreshCw, Send } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 
 type RcfeOption = {
   id: string;
@@ -65,6 +67,10 @@ export default function SWSignOffPage() {
   const [geolocation, setGeolocation] = useState<{ latitude: number; longitude: number; accuracy?: number } | null>(null);
   const [geoAddress, setGeoAddress] = useState<string>('');
   const [loadingGeoAddress, setLoadingGeoAddress] = useState(false);
+
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false);
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
   const swUid = String((user as any)?.uid || '').trim();
@@ -262,6 +268,53 @@ export default function SWSignOffPage() {
       toast({ title: 'Submission failed', description: e?.message || 'Please try again.', variant: 'destructive' });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const submitOverrideRequest = async () => {
+    if (!auth?.currentUser) {
+      toast({ title: 'Please sign in again', description: 'No active session found.', variant: 'destructive' });
+      return;
+    }
+    const reason = overrideReason.trim();
+    if (!reason) return;
+    if (!rcfeId || !claimDay) return;
+    if (selectedVisits.length === 0) return;
+    if (overrideSubmitting) return;
+
+    setOverrideSubmitting(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/sw-claims/override-request', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          rcfeId,
+          rcfeName: String(selectedRcfe?.name || '').trim(),
+          rcfeAddress: String(selectedRcfe?.address || '').trim(),
+          claimDay,
+          visitIds: selectedVisits.map((v) => String(v.visitId || '').trim()).filter(Boolean),
+          reason,
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Request failed (HTTP ${res.status})`);
+      }
+      toast({
+        title: 'Override requested',
+        description: 'Admin has been notified. You can continue with other visits while they review.',
+      });
+      setOverrideOpen(false);
+      setOverrideReason('');
+    } catch (e: any) {
+      toast({
+        title: 'Request failed',
+        description: e?.message || 'Could not send override request.',
+        variant: 'destructive',
+      });
+    } finally {
+      setOverrideSubmitting(false);
     }
   };
 
@@ -503,6 +556,76 @@ export default function SWSignOffPage() {
           </Button>
         </CardContent>
       </Card>
+
+      <Card className="border-amber-200 bg-amber-50/40">
+        <CardHeader>
+          <CardTitle className="text-base">Can’t get RCFE sign-off?</CardTitle>
+          <CardDescription>
+            If staff cannot sign today, you can request an admin override to submit the claim on the backend. A reason is required.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-muted-foreground">
+            <div>
+              <span className="font-medium text-slate-900">RCFE:</span> {String(selectedRcfe?.name || '—')}
+            </div>
+            <div>
+              <span className="font-medium text-slate-900">Date:</span> {claimDay || '—'} •{' '}
+              <span className="font-medium text-slate-900">Draft visits:</span> {selectedVisits.length}
+            </div>
+          </div>
+          <Button
+            className="w-full sm:w-auto"
+            variant="outline"
+            onClick={() => setOverrideOpen(true)}
+            disabled={!rcfeId || !claimDay || selectedVisits.length === 0}
+          >
+            Request admin override
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Dialog open={overrideOpen} onOpenChange={setOverrideOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Request admin override</DialogTitle>
+            <DialogDescription>
+              This will send an override request to Admin with your reason, RCFE, and visit date. Admin will decide to approve or reject.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded border bg-white p-3 text-sm">
+              <div>
+                <span className="font-medium">RCFE:</span> {String(selectedRcfe?.name || '—')}
+              </div>
+              <div className="text-muted-foreground">
+                <span className="font-medium text-slate-900">Date:</span> {claimDay} •{' '}
+                <span className="font-medium text-slate-900">Draft visits:</span> {selectedVisits.length}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="overrideReason">Reason (required)</Label>
+              <Textarea
+                id="overrideReason"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                placeholder="Example: Staff unavailable; facility refused to sign; member visits completed but no authorized representative onsite."
+                rows={4}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setOverrideOpen(false)} disabled={overrideSubmitting}>
+                Cancel
+              </Button>
+              <Button onClick={() => void submitOverrideRequest()} disabled={overrideSubmitting || !overrideReason.trim()}>
+                {overrideSubmitting ? 'Sending…' : 'Send request'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

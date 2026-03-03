@@ -127,6 +127,7 @@ export default function SWClaimsManagementPage() {
   const [duplicateMemberName, setDuplicateMemberName] = useState('');
   const [duplicateMonth, setDuplicateMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [adminActionNote, setAdminActionNote] = useState('');
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false);
   const [summary, setSummary] = useState<ClaimSummary>({
     totalClaims: 0,
     totalAmount: 0,
@@ -153,6 +154,32 @@ export default function SWClaimsManagementPage() {
   const [sendingReminders, setSendingReminders] = useState(false);
   const [reminderError, setReminderError] = useState<string | null>(null);
   const [reminderResult, setReminderResult] = useState<any | null>(null);
+
+  const [overrideRequests, setOverrideRequests] = useState<any[]>([]);
+  const [loadingOverrideRequests, setLoadingOverrideRequests] = useState(false);
+  const [overrideRequestsError, setOverrideRequestsError] = useState<string | null>(null);
+  const [decidingOverrideId, setDecidingOverrideId] = useState<string | null>(null);
+  const [overrideDecisionNote, setOverrideDecisionNote] = useState('');
+
+  const loadOverrideRequests = async () => {
+    if (!adminUser) return;
+    setLoadingOverrideRequests(true);
+    setOverrideRequestsError(null);
+    try {
+      const idToken = await adminUser.getIdToken();
+      const res = await fetch('/api/admin/sw-claims/override-requests/list?status=pending', {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (HTTP ${res.status})`);
+      setOverrideRequests(Array.isArray(data?.requests) ? data.requests : []);
+    } catch (e: any) {
+      setOverrideRequests([]);
+      setOverrideRequestsError(e?.message || 'Failed to load override requests.');
+    } finally {
+      setLoadingOverrideRequests(false);
+    }
+  };
 
   useEffect(() => {
     if (!firestore) return;
@@ -208,6 +235,12 @@ export default function SWClaimsManagementPage() {
 
     return () => unsub();
   }, [firestore, toast]);
+
+  useEffect(() => {
+    if (!adminUser) return;
+    void loadOverrideRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminUser]);
 
   useEffect(() => {
     applyFilters();
@@ -773,6 +806,124 @@ export default function SWClaimsManagementPage() {
     }
   };
 
+  const overrideSubmitDraftClaim = async (claimId: string, reason: string) => {
+    try {
+      const notes = String(reason || '').trim();
+      if (!notes) {
+        toast({
+          variant: 'destructive',
+          title: 'Reason required',
+          description: 'Enter a reason in Admin note before override-submitting without sign-off.',
+        });
+        return;
+      }
+      if (!adminUser) throw new Error('No admin session');
+      if (overrideSubmitting) return;
+
+      setOverrideSubmitting(true);
+      const idToken = await adminUser.getIdToken();
+      const res = await fetch('/api/admin/sw-claims/override-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ claimId, reason: notes }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to override submit claim');
+
+      toast({
+        title: 'Override submitted',
+        description: 'Draft claim was submitted without RCFE sign-off (admin override).',
+      });
+      setSelectedClaim(null);
+      setReviewDialogOpen(false);
+      setAdminActionNote('');
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Override failed', description: e?.message || 'Please try again.' });
+    } finally {
+      setOverrideSubmitting(false);
+    }
+  };
+
+  const approveOverrideRequest = async (reqRow: any) => {
+    if (!adminUser) return;
+    const requestId = String(reqRow?.id || reqRow?.requestId || '').trim();
+    const visitIds: string[] = Array.isArray(reqRow?.visitIds) ? reqRow.visitIds.map((v: any) => String(v || '').trim()).filter(Boolean) : [];
+    const reason = String(reqRow?.reason || '').trim();
+    if (!requestId || visitIds.length === 0 || !reason) return;
+
+    if (!overrideDecisionNote.trim()) {
+      toast({ variant: 'destructive', title: 'Admin note required', description: 'Enter an admin decision note before approving.' });
+      return;
+    }
+
+    setDecidingOverrideId(requestId);
+    try {
+      const idToken = await adminUser.getIdToken();
+      const actorLabel = String(adminUser?.displayName || adminUser?.email || 'Admin').trim() || 'Admin';
+
+      const res = await fetch('/api/admin/sw-visits/override-signoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          visitIds,
+          rcfeStaffName: actorLabel,
+          rcfeStaffTitle: 'Admin',
+          reason,
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Override sign-off failed');
+
+      const first = Array.isArray(data?.results) ? data.results[0] : null;
+      await fetch('/api/admin/sw-claims/override-requests/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          requestId,
+          status: 'approved',
+          adminNote: overrideDecisionNote.trim(),
+          result: first ? { claimId: first.claimId, claimNumber: first.claimNumber, signOffId: first.signOffId } : { note: 'Approved' },
+        }),
+      });
+
+      toast({ title: 'Approved', description: 'Override request approved and claim submitted.' });
+      setOverrideDecisionNote('');
+      await loadOverrideRequests();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Approval failed', description: e?.message || 'Please try again.' });
+    } finally {
+      setDecidingOverrideId(null);
+    }
+  };
+
+  const rejectOverrideRequest = async (reqRow: any) => {
+    if (!adminUser) return;
+    const requestId = String(reqRow?.id || reqRow?.requestId || '').trim();
+    if (!requestId) return;
+    if (!overrideDecisionNote.trim()) {
+      toast({ variant: 'destructive', title: 'Admin note required', description: 'Enter an admin decision note before rejecting.' });
+      return;
+    }
+    setDecidingOverrideId(requestId);
+    try {
+      const idToken = await adminUser.getIdToken();
+      const res = await fetch('/api/admin/sw-claims/override-requests/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ requestId, status: 'rejected', adminNote: overrideDecisionNote.trim() }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Reject failed');
+      toast({ title: 'Rejected', description: 'Override request rejected.' });
+      setOverrideDecisionNote('');
+      await loadOverrideRequests();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Reject failed', description: e?.message || 'Please try again.' });
+    } finally {
+      setDecidingOverrideId(null);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const variants = {
       'submitted': 'outline',
@@ -1266,6 +1417,30 @@ export default function SWClaimsManagementPage() {
                       Mark as Unpaid
                     </Button>
                   ) : null}
+
+                  {selectedClaim.status === 'draft' ? (
+                    <div className="flex flex-col gap-1">
+                      <Button
+                        variant="destructive"
+                        onClick={() => {
+                          const ok =
+                            typeof window !== 'undefined'
+                              ? window.confirm(
+                                  'Override submit this DRAFT claim WITHOUT RCFE sign-off?\n\nThis should be used only when sign-off cannot be obtained. A reason is required.'
+                                )
+                              : true;
+                          if (!ok) return;
+                          void overrideSubmitDraftClaim(selectedClaim.id, adminActionNote);
+                        }}
+                        disabled={overrideSubmitting || !String(adminActionNote || '').trim()}
+                      >
+                        {overrideSubmitting ? 'Submitting…' : 'Override submit (no sign-off)'}
+                      </Button>
+                      {!String(adminActionNote || '').trim() ? (
+                        <div className="text-xs text-muted-foreground">Enter an Admin note (reason) to enable override.</div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -1342,6 +1517,84 @@ export default function SWClaimsManagementPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Override requests */}
+      <Card>
+        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Override requests (no RCFE sign-off)</CardTitle>
+            <CardDescription>Requested by Social Workers when RCFE staff cannot sign. Approving will submit the claim via admin override.</CardDescription>
+          </div>
+          <Button variant="outline" onClick={() => void loadOverrideRequests()} disabled={loadingOverrideRequests}>
+            {loadingOverrideRequests ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {overrideRequestsError ? <div className="text-sm text-destructive">{overrideRequestsError}</div> : null}
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Admin decision note (required to approve/reject)</div>
+            <Textarea
+              value={overrideDecisionNote}
+              onChange={(e) => setOverrideDecisionNote(e.target.value)}
+              placeholder="Reason for approval/rejection (will be saved on the request)."
+              rows={2}
+            />
+          </div>
+
+          {overrideRequests.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No pending override requests.</div>
+          ) : (
+            <div className="rounded-md border bg-white">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[140px]">Date</TableHead>
+                      <TableHead className="min-w-[200px]">RCFE</TableHead>
+                      <TableHead className="min-w-[220px]">Social Worker</TableHead>
+                      <TableHead className="min-w-[320px]">Reason</TableHead>
+                      <TableHead className="min-w-[90px] text-right">Visits</TableHead>
+                      <TableHead className="min-w-[220px] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {overrideRequests.map((r) => {
+                      const id = String(r?.id || '').trim();
+                      const busy = decidingOverrideId === id;
+                      return (
+                        <TableRow key={id}>
+                          <TableCell className="font-mono text-xs text-muted-foreground">{String(r?.claimDay || '—')}</TableCell>
+                          <TableCell className="min-w-0">
+                            <div className="truncate font-medium">{String(r?.rcfeName || '—')}</div>
+                            <div className="text-xs text-muted-foreground truncate">{String(r?.rcfeAddress || '')}</div>
+                          </TableCell>
+                          <TableCell className="min-w-0">
+                            <div className="truncate font-medium">{String(r?.socialWorkerName || '—')}</div>
+                            <div className="text-xs text-muted-foreground truncate">{String(r?.socialWorkerEmail || '')}</div>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{String(r?.reason || '—')}</TableCell>
+                          <TableCell className="text-right">{Number(r?.visitCount || 0) || '—'}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button variant="outline" size="sm" onClick={() => void rejectOverrideRequest(r)} disabled={busy}>
+                                Reject
+                              </Button>
+                              <Button size="sm" onClick={() => void approveOverrideRequest(r)} disabled={busy}>
+                                {busy ? 'Working…' : 'Approve & submit'}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Recently submitted */}
       <Card>

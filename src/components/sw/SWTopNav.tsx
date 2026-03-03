@@ -4,16 +4,14 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { ClipboardCheck, FileBarChart, DollarSign, Users, Home, BookOpenText, CheckCircle2 } from 'lucide-react';
+import { ClipboardCheck, FileBarChart, Users, BookOpenText, CheckCircle2 } from 'lucide-react';
 
 const links = [
-  { href: '/sw-portal', label: 'Menu', icon: Home },
   { href: '/sw-portal/instructions', label: 'Instructions', icon: BookOpenText },
   { href: '/sw-visit-verification', label: 'Monthly Questionnaire', icon: ClipboardCheck },
   { href: '/sw-portal/roster', label: 'SW Assignments', icon: Users },
   { href: '/sw-portal/status-log', label: 'Status Log', icon: CheckCircle2 },
   { href: '/sw-portal/sign-off', label: 'Sign Off', icon: FileBarChart },
-  { href: '/sw-portal/submit-claims', label: 'Submit Claims', icon: DollarSign },
 ] as const;
 
 export function SWTopNav({ className }: { className?: string }) {
@@ -26,9 +24,9 @@ export function SWTopNav({ className }: { className?: string }) {
     >
       {links.map((l) => {
         const active =
-          l.href === '/sw-portal'
-            ? pathname === '/sw-portal'
-            : pathname === l.href || pathname.startsWith(`${l.href}/`) || (l.href === '/sw-visit-verification' && pathname.startsWith('/sw-portal/visit-verification'));
+          pathname === l.href ||
+          pathname.startsWith(`${l.href}/`) ||
+          (l.href === '/sw-visit-verification' && pathname.startsWith('/sw-portal/visit-verification'));
         const Icon = l.icon;
         return (
           <Link
