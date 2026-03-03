@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye, History, MoreVertical } from 'lucide-react';
+import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye, History, MoreVertical, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,6 +23,9 @@ import {
 import { useToast } from '@/hooks/use-toast';
 
 type AccountKind = 'staff' | 'social_worker' | 'user' | 'unknown';
+
+type SortKey = 'type' | 'status' | 'email';
+type SortDir = 'asc' | 'desc';
 
 type ListedUser = {
   uid: string;
@@ -69,6 +72,8 @@ export default function RegisteredUsersPage() {
 
   const [actionLoadingUid, setActionLoadingUid] = useState<string | null>(null);
   const [actionMode, setActionMode] = useState<'disable' | 'enable' | 'delete'>('disable');
+  const [sortKey, setSortKey] = useState<SortKey>('email');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   useEffect(() => {
     if (!isLoading && !isSuperAdmin) router.replace('/admin');
@@ -120,6 +125,42 @@ export default function RegisteredUsersPage() {
       );
     });
   }, [users, query, kindFilter]);
+
+  const sortedUsers = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const typeLabel = (k?: AccountKind) => {
+      const kind = (k || 'unknown') as AccountKind;
+      if (kind === 'staff') return 'Staff/Admin';
+      if (kind === 'social_worker') return 'Social Worker';
+      if (kind === 'user') return 'Application User';
+      return 'Unknown';
+    };
+    const statusLabel = (u: ListedUser) => (u.disabled ? 'Frozen' : 'Active');
+
+    const cmp = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      if (sortKey === 'type') return dir * cmp(typeLabel(a.kind), typeLabel(b.kind));
+      if (sortKey === 'status') return dir * cmp(statusLabel(a), statusLabel(b));
+      return dir * cmp(String(a.email || ''), String(b.email || ''));
+    });
+    return arr;
+  }, [filtered, sortDir, sortKey]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir('asc');
+      return;
+    }
+    setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+  };
+
+  const sortIcon = (key: SortKey) => {
+    if (sortKey !== key) return <ArrowUpDown className="h-3.5 w-3.5" />;
+    return sortDir === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />;
+  };
 
   const kindCounts = useMemo(() => {
     const counts: Record<AccountKind, number> = { staff: 0, social_worker: 0, user: 0, unknown: 0 };
@@ -257,7 +298,7 @@ export default function RegisteredUsersPage() {
               <SelectItem value="staff">Staff/Admin ({kindCounts.staff})</SelectItem>
               <SelectItem value="social_worker">Social Workers ({kindCounts.social_worker})</SelectItem>
               <SelectItem value="user">Application Users ({kindCounts.user})</SelectItem>
-              <SelectItem value="unknown">Unknown ({kindCounts.unknown})</SelectItem>
+              {kindCounts.unknown > 0 ? <SelectItem value="unknown">Unknown ({kindCounts.unknown})</SelectItem> : null}
             </SelectContent>
           </Select>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => void loadUsers({ reset: true })} disabled={loadingList}>
@@ -280,13 +321,36 @@ export default function RegisteredUsersPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Users</CardTitle>
           <CardDescription>
-            Showing {filtered.length} of {users.length} loaded • Staff/Admin {kindCounts.staff} • SW {kindCounts.social_worker} • Users {kindCounts.user}
+            Showing {sortedUsers.length} of {users.length} loaded • Staff/Admin {kindCounts.staff} • SW {kindCounts.social_worker} • Users {kindCounts.user}
+            {kindCounts.unknown > 0 ? ` • Unknown ${kindCounts.unknown}` : ''}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Mobile: compact card list */}
-          <div className="space-y-2 sm:hidden">
-            {filtered.map((u) => (
+          {/* Mobile/tablet: compact card list */}
+          <div className="space-y-2 lg:hidden">
+            <div className="flex flex-col gap-2">
+              <Select
+                value={`${sortKey}:${sortDir}`}
+                onValueChange={(v) => {
+                  const [k, d] = String(v).split(':');
+                  setSortKey((k as any) || 'email');
+                  setSortDir((d as any) || 'asc');
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Sort" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[60vh] overflow-auto z-[60]">
+                  <SelectItem value="email:asc">Email (A→Z)</SelectItem>
+                  <SelectItem value="email:desc">Email (Z→A)</SelectItem>
+                  <SelectItem value="type:asc">Type (A→Z)</SelectItem>
+                  <SelectItem value="type:desc">Type (Z→A)</SelectItem>
+                  <SelectItem value="status:asc">Status (A→Z)</SelectItem>
+                  <SelectItem value="status:desc">Status (Z→A)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {sortedUsers.map((u) => (
               <div key={u.uid} className="rounded-md border p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -366,25 +430,41 @@ export default function RegisteredUsersPage() {
                 </div>
               </div>
             ))}
-            {filtered.length === 0 ? <div className="text-sm text-muted-foreground py-6 text-center">No users match your search.</div> : null}
+            {sortedUsers.length === 0 ? <div className="text-sm text-muted-foreground py-6 text-center">No users match your search.</div> : null}
           </div>
 
-          {/* Desktop/tablet: table view */}
-          <div className="hidden sm:block overflow-x-auto rounded-md border">
+          {/* Desktop: table view */}
+          <div className="hidden lg:block overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[220px]">Email</TableHead>
+                  <TableHead className="min-w-[220px] whitespace-nowrap">Email</TableHead>
                   <TableHead className="min-w-[180px]">Name</TableHead>
-                  <TableHead className="min-w-[140px]">Type</TableHead>
-                  <TableHead className="min-w-[110px]">Status</TableHead>
+                  <TableHead className="min-w-[140px] whitespace-nowrap">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:underline"
+                      onClick={() => toggleSort('type')}
+                    >
+                      Type {sortIcon('type')}
+                    </button>
+                  </TableHead>
+                  <TableHead className="min-w-[110px] whitespace-nowrap">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:underline"
+                      onClick={() => toggleSort('status')}
+                    >
+                      Status {sortIcon('status')}
+                    </button>
+                  </TableHead>
                   <TableHead className="min-w-[180px]">Created</TableHead>
-                  <TableHead className="min-w-[180px]">Last sign-in</TableHead>
+                  <TableHead className="min-w-[180px] whitespace-nowrap">Last login</TableHead>
                   <TableHead className="min-w-[200px] text-right sticky right-0 bg-white">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((u) => (
+                {sortedUsers.map((u) => (
                   <TableRow key={u.uid}>
                     <TableCell className="font-mono text-xs break-all py-2">{u.email || '—'}</TableCell>
                     <TableCell className="break-words py-2">{u.displayName || '—'}</TableCell>

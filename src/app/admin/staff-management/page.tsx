@@ -63,6 +63,9 @@ export default function StaffManagementPage() {
 
     // Global admin portal access (master switch)
     const [adminPortalEnabled, setAdminPortalEnabled] = useState(true);
+    // Global app access (master switch for ALL users)
+    const [appAccessEnabled, setAppAccessEnabled] = useState(true);
+    const [appAccessMessage, setAppAccessMessage] = useState('');
 
     // Web in-app notifications (cards/toasts) for staff notes
     const [webAppNotificationsEnabled, setWebAppNotificationsEnabled] = useState(true);
@@ -289,13 +292,14 @@ export default function StaffManagementPage() {
     const fetchNotificationRecipients = async () => {
         if (!firestore) return;
         try {
-            const [notificationsSnap, adminAccessSnap, reviewSnap] = await Promise.all([
+            const [notificationsSnap, adminAccessSnap, reviewSnap, appAccessSnap] = await Promise.all([
                 getDoc(doc(firestore, 'system_settings', 'notifications')).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'system_settings/notifications', operation: 'get' }));
                     throw e;
                 }),
                 getDoc(doc(firestore, 'system_settings', 'admin_access')).catch(() => null),
                 getDoc(doc(firestore, 'system_settings', 'review_notifications')).catch(() => null),
+                getDoc(doc(firestore, 'system_settings', 'app_access')).catch(() => null),
             ]);
 
             if (notificationsSnap?.exists()) {
@@ -316,6 +320,15 @@ export default function StaffManagementPage() {
                 setAdminPortalEnabled(Boolean(data?.enabled ?? true));
             } else {
                 setAdminPortalEnabled(true);
+            }
+
+            if (appAccessSnap?.exists()) {
+                const data = appAccessSnap.data() as any;
+                setAppAccessEnabled(Boolean(data?.enabled ?? true));
+                setAppAccessMessage(String(data?.message || '').trim());
+            } else {
+                setAppAccessEnabled(true);
+                setAppAccessMessage('');
             }
 
             if (reviewSnap?.exists()) {
@@ -495,6 +508,14 @@ export default function StaffManagementPage() {
                 updatedBy: currentUser?.uid || null,
             };
 
+            const appAccessRef = doc(firestore, 'system_settings', 'app_access');
+            const appAccessData = {
+                enabled: Boolean(appAccessEnabled),
+                message: String(appAccessMessage || '').trim() || null,
+                updatedAt: new Date(),
+                updatedBy: currentUser?.uid || null,
+            };
+
             const reviewRef = doc(firestore, 'system_settings', 'review_notifications');
             const reviewData = {
                 enabled: Boolean(reviewPopupsEnabled),
@@ -511,6 +532,10 @@ export default function StaffManagementPage() {
                 }),
                 setDoc(adminAccessRef, adminAccessData, { merge: true }).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: adminAccessRef.path, operation: 'update', requestResourceData: adminAccessData }));
+                    throw e;
+                }),
+                setDoc(appAccessRef, appAccessData, { merge: true }).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: appAccessRef.path, operation: 'update', requestResourceData: appAccessData }));
                     throw e;
                 }),
                 setDoc(reviewRef, reviewData, { merge: true }).catch(e => {
@@ -762,6 +787,18 @@ export default function StaffManagementPage() {
                         </div>
                         <div className="flex items-center justify-between gap-4">
                             <div className="space-y-1">
+                                <div className="text-sm font-semibold">Application access (master switch)</div>
+                                <div className="text-xs text-muted-foreground">
+                                    Turn off to block all users from the app (except <span className="font-semibold">jason@carehomefinders.com</span>).
+                                </div>
+                            </div>
+                            <Switch
+                                checked={appAccessEnabled}
+                                onCheckedChange={(v) => { setAppAccessEnabled(Boolean(v)); queueAutoSave(); }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-1">
                                 <div className="text-sm font-semibold">Electron notifications (incoming forms)</div>
                                 <div className="text-xs text-muted-foreground">
                                     Controls CS Summary + Documents review popups for selected staff.
@@ -773,6 +810,20 @@ export default function StaffManagementPage() {
                             />
                         </div>
                     </div>
+
+                    {!appAccessEnabled ? (
+                        <div className="mb-4 space-y-2 p-3 border rounded-lg bg-amber-50">
+                            <div className="text-sm font-semibold text-amber-900">Master switch message (optional)</div>
+                            <div className="text-xs text-amber-900/80">
+                                This message is shown to blocked users when access is disabled.
+                            </div>
+                            <Input
+                                value={appAccessMessage}
+                                onChange={(e) => { setAppAccessMessage(e.target.value); queueAutoSave(); }}
+                                placeholder="Example: Maintenance in progress. Please try again at 2pm."
+                            />
+                        </div>
+                    ) : null}
 
                     <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4 p-3 border rounded-lg bg-muted/20">
                         <div className="flex items-center justify-between gap-4">

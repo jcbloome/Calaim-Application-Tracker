@@ -62,14 +62,26 @@ export async function GET(req: NextRequest) {
 
     const user = await adminCheck.adminAuth.getUser(targetUid);
 
-    const loginLogsSnap = await adminCheck.adminDb
-      .collection('loginLogs')
-      .where('userId', '==', targetUid)
-      .orderBy('timestamp', 'desc')
-      .limit(20)
-      .get();
+    // Avoid requiring a composite Firestore index (where + orderBy) by falling back to
+    // a simple equality query and sorting in-memory if needed.
+    let loginLogsDocs: any[] = [];
+    try {
+      const snap = await adminCheck.adminDb
+        .collection('loginLogs')
+        .where('userId', '==', targetUid)
+        .orderBy('timestamp', 'desc')
+        .limit(20)
+        .get();
+      loginLogsDocs = snap.docs;
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      const isIndexError = msg.includes('requires an index') || msg.includes('FAILED_PRECONDITION');
+      if (!isIndexError) throw e;
+      const snap = await adminCheck.adminDb.collection('loginLogs').where('userId', '==', targetUid).limit(50).get();
+      loginLogsDocs = snap.docs;
+    }
 
-    const loginLogs = loginLogsSnap.docs.map((d) => {
+    const loginLogs = loginLogsDocs.map((d) => {
       const data = d.data() as any;
       return {
         id: d.id,
@@ -78,16 +90,30 @@ export async function GET(req: NextRequest) {
         displayName: String(data?.displayName || ''),
         timestamp: toIso(data?.timestamp) || null,
       };
-    });
+    }).sort((a: any, b: any) => {
+      const am = a?.timestamp ? Date.parse(String(a.timestamp)) : 0;
+      const bm = b?.timestamp ? Date.parse(String(b.timestamp)) : 0;
+      return (Number.isFinite(bm) ? bm : 0) - (Number.isFinite(am) ? am : 0);
+    }).slice(0, 20);
 
-    const uploadsSnap = await adminCheck.adminDb
-      .collection('standalone_upload_submissions')
-      .where('userId', '==', targetUid)
-      .orderBy('createdAt', 'desc')
-      .limit(10)
-      .get();
+    let uploadsDocs: any[] = [];
+    try {
+      const snap = await adminCheck.adminDb
+        .collection('standalone_upload_submissions')
+        .where('userId', '==', targetUid)
+        .orderBy('createdAt', 'desc')
+        .limit(10)
+        .get();
+      uploadsDocs = snap.docs;
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      const isIndexError = msg.includes('requires an index') || msg.includes('FAILED_PRECONDITION');
+      if (!isIndexError) throw e;
+      const snap = await adminCheck.adminDb.collection('standalone_upload_submissions').where('userId', '==', targetUid).limit(25).get();
+      uploadsDocs = snap.docs;
+    }
 
-    const uploads = uploadsSnap.docs.map((d) => {
+    const uploads = uploadsDocs.map((d) => {
       const data = d.data() as any;
       return {
         id: d.id,
@@ -97,7 +123,11 @@ export async function GET(req: NextRequest) {
         storagePath: String(data?.storagePath || ''),
         createdAt: toIso(data?.createdAt) || null,
       };
-    });
+    }).sort((a: any, b: any) => {
+      const am = a?.createdAt ? Date.parse(String(a.createdAt)) : 0;
+      const bm = b?.createdAt ? Date.parse(String(b.createdAt)) : 0;
+      return (Number.isFinite(bm) ? bm : 0) - (Number.isFinite(am) ? am : 0);
+    }).slice(0, 10);
 
     return NextResponse.json({
       success: true,
