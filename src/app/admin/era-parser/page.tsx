@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, FileUp, Download, FileText } from 'lucide-react';
 
+type ExtractedPagesResult = { pages: string[][]; totalLines: number; pagesCount: number };
+
 type EraRow = {
   payer?: string;
   remittance_date?: string | null;
@@ -76,6 +78,49 @@ export default function EraParserPage() {
   const [summary, setSummary] = useState<EraSummary | null>(null);
   const [payer, setPayer] = useState<string>('Health Net');
 
+  const extractPages = async (pdfFile: File): Promise<ExtractedPagesResult> => {
+    const buf = await pdfFile.arrayBuffer();
+    const mod: any = await import('pdfjs-dist/build/pdf.mjs');
+    const pdfjs: any = mod?.getDocument ? mod : mod?.default || mod;
+    const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buf), disableWorker: true });
+    const pdf = await loadingTask.promise;
+    const pages: string[][] = [];
+    let totalLines = 0;
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const tc = await page.getTextContent();
+      const items = (tc.items || []) as Array<any>;
+      const rows: Array<{ str: string; x: number; y: number }> = [];
+      for (const it of items) {
+        const str = String(it?.str || '').trim();
+        if (!str) continue;
+        const tr = it?.transform || [];
+        const x = Number(tr?.[4] ?? 0);
+        const y = Number(tr?.[5] ?? 0);
+        rows.push({ str, x, y });
+      }
+      const byY = new Map<number, Array<{ str: string; x: number }>>();
+      for (const r of rows) {
+        const yk = Math.round(r.y);
+        const arr = byY.get(yk) || [];
+        arr.push({ str: r.str, x: r.x });
+        byY.set(yk, arr);
+      }
+      const yKeys = Array.from(byY.keys()).sort((a, b) => b - a);
+      const lines: string[] = [];
+      for (const yk of yKeys) {
+        const parts = (byY.get(yk) || []).sort((a, b) => a.x - b.x).map((p) => p.str);
+        const ln = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
+        if (ln) lines.push(ln);
+      }
+      pages.push(lines);
+      totalLines += lines.length;
+    }
+
+    return { pages, totalLines, pagesCount: pdf.numPages };
+  };
+
   useEffect(() => {
     if (!isLoading && !isSuperAdmin) router.replace('/admin');
   }, [isLoading, isSuperAdmin, router]);
@@ -103,12 +148,14 @@ export default function EraParserPage() {
     setSummary(null);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const fd = new FormData();
-      fd.set('file', file);
+      const extracted = await extractPages(file);
+      if (!extracted.pagesCount || extracted.totalLines === 0) {
+        throw new Error('No selectable text was found in this PDF (it may be scanned).');
+      }
       const res = await fetch('/api/admin/era/parse', {
         method: 'POST',
-        headers: { authorization: `Bearer ${idToken}` },
-        body: fd,
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ pages: extracted.pages }),
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.success) {
