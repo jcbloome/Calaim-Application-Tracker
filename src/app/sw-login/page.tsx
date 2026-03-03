@@ -102,7 +102,7 @@ export default function SWLoginPage() {
     }
   }, [searchParams, toast]);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!email || !password) {
@@ -113,7 +113,7 @@ export default function SWLoginPage() {
     setIsLoading(true);
     setError('');
 
-    try {
+    void (async () => {
       const normalizedEmail = email.trim().toLowerCase();
 
       // Ensure session isolation doesn't immediately sign us out after auth state flips.
@@ -139,10 +139,8 @@ export default function SWLoginPage() {
       if (!sessionResponse.ok) {
         const sessionData = await sessionResponse.json().catch(() => ({}));
         const sessionError = sessionData?.error || 'Social worker access required.';
-        await auth.signOut();
-        setLoginAttempted(false);
+        await auth.signOut().catch(() => null);
         setError(sessionError);
-        setIsLoading(false);
         return;
       }
 
@@ -171,37 +169,42 @@ export default function SWLoginPage() {
       if (!hasSwClaim) {
         await auth.signOut().catch(() => null);
         setError('This email is not enabled for Social Worker access. Please contact your administrator.');
-        setIsLoading(false);
         return;
       }
 
       // Record daily login marker (forces a fresh sign-in each day).
       writeStoredSwLoginDay(getTodayLocalDayKey());
-      
+
       toast({
         title: 'Login Successful',
         description: 'Welcome to the Social Worker Portal'
       });
 
       router.push('/sw-portal');
-    } catch (error: any) {
-      console.error('Login error:', error);
-      
-      let errorMessage = 'Login failed. Please try again.';
-      
-      if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email address.';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Incorrect password. Please try again.';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid email address.';
-      } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many failed attempts. Please try again later.';
-      }
-      
-      setError(errorMessage);
-      setIsLoading(false);
-    }
+    })()
+      .catch((err: any) => {
+        const code = String(err?.code || '').trim();
+        // Avoid Next dev overlay "Unhandled Runtime Error" by not rethrowing and by
+        // not passing the raw Error object directly to console.error.
+        if (code) console.warn('SW login failed:', code);
+        else console.warn('SW login failed');
+
+        let errorMessage = 'Login failed. Please try again.';
+
+        // Firebase v10+ often uses auth/invalid-credential for wrong email/password.
+        if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+          errorMessage = 'Incorrect email or password. Please try again.';
+        } else if (code === 'auth/invalid-email') {
+          errorMessage = 'Please enter a valid email address.';
+        } else if (code === 'auth/too-many-requests') {
+          errorMessage = 'Too many failed attempts. Please try again later.';
+        }
+
+        setError(errorMessage);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   };
 
   return (

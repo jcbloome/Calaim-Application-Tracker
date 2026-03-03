@@ -81,7 +81,7 @@ export default function AdminLoginClient() {
     }
   };
 
-  const handleSignIn = async (e: React.FormEvent) => {
+  const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
@@ -93,7 +93,7 @@ export default function AdminLoginClient() {
       return;
     }
 
-    try {
+    void (async () => {
       if (auth.currentUser) {
         await auth.signOut();
       }
@@ -187,22 +187,22 @@ export default function AdminLoginClient() {
         ? redirectTo
         : '/admin';
       router.replace(safeRedirect);
-
-      setIsLoading(false);
-    } catch (err) {
+    })().catch((err) => {
       const authError = err as AuthError;
+      const code = String(authError?.code || '').trim();
       let errorMessage = 'An unexpected error occurred.';
-      if (authError.code === 'auth/user-not-found' || authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
+      if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
         errorMessage = 'Invalid email or password. Please check your credentials and try again.';
-      } else if (authError.code === 'auth/too-many-requests') {
+      } else if (code === 'auth/too-many-requests') {
         errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
       } else {
-        errorMessage = `${errorMessage} (Error: ${authError.code || 'unknown'})`;
+        errorMessage = `${errorMessage}${code ? ` (Error: ${code})` : ''}`;
       }
 
       setError(errorMessage);
+    }).finally(() => {
       setIsLoading(false);
-    }
+    });
   };
 
 
