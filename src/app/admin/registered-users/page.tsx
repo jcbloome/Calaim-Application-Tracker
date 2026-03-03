@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye, History } from 'lucide-react';
+import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye, History, MoreVertical } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 type AccountKind = 'staff' | 'social_worker' | 'user' | 'unknown';
 
@@ -219,13 +226,18 @@ export default function RegisteredUsersPage() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
             <Search className="h-4 w-4 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search email, name, or UID…" className="w-[320px]" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search email, name, or UID…"
+              className="w-full sm:w-[320px]"
+            />
           </div>
           <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as any)}>
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-full sm:w-[220px]">
               <SelectValue placeholder="Filter by type" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[60vh] overflow-auto z-[60]">
               <SelectItem value="all">All types</SelectItem>
               <SelectItem value="staff">Staff/Admin ({kindCounts.staff})</SelectItem>
               <SelectItem value="social_worker">Social Workers ({kindCounts.social_worker})</SelectItem>
@@ -233,7 +245,7 @@ export default function RegisteredUsersPage() {
               <SelectItem value="unknown">Unknown ({kindCounts.unknown})</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" onClick={() => void loadUsers({ reset: true })} disabled={loadingList}>
+          <Button className="w-full sm:w-auto" variant="outline" onClick={() => void loadUsers({ reset: true })} disabled={loadingList}>
             <RefreshCw className="h-4 w-4 mr-2" />
             {loadingList ? 'Refreshing…' : 'Refresh'}
           </Button>
@@ -257,55 +269,127 @@ export default function RegisteredUsersPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-md border">
+          {/* Mobile: compact card list */}
+          <div className="space-y-2 sm:hidden">
+            {filtered.map((u) => (
+              <div key={u.uid} className="rounded-md border p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-mono text-[11px] break-all text-muted-foreground">{u.email || '—'}</div>
+                    <div className="text-sm font-semibold truncate">{u.displayName || '—'}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {kindBadge(u.kind)}
+                      {u.disabled ? <Badge variant="secondary">Frozen</Badge> : <Badge className="bg-emerald-600 hover:bg-emerald-600">Active</Badge>}
+                    </div>
+                    <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                      <div>Created: {fmt(u.createdAt)}</div>
+                      <div>Last sign-in: {fmt(u.lastSignInAt)}</div>
+                    </div>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="icon" className="shrink-0">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={() => void openDetails(u)}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        View
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => void openDetails(u)}>
+                        <History className="h-4 w-4 mr-2" />
+                        Login history
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {u.disabled ? (
+                        <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'enable')}>
+                          <CheckCircle2 className="h-4 w-4 mr-2" />
+                          Unfreeze
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'disable')}>
+                          <Ban className="h-4 w-4 mr-2" />
+                          Freeze
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'delete')} className="text-destructive">
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            ))}
+            {filtered.length === 0 ? <div className="text-sm text-muted-foreground py-6 text-center">No users match your search.</div> : null}
+          </div>
+
+          {/* Desktop/tablet: table view */}
+          <div className="hidden sm:block overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[240px]">Email</TableHead>
-                  <TableHead className="min-w-[200px]">Name</TableHead>
-                  <TableHead className="min-w-[150px]">Type</TableHead>
-                  <TableHead className="min-w-[120px]">Status</TableHead>
-                  <TableHead className="min-w-[220px]">Created</TableHead>
-                  <TableHead className="min-w-[220px]">Last sign-in</TableHead>
-                  <TableHead className="min-w-[220px] text-right">Actions</TableHead>
+                  <TableHead className="min-w-[220px]">Email</TableHead>
+                  <TableHead className="min-w-[180px]">Name</TableHead>
+                  <TableHead className="min-w-[140px]">Type</TableHead>
+                  <TableHead className="min-w-[110px]">Status</TableHead>
+                  <TableHead className="min-w-[180px]">Created</TableHead>
+                  <TableHead className="min-w-[180px]">Last sign-in</TableHead>
+                  <TableHead className="min-w-[200px] text-right sticky right-0 bg-white">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((u) => (
                   <TableRow key={u.uid}>
-                    <TableCell className="font-mono text-xs break-all">{u.email || '—'}</TableCell>
-                    <TableCell className="break-words">{u.displayName || '—'}</TableCell>
+                    <TableCell className="font-mono text-xs break-all py-2">{u.email || '—'}</TableCell>
+                    <TableCell className="break-words py-2">{u.displayName || '—'}</TableCell>
                     <TableCell>{kindBadge(u.kind)}</TableCell>
                     <TableCell>
                       {u.disabled ? <Badge variant="secondary">Disabled</Badge> : <Badge className="bg-emerald-600 hover:bg-emerald-600">Active</Badge>}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{fmt(u.createdAt)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{fmt(u.lastSignInAt)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-xs text-muted-foreground py-2">{fmt(u.createdAt)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground py-2">{fmt(u.lastSignInAt)}</TableCell>
+                    <TableCell className="text-right sticky right-0 bg-white py-2">
                       <div className="flex flex-wrap justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={() => void openDetails(u)}>
-                          <Eye className="h-4 w-4 mr-2" />
-                          View
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => void openDetails(u)}>
-                          <History className="h-4 w-4 mr-2" />
-                          History
-                        </Button>
-                        {u.disabled ? (
-                          <Button size="sm" variant="outline" disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'enable')}>
-                            <CheckCircle2 className="h-4 w-4 mr-2" />
-                            Unfreeze
-                          </Button>
-                        ) : (
-                          <Button size="sm" variant="outline" disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'disable')}>
-                            <Ban className="h-4 w-4 mr-2" />
-                            Freeze
-                          </Button>
-                        )}
-                        <Button size="sm" variant="destructive" disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'delete')}>
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="outline">
+                              <MoreVertical className="h-4 w-4 mr-2" />
+                              Actions
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuItem onClick={() => void openDetails(u)}>
+                              <Eye className="h-4 w-4 mr-2" />
+                              View
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => void openDetails(u)}>
+                              <History className="h-4 w-4 mr-2" />
+                              Login history
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {u.disabled ? (
+                              <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'enable')}>
+                                <CheckCircle2 className="h-4 w-4 mr-2" />
+                                Unfreeze
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'disable')}>
+                                <Ban className="h-4 w-4 mr-2" />
+                                Freeze
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem
+                              disabled={actionLoadingUid === u.uid}
+                              onClick={() => void runAction(u, 'delete')}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </TableCell>
                   </TableRow>
