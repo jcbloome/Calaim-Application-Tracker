@@ -211,6 +211,16 @@ const gatherAmounts = (lines: string[], idx: number) => {
   return out.slice(0, 6);
 };
 
+const pickPaid = (amounts: string[]) => {
+  if (!amounts.length) return null;
+  const nums = amounts.map((a) => toNum(a));
+  const last = nums[nums.length - 1];
+  const third = nums.length >= 3 ? nums[2] : null;
+  // Health Net often prints NET as the last amount; the 3rd amount can be 0.00.
+  if ((last === null || last === 0) && typeof third === 'number' && third !== 0) return third;
+  return typeof last === 'number' ? last : null;
+};
+
 const toCsv = (rows: EraRow[]) => {
   const header = [
     'payer',
@@ -411,7 +421,7 @@ export default function EraParserPage() {
         const amounts = gatherAmounts(lines, i);
         const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
         const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
-        const paid = amounts.length >= 3 ? toNum(amounts[2]) : (amounts.length ? toNum(amounts[amounts.length - 1]) : null);
+        const paid = pickPaid(amounts);
 
         const svc = parseServiceDatesFromProcLine(ln, remittance_date);
 

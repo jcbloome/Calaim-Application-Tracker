@@ -128,9 +128,17 @@ const gatherAmounts = (lines: string[], idx: number) => {
     // Once we have at least 3, we likely have billed/allowed/paid; keep going only one more line for safety.
     if (out.length >= 3 && j >= idx + 1) break;
   }
-  // Prefer the first three amounts found (billed/allowed/paid).
   return out.slice(0, 6);
-  return out;
+};
+
+const pickPaid = (amounts: string[]) => {
+  if (!amounts.length) return null;
+  const nums = amounts.map((a) => toNum(a));
+  const last = nums[nums.length - 1];
+  const third = nums.length >= 3 ? nums[2] : null;
+  // Health Net often prints NET as the last amount; the 3rd amount can be 0.00.
+  if ((last === null || last === 0) && typeof third === "number" && third !== 0) return third;
+  return typeof last === "number" ? last : null;
 };
 
 async function requireSuperAdmin(auth: any) {
@@ -232,8 +240,7 @@ export const parseEraPdfFromStorage = onCall(
         const amounts = gatherAmounts(lines, i);
         const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
         const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
-        // Prefer a 3rd amount when present; otherwise fall back to last found.
-        const paid = amounts.length >= 3 ? toNum(amounts[2]) : (amounts.length ? toNum(amounts[amounts.length - 1]) : null);
+        const paid = pickPaid(amounts);
         const svc = parseServiceDatesFromProcLine(ln, remittance_date);
 
         allRows.push({
