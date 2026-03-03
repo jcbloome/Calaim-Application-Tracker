@@ -112,9 +112,11 @@ const extractNameHicAcntIcn = (line: string) => {
 };
 
 async function extractPdfLinesByPage(pdfBytes: Buffer): Promise<{ pages: string[][]; rawText: string }> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  // @ts-expect-error pdfjs types mismatch
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(pdfBytes) });
+  // Use the shipped ESM build and disable workers (server-safe).
+  // (This package version ships `pdf.mjs`, not `pdf.js`.)
+  const mod: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const pdfjs: any = mod?.getDocument ? mod : mod?.default || mod;
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(pdfBytes), disableWorker: true });
   const pdf = await loadingTask.promise;
   const pages: string[][] = [];
   let rawText = '';
@@ -290,7 +292,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Uploaded file is empty.' }, { status: 400 });
     }
 
-    const payload = await parseEraFromPdfBytes(bytes);
+    let payload: any = null;
+    try {
+      payload = await parseEraFromPdfBytes(bytes);
+    } catch (e: any) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: e?.message || 'Failed to read PDF text.',
+          details: {
+            hint: 'If this keeps failing, the PDF may be scanned or the server runtime may be blocking pdf.js. We can add an OCR fallback next.',
+            name: String(e?.name || ''),
+            stack: String(e?.stack || '').slice(0, 4000) || null,
+          },
+        },
+        { status: 500 }
+      );
+    }
     if (!payload?.success) {
       return NextResponse.json({ success: false, error: 'ERA parse failed.' }, { status: 500 });
     }
