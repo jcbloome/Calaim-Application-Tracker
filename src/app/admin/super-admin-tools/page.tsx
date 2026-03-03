@@ -5,7 +5,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench, Mail } from 'lucide-react';
+import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench, Mail, Receipt } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
@@ -119,6 +119,14 @@ const tools: ToolCard[] = [
         description: 'Test and explore all system APIs',
         icon: <Code className="h-6 w-6" />,
         href: '/admin/api-explorer',
+        category: 'system',
+        status: 'beta'
+    },
+    {
+        title: 'ERA Parser (Health Net)',
+        description: 'Upload remittance PDFs and export T2038/H2022 payments for Caspio',
+        icon: <Receipt className="h-6 w-6" />,
+        href: '/admin/era-parser',
         category: 'system',
         status: 'beta'
     }
