@@ -52,7 +52,8 @@ import {
   RotateCcw,
   UserCheck,
   FileBarChart,
-  UploadCloud
+  UploadCloud,
+  Receipt
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -147,6 +148,7 @@ const superAdminNavLinks = [
       { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
+      { href: '/admin/era-parser', label: 'ERA Parser', icon: Receipt },
       { href: '/admin/communication-notes', label: 'Communication & Notes', icon: MessageSquareText },
       { href: '/admin/development-testing', label: 'Development & Testing', icon: TestTube2 }
     ]
