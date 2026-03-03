@@ -114,12 +114,22 @@ const toNum = (v?: string | null) => {
 
 const gatherAmounts = (lines: string[], idx: number) => {
   const out: string[] = [];
-  for (let j = idx; j < Math.min(lines.length, idx + 3); j++) {
+  // Some ERAs wrap amounts onto following lines; scan forward until the next service line or NAME header.
+  // Cap the lookahead so we don't accidentally capture totals far below the line item.
+  for (let j = idx; j < Math.min(lines.length, idx + 12); j++) {
     const ln = String(lines[j] || "");
+    if (j > idx) {
+      if (/^\s*NAME\b/i.test(ln)) break;
+      if (PROC_RE.test(ln)) break;
+    }
     for (const mm of ln.matchAll(AMOUNT_RE)) {
       if (mm?.[1]) out.push(String(mm[1]));
     }
+    // Once we have at least 3, we likely have billed/allowed/paid; keep going only one more line for safety.
+    if (out.length >= 3 && j >= idx + 1) break;
   }
+  // Prefer the first three amounts found (billed/allowed/paid).
+  return out.slice(0, 6);
   return out;
 };
 
@@ -222,7 +232,8 @@ export const parseEraPdfFromStorage = onCall(
         const amounts = gatherAmounts(lines, i);
         const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
         const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
-        const paid = amounts.length >= 1 ? toNum(amounts[amounts.length - 1]) : null;
+        // Prefer a 3rd amount when present; otherwise fall back to last found.
+        const paid = amounts.length >= 3 ? toNum(amounts[2]) : (amounts.length ? toNum(amounts[amounts.length - 1]) : null);
         const svc = parseServiceDatesFromProcLine(ln, remittance_date);
 
         allRows.push({

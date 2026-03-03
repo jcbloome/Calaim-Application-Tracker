@@ -196,13 +196,19 @@ const toNum = (v?: string | null) => {
 
 const gatherAmounts = (lines: string[], idx: number) => {
   const out: string[] = [];
-  for (let j = idx; j < Math.min(lines.length, idx + 3); j++) {
+  // Scan forward because Health Net often wraps amounts onto subsequent lines.
+  for (let j = idx; j < Math.min(lines.length, idx + 12); j++) {
     const ln = String(lines[j] || '');
+    if (j > idx) {
+      if (/^\s*NAME\b/i.test(ln)) break;
+      if (PROC_RE.test(ln)) break;
+    }
     for (const mm of ln.matchAll(AMOUNT_RE)) {
       if (mm?.[1]) out.push(String(mm[1]));
     }
+    if (out.length >= 3 && j >= idx + 1) break;
   }
-  return out;
+  return out.slice(0, 6);
 };
 
 const toCsv = (rows: EraRow[]) => {
@@ -221,6 +227,7 @@ const toCsv = (rows: EraRow[]) => {
     'billed',
     'allowed',
     'paid',
+    'source_line',
   ];
   const esc = (v: any) => {
     const s = v === null || v === undefined ? '' : String(v);
@@ -404,7 +411,7 @@ export default function EraParserPage() {
         const amounts = gatherAmounts(lines, i);
         const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
         const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
-        const paid = amounts.length >= 1 ? toNum(amounts[amounts.length - 1]) : null;
+        const paid = amounts.length >= 3 ? toNum(amounts[2]) : (amounts.length ? toNum(amounts[amounts.length - 1]) : null);
 
         const svc = parseServiceDatesFromProcLine(ln, remittance_date);
 
