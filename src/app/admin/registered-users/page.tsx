@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useToast } from '@/hooks/use-toast';
 
 type AccountKind = 'staff' | 'social_worker' | 'user' | 'unknown';
 
@@ -51,6 +52,7 @@ export default function RegisteredUsersPage() {
   const { isSuperAdmin, isLoading } = useAdmin();
   const auth = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
 
   const [loadingList, setLoadingList] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,14 +166,14 @@ export default function RegisteredUsersPage() {
   const runAction = async (u: ListedUser, mode: 'disable' | 'enable' | 'delete') => {
     if (!auth?.currentUser) return;
     const needsReason = mode === 'disable' || mode === 'delete';
-    const reason = needsReason
-      ? String(
-          typeof window !== 'undefined'
-            ? window.prompt(`Reason required to ${mode === 'delete' ? 'delete' : 'freeze'} this user:`, '')
-            : ''
-        ).trim()
-      : '';
-    if (needsReason && !reason) return;
+    let reason = '';
+    if (needsReason) {
+      if (typeof window === 'undefined') return;
+      const v = window.prompt(`Reason required to ${mode === 'delete' ? 'delete' : 'freeze'} this user:`, '');
+      if (v == null) return; // cancelled
+      reason = String(v).trim();
+      if (!reason) return;
+    }
     const ok =
       typeof window !== 'undefined'
         ? window.confirm(
@@ -196,8 +198,21 @@ export default function RegisteredUsersPage() {
       if (detail?.user?.uid === u.uid) {
         setDetail((prev) => (prev ? { ...prev, user: { ...prev.user, disabled: mode === 'disable' ? true : mode === 'enable' ? false : prev.user.disabled } } : prev));
       }
+      toast({
+        title:
+          mode === 'delete'
+            ? 'User deleted'
+            : mode === 'disable'
+              ? 'User frozen'
+              : 'User unfrozen',
+        description: u.email ? String(u.email) : u.uid,
+      });
     } catch (e: any) {
-      alert(e?.message || 'Action failed.');
+      toast({
+        title: 'Action failed',
+        description: e?.message || 'Action failed.',
+        variant: 'destructive',
+      });
     } finally {
       setActionLoadingUid(null);
     }
@@ -293,27 +308,56 @@ export default function RegisteredUsersPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuItem onClick={() => void openDetails(u)}>
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          void openDetails(u);
+                        }}
+                      >
                         <Eye className="h-4 w-4 mr-2" />
                         View
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => void openDetails(u)}>
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          void openDetails(u);
+                        }}
+                      >
                         <History className="h-4 w-4 mr-2" />
                         Login history
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       {u.disabled ? (
-                        <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'enable')}>
+                        <DropdownMenuItem
+                          disabled={actionLoadingUid === u.uid}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            void runAction(u, 'enable');
+                          }}
+                        >
                           <CheckCircle2 className="h-4 w-4 mr-2" />
                           Unfreeze
                         </DropdownMenuItem>
                       ) : (
-                        <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'disable')}>
+                        <DropdownMenuItem
+                          disabled={actionLoadingUid === u.uid}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            void runAction(u, 'disable');
+                          }}
+                        >
                           <Ban className="h-4 w-4 mr-2" />
                           Freeze
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'delete')} className="text-destructive">
+                      <DropdownMenuItem
+                        disabled={actionLoadingUid === u.uid}
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          void runAction(u, 'delete');
+                        }}
+                        className="text-destructive"
+                      >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete
                       </DropdownMenuItem>
@@ -360,29 +404,54 @@ export default function RegisteredUsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuItem onClick={() => void openDetails(u)}>
+                            <DropdownMenuItem
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                void openDetails(u);
+                              }}
+                            >
                               <Eye className="h-4 w-4 mr-2" />
                               View
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => void openDetails(u)}>
+                            <DropdownMenuItem
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                void openDetails(u);
+                              }}
+                            >
                               <History className="h-4 w-4 mr-2" />
                               Login history
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {u.disabled ? (
-                              <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'enable')}>
+                              <DropdownMenuItem
+                                disabled={actionLoadingUid === u.uid}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  void runAction(u, 'enable');
+                                }}
+                              >
                                 <CheckCircle2 className="h-4 w-4 mr-2" />
                                 Unfreeze
                               </DropdownMenuItem>
                             ) : (
-                              <DropdownMenuItem disabled={actionLoadingUid === u.uid} onClick={() => void runAction(u, 'disable')}>
+                              <DropdownMenuItem
+                                disabled={actionLoadingUid === u.uid}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  void runAction(u, 'disable');
+                                }}
+                              >
                                 <Ban className="h-4 w-4 mr-2" />
                                 Freeze
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuItem
                               disabled={actionLoadingUid === u.uid}
-                              onClick={() => void runAction(u, 'delete')}
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                void runAction(u, 'delete');
+                              }}
                               className="text-destructive"
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
