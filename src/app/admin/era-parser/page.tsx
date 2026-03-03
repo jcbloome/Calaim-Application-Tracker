@@ -71,6 +71,7 @@ export default function EraParserPage() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [rows, setRows] = useState<EraRow[]>([]);
   const [summary, setSummary] = useState<EraSummary | null>(null);
   const [payer, setPayer] = useState<string>('Health Net');
@@ -97,6 +98,7 @@ export default function EraParserPage() {
     if (!auth?.currentUser) return;
     setUploading(true);
     setError(null);
+    setErrorDetails(null);
     setRows([]);
     setSummary(null);
     try {
@@ -109,7 +111,12 @@ export default function EraParserPage() {
         body: fd,
       });
       const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (HTTP ${res.status})`);
+      if (!res.ok || !data?.success) {
+        const msg = String(data?.error || `Failed (HTTP ${res.status})`);
+        const details = data?.details ? JSON.stringify(data.details, null, 2) : '';
+        setErrorDetails(details || null);
+        throw new Error(msg);
+      }
       setPayer(String(data?.payer || 'Health Net'));
       setRows(Array.isArray(data?.rows) ? data.rows : []);
       setSummary((data?.summary || null) as any);
@@ -146,7 +153,14 @@ export default function EraParserPage() {
           {error ? (
             <Alert variant="destructive">
               <AlertTitle>Parse failed</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription className="space-y-2">
+                <div>{error}</div>
+                {errorDetails ? (
+                  <pre className="max-h-40 overflow-auto rounded-md bg-white/60 p-2 text-xs whitespace-pre-wrap">
+                    {errorDetails}
+                  </pre>
+                ) : null}
+              </AlertDescription>
             </Alert>
           ) : null}
 
