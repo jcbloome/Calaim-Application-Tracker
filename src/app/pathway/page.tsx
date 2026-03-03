@@ -701,13 +701,18 @@ function PathwayPageContent() {
     if (isReadOnly) {
        if (req.type === 'Upload') {
            return (
-                <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
+                <div className="flex min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                     {formInfo?.downloadURL && (isAdmin || isSuperAdmin) ? (
-                        <a href={formInfo.downloadURL} target="_blank" rel="noopener noreferrer" className="truncate flex-1 text-green-800 font-medium hover:underline">
+                        <a
+                          href={formInfo.downloadURL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
+                        >
                             {formInfo?.fileName || 'Completed'}
                         </a>
                     ) : (
-                        <span className="truncate flex-1 text-green-800 font-medium">
+                        <span className="min-w-0 flex-1 truncate text-green-800 font-medium">
                             {formInfo?.fileName || 'Completed'}
                             {!isAdmin && !isSuperAdmin && formInfo?.downloadURL && (
                                 <span className="block text-xs text-gray-500 mt-1">Document submitted - accessible by staff only</span>
@@ -759,20 +764,30 @@ function PathwayPageContent() {
         case 'Upload':
              if (isCompleted) {
                  return (
-                    <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
+                    <div className="flex min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                         {formInfo?.downloadURL && (isAdmin || isSuperAdmin) ? (
-                            <a href={formInfo.downloadURL} target="_blank" rel="noopener noreferrer" className="truncate flex-1 text-green-800 font-medium hover:underline">
+                            <a
+                              href={formInfo.downloadURL}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
+                            >
                                 {formInfo?.fileName || 'Completed'}
                             </a>
                         ) : (
-                             <span className="truncate flex-1 text-green-800 font-medium">
+                             <span className="min-w-0 flex-1 truncate text-green-800 font-medium">
                                 {formInfo?.fileName || 'Completed'}
                                 {!isAdmin && !isSuperAdmin && formInfo?.downloadURL && (
                                     <span className="block text-xs text-gray-500 mt-1">Document submitted - accessible by staff only</span>
                                 )}
                              </span>
                         )}
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo!)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                          onClick={() => handleFileRemove(formInfo!)}
+                        >
                             <X className="h-4 w-4" />
                             <span className="sr-only">Remove file</span>
                         </Button>
