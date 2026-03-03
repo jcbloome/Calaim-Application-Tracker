@@ -36,6 +36,19 @@ type EraSummary = {
   h2022?: { rows?: number; members?: number; total_paid?: number };
 };
 
+let _pdfJsPromise: Promise<any> | null = null;
+const loadPdfJs = async () => {
+  if (_pdfJsPromise) return _pdfJsPromise;
+  // Load pdf.js via CDN to avoid Next/webpack bundling issues that can cause:
+  // "Object.defineProperty called on non-object"
+  // (jsdelivr serves proper CORS headers for module imports)
+  _pdfJsPromise = import(
+    /* webpackIgnore: true */
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
+  ).then((mod: any) => (mod?.getDocument ? mod : mod?.default || mod));
+  return _pdfJsPromise;
+};
+
 const toCsv = (rows: EraRow[]) => {
   const header = [
     'payer',
@@ -80,8 +93,7 @@ export default function EraParserPage() {
 
   const extractPages = async (pdfFile: File): Promise<ExtractedPagesResult> => {
     const buf = await pdfFile.arrayBuffer();
-    const mod: any = await import('pdfjs-dist/build/pdf.mjs');
-    const pdfjs: any = mod?.getDocument ? mod : mod?.default || mod;
+    const pdfjs: any = await loadPdfJs();
     const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buf), disableWorker: true });
     const pdf = await loadingTask.promise;
     const pages: string[][] = [];
@@ -169,6 +181,8 @@ export default function EraParserPage() {
       setSummary((data?.summary || null) as any);
     } catch (e: any) {
       setError(e?.message || 'Failed to parse ERA PDF.');
+      const detail = String(e?.stack || e?.cause || '').trim();
+      if (detail) setErrorDetails(detail.slice(0, 4000));
     } finally {
       setUploading(false);
     }
