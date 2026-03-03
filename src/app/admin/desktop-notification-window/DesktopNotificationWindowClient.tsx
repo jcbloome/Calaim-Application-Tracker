@@ -212,7 +212,7 @@ export default function DesktopNotificationWindowClient() {
       if (k === 'cs' && Boolean(n?.isNew)) csHasNew = true;
     });
     const parts: string[] = [];
-    // Hide chat counters in the UI (still handled via the dedicated chat window).
+    if (counts.chat) parts.push(`Chat(${counts.chat})`);
     if (counts.cs) {
       // Show CS(!) when there is exactly one newly-arrived CS summary.
       parts.push(counts.cs === 1 && csHasNew ? 'CS(!)' : `CS(${counts.cs})`);
