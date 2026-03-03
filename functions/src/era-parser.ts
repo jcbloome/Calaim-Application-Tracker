@@ -112,21 +112,36 @@ const toNum = (v?: string | null) => {
   return isParen ? -Math.abs(n) : n;
 };
 
+const extractAmountsFromLine = (line: string) =>
+  Array.from(String(line || "").matchAll(AMOUNT_RE))
+    .map((mm) => mm?.[1])
+    .filter(Boolean)
+    .map((v) => String(v));
+
 const gatherAmounts = (lines: string[], idx: number) => {
-  const out: string[] = [];
-  // Some ERAs wrap amounts onto following lines; scan forward until the next service line or NAME header.
-  // Cap the lookahead so we don't accidentally capture totals far below the line item.
-  for (let j = idx; j < Math.min(lines.length, idx + 12); j++) {
+  const first = extractAmountsFromLine(lines[idx] || "");
+  // If the proc line already has billed/allowed/net, don't scan into PT RESP / totals.
+  if (first.length >= 3) return first.slice(0, 6);
+
+  const out: string[] = [...first];
+  const stopLine = (ln: string) =>
+    /^\s*NAME\b/i.test(ln) ||
+    PROC_RE.test(ln) ||
+    /^\s*PT\s*RESP\b/i.test(ln) ||
+    /\bCLAIM\s+TOTALS\b/i.test(ln) ||
+    /^\s*ADJ\s+TO\s+TOTAL\b/i.test(ln) ||
+    /^\s*STATUS\s+CODE\b/i.test(ln) ||
+    /\bINTEREST\b/i.test(ln) ||
+    /\bLATE\s+FILING\b/i.test(ln);
+
+  // Some ERAs wrap amounts onto the next line only; scan forward a little.
+  for (let j = idx + 1; j < Math.min(lines.length, idx + 8); j++) {
     const ln = String(lines[j] || "");
-    if (j > idx) {
-      if (/^\s*NAME\b/i.test(ln)) break;
-      if (PROC_RE.test(ln)) break;
-    }
-    for (const mm of ln.matchAll(AMOUNT_RE)) {
-      if (mm?.[1]) out.push(String(mm[1]));
-    }
-    // Once we have at least 3, we likely have billed/allowed/paid; keep going only one more line for safety.
-    if (out.length >= 3 && j >= idx + 1) break;
+    if (stopLine(ln)) break;
+    const more = extractAmountsFromLine(ln);
+    if (!more.length) continue;
+    out.push(...more);
+    if (out.length >= 3) break;
   }
   return out.slice(0, 6);
 };
