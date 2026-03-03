@@ -182,6 +182,22 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     isActive: true
   },
   {
+    id: 59,
+    status: 'ILS/RCFE_Member_At_RCFE_Need_Conf',
+    sortOrder: 15.8,
+    description: 'Member is at RCFE; confirmation needed',
+    category: 'placement',
+    isActive: true
+  },
+  {
+    id: 60,
+    status: 'ILS/RCFE_Member_At_RCFE_Confirmed',
+    sortOrder: 15.9,
+    description: 'Member is at RCFE; confirmation received',
+    category: 'completion',
+    isActive: true
+  },
+  {
     id: 22,
     status: 'Non-active',
     sortOrder: 25,

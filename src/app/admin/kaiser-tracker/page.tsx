@@ -108,7 +108,9 @@ const getStatusColor = (status: string): string => {
     'R&B Needed': 'bg-orange-50 text-orange-700 border-orange-200',
     'RN Visit Needed': 'bg-red-50 text-red-700 border-red-200',
     'RCFE_Located': 'bg-green-50 text-green-700 border-green-200',
-    'ILS Contract Email Needed': 'bg-blue-50 text-blue-700 border-blue-200'
+    'ILS Contract Email Needed': 'bg-blue-50 text-blue-700 border-blue-200',
+    'ILS/RCFE_Member_At_RCFE_Need_Conf': 'bg-amber-50 text-amber-800 border-amber-200',
+    'ILS/RCFE_Member_At_RCFE_Confirmed': 'bg-emerald-50 text-emerald-800 border-emerald-200'
   };
   
   return statusColors[status] || 'bg-gray-50 text-gray-700 border-gray-200';
@@ -145,7 +147,9 @@ const getStatusIcon = (status: string) => {
     'R&B Needed': <FileText className="h-3 w-3" />,
     'RN Visit Needed': <Calendar className="h-3 w-3" />,
     'RCFE_Located': <MapPin className="h-3 w-3" />,
-    'ILS Contract Email Needed': <Mail className="h-3 w-3" />
+    'ILS Contract Email Needed': <Mail className="h-3 w-3" />,
+    'ILS/RCFE_Member_At_RCFE_Need_Conf': <AlertTriangle className="h-3 w-3" />,
+    'ILS/RCFE_Member_At_RCFE_Confirmed': <CheckCircle className="h-3 w-3" />
   };
   
   return iconMap[status] || <Clock className="h-3 w-3" />;
@@ -192,7 +196,9 @@ const kaiserWorkflow = {
   'RCFE_Located': { next: 'R&B Requested', recommendedDays: 7 },
   'R&B Requested': { next: 'R&B Signed', recommendedDays: 14 },
   'R&B Signed': { next: 'ILS/RCFE Contract Email Needed', recommendedDays: 7 },
-  'ILS/RCFE Contract Email Needed': { next: 'ILS/RCFE Contract Email Sent', recommendedDays: 7 }
+  'ILS/RCFE Contract Email Needed': { next: 'ILS/RCFE Contract Email Sent', recommendedDays: 7 },
+  'ILS/RCFE Contract Email Sent': { next: 'ILS/RCFE_Member_At_RCFE_Need_Conf', recommendedDays: 7 },
+  'ILS/RCFE_Member_At_RCFE_Need_Conf': { next: 'ILS/RCFE_Member_At_RCFE_Confirmed', recommendedDays: 7 }
 };
 
 // Predefined Kaiser statuses to show immediately
