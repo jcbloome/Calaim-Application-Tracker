@@ -12,6 +12,18 @@ service firebase.storage {
         firestore.exists(/databases/(default)/documents/roles_super_admin/$(request.auth.uid))
       );
     }
+
+    // Temporary uploads used by the Super Admin ERA Parser
+    // (kept separate from user_uploads/documents)
+    match /era_parser_uploads/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && (
+        request.auth.uid == userId ||
+        request.auth.token.admin == true ||
+        firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) ||
+        firestore.exists(/databases/(default)/documents/roles_admin/$(request.auth.uid)) ||
+        firestore.exists(/databases/(default)/documents/roles_super_admin/$(request.auth.uid))
+      );
+    }
     
     // Allow authenticated users to upload to shared folders (admin only)
     match /shared_uploads/{allPaths=**} {

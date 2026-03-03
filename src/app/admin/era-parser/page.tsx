@@ -4,13 +4,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
+import { storage } from '@/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
 import { Loader2, FileUp, Download, FileText } from 'lucide-react';
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 
-type ExtractedPagesResult = { pages: string[][]; totalLines: number; pagesCount: number };
+type ExtractedPagesResult = { totalLines: number; pagesCount: number };
 
 type EraRow = {
   payer?: string;
@@ -36,6 +40,13 @@ type EraSummary = {
   h2022?: { rows?: number; members?: number; total_paid?: number };
 };
 
+type ParsePhase = 'idle' | 'loading_pdfjs' | 'opening_pdf' | 'extracting' | 'uploading' | 'parsing' | 'done';
+type ExtractProgress = { currentPage: number; totalPages: number; startedAtMs: number; avgMsPerPage: number };
+type OpenProgress = { loaded: number; total: number; startedAtMs: number };
+type UploadProgress = { transferred: number; total: number };
+
+const getErrCode = (e: any) => String(e?.code || e?.details?.code || e?.cause?.code || '').toLowerCase();
+
 let _pdfJsPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
   if (_pdfJsPromise) return _pdfJsPromise;
@@ -45,8 +56,137 @@ const loadPdfJs = async () => {
   _pdfJsPromise = import(
     /* webpackIgnore: true */
     'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
-  ).then((mod: any) => (mod?.getDocument ? mod : mod?.default || mod));
+  ).then((mod: any) => {
+    const pdfjs = mod?.getDocument ? mod : mod?.default || mod;
+    // Newer pdf.js versions require a workerSrc when workers are enabled.
+    // Even when we pass disableWorker in getDocument, some builds still touch PDFWorker.
+    try {
+      if (pdfjs?.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
+        pdfjs.GlobalWorkerOptions.workerSrc =
+          'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.worker.min.mjs';
+      }
+    } catch {
+      // ignore
+    }
+    return pdfjs;
+  });
   return _pdfJsPromise;
+};
+
+const AMOUNT_RE = /(?<!\d)(\d{1,3}(?:,\d{3})*\.\d{2})(?!\d)/g;
+const PROC_RE = /\b(H2022|T2038)\b/i;
+
+const formatDuration = (ms: number) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  return `${m}:${String(ss).padStart(2, '0')}`;
+};
+
+const phaseLabel = (p: ParsePhase) => {
+  switch (p) {
+    case 'loading_pdfjs':
+      return 'Loading PDF engine…';
+    case 'opening_pdf':
+      return 'Opening PDF…';
+    case 'extracting':
+      return 'Extracting text…';
+    case 'uploading':
+      return 'Uploading PDF…';
+    case 'parsing':
+      return 'Parsing (fast server mode)…';
+    case 'done':
+      return 'Done';
+    default:
+      return 'Ready';
+  }
+};
+
+const toIsoFromMmddyy = (mmddyy: string) => {
+  const raw = String(mmddyy || '').trim();
+  if (!/^\d{6}$/.test(raw)) return null;
+  const mm = raw.slice(0, 2);
+  const dd = raw.slice(2, 4);
+  const yy = raw.slice(4, 6);
+  const year = 2000 + Number(yy);
+  return `${String(year)}-${mm}-${dd}`;
+};
+
+const toIsoFromMmdd = (mmdd: string, year: number) => {
+  const raw = String(mmdd || '').trim();
+  if (!/^\d{4}$/.test(raw)) return null;
+  const mm = raw.slice(0, 2);
+  const dd = raw.slice(2, 4);
+  return `${String(year)}-${mm}-${dd}`;
+};
+
+const parseRemitDate = (lines: string[]) => {
+  for (const ln of lines.slice(0, 120)) {
+    const m = ln.match(/\bDATE\b\s*[:#]?\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{2,4})/i);
+    if (m?.[1]) return String(m[1]);
+  }
+  return null;
+};
+
+const findKwToken = (line: string, kw: string) => {
+  const m = line.match(new RegExp(`\\b${kw}\\b\\s*[:#]?\\s*(\\S+)`, 'i'));
+  return m?.[1] ? String(m[1]).trim() : null;
+};
+
+const segmentBetween = (line: string, startKw: string, endKws: string[]) => {
+  const lower = line.toLowerCase();
+  const startIdx = lower.indexOf(startKw.toLowerCase());
+  if (startIdx < 0) return '';
+  const tail = line.slice(startIdx + startKw.length);
+  const tailLower = tail.toLowerCase();
+  let cut = tail.length;
+  for (const kw of endKws) {
+    const idx = tailLower.indexOf(` ${kw.toLowerCase()} `);
+    if (idx >= 0) cut = Math.min(cut, idx);
+  }
+  return tail.slice(0, cut).trim();
+};
+
+const extractNameHicAcntIcn = (line: string) => {
+  const name = segmentBetween(line, 'NAME', ['HIC', 'ACNT', 'ICN']);
+  const hicSegment = segmentBetween(line, 'HIC', ['ACNT', 'ICN']);
+  const tokens = hicSegment ? hicSegment.split(/\s+/).filter(Boolean) : [];
+  const hic = tokens.length >= 1 ? tokens[0] : null;
+  const medi = tokens.length >= 2 ? tokens[1] : null;
+  const acnt = findKwToken(line, 'ACNT');
+  const icn = findKwToken(line, 'ICN');
+  return { name, hic, medi, acnt, icn };
+};
+
+function parseServiceDatesFromProcLine(line: string, remitDate: string | null) {
+  const tokens = String(line || '').trim().split(/\s+/).filter(Boolean);
+  const mmdd = tokens.find((t) => /^\d{4}$/.test(t)) || null;
+  const mmddyy = tokens.find((t) => /^\d{6}$/.test(t)) || null;
+
+  const yearFromRemit = (() => {
+    if (!remitDate) return null;
+    const m = remitDate.match(/(\d{4})/);
+    return m?.[1] ? Number(m[1]) : null;
+  })();
+
+  let toIso: string | null = null;
+  if (mmddyy) toIso = toIsoFromMmddyy(mmddyy);
+  const year = (() => {
+    if (toIso) return Number(toIso.slice(0, 4));
+    if (yearFromRemit) return yearFromRemit;
+    return null;
+  })();
+
+  const fromIso = mmdd && year ? toIsoFromMmdd(mmdd, year) : null;
+  return { service_from: fromIso, service_to: toIso };
+}
+
+const toNum = (v?: string | null) => {
+  if (!v) return null;
+  const n = Number(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : null;
 };
 
 const toCsv = (rows: EraRow[]) => {
@@ -90,16 +230,104 @@ export default function EraParserPage() {
   const [rows, setRows] = useState<EraRow[]>([]);
   const [summary, setSummary] = useState<EraSummary | null>(null);
   const [payer, setPayer] = useState<string>('Health Net');
+  const [phase, setPhase] = useState<ParsePhase>('idle');
+  const [extractProgress, setExtractProgress] = useState<ExtractProgress | null>(null);
+  const [openProgress, setOpenProgress] = useState<OpenProgress | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [lastExtracted, setLastExtracted] = useState<ExtractedPagesResult | null>(null);
+  const [progressTick, setProgressTick] = useState(0);
 
-  const extractPages = async (pdfFile: File): Promise<ExtractedPagesResult> => {
-    const buf = await pdfFile.arrayBuffer();
+  // Used to re-render elapsed time during long "Opening PDF..." work where pdf.js provides no byte progress.
+  void progressTick;
+
+  useEffect(() => {
+    if (!uploading) return;
+    const id = window.setInterval(() => setProgressTick((v) => v + 1), 500);
+    return () => window.clearInterval(id);
+  }, [uploading]);
+
+  // Preload pdf.js engine early so the first parse feels snappy.
+  useEffect(() => {
+    if (!isSuperAdmin || isLoading) return;
+    loadPdfJs().catch(() => undefined);
+  }, [isSuperAdmin, isLoading]);
+
+  const totalMembers = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of rows) {
+      const key = String(r.acnt || '').trim() || String(r.member_name || '').trim();
+      if (key) s.add(key);
+    }
+    return s.size;
+  }, [rows]);
+
+  const uploadPdfToTempStorage = async (pdfFile: File) => {
+    if (!auth?.currentUser?.uid) throw new Error('Not signed in.');
+    const uid = auth.currentUser.uid;
+    const safeName = String(pdfFile.name || 'era.pdf').replace(/[^\w.\-]+/g, '_').slice(0, 80);
+    const fullPath = `era_parser_uploads/${uid}/${Date.now()}_${safeName}`;
+    const refObj = storageRef(storage, fullPath);
+    const task = uploadBytesResumable(refObj, pdfFile, { contentType: 'application/pdf' });
+
+    setPhase('uploading');
+    setUploadProgress({ transferred: 0, total: pdfFile.size || 0 });
+
+    await new Promise<void>((resolve, reject) => {
+      task.on(
+        'state_changed',
+        (snap) => setUploadProgress({ transferred: snap.bytesTransferred, total: snap.totalBytes }),
+        (err) => reject(err),
+        () => resolve()
+      );
+    });
+    const url = await getDownloadURL(refObj);
+    return { fullPath, url };
+  };
+
+  const extractPages = async (pdfUrl: string): Promise<ExtractedPagesResult> => {
+    setPhase('loading_pdfjs');
     const pdfjs: any = await loadPdfJs();
-    const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buf), disableWorker: true });
-    const pdf = await loadingTask.promise;
-    const pages: string[][] = [];
+    setPhase('opening_pdf');
+    const openStartedAtMs = Date.now();
+    setOpenProgress({ loaded: 0, total: 0, startedAtMs: openStartedAtMs });
+
+    let pdf: any;
+    try {
+      // Open via HTTPS URL so pdf.js can use range requests and caching.
+      const loadingTask = pdfjs.getDocument({
+        url: pdfUrl,
+        disableRange: false,
+        disableStream: false,
+        disableAutoFetch: false,
+      });
+      try {
+        loadingTask.onProgress = (p: any) => {
+          const loaded = Number(p?.loaded || 0);
+          const total = Number(p?.total || 0);
+          setOpenProgress({ loaded, total, startedAtMs: openStartedAtMs });
+        };
+      } catch {
+        // ignore
+      }
+      pdf = await loadingTask.promise;
+    } finally {
+      setOpenProgress(null);
+    }
     let totalLines = 0;
+    const startedAtMs = Date.now();
+    setExtractProgress({ currentPage: 0, totalPages: pdf.numPages, startedAtMs, avgMsPerPage: 0 });
+
+    // Incremental parsing accumulators
+    const payerLocal = 'Health Net';
+    let t2038Paid = 0;
+    let h2022Paid = 0;
+    let t2038Rows = 0;
+    let h2022Rows = 0;
+    const membersT2038 = new Set<string>();
+    const membersH2022 = new Set<string>();
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      setPhase('extracting');
       const page = await pdf.getPage(pageNum);
       const tc = await page.getTextContent();
       const items = (tc.items || []) as Array<any>;
@@ -126,11 +354,105 @@ export default function EraParserPage() {
         const ln = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
         if (ln) lines.push(ln);
       }
-      pages.push(lines);
       totalLines += lines.length;
+
+      // Parse this page immediately and append results to the table + summary.
+      const remittance_date = parseRemitDate(lines);
+      let current = {
+        member_name: '',
+        hic: null as string | null,
+        medi: null as string | null,
+        acnt: null as string | null,
+        icn: null as string | null,
+      };
+      const pageRows: EraRow[] = [];
+
+      for (const ln of lines) {
+        if (/^\s*NAME\b/i.test(ln)) {
+          const parsed = extractNameHicAcntIcn(ln);
+          current = {
+            member_name: parsed.name || '',
+            hic: parsed.hic,
+            medi: parsed.medi,
+            acnt: parsed.acnt,
+            icn: parsed.icn,
+          };
+          continue;
+        }
+        const m = ln.match(PROC_RE);
+        if (!m?.[1]) continue;
+        const proc = String(m[1]).toUpperCase();
+        if (proc !== 'H2022' && proc !== 'T2038') continue;
+
+        const amounts = Array.from(ln.matchAll(AMOUNT_RE)).map((mm) => mm?.[1]).filter(Boolean);
+        const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
+        const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
+        const paid = amounts.length >= 1 ? toNum(amounts[amounts.length - 1]) : null;
+
+        const svc = parseServiceDatesFromProcLine(ln, remittance_date);
+
+        pageRows.push({
+          payer: payerLocal,
+          remittance_date,
+          page: pageNum,
+          member_name: String(current.member_name || '').trim(),
+          hic: current.hic,
+          medi_cal_number: current.medi,
+          acnt: current.acnt,
+          icn: current.icn,
+          proc: proc as any,
+          service_from: svc.service_from,
+          service_to: svc.service_to,
+          billed,
+          allowed,
+          paid,
+          source_line: ln,
+        });
+      }
+
+      if (pageRows.length) {
+        for (const r of pageRows) {
+          const memberKey = String(r.acnt || '').trim() || String(r.member_name || '').trim();
+          if (r.proc === 'T2038') {
+            t2038Rows += 1;
+            if (typeof r.paid === 'number' && Number.isFinite(r.paid)) t2038Paid += r.paid;
+            if (memberKey) membersT2038.add(memberKey);
+          } else if (r.proc === 'H2022') {
+            h2022Rows += 1;
+            if (typeof r.paid === 'number' && Number.isFinite(r.paid)) h2022Paid += r.paid;
+            if (memberKey) membersH2022.add(memberKey);
+          }
+        }
+        setPayer(payerLocal);
+        setRows((prev) => prev.concat(pageRows));
+        setSummary({
+          total_rows: t2038Rows + h2022Rows,
+          t2038: { rows: t2038Rows, members: membersT2038.size, total_paid: Number(t2038Paid.toFixed(2)) },
+          h2022: { rows: h2022Rows, members: membersH2022.size, total_paid: Number(h2022Paid.toFixed(2)) },
+        });
+      }
+
+      const elapsed = Date.now() - startedAtMs;
+      const avgMsPerPage = elapsed / pageNum;
+      setExtractProgress({ currentPage: pageNum, totalPages: pdf.numPages, startedAtMs, avgMsPerPage });
+      // Yield to keep the UI responsive for long PDFs.
+      await new Promise((r) => setTimeout(r, 0));
     }
 
-    return { pages, totalLines, pagesCount: pdf.numPages };
+    const result = { totalLines, pagesCount: pdf.numPages };
+    setLastExtracted(result);
+    setExtractProgress(null);
+    return result;
+  };
+
+  const extractPagesFromFile = async (pdfFile: File) => {
+    // Fallback path when Storage upload is blocked by rules.
+    const objectUrl = URL.createObjectURL(pdfFile);
+    try {
+      return await extractPages(objectUrl);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
   };
 
   useEffect(() => {
@@ -150,6 +472,35 @@ export default function EraParserPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleParseLocal = async () => {
+    if (!file) return;
+    if (!auth?.currentUser) return;
+    setUploading(true);
+    setError(null);
+    setErrorDetails(null);
+    setRows([]);
+    setSummary(null);
+    setPhase('idle');
+    setOpenProgress(null);
+    setUploadProgress(null);
+    setLastExtracted(null);
+    try {
+      // Local parsing (slow for large PDFs)
+      const extracted = await extractPagesFromFile(file);
+      if (!extracted.pagesCount || extracted.totalLines === 0) {
+        throw new Error('No selectable text was found in this PDF (it may be scanned).');
+      }
+      setPhase('done');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to parse ERA PDF.');
+      const detail = String(e?.stack || e?.cause || '').trim();
+      if (detail) setErrorDetails(detail.slice(0, 4000));
+      setPhase('idle');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleParse = async () => {
     if (!file) return;
     if (!auth?.currentUser) return;
@@ -158,31 +509,63 @@ export default function EraParserPage() {
     setErrorDetails(null);
     setRows([]);
     setSummary(null);
+    setPhase('idle');
+    setOpenProgress(null);
+    setUploadProgress(null);
+    setLastExtracted(null);
     try {
-      const idToken = await auth.currentUser.getIdToken();
-      const extracted = await extractPages(file);
-      if (!extracted.pagesCount || extracted.totalLines === 0) {
-        throw new Error('No selectable text was found in this PDF (it may be scanned).');
+      let cleanupPath: string | null = null;
+      let url: string | null = null;
+      try {
+        const uploaded = await uploadPdfToTempStorage(file);
+        cleanupPath = uploaded.fullPath;
+        url = uploaded.url;
+      } catch (e: any) {
+        const code = getErrCode(e);
+        if (code.includes('storage/unauthorized') || code.includes('unauthorized')) throw e;
+        throw e;
+      } finally {
+        setUploadProgress(null);
       }
-      const res = await fetch('/api/admin/era/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ pages: extracted.pages }),
-      });
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) {
-        const msg = String(data?.error || `Failed (HTTP ${res.status})`);
-        const details = data?.details ? JSON.stringify(data.details, null, 2) : '';
-        setErrorDetails(details || null);
-        throw new Error(msg);
+
+      setPhase('parsing');
+      if (cleanupPath) {
+        // Prefer server-side parsing for large PDFs (fastest + avoids browser "Opening PDF..." stalls).
+        const fn = httpsCallable(getFunctions(), 'parseEraPdfFromStorage');
+        const data: any = await fn({ fullPath: cleanupPath }).then((r) => r.data);
+        if (!data?.success) throw new Error(String(data?.error || 'Server parse failed.'));
+        setPayer(String(data?.payer || 'Health Net'));
+        setRows(Array.isArray(data?.rows) ? data.rows : []);
+        setSummary((data?.summary || null) as any);
+        // Best-effort cleanup (ignore failures due to rules).
+        deleteObject(storageRef(storage, cleanupPath)).catch(() => undefined);
+      } else {
+        // Fallback: local parsing (may be slow on very large PDFs)
+        const extracted = await extractPagesFromFile(file);
+        if (!extracted.pagesCount || extracted.totalLines === 0) {
+          throw new Error('No selectable text was found in this PDF (it may be scanned).');
+        }
       }
-      setPayer(String(data?.payer || 'Health Net'));
-      setRows(Array.isArray(data?.rows) ? data.rows : []);
-      setSummary((data?.summary || null) as any);
+      setPhase('done');
     } catch (e: any) {
-      setError(e?.message || 'Failed to parse ERA PDF.');
-      const detail = String(e?.stack || e?.cause || '').trim();
-      if (detail) setErrorDetails(detail.slice(0, 4000));
+      const code = getErrCode(e);
+      if (code.includes('storage/unauthorized') || code.includes('unauthorized')) {
+        setError('Fast mode blocked: Storage rules not deployed (storage/unauthorized).');
+        setErrorDetails(
+          'Run:\n  firebase deploy --only storage\n\nThen refresh and try “Parse ERA (fast)” again.\n\nOr click “Parse locally (slow)”.'
+        );
+      } else if (code.includes('functions/not-found') || code.includes('not-found')) {
+        setError('Fast mode unavailable: Cloud Function not deployed yet (functions/not-found).');
+        setErrorDetails('Run:\n  cd functions\n  firebase deploy --only functions\n\nThen refresh and try again.');
+      } else if (code.includes('functions/unavailable') || code.includes('unavailable')) {
+        setError('Fast mode unavailable: Cloud Function unreachable (functions/unavailable).');
+        setErrorDetails('Check Functions deploy/status, then try again.');
+      } else {
+        setError(e?.message || 'Failed to parse ERA PDF.');
+        const detail = String(e?.stack || e?.cause || '').trim();
+        if (detail) setErrorDetails(detail.slice(0, 4000));
+      }
+      setPhase('idle');
     } finally {
       setUploading(false);
     }
@@ -236,11 +619,80 @@ export default function EraParserPage() {
               <div className="text-xs text-muted-foreground">
                 Best results when the PDF has selectable text (not a scanned image).
               </div>
+              {uploading ? (
+                <div className="space-y-2 pt-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <div className="font-medium text-foreground">{phaseLabel(phase)}</div>
+                    {extractProgress ? (
+                      <div className="tabular-nums">
+                        Page {extractProgress.currentPage}/{extractProgress.totalPages}
+                        {extractProgress.avgMsPerPage > 0 && extractProgress.currentPage > 0 ? (
+                          <>
+                            {' '}
+                            • ETA{' '}
+                            {formatDuration(
+                              (extractProgress.totalPages - extractProgress.currentPage) * extractProgress.avgMsPerPage
+                            )}
+                          </>
+                        ) : null}
+                      </div>
+                    ) : openProgress && phase === 'opening_pdf' ? (
+                      <div className="tabular-nums">
+                        {openProgress.total > 0 ? (
+                          <>
+                            {Math.round((openProgress.loaded / Math.max(1, openProgress.total)) * 100)}% •{' '}
+                            {(openProgress.loaded / (1024 * 1024)).toFixed(1)}MB /{' '}
+                            {(openProgress.total / (1024 * 1024)).toFixed(1)}MB
+                          </>
+                        ) : (
+                          <>Elapsed {formatDuration(Date.now() - openProgress.startedAtMs)} • Still opening…</>
+                        )}
+                      </div>
+                    ) : uploadProgress && phase === 'uploading' ? (
+                      <div className="tabular-nums">
+                        {uploadProgress.total > 0
+                          ? `${Math.round((uploadProgress.transferred / Math.max(1, uploadProgress.total)) * 100)}% • ${(
+                              uploadProgress.transferred /
+                              (1024 * 1024)
+                            ).toFixed(1)}MB / ${(uploadProgress.total / (1024 * 1024)).toFixed(1)}MB`
+                          : `${(uploadProgress.transferred / (1024 * 1024)).toFixed(1)}MB uploaded`}
+                      </div>
+                    ) : lastExtracted ? (
+                      <div className="tabular-nums">
+                        Extracted {lastExtracted.pagesCount} pages • {lastExtracted.totalLines} lines
+                      </div>
+                    ) : null}
+                  </div>
+                  <Progress
+                    value={
+                      extractProgress
+                        ? Math.round((extractProgress.currentPage / Math.max(1, extractProgress.totalPages)) * 100)
+                        : openProgress && phase === 'opening_pdf'
+                          ? openProgress.total > 0
+                            ? Math.round((openProgress.loaded / Math.max(1, openProgress.total)) * 100)
+                            : 100
+                        : uploadProgress && phase === 'uploading'
+                          ? Math.round((uploadProgress.transferred / Math.max(1, uploadProgress.total)) * 100)
+                        : phase === 'uploading'
+                          ? 92
+                          : phase === 'parsing'
+                            ? 96
+                            : 0
+                    }
+                    className={`h-2 ${openProgress && phase === 'opening_pdf' && openProgress.total === 0 ? 'animate-pulse' : ''}`}
+                  />
+                </div>
+              ) : null}
             </div>
-            <Button onClick={handleParse} disabled={!file || uploading}>
-              {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
-              Parse ERA
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Button onClick={handleParse} disabled={!file || uploading}>
+                {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
+                {uploading ? phaseLabel(phase) : 'Parse ERA (fast)'}
+              </Button>
+              <Button variant="outline" onClick={handleParseLocal} disabled={!file || uploading}>
+                Parse locally (slow)
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -253,25 +705,37 @@ export default function EraParserPage() {
               Parsed {payer} ERA at {parsedAtLabel}
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4">
             <div className="rounded-md border p-3">
-              <div className="text-xs text-muted-foreground">T2038 total paid</div>
+              <div className="text-xs text-muted-foreground">T2038 payments (total paid)</div>
               <div className="text-2xl font-semibold">${Number(summary?.t2038?.total_paid || 0).toFixed(2)}</div>
               <div className="text-xs text-muted-foreground">
-                {summary?.t2038?.members || 0} members • {summary?.t2038?.rows || 0} rows
+                {summary?.t2038?.rows || 0} payments • {summary?.t2038?.members || 0} members
               </div>
             </div>
             <div className="rounded-md border p-3">
-              <div className="text-xs text-muted-foreground">H2022 total paid</div>
+              <div className="text-xs text-muted-foreground">H2022 payments (total paid)</div>
               <div className="text-2xl font-semibold">${Number(summary?.h2022?.total_paid || 0).toFixed(2)}</div>
               <div className="text-xs text-muted-foreground">
-                {summary?.h2022?.members || 0} members • {summary?.h2022?.rows || 0} rows
+                {summary?.h2022?.rows || 0} payments • {summary?.h2022?.members || 0} members
               </div>
             </div>
             <div className="rounded-md border p-3">
-              <div className="text-xs text-muted-foreground">Total extracted rows</div>
-              <div className="text-2xl font-semibold">{summary?.total_rows || rows.length}</div>
-              <div className="text-xs text-muted-foreground">H2022 + T2038 only</div>
+              <div className="text-xs text-muted-foreground">Total payments (T2038 + H2022)</div>
+              <div className="text-2xl font-semibold">
+                $
+                {(
+                  Number(summary?.t2038?.total_paid || 0) + Number(summary?.h2022?.total_paid || 0)
+                ).toFixed(2)}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {summary?.total_rows || rows.length} payments • H2022 + T2038 only
+              </div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Total unique members</div>
+              <div className="text-2xl font-semibold">{totalMembers}</div>
+              <div className="text-xs text-muted-foreground">Deduped by ACNT (fallback: member name)</div>
             </div>
           </CardContent>
         </Card>

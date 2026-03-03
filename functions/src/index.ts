@@ -181,6 +181,9 @@ export {
   sendNotificationWithSettings
 } from './notification-settings';
 
+// ERA Parser (Health Net) - server-side parsing for large PDFs
+export { parseEraPdfFromStorage } from './era-parser';
+
 // Export Login Tracking functions
 export {
   logUserActivity,
