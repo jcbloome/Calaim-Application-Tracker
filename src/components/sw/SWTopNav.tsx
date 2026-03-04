@@ -4,12 +4,13 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { ClipboardCheck, FileBarChart, Users, BookOpenText, CheckCircle2, ReceiptText, ListTodo } from 'lucide-react';
+import { ClipboardCheck, FileBarChart, Users, BookOpenText, CheckCircle2, ReceiptText, ListTodo, UploadCloud } from 'lucide-react';
 
 const links = [
   { href: '/sw-portal/queue', label: 'Queue', icon: ListTodo },
   { href: '/sw-portal/roster', label: 'Roster', icon: Users },
   { href: '/sw-portal/status-log', label: 'Status Log', icon: CheckCircle2 },
+  { href: '/sw-portal/alft-upload', label: 'ALFT Upload', icon: UploadCloud },
   { href: '/sw-portal/claims', label: 'Claims', icon: ReceiptText },
   { href: '/sw-portal/sign-off', label: 'Sign Off', icon: FileBarChart },
   { href: '/sw-visit-verification', label: 'Questionnaire', icon: ClipboardCheck },

@@ -14,6 +14,7 @@ import { CsSummaryReminderEmail, getCsSummaryReminderEmailText } from '@/compone
 import EligibilityCheckConfirmationEmail from '@/components/emails/EligibilityCheckConfirmationEmail';
 import EligibilityCheckResultEmail from '@/components/emails/EligibilityCheckResultEmail';
 import SwClaimReminderEmail, { type SwClaimReminderItem } from '@/components/emails/SwClaimReminderEmail';
+import AlftUploadEmail from '@/components/emails/AlftUploadEmail';
 import * as admin from 'firebase-admin';
 
 // Note: Firebase Admin is initialized in a central file (e.g., src/ai/dev.ts).
@@ -110,6 +111,16 @@ interface SwClaimReminderPayload {
     socialWorkerName: string;
     items: SwClaimReminderItem[];
     portalUrl?: string;
+}
+
+interface AlftUploadPayload {
+    to: string;
+    memberName: string;
+    uploadDate: string;
+    kaiserMrn?: string;
+    uploaderName: string;
+    uploaderEmail?: string;
+    intakeUrl: string;
 }
 
 async function getBccRecipients(): Promise<string[]> {
@@ -463,4 +474,44 @@ export const sendEligibilityCheckResultEmail = async (payload: EligibilityCheckR
         console.error('Failed to send eligibility result email:', error);
         throw error;
     }
+};
+
+export const sendAlftUploadEmail = async (payload: AlftUploadPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const intakeUrlRaw = String(payload.intakeUrl || '').trim();
+    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const intakeUrl = intakeUrlRaw.startsWith('http') ? intakeUrlRaw : `${baseUrl}${intakeUrlRaw.startsWith('/') ? '' : '/'}${intakeUrlRaw}`;
+
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const uploaderName = String(payload.uploaderName || '').trim() || 'Social Worker';
+
+    const emailHtml = await renderAsync(
+        AlftUploadEmail({
+            memberName,
+            uploadDate: String(payload.uploadDate || '').trim(),
+            kaiserMrn: String(payload.kaiserMrn || '').trim() || undefined,
+            uploaderName,
+            uploaderEmail: String(payload.uploaderEmail || '').trim() || undefined,
+            intakeUrl,
+        })
+    );
+
+    const { data, error } = await resend.emails.send({
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `ALFT Tool uploaded: ${memberName}`,
+        html: emailHtml,
+    });
+
+    if (error) {
+        console.error('Resend ALFT Upload Error:', error);
+        throw new Error(error.message);
+    }
+
+    return data;
 };

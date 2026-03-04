@@ -1,6 +1,6 @@
 'use client';
 
-import React, { ReactNode, useEffect, useRef, useState } from 'react';
+import React, { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import appPackage from '../../../package.json';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -201,6 +201,7 @@ function AdminHeader() {
   const [eligibilityPendingCount, setEligibilityPendingCount] = useState(0);
   const [priorityNotesCount, setPriorityNotesCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [alftPendingCount, setAlftPendingCount] = useState(0);
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
@@ -412,6 +413,7 @@ function AdminHeader() {
       let nextHnDocs = 0;
       let nextKaiserCs = 0;
       let nextKaiserDocs = 0;
+      let nextAlft = 0;
 
       let csSummaryCount = 0;
       let csLatestMs = 0;
@@ -518,11 +520,17 @@ function AdminHeader() {
         const isHn = plan.includes('health net');
         const url = `/admin/standalone-uploads?focus=${encodeURIComponent(String(u?.id || ''))}`;
         const docType = String(u?.documentType || '').trim();
+        const toolCode = String(u?.toolCode || '').trim().toUpperCase();
         const docTypeLower = docType.toLowerCase();
         const isCs = docTypeLower.includes('cs') && docTypeLower.includes('summary');
+        const isAlft = toolCode === 'ALFT' || docTypeLower.includes('alft');
 
         const ms = Math.max(toMs(u?.createdAt), toMs(u?.updatedAt), toMs(u?.timestamp));
         const author = String(u?.uploaderName || u?.uploaderEmail || '').trim() || 'User';
+
+        if (isAlft) {
+          nextAlft += 1;
+        }
 
         if (isCs) {
           csSummaryCount += 1;
@@ -563,6 +571,7 @@ function AdminHeader() {
       setHnDocCount(nextHnDocs);
       setKaiserCsCount(nextKaiserCs);
       setKaiserDocCount(nextKaiserDocs);
+      setAlftPendingCount(nextAlft);
 
       // Review notifications (CS + documents) are only for recipients explicitly enabled in system settings.
       // - CS: can auto-expand (low volume).
@@ -934,11 +943,13 @@ function AdminHeader() {
       : null;
     const dLabel = showDocs ? `D(${newUploadCount})` : null;
     const notesLabel = priorityNotesCount > 0 ? `Notes(${priorityNotesCount})` : null;
+    const alftLabel = alftPendingCount > 0 ? `ALFT(${alftPendingCount})` : null;
 
     const items: Array<{ key: string; label: string; href: string; dot: string }> = [];
     if (csLabel) items.push({ key: 'cs', label: csLabel, href: '/admin/applications?review=cs', dot: 'bg-orange-500' });
     if (dLabel) items.push({ key: 'docs', label: dLabel, href: '/admin/applications?review=docs', dot: 'bg-green-600' });
     if (notesLabel) items.push({ key: 'notes', label: notesLabel, href: '/admin/my-notes', dot: 'bg-blue-600' });
+    if (alftLabel) items.push({ key: 'alft', label: alftLabel, href: '/admin/standalone-uploads?filter=alft', dot: 'bg-purple-600' });
 
     if (items.length === 0) return null;
     return (

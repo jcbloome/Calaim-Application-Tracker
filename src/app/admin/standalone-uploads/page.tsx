@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,6 +36,7 @@ type StandaloneUpload = {
   id: string;
   status: string;
   createdAt?: any;
+  toolCode?: string;
   documentType: string;
   files: Array<{ fileName: string; downloadURL: string; storagePath?: string }>;
   uploaderName?: string;
@@ -72,11 +74,14 @@ export default function StandaloneUploadsPage() {
   const { isAdmin, isLoading, user } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
 
   const [rows, setRows] = useState<StandaloneUpload[]>([]);
   const [search, setSearch] = useState('');
   const [plan, setPlan] = useState<'all' | 'kaiser' | 'health-net' | 'other'>('all');
   const [docType, setDocType] = useState<'all' | 'cs' | 'docs'>('all');
+  const [toolFilter, setToolFilter] = useState<'all' | 'alft'>('all');
+  const [focusId, setFocusId] = useState<string>('');
   const [processingId, setProcessingId] = useState<string>('');
 
   const [assignOpen, setAssignOpen] = useState(false);
@@ -104,6 +109,7 @@ export default function StandaloneUploadsPage() {
             id: toLabel(r.id),
             status: toLabel(r.status || 'pending'),
             createdAt: r.createdAt,
+            toolCode: toLabel(r.toolCode) || undefined,
             documentType: toLabel(r.documentType),
             files: Array.isArray(r.files) ? r.files : [],
             uploaderName: toLabel(r.uploaderName) || undefined,
@@ -122,6 +128,18 @@ export default function StandaloneUploadsPage() {
     return () => unsub();
   }, [firestore, isAdmin]);
 
+  // URL-driven filters (for badges/notifications).
+  useEffect(() => {
+    const filter = String(searchParams?.get('filter') || '').trim().toLowerCase();
+    const focus = String(searchParams?.get('focus') || '').trim();
+    if (filter === 'alft') {
+      setToolFilter('alft');
+    }
+    if (focus) {
+      setFocusId(focus);
+    }
+  }, [searchParams]);
+
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return rows.filter((r) => {
@@ -136,6 +154,10 @@ export default function StandaloneUploadsPage() {
       const isCs = dtLower.includes('cs') && dtLower.includes('summary');
       const matchesDocType = docType === 'all' || (docType === 'cs' ? isCs : !isCs);
 
+      const toolCode = toLabel((r as any).toolCode).toUpperCase();
+      const isAlft = toolCode === 'ALFT' || dtLower.includes('alft');
+      const matchesTool = toolFilter === 'all' || (toolFilter === 'alft' ? isAlft : true);
+
       const matchesSearch =
         !s ||
         toLabel(r.memberName).toLowerCase().includes(s) ||
@@ -146,9 +168,9 @@ export default function StandaloneUploadsPage() {
         toLabel(r.mediCalNumber).toLowerCase().includes(s) ||
         toLabel(r.kaiserMrn).toLowerCase().includes(s);
 
-      return matchesPlan && matchesDocType && matchesSearch;
+      return matchesPlan && matchesDocType && matchesTool && matchesSearch;
     });
-  }, [rows, search, plan, docType]);
+  }, [rows, search, plan, docType, toolFilter]);
 
   const markProcessed = async (id: string) => {
     if (!firestore) return;
@@ -412,6 +434,17 @@ export default function StandaloneUploadsPage() {
               </SelectContent>
             </Select>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Select value={toolFilter} onValueChange={(v) => setToolFilter(v as any)}>
+              <SelectTrigger><SelectValue placeholder="All tools" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All tools</SelectItem>
+                <SelectItem value="alft">ALFT Tool</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="hidden md:block" />
+            <div className="hidden md:block" />
+          </div>
 
           <div className="rounded-lg border overflow-x-auto">
             <Table>
@@ -444,12 +477,16 @@ export default function StandaloneUploadsPage() {
                     .map((r) => {
                       const dtLower = toLabel(r.documentType).toLowerCase();
                       const isCs = dtLower.includes('cs') && dtLower.includes('summary');
+                      const toolCode = toLabel((r as any).toolCode).toUpperCase();
+                      const isAlft = toolCode === 'ALFT' || dtLower.includes('alft');
+                      const isFocused = focusId && r.id === focusId;
                       return (
-                        <TableRow key={r.id}>
+                        <TableRow key={r.id} className={isFocused ? 'bg-purple-50' : undefined}>
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
                               <span>{r.memberName}</span>
                               {isCs ? <Badge variant="secondary">CS</Badge> : null}
+                              {isAlft ? <Badge variant="secondary">ALFT</Badge> : null}
                             </div>
                           </TableCell>
                           <TableCell>{r.memberBirthdate}</TableCell>
