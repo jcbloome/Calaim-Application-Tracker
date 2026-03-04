@@ -32,7 +32,13 @@ export function useSocialWorker() {
 
   useEffect(() => {
     const checkSocialWorkerStatus = async () => {
-      if (loading || !firestore) return;
+      // Important: keep portal in loading state while Firebase auth is resolving
+      // or while we verify SW access, otherwise the SW portal layout may redirect
+      // back to /sw-login before claims / Firestore lookups complete.
+      if (loading || !firestore) {
+        setIsLoading(true);
+        return;
+      }
       
       if (!user) {
         setIsSocialWorker(false);
@@ -41,6 +47,9 @@ export function useSocialWorker() {
         setIsLoading(false);
         return;
       }
+
+      // User exists → begin SW verification.
+      setIsLoading(true);
 
       let claimedSocialWorker = false;
       try {
