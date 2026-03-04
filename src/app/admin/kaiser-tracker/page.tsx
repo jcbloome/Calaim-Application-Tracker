@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getNextKaiserStatus, getKaiserStatusesInOrder, KAISER_STATUS_PROGRESSION, getKaiserStatusById } from '@/lib/kaiser-status-progression';
+import { getNextKaiserStatus, getKaiserStatusesInOrder, KAISER_STATUS_PROGRESSION, getKaiserStatusById, normalizeKaiserStatusName } from '@/lib/kaiser-status-progression';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -81,6 +81,7 @@ interface StatusSummaryItem {
 
 // Helper functions for status styling
 const getStatusColor = (status: string): string => {
+  const normalized = normalizeKaiserStatusName(status);
   const statusColors: Record<string, string> = {
     'Complete': 'bg-green-50 text-green-700 border-green-200',
     'Active': 'bg-blue-50 text-blue-700 border-blue-200',
@@ -113,13 +114,14 @@ const getStatusColor = (status: string): string => {
     'ILS/RCFE_Member_At_RCFE_Confirmed': 'bg-emerald-50 text-emerald-800 border-emerald-200'
   };
   
-  return statusColors[status] || 'bg-gray-50 text-gray-700 border-gray-200';
+  return statusColors[normalized] || statusColors[status] || 'bg-gray-50 text-gray-700 border-gray-200';
 };
 
 const getMemberKey = (member: KaiserMember, index: number) =>
   `${member.id}-${member.client_ID2}-${member.memberFirstName}-${member.memberLastName}-${index}`;
 
 const getStatusIcon = (status: string) => {
+  const normalized = normalizeKaiserStatusName(status);
   const iconMap: Record<string, React.ReactNode> = {
     'Complete': <CheckCircle className="h-3 w-3" />,
     'Active': <CheckCircle className="h-3 w-3" />,
@@ -152,7 +154,7 @@ const getStatusIcon = (status: string) => {
     'ILS/RCFE_Member_At_RCFE_Confirmed': <CheckCircle className="h-3 w-3" />
   };
   
-  return iconMap[status] || <Clock className="h-3 w-3" />;
+  return iconMap[normalized] || iconMap[status] || <Clock className="h-3 w-3" />;
 };
 
 // Helper function to format dates
@@ -201,11 +203,7 @@ const kaiserWorkflow = {
   'ILS/RCFE_Member_At_RCFE_Need_Conf': { next: 'ILS/RCFE_Member_At_RCFE_Confirmed', recommendedDays: 7 }
 };
 
-// Predefined Kaiser statuses to show immediately
-const KAISER_STATUS_ORDER = getKaiserStatusesInOrder().map((status) => status.status);
-const buildKaiserStatusList = () => {
-  return [...KAISER_STATUS_ORDER];
-};
+const FALLBACK_KAISER_STATUS_ORDER = getKaiserStatusesInOrder().map((status) => status.status);
 
 const CALAIM_STATUS_OPTIONS = [
   'Authorized',
@@ -246,7 +244,7 @@ const getEffectiveKaiserStatus = (member: any): string => {
     hasMeaningfulValue(member?.Kaiser_T2038_Received);
 
   if (hasAuthEmail && !hasOfficialAuth) return 'T2038 Auth Only Email';
-  return String(member?.Kaiser_Status || 'No Status');
+  return normalizeKaiserStatusName(String(member?.Kaiser_Status || 'No Status'));
 };
 
 const toDateValue = (value: any): Date | null => {
@@ -696,6 +694,10 @@ function KaiserTrackerPageContent() {
 
   // State declarations
   const [isLoading, setIsLoading] = useState(false);
+  const [statusListLoading, setStatusListLoading] = useState(false);
+  const [statusListSyncing, setStatusListSyncing] = useState(false);
+  const [kaiserStatusOptions, setKaiserStatusOptions] = useState<string[]>([...FALLBACK_KAISER_STATUS_ORDER]);
+  const [kaiserStatusListUpdatedAtLabel, setKaiserStatusListUpdatedAtLabel] = useState<string>('');
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<string>('');
@@ -745,11 +747,11 @@ function KaiserTrackerPageContent() {
       summary[status] += 1;
     });
 
-    return buildKaiserStatusList().map((status) => ({
+    return kaiserStatusOptions.map((status) => ({
       status,
       count: summary[status] || 0
     }));
-  }, [members]);
+  }, [members, kaiserStatusOptions]);
 
 
   // Treat numeric-only staff values (e.g. Caspio user IDs 107, 224, 33, 48) as unassigned
@@ -986,6 +988,93 @@ function KaiserTrackerPageContent() {
   };
 
   // Helper functions
+  const loadKaiserStatusOptions = async () => {
+    setStatusListLoading(true);
+    try {
+      if (!auth?.currentUser) {
+        setKaiserStatusOptions([...FALLBACK_KAISER_STATUS_ORDER]);
+        setKaiserStatusListUpdatedAtLabel('Using built-in status list (not signed in)');
+        return;
+      }
+
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-statuses/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Failed to load Kaiser status list');
+      }
+
+      const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : [];
+      const options = rows
+        .map((r: any) => String(r?.status || '').trim())
+        .filter(Boolean)
+        .map((s: string) => normalizeKaiserStatusName(s));
+      const unique = Array.from(new Set(options));
+      setKaiserStatusOptions(unique.length > 0 ? unique : [...FALLBACK_KAISER_STATUS_ORDER]);
+
+      const updatedAt = String((data as any)?.updatedAt || '').trim();
+      const byEmail = String((data as any)?.updatedByEmail || '').trim();
+      setKaiserStatusListUpdatedAtLabel(
+        updatedAt
+          ? `Status list last updated: ${updatedAt}${byEmail ? ` by ${byEmail}` : ''}`
+          : 'Status list not yet synced'
+      );
+    } catch (e: any) {
+      console.error('Failed to load Kaiser status list:', e);
+      setKaiserStatusOptions([...FALLBACK_KAISER_STATUS_ORDER]);
+      setKaiserStatusListUpdatedAtLabel('Using built-in status list (load failed)');
+    } finally {
+      setStatusListLoading(false);
+    }
+  };
+
+  const syncKaiserStatusOptions = async () => {
+    setStatusListSyncing(true);
+    try {
+      if (!auth?.currentUser) {
+        throw new Error('You must be signed in to sync.');
+      }
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-statuses/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Failed to sync Kaiser status list');
+      }
+
+      const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : [];
+      const options = rows
+        .map((r: any) => String(r?.status || '').trim())
+        .filter(Boolean)
+        .map((s: string) => normalizeKaiserStatusName(s));
+      const unique = Array.from(new Set(options));
+      setKaiserStatusOptions(unique.length > 0 ? unique : [...FALLBACK_KAISER_STATUS_ORDER]);
+
+      toast({
+        title: 'Kaiser status list synced',
+        description: `Loaded ${unique.length || rows.length || 0} statuses from Caspio`,
+      });
+
+      await loadKaiserStatusOptions();
+    } catch (e: any) {
+      console.error('Failed to sync Kaiser statuses:', e);
+      toast({
+        title: 'Status sync failed',
+        description: e?.message || 'Could not sync Kaiser statuses from Caspio',
+        variant: 'destructive',
+      });
+    } finally {
+      setStatusListSyncing(false);
+    }
+  };
+
   // Fetch Kaiser members from Caspio
   const fetchCaspioData = async () => {
     setIsLoading(true);
@@ -1092,7 +1181,7 @@ function KaiserTrackerPageContent() {
   // Filter and sort functions
   const filteredMembers = () => {
     return members.filter(member => {
-      if (filters.kaiserStatus !== 'all' && member.Kaiser_Status !== filters.kaiserStatus) return false;
+      if (filters.kaiserStatus !== 'all' && getEffectiveKaiserStatus(member) !== filters.kaiserStatus) return false;
       if (filters.calaimStatus !== 'all') {
         const normalized = normalizeCalaimStatus(member.CalAIM_Status || '');
         if (CALAIM_STATUS_MAP[normalized] !== filters.calaimStatus) return false;
@@ -1119,8 +1208,8 @@ function KaiserTrackerPageContent() {
         bValue = b.memberCounty;
               break;
             case 'kaiser_status':
-        aValue = a.Kaiser_Status;
-        bValue = b.Kaiser_Status;
+        aValue = getEffectiveKaiserStatus(a);
+        bValue = getEffectiveKaiserStatus(b);
               break;
             case 'calaim_status':
         aValue = a.CalAIM_Status;
@@ -1176,7 +1265,16 @@ function KaiserTrackerPageContent() {
   };
 
   // Get unique values for filter dropdowns
-  const allKaiserStatuses = buildKaiserStatusList();
+  const allKaiserStatuses = useMemo(() => {
+    const known = kaiserStatusOptions;
+    const seen = new Set<string>();
+    for (const m of members) {
+      const s = getEffectiveKaiserStatus(m);
+      if (s) seen.add(s);
+    }
+    const unknown = Array.from(seen).filter((s) => !known.includes(s)).sort();
+    return [...known, ...unknown];
+  }, [kaiserStatusOptions, members]);
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
   const availableCalAIMStatuses = CALAIM_STATUS_OPTIONS;
   const staffMembers = [...new Set(members.map(m => String(m.Kaiser_User_Assignment || m.Staff_Assigned || '')).filter(Boolean).map(String))];
@@ -1185,6 +1283,7 @@ function KaiserTrackerPageContent() {
   useEffect(() => {
     // Only fetch data when user manually clicks sync button, not on page load
     // fetchCaspioData();
+    loadKaiserStatusOptions();
   }, []);
 
   if (isAdminLoading) {
@@ -1216,15 +1315,29 @@ function KaiserTrackerPageContent() {
           <p className="text-muted-foreground text-sm">
             Overview of {members.length} Kaiser members | Last sync: {members.length > 0 ? new Date().toLocaleString() : 'Never'}
           </p>
+          <p className="text-muted-foreground text-xs mt-1">
+            {statusListLoading ? 'Loading Kaiser status list…' : (kaiserStatusListUpdatedAtLabel || ' ')}
+          </p>
         </div>
-        <Button 
-          onClick={fetchCaspioData} 
-          disabled={isLoading}
-          className="flex items-center gap-2"
-        >
-          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-          {isLoading ? 'Syncing...' : 'Sync from Caspio'}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button
+            onClick={syncKaiserStatusOptions}
+            disabled={statusListSyncing || statusListLoading}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${statusListSyncing ? 'animate-spin' : ''}`} />
+            {statusListSyncing ? 'Syncing statuses…' : 'Sync statuses'}
           </Button>
+          <Button 
+            onClick={fetchCaspioData} 
+            disabled={isLoading}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            {isLoading ? 'Syncing...' : 'Sync members'}
+          </Button>
+        </div>
       </div>
 
       {/* Interactive Filtering Message */}

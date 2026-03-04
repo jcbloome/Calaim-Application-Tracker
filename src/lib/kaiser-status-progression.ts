@@ -10,6 +10,31 @@ export interface KaiserStatus {
   isActive: boolean;
 }
 
+const normalizeKey = (value: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+// Central alias map so older labels still match current Caspio labels.
+// Keys are normalized via normalizeKey().
+export const KAISER_STATUS_ALIASES: Record<string, string> = {
+  [normalizeKey('ILS Contract Email Needed')]: 'ILS/RCFE Contract Email Needed',
+  [normalizeKey('ILS Contract Email Sent')]: 'ILS/RCFE Contract Email Sent',
+  [normalizeKey('ILS/RCFE Contract Email Needed')]: 'ILS/RCFE Contract Email Needed',
+  [normalizeKey('ILS/RCFE Contract Email Sent')]: 'ILS/RCFE Contract Email Sent',
+  [normalizeKey('Non Active')]: 'Non-active',
+  [normalizeKey('Non_Active')]: 'Non-active',
+  [normalizeKey('On Hold')]: 'On-Hold',
+  [normalizeKey('On_Hold')]: 'On-Hold',
+};
+
+export function normalizeKaiserStatusName(raw: string): string {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  return KAISER_STATUS_ALIASES[normalizeKey(trimmed)] || trimmed;
+}
+
 export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   {
     id: 36,
