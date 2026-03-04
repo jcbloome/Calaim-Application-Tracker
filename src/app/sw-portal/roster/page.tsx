@@ -3,13 +3,15 @@
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSocialWorker } from '@/hooks/use-social-worker';
+import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/firebase';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw, CheckCircle2, Circle } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw, CheckCircle2, Circle, Pin, Clock } from 'lucide-react';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
 
 type RosterMember = {
@@ -33,6 +35,7 @@ type RosterFacility = {
 
 type MonthVisitStatus = {
   visitId: string;
+  visitDay?: string;
   signedOff: boolean;
   claimStatus: string;
   claimSubmitted: boolean;
@@ -40,9 +43,52 @@ type MonthVisitStatus = {
   claimId?: string;
 };
 
+type RecentMember = {
+  memberId: string;
+  memberName: string;
+  rcfeId: string;
+  rcfeName: string;
+  atMs: number;
+};
+
+type DraftVisit = {
+  visitId: string;
+  memberId: string;
+  memberName: string;
+  memberRoomNumber?: string;
+  rcfeId: string;
+  rcfeName: string;
+  rcfeAddress?: string;
+  flagged?: boolean;
+  updatedAt?: string;
+};
+
+const LS_PINNED_RCFES = 'swRosterPinnedRcfeIds_v1';
+const LS_RECENT_MEMBERS = 'swRosterRecentMembers_v1';
+
+const safeJsonParse = <T,>(raw: string | null, fallback: T): T => {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+};
+
+const todayLocalKey = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const rcfeAnchorId = (rcfeId: string) => `rcfe_${encodeURIComponent(String(rcfeId || '').trim()).replace(/%/g, '_')}`;
+
 export default function SWRosterPage() {
   const { user, isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -53,6 +99,14 @@ export default function SWRosterPage() {
   const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
   const [monthStatusesLoaded, setMonthStatusesLoaded] = useState(false);
   const [monthStatusesFailed, setMonthStatusesFailed] = useState(false);
+
+  const [pinnedRcfeIds, setPinnedRcfeIds] = useState<string[]>([]);
+  const [recentMembers, setRecentMembers] = useState<RecentMember[]>([]);
+
+  const [printNeedsActionOnly, setPrintNeedsActionOnly] = useState(false);
+
+  const [draftsToday, setDraftsToday] = useState<DraftVisit[]>([]);
+  const [loadingDraftsToday, setLoadingDraftsToday] = useState(false);
 
   const refreshRoster = useCallback(async () => {
     if (!user?.email) return;
@@ -106,6 +160,7 @@ export default function SWRosterPage() {
         if (!memberId) return;
         map[memberId] = {
           visitId: String(r?.visitId || '').trim(),
+          visitDay: String(r?.date || '').trim() || undefined,
           signedOff: Boolean(r?.signedOff),
           claimStatus: String(r?.claimStatus || 'draft').trim(),
           claimSubmitted: Boolean(r?.claimSubmitted),
@@ -116,15 +171,20 @@ export default function SWRosterPage() {
       setMonthStatuses(map);
       setMonthStatusesLoaded(true);
       setMonthStatusesFailed(false);
-    } catch {
+    } catch (e: any) {
       // best-effort: roster should still work without statuses
       setMonthStatuses({});
       setMonthStatusesLoaded(false);
       setMonthStatusesFailed(true);
+      toast({
+        title: 'Couldn’t load status icons',
+        description: e?.message || 'Monthly statuses failed to load. You can still use the roster; retry from Assignments.',
+        variant: 'destructive',
+      });
     } finally {
       setLoadingMonthStatuses(false);
     }
-  }, [auth, auth?.currentUser, statusMonth]);
+  }, [auth, auth?.currentUser, statusMonth, toast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +214,54 @@ export default function SWRosterPage() {
     };
   }, [isLoading, isSocialWorker, user]);
 
+  // Load pinned/recent preferences (client-only).
+  useEffect(() => {
+    try {
+      const pinned = safeJsonParse<string[]>(window.localStorage.getItem(LS_PINNED_RCFES), []);
+      const recent = safeJsonParse<RecentMember[]>(window.localStorage.getItem(LS_RECENT_MEMBERS), []);
+      setPinnedRcfeIds(Array.isArray(pinned) ? pinned.map((s) => String(s).trim()).filter(Boolean) : []);
+      setRecentMembers(Array.isArray(recent) ? recent.filter(Boolean).slice(0, 10) : []);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const togglePinnedRcfe = useCallback((rcfeId: string) => {
+    const id = String(rcfeId || '').trim();
+    if (!id) return;
+    setPinnedRcfeIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev];
+      try {
+        window.localStorage.setItem(LS_PINNED_RCFES, JSON.stringify(next.slice(0, 20)));
+      } catch {
+        // ignore
+      }
+      return next.slice(0, 20);
+    });
+  }, []);
+
+  const trackRecentMember = useCallback((m: { memberId: string; memberName: string; rcfeId: string; rcfeName: string }) => {
+    const memberId = String(m.memberId || '').trim();
+    if (!memberId) return;
+    const item: RecentMember = {
+      memberId,
+      memberName: String(m.memberName || '').trim() || 'Member',
+      rcfeId: String(m.rcfeId || '').trim() || '',
+      rcfeName: String(m.rcfeName || '').trim() || 'RCFE',
+      atMs: Date.now(),
+    };
+    setRecentMembers((prev) => {
+      const without = prev.filter((x) => String(x?.memberId || '').trim() !== memberId);
+      const next = [item, ...without].slice(0, 10);
+      try {
+        window.localStorage.setItem(LS_RECENT_MEMBERS, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (isLoading) return;
     if (!isSocialWorker) return;
@@ -168,6 +276,36 @@ export default function SWRosterPage() {
     if (!hasLoadedOnce) return;
     void refreshMonthStatuses();
   }, [hasLoadedOnce, isLoading, isSocialWorker, refreshMonthStatuses]);
+
+  const refreshDraftsToday = useCallback(async () => {
+    if (!auth?.currentUser) {
+      setDraftsToday([]);
+      return;
+    }
+    setLoadingDraftsToday(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const claimDay = todayLocalKey();
+      const res = await fetch(`/api/sw-visits/drafts?claimDay=${encodeURIComponent(claimDay)}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load drafts (HTTP ${res.status})`);
+      const visits = Array.isArray(data?.visits) ? (data.visits as DraftVisit[]) : [];
+      setDraftsToday(visits.slice(0, 50));
+    } catch {
+      // best-effort only
+      setDraftsToday([]);
+    } finally {
+      setLoadingDraftsToday(false);
+    }
+  }, [auth]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
+    void refreshDraftsToday();
+  }, [isLoading, isSocialWorker, refreshDraftsToday]);
 
   const needsQuestionnaire = useMemo(() => {
     if (!monthStatusesLoaded) return [];
@@ -190,6 +328,18 @@ export default function SWRosterPage() {
     return rows;
   }, [facilities, monthStatuses, monthStatusesLoaded]);
 
+  const nextQuestionnaire = useMemo(() => {
+    if (!needsQuestionnaire || needsQuestionnaire.length === 0) return null;
+    return needsQuestionnaire[0];
+  }, [needsQuestionnaire]);
+
+  const pinnedFacilities = useMemo(() => {
+    if (!pinnedRcfeIds || pinnedRcfeIds.length === 0) return [];
+    const byId = new Map<string, RosterFacility>();
+    for (const f of facilities) byId.set(String(f.id || '').trim(), f);
+    return pinnedRcfeIds.map((id) => byId.get(String(id || '').trim())).filter(Boolean) as RosterFacility[];
+  }, [facilities, pinnedRcfeIds]);
+
   const filteredFacilities = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return facilities;
@@ -210,6 +360,23 @@ export default function SWRosterPage() {
       })
       .filter(Boolean) as RosterFacility[];
   }, [facilities, query]);
+
+  const printFacilities = useMemo(() => {
+    if (!printNeedsActionOnly) return filteredFacilities;
+    if (!monthStatusesLoaded) return filteredFacilities;
+
+    const out: RosterFacility[] = [];
+    for (const f of filteredFacilities) {
+      const members = Array.isArray(f.members) ? f.members : [];
+      const keep = members.filter((m) => {
+        const s = monthStatuses[String(m.id || '').trim()];
+        const flags = computeSwVisitStatusFlags(s);
+        return Boolean(flags.needsAction);
+      });
+      if (keep.length > 0) out.push({ ...f, members: keep });
+    }
+    return out;
+  }, [filteredFacilities, monthStatuses, monthStatusesLoaded, printNeedsActionOnly]);
 
   const totals = useMemo(() => {
     const facilityCount = facilities.length;
@@ -304,6 +471,13 @@ export default function SWRosterPage() {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2 text-xs text-muted-foreground">
+            <span className="font-medium text-slate-900">Print</span>
+            <div className="flex items-center gap-2">
+              <Switch checked={printNeedsActionOnly} onCheckedChange={(v) => setPrintNeedsActionOnly(Boolean(v))} />
+              <span>Needs action only</span>
+            </div>
+          </div>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => void refreshRoster()} disabled={loading}>
             <RefreshCw className="h-4 w-4 mr-2" />
             {loading ? 'Refreshing…' : 'Refresh list'}
@@ -323,6 +497,135 @@ export default function SWRosterPage() {
           </Button>
         </div>
       </div>
+
+      {(nextQuestionnaire || loadingDraftsToday || draftsToday.length > 0 || pinnedFacilities.length > 0 || recentMembers.length > 0) ? (
+        <div className="grid gap-4 print:hidden lg:grid-cols-2">
+          {loadingDraftsToday || draftsToday.length > 0 ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Resume draft questionnaires (today)</CardTitle>
+                <CardDescription>
+                  {loadingDraftsToday
+                    ? 'Checking for draft questionnaires saved today…'
+                    : `You have ${draftsToday.length} draft${draftsToday.length === 1 ? '' : 's'} saved for today (${todayLocalKey()}).`}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {loadingDraftsToday ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Checking drafts…
+                  </div>
+                ) : (
+                  draftsToday.slice(0, 5).map((d) => (
+                    <div key={d.visitId} className="flex items-center justify-between gap-3 rounded-md border bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{d.memberName || 'Member'}</div>
+                        <div className="truncate text-xs text-muted-foreground">{d.rcfeName || 'RCFE'}</div>
+                      </div>
+                      <Button asChild size="sm" variant="outline" className="shrink-0">
+                        <Link
+                          href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(d.rcfeId || '').trim())}&memberId=${encodeURIComponent(String(d.memberId || '').trim())}`}
+                        >
+                          Resume
+                        </Link>
+                      </Button>
+                    </div>
+                  ))
+                )}
+                <div className="flex items-center justify-between pt-1">
+                  <Button variant="ghost" size="sm" className="gap-2" onClick={() => void refreshDraftsToday()}>
+                    <RefreshCw className={`h-4 w-4 ${loadingDraftsToday ? 'animate-spin' : ''}`} />
+                    Refresh drafts
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : nextQuestionnaire ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Start next questionnaire</CardTitle>
+                <CardDescription>Jump straight into the next member who needs a questionnaire.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{nextQuestionnaire.memberName}</div>
+                  <div className="truncate text-xs text-muted-foreground">{nextQuestionnaire.rcfeName}</div>
+                </div>
+                <Button asChild className="shrink-0">
+                  <Link
+                    href={`/sw-visit-verification?rcfeId=${encodeURIComponent(nextQuestionnaire.rcfeId)}&memberId=${encodeURIComponent(nextQuestionnaire.memberId)}`}
+                  >
+                    Open questionnaire
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {pinnedFacilities.length > 0 || recentMembers.length > 0 ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Pinned & recent</CardTitle>
+                <CardDescription>Shortcuts to the homes and members you use most.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {pinnedFacilities.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-slate-900">Pinned RCFEs</div>
+                    <div className="flex flex-wrap gap-2">
+                      {pinnedFacilities.map((f) => (
+                        <Button key={`pin-${f.id}`} asChild variant="outline" size="sm" className="gap-2">
+                          <Link href={`/sw-portal/roster#${rcfeAnchorId(f.id)}`}>
+                            <Pin className="h-3.5 w-3.5" />
+                            <span className="max-w-[220px] truncate">{f.name}</span>
+                          </Link>
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {recentMembers.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-slate-900">Recently opened</div>
+                    <div className="space-y-2">
+                      {recentMembers.slice(0, 5).map((r) => (
+                        <div key={`recent-${r.memberId}`} className="flex items-center justify-between gap-3 rounded-md border bg-white px-3 py-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">{r.memberName}</div>
+                            <div className="truncate text-xs text-muted-foreground">{r.rcfeName}</div>
+                          </div>
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0"
+                            onClick={() =>
+                              trackRecentMember({
+                                memberId: r.memberId,
+                                memberName: r.memberName,
+                                rcfeId: r.rcfeId,
+                                rcfeName: r.rcfeName,
+                              })
+                            }
+                          >
+                            <Link
+                              href={`/sw-visit-verification?rcfeId=${encodeURIComponent(r.rcfeId)}&memberId=${encodeURIComponent(r.memberId)}`}
+                            >
+                              Open
+                            </Link>
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      ) : null}
 
       <Card className="print:hidden">
         <CardHeader className="pb-3">
@@ -349,12 +652,20 @@ export default function SWRosterPage() {
               Loading monthly statuses…
             </div>
           ) : monthStatusesFailed ? (
-            <div className="text-sm text-muted-foreground">
-              Monthly status couldn’t be loaded right now. You can still use the roster below, or open the{' '}
-              <Link className="underline underline-offset-2" href="/sw-visit-verification">
-                Monthly Questionnaire
-              </Link>{' '}
-              page.
+            <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+              <div>
+                Monthly status couldn’t be loaded right now. You can still use the roster below, or open the{' '}
+                <Link className="underline underline-offset-2" href="/sw-visit-verification">
+                  Monthly Questionnaire
+                </Link>{' '}
+                page.
+              </div>
+              <div>
+                <Button type="button" variant="outline" size="sm" onClick={() => void refreshMonthStatuses()} disabled={loadingMonthStatuses}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loadingMonthStatuses ? 'animate-spin' : ''}`} />
+                  Retry statuses
+                </Button>
+              </div>
             </div>
           ) : !monthStatusesLoaded ? (
             <div className="text-sm text-muted-foreground">
@@ -438,7 +749,7 @@ export default function SWRosterPage() {
             <div className="text-xl font-bold">Weekly Roster</div>
             {lastSync ? <div className="text-xs text-muted-foreground">Cache last updated: {lastSync}</div> : null}
           </div>
-          {filteredFacilities.map((f) => (
+          {printFacilities.map((f) => (
             <div key={`print-${f.id}`} className="break-inside-avoid">
               <div className="font-semibold">{f.name}</div>
               <div className="text-xs text-muted-foreground">{formatAddressLine(f) || '—'}</div>
@@ -468,7 +779,7 @@ export default function SWRosterPage() {
                 <TableBody>
                   {filteredFacilities.map((f) => (
                     <React.Fragment key={`group-${f.id}`}>
-                      <TableRow key={`rcfe-${f.id}`} className="bg-slate-50">
+                      <TableRow key={`rcfe-${f.id}`} id={rcfeAnchorId(String(f.id || '').trim())} className="bg-slate-50">
                         <TableCell colSpan={2}>
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0">
@@ -480,6 +791,17 @@ export default function SWRosterPage() {
                                   {f.name}
                                 </Link>
                                 <Badge variant="secondary">{(f.members || []).length} member(s)</Badge>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={pinnedRcfeIds.includes(String(f.id || '').trim()) ? 'default' : 'outline'}
+                                  className="h-7 px-2 gap-1"
+                                  onClick={() => togglePinnedRcfe(String(f.id || '').trim())}
+                                  title={pinnedRcfeIds.includes(String(f.id || '').trim()) ? 'Unpin RCFE' : 'Pin RCFE'}
+                                >
+                                  <Pin className="h-3.5 w-3.5" />
+                                  <span className="text-xs">{pinnedRcfeIds.includes(String(f.id || '').trim()) ? 'Pinned' : 'Pin'}</span>
+                                </Button>
                               </div>
                               <div className="mt-1 flex items-start gap-2 text-xs text-muted-foreground min-w-0">
                                 <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -522,6 +844,14 @@ export default function SWRosterPage() {
                                 <Link
                                   className="min-w-0 truncate font-medium hover:underline underline-offset-2"
                                   href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id || '').trim())}&memberId=${encodeURIComponent(String(m.id || '').trim())}`}
+                                  onClick={() =>
+                                    trackRecentMember({
+                                      memberId: String(m.id || '').trim(),
+                                      memberName: String(m.name || '').trim(),
+                                      rcfeId: String(f.id || '').trim(),
+                                      rcfeName: String(f.name || '').trim(),
+                                    })
+                                  }
                                 >
                                   {m.name}
                                 </Link>
@@ -570,12 +900,33 @@ export default function SWRosterPage() {
                                   <Button asChild size="sm" variant="outline" className="ml-2 shrink-0">
                                     <Link
                                       href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id || '').trim())}&memberId=${encodeURIComponent(String(m.id || '').trim())}`}
+                                      onClick={() =>
+                                        trackRecentMember({
+                                          memberId: String(m.id || '').trim(),
+                                          memberName: String(m.name || '').trim(),
+                                          rcfeId: String(f.id || '').trim(),
+                                          rcfeName: String(f.name || '').trim(),
+                                        })
+                                      }
                                     >
                                       Questionnaire
                                     </Link>
                                   </Button>
                                 ) : null}
                               </div>
+                              {monthStatusesLoaded && s?.visitDay ? (
+                                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  <span>This month: {String(s.visitDay).slice(0, 10)}</span>
+                                  {flags.needsAction ? (
+                                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800">
+                                      Next: {flags.nextAction === 'questionnaire' ? 'Questionnaire' : flags.nextAction === 'signoff' ? 'Sign off' : 'Claim'}
+                                    </span>
+                                  ) : (
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">Up to date</span>
+                                  )}
+                                </div>
+                              ) : null}
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground min-w-0">
                               <div className="min-w-0">
