@@ -1,5 +1,6 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import SWClaimsManagementPage from '../sw-claims-management/page';
-
-export default SWClaimsManagementPage;
+// Legacy route. Keep for backwards compatibility.
+export default function AdminSwClaimsTrackingLegacyPage() {
+  redirect('/admin/sw-claims-management');
+}

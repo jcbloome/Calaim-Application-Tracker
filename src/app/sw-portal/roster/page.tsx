@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -111,6 +112,7 @@ export default function SWRosterPage() {
   const { user, isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -312,6 +314,13 @@ export default function SWRosterPage() {
     if (loading) return;
     void refreshRoster();
   }, [hasLoadedOnce, isLoading, isSocialWorker, loading, refreshRoster]);
+
+  // Hydrate search query from URL (used by header global search).
+  useEffect(() => {
+    const q = String(searchParams?.get('q') || '').trim();
+    if (!q) return;
+    setQuery(q);
+  }, [searchParams]);
 
   useEffect(() => {
     if (isLoading) return;

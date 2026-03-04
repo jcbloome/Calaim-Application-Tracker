@@ -53,10 +53,12 @@ import {
   UserCheck,
   FileBarChart,
   UploadCloud,
-  Receipt
+  Receipt,
+  Search
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useAuth, useFirestore } from '@/firebase';
 import { useGlobalNotifications } from '@/components/NotificationProvider';
 import { StaffNotificationBell } from '@/components/StaffNotificationBell';
@@ -86,51 +88,70 @@ import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon'
 import { isPriorityOrUrgent } from '@/lib/notification-utils';
 
 const adminNavLinks = [
-  { 
-    label: 'Dashboard', 
-    icon: LayoutDashboard, 
+  {
+    label: 'Operations',
+    icon: LayoutDashboard,
     isSubmenu: true,
     submenuItems: [
       { href: '/admin', label: 'Activity Dashboard', icon: Activity },
-      { href: '/admin/applications', label: 'All Applications', icon: FolderKanban },
-      { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
+      { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
+      { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
       { href: '/admin/standalone-uploads', label: 'Standalone Upload Intake', icon: UploadCloud },
-      { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
+      { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield },
+      { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
+      { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
-      { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield }
-    ]
+    ],
   },
-  { 
-    label: 'My Tasks', 
-    icon: ClipboardList, 
+  {
+    label: 'Kaiser',
+    icon: Heart,
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
+    ],
+  },
+  {
+    label: 'Claims',
+    icon: FileBarChart,
+    isSubmenu: true,
+    submenuItems: [{ href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart }],
+  },
+  {
+    label: 'Social Worker',
+    icon: Users,
+    isSubmenu: true,
+    submenuItems: [
+      { href: '/admin/social-worker-assignments', label: 'SW Assignments', icon: UserPlus },
+      { href: '/admin/sw-roster', label: 'SW Weekly Roster', icon: Printer },
+      { href: '/admin/sw-visit-tracking', label: 'SW Visit Tracking', icon: FileBarChart },
+    ],
+  },
+  {
+    label: 'My Tasks',
+    icon: ClipboardList,
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/my-notes', label: 'My Notifications', icon: Bell },
-      { href: '/admin/tasks', label: 'Daily Task Tracker', icon: ClipboardList }
-    ]
+      { href: '/admin/tasks', label: 'Daily Task Tracker', icon: ClipboardList },
+    ],
   },
-  { 
-    label: 'Tools', 
-    icon: Wrench, 
+  {
+    label: 'Tools',
+    icon: Wrench,
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/tools', label: 'Tools Home', icon: Wrench },
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
-      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
-      { href: '/admin/social-worker-assignments', label: 'Social Worker Assignments', icon: UserPlus },
-      { href: '/admin/sw-roster', label: 'SW Weekly Roster', icon: Printer },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
-      { href: '/admin/sw-visit-tracking', label: 'SW Visit Tracking', icon: FileBarChart },
-      { href: '/admin/sw-claims-tracking', label: 'SW Claims Tracker', icon: FileBarChart },
-      { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },
-      { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
       { href: '/admin/california-counties', label: 'County Analysis', icon: MapIcon },
-      { href: '/admin/reports', label: 'Reports', icon: FileText }
-    ]
+      { href: '/admin/reports', label: 'Reports', icon: FileText },
+    ],
   },
 ];
 
@@ -165,6 +186,12 @@ function AdminHeader() {
   const router = useRouter();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
   const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
+  const [headerSearch, setHeaderSearch] = useState('');
+  const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
+  const [headerSearchLoading, setHeaderSearchLoading] = useState(false);
+  const [headerSearchResults, setHeaderSearchResults] = useState<
+    Array<{ clientId2: string; firstName: string; lastName: string; healthPlan?: string; status?: string }>
+  >([]);
   const [newCsSummaryCount, setNewCsSummaryCount] = useState(0);
   const [newUploadCount, setNewUploadCount] = useState(0);
   const [hnCsCount, setHnCsCount] = useState(0);
@@ -945,12 +972,62 @@ function AdminHeader() {
     return items.some((it: any) => !it?.isDivider && isHrefActive(it?.href));
   };
 
+  const goToApplicationSearch = useCallback(
+    (q: string) => {
+      const next = String(q || '').trim();
+      if (!next) return;
+      setHeaderSearchOpen(false);
+      router.push(`/admin/applications?member=${encodeURIComponent(next)}`);
+    },
+    [router]
+  );
+
+  useEffect(() => {
+    const q = headerSearch.trim();
+    if (!headerSearchOpen) return;
+    if (q.length < 2) {
+      setHeaderSearchResults([]);
+      setHeaderSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      try {
+        setHeaderSearchLoading(true);
+        const res = await fetch(`/api/members?search=${encodeURIComponent(q)}&limit=10&offset=0`);
+        const data = (await res.json().catch(() => ({}))) as any;
+        const members: any[] = Array.isArray(data?.members) ? data.members : [];
+        const mapped = members
+          .map((m: any) => ({
+            clientId2: String(m?.clientId2 || '').trim(),
+            firstName: String(m?.firstName || '').trim(),
+            lastName: String(m?.lastName || '').trim(),
+            healthPlan: String(m?.healthPlan || '').trim() || undefined,
+            status: String(m?.status || '').trim() || undefined,
+          }))
+          .filter((m: any) => m.clientId2 || m.firstName || m.lastName)
+          .slice(0, 10);
+        if (!cancelled) setHeaderSearchResults(mapped);
+      } catch {
+        if (!cancelled) setHeaderSearchResults([]);
+      } finally {
+        if (!cancelled) setHeaderSearchLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [headerSearch, headerSearchOpen]);
+
   // Filter navigation based on user role
   let combinedNavLinks = adminNavLinks;
   
   if (isSocialWorker) {
     // Social workers only see the SW tab
-    combinedNavLinks = adminNavLinks.filter(nav => nav.label === 'SW');
+    combinedNavLinks = adminNavLinks.filter(nav => nav.label === 'SW' || nav.label === 'Social Worker');
   } else if (isSuperAdmin) {
     // Super admins see everything
     combinedNavLinks = [...adminNavLinks, ...superAdminNavLinks];
@@ -1015,7 +1092,7 @@ function AdminHeader() {
                               >
                                 <item.icon className="h-4 w-4" />
                                 {item.label}
-                                {navItem.label === 'Dashboard' && item.href === '/admin' && (
+                                {navItem.label === 'Operations' && item.href === '/admin' && (
                                   <span className="ml-auto flex items-center gap-2" />
                                 )}
                               </Link>
@@ -1046,6 +1123,74 @@ function AdminHeader() {
         </div>
 
         <div className="flex items-center gap-3 relative z-50">
+          {/* Global search (Admin) */}
+          <div className="relative hidden md:block w-[360px]">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                goToApplicationSearch(headerSearch);
+              }}
+            >
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={headerSearch}
+                  onChange={(e) => setHeaderSearch(e.target.value)}
+                  onFocus={() => setHeaderSearchOpen(true)}
+                  onBlur={() => {
+                    // Allow click selection in dropdown
+                    window.setTimeout(() => setHeaderSearchOpen(false), 120);
+                  }}
+                  placeholder="Search members (name)…"
+                  className="pl-9"
+                  aria-label="Search members"
+                />
+              </div>
+            </form>
+
+            {headerSearchOpen ? (
+              <div className="absolute left-0 right-0 mt-2 rounded-md border bg-background shadow-sm overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => goToApplicationSearch(headerSearch)}
+                >
+                  <div className="font-medium">Search applications for “{headerSearch.trim() || '…'}”</div>
+                  <div className="text-xs text-muted-foreground">Opens Admin Applications with member filter applied</div>
+                </button>
+                <div className="h-px bg-border" />
+                {headerSearchLoading ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">Searching…</div>
+                ) : headerSearchResults.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">No members found.</div>
+                ) : (
+                  <div className="max-h-[320px] overflow-auto">
+                    {headerSearchResults.map((m) => {
+                      const name = `${m.firstName} ${m.lastName}`.trim() || 'Member';
+                      return (
+                        <button
+                          key={`${m.clientId2}:${name}`}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => goToApplicationSearch(name)}
+                        >
+                          <div className="font-medium">{name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {m.clientId2 ? `Client_ID2 ${m.clientId2}` : null}
+                            {m.healthPlan ? ` • ${m.healthPlan}` : null}
+                            {m.status ? ` • ${m.status}` : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+
           {/* Staff Notification Bell removed in favor of quick icons */}
           
           {/* User Menu */}

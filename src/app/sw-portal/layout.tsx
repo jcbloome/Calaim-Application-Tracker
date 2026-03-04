@@ -7,9 +7,11 @@ import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useAuth } from '@/firebase';
 import {
   LogOut,
-  Loader2
+  Loader2,
+  Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import Image from 'next/image';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, msUntilNextLocalMidnight, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 import { SWTopNav } from '@/components/sw/SWTopNav';
@@ -20,6 +22,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const { user, socialWorkerData, isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [headerSearch, setHeaderSearch] = useState('');
 
   const swName = String(
     (socialWorkerData as any)?.displayName ||
@@ -110,6 +113,29 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
             <SWTopNav className="shrink-0" />
 
             <div className="ml-auto shrink-0 flex items-center gap-3">
+              {/* Global search (SW) */}
+              <div className="hidden md:block w-[280px]">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const q = headerSearch.trim();
+                    if (!q) return;
+                    router.push(`/sw-portal/queue?q=${encodeURIComponent(q)}`);
+                    setHeaderSearch('');
+                  }}
+                >
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={headerSearch}
+                      onChange={(e) => setHeaderSearch(e.target.value)}
+                      placeholder="Search roster…"
+                      className="pl-9"
+                      aria-label="Search roster"
+                    />
+                  </div>
+                </form>
+              </div>
               <div className="text-sm font-semibold text-foreground max-w-[160px] sm:max-w-[240px] truncate">
                 {swName}
               </div>

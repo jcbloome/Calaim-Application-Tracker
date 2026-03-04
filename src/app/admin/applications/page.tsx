@@ -144,6 +144,7 @@ function AdminApplicationsPageContent() {
   useEffect(() => {
     const plan = (searchParams.get('plan') || '').toLowerCase();
     const review = (searchParams.get('review') || '').toLowerCase();
+    const member = String(searchParams.get('member') || '').trim();
 
     if (plan) {
       if (plan.includes('kaiser')) setHealthPlanFilter('Kaiser');
@@ -152,6 +153,7 @@ function AdminApplicationsPageContent() {
 
     if (review === 'cs') setReviewFilter('cs');
     if (review === 'docs') setReviewFilter('docs');
+    if (member) setMemberFilter(member);
   }, [searchParams]);
 
   const filteredApplications = useMemo(() => {
