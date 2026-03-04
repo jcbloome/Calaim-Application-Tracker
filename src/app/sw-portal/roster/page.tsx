@@ -44,6 +44,27 @@ type MonthVisitStatus = {
   claimId?: string;
 };
 
+type MonthExportRow = {
+  date: string;
+  memberId: string;
+  memberName: string;
+  rcfeName: string;
+  rcfeAddress: string;
+  visitId: string;
+  flagged: boolean;
+  signedOff: boolean;
+  claimId: string;
+  claimNumber: string;
+  serviceLineId: string;
+  claimStatus: string;
+  claimSubmitted: boolean;
+  claimPaid: boolean;
+  dailyVisitCount: number;
+  dailyVisitFees: number;
+  dailyGas: number;
+  dailyTotal: number;
+};
+
 type RecentMember = {
   memberId: string;
   memberName: string;
@@ -97,6 +118,7 @@ export default function SWRosterPage() {
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
+  const [monthRows, setMonthRows] = useState<MonthExportRow[]>([]);
   const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
   const [monthStatusesLoaded, setMonthStatusesLoaded] = useState(false);
   const [monthStatusesFailed, setMonthStatusesFailed] = useState(false);
@@ -155,6 +177,7 @@ export default function SWRosterPage() {
   const refreshMonthStatuses = useCallback(async () => {
     if (!auth?.currentUser) {
       setMonthStatuses({});
+      setMonthRows([]);
       setMonthStatusesLoaded(false);
       setMonthStatusesFailed(false);
       return;
@@ -171,7 +194,8 @@ export default function SWRosterPage() {
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load monthly statuses (${res.status})`);
-      const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
+      const rows: MonthExportRow[] = Array.isArray(data?.rows) ? (data.rows as MonthExportRow[]) : [];
+      setMonthRows(rows);
       const map: Record<string, MonthVisitStatus> = {};
       rows.forEach((r) => {
         const memberId = String(r?.memberId || '').trim();
@@ -192,6 +216,7 @@ export default function SWRosterPage() {
     } catch (e: any) {
       // best-effort: roster should still work without statuses
       setMonthStatuses({});
+      setMonthRows([]);
       setMonthStatusesLoaded(false);
       setMonthStatusesFailed(true);
       toast({
@@ -293,6 +318,22 @@ export default function SWRosterPage() {
     if (!isSocialWorker) return;
     if (!hasLoadedOnce) return;
     void refreshMonthStatuses();
+  }, [hasLoadedOnce, isLoading, isSocialWorker, refreshMonthStatuses]);
+
+  // Auto-refresh status icons while roster is open.
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
+    if (!hasLoadedOnce) return;
+
+    const intervalMs = 60_000;
+    const t = window.setInterval(() => {
+      // Avoid hammering in background tabs.
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void refreshMonthStatuses();
+    }, intervalMs);
+
+    return () => window.clearInterval(t);
   }, [hasLoadedOnce, isLoading, isSocialWorker, refreshMonthStatuses]);
 
   const refreshDraftsToday = useCallback(async () => {
@@ -731,6 +772,62 @@ export default function SWRosterPage() {
                   Showing first 50. Use Search below to find specific members/homes.
                 </div>
               ) : null}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="print:hidden">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Completed questionnaires (selected month)</CardTitle>
+          <CardDescription>
+            Shows questionnaires you completed in {statusMonth}, even if the member is no longer in your current assignments list.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!monthStatusesLoaded ? (
+            <div className="text-sm text-muted-foreground">Load status icons to view completed questionnaires for this month.</div>
+          ) : monthRows.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No completed questionnaires found for {statusMonth}.</div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{monthRows.length} completed</Badge>
+                <span className="text-xs text-muted-foreground">Month: {statusMonth}</span>
+                <span className="text-xs text-muted-foreground">Auto-updates while open</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {monthRows
+                  .slice()
+                  .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(a.memberName || '').localeCompare(String(b.memberName || '')))
+                  .slice(0, 50)
+                  .map((r) => (
+                    <div key={`done-${r.visitId || r.memberId}`} className="flex items-center justify-between gap-3 rounded-md border bg-white p-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{r.memberName || 'Member'}</div>
+                        <div className="truncate text-xs text-muted-foreground">{r.rcfeName || 'RCFE'} • {String(r.date || '').slice(0, 10) || '—'}</div>
+                      </div>
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() =>
+                          trackRecentMember({
+                            memberId: String(r.memberId || '').trim(),
+                            memberName: String(r.memberName || '').trim(),
+                            rcfeId: '',
+                            rcfeName: String(r.rcfeName || '').trim(),
+                          })
+                        }
+                      >
+                        <Link href={`/sw-visit-verification?memberId=${encodeURIComponent(String(r.memberId || '').trim())}`}>
+                          Open
+                        </Link>
+                      </Button>
+                    </div>
+                  ))}
+              </div>
             </>
           )}
         </CardContent>
