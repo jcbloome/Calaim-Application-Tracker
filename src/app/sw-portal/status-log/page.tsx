@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAuth } from '@/firebase';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Printer, CheckCircle2, Circle } from 'lucide-react';
+import { Loader2, Printer, CheckCircle2, Circle, Star } from 'lucide-react';
 
 type MonthVisitStatus = {
   visitId: string;
@@ -347,6 +347,38 @@ export default function SWStatusLogPage() {
     );
   };
 
+  const renderStars = (params: { value: number; label: string }) => {
+    const value = Number.isFinite(Number(params.value)) ? Number(params.value) : 0;
+    const safeValue = Math.max(0, Math.min(5, Math.floor(value)));
+    const ratingLabel =
+      safeValue === 0
+        ? 'Not rated'
+        : safeValue === 1
+          ? 'Poor'
+          : safeValue === 2
+            ? 'Fair'
+            : safeValue === 3
+              ? 'Good'
+              : safeValue === 4
+                ? 'Very Good'
+                : 'Excellent';
+
+    return (
+      <div className="space-y-1">
+        <div className="text-xs text-muted-foreground">{params.label}</div>
+        <div className="flex items-center gap-1" aria-label={`${params.label}: ${ratingLabel}`}>
+          {[1, 2, 3, 4, 5].map((star) => {
+            const on = star <= safeValue;
+            return (
+              <Star key={star} className={`h-5 w-5 ${on ? 'text-yellow-400 fill-current' : 'text-slate-200'}`} />
+            );
+          })}
+          <span className="ml-2 text-xs text-muted-foreground">{ratingLabel}</span>
+        </div>
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -514,8 +546,16 @@ export default function SWStatusLogPage() {
                     <TableRow>
                       <TableHead className="min-w-[110px]">Day</TableHead>
                       <TableHead className="min-w-[220px]">Client</TableHead>
-                      <TableHead className="min-w-[72px] text-center">Q</TableHead>
-                      <TableHead className="min-w-[72px] text-center">S</TableHead>
+                      <TableHead
+                        className="min-w-[72px] text-center"
+                        title="Questionnaire complete"
+                        aria-label="Questionnaire complete"
+                      >
+                        Q
+                      </TableHead>
+                      <TableHead className="min-w-[72px] text-center" title="Sign-off complete" aria-label="Sign-off complete">
+                        S
+                      </TableHead>
                       <TableHead className="min-w-[150px]">Claim status</TableHead>
                       <TableHead className="min-w-[72px] text-center">Paid</TableHead>
                       <TableHead className="min-w-[220px]">Claim #</TableHead>
@@ -694,7 +734,7 @@ export default function SWStatusLogPage() {
       </Dialog>
 
       <Dialog open={visitDetailOpen} onOpenChange={setVisitDetailOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Questionnaire (view only)</DialogTitle>
             <DialogDescription>This is the submitted visit record. Editing is disabled.</DialogDescription>
@@ -705,32 +745,205 @@ export default function SWStatusLogPage() {
             <div className="text-sm text-destructive">{visitDetailError}</div>
           ) : visitDetailResult ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 text-sm">
-                <div className="rounded border p-3">
-                  <div className="text-xs text-muted-foreground">Member</div>
-                  <div className="font-semibold break-words">{String(visitDetailResult?.memberName || '—')}</div>
-                </div>
-                <div className="rounded border p-3">
-                  <div className="text-xs text-muted-foreground">RCFE</div>
-                  <div className="font-semibold break-words">{String(visitDetailResult?.rcfeName || '—')}</div>
-                  <div className="text-xs text-muted-foreground break-words">{String(visitDetailResult?.rcfeAddress || '').trim()}</div>
-                </div>
-                <div className="rounded border p-3">
-                  <div className="text-xs text-muted-foreground">Visit date</div>
-                  <div className="font-semibold">{String(visitDetailResult?.visitDate || '').slice(0, 10) || '—'}</div>
-                </div>
-                <div className="rounded border p-3">
-                  <div className="text-xs text-muted-foreground">Status</div>
-                  <div className="font-semibold">{String(visitDetailResult?.status || '—')}</div>
-                </div>
-              </div>
+              {(() => {
+                const raw = (visitDetailResult as any)?.raw || visitDetailResult || {};
+                const q = raw as any;
 
-              <div className="rounded border p-3">
-                <div className="text-xs text-muted-foreground">Raw questionnaire (JSON)</div>
-                <pre className="mt-2 max-h-[340px] overflow-auto whitespace-pre-wrap break-words text-xs">
-                  {JSON.stringify(visitDetailResult?.raw || visitDetailResult || {}, null, 2)}
-                </pre>
-              </div>
+                const yesNo = (value: any) =>
+                  value === true ? 'Yes' : value === false ? 'No' : '—';
+
+                const listSelected = (obj: any) => {
+                  const entries = obj && typeof obj === 'object' ? Object.entries(obj as Record<string, any>) : [];
+                  const selected = entries.filter(([, v]) => Boolean(v)).map(([k]) => k);
+                  return selected.length ? selected.join(', ') : '—';
+                };
+
+                const section = (title: string, content: React.ReactNode) => (
+                  <div className="rounded border p-3">
+                    <div className="font-semibold">{title}</div>
+                    <div className="mt-2 space-y-2 text-sm">{content}</div>
+                  </div>
+                );
+
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 text-sm">
+                      <div className="rounded border p-3">
+                        <div className="text-xs text-muted-foreground">Member</div>
+                        <div className="font-semibold break-words">{String((visitDetailResult as any)?.memberName || q?.memberName || '—')}</div>
+                      </div>
+                      <div className="rounded border p-3">
+                        <div className="text-xs text-muted-foreground">RCFE</div>
+                        <div className="font-semibold break-words">{String((visitDetailResult as any)?.rcfeName || q?.rcfeName || '—')}</div>
+                        <div className="text-xs text-muted-foreground break-words">{String((visitDetailResult as any)?.rcfeAddress || q?.rcfeAddress || '').trim()}</div>
+                      </div>
+                      <div className="rounded border p-3">
+                        <div className="text-xs text-muted-foreground">Visit date</div>
+                        <div className="font-semibold">{String((visitDetailResult as any)?.visitDate || q?.visitDate || '').slice(0, 10) || '—'}</div>
+                      </div>
+                      <div className="rounded border p-3">
+                        <div className="text-xs text-muted-foreground">Status</div>
+                        <div className="font-semibold">{String((visitDetailResult as any)?.status || '—')}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Signed off: {yesNo(Boolean((visitDetailResult as any)?.signedOff ?? q?.signedOff))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {section(
+                      'Meeting location',
+                      <>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Location</div>
+                          <div className="font-medium">
+                            {String(q?.meetingLocation?.location || '—')}
+                            {String(q?.meetingLocation?.otherLocation || '').trim()
+                              ? ` — ${String(q.meetingLocation.otherLocation).trim()}`
+                              : ''}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Notes</div>
+                          <div className="whitespace-pre-wrap break-words">{String(q?.meetingLocation?.notes || '—')}</div>
+                        </div>
+                      </>
+                    )}
+
+                    {section(
+                      'Member wellbeing',
+                      <>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          {renderStars({ value: Number(q?.memberWellbeing?.physicalHealth || 0), label: 'Physical health' })}
+                          {renderStars({ value: Number(q?.memberWellbeing?.mentalHealth || 0), label: 'Mental health' })}
+                          {renderStars({ value: Number(q?.memberWellbeing?.socialEngagement || 0), label: 'Social engagement' })}
+                          {renderStars({ value: Number(q?.memberWellbeing?.overallMood || 0), label: 'Overall mood' })}
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Notes</div>
+                          <div className="whitespace-pre-wrap break-words">{String(q?.memberWellbeing?.notes || '—')}</div>
+                        </div>
+                      </>
+                    )}
+
+                    {section(
+                      'Care satisfaction',
+                      <>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          {renderStars({ value: Number(q?.careSatisfaction?.staffAttentiveness || 0), label: 'Staff attentiveness' })}
+                          {renderStars({ value: Number(q?.careSatisfaction?.mealQuality || 0), label: 'Meal quality' })}
+                          {renderStars({ value: Number(q?.careSatisfaction?.cleanlinessOfRoom || 0), label: 'Room cleanliness' })}
+                          {renderStars({ value: Number(q?.careSatisfaction?.activitiesPrograms || 0), label: 'Activities/programs' })}
+                          {renderStars({ value: Number(q?.careSatisfaction?.overallSatisfaction || 0), label: 'Overall satisfaction' })}
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Notes</div>
+                          <div className="whitespace-pre-wrap break-words">{String(q?.careSatisfaction?.notes || '—')}</div>
+                        </div>
+                      </>
+                    )}
+
+                    {section(
+                      'Member concerns',
+                      <>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div>
+                            <div className="text-xs text-muted-foreground">Any concerns?</div>
+                            <div className="font-medium">{yesNo(q?.memberConcerns?.hasConcerns)}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Action required</div>
+                            <div className="font-medium">{yesNo(Boolean(q?.memberConcerns?.actionRequired))}</div>
+                          </div>
+                        </div>
+                        {q?.memberConcerns?.nonResponsive ? (
+                          <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900">
+                            <div className="text-sm font-medium">Member non-responsive</div>
+                            <div className="text-xs text-amber-900/80">
+                              {String(q?.memberConcerns?.nonResponsiveReason || '—')}
+                            </div>
+                            <div className="mt-2 text-sm whitespace-pre-wrap break-words">
+                              {String(q?.memberConcerns?.nonResponsiveDetails || '—')}
+                            </div>
+                          </div>
+                        ) : null}
+                        <div>
+                          <div className="text-xs text-muted-foreground">Concern types</div>
+                          <div className="font-medium">{listSelected(q?.memberConcerns?.concernTypes)}</div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div>
+                            <div className="text-xs text-muted-foreground">Urgency</div>
+                            <div className="font-medium">{String(q?.memberConcerns?.urgencyLevel || '—')}</div>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Details</div>
+                          <div className="whitespace-pre-wrap break-words">{String(q?.memberConcerns?.detailedConcerns || '—')}</div>
+                        </div>
+                      </>
+                    )}
+
+                    {section(
+                      'RCFE assessment',
+                      <>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          {renderStars({ value: Number(q?.rcfeAssessment?.facilityCondition || 0), label: 'Facility condition' })}
+                          {renderStars({ value: Number(q?.rcfeAssessment?.staffProfessionalism || 0), label: 'Staff professionalism' })}
+                          {renderStars({ value: Number(q?.rcfeAssessment?.safetyCompliance || 0), label: 'Safety compliance' })}
+                          {renderStars({ value: Number(q?.rcfeAssessment?.careQuality || 0), label: 'Care quality' })}
+                          {renderStars({ value: Number(q?.rcfeAssessment?.overallRating || 0), label: 'Overall rating' })}
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div>
+                            <div className="text-xs text-muted-foreground">Flag for review</div>
+                            <div className="font-medium">{yesNo(Boolean(q?.rcfeAssessment?.flagForReview))}</div>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Notes</div>
+                          <div className="whitespace-pre-wrap break-words">{String(q?.rcfeAssessment?.notes || '—')}</div>
+                        </div>
+                      </>
+                    )}
+
+                    {section(
+                      'Visit summary',
+                      <>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div>
+                            <div className="text-xs text-muted-foreground">Total score</div>
+                            <div className="font-medium">{String(q?.visitSummary?.totalScore ?? (visitDetailResult as any)?.totalScore ?? '—')}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Flagged</div>
+                            <div className="font-medium">{yesNo(Boolean(q?.visitSummary?.flagged ?? (visitDetailResult as any)?.flagged))}</div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {q?.memberSignoff ? section(
+                      'Member sign-off',
+                      <>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div>
+                            <div className="text-xs text-muted-foreground">Acknowledged</div>
+                            <div className="font-medium">{yesNo(Boolean(q?.memberSignoff?.acknowledged))}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Signature name</div>
+                            <div className="font-medium">{String(q?.memberSignoff?.signatureName || '—')}</div>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Signed at</div>
+                          <div className="font-medium">{String(q?.memberSignoff?.signedAt || '—')}</div>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div className="text-sm text-muted-foreground">No visit loaded.</div>

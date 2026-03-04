@@ -247,6 +247,74 @@ export async function GET(req: NextRequest) {
     const adminModule = await import('@/firebase-admin');
     const adminDb = adminModule.adminDb;
 
+    const requestedEmail = String(socialWorkerId || '').trim().toLowerCase();
+
+    // Admin-managed SW assignment overrides (source-of-truth during transitions).
+    // These overrides can temporarily differ from Caspio cache fields.
+    const nowMs = Date.now();
+    type SwAssignmentOverrideDoc = {
+      memberId?: string;
+      fromSwEmail?: string | null;
+      toSwEmail?: string | null;
+      effectiveUntilMs?: number | null;
+      updatedAtMs?: number | null;
+      memberForRoster?: any;
+    };
+
+    const isOverrideActive = (o: SwAssignmentOverrideDoc | null) => {
+      if (!o) return false;
+      const until = typeof o.effectiveUntilMs === 'number' ? o.effectiveUntilMs : null;
+      if (!until) return true;
+      return until >= nowMs;
+    };
+
+    const overridesByMemberId = new Map<string, SwAssignmentOverrideDoc>();
+    const movedInOverrideMembers: any[] = [];
+    let overridesMovedIn = 0;
+    let overridesMovedOut = 0;
+    if (requestedEmail.includes('@')) {
+      try {
+        const overridesCol = adminDb.collection('sw_assignment_overrides');
+        const [inSnap, outSnap] = await Promise.all([
+          overridesCol.where('toSwEmail', '==', requestedEmail).limit(5000).get().catch(() => null as any),
+          overridesCol.where('fromSwEmail', '==', requestedEmail).limit(5000).get().catch(() => null as any),
+        ]);
+
+        const addSnap = (snap: any) => {
+          if (!snap?.docs) return;
+          snap.docs.forEach((d: any) => {
+            const data = (d?.data?.() ? d.data() : d?.data) as SwAssignmentOverrideDoc;
+            const memberId = String(data?.memberId || d?.id || '').trim();
+            if (!memberId) return;
+            if (!isOverrideActive(data)) return;
+            overridesByMemberId.set(memberId, { ...data, memberId });
+          });
+        };
+        addSnap(inSnap);
+        addSnap(outSnap);
+
+        overridesByMemberId.forEach((o) => {
+          const toEmail = String(o?.toSwEmail || '').trim().toLowerCase();
+          const fromEmail = String(o?.fromSwEmail || '').trim().toLowerCase();
+          if (toEmail && toEmail === requestedEmail) {
+            overridesMovedIn += 1;
+            const m = o?.memberForRoster ? { ...(o.memberForRoster as any) } : null;
+            if (m) {
+              // Ensure week-flag logic can highlight this change.
+              const updatedAtMs = typeof o.updatedAtMs === 'number' ? o.updatedAtMs : nowMs;
+              (m as any).assignmentChangedAt = new Date(updatedAtMs).toISOString();
+              (m as any).assignmentChangedTo = toEmail;
+              movedInOverrideMembers.push(m);
+            }
+          } else if (fromEmail && fromEmail === requestedEmail && toEmail && toEmail !== requestedEmail) {
+            overridesMovedOut += 1;
+          }
+        });
+      } catch {
+        // best-effort only
+      }
+    }
+
     const normalize = (value: unknown) =>
       String(value ?? '')
         .trim()
@@ -406,6 +474,14 @@ export async function GET(req: NextRequest) {
     };
 
     const assignedAll = members.filter((member) => {
+      const memberId = String(member?.Client_ID2 || member?.client_ID2 || member?.id || '').trim();
+      const override = memberId ? overridesByMemberId.get(memberId) : null;
+      if (isOverrideActive(override || null)) {
+        const toEmail = String(override?.toSwEmail || '').trim().toLowerCase();
+        if (!toEmail || toEmail === 'unassigned') return false;
+        return toEmail === requestedEmail;
+      }
+
       const assigned = needles.some((needle) =>
         swMatchesMember({
           socialWorkerId: needle,
@@ -426,6 +502,20 @@ export async function GET(req: NextRequest) {
       );
       return assigned;
     });
+
+    // Union in moved-in members (may not be discoverable via cache search keys yet).
+    if (movedInOverrideMembers.length > 0) {
+      const existing = new Set(
+        assignedAll.map((m) => String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim()).filter(Boolean)
+      );
+      movedInOverrideMembers.forEach((m) => {
+        const memberId = String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim();
+        if (!memberId) return;
+        if (existing.has(memberId)) return;
+        existing.add(memberId);
+        assignedAll.push(m);
+      });
+    }
 
     // Monthly SW visit questionnaires are for Authorized members only.
     const assignedAuthorized = assignedAll.filter((member) =>
@@ -609,6 +699,12 @@ export async function GET(req: NextRequest) {
       membersSuspendedHold: suspendedHoldCount,
       membersSuspendedAuthExpired: suspendedAuthExpiredCount,
       cacheStatus,
+      assignmentOverrides: requestedEmail.includes('@')
+        ? {
+            movedIn: overridesMovedIn,
+            movedOut: overridesMovedOut,
+          }
+        : null,
       // Extra diagnostics (safe for SW portal UI / admin debugging).
       totalAssignedAuthorized: assignedAuthorized.length,
       totalAssignedAll: assignedAll.length

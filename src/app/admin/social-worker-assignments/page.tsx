@@ -315,6 +315,83 @@ export default function SocialWorkerAssignmentsPage() {
   const [sortField, setSortField] = useState<SortField>('memberName');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
+  // Admin assignment override editor (Firestore-backed source-of-truth when needed)
+  const [assignmentEditorOpen, setAssignmentEditorOpen] = useState(false);
+  const [assignmentEditorMember, setAssignmentEditorMember] = useState<Member | null>(null);
+  const [assignmentEditorToEmail, setAssignmentEditorToEmail] = useState('');
+  const [assignmentEditorReason, setAssignmentEditorReason] = useState('');
+  const [assignmentEditorSaving, setAssignmentEditorSaving] = useState(false);
+
+  const openAssignmentEditor = useCallback((member: Member) => {
+    setAssignmentEditorMember(member);
+    setAssignmentEditorToEmail(String(member?.Social_Worker_Assigned || '').trim());
+    setAssignmentEditorReason('');
+    setAssignmentEditorOpen(true);
+  }, []);
+
+  const saveAssignmentOverride = useCallback(async () => {
+    if (!auth?.currentUser) {
+      toast({ title: 'Not signed in', description: 'You must be signed in as an admin.', variant: 'destructive' });
+      return;
+    }
+    if (!assignmentEditorMember) return;
+    const memberId = String(assignmentEditorMember?.Client_ID2 || '').trim();
+    if (!memberId) {
+      toast({ title: 'Missing member ID', description: 'This member is missing Client_ID2.', variant: 'destructive' });
+      return;
+    }
+
+    const toSwEmail = String(assignmentEditorToEmail || '').trim();
+    const fromSwEmail = String(assignmentEditorMember?.Social_Worker_Assigned || '').trim();
+
+    setAssignmentEditorSaving(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/sw-assignments/override-upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          memberId,
+          fromSwEmail,
+          toSwEmail,
+          reason: assignmentEditorReason,
+          member: assignmentEditorMember,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to save override (HTTP ${res.status})`);
+      }
+
+      // Update the local view immediately (admin portal becomes the source-of-truth UX-wise).
+      setMembers((prev) =>
+        prev.map((m) =>
+          String(m?.Client_ID2 || '').trim() === memberId
+            ? {
+                ...m,
+                Social_Worker_Assigned: toSwEmail,
+                last_updated: new Date().toISOString(),
+              }
+            : m
+        )
+      );
+
+      toast({
+        title: 'Assignment updated',
+        description: `${assignmentEditorMember.memberName} → ${toSwEmail || 'Unassigned'}`,
+      });
+      setAssignmentEditorOpen(false);
+    } catch (e: any) {
+      toast({
+        title: 'Save failed',
+        description: e?.message || 'Could not save the assignment override.',
+        variant: 'destructive',
+      });
+    } finally {
+      setAssignmentEditorSaving(false);
+    }
+  }, [assignmentEditorMember, assignmentEditorReason, assignmentEditorToEmail, auth?.currentUser, toast]);
+
   const isHold = (value?: string | null) => {
     const v = String(value ?? '').trim().toLowerCase();
     if (!v) return false;
@@ -1301,7 +1378,7 @@ export default function SocialWorkerAssignmentsPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Button variant="ghost" size="sm">
+                            <Button variant="ghost" size="sm" onClick={() => openAssignmentEditor(member)} aria-label="Edit assignment">
                               <Edit className="h-4 w-4" />
                             </Button>
                           </TableCell>
@@ -1675,6 +1752,56 @@ export default function SocialWorkerAssignmentsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Assignment Override Editor */}
+      <Dialog open={assignmentEditorOpen} onOpenChange={setAssignmentEditorOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Update social worker assignment</DialogTitle>
+            <DialogDescription>
+              This saves an admin assignment override (used by the SW portal roster immediately).
+            </DialogDescription>
+          </DialogHeader>
+
+          {assignmentEditorMember ? (
+            <div className="space-y-4">
+              <div className="rounded-md border p-3">
+                <div className="font-medium">{assignmentEditorMember.memberName}</div>
+                <div className="text-xs text-muted-foreground">Client_ID2: {assignmentEditorMember.Client_ID2}</div>
+                <div className="text-xs text-muted-foreground">
+                  Current: {assignmentEditorMember.Social_Worker_Assigned || 'Unassigned'}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Assign to (email)</label>
+                <Input
+                  value={assignmentEditorToEmail}
+                  onChange={(e) => setAssignmentEditorToEmail(e.target.value)}
+                  placeholder="e.g. john@carehomefinders.com"
+                />
+                <div className="text-xs text-muted-foreground">Leave blank to set Unassigned.</div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Reason (optional)</label>
+                <Input value={assignmentEditorReason} onChange={(e) => setAssignmentEditorReason(e.target.value)} placeholder="Optional note" />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setAssignmentEditorOpen(false)} disabled={assignmentEditorSaving}>
+                  Cancel
+                </Button>
+                <Button onClick={() => void saveAssignmentOverride()} disabled={assignmentEditorSaving}>
+                  {assignmentEditorSaving ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">Select a member to edit.</div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Member Details Modal */}
       <Dialog open={showMemberModal} onOpenChange={setShowMemberModal}>
