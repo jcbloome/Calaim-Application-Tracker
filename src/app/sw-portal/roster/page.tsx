@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAuth } from '@/firebase';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw, CheckCircle2, Circle, Pin, Clock } from 'lucide-react';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
 
@@ -132,7 +133,24 @@ export default function SWRosterPage() {
     }
   }, [user?.email]);
 
-  const statusMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const [statusMonth, setStatusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
+
+  const monthOptions = useMemo(() => {
+    // SW claims/visit tracking begins Feb 2026 (testing); don't show earlier months.
+    const start = new Date(2026, 1, 1); // Feb 2026 (local)
+    const now = new Date();
+
+    const opts: Array<{ value: string; label: string }> = [];
+    const cursor = new Date(now.getFullYear(), now.getMonth(), 1);
+    while (cursor >= start) {
+      const value = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+      const label = cursor.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+      opts.push({ value, label });
+      cursor.setMonth(cursor.getMonth() - 1);
+    }
+
+    return opts;
+  }, []);
 
   const refreshMonthStatuses = useCallback(async () => {
     if (!auth?.currentUser) {
@@ -444,7 +462,21 @@ export default function SWRosterPage() {
             {lastSync ? (
               <span>Cache last updated: {lastSync}</span>
             ) : null}
-            <span>• Status month: {statusMonth}</span>
+            <span className="inline-flex items-center gap-2">
+              <span>• Month:</span>
+              <Select value={statusMonth} onValueChange={setStatusMonth}>
+                <SelectTrigger className="h-7 w-[190px] bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </span>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span className="font-medium text-slate-900">Icons:</span>
@@ -489,7 +521,7 @@ export default function SWRosterPage() {
             disabled={loadingMonthStatuses || !hasLoadedOnce}
           >
             <RefreshCw className="h-4 w-4 mr-2" />
-            {loadingMonthStatuses ? 'Refreshing…' : 'Refresh statuses'}
+            {loadingMonthStatuses ? 'Refreshing…' : 'Refresh status icons'}
           </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
