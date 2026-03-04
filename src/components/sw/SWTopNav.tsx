@@ -4,13 +4,14 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { ClipboardCheck, FileBarChart, Users, BookOpenText, CheckCircle2 } from 'lucide-react';
+import { ClipboardCheck, FileBarChart, Users, BookOpenText, CheckCircle2, ReceiptText } from 'lucide-react';
 
 const links = [
   { href: '/sw-portal/instructions', label: 'Instructions', icon: BookOpenText },
   { href: '/sw-visit-verification', label: 'Monthly Questionnaire', icon: ClipboardCheck },
   { href: '/sw-portal/roster', label: 'SW Assignments', icon: Users },
   { href: '/sw-portal/status-log', label: 'Status Log', icon: CheckCircle2 },
+  { href: '/sw-portal/claims', label: 'Claims', icon: ReceiptText },
   { href: '/sw-portal/sign-off', label: 'Sign Off', icon: FileBarChart },
 ] as const;
 
