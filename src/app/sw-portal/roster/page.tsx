@@ -473,7 +473,12 @@ export default function SWRosterPage() {
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="font-semibold truncate max-w-full">{f.name}</div>
+                                <Link
+                                  className="font-semibold truncate max-w-full hover:underline underline-offset-2"
+                                  href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id || '').trim())}`}
+                                >
+                                  {f.name}
+                                </Link>
                                 <Badge variant="secondary">{(f.members || []).length} member(s)</Badge>
                               </div>
                               <div className="mt-1 flex items-start gap-2 text-xs text-muted-foreground min-w-0">
@@ -514,7 +519,12 @@ export default function SWRosterPage() {
                                     aria-hidden="true"
                                   />
                                 )}
-                                <span className="min-w-0 truncate font-medium">{m.name}</span>
+                                <Link
+                                  className="min-w-0 truncate font-medium hover:underline underline-offset-2"
+                                  href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id || '').trim())}&memberId=${encodeURIComponent(String(m.id || '').trim())}`}
+                                >
+                                  {m.name}
+                                </Link>
                                 {m.isNewAssignment ? (
                                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
                                     <Sparkles className="h-3.5 w-3.5" />
@@ -569,7 +579,12 @@ export default function SWRosterPage() {
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground min-w-0">
                               <div className="min-w-0">
-                                <div className="truncate font-medium text-slate-900">{f.name}</div>
+                                <Link
+                                  className="truncate font-medium text-slate-900 hover:underline underline-offset-2"
+                                  href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id || '').trim())}`}
+                                >
+                                  {f.name}
+                                </Link>
                                 <div className="text-xs break-words">{formatAddressLine(f) || f.address || '—'}</div>
                               </div>
                             </TableCell>
