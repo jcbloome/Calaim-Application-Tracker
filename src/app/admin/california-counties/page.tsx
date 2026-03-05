@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, RotateCcw, MapPin, Users, Building2, Navigation } from 'lucide-react';
+import { Search, RotateCcw, MapPin, Users, Building2, Navigation, RefreshCw, Loader2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { findCountyByCity, searchCities, getCitiesInCounty } from '@/lib/california-cities';
 
 // California counties data with coordinates and basic info
@@ -86,8 +87,76 @@ export default function CaliforniaCountiesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedCounty, setSelectedCounty] = useState<string | null>(null);
-  const [mapImageLoading, setMapImageLoading] = useState(true);
-  const [mapImageError, setMapImageError] = useState(false);
+
+  const normalizeCountyKey = (v: unknown) => String(v ?? '').trim().toLowerCase();
+
+  const [countyMetrics, setCountyMetrics] = useState<
+    Record<string, { rcfes: number; members: number; socialWorkers: number }>
+  >({});
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [metricsFilter, setMetricsFilter] = useState<'all' | 'hasAny' | 'rcfes' | 'members' | 'sw'>('all');
+
+  const getMetrics = useCallback(
+    (countyName: string) => {
+      const key = normalizeCountyKey(countyName);
+      return countyMetrics[key] || { rcfes: 0, members: 0, socialWorkers: 0 };
+    },
+    [countyMetrics]
+  );
+
+  const refreshCountyMetrics = useCallback(async () => {
+    setMetricsLoading(true);
+    setMetricsError(null);
+    try {
+      // Note: rcfe-locations and staff-locations hit Caspio and can take a bit.
+      const [rcfeRes, staffRes, memberRes] = await Promise.all([
+        fetch('/api/rcfe-locations', { cache: 'no-store' }),
+        fetch('/api/staff-locations', { cache: 'no-store' }),
+        fetch('/api/member-locations', { cache: 'no-store' }),
+      ]);
+
+      const [rcfeJson, staffJson, memberJson] = await Promise.all([
+        rcfeRes.json().catch(() => ({})),
+        staffRes.json().catch(() => ({})),
+        memberRes.json().catch(() => ({})),
+      ]);
+
+      const next: Record<string, { rcfes: number; members: number; socialWorkers: number }> = {};
+      const ensure = (key: string) => {
+        if (!next[key]) next[key] = { rcfes: 0, members: 0, socialWorkers: 0 };
+        return next[key];
+      };
+
+      const rcfesByCounty = (rcfeJson as any)?.data?.rcfesByCounty || {};
+      Object.entries(rcfesByCounty).forEach(([county, payload]: [string, any]) => {
+        const key = normalizeCountyKey(county);
+        const facilities = Array.isArray(payload?.facilities) ? payload.facilities : [];
+        ensure(key).rcfes = facilities.length;
+      });
+
+      const staffByCounty = (staffJson as any)?.data?.staffByCounty || {};
+      Object.entries(staffByCounty).forEach(([county, payload]: [string, any]) => {
+        const key = normalizeCountyKey(county);
+        const sw = Array.isArray(payload?.socialWorkers) ? payload.socialWorkers : [];
+        ensure(key).socialWorkers = sw.length;
+      });
+
+      const membersByCounty = (memberJson as any)?.data?.membersByCounty || {};
+      Object.entries(membersByCounty).forEach(([county, payload]: [string, any]) => {
+        const key = normalizeCountyKey(county);
+        ensure(key).members = Number(payload?.totalMembers || 0) || 0;
+      });
+
+      setCountyMetrics(next);
+
+      // If the currently selected county no longer matches any visible card due to filtering, keep selection.
+    } catch (e: any) {
+      setMetricsError(e?.message || 'Failed to refresh county metrics');
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, []);
 
   // Filter counties based on search and region
   const filteredCounties = useMemo(() => {
@@ -102,9 +171,20 @@ export default function CaliforniaCountiesPage() {
     if (selectedRegion) {
       filtered = filtered.filter(county => county.region === selectedRegion);
     }
+
+    if (metricsFilter !== 'all') {
+      filtered = filtered.filter((county) => {
+        const m = getMetrics(county.name);
+        if (metricsFilter === 'hasAny') return (m.rcfes + m.members + m.socialWorkers) > 0;
+        if (metricsFilter === 'rcfes') return m.rcfes > 0;
+        if (metricsFilter === 'members') return m.members > 0;
+        if (metricsFilter === 'sw') return m.socialWorkers > 0;
+        return true;
+      });
+    }
     
     return filtered;
-  }, [searchTerm, selectedRegion]);
+  }, [searchTerm, selectedRegion, metricsFilter, getMetrics]);
 
   // Get unique regions
   const regions = useMemo(() => {
@@ -174,7 +254,31 @@ export default function CaliforniaCountiesPage() {
             </div>
           </div>
           
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            <Select value={metricsFilter} onValueChange={(v) => setMetricsFilter(v as any)}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Metrics filter" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All counties</SelectItem>
+                <SelectItem value="hasAny">Counties with any activity</SelectItem>
+                <SelectItem value="members">Members &gt; 0</SelectItem>
+                <SelectItem value="rcfes">RCFEs &gt; 0</SelectItem>
+                <SelectItem value="sw">Social workers &gt; 0</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshCountyMetrics}
+              disabled={metricsLoading}
+              className="gap-2"
+              title="Refresh RCFE/member/staff counts by county"
+            >
+              {metricsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh metrics
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -185,6 +289,9 @@ export default function CaliforniaCountiesPage() {
             </Button>
           </div>
         </div>
+        {metricsError ? (
+          <div className="text-sm text-destructive">{metricsError}</div>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -198,52 +305,28 @@ export default function CaliforniaCountiesPage() {
                 California Counties Map
               </CardTitle>
               <CardDescription>
-                Visual reference map of California counties
+                Full-size reference map (external)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="relative">
-                {mapImageLoading && !mapImageError && (
-                  <div className="w-full h-64 bg-gray-100 rounded-lg border shadow-sm flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                      <p className="text-sm text-gray-500">Loading California map...</p>
-                    </div>
-                  </div>
-                )}
-                
-                {mapImageError ? (
-                  <div className="w-full h-64 bg-gray-100 rounded-lg border shadow-sm flex items-center justify-center flex-col text-gray-500">
-                    <MapPin className="h-16 w-16 mb-4" />
-                    <p className="text-sm font-medium">California Counties Map</p>
-                    <p className="text-xs">Interactive county data available below</p>
-                  </div>
-                ) : (
-                  <img 
-                    src="https://www.suncatcherstudio.com/uploads/2/8/9/4/28949970/california-county-map-color_orig.png"
-                    alt="California Counties Map"
-                    className={`w-full h-auto rounded-lg border shadow-sm ${mapImageLoading ? 'hidden' : ''}`}
-                    style={{ maxHeight: '400px', objectFit: 'contain' }}
-                    onLoad={() => setMapImageLoading(false)}
-                    onError={(e) => {
-                      // Try fallback image
-                      const target = e.target as HTMLImageElement;
-                      if (target.src.includes('suncatcherstudio')) {
-                        target.src = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/California_county_map_%28labeled%29.svg/800px-California_county_map_%28labeled%29.svg.png";
-                      } else {
-                        // Both images failed
-                        setMapImageError(true);
-                        setMapImageLoading(false);
-                      }
-                    }}
-                  />
-                )}
-                
-                {!mapImageError && !mapImageLoading && (
-                  <div className="absolute bottom-2 right-2 text-xs text-gray-500 bg-white bg-opacity-90 px-2 py-1 rounded">
-                    Reference Map
-                  </div>
-                )}
+              <div className="flex flex-col gap-2">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-auto py-3 whitespace-normal text-center leading-snug"
+                >
+                  <a
+                    href="https://geology.com/county-map/california.shtml"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open full-size county map (Geology.com)
+                  </a>
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Opens an external reference map in a new tab.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -407,6 +490,9 @@ export default function CaliforniaCountiesPage() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[600px] overflow-y-auto">
                 {filteredCounties.map((county) => (
+                  (() => {
+                    const m = getMetrics(county.name);
+                    return (
                   <Card
                     key={county.name}
                     className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${
@@ -441,6 +527,21 @@ export default function CaliforniaCountiesPage() {
                         </div>
                       </div>
 
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+                        <div className="rounded-md border bg-white/70 px-2 py-1">
+                          <div className="text-muted-foreground">RCFEs</div>
+                          <div className="font-semibold text-foreground">{m.rcfes}</div>
+                        </div>
+                        <div className="rounded-md border bg-white/70 px-2 py-1">
+                          <div className="text-muted-foreground">Members</div>
+                          <div className="font-semibold text-foreground">{m.members}</div>
+                        </div>
+                        <div className="rounded-md border bg-white/70 px-2 py-1">
+                          <div className="text-muted-foreground">SW</div>
+                          <div className="font-semibold text-foreground">{m.socialWorkers}</div>
+                        </div>
+                      </div>
+
                       {selectedCounty === county.name && citiesInSelectedCounty.length > 0 && (
                         <div className="mt-3 pt-3 border-t">
                           <div className="text-xs font-medium text-gray-700 mb-2">
@@ -467,6 +568,8 @@ export default function CaliforniaCountiesPage() {
                       )}
                     </CardContent>
                   </Card>
+                    );
+                  })()
                 ))}
               </div>
             </CardContent>

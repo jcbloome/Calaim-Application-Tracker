@@ -10,6 +10,7 @@ import type { User } from 'firebase/auth';
 interface AdminStatus {
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  isClaimsStaff: boolean;
   isLoading: boolean;
   isUserLoading: boolean;
   user: User | null;
@@ -21,6 +22,7 @@ export function useAdmin(): AdminStatus {
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isClaimsStaff, setIsClaimsStaff] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -41,6 +43,7 @@ export function useAdmin(): AdminStatus {
       setIsLoading(false);
       setIsAdmin(false);
       setIsSuperAdmin(false);
+      setIsClaimsStaff(false);
       return;
     }
 
@@ -56,7 +59,9 @@ export function useAdmin(): AdminStatus {
         const hasSuperAdminClaim = Boolean(claims.superAdmin);
         if (hasAdminClaim || hasSuperAdminClaim) {
           setIsAdmin(true);
-          setIsSuperAdmin(Boolean(isEmailAdmin || hasSuperAdminClaim));
+          const nextSuper = Boolean(isEmailAdmin || hasSuperAdminClaim);
+          setIsSuperAdmin(nextSuper);
+          setIsClaimsStaff(nextSuper);
           setIsLoading(false);
           return;
         }
@@ -68,6 +73,7 @@ export function useAdmin(): AdminStatus {
       if (isEmailAdmin) {
         setIsAdmin(true);
         setIsSuperAdmin(true);
+        setIsClaimsStaff(true);
         setIsLoading(false);
         return;
       }
@@ -75,6 +81,7 @@ export function useAdmin(): AdminStatus {
       if (!firestore) {
         setIsAdmin(false);
         setIsSuperAdmin(false);
+        setIsClaimsStaff(false);
         setIsLoading(false);
         return;
       }
@@ -84,9 +91,10 @@ export function useAdmin(): AdminStatus {
         const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
         const superAdminRoleRef = doc(firestore, 'roles_super_admin', user.uid);
 
-        const [adminDoc, superAdminDoc] = await Promise.all([
+        const [adminDoc, superAdminDoc, userDoc] = await Promise.all([
           getDoc(adminRoleRef),
-          getDoc(superAdminRoleRef)
+          getDoc(superAdminRoleRef),
+          getDoc(doc(firestore, 'users', user.uid)).catch(() => null as any),
         ]);
 
         let isAdminUser = isEmailAdmin || adminDoc.exists() || superAdminDoc.exists();
@@ -110,10 +118,14 @@ export function useAdmin(): AdminStatus {
 
         setIsAdmin(isAdminUser);
         setIsSuperAdmin(isSuperAdminUser);
+        // Claims access: super admins always allowed; other staff use `users/{uid}.isClaimsStaff`.
+        const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
+        setIsClaimsStaff(Boolean(isSuperAdminUser || userData?.isClaimsStaff));
       } catch (error) {
         console.error('❌ useAdmin: Error checking admin roles', error);
         setIsAdmin(false);
         setIsSuperAdmin(false);
+        setIsClaimsStaff(false);
       } finally {
         setIsLoading(false);
       }
@@ -126,6 +138,7 @@ export function useAdmin(): AdminStatus {
     user,
     isAdmin,
     isSuperAdmin,
+    isClaimsStaff,
     isLoading: isUserLoading || isLoading,
     isUserLoading,
   };

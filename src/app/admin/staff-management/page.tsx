@@ -5,7 +5,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, Users, Bell, Save, ShieldCheck, Mail, UserPlus, RotateCcw, Trash2 } from 'lucide-react';
+import { Loader2, Users, Bell, Save, ShieldCheck, Mail, UserPlus, RotateCcw, Trash2, ReceiptText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
@@ -25,6 +25,7 @@ interface StaffMember {
     email: string;
     isKaiserStaff?: boolean;
     isHealthNetStaff?: boolean;
+    isClaimsStaff?: boolean;
 }
 
 type ReviewRecipientSettings = {
@@ -152,6 +153,7 @@ export default function StaffManagementPage() {
                     email: userData.email || uid,
                     isKaiserStaff: Boolean(userData.isKaiserStaff),
                     isHealthNetStaff: Boolean(userData.isHealthNetStaff),
+                    isClaimsStaff: Boolean(userData.isClaimsStaff),
                 };
             });
 
@@ -197,7 +199,7 @@ export default function StaffManagementPage() {
 
     const handlePlanFlagUpdate = async (
       uid: string,
-      patch: Partial<Pick<StaffMember, 'isKaiserStaff' | 'isHealthNetStaff'>>
+      patch: Partial<Pick<StaffMember, 'isKaiserStaff' | 'isHealthNetStaff' | 'isClaimsStaff'>>
     ) => {
       if (!firestore) return;
       const cleanUid = String(uid || '').trim();
@@ -989,6 +991,20 @@ export default function StaffManagementPage() {
                                                     handlePlanFlagUpdate(staff.uid, { isHealthNetStaff: Boolean(checked) }).catch(() => undefined);
                                                 }}
                                                 aria-label={`Toggle Health Net staff for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <ReceiptText className={`h-4 w-4 ${staff.isClaimsStaff ? 'text-emerald-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`claims-staff-${staff.uid}`} className="text-sm font-medium">Claims access</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`claims-staff-${staff.uid}`}
+                                                checked={Boolean(staff.isClaimsStaff)}
+                                                onCheckedChange={(checked) => {
+                                                    handlePlanFlagUpdate(staff.uid, { isClaimsStaff: Boolean(checked) }).catch(() => undefined);
+                                                }}
+                                                aria-label={`Toggle claims access for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">

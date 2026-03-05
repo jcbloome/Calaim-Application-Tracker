@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useAdmin } from '@/hooks/use-admin';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useToast } from '@/hooks/use-toast';
 
 
 const StatCard = ({ title, children, borderColor }: { title: string, children: React.ReactNode, borderColor?: string }) => (
@@ -59,6 +60,7 @@ export default function AdminStatisticsPage() {
   const auth = useAuth();
   const firestore = useFirestore();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { toast } = useToast();
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
 
   const [applications, setApplications] = useState<Application[]>([]);
@@ -79,29 +81,6 @@ export default function AdminStatisticsPage() {
   const [statsError, setStatsError] = useState<string | null>(null);
 
   const [isSyncingMembers, setIsSyncingMembers] = useState(false);
-
-  const syncMembersFromCaspio = useCallback(async () => {
-    if (!isAdmin) return;
-    if (!auth?.currentUser) return;
-
-    setIsSyncingMembers(true);
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/caspio/members-cache/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'incremental' }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !(data as any)?.success) {
-        throw new Error((data as any)?.error || 'Failed to sync members cache');
-      }
-    } catch (e) {
-      console.error('Failed to sync members cache:', e);
-    } finally {
-      setIsSyncingMembers(false);
-    }
-  }, [auth, isAdmin]);
 
   const fetchApps = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
@@ -209,6 +188,41 @@ export default function AdminStatisticsPage() {
       fetchStatusStats()
     ]);
   };
+
+  const syncMembersFromCaspio = useCallback(async () => {
+    if (!isAdmin) return;
+    if (!auth?.currentUser) return;
+
+    setIsSyncingMembers(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/caspio/members-cache/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, mode: 'incremental' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Failed to sync members cache');
+      }
+      toast({
+        title: 'Members synced',
+        description: `Fetched ${(data as any)?.fetched ?? '—'} • Upserted ${(data as any)?.upserted ?? '—'}`,
+      });
+      // Refresh the dashboard so member/resource counts update.
+      setHasLoaded(true);
+      await Promise.all([fetchResourceData(), fetchStatusStats()]);
+    } catch (e) {
+      console.error('Failed to sync members cache:', e);
+      toast({
+        title: 'Sync failed',
+        description: e instanceof Error ? e.message : 'Failed to sync members cache',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSyncingMembers(false);
+    }
+  }, [auth, fetchResourceData, fetchStatusStats, isAdmin, toast]);
 
   // Calculate resource statistics
   const resourceStats = useMemo(() => {

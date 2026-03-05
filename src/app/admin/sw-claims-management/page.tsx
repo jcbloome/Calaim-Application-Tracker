@@ -87,7 +87,7 @@ interface ClaimSummary {
 
 export default function SWClaimsManagementPage() {
   const firestore = useFirestore();
-  const { isSuperAdmin, user: adminUser } = useAdmin();
+  const { isSuperAdmin, isClaimsStaff, user: adminUser } = useAdmin();
   const { toast } = useToast();
   
   const [claims, setClaims] = useState<ClaimSubmission[]>([]);
@@ -1077,7 +1077,7 @@ export default function SWClaimsManagementPage() {
   };
 
   // Show loading while checking admin status
-  if (!isSuperAdmin) {
+  if (!isSuperAdmin && !isClaimsStaff) {
     return (
       <div className="container mx-auto p-6">
         <Card>
@@ -1087,7 +1087,7 @@ export default function SWClaimsManagementPage() {
               Access Denied
             </CardTitle>
             <CardDescription>
-              You need super admin permissions to manage SW claims.
+              You need claims access permissions to manage SW claims.
             </CardDescription>
           </CardHeader>
         </Card>

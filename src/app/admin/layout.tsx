@@ -106,21 +106,6 @@ const adminNavLinks = [
     ],
   },
   {
-    label: 'Kaiser',
-    icon: Heart,
-    isSubmenu: true,
-    submenuItems: [
-      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
-      { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
-    ],
-  },
-  {
-    label: 'Claims',
-    icon: FileBarChart,
-    isSubmenu: true,
-    submenuItems: [{ href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart }],
-  },
-  {
     label: 'Social Worker',
     icon: Users,
     isSubmenu: true,
@@ -144,9 +129,13 @@ const adminNavLinks = [
     icon: Wrench,
     isSubmenu: true,
     submenuItems: [
-      { href: '/admin/tools', label: 'Tools Home', icon: Wrench },
       { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
+      { isDivider: true, label: 'Claims', icon: FileBarChart },
+      { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
+      { isDivider: true, label: 'Kaiser', icon: Heart },
+      { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
       { href: '/admin/california-counties', label: 'County Analysis', icon: MapIcon },
@@ -177,7 +166,7 @@ const superAdminNavLinks = [
 ];
 
 function AdminHeader() {
-  const { user, isSuperAdmin } = useAdmin();
+  const { user, isSuperAdmin, isClaimsStaff } = useAdmin();
   const { isSocialWorker } = useSocialWorker();
   const auth = useAuth();
   const firestore = useFirestore();
@@ -189,6 +178,7 @@ function AdminHeader() {
   const [headerSearch, setHeaderSearch] = useState('');
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
   const [headerSearchLoading, setHeaderSearchLoading] = useState(false);
+  const headerSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [headerSearchResults, setHeaderSearchResults] = useState<
     Array<{ clientId2: string; firstName: string; lastName: string; healthPlan?: string; status?: string }>
   >([]);
@@ -911,6 +901,13 @@ function AdminHeader() {
         dot: 'bg-amber-600',
         href: '/admin/eligibility-checks',
       },
+      {
+        key: 'alft',
+        label: 'ALFT',
+        count: alftPendingCount,
+        dot: 'bg-purple-600',
+        href: '/admin/standalone-uploads?filter=alft',
+      },
     ];
 
     return (
@@ -943,13 +940,10 @@ function AdminHeader() {
       : null;
     const dLabel = showDocs ? `D(${newUploadCount})` : null;
     const notesLabel = priorityNotesCount > 0 ? `Notes(${priorityNotesCount})` : null;
-    const alftLabel = alftPendingCount > 0 ? `ALFT(${alftPendingCount})` : null;
-
-    const items: Array<{ key: string; label: string; href: string; dot: string }> = [];
+    const items: Array<{ key: string; label: string; href: string; dot: string; dim?: boolean; title?: string }> = [];
     if (csLabel) items.push({ key: 'cs', label: csLabel, href: '/admin/applications?review=cs', dot: 'bg-orange-500' });
     if (dLabel) items.push({ key: 'docs', label: dLabel, href: '/admin/applications?review=docs', dot: 'bg-green-600' });
     if (notesLabel) items.push({ key: 'notes', label: notesLabel, href: '/admin/my-notes', dot: 'bg-blue-600' });
-    if (alftLabel) items.push({ key: 'alft', label: alftLabel, href: '/admin/standalone-uploads?filter=alft', dot: 'bg-purple-600' });
 
     if (items.length === 0) return null;
     return (
@@ -958,8 +952,11 @@ function AdminHeader() {
           <Link
             key={item.key}
             href={item.href}
-            className="inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent"
-            title="Open related action items"
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent",
+              item.dim ? "opacity-60" : ""
+            )}
+            title={item.title || "Open related action items"}
           >
             <span className={`h-2 w-2 rounded-full ${item.dot}`} />
             <span className="font-semibold text-foreground">{item.label}</span>
@@ -992,6 +989,19 @@ function AdminHeader() {
     },
     [router]
   );
+
+  useEffect(() => {
+    if (!headerSearchOpen) return;
+    if (typeof window === 'undefined') return;
+    const t = window.setTimeout(() => {
+      try {
+        headerSearchInputRef.current?.focus?.();
+      } catch {
+        // ignore
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [headerSearchOpen]);
 
   useEffect(() => {
     const q = headerSearch.trim();
@@ -1033,7 +1043,7 @@ function AdminHeader() {
     };
   }, [headerSearch, headerSearchOpen]);
 
-  // Filter navigation based on user role
+  // Filter navigation based on user role and staff permissions
   let combinedNavLinks = adminNavLinks;
   
   if (isSocialWorker) {
@@ -1047,10 +1057,20 @@ function AdminHeader() {
     combinedNavLinks = adminNavLinks.filter(nav => nav.label !== 'SW');
   }
 
+  // Claims Management should be visible only to claims staff (or super admin).
+  if (!isSuperAdmin && !isClaimsStaff) {
+    combinedNavLinks = combinedNavLinks.map((nav: any) => {
+      if (nav.label !== 'Tools' || !Array.isArray(nav?.submenuItems)) return nav;
+      const removedClaims = nav.submenuItems.filter((it: any) => it?.href !== '/admin/sw-claims-management');
+      const finalItems = removedClaims.filter((it: any) => !(it?.isDivider && String(it?.label || '').trim() === 'Claims'));
+      return { ...nav, submenuItems: finalItems };
+    });
+  }
+
   return (
     <div className="bg-card border-b sticky top-0 z-40">
       <div className="container mx-auto flex items-center justify-between min-h-16 gap-3 px-4 py-2 sm:px-6">
-        <div className="flex items-center gap-4 min-w-0">
+        <div className="flex items-center gap-4 min-w-0 flex-1">
           <Link href="/admin" className="shrink-0">
             <Image
               src="/calaimlogopdf.png"
@@ -1062,9 +1082,9 @@ function AdminHeader() {
             />
           </Link>
 
-          {/* Desktop Navigation */}
-          <NavigationMenu className="hidden lg:flex">
-            <NavigationMenuList className="flex gap-1">
+          {/* Desktop Navigation (no horizontal scroll) */}
+          <NavigationMenu className="hidden lg:flex min-w-0">
+            <NavigationMenuList className="flex gap-1 min-w-0">
               {combinedNavLinks.map((navItem) => (
                 <NavigationMenuItem key={navItem.label}>
                   {navItem.isSubmenu ? (
@@ -1074,11 +1094,10 @@ function AdminHeader() {
                           variant="ghost"
                           className={cn(
                             navigationMenuTriggerStyle(),
-                            "flex items-center gap-2 text-sm font-medium transition-colors hover:text-primary focus:text-primary focus:outline-none disabled:pointer-events-none disabled:opacity-50 data-[active]:bg-accent/50 data-[state=open]:bg-accent/50",
+                            "flex items-center gap-2 text-sm font-medium transition-colors hover:text-primary focus:text-primary focus:outline-none disabled:pointer-events-none disabled:opacity-50 data-[active]:bg-accent/50 data-[state=open]:bg-accent/50 px-2",
                             isSubmenuActive(navItem) && "bg-accent text-accent-foreground"
                           )}
                         >
-                          <navItem.icon className="h-4 w-4" />
                           {navItem.label}
                           <ChevronDown className="h-3 w-3 ml-1" />
                         </Button>
@@ -1101,7 +1120,6 @@ function AdminHeader() {
                                   isHrefActive(item.href) && "bg-accent text-accent-foreground font-medium"
                                 )}
                               >
-                                <item.icon className="h-4 w-4" />
                                 {item.label}
                                 {navItem.label === 'Operations' && item.href === '/admin' && (
                                   <span className="ml-auto flex items-center gap-2" />
@@ -1118,11 +1136,10 @@ function AdminHeader() {
                         href={navItem.href || '#'}
                         className={cn(
                           navigationMenuTriggerStyle(),
-                          "flex items-center gap-2",
+                          "flex items-center gap-2 px-2",
                           pathname === navItem.href && "bg-accent text-accent-foreground"
                         )}
                       >
-                        <navItem.icon className="h-4 w-4" />
                         {navItem.label}
                       </Link>
                     </NavigationMenuLink>
@@ -1135,32 +1152,49 @@ function AdminHeader() {
 
         <div className="flex items-center gap-3 relative z-50">
           {/* Global search (Admin) */}
-          <div className="relative hidden md:block w-[360px]">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                goToApplicationSearch(headerSearch);
-              }}
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-2"
+              aria-label="Search members"
+              onClick={() => setHeaderSearchOpen((v) => !v)}
             >
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  value={headerSearch}
-                  onChange={(e) => setHeaderSearch(e.target.value)}
-                  onFocus={() => setHeaderSearchOpen(true)}
-                  onBlur={() => {
-                    // Allow click selection in dropdown
-                    window.setTimeout(() => setHeaderSearchOpen(false), 120);
-                  }}
-                  placeholder="Search members (name)…"
-                  className="pl-9"
-                  aria-label="Search members"
-                />
-              </div>
-            </form>
+              <Search className="h-4 w-4" />
+              <span className="hidden xl:inline text-sm">Search</span>
+            </Button>
 
             {headerSearchOpen ? (
-              <div className="absolute left-0 right-0 mt-2 rounded-md border bg-background shadow-sm overflow-hidden">
+              <div className="absolute right-0 mt-2 w-[320px] sm:w-[380px] rounded-md border bg-background shadow-sm overflow-hidden">
+                <form
+                  className="p-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    goToApplicationSearch(headerSearch);
+                  }}
+                >
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      ref={headerSearchInputRef}
+                      value={headerSearch}
+                      onChange={(e) => setHeaderSearch(e.target.value)}
+                      onBlur={() => {
+                        // Allow click selection in dropdown
+                        window.setTimeout(() => setHeaderSearchOpen(false), 120);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setHeaderSearchOpen(false);
+                        }
+                      }}
+                      placeholder="Search members (name)…"
+                      className="pl-9"
+                      aria-label="Search members"
+                    />
+                  </div>
+                </form>
+
                 <button
                   type="button"
                   className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
@@ -1337,16 +1371,6 @@ function AdminHeader() {
             </span>
             <div className="flex items-center gap-2">
               {renderPillAlignedBadges()}
-              <Link href="/admin/tasks?range=daily">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex items-center gap-2 text-red-600 hover:text-red-700"
-                  title="Daily Tasks Due"
-                >
-                  <CalendarCheck className="h-4 w-4" />
-                </Button>
-              </Link>
             </div>
           </div>
           {renderPlanBadges()}
