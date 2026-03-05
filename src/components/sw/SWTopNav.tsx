@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { ClipboardCheck, FileBarChart, Users, BookOpenText, CheckCircle2, ReceiptText, ListTodo, UploadCloud } from 'lucide-react';
+import { ClipboardCheck, FileBarChart, Users, BookOpenText, CheckCircle2, ReceiptText, ListTodo, UploadCloud, ShieldCheck } from 'lucide-react';
 
 const links = [
   { href: '/sw-portal/queue', label: 'Queue', icon: ListTodo },
@@ -13,6 +13,7 @@ const links = [
   { href: '/sw-portal/alft-upload', label: 'ALFT Upload', icon: UploadCloud },
   { href: '/sw-portal/claims', label: 'Claims', icon: ReceiptText },
   { href: '/sw-portal/sign-off', label: 'Sign Off', icon: FileBarChart },
+  { href: '/sw-portal/ccl-checks', label: 'CCL Checks', icon: ShieldCheck },
   { href: '/sw-visit-verification', label: 'Questionnaire', icon: ClipboardCheck },
   { href: '/sw-portal/instructions', label: 'Instructions', icon: BookOpenText },
 ] as const;

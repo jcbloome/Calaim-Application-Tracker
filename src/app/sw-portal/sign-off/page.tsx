@@ -247,7 +247,7 @@ export default function SWSignOffPage() {
 
       toast({
         title: 'Submitted',
-        description: `Submitted ${selectedVisits.length} questionnaire(s) and the claim. Returning to Visit Verification…`,
+        description: `Submitted ${selectedVisits.length} questionnaire(s). Next: complete the monthly CCL check to auto-submit the claim(s).`,
       });
 
       setStaffName('');
@@ -259,9 +259,9 @@ export default function SWSignOffPage() {
       await loadCandidates();
 
       // After a successful submission, the next action is usually to select another RCFE/member.
-      // Route back to Visit Verification so the SW can continue their workflow.
+      // Route to CCL Checks (desktop-friendly last step).
       setTimeout(() => {
-        router.push('/sw-visit-verification');
+        router.push('/sw-portal/ccl-checks');
       }, 400);
     } catch (e: any) {
       setError(e?.message || 'Failed to submit.');

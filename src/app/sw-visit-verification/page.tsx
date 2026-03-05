@@ -106,36 +106,7 @@ interface MemberVisitQuestionnaire {
     totalScore: number;
     flagged: boolean;
   };
-
-  communityCareLicensing: {
-    facilitySearchUrl: string;
-    month: string; // YYYY-MM
-    rcfeId: string;
-    rcfeName: string;
-    latestReportDate: string; // YYYY-MM-DD
-    typeAViolations: number;
-    typeBViolations: number;
-    seriousViolationComments: string;
-    noNewReportsSinceLastCheck: boolean;
-    lastCheckAt?: string;
-  };
 }
-
-type RcfeMonthlyCclCheck = {
-  id: string;
-  rcfeId: string;
-  rcfeName: string;
-  month: string;
-  latestReportDate: string;
-  typeAViolations: number;
-  typeBViolations: number;
-  seriousViolationComments: string;
-  checkedAt?: string;
-  updatedAt?: string;
-  checkedByName?: string;
-};
-
-const CCLD_ELDERLY_ASSISTED_LIVING_URL = 'https://www.ccld.dss.ca.gov/carefacilitysearch/';
 
 interface Member {
   id: string;
@@ -297,18 +268,6 @@ export default function SWVisitVerification() {
       totalScore: 0,
       flagged: false
     },
-    communityCareLicensing: {
-      facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
-      month: new Date().toISOString().slice(0, 7),
-      rcfeId: '',
-      rcfeName: '',
-      latestReportDate: '',
-      typeAViolations: 0,
-      typeBViolations: 0,
-      seriousViolationComments: '',
-      noNewReportsSinceLastCheck: false,
-      lastCheckAt: '',
-    },
   });
   
   // Track completed visits for sign-off
@@ -445,16 +404,11 @@ export default function SWVisitVerification() {
   >({});
   const [loadingDraftVisits, setLoadingDraftVisits] = useState(false);
 
-  const [rcfeMonthlyCclCheck, setRcfeMonthlyCclCheck] = useState<RcfeMonthlyCclCheck | null>(null);
-  const [loadingRcfeMonthlyCclCheck, setLoadingRcfeMonthlyCclCheck] = useState(false);
-
   const claimDayKey = useMemo(() => {
     const d = String(questionnaire.visitDate || '').trim().slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     return new Date().toISOString().slice(0, 10);
   }, [questionnaire.visitDate]);
-
-  const visitMonthKey = useMemo(() => claimDayKey.slice(0, 7), [claimDayKey]);
 
   const getIdToken = useCallback(async () => {
     try {
@@ -473,128 +427,6 @@ export default function SWVisitVerification() {
     return '';
   }, [auth, user]);
 
-
-  // Load the once-per-RCFE-per-month Community Care Licensing (CCLD) check.
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      if (!selectedRCFE?.id) {
-        setRcfeMonthlyCclCheck(null);
-        return;
-      }
-      if (!visitMonthKey || !/^\d{4}-\d{2}$/.test(visitMonthKey)) {
-        setRcfeMonthlyCclCheck(null);
-        return;
-      }
-      setLoadingRcfeMonthlyCclCheck(true);
-      try {
-        const idToken = await getIdToken();
-        if (!idToken) throw new Error('Not signed in');
-        const qs = new URLSearchParams({
-          rcfeId: String(selectedRCFE.id),
-          month: visitMonthKey,
-        });
-        const res = await fetch(`/api/sw-visits/rcfe-ccl-check?${qs.toString()}`, {
-          headers: { authorization: `Bearer ${idToken}` },
-        });
-        const data = (await res.json().catch(() => ({} as any))) as any;
-        if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load CCLD check (${res.status})`);
-        const check = data?.check || null;
-        if (cancelled) return;
-        setRcfeMonthlyCclCheck(
-          check
-            ? {
-                id: String(check?.id || '').trim() || `${String(selectedRCFE.id)}_${visitMonthKey}`,
-                rcfeId: String(check?.rcfeId || selectedRCFE.id || '').trim(),
-                rcfeName: String(check?.rcfeName || selectedRCFE.name || '').trim(),
-                month: String(check?.month || visitMonthKey || '').trim(),
-                latestReportDate: String(check?.latestReportDate || '').trim(),
-                typeAViolations: Number(check?.typeAViolations ?? 0) || 0,
-                typeBViolations: Number(check?.typeBViolations ?? 0) || 0,
-                seriousViolationComments: String(check?.seriousViolationComments || '').trim(),
-                checkedAt: String(check?.checkedAt || '').trim() || undefined,
-                updatedAt: String(check?.updatedAt || '').trim() || undefined,
-                checkedByName: String(check?.checkedByName || '').trim() || undefined,
-              }
-            : null
-        );
-      } catch {
-        if (!cancelled) setRcfeMonthlyCclCheck(null);
-      } finally {
-        if (!cancelled) setLoadingRcfeMonthlyCclCheck(false);
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [getIdToken, selectedRCFE?.id, selectedRCFE?.name, visitMonthKey]);
-
-  // Keep the questionnaire's CCLD section aligned to the selected RCFE + month.
-  useEffect(() => {
-    if (!selectedRCFE?.id) return;
-    if (!visitMonthKey) return;
-    setQuestionnaire((prev) => {
-      const ccl = prev.communityCareLicensing || ({} as any);
-      const prevRcfeId = String(ccl?.rcfeId || '').trim();
-      const prevMonth = String(ccl?.month || '').trim();
-      const contextChanged =
-        (prevRcfeId && prevRcfeId !== String(selectedRCFE.id)) ||
-        (prevMonth && prevMonth !== String(visitMonthKey));
-      const base = {
-        ...ccl,
-        facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
-        month: visitMonthKey,
-        rcfeId: String(selectedRCFE.id),
-        rcfeName: String(selectedRCFE.name || ''),
-      };
-
-      const cleared = contextChanged
-        ? {
-            ...base,
-            latestReportDate: '',
-            typeAViolations: 0,
-            typeBViolations: 0,
-            seriousViolationComments: '',
-            noNewReportsSinceLastCheck: false,
-            lastCheckAt: '',
-          }
-        : base;
-
-      // If we have an existing monthly check, default to "no new reports since last check" and
-      // hydrate the details (unless the SW has explicitly opted to re-check/edit).
-      if (rcfeMonthlyCclCheck) {
-        const hasUserInput =
-          Boolean(String(cleared.latestReportDate || '').trim()) ||
-          Number(cleared.typeAViolations || 0) > 0 ||
-          Number(cleared.typeBViolations || 0) > 0 ||
-          Boolean(String(cleared.seriousViolationComments || '').trim());
-        const shouldUseExisting = Boolean(cleared.noNewReportsSinceLastCheck) || !hasUserInput;
-        return {
-          ...prev,
-          communityCareLicensing: {
-            ...cleared,
-            noNewReportsSinceLastCheck: shouldUseExisting ? true : false,
-            latestReportDate: shouldUseExisting ? rcfeMonthlyCclCheck.latestReportDate : cleared.latestReportDate,
-            typeAViolations: shouldUseExisting ? rcfeMonthlyCclCheck.typeAViolations : cleared.typeAViolations,
-            typeBViolations: shouldUseExisting ? rcfeMonthlyCclCheck.typeBViolations : cleared.typeBViolations,
-            seriousViolationComments: shouldUseExisting ? rcfeMonthlyCclCheck.seriousViolationComments : cleared.seriousViolationComments,
-            lastCheckAt: rcfeMonthlyCclCheck.checkedAt || rcfeMonthlyCclCheck.updatedAt || cleared.lastCheckAt || '',
-          },
-        };
-      }
-
-      // No existing check found → force entry (no "no new reports" allowed).
-      return {
-        ...prev,
-        communityCareLicensing: {
-          ...cleared,
-          noNewReportsSinceLastCheck: false,
-          lastCheckAt: '',
-        },
-      };
-    });
-  }, [rcfeMonthlyCclCheck, selectedRCFE?.id, selectedRCFE?.name, visitMonthKey]);
 
   const refreshDraftVisits = useCallback(async () => {
     if (!user || !isSocialWorker || !selectedRCFE?.id) {
@@ -1066,18 +898,6 @@ export default function SWVisitVerification() {
         totalScore: 0,
         flagged: false,
       },
-      communityCareLicensing: {
-        facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
-        month: new Date().toISOString().slice(0, 7),
-        rcfeId: selectedMember.rcfeId,
-        rcfeName: selectedMember.rcfeName,
-        latestReportDate: '',
-        typeAViolations: 0,
-        typeBViolations: 0,
-        seriousViolationComments: '',
-        noNewReportsSinceLastCheck: false,
-        lastCheckAt: '',
-      },
     });
     setQuestionStep(1);
     setCurrentStep('questionnaire');
@@ -1230,18 +1050,6 @@ export default function SWVisitVerification() {
             flagForReview: false,
           },
           visitSummary: { totalScore: 0, flagged: false },
-          communityCareLicensing: {
-            facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
-            month: new Date().toISOString().slice(0, 7),
-            rcfeId: selectedMember.rcfeId,
-            rcfeName: selectedMember.rcfeName,
-            latestReportDate: '',
-            typeAViolations: 0,
-            typeBViolations: 0,
-            seriousViolationComments: '',
-            noNewReportsSinceLastCheck: false,
-            lastCheckAt: '',
-          },
         });
       }
       setQuestionStep(1);
@@ -1417,23 +1225,7 @@ export default function SWVisitVerification() {
       errors.push("Overall rating is required");
     }
 
-    // Community Care Licensing (CCLD) check: required once per RCFE per month.
-    const ccl = questionnaire.communityCareLicensing;
-    const hasExistingMonthlyCheck = Boolean(rcfeMonthlyCclCheck && rcfeMonthlyCclCheck.rcfeId);
-    const wantsNoNewReports = Boolean(ccl?.noNewReportsSinceLastCheck);
-    if (wantsNoNewReports && !hasExistingMonthlyCheck) {
-      errors.push("Community Care Licensing check is required for this RCFE/month (no previous check found).");
-    }
-    if (!wantsNoNewReports) {
-      const latest = String(ccl?.latestReportDate || '').trim();
-      const typeA = Number(ccl?.typeAViolations ?? NaN);
-      const typeB = Number(ccl?.typeBViolations ?? NaN);
-      if (!latest || !/^\d{4}-\d{2}-\d{2}$/.test(latest)) {
-        errors.push("Community Care Licensing: latest violation report date is required");
-      }
-      if (!Number.isFinite(typeA) || typeA < 0) errors.push("Community Care Licensing: Type A violations must be 0 or greater");
-      if (!Number.isFinite(typeB) || typeB < 0) errors.push("Community Care Licensing: Type B violations must be 0 or greater");
-    }
+    // Community Care Licensing (CCLD) check is completed post-signoff on desktop.
     
     // Note: Social worker observations are captured in rcfeAssessment.notes
     // No additional observations required for visit summary
@@ -1501,36 +1293,9 @@ export default function SWVisitVerification() {
         }
       }
 
-      // Attach the Community Care Licensing (CCLD) monthly RCFE check to this draft.
-      const baseCcl = questionnaire.communityCareLicensing || ({} as any);
-      const effectiveCcl =
-        baseCcl.noNewReportsSinceLastCheck && rcfeMonthlyCclCheck
-          ? {
-              facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
-              month: visitMonthKey,
-              rcfeId: questionnaire.rcfeId,
-              rcfeName: questionnaire.rcfeName,
-              latestReportDate: rcfeMonthlyCclCheck.latestReportDate,
-              typeAViolations: rcfeMonthlyCclCheck.typeAViolations,
-              typeBViolations: rcfeMonthlyCclCheck.typeBViolations,
-              seriousViolationComments: rcfeMonthlyCclCheck.seriousViolationComments,
-              noNewReportsSinceLastCheck: true,
-              lastCheckAt: rcfeMonthlyCclCheck.checkedAt || rcfeMonthlyCclCheck.updatedAt || baseCcl.lastCheckAt || '',
-            }
-          : {
-              ...baseCcl,
-              facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
-              month: visitMonthKey,
-              rcfeId: questionnaire.rcfeId,
-              rcfeName: questionnaire.rcfeName,
-              noNewReportsSinceLastCheck: false,
-              lastCheckAt: new Date().toISOString(),
-            };
-
       // Save draft to API (no claim yet)
       const submitData = {
         ...questionnaire,
-        communityCareLicensing: effectiveCcl,
         socialWorkerUid: user?.uid || null,
         socialWorkerEmail: (user?.email || '').toLowerCase() || null,
         socialWorkerName: user?.displayName || user?.email || questionnaire.socialWorkerId || null,
@@ -2615,142 +2380,10 @@ export default function SWVisitVerification() {
                     )}
                   </div>
 
-                  <div className="rounded-lg border bg-white p-4 space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">
-                          Community Care Licensing (monthly RCFE check) <span className="text-red-500">*</span>
-                        </div>
-                        <div className="mt-1 text-xs text-slate-600">
-                          Required once per RCFE each month. Use the official CCLD site to review violations for this facility.
-                        </div>
-                      </div>
-                      <a
-                        className="text-xs underline underline-offset-2 text-blue-700"
-                        href={CCLD_ELDERLY_ASSISTED_LIVING_URL}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Open CCLD facility search
-                      </a>
-                    </div>
-
-                    {loadingRcfeMonthlyCclCheck ? (
-                      <div className="text-xs text-muted-foreground">Loading this month’s saved RCFE check…</div>
-                    ) : rcfeMonthlyCclCheck ? (
-                      <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-700">
-                        <div className="font-medium text-slate-900">Saved for {rcfeMonthlyCclCheck.month}</div>
-                        <div className="mt-1">
-                          Latest report date: <span className="font-semibold">{rcfeMonthlyCclCheck.latestReportDate || '—'}</span> • Type A:{' '}
-                          <span className="font-semibold">{rcfeMonthlyCclCheck.typeAViolations}</span> • Type B:{' '}
-                          <span className="font-semibold">{rcfeMonthlyCclCheck.typeBViolations}</span>
-                        </div>
-                        {rcfeMonthlyCclCheck.checkedAt || rcfeMonthlyCclCheck.updatedAt ? (
-                          <div className="mt-1 text-muted-foreground">
-                            Last checked: {String(rcfeMonthlyCclCheck.checkedAt || rcfeMonthlyCclCheck.updatedAt)}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-amber-700">
-                        No check saved yet for {visitMonthKey}. Please complete the fields below.
-                      </div>
-                    )}
-
-                    {rcfeMonthlyCclCheck ? (
-                      <label className="flex items-start gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
-                          onChange={(e) =>
-                            setQuestionnaire((prev) => ({
-                              ...prev,
-                              communityCareLicensing: {
-                                ...prev.communityCareLicensing,
-                                noNewReportsSinceLastCheck: e.target.checked,
-                              },
-                            }))
-                          }
-                          className="mt-1 h-4 w-4"
-                        />
-                        <span>
-                          No new reports since the last questionnaire reported date (reuse this month’s RCFE check)
-                        </span>
-                      </label>
-                    ) : null}
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div className="space-y-1.5 sm:col-span-1">
-                        <label className="text-sm font-medium">Latest violation report date</label>
-                        <Input
-                          type="date"
-                          value={String(questionnaire.communityCareLicensing?.latestReportDate || '')}
-                          onChange={(e) =>
-                            setQuestionnaire((prev) => ({
-                              ...prev,
-                              communityCareLicensing: {
-                                ...prev.communityCareLicensing,
-                                latestReportDate: e.target.value,
-                              },
-                            }))
-                          }
-                          disabled={Boolean(rcfeMonthlyCclCheck && questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Type A violations</label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={String(questionnaire.communityCareLicensing?.typeAViolations ?? 0)}
-                          onChange={(e) =>
-                            setQuestionnaire((prev) => ({
-                              ...prev,
-                              communityCareLicensing: {
-                                ...prev.communityCareLicensing,
-                                typeAViolations: Math.max(0, Number(e.target.value || 0)),
-                              },
-                            }))
-                          }
-                          disabled={Boolean(rcfeMonthlyCclCheck && questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">Type B violations</label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={String(questionnaire.communityCareLicensing?.typeBViolations ?? 0)}
-                          onChange={(e) =>
-                            setQuestionnaire((prev) => ({
-                              ...prev,
-                              communityCareLicensing: {
-                                ...prev.communityCareLicensing,
-                                typeBViolations: Math.max(0, Number(e.target.value || 0)),
-                              },
-                            }))
-                          }
-                          disabled={Boolean(rcfeMonthlyCclCheck && questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Serious violations / comments</label>
-                      <Textarea
-                        placeholder="Note any serious violations staff should be aware of…"
-                        value={String(questionnaire.communityCareLicensing?.seriousViolationComments || '')}
-                        onChange={(e) =>
-                          setQuestionnaire((prev) => ({
-                            ...prev,
-                            communityCareLicensing: {
-                              ...prev.communityCareLicensing,
-                              seriousViolationComments: e.target.value,
-                            },
-                          }))
-                        }
-                        disabled={Boolean(rcfeMonthlyCclCheck && questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
-                      />
+                  <div className="rounded-lg border bg-white p-4 space-y-2">
+                    <div className="text-sm font-semibold text-slate-900">Community Care Licensing (monthly RCFE check)</div>
+                    <div className="text-xs text-slate-600">
+                      This check is completed after sign-off (desktop-friendly) on the CCL Checks page.
                     </div>
                   </div>
 
