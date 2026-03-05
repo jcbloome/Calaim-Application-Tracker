@@ -92,6 +92,8 @@ export async function GET(request: NextRequest) {
         Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
         ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
         ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
+        Kaiser_H2022_Requested: member.Kaiser_H2022_Requested || '',
+        Kaiser_H2022_Received: member.Kaiser_H2022_Received || '',
         Hold_For_Social_Worker: member.Hold_For_Social_Worker || member.Hold_For_Social_Worker_Visit || '',
       }));
 
@@ -466,6 +468,8 @@ export async function GET(request: NextRequest) {
       Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
       ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
       ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
+      Kaiser_H2022_Requested: member.Kaiser_H2022_Requested || '',
+      Kaiser_H2022_Received: member.Kaiser_H2022_Received || '',
       
       // Hold status for social worker visits
       Hold_For_Social_Worker: member.Hold_For_Social_Worker || '',

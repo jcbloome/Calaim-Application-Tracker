@@ -1032,7 +1032,7 @@ function KaiserTrackerPageContent() {
     }
   };
 
-  const syncKaiserStatusOptions = async () => {
+  const syncKaiserStatusOptions = async (opts?: { quiet?: boolean }) => {
     setStatusListSyncing(true);
     try {
       if (!auth?.currentUser) {
@@ -1057,26 +1057,30 @@ function KaiserTrackerPageContent() {
       const unique = Array.from(new Set(options));
       setKaiserStatusOptions(unique.length > 0 ? unique : [...FALLBACK_KAISER_STATUS_ORDER]);
 
-      toast({
-        title: 'Kaiser status list synced',
-        description: `Loaded ${unique.length || rows.length || 0} statuses from Caspio`,
-      });
+      if (!opts?.quiet) {
+        toast({
+          title: 'Kaiser status list synced',
+          description: `Loaded ${unique.length || rows.length || 0} statuses from Caspio`,
+        });
+      }
 
       await loadKaiserStatusOptions();
     } catch (e: any) {
       console.error('Failed to sync Kaiser statuses:', e);
-      toast({
-        title: 'Status sync failed',
-        description: e?.message || 'Could not sync Kaiser statuses from Caspio',
-        variant: 'destructive',
-      });
+      if (!opts?.quiet) {
+        toast({
+          title: 'Status sync failed',
+          description: e?.message || 'Could not sync Kaiser statuses from Caspio',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setStatusListSyncing(false);
     }
   };
 
   // Fetch Kaiser members from Caspio
-  const fetchCaspioData = async () => {
+  const fetchCaspioData = async (opts?: { quiet?: boolean }) => {
     setIsLoading(true);
     try {
       if (!auth?.currentUser) {
@@ -1162,19 +1166,40 @@ function KaiserTrackerPageContent() {
 
       setMembers(cleanMembers);
       
-      toast({
-        title: "Data Synced Successfully",
-        description: `Loaded ${cleanMembers.length} Kaiser members`,
-      });
+      if (!opts?.quiet) {
+        toast({
+          title: "Data synced",
+          description: `Loaded ${cleanMembers.length} Kaiser members`,
+        });
+      }
     } catch (error) {
       console.error('Error fetching Kaiser members:', error);
-      toast({
-        title: "Sync Failed",
-        description: "Failed to load Kaiser members. Please try again.",
-        variant: "destructive",
-      });
+      if (!opts?.quiet) {
+        toast({
+          title: "Sync failed",
+          description: "Failed to load Kaiser members. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const syncAll = async () => {
+    if (isLoading || statusListSyncing) return;
+    try {
+      await Promise.all([syncKaiserStatusOptions({ quiet: true }), fetchCaspioData({ quiet: true })]);
+      toast({
+        title: 'Synced',
+        description: 'Updated members cache + Kaiser status list (includes Kaiser & CalAIM status).',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Sync failed',
+        description: e?.message || 'Could not sync members and statuses.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -1321,21 +1346,12 @@ function KaiserTrackerPageContent() {
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
           <Button
-            onClick={syncKaiserStatusOptions}
-            disabled={statusListSyncing || statusListLoading}
-            variant="outline"
+            onClick={() => void syncAll()}
+            disabled={isLoading || statusListSyncing || statusListLoading}
             className="flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${statusListSyncing ? 'animate-spin' : ''}`} />
-            {statusListSyncing ? 'Syncing statuses…' : 'Sync statuses'}
-          </Button>
-          <Button 
-            onClick={fetchCaspioData} 
-            disabled={isLoading}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            {isLoading ? 'Syncing...' : 'Sync members'}
+            <RefreshCw className={`h-4 w-4 ${isLoading || statusListSyncing ? 'animate-spin' : ''}`} />
+            {isLoading || statusListSyncing ? 'Syncing…' : 'Sync'}
           </Button>
         </div>
       </div>

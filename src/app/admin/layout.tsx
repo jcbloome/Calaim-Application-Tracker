@@ -130,7 +130,7 @@ const adminNavLinks = [
     icon: Wrench,
     isSubmenu: true,
     submenuItems: [
-      { href: '/admin/ils-report-editor', label: 'ILS Report Editor', icon: FileEdit },
+      { href: '/admin/ils-report-editor', label: 'ILS Member Update', icon: FileEdit },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
       { isDivider: true, label: 'Claims', icon: FileBarChart },
       { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
