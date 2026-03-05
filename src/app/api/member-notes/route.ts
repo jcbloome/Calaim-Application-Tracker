@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
-import { CaspioService } from '@/modules/caspio-integration';
 
 // Try to import Firebase Admin, but handle gracefully if not available
 let adminDb: any = null;
@@ -669,31 +668,37 @@ export async function GET(request: NextRequest) {
 
     console.log(`📥 Fetching notes for member: ${clientId2} (forceSync: ${forceSync})`);
 
-    // Use new Caspio module for fetching notes
-    const caspioService = CaspioService.getInstance();
-    const syncOptions = {
-      forceRefresh: forceSync,
-      includeILS: true
-    };
+    // Use legacy Caspio REST table sync for member notes.
+    // The module-based notes tables are not guaranteed to exist in all Caspio environments.
+    const memberKey = String(clientId2 || '').trim();
+    const prevStatus = await getSyncStatusFromFirestore(memberKey).catch(() => null);
+    const prevLastSyncAt = String(prevStatus?.lastSyncAt || '').trim();
+    const hasFirstSync = Boolean(prevStatus?.firstSyncCompleted);
 
-    const notes = await caspioService.getMemberNotes(clientId2, syncOptions);
-    
-    // Sync to Firestore for caching
-    if (adminDb) {
-      await caspioService.syncNotesToFirestore(clientId2);
+    let isFirstSync = false;
+    let newNotesCount = 0;
+    if (forceSync || !hasFirstSync || !prevLastSyncAt) {
+      isFirstSync = true;
+      newNotesCount = await syncAllNotesFromCaspio(memberKey);
+    } else {
+      newNotesCount = await syncNewNotesFromCaspio(memberKey, prevLastSyncAt);
     }
+
+    const notes = await getNotesFromFirestore(memberKey);
 
     return NextResponse.json({
       success: true,
       notes: notes,
       count: notes.length,
-      source: 'caspio-module',
+      source: 'legacy-caspio-rest',
       timestamp: new Date().toISOString(),
       totalNotes: notes.length,
       legacyNotes: notes.filter(n => n.isLegacy).length,
       regularNotes: notes.filter(n => n.source === 'Caspio').length,
       ilsNotes: notes.filter(n => n.source === 'ILS').length,
-      appNotes: notes.filter(n => n.source === 'App' || n.source === 'Admin').length
+      appNotes: notes.filter(n => n.source === 'App' || n.source === 'Admin').length,
+      isFirstSync,
+      newNotesCount
     });
 
   } catch (error: any) {

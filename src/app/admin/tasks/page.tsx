@@ -149,6 +149,24 @@ function MyTasksPageContent() {
     }
   }, [searchParams]);
 
+  // Deep-link support:
+  // - /admin/tasks?tab=followup_calendar&day=YYYY-MM-DD opens calendar to that day
+  useEffect(() => {
+    const tab = String(searchParams.get('tab') || '').trim();
+    const day = String(searchParams.get('day') || '').trim().slice(0, 10);
+    if (tab === 'followup_calendar' || tab === 'followup') {
+      setSelectedTab(tab);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      const d = new Date(`${day}T00:00:00`);
+      if (!Number.isNaN(d.getTime())) {
+        setFollowUpDay(d);
+        setFollowUpMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   const fetchMyTasks = async () => {
     if (!user?.uid) return;
     

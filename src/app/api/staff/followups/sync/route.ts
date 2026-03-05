@@ -167,11 +167,14 @@ export async function POST(request: NextRequest) {
         const noteId = normalizeString(r.Note_ID);
         const clientId2 = normalizeString(r.Client_ID2);
         const memberName = clientLookup.get(clientId2)?.seniorFullName || `Client ${clientId2}`.trim();
+        const userFullName = normalizeString(r.User_Full_Name || r.User_FullName || r.Created_By || r.Staff_Name);
         return {
           id: noteId,
           noteId,
           clientId2,
           userId: normalizeString(r.User_ID),
+          userFullName,
+          senderName: userFullName,
           comments: normalizeString(r.Comments),
           timeStamp: normalizeString(r.Time_Stamp),
           followUpDate: normalizeString(r.Follow_Up_Date),

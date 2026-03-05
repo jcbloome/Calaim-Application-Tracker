@@ -122,6 +122,7 @@ const adminNavLinks = [
     submenuItems: [
       { href: '/admin/my-notes', label: 'My Notifications', icon: Bell },
       { href: '/admin/tasks', label: 'Daily Task Tracker', icon: ClipboardList },
+      { href: '/admin/followup-notes', label: 'Follow-up Notes (Caspio)', icon: MessageSquareText },
     ],
   },
   {

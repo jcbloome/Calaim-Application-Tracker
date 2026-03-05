@@ -95,9 +95,26 @@
   * {
     @apply border-border;
   }
+  html,
+  body {
+    @apply overflow-x-hidden;
+  }
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Hide native date picker indicator/icon for compact UI */
+.no-date-indicator::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  display: none;
+}
+.no-date-indicator::-webkit-inner-spin-button {
+  display: none;
+}
+.no-date-indicator {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 @media print {

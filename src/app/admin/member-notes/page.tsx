@@ -187,7 +187,19 @@ function MemberNotesPageContent() {
       const data = await response.json();
       
       if (data.success) {
-        setStaffList(data.staff || []);
+        const raw = Array.isArray(data.staff) ? data.staff : [];
+        const byUid = new Map<string, { uid: string; name: string; email: string }>();
+        for (const s of raw) {
+          const uid = String(s?.uid || '').trim();
+          if (!uid) continue; // avoid duplicate keys/values + invalid assignments
+          if (byUid.has(uid)) continue;
+          byUid.set(uid, {
+            uid,
+            name: String(s?.name || '').trim() || uid,
+            email: String(s?.email || '').trim(),
+          });
+        }
+        setStaffList(Array.from(byUid.values()));
       }
     } catch (error) {
       console.error('Error loading staff members:', error);

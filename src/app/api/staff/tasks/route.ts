@@ -313,9 +313,10 @@ export async function GET(request: NextRequest) {
             if (Boolean((data as any)?.deleted)) return;
             const noteClosed = String(data.followUpStatus || '').toLowerCase() === 'closed';
             if (onlyFollowUp && noteClosed) return;
-            const followUpDate = data.followUpDate || data.timeStamp || data.createdAt;
+            // Only treat notes as follow-up tasks if they have an explicit follow-up date.
+            const followUpDate = data.followUpDate;
             if (!followUpDate) return;
-            const dueDate = followUpDate?.toDate?.()?.toISOString?.() || followUpDate;
+            const dueDate = followUpDate?.toDate?.()?.toISOString?.() || String(followUpDate || '');
             if (!dueDate || typeof dueDate !== 'string') return;
             const isOverdue = dueDate ? new Date(dueDate) < now : false;
             const noteId = String(data.noteId || docSnap.id).trim() || docSnap.id;

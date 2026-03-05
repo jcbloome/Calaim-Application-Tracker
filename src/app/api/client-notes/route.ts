@@ -9,6 +9,7 @@ interface ClientNote {
   noteId: string;
   clientId2: string;
   userId?: string;
+  userFirst?: string;
   comments: string;
   timeStamp: string;
   followUpDate?: string;
@@ -189,15 +190,38 @@ export async function GET(request: NextRequest) {
     const since = searchParams.get('since'); // Timestamp for incremental sync
     const includeAll = searchParams.get('includeAll') === 'true'; // Force full sync
     const forceRefresh = searchParams.get('forceRefresh') === 'true'; // Force refresh from Caspio
+    const monthsParam = searchParams.get('months');
+    const months =
+      monthsParam && String(monthsParam).trim()
+        ? Math.max(1, Math.min(24, Number(monthsParam)))
+        : null;
+
+    const windowSinceIso =
+      !includeAll && months && clientId2
+        ? new Date(Date.now() - months * 30 * 24 * 60 * 60 * 1000).toISOString()
+        : null;
+    const effectiveSince = windowSinceIso || since || undefined;
     
     console.log('📝 Fetching client notes...', { 
       clientId2, 
       userId, 
-      since, 
+      since: effectiveSince || since || null,
       includeAll,
       forceRefresh,
       syncType: forceRefresh ? 'FORCE_REFRESH' : includeAll ? 'INITIAL_SYNC' : since ? 'INCREMENTAL_SYNC' : 'CACHED_FIRST'
     });
+
+    const inWindow = (rawTs: any) => {
+      if (!windowSinceIso) return true;
+      try {
+        const ms = new Date(String(rawTs || '')).getTime();
+        const sinceMs = new Date(windowSinceIso).getTime();
+        if (Number.isNaN(ms) || Number.isNaN(sinceMs)) return true;
+        return ms >= sinceMs;
+      } catch {
+        return true;
+      }
+    };
     
     // If we have a clientId2, check Firestore cache first (unless force refresh)
     if (clientId2 && !forceRefresh && !includeAll) {
@@ -207,27 +231,28 @@ export async function GET(request: NextRequest) {
         
         // If we have cached notes and sync was recent (within last hour), return cached
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-        if (cachedNotes.length > 0 && syncMetadata.lastSync && syncMetadata.lastSync > oneHourAgo) {
-          console.log(`✅ Returning ${cachedNotes.length} cached notes from Firestore (last sync: ${syncMetadata.lastSync})`);
+        const cachedInWindow = windowSinceIso ? cachedNotes.filter(n => inWindow(n.timeStamp)) : cachedNotes;
+        if (cachedInWindow.length > 0 && syncMetadata.lastSync && syncMetadata.lastSync > oneHourAgo) {
+          console.log(`✅ Returning ${cachedInWindow.length} cached notes from Firestore (last sync: ${syncMetadata.lastSync})`);
           
           // Still do incremental sync in background if we have a lastSync timestamp
           if (syncMetadata.lastSync) {
             // Fire and forget incremental sync
-            fetchFromCaspioAndSave(clientId2, userId, syncMetadata.lastSync.toISOString()).catch(err => {
+            fetchFromCaspioAndSave(clientId2, userId, effectiveSince || syncMetadata.lastSync.toISOString()).catch(err => {
               console.error('Background sync error:', err);
             });
           }
           
           // Process cached notes same way as Caspio notes
-          return formatNotesResponse(cachedNotes, clientId2);
-        } else if (cachedNotes.length > 0) {
+          return formatNotesResponse(cachedInWindow, clientId2);
+        } else if (cachedInWindow.length > 0) {
           // We have cached notes but they're stale, do incremental sync
           console.log(`🔄 Cached notes are stale, doing incremental sync from ${syncMetadata.lastSync || 'beginning'}`);
           const incrementalSince = syncMetadata.lastSync ? syncMetadata.lastSync.toISOString() : undefined;
-          const newNotes = await fetchFromCaspioAndSave(clientId2, userId, incrementalSince);
+          const newNotes = await fetchFromCaspioAndSave(clientId2, userId, effectiveSince || incrementalSince);
           
           // Combine cached and new notes, remove duplicates
-          const allNotes = [...cachedNotes, ...newNotes];
+          const allNotes = [...cachedInWindow, ...newNotes];
           const uniqueNotes = Array.from(
             new Map(allNotes.map(note => [note.noteId || note.id, note])).values()
           );
@@ -241,7 +266,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Fetch from Caspio (either no cache, force refresh, or initial sync)
-    const notes = await fetchFromCaspioAndSave(clientId2 || undefined, userId || undefined, since || undefined, includeAll);
+    const notes = await fetchFromCaspioAndSave(clientId2 || undefined, userId || undefined, effectiveSince, includeAll);
     
     return formatNotesResponse(notes, clientId2 || undefined);
     
@@ -399,6 +424,7 @@ async function fetchFromCaspioAndSave(
     const userLookup = allUsers.reduce((acc: any, user) => {
       acc[user.User_ID] = {
         userId: user.User_ID,
+        userFirst: user.First_Name || '',
         userFullName: user.User_Full_Name || `${user.First_Name || ''} ${user.Last_Name || ''}`.trim(),
         role: user.Role || 'Staff'
       };
@@ -458,12 +484,26 @@ async function fetchFromCaspioAndSave(
     const notes: ClientNote[] = allNotes.map((record: any) => {
       const user = userLookup[record.User_ID] || {};
       const client = clientLookup[record.Client_ID2] || {};
+
+      const recordUserFullName =
+        record.User_Full_Name ||
+        record.User_FullName ||
+        record.Staff_Name ||
+        record.Created_By ||
+        record.Entered_By ||
+        '';
+      const recordUserFirst =
+        record.User_First ||
+        record.First_Name ||
+        (typeof recordUserFullName === 'string' ? String(recordUserFullName).trim().split(/\s+/)[0] : '') ||
+        '';
       
       return {
         id: record.Note_ID || record.ID || record.id || Math.random().toString(36),
         noteId: record.Note_ID || '',
         clientId2: record.Client_ID2 || '',
         userId: record.User_ID || '',
+        userFirst: user.userFirst || recordUserFirst || '',
         comments: record.Comments || '',
         timeStamp: record.Time_Stamp || '',
         followUpDate: record.Follow_Up_Date || '',
@@ -472,7 +512,7 @@ async function fetchFromCaspioAndSave(
         seniorFirst: client.seniorFirst || '',
         seniorLast: client.seniorLast || '',
         seniorFullName: client.seniorFullName || '',
-        userFullName: user.userFullName || '',
+        userFullName: user.userFullName || recordUserFullName || '',
         userRole: user.role || '',
         isNew: since ? new Date(record.Time_Stamp) > new Date(since) : false
       };
