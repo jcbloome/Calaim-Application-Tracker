@@ -49,11 +49,6 @@ interface MemberVisitQuestionnaire {
   rcfeAddress: string;
   visitDate: string;
   memberRoomNumber: string;
-  memberSignoff: {
-    acknowledged: boolean;
-    signatureName: string;
-    signedAt: string;
-  };
   
   meetingLocation: {
     location: string;
@@ -111,7 +106,36 @@ interface MemberVisitQuestionnaire {
     totalScore: number;
     flagged: boolean;
   };
+
+  communityCareLicensing: {
+    facilitySearchUrl: string;
+    month: string; // YYYY-MM
+    rcfeId: string;
+    rcfeName: string;
+    latestReportDate: string; // YYYY-MM-DD
+    typeAViolations: number;
+    typeBViolations: number;
+    seriousViolationComments: string;
+    noNewReportsSinceLastCheck: boolean;
+    lastCheckAt?: string;
+  };
 }
+
+type RcfeMonthlyCclCheck = {
+  id: string;
+  rcfeId: string;
+  rcfeName: string;
+  month: string;
+  latestReportDate: string;
+  typeAViolations: number;
+  typeBViolations: number;
+  seriousViolationComments: string;
+  checkedAt?: string;
+  updatedAt?: string;
+  checkedByName?: string;
+};
+
+const CCLD_ELDERLY_ASSISTED_LIVING_URL = 'https://www.ccld.dss.ca.gov/carefacilitysearch/';
 
 interface Member {
   id: string;
@@ -216,11 +240,6 @@ export default function SWVisitVerification() {
     rcfeAddress: '',
     visitDate: new Date().toISOString().split('T')[0],
     memberRoomNumber: '',
-    memberSignoff: {
-      acknowledged: false,
-      signatureName: '',
-      signedAt: '',
-    },
 
     meetingLocation: {
       location: '',
@@ -277,7 +296,19 @@ export default function SWVisitVerification() {
     visitSummary: {
       totalScore: 0,
       flagged: false
-    }
+    },
+    communityCareLicensing: {
+      facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
+      month: new Date().toISOString().slice(0, 7),
+      rcfeId: '',
+      rcfeName: '',
+      latestReportDate: '',
+      typeAViolations: 0,
+      typeBViolations: 0,
+      seriousViolationComments: '',
+      noNewReportsSinceLastCheck: false,
+      lastCheckAt: '',
+    },
   });
   
   // Track completed visits for sign-off
@@ -395,6 +426,7 @@ export default function SWVisitVerification() {
     geolocation: null as any,
     locationVerified: false
   });
+
   
   // Fetch SW's assigned RCFEs and members
   const [rcfeList, setRcfeList] = useState<RCFE[]>([]);
@@ -413,11 +445,16 @@ export default function SWVisitVerification() {
   >({});
   const [loadingDraftVisits, setLoadingDraftVisits] = useState(false);
 
+  const [rcfeMonthlyCclCheck, setRcfeMonthlyCclCheck] = useState<RcfeMonthlyCclCheck | null>(null);
+  const [loadingRcfeMonthlyCclCheck, setLoadingRcfeMonthlyCclCheck] = useState(false);
+
   const claimDayKey = useMemo(() => {
     const d = String(questionnaire.visitDate || '').trim().slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     return new Date().toISOString().slice(0, 10);
   }, [questionnaire.visitDate]);
+
+  const visitMonthKey = useMemo(() => claimDayKey.slice(0, 7), [claimDayKey]);
 
   const getIdToken = useCallback(async () => {
     try {
@@ -435,6 +472,129 @@ export default function SWVisitVerification() {
     }
     return '';
   }, [auth, user]);
+
+
+  // Load the once-per-RCFE-per-month Community Care Licensing (CCLD) check.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!selectedRCFE?.id) {
+        setRcfeMonthlyCclCheck(null);
+        return;
+      }
+      if (!visitMonthKey || !/^\d{4}-\d{2}$/.test(visitMonthKey)) {
+        setRcfeMonthlyCclCheck(null);
+        return;
+      }
+      setLoadingRcfeMonthlyCclCheck(true);
+      try {
+        const idToken = await getIdToken();
+        if (!idToken) throw new Error('Not signed in');
+        const qs = new URLSearchParams({
+          rcfeId: String(selectedRCFE.id),
+          month: visitMonthKey,
+        });
+        const res = await fetch(`/api/sw-visits/rcfe-ccl-check?${qs.toString()}`, {
+          headers: { authorization: `Bearer ${idToken}` },
+        });
+        const data = (await res.json().catch(() => ({} as any))) as any;
+        if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load CCLD check (${res.status})`);
+        const check = data?.check || null;
+        if (cancelled) return;
+        setRcfeMonthlyCclCheck(
+          check
+            ? {
+                id: String(check?.id || '').trim() || `${String(selectedRCFE.id)}_${visitMonthKey}`,
+                rcfeId: String(check?.rcfeId || selectedRCFE.id || '').trim(),
+                rcfeName: String(check?.rcfeName || selectedRCFE.name || '').trim(),
+                month: String(check?.month || visitMonthKey || '').trim(),
+                latestReportDate: String(check?.latestReportDate || '').trim(),
+                typeAViolations: Number(check?.typeAViolations ?? 0) || 0,
+                typeBViolations: Number(check?.typeBViolations ?? 0) || 0,
+                seriousViolationComments: String(check?.seriousViolationComments || '').trim(),
+                checkedAt: String(check?.checkedAt || '').trim() || undefined,
+                updatedAt: String(check?.updatedAt || '').trim() || undefined,
+                checkedByName: String(check?.checkedByName || '').trim() || undefined,
+              }
+            : null
+        );
+      } catch {
+        if (!cancelled) setRcfeMonthlyCclCheck(null);
+      } finally {
+        if (!cancelled) setLoadingRcfeMonthlyCclCheck(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [getIdToken, selectedRCFE?.id, selectedRCFE?.name, visitMonthKey]);
+
+  // Keep the questionnaire's CCLD section aligned to the selected RCFE + month.
+  useEffect(() => {
+    if (!selectedRCFE?.id) return;
+    if (!visitMonthKey) return;
+    setQuestionnaire((prev) => {
+      const ccl = prev.communityCareLicensing || ({} as any);
+      const prevRcfeId = String(ccl?.rcfeId || '').trim();
+      const prevMonth = String(ccl?.month || '').trim();
+      const contextChanged =
+        (prevRcfeId && prevRcfeId !== String(selectedRCFE.id)) ||
+        (prevMonth && prevMonth !== String(visitMonthKey));
+      const base = {
+        ...ccl,
+        facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
+        month: visitMonthKey,
+        rcfeId: String(selectedRCFE.id),
+        rcfeName: String(selectedRCFE.name || ''),
+      };
+
+      const cleared = contextChanged
+        ? {
+            ...base,
+            latestReportDate: '',
+            typeAViolations: 0,
+            typeBViolations: 0,
+            seriousViolationComments: '',
+            noNewReportsSinceLastCheck: false,
+            lastCheckAt: '',
+          }
+        : base;
+
+      // If we have an existing monthly check, default to "no new reports since last check" and
+      // hydrate the details (unless the SW has explicitly opted to re-check/edit).
+      if (rcfeMonthlyCclCheck) {
+        const hasUserInput =
+          Boolean(String(cleared.latestReportDate || '').trim()) ||
+          Number(cleared.typeAViolations || 0) > 0 ||
+          Number(cleared.typeBViolations || 0) > 0 ||
+          Boolean(String(cleared.seriousViolationComments || '').trim());
+        const shouldUseExisting = Boolean(cleared.noNewReportsSinceLastCheck) || !hasUserInput;
+        return {
+          ...prev,
+          communityCareLicensing: {
+            ...cleared,
+            noNewReportsSinceLastCheck: shouldUseExisting ? true : false,
+            latestReportDate: shouldUseExisting ? rcfeMonthlyCclCheck.latestReportDate : cleared.latestReportDate,
+            typeAViolations: shouldUseExisting ? rcfeMonthlyCclCheck.typeAViolations : cleared.typeAViolations,
+            typeBViolations: shouldUseExisting ? rcfeMonthlyCclCheck.typeBViolations : cleared.typeBViolations,
+            seriousViolationComments: shouldUseExisting ? rcfeMonthlyCclCheck.seriousViolationComments : cleared.seriousViolationComments,
+            lastCheckAt: rcfeMonthlyCclCheck.checkedAt || rcfeMonthlyCclCheck.updatedAt || cleared.lastCheckAt || '',
+          },
+        };
+      }
+
+      // No existing check found → force entry (no "no new reports" allowed).
+      return {
+        ...prev,
+        communityCareLicensing: {
+          ...cleared,
+          noNewReportsSinceLastCheck: false,
+          lastCheckAt: '',
+        },
+      };
+    });
+  }, [rcfeMonthlyCclCheck, selectedRCFE?.id, selectedRCFE?.name, visitMonthKey]);
 
   const refreshDraftVisits = useCallback(async () => {
     if (!user || !isSocialWorker || !selectedRCFE?.id) {
@@ -798,7 +958,6 @@ export default function SWVisitVerification() {
       rcfeName: member.rcfeName,
       rcfeAddress: member.rcfeAddress,
       memberRoomNumber: '',
-      memberSignoff: { acknowledged: false, signatureName: '', signedAt: '' },
     }));
     setQuestionStep(1);
     setCurrentStep('questionnaire');
@@ -856,11 +1015,6 @@ export default function SWVisitVerification() {
       rcfeAddress: selectedMember.rcfeAddress,
       visitDate: new Date().toISOString().split('T')[0],
       memberRoomNumber: '',
-      memberSignoff: {
-        acknowledged: false,
-        signatureName: '',
-        signedAt: '',
-      },
       meetingLocation: {
         location: '',
         otherLocation: '',
@@ -911,6 +1065,18 @@ export default function SWVisitVerification() {
       visitSummary: {
         totalScore: 0,
         flagged: false,
+      },
+      communityCareLicensing: {
+        facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
+        month: new Date().toISOString().slice(0, 7),
+        rcfeId: selectedMember.rcfeId,
+        rcfeName: selectedMember.rcfeName,
+        latestReportDate: '',
+        typeAViolations: 0,
+        typeBViolations: 0,
+        seriousViolationComments: '',
+        noNewReportsSinceLastCheck: false,
+        lastCheckAt: '',
       },
     });
     setQuestionStep(1);
@@ -1026,7 +1192,6 @@ export default function SWVisitVerification() {
           rcfeAddress: selectedMember.rcfeAddress,
           visitDate: new Date().toISOString().split('T')[0],
           memberRoomNumber: '',
-          memberSignoff: { acknowledged: false, signatureName: '', signedAt: '' },
           meetingLocation: { location: '', otherLocation: '', notes: '' },
           memberWellbeing: { physicalHealth: 0, mentalHealth: 0, socialEngagement: 0, overallMood: 0, notes: '' },
           careSatisfaction: {
@@ -1065,6 +1230,18 @@ export default function SWVisitVerification() {
             flagForReview: false,
           },
           visitSummary: { totalScore: 0, flagged: false },
+          communityCareLicensing: {
+            facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
+            month: new Date().toISOString().slice(0, 7),
+            rcfeId: selectedMember.rcfeId,
+            rcfeName: selectedMember.rcfeName,
+            latestReportDate: '',
+            typeAViolations: 0,
+            typeBViolations: 0,
+            seriousViolationComments: '',
+            noNewReportsSinceLastCheck: false,
+            lastCheckAt: '',
+          },
         });
       }
       setQuestionStep(1);
@@ -1240,8 +1417,22 @@ export default function SWVisitVerification() {
       errors.push("Overall rating is required");
     }
 
-    if (questionnaire.memberSignoff?.acknowledged && !String(questionnaire.memberSignoff?.signatureName || '').trim()) {
-      errors.push("Member signature name is required (or uncheck member sign-off)");
+    // Community Care Licensing (CCLD) check: required once per RCFE per month.
+    const ccl = questionnaire.communityCareLicensing;
+    const hasExistingMonthlyCheck = Boolean(rcfeMonthlyCclCheck && rcfeMonthlyCclCheck.rcfeId);
+    const wantsNoNewReports = Boolean(ccl?.noNewReportsSinceLastCheck);
+    if (wantsNoNewReports && !hasExistingMonthlyCheck) {
+      errors.push("Community Care Licensing check is required for this RCFE/month (no previous check found).");
+    }
+    if (!wantsNoNewReports) {
+      const latest = String(ccl?.latestReportDate || '').trim();
+      const typeA = Number(ccl?.typeAViolations ?? NaN);
+      const typeB = Number(ccl?.typeBViolations ?? NaN);
+      if (!latest || !/^\d{4}-\d{2}-\d{2}$/.test(latest)) {
+        errors.push("Community Care Licensing: latest violation report date is required");
+      }
+      if (!Number.isFinite(typeA) || typeA < 0) errors.push("Community Care Licensing: Type A violations must be 0 or greater");
+      if (!Number.isFinite(typeB) || typeB < 0) errors.push("Community Care Licensing: Type B violations must be 0 or greater");
     }
     
     // Note: Social worker observations are captured in rcfeAssessment.notes
@@ -1310,9 +1501,36 @@ export default function SWVisitVerification() {
         }
       }
 
+      // Attach the Community Care Licensing (CCLD) monthly RCFE check to this draft.
+      const baseCcl = questionnaire.communityCareLicensing || ({} as any);
+      const effectiveCcl =
+        baseCcl.noNewReportsSinceLastCheck && rcfeMonthlyCclCheck
+          ? {
+              facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
+              month: visitMonthKey,
+              rcfeId: questionnaire.rcfeId,
+              rcfeName: questionnaire.rcfeName,
+              latestReportDate: rcfeMonthlyCclCheck.latestReportDate,
+              typeAViolations: rcfeMonthlyCclCheck.typeAViolations,
+              typeBViolations: rcfeMonthlyCclCheck.typeBViolations,
+              seriousViolationComments: rcfeMonthlyCclCheck.seriousViolationComments,
+              noNewReportsSinceLastCheck: true,
+              lastCheckAt: rcfeMonthlyCclCheck.checkedAt || rcfeMonthlyCclCheck.updatedAt || baseCcl.lastCheckAt || '',
+            }
+          : {
+              ...baseCcl,
+              facilitySearchUrl: CCLD_ELDERLY_ASSISTED_LIVING_URL,
+              month: visitMonthKey,
+              rcfeId: questionnaire.rcfeId,
+              rcfeName: questionnaire.rcfeName,
+              noNewReportsSinceLastCheck: false,
+              lastCheckAt: new Date().toISOString(),
+            };
+
       // Save draft to API (no claim yet)
       const submitData = {
         ...questionnaire,
+        communityCareLicensing: effectiveCcl,
         socialWorkerUid: user?.uid || null,
         socialWorkerEmail: (user?.email || '').toLowerCase() || null,
         socialWorkerName: user?.displayName || user?.email || questionnaire.socialWorkerId || null,
@@ -2397,75 +2615,145 @@ export default function SWVisitVerification() {
                     )}
                   </div>
 
-                  <div className="rounded-lg border bg-white p-4">
-                    <div className="text-sm font-semibold text-slate-900">Member sign-off (optional)</div>
-                    <div className="mt-1 text-xs text-slate-600">
-                      If the member is able, they can acknowledge this questionnaire with a typed signature.
+                  <div className="rounded-lg border bg-white p-4 space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">
+                          Community Care Licensing (monthly RCFE check) <span className="text-red-500">*</span>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          Required once per RCFE each month. Use the official CCLD site to review violations for this facility.
+                        </div>
+                      </div>
+                      <a
+                        className="text-xs underline underline-offset-2 text-blue-700"
+                        href={CCLD_ELDERLY_ASSISTED_LIVING_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open CCLD facility search
+                      </a>
                     </div>
 
-                    <label className="mt-3 flex items-start gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(questionnaire.memberSignoff?.acknowledged)}
+                    {loadingRcfeMonthlyCclCheck ? (
+                      <div className="text-xs text-muted-foreground">Loading this month’s saved RCFE check…</div>
+                    ) : rcfeMonthlyCclCheck ? (
+                      <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-700">
+                        <div className="font-medium text-slate-900">Saved for {rcfeMonthlyCclCheck.month}</div>
+                        <div className="mt-1">
+                          Latest report date: <span className="font-semibold">{rcfeMonthlyCclCheck.latestReportDate || '—'}</span> • Type A:{' '}
+                          <span className="font-semibold">{rcfeMonthlyCclCheck.typeAViolations}</span> • Type B:{' '}
+                          <span className="font-semibold">{rcfeMonthlyCclCheck.typeBViolations}</span>
+                        </div>
+                        {rcfeMonthlyCclCheck.checkedAt || rcfeMonthlyCclCheck.updatedAt ? (
+                          <div className="mt-1 text-muted-foreground">
+                            Last checked: {String(rcfeMonthlyCclCheck.checkedAt || rcfeMonthlyCclCheck.updatedAt)}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-amber-700">
+                        No check saved yet for {visitMonthKey}. Please complete the fields below.
+                      </div>
+                    )}
+
+                    {rcfeMonthlyCclCheck ? (
+                      <label className="flex items-start gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
+                          onChange={(e) =>
+                            setQuestionnaire((prev) => ({
+                              ...prev,
+                              communityCareLicensing: {
+                                ...prev.communityCareLicensing,
+                                noNewReportsSinceLastCheck: e.target.checked,
+                              },
+                            }))
+                          }
+                          className="mt-1 h-4 w-4"
+                        />
+                        <span>
+                          No new reports since the last questionnaire reported date (reuse this month’s RCFE check)
+                        </span>
+                      </label>
+                    ) : null}
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="space-y-1.5 sm:col-span-1">
+                        <label className="text-sm font-medium">Latest violation report date</label>
+                        <Input
+                          type="date"
+                          value={String(questionnaire.communityCareLicensing?.latestReportDate || '')}
+                          onChange={(e) =>
+                            setQuestionnaire((prev) => ({
+                              ...prev,
+                              communityCareLicensing: {
+                                ...prev.communityCareLicensing,
+                                latestReportDate: e.target.value,
+                              },
+                            }))
+                          }
+                          disabled={Boolean(rcfeMonthlyCclCheck && questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Type A violations</label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={String(questionnaire.communityCareLicensing?.typeAViolations ?? 0)}
+                          onChange={(e) =>
+                            setQuestionnaire((prev) => ({
+                              ...prev,
+                              communityCareLicensing: {
+                                ...prev.communityCareLicensing,
+                                typeAViolations: Math.max(0, Number(e.target.value || 0)),
+                              },
+                            }))
+                          }
+                          disabled={Boolean(rcfeMonthlyCclCheck && questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Type B violations</label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={String(questionnaire.communityCareLicensing?.typeBViolations ?? 0)}
+                          onChange={(e) =>
+                            setQuestionnaire((prev) => ({
+                              ...prev,
+                              communityCareLicensing: {
+                                ...prev.communityCareLicensing,
+                                typeBViolations: Math.max(0, Number(e.target.value || 0)),
+                              },
+                            }))
+                          }
+                          disabled={Boolean(rcfeMonthlyCclCheck && questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Serious violations / comments</label>
+                      <Textarea
+                        placeholder="Note any serious violations staff should be aware of…"
+                        value={String(questionnaire.communityCareLicensing?.seriousViolationComments || '')}
                         onChange={(e) =>
                           setQuestionnaire((prev) => ({
                             ...prev,
-                            memberSignoff: {
-                              ...prev.memberSignoff,
-                              acknowledged: e.target.checked,
+                            communityCareLicensing: {
+                              ...prev.communityCareLicensing,
+                              seriousViolationComments: e.target.value,
                             },
                           }))
                         }
-                        className="mt-1 h-4 w-4"
+                        disabled={Boolean(rcfeMonthlyCclCheck && questionnaire.communityCareLicensing?.noNewReportsSinceLastCheck)}
                       />
-                      <span>Member acknowledged this visit/questionnaire</span>
-                    </label>
-
-                    {questionnaire.memberSignoff?.acknowledged ? (
-                      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium">Member signature (type full name)</label>
-                          <Input
-                            value={String(questionnaire.memberSignoff?.signatureName || '')}
-                            onChange={(e) =>
-                              setQuestionnaire((prev) => ({
-                                ...prev,
-                                memberSignoff: {
-                                  ...prev.memberSignoff,
-                                  signatureName: e.target.value,
-                                  signedAt: prev.memberSignoff?.signedAt || new Date().toISOString(),
-                                },
-                              }))
-                            }
-                            placeholder="Type full name"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium">Signed at</label>
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                            <Input value={String(questionnaire.memberSignoff?.signedAt || '')} readOnly />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="w-full sm:w-auto"
-                              onClick={() =>
-                                setQuestionnaire((prev) => ({
-                                  ...prev,
-                                  memberSignoff: {
-                                    ...prev.memberSignoff,
-                                    signedAt: new Date().toISOString(),
-                                  },
-                                }))
-                              }
-                            >
-                              Set time to now
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
+                    </div>
                   </div>
-                  
+
                 </CardContent>
               </Card>
             )}
@@ -3066,10 +3354,7 @@ export default function SWVisitVerification() {
                         </div>
                       </div>
                       {nextMemberAtSelectedRcfe ? (
-                        <Button type="button" size="sm" onClick={() => handleMemberSelect(nextMemberAtSelectedRcfe as any)}>
-                          <ArrowRight className="h-4 w-4 mr-2" />
-                          Next member
-                        </Button>
+                        <Badge variant="secondary">More members at this RCFE</Badge>
                       ) : (
                         <Badge className="bg-green-600 hover:bg-green-600">
                           <CheckCircle className="h-3 w-3 mr-1" />
@@ -3091,78 +3376,114 @@ export default function SWVisitVerification() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Continue at Same RCFE */}
-                  <Button
-                    onClick={() => setCurrentStep('select-member')}
-                    className="h-auto p-6 flex-col space-y-2"
-                    variant="outline"
-                  >
-                    <User className="h-8 w-8 text-blue-600" />
-                    <div className="text-center">
-                      <div className="font-semibold">{nextMemberAtSelectedRcfe ? 'Continue to Next Member' : 'Visit Another Member'}</div>
-                      <div className="text-sm text-muted-foreground">
-                        Continue at {selectedRCFE?.name}
-                      </div>
-                    </div>
-                  </Button>
-
-                  {/* Go to Different RCFE */}
-                  <Button
-                    onClick={() => {
-                      setCurrentStep('select-rcfe');
-                      setSelectedRCFE(null);
-                      setSelectedMember(null);
-                      setQuestionStep(1);
-                    }}
-                    className="h-auto p-6 flex-col space-y-2"
-                    variant="outline"
-                  >
-                    <Building className="h-8 w-8 text-purple-600" />
-                    <div className="text-center">
-                      <div className="font-semibold">Visit Different RCFE</div>
-                      <div className="text-sm text-muted-foreground">
-                        Select another facility
-                      </div>
-                    </div>
-                  </Button>
-                </div>
-
-                {/* Sign-Off Option (if visits completed) */}
-                {completedVisitsForSelectedRcfe.length > 0 && (
-                  <div className="pt-4 border-t">
-                    <Button
-                      onClick={() =>
-                        router.push(
-                          `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
-                            claimDayKey
-                          )}`
-                        )
-                      }
-                      className="w-full h-auto p-4 bg-green-600 hover:bg-green-700"
-                    >
-                      <div className="flex items-center justify-center space-x-3">
-                        <CheckCircle className="h-6 w-6" />
-                        <div className="text-center">
-                          <div className="font-semibold">Sign Off & Submit</div>
-                          <div className="text-sm opacity-90">
-                            {completedVisitsForSelectedRcfe.length} draft{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} ready at this home
+                {completedVisitsForSelectedRcfe.length > 0 ? (
+                  <>
+                    {nextMemberAtSelectedRcfe ? (
+                      <>
+                        <div className="rounded-lg border bg-blue-50/40 p-4">
+                          <div className="text-sm font-semibold text-slate-900">More members at this RCFE</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Would you like to continue to the next member at {selectedRCFE?.name}, or get RCFE staff sign-off for this set of members?
                           </div>
                         </div>
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <Button
+                            type="button"
+                            onClick={() => handleMemberSelect(nextMemberAtSelectedRcfe as any)}
+                            className="h-auto p-5 flex-col items-start gap-1"
+                            variant="outline"
+                          >
+                            <div className="flex items-center gap-2">
+                              <ArrowRight className="h-5 w-5 text-blue-600" />
+                              <div className="font-semibold">Next member at this RCFE</div>
+                            </div>
+                            <div className="text-sm text-muted-foreground text-left">
+                              Continue the questionnaire workflow at {selectedRCFE?.name}
+                            </div>
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={() =>
+                              router.push(
+                                `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
+                                  claimDayKey
+                                )}`
+                              )
+                            }
+                            className="h-auto p-5 flex-col items-start gap-1 bg-green-600 hover:bg-green-700"
+                          >
+                            <div className="flex items-center gap-2">
+                              <CheckCircle className="h-5 w-5" />
+                              <div className="font-semibold">Sign off for this RCFE set</div>
+                            </div>
+                            <div className="text-sm opacity-90 text-left">
+                              Submit {completedVisitsForSelectedRcfe.length} draft{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} for {selectedRCFE?.name}
+                            </div>
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-3">
+                        <Button
+                          type="button"
+                          onClick={() =>
+                            router.push(
+                              `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
+                                claimDayKey
+                              )}`
+                            )
+                          }
+                          className="w-full h-auto p-5 bg-green-600 hover:bg-green-700"
+                        >
+                          <div className="flex items-center justify-center gap-3">
+                            <CheckCircle className="h-6 w-6" />
+                            <div className="text-center">
+                              <div className="font-semibold">Sign Off & Submit</div>
+                              <div className="text-sm opacity-90">
+                                {completedVisitsForSelectedRcfe.length} draft{completedVisitsForSelectedRcfe.length !== 1 ? 's' : ''} ready at this home
+                              </div>
+                            </div>
+                          </div>
+                        </Button>
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <Button type="button" variant="outline" onClick={() => setCurrentStep('select-member')} className="h-auto p-5">
+                            Back to member list
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setCurrentStep('select-rcfe');
+                              setSelectedRCFE(null);
+                              setSelectedMember(null);
+                              setQuestionStep(1);
+                            }}
+                            className="h-auto p-5"
+                          >
+                            Visit different RCFE
+                          </Button>
+                        </div>
                       </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <Button type="button" variant="outline" onClick={() => setCurrentStep('select-member')} className="h-auto p-5">
+                      Back to member list
                     </Button>
-                    <div className="mt-3 text-center text-sm text-muted-foreground">
-                      Have all members been visited at this RCFE?{' '}
-                      <Link
-                        className="font-medium text-primary hover:underline"
-                        href={`/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
-                          claimDayKey
-                        )}`}
-                      >
-                        Go to Sign Off Page
-                      </Link>
-                      .
-                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setCurrentStep('select-rcfe');
+                        setSelectedRCFE(null);
+                        setSelectedMember(null);
+                        setQuestionStep(1);
+                      }}
+                      className="h-auto p-5"
+                    >
+                      Visit different RCFE
+                    </Button>
                   </div>
                 )}
 

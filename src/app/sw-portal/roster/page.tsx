@@ -158,6 +158,7 @@ export default function SWRosterPage() {
   }, [user?.email]);
 
   const [statusMonth, setStatusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
+  const [facilitySort, setFacilitySort] = useState<'assigned' | 'rcfe-az' | 'rcfe-za'>('assigned');
 
   const monthOptions = useMemo(() => {
     // SW claims/visit tracking begins Feb 2026 (testing); don't show earlier months.
@@ -429,9 +430,22 @@ export default function SWRosterPage() {
       .filter(Boolean) as RosterFacility[];
   }, [facilities, query]);
 
+  const sortFacilities = useCallback((list: RosterFacility[]) => {
+    if (facilitySort === 'assigned') return list;
+    const dir = facilitySort === 'rcfe-za' ? -1 : 1;
+    return list
+      .slice()
+      .sort(
+        (a, b) =>
+          dir * (String(a?.name || '').localeCompare(String(b?.name || '')) || String(a?.address || '').localeCompare(String(b?.address || '')))
+      );
+  }, [facilitySort]);
+
+  const displayFacilities = useMemo(() => sortFacilities(filteredFacilities), [filteredFacilities, sortFacilities]);
+
   const printFacilities = useMemo(() => {
-    if (!printNeedsActionOnly) return filteredFacilities;
-    if (!monthStatusesLoaded) return filteredFacilities;
+    if (!printNeedsActionOnly) return sortFacilities(filteredFacilities);
+    if (!monthStatusesLoaded) return sortFacilities(filteredFacilities);
 
     const out: RosterFacility[] = [];
     for (const f of filteredFacilities) {
@@ -443,8 +457,8 @@ export default function SWRosterPage() {
       });
       if (keep.length > 0) out.push({ ...f, members: keep });
     }
-    return out;
-  }, [filteredFacilities, monthStatuses, monthStatusesLoaded, printNeedsActionOnly]);
+    return sortFacilities(out);
+  }, [filteredFacilities, monthStatuses, monthStatusesLoaded, printNeedsActionOnly, sortFacilities]);
 
   const totals = useMemo(() => {
     const facilityCount = facilities.length;
@@ -524,6 +538,19 @@ export default function SWRosterPage() {
                       {m.label}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span>• Sort:</span>
+              <Select value={facilitySort} onValueChange={(v) => setFacilitySort(v as any)}>
+                <SelectTrigger className="h-7 w-[160px] bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="assigned">Assigned order</SelectItem>
+                  <SelectItem value="rcfe-az">RCFE A–Z</SelectItem>
+                  <SelectItem value="rcfe-za">RCFE Z–A</SelectItem>
                 </SelectContent>
               </Select>
             </span>
@@ -904,7 +931,7 @@ export default function SWRosterPage() {
         </div>
 
         {/* Screen: compact roster table */}
-        {filteredFacilities.length > 0 ? (
+        {displayFacilities.length > 0 ? (
           <div className="rounded-lg border bg-white print:hidden">
             <div className="overflow-x-auto">
               <Table>
@@ -915,7 +942,7 @@ export default function SWRosterPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredFacilities.map((f) => (
+                  {displayFacilities.map((f) => (
                     <React.Fragment key={`group-${f.id}`}>
                       <TableRow key={`rcfe-${f.id}`} id={rcfeAnchorId(String(f.id || '').trim())} className="bg-slate-50">
                         <TableCell colSpan={2}>

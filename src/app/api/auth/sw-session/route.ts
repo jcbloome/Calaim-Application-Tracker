@@ -3,6 +3,46 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const clean = (v: unknown, max = 200) => String(v ?? '').trim().slice(0, max);
+
+async function resolveSwDisplayName(params: {
+  adminDb: any;
+  record: any;
+  email: string;
+}): Promise<string> {
+  const fromRecord = clean(params.record?.displayName, 140) || clean(params.record?.name, 140);
+  if (fromRecord) return fromRecord;
+
+  const email = clean(params.email, 200).toLowerCase();
+  const swId = clean(params.record?.sw_id || params.record?.SW_ID, 80);
+
+  try {
+    if (email) {
+      const s1 = await params.adminDb.collection('syncedSocialWorkers').where('email', '==', email).limit(1).get();
+      if (!s1.empty) {
+        const name = clean(s1.docs[0].data()?.name, 140);
+        if (name) return name;
+      }
+    }
+  } catch {
+    // ignore best-effort
+  }
+
+  try {
+    if (swId) {
+      const s2 = await params.adminDb.collection('syncedSocialWorkers').where('sw_id', '==', swId).limit(1).get();
+      if (!s2.empty) {
+        const name = clean(s2.docs[0].data()?.name, 140);
+        if (name) return name;
+      }
+    }
+  } catch {
+    // ignore best-effort
+  }
+
+  return '';
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { idToken } = await request.json();
@@ -68,10 +108,12 @@ export async function POST(request: NextRequest) {
 
     // Ensure there is a UID-keyed SW doc for rules / consistent lookups.
     try {
+      const displayNameResolved = await resolveSwDisplayName({ adminDb, record, email });
       const merged = {
         ...(record || {}),
         email,
         isActive: true,
+        displayName: displayNameResolved || (record?.displayName ?? record?.name ?? null),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
       if (!uidDoc.exists) {

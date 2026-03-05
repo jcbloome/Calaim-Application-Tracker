@@ -42,6 +42,9 @@ type StandaloneUpload = {
   uploaderName?: string;
   uploaderEmail?: string;
   memberName: string;
+  memberFirstName?: string;
+  memberLastName?: string;
+  memberNameSearch?: string;
   memberBirthdate: string;
   healthPlan?: string;
   medicalRecordNumber?: string | null;
@@ -115,6 +118,9 @@ export default function StandaloneUploadsPage() {
             uploaderName: toLabel(r.uploaderName) || undefined,
             uploaderEmail: toLabel(r.uploaderEmail) || undefined,
             memberName: toLabel(r.memberName),
+            memberFirstName: toLabel(r.memberFirstName) || undefined,
+            memberLastName: toLabel(r.memberLastName) || undefined,
+            memberNameSearch: toLabel(r.memberNameSearch) || undefined,
             memberBirthdate: toLabel(r.memberBirthdate),
             healthPlan: toLabel(r.healthPlan) || undefined,
             medicalRecordNumber: r.medicalRecordNumber ?? r.kaiserMrn ?? r.mediCalNumber ?? null,
@@ -158,9 +164,13 @@ export default function StandaloneUploadsPage() {
       const isAlft = toolCode === 'ALFT' || dtLower.includes('alft');
       const matchesTool = toolFilter === 'all' || (toolFilter === 'alft' ? isAlft : true);
 
+      const memberNameSearch = toLabel((r as any).memberNameSearch).toLowerCase();
       const matchesSearch =
         !s ||
         toLabel(r.memberName).toLowerCase().includes(s) ||
+        toLabel((r as any).memberLastName).toLowerCase().includes(s) ||
+        toLabel((r as any).memberFirstName).toLowerCase().includes(s) ||
+        memberNameSearch.includes(s) ||
         toLabel(r.documentType).toLowerCase().includes(s) ||
         toLabel(r.uploaderName).toLowerCase().includes(s) ||
         toLabel(r.uploaderEmail).toLowerCase().includes(s) ||
@@ -195,7 +205,7 @@ export default function StandaloneUploadsPage() {
     setAssignOpen(true);
     setAssigning(false);
     setAssignedOpenUrl('');
-    setMemberSearch(row?.memberName || '');
+    setMemberSearch(row?.memberLastName || row?.memberName || '');
     setMemberResults([]);
     setSelectedMember(null);
     setSelectedMemberMrn('');

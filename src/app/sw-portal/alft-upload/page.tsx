@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth, useStorage } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
@@ -36,18 +36,25 @@ export default function SwAlftUploadPage() {
   const { user, socialWorkerData, isSocialWorker, isLoading } = useSocialWorker();
 
   const swEmail = String((user as any)?.email || '').trim();
-  const swDisplayName = String(
-    (socialWorkerData as any)?.displayName || (user as any)?.displayName || swEmail || 'Social Worker'
-  ).trim();
+  const swProfileName = String((socialWorkerData as any)?.displayName || (user as any)?.displayName || '').trim();
+  const swRealName = swProfileName && !swProfileName.includes('@') ? swProfileName : '';
+  const swDisplayName = swRealName || swEmail || 'Social Worker';
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [files, setFiles] = useState<FileList | null>(null);
 
-  const [memberName, setMemberName] = useState('');
+  const [memberFirstName, setMemberFirstName] = useState('');
+  const [memberLastName, setMemberLastName] = useState('');
   const [uploadDate, setUploadDate] = useState<string>(() => todayLocalKey()); // YYYY-MM-DD
   const [kaiserMrn, setKaiserMrn] = useState('');
-  const [socialWorkerName, setSocialWorkerName] = useState(swDisplayName);
+  const [socialWorkerName, setSocialWorkerName] = useState(swRealName);
+
+  // If the SW profile name loads after first render, auto-populate the field.
+  useEffect(() => {
+    if (!swRealName) return;
+    setSocialWorkerName((prev) => (prev && !prev.includes('@') ? prev : swRealName));
+  }, [swRealName]);
 
   const uploaderParts = useMemo(() => {
     const cleaned = socialWorkerName.replace(/\s+/g, ' ').trim();
@@ -66,14 +73,24 @@ export default function SwAlftUploadPage() {
       toast({ title: 'Not signed in', description: 'Please sign in again.', variant: 'destructive' });
       return;
     }
-    const mName = memberName.trim();
+    const first = memberFirstName.trim();
+    const last = memberLastName.trim();
+    const memberName = `${first} ${last}`.replace(/\s+/g, ' ').trim();
     const upDate = uploadDate.trim();
     const mrn = kaiserMrn.trim();
     const swName = socialWorkerName.trim();
-    if (!mName || !mrn || !swName || !upDate) {
+    if (!first || !last || !mrn || !swName || !upDate) {
       toast({
         title: 'Missing info',
-        description: 'Member name, Kaiser MRN, social worker name, and upload date are required.',
+        description: 'Member first/last name, Kaiser MRN, social worker name, and upload date are required.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (swName.includes('@')) {
+      toast({
+        title: 'Social worker name required',
+        description: 'Please enter your real name (not an email address).',
         variant: 'destructive',
       });
       return;
@@ -89,7 +106,7 @@ export default function SwAlftUploadPage() {
 
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const safeMember = sanitizePathSegment(mName);
+      const safeMember = sanitizePathSegment(memberName);
       const uploadRoot = `user_uploads/${user.uid}/sw-portal/alft/${safeMember}_${timestamp}`;
 
       const uploadPromises = Array.from(files)
@@ -125,7 +142,7 @@ export default function SwAlftUploadPage() {
           idToken,
           uploader: { ...uploaderParts, email: swEmail, displayName: swName },
           uploadDate: upDate,
-          member: { name: mName, healthPlan: 'Kaiser', kaiserMrn: mrn, medicalRecordNumber: mrn },
+          member: { firstName: first, lastName: last, name: memberName, healthPlan: 'Kaiser', kaiserMrn: mrn, medicalRecordNumber: mrn },
           files: results.map((r) => ({ fileName: r.fileName, downloadURL: r.downloadURL, storagePath: r.storagePath })),
         }),
       });
@@ -140,10 +157,11 @@ export default function SwAlftUploadPage() {
       });
 
       setFiles(null);
-      setMemberName('');
+      setMemberFirstName('');
+      setMemberLastName('');
       setUploadDate(todayLocalKey());
       setKaiserMrn('');
-      setSocialWorkerName(swDisplayName);
+      setSocialWorkerName(swRealName);
       setUploadProgress(0);
     } catch (err: any) {
       toast({
@@ -198,29 +216,67 @@ export default function SwAlftUploadPage() {
           </Alert>
 
           <form onSubmit={handleUpload} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="memberName">Member name</Label>
-              <Input id="memberName" value={memberName} onChange={(e) => setMemberName(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="swName">Social worker name</Label>
-              <Input id="swName" value={socialWorkerName} onChange={(e) => setSocialWorkerName(e.target.value)} required />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="uploadDate">Upload date</Label>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label>Member name</Label>
+                <a
+                  className="text-xs underline underline-offset-2 text-blue-700"
+                  href="https://www.carehomefinders.com/alft"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  ALFT tool link
+                </a>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Input
-                  id="uploadDate"
-                  type="date"
-                  value={uploadDate}
-                  onChange={(e) => setUploadDate(e.target.value)}
+                  id="memberFirstName"
+                  value={memberFirstName}
+                  onChange={(e) => setMemberFirstName(e.target.value)}
+                  placeholder="First name"
+                  required
+                />
+                <Input
+                  id="memberLastName"
+                  value={memberLastName}
+                  onChange={(e) => setMemberLastName(e.target.value)}
+                  placeholder="Last name"
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="mrn">Kaiser MRN</Label>
-                <Input id="mrn" value={kaiserMrn} onChange={(e) => setKaiserMrn(e.target.value)} required />
-              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mrn">Kaiser MRN</Label>
+              <Input id="mrn" value={kaiserMrn} onChange={(e) => setKaiserMrn(e.target.value)} required />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="swName">Social worker name</Label>
+              <Input
+                id="swName"
+                value={socialWorkerName}
+                onChange={(e) => setSocialWorkerName(e.target.value)}
+                placeholder={swRealName ? '' : 'Type your full name (not email)'}
+                required
+                disabled={Boolean(swRealName)}
+              />
+              {!swRealName ? (
+                <div className="text-xs text-muted-foreground">
+                  This should auto-fill from your Social Worker profile. If it’s blank, ask admin to set your display name.
+                </div>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="uploadDate">Upload date</Label>
+              <Input
+                id="uploadDate"
+                type="date"
+                value={uploadDate}
+                onChange={(e) => setUploadDate(e.target.value)}
+                required
+              />
             </div>
 
             <div className="space-y-2">

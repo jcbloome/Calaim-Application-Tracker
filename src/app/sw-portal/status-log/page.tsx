@@ -922,25 +922,6 @@ export default function SWStatusLogPage() {
                       </>
                     )}
 
-                    {q?.memberSignoff ? section(
-                      'Member sign-off',
-                      <>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          <div>
-                            <div className="text-xs text-muted-foreground">Acknowledged</div>
-                            <div className="font-medium">{yesNo(Boolean(q?.memberSignoff?.acknowledged))}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-muted-foreground">Signature name</div>
-                            <div className="font-medium">{String(q?.memberSignoff?.signatureName || '—')}</div>
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground">Signed at</div>
-                          <div className="font-medium">{String(q?.memberSignoff?.signedAt || '—')}</div>
-                        </div>
-                      </>
-                    ) : null}
                   </div>
                 );
               })()}

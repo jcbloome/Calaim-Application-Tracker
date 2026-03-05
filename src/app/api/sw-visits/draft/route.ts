@@ -3,6 +3,13 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
+
+const safeDocId = (value: string) =>
+  clean(value, 240)
+    .replace(/[^\w.\-]+/g, '_')
+    .slice(0, 240);
+
 function isHoldValue(value: unknown): boolean {
   const v = String(value ?? '').trim().toLowerCase();
   if (!v) return false;
@@ -284,6 +291,75 @@ export async function POST(req: NextRequest) {
 
     const flagged = Boolean(visitData?.visitSummary?.flagged);
     const totalScore = Number(visitData?.visitSummary?.totalScore || 0);
+
+    // Community Care Licensing (CCLD) monthly RCFE check:
+    // - Required once per RCFE per month when completing questionnaires for multiple members at the same RCFE.
+    // - Stored in `rcfe_monthly_ccl_checks` keyed by `${rcfeId}_${visitMonth}`.
+    try {
+      const ccl = (visitData as any)?.communityCareLicensing || null;
+      const cclRcfeId = String(ccl?.rcfeId || rcfeId || '').trim();
+      const cclMonth = String(ccl?.month || visitMonth || '').trim();
+      const noNew = Boolean(ccl?.noNewReportsSinceLastCheck);
+      if (ccl && cclRcfeId && cclMonth && /^\d{4}-\d{2}$/.test(cclMonth)) {
+        const docId = safeDocId(`${cclRcfeId}_${cclMonth}`);
+        const ref = adminDb.collection('rcfe_monthly_ccl_checks').doc(docId);
+        const existing = await ref.get().catch(() => null as any);
+
+        if (noNew) {
+          if (!existing || !existing.exists) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: 'No prior Community Care Licensing check found for this RCFE/month. Please complete the check.',
+              },
+              { status: 409 }
+            );
+          }
+        } else {
+          const latestReportDate = clean(ccl?.latestReportDate, 10);
+          const typeA = Number(ccl?.typeAViolations ?? NaN);
+          const typeB = Number(ccl?.typeBViolations ?? NaN);
+          if (!latestReportDate || !/^\d{4}-\d{2}-\d{2}$/.test(latestReportDate)) {
+            return NextResponse.json(
+              { success: false, error: 'Community Care Licensing: latest violation report date is required (YYYY-MM-DD).' },
+              { status: 400 }
+            );
+          }
+          if (!Number.isFinite(typeA) || typeA < 0 || !Number.isFinite(typeB) || typeB < 0) {
+            return NextResponse.json(
+              { success: false, error: 'Community Care Licensing: Type A/Type B violation counts must be 0 or greater.' },
+              { status: 400 }
+            );
+          }
+
+          const checkPayload = {
+            rcfeId: cclRcfeId,
+            rcfeName: clean(ccl?.rcfeName || rcfeName, 200),
+            month: cclMonth,
+            latestReportDate,
+            typeAViolations: Math.floor(typeA),
+            typeBViolations: Math.floor(typeB),
+            seriousViolationComments: clean(ccl?.seriousViolationComments, 4000),
+            facilitySearchUrl:
+              clean(ccl?.facilitySearchUrl, 600) ||
+              'https://www.ccld.dss.ca.gov/carefacilitysearch/',
+            checkedByUid: uid,
+            checkedByEmail: email,
+            checkedByName: clean(ccl?.checkedByName || socialWorkerName, 140),
+            checkedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          } as const;
+
+          if (!existing || !existing.exists) {
+            await ref.set({ ...checkPayload, createdAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          } else {
+            await ref.set(checkPayload, { merge: true });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ CCLD check save best-effort failed:', e);
+    }
 
     const payload: Record<string, any> = {
       id: effectiveVisitId,

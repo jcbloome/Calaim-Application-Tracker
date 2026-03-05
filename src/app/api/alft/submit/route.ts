@@ -10,6 +10,8 @@ type SubmitBody = {
   uploadDate?: string; // YYYY-MM-DD (entered by SW)
   member?: {
     name?: string;
+    firstName?: string;
+    lastName?: string;
     healthPlan?: string;
     medicalRecordNumber?: string;
     mediCalNumber?: string;
@@ -48,12 +50,21 @@ export async function POST(request: NextRequest) {
     const idToken = clean(body?.idToken, 5000);
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
 
-    const memberName = clean(body?.member?.name, 140);
+    const memberFirstName = clean(body?.member?.firstName, 80);
+    const memberLastName = clean(body?.member?.lastName, 80);
+    const memberNameRaw = clean(body?.member?.name, 140);
+    const memberName = clean(`${memberFirstName} ${memberLastName}`.replace(/\s+/g, ' ').trim(), 140) || memberNameRaw;
     const uploadDate = clean(body?.uploadDate, 20);
     const uploaderDisplayName = clean(body?.uploader?.displayName, 140);
-    if (!memberName || !uploadDate || !uploaderDisplayName) {
+    if (!memberName || !memberFirstName || !memberLastName || !uploadDate || !uploaderDisplayName) {
       return NextResponse.json(
-        { success: false, error: 'Missing member name, upload date, or social worker name' },
+        { success: false, error: 'Missing member first/last name, upload date, or social worker name' },
+        { status: 400 }
+      );
+    }
+    if (uploaderDisplayName.includes('@')) {
+      return NextResponse.json(
+        { success: false, error: 'Social worker name must be a real name (not email)' },
         { status: 400 }
       );
     }
@@ -112,6 +123,9 @@ export async function POST(request: NextRequest) {
       uploaderEmail: uploaderEmail || null,
       uploaderName,
       memberName,
+      memberFirstName,
+      memberLastName,
+      memberNameSearch: `${memberLastName.toLowerCase()}|${memberFirstName.toLowerCase()}|${memberName.toLowerCase()}`.slice(0, 300),
       healthPlan,
       medicalRecordNumber: medicalRecordNumber || null,
       mediCalNumber: mediCalNumber || null,
