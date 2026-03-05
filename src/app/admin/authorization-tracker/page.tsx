@@ -59,6 +59,8 @@ interface AuthorizationMember {
   h2022DaysRemaining?: number;
   t2038Status: 'active' | 'expiring' | 'expired' | 'pending' | 'none';
   h2022Status: 'active' | 'expiring' | 'expired' | 'pending' | 'none';
+  // Kaiser-only critical warning: H2022 ends within 30 days
+  h2022KaiserCritical?: boolean;
   needsAttention: boolean;
 }
 
@@ -99,6 +101,20 @@ const getHealthPlanBadgeClass = (plan?: string) => {
   if (normalized.includes('health net')) return 'bg-green-50 text-green-700 border-green-200';
   if (normalized.includes('kaiser')) return 'bg-blue-50 text-blue-700 border-blue-200';
   return 'bg-gray-50 text-gray-700 border-gray-200';
+};
+
+const isKaiserPlan = (plan?: string) => String(plan || '').toLowerCase().includes('kaiser');
+
+const isEndDateWithinDays = (endDate?: string, withinDays: number = 30) => {
+  if (!endDate || endDate.trim() === '') return false;
+  try {
+    const end = parseISO(endDate);
+    if (isNaN(end.getTime())) return false;
+    const daysRemaining = differenceInDays(end, new Date());
+    return daysRemaining >= 0 && daysRemaining <= withinDays;
+  } catch {
+    return false;
+  }
 };
 
 const formatDateSafe = (dateString?: string) => {
@@ -249,9 +265,16 @@ export default function AuthorizationTracker() {
         const h2022Status = getAuthStatus(member.authEndDateH2022);
         const t2038DaysRemaining = getDaysRemaining(member.authEndDateT2038);
         const h2022DaysRemaining = getDaysRemaining(member.authEndDateH2022);
+
+        const h2022KaiserCritical =
+          isKaiserPlan(member.healthPlan) && isEndDateWithinDays(member.authEndDateH2022, 30);
         
-        const needsAttention = t2038Status === 'expiring' || t2038Status === 'expired' ||
-                              h2022Status === 'expiring' || h2022Status === 'expired';
+        const needsAttention =
+          t2038Status === 'expiring' ||
+          t2038Status === 'expired' ||
+          h2022Status === 'expiring' ||
+          h2022Status === 'expired' ||
+          h2022KaiserCritical;
         
         return {
           ...member,
@@ -259,6 +282,7 @@ export default function AuthorizationTracker() {
           h2022Status,
           t2038DaysRemaining,
           h2022DaysRemaining,
+          h2022KaiserCritical,
           needsAttention
         };
       });
@@ -364,6 +388,7 @@ export default function AuthorizationTracker() {
         (selectedFilter === 'needsAttention' && member.needsAttention) ||
         (selectedFilter === 't2038Expiring' && member.t2038Status === 'expiring') ||
         (selectedFilter === 'h2022Expiring' && member.h2022Status === 'expiring') ||
+        (selectedFilter === 'kaiserH2022Critical' && member.h2022KaiserCritical) ||
         (selectedFilter === 'expired' && (member.t2038Status === 'expired' || member.h2022Status === 'expired'));
       
       // Month-based filtering
@@ -455,6 +480,7 @@ export default function AuthorizationTracker() {
     const t2038Expiring = members.filter(m => m.t2038Status === 'expiring').length;
     const h2022Expiring = members.filter(m => m.h2022Status === 'expiring').length;
     const expired = members.filter(m => m.t2038Status === 'expired' || m.h2022Status === 'expired').length;
+    const kaiserH2022Critical = members.filter(m => m.h2022KaiserCritical).length;
     
     // Calculate monthly expiration data for next 6 months
     const today = new Date();
@@ -504,6 +530,7 @@ export default function AuthorizationTracker() {
       needingAttention, 
       t2038Expiring, 
       h2022Expiring, 
+      kaiserH2022Critical,
       expired, 
       monthlyExpirations,
       mcoBreakdown
@@ -553,8 +580,43 @@ export default function AuthorizationTracker() {
 
       {/* Always show the interface structure */}
       <>
+      {stats.kaiserH2022Critical > 0 && (
+        <Card className="mb-6 border-red-200 bg-red-50">
+          <CardContent className="p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-700 mt-0.5" />
+              <div>
+                <div className="font-semibold text-red-800">
+                  Critical: {stats.kaiserH2022Critical} Kaiser member{stats.kaiserH2022Critical === 1 ? '' : 's'} have H2022 expiring within 30 days
+                </div>
+                <div className="text-sm text-red-700">
+                  These members are highlighted and can be filtered for quick review.
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setSelectedMCO('kaiser');
+                  handleCardClick('kaiserH2022Critical');
+                }}
+              >
+                View Members
+              </Button>
+              <Button
+                variant="outline"
+                className="border-red-200 text-red-800 hover:bg-red-100"
+                onClick={() => handleCardClick('kaiserH2022Critical')}
+              >
+                Filter Only
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
         <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'all' ? 'ring-2 ring-blue-500' : ''}`} 
               onClick={() => handleCardClick('all')}>
           <CardContent className="p-4">
@@ -602,6 +664,21 @@ export default function AuthorizationTracker() {
               <div>
                 <p className="text-sm text-muted-foreground">H2022 Expiring</p>
                 <p className="text-2xl font-bold text-purple-600">{stats.h2022Expiring}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card
+          className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'kaiserH2022Critical' ? 'ring-2 ring-red-500' : ''}`}
+          onClick={() => handleCardClick('kaiserH2022Critical')}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <div>
+                <p className="text-sm text-muted-foreground">Kaiser H2022 ≤30d</p>
+                <p className="text-2xl font-bold text-red-600">{stats.kaiserH2022Critical}</p>
               </div>
             </div>
           </CardContent>
@@ -773,6 +850,7 @@ export default function AuthorizationTracker() {
                     {selectedFilter === 'needsAttention' && 'Need Attention'}
                     {selectedFilter === 't2038Expiring' && 'T2038 Expiring'}
                     {selectedFilter === 'h2022Expiring' && 'H2022 Expiring'}
+                    {selectedFilter === 'kaiserH2022Critical' && 'Kaiser H2022 ≤30 days'}
                     {selectedFilter === 'expired' && 'Expired'}
                     {selectedMonth !== 'all' && `Expiring in ${selectedMonth}`}
                   </span>
@@ -931,7 +1009,12 @@ export default function AuthorizationTracker() {
                       </TableRow>
                     ) : (
                       filteredAndSortedMembers.map((member) => (
-                      <TableRow key={member.id} className={member.needsAttention ? 'bg-red-50' : ''}>
+                      <TableRow
+                        key={member.id}
+                        className={
+                          member.h2022KaiserCritical ? 'bg-red-100' : member.needsAttention ? 'bg-red-50' : ''
+                        }
+                      >
                         <TableCell>
                           <div>
                             <p className="font-medium">{member.memberName}</p>
@@ -1007,7 +1090,14 @@ export default function AuthorizationTracker() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
+                          <div className="flex flex-col gap-1">
+                            {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
+                            {member.h2022KaiserCritical && (
+                              <Badge variant="destructive" className="w-fit bg-red-600">
+                                Critical ≤30d
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           {member.authStartDateH2022 ? (
@@ -1110,7 +1200,16 @@ export default function AuthorizationTracker() {
                   </div>
                 ) : (
                   filteredAndSortedMembers.map((member) => (
-                    <Card key={member.id} className={member.needsAttention ? 'border-l-4 border-l-red-500' : ''}>
+                    <Card
+                      key={member.id}
+                      className={
+                        member.h2022KaiserCritical
+                          ? 'border-l-4 border-l-red-700 bg-red-50/50'
+                          : member.needsAttention
+                            ? 'border-l-4 border-l-red-500'
+                            : ''
+                      }
+                    >
                       <CardContent className="p-4 space-y-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <div className="font-medium">{member.memberName}</div>
@@ -1127,6 +1226,11 @@ export default function AuthorizationTracker() {
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-muted-foreground">H2022:</span>
                             {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
+                            {member.h2022KaiserCritical && (
+                              <Badge variant="destructive" className="bg-red-600">
+                                Critical ≤30d
+                              </Badge>
+                            )}
                           </div>
                         </div>
                         <div className="grid gap-2 text-sm">
