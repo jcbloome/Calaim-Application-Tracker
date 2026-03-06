@@ -476,6 +476,26 @@ export default function StaffManagementPage() {
         queueAutoSave();
     };
 
+    const staffUids = useMemo(() => {
+        return Array.from(new Set(staffList.map((s) => String(s.uid || '').trim()).filter(Boolean)));
+    }, [staffList]);
+
+    const interofficeAllEnabled = useMemo(() => {
+        if (!staffUids.length) return false;
+        const recipientSet = new Set((notificationRecipients || []).map((x) => String(x || '').trim()).filter(Boolean));
+        return staffUids.every((uid) => recipientSet.has(uid));
+    }, [notificationRecipients, staffUids]);
+
+    const handleInterofficeToggleAll = (checked: boolean) => {
+        const enable = Boolean(checked);
+        if (enable) {
+            setNotificationRecipients(staffUids);
+        } else {
+            setNotificationRecipients([]);
+        }
+        queueAutoSave();
+    };
+
     const handleIlsNoteToggle = (uid: string, checked: boolean) => {
         setIlsNotePermissions(prev => 
             checked ? [...prev, uid] : prev.filter(id => id !== uid)
@@ -892,6 +912,20 @@ export default function StaffManagementPage() {
                                 <option value="Admin">Admin</option>
                                 <option value="Super Admin">Super Admin</option>
                             </select>
+                        </div>
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2 h-10">
+                                <Label className="text-sm font-medium">Interoffice notes (all staff)</Label>
+                                <Switch
+                                    checked={interofficeAllEnabled}
+                                    onCheckedChange={(v) => handleInterofficeToggleAll(Boolean(v))}
+                                    disabled={staffUids.length === 0}
+                                    aria-label="Toggle interoffice notes for all staff"
+                                />
+                            </div>
+                            <div className="text-xs text-muted-foreground leading-snug">
+                                Global toggle for who receives interoffice note notifications.
+                            </div>
                         </div>
                     </div>
                     {isLoadingStaff ? (
