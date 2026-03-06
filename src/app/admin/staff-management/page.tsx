@@ -32,6 +32,9 @@ type ReviewRecipientSettings = {
     enabled: boolean;
     csSummary: boolean;
     documents: boolean;
+    eligibility?: boolean;
+    standalone?: boolean;
+    alft?: boolean;
     // Which plan uploads should count as action items / popups for this staff member.
     // Defaults to true when not explicitly set.
     kaiserUploads?: boolean;
@@ -619,6 +622,9 @@ export default function StaffManagementPage() {
                 enabled: false,
                 csSummary: false,
                 documents: false,
+                eligibility: false,
+                standalone: false,
+                alft: false,
                 kaiserUploads: true,
                 healthNetUploads: true,
                 email: staff?.email,
@@ -959,6 +965,9 @@ export default function StaffManagementPage() {
                                         enabled: false,
                                         csSummary: false,
                                         documents: false,
+                                        eligibility: false,
+                                        standalone: false,
+                                        alft: false,
                                         kaiserUploads: true,
                                         healthNetUploads: true,
                                         email: staff?.email,
@@ -1110,6 +1119,27 @@ export default function StaffManagementPage() {
                                                     );
                                                 }}
                                                 aria-label={`Toggle document upload review notifications for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Bell className={`h-4 w-4 ${Boolean(reviewRecipient.alft) ? 'text-purple-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`review-alft-${staff.uid}`} className="text-sm font-medium">ALFT (Electron)</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`review-alft-${staff.uid}`}
+                                                checked={Boolean(reviewRecipient.alft)}
+                                                disabled={!reviewPopupsEnabled}
+                                                onCheckedChange={(checked) => {
+                                                    const nextValue = Boolean(checked);
+                                                    const keepEnabled = nextValue || Boolean(reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone);
+                                                    setReviewRecipient(
+                                                      staff.uid,
+                                                      { alft: nextValue, enabled: keepEnabled },
+                                                      staff
+                                                    );
+                                                }}
+                                                aria-label={`Toggle ALFT Electron notifications for ${staff.email}`}
                                             />
                                         </div>
                                     </div>

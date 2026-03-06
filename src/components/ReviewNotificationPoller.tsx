@@ -16,6 +16,7 @@ type SeenState = {
   docs: { count: number; latestMs: number };
   elig: { count: number; latestMs: number };
   standalone: { count: number; latestMs: number };
+  alft: { count: number; latestMs: number };
 };
 
 const makeStorageKey = (uid: string) => `review-notification-seen:${uid}`;
@@ -27,6 +28,7 @@ const readSeen = (uid: string): SeenState => {
       docs: { count: 0, latestMs: 0 },
       elig: { count: 0, latestMs: 0 },
       standalone: { count: 0, latestMs: 0 },
+      alft: { count: 0, latestMs: 0 },
     };
   }
   try {
@@ -37,6 +39,7 @@ const readSeen = (uid: string): SeenState => {
         docs: { count: 0, latestMs: 0 },
         elig: { count: 0, latestMs: 0 },
         standalone: { count: 0, latestMs: 0 },
+        alft: { count: 0, latestMs: 0 },
       };
     }
     const parsed = JSON.parse(raw) as Partial<SeenState>;
@@ -57,6 +60,10 @@ const readSeen = (uid: string): SeenState => {
         count: Number((parsed as any)?.standalone?.count || 0),
         latestMs: Number((parsed as any)?.standalone?.latestMs || 0),
       },
+      alft: {
+        count: Number((parsed as any)?.alft?.count || 0),
+        latestMs: Number((parsed as any)?.alft?.latestMs || 0),
+      },
     };
   } catch {
     return {
@@ -64,6 +71,7 @@ const readSeen = (uid: string): SeenState => {
       docs: { count: 0, latestMs: 0 },
       elig: { count: 0, latestMs: 0 },
       standalone: { count: 0, latestMs: 0 },
+      alft: { count: 0, latestMs: 0 },
     };
   }
 };
@@ -161,7 +169,8 @@ export function ReviewNotificationPoller() {
       const allowDocs = Boolean(reviewPrefs?.allowDocs);
       const allowElig = Boolean(reviewPrefs?.allowEligibility);
       const allowStandalone = Boolean(reviewPrefs?.allowStandalone);
-      if (!allowCs && !allowDocs && !allowElig && !allowStandalone) {
+      const allowAlft = Boolean(reviewPrefs?.allowAlft);
+      if (!allowCs && !allowDocs && !allowElig && !allowStandalone && !allowAlft) {
         return intervalSeconds;
       }
 
@@ -178,16 +187,21 @@ export function ReviewNotificationPoller() {
       const standaloneTasks = allowStandalone
         ? reviewTasks.filter((t) => t?.reviewKind === 'standalone' || String(t?.title || '').toLowerCase().includes('standalone'))
         : [];
+      const alftTasks = allowAlft
+        ? reviewTasks.filter((t) => t?.reviewKind === 'alft' || String(t?.title || '').toLowerCase().includes('alft'))
+        : [];
 
       const csCount = csTasks.length;
       const docsCount = docTasks.length;
       const eligCount = eligTasks.length;
       const standaloneCount = standaloneTasks.length;
+      const alftCount = alftTasks.length;
 
       const csLatestMs = Math.max(...csTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
       const docsLatestMs = Math.max(...docTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
       const eligLatestMs = Math.max(...eligTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
       const standaloneLatestMs = Math.max(...standaloneTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
+      const alftLatestMs = Math.max(...alftTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
 
       const csIsNew = allowCs && csCount > 0 && (csLatestMs > seen.cs.latestMs || csCount > seen.cs.count);
       const docsIsNew = allowDocs && docsCount > 0 && (docsLatestMs > seen.docs.latestMs || docsCount > seen.docs.count);
@@ -196,20 +210,23 @@ export function ReviewNotificationPoller() {
         allowStandalone &&
         standaloneCount > 0 &&
         (standaloneLatestMs > seen.standalone.latestMs || standaloneCount > seen.standalone.count);
+      const alftIsNew = allowAlft && alftCount > 0 && (alftLatestMs > seen.alft.latestMs || alftCount > seen.alft.count);
 
-      if (!csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew) {
+      if (!csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew && !alftIsNew) {
         return;
       }
 
       const title =
-        csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew
+        csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew && !alftIsNew
           ? 'CS Summary received'
-          : docsIsNew && !csIsNew && !eligIsNew && !standaloneIsNew
+          : docsIsNew && !csIsNew && !eligIsNew && !standaloneIsNew && !alftIsNew
             ? 'Documents received'
-            : eligIsNew && !csIsNew && !docsIsNew && !standaloneIsNew
+            : eligIsNew && !csIsNew && !docsIsNew && !standaloneIsNew && !alftIsNew
               ? 'Eligibility check received'
-              : standaloneIsNew && !csIsNew && !docsIsNew && !eligIsNew
+              : standaloneIsNew && !csIsNew && !docsIsNew && !eligIsNew && !alftIsNew
                 ? 'Standalone upload received'
+                : alftIsNew && !csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew
+                  ? 'ALFT upload received'
             : 'Review items received';
       const parts: string[] = [];
       if (allowCs && csCount > 0) {
@@ -224,6 +241,9 @@ export function ReviewNotificationPoller() {
       if (allowStandalone && standaloneCount > 0) {
         parts.push(`${standaloneCount} standalone intake${standaloneCount === 1 ? '' : 's'} to triage`);
       }
+      if (allowAlft && alftCount > 0) {
+        parts.push(`${alftCount} ALFT intake${alftCount === 1 ? '' : 's'} to triage`);
+      }
       const message = parts.length > 0 ? parts.join(' • ') : 'New items require review.';
 
       const actionUrl = csIsNew
@@ -232,9 +252,17 @@ export function ReviewNotificationPoller() {
           ? '/admin/applications?review=docs'
           : eligIsNew
             ? '/admin/eligibility-checks'
-            : '/admin/standalone-uploads';
+            : alftIsNew
+              ? '/admin/standalone-uploads?filter=alft'
+              : '/admin/standalone-uploads';
 
       const reviewNotes = [
+        ...alftTasks.slice(0, 4).map((t) => ({
+          kind: 'alft' as const,
+          title: 'ALFT upload received',
+          message: t?.memberName ? `${t.memberName}${t?.description ? ` — ${t.description}` : ''}` : String(t?.description || t?.title || ''),
+          timestamp: t?.dueDate || t?.createdAt,
+        })),
         ...standaloneTasks.slice(0, 4).map((t) => ({
           kind: 'standalone' as const,
           title: 'Standalone upload received',
@@ -268,7 +296,8 @@ export function ReviewNotificationPoller() {
               (allowCs ? csCount : 0) +
               (allowDocs ? docsCount : 0) +
               (allowElig ? eligCount : 0) +
-              (allowStandalone ? standaloneCount : 0),
+              (allowStandalone ? standaloneCount : 0) +
+              (allowAlft ? alftCount : 0),
             notes: reviewNotes.map((n) => ({
               title: n.title,
               message: n.message,
@@ -345,6 +374,10 @@ export function ReviewNotificationPoller() {
         standalone: {
           count: allowStandalone ? standaloneCount : seen.standalone.count,
           latestMs: allowStandalone ? Math.max(seen.standalone.latestMs, standaloneLatestMs) : seen.standalone.latestMs,
+        },
+        alft: {
+          count: allowAlft ? alftCount : seen.alft.count,
+          latestMs: allowAlft ? Math.max(seen.alft.latestMs, alftLatestMs) : seen.alft.latestMs,
         },
       });
       return intervalSeconds;

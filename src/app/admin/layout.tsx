@@ -202,6 +202,7 @@ function AdminHeader() {
     allowCs: boolean;
     allowEligibility: boolean;
     allowStandalone: boolean;
+    allowAlft: boolean;
   }>({
     enabled: true,
     recipientEnabled: false,
@@ -209,6 +210,7 @@ function AdminHeader() {
     allowCs: false,
     allowEligibility: false,
     allowStandalone: false,
+    allowAlft: false,
   });
   // In admin, show the review popup whenever there are pending review items.
   // Use an in-memory baseline so we don't spam repeatedly while the page is open,
@@ -292,6 +294,7 @@ function AdminHeader() {
           allowCs: Boolean(recipient?.csSummary),
           allowEligibility: Boolean(recipient?.eligibility),
           allowStandalone: Boolean(recipient?.standalone),
+          allowAlft: Boolean(recipient?.alft),
         });
       },
       () => {
@@ -303,6 +306,7 @@ function AdminHeader() {
           allowCs: false,
           allowEligibility: false,
           allowStandalone: false,
+          allowAlft: false,
         });
       }
     );
@@ -434,6 +438,9 @@ function AdminHeader() {
       let standaloneCount = 0;
       let standaloneLatestMs = 0;
       const standaloneNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
+      let alftCount = 0;
+      let alftLatestMs = 0;
+      const alftNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
 
       const docsByApp = new Map<
         string,
@@ -555,10 +562,18 @@ function AdminHeader() {
         }
 
         // Non-CS standalone intakes are tracked separately from application "docs needing acknowledgement".
-        standaloneCount += 1;
-        standaloneLatestMs = Math.max(standaloneLatestMs, ms);
-        const label = docType || 'Standalone upload';
-        standaloneNotes.push({ message: `${memberName} — ${label}`, timestampMs: ms, url, author });
+        // ALFT gets its own toggle + count.
+        if (isAlft) {
+          alftCount += 1;
+          alftLatestMs = Math.max(alftLatestMs, ms);
+          const label = docType || 'ALFT';
+          alftNotes.push({ message: `${memberName} — ${label}`, timestampMs: ms, url, author });
+        } else {
+          standaloneCount += 1;
+          standaloneLatestMs = Math.max(standaloneLatestMs, ms);
+          const label = docType || 'Standalone upload';
+          standaloneNotes.push({ message: `${memberName} — ${label}`, timestampMs: ms, url, author });
+        }
 
         const key = `standalone-${String(u?.id || '')}`;
         const current = docsByApp.get(key) || {
@@ -596,6 +611,9 @@ function AdminHeader() {
       );
       const allowEligibilityDesktop = Boolean(
         reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowEligibility
+      );
+      const allowAlftDesktop = Boolean(
+        reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowAlft
       );
 
       // Web popups for document uploads are intentionally disabled (too noisy).
@@ -663,6 +681,19 @@ function AdminHeader() {
                   actionUrl: d.url || '/admin/standalone-uploads',
                 }))
             : [];
+          const alftItems = allowAlftDesktop
+            ? alftNotes
+                .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
+                .slice(0, 6)
+                .map((d) => ({
+                  title: 'ALFT upload received',
+                  message: d.message,
+                  kind: 'alft',
+                  memberName: '',
+                  timestamp: d.timestampMs ? new Date(d.timestampMs).toLocaleString() : undefined,
+                  actionUrl: d.url || '/admin/standalone-uploads?filter=alft',
+                }))
+            : [];
           const eligibilityItems = allowEligibilityDesktop && eligibilityPendingCount > 0
             ? [
                 {
@@ -679,8 +710,9 @@ function AdminHeader() {
             (allowCsDesktop ? csSummaryCount : 0) +
             (allowDocsDesktop ? uploadCount : 0) +
             (allowStandaloneDesktop ? standaloneCount : 0) +
+            (allowAlftDesktop ? alftCount : 0) +
             (allowEligibilityDesktop ? eligibilityPendingCount : 0);
-          const notes = [...csItems, ...docItems, ...standaloneItems, ...eligibilityItems];
+          const notes = [...csItems, ...docItems, ...standaloneItems, ...alftItems, ...eligibilityItems];
           const shouldSend = reviewCount > 0 || desktopReviewInitializedRef.current;
           if (shouldSend) {
             window.desktopNotifications?.setReviewPillSummary?.({

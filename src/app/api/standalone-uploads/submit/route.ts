@@ -110,10 +110,16 @@ export async function POST(request: NextRequest) {
         const recipientUids: string[] = [];
         const recipientMetaByUid = new Map<string, any>();
 
+        const isAlft = String(documentType || '').trim().toLowerCase().includes('alft');
+
         Object.entries(recipients).forEach(([key, raw]) => {
           const r = raw || {};
           if (!Boolean(r?.enabled)) return;
-          if (!Boolean(r?.standalone)) return;
+          if (isAlft) {
+            if (!Boolean(r?.alft)) return;
+          } else {
+            if (!Boolean(r?.standalone)) return;
+          }
           const uid = String(r?.uid || '').trim() || (!String(key).includes('@') ? String(key).trim() : '');
           if (!uid) return;
           if (!recipientUids.includes(uid)) recipientUids.push(uid);
@@ -123,15 +129,17 @@ export async function POST(request: NextRequest) {
         if (recipientUids.length > 0) {
           const mrnLabel = medicalRecordNumber ? `MRN ${medicalRecordNumber}` : 'MRN —';
           const basePayload: Record<string, any> = {
-            title: 'Standalone Upload',
+            title: isAlft ? 'ALFT Upload' : 'Standalone Upload',
             message: `${memberName || 'Member'} — ${healthPlan} • ${mrnLabel}\n${documentType}\nUploader: ${uploaderEmail || uploaderName}`,
-            type: 'standalone_upload',
+            type: isAlft ? 'alft_upload' : 'standalone_upload',
             priority: 'Priority',
             status: 'Open',
             isRead: false,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             source: 'portal',
-            actionUrl: `/admin/standalone-uploads?focus=${encodeURIComponent(ref.id)}`,
+            actionUrl: isAlft
+              ? `/admin/standalone-uploads?focus=${encodeURIComponent(ref.id)}&filter=alft`
+              : `/admin/standalone-uploads?focus=${encodeURIComponent(ref.id)}`,
             standaloneUploadId: ref.id,
             memberName,
             healthPlan,

@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
         const allowDocs = Boolean(recipient?.documents);
         const allowEligibility = Boolean(recipient?.eligibility);
         const allowStandalone = Boolean(recipient?.standalone);
+        const allowAlft = Boolean(recipient?.alft);
         return {
           enabled,
           pollIntervalSeconds,
@@ -80,6 +81,7 @@ export async function GET(request: NextRequest) {
           allowDocs,
           allowEligibility,
           allowStandalone,
+          allowAlft,
         };
       } catch {
         return {
@@ -90,12 +92,13 @@ export async function GET(request: NextRequest) {
           allowDocs: false,
           allowEligibility: false,
           allowStandalone: false,
+          allowAlft: false,
         };
       }
     };
 
     const reviewPrefs = onlyFollowUp
-      ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false, allowEligibility: false, allowStandalone: false }
+      ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false, allowEligibility: false, allowStandalone: false, allowAlft: false }
       : await loadReviewNotificationRecipient();
 
     const fetchAllDocs = async (
@@ -421,7 +424,7 @@ export async function GET(request: NextRequest) {
         if (
           reviewPrefs.enabled &&
           reviewPrefs.recipientEnabled &&
-          (reviewPrefs.allowCs || reviewPrefs.allowDocs || reviewPrefs.allowEligibility || reviewPrefs.allowStandalone)
+          (reviewPrefs.allowCs || reviewPrefs.allowDocs || reviewPrefs.allowEligibility || reviewPrefs.allowStandalone || reviewPrefs.allowAlft)
         ) {
           const maxItems = 60;
 
@@ -605,7 +608,7 @@ export async function GET(request: NextRequest) {
             });
           }
 
-          if (reviewPrefs.allowStandalone) {
+          if (reviewPrefs.allowStandalone || reviewPrefs.allowAlft) {
             const standaloneSnap = await adminDb
               .collection('standalone_upload_submissions')
               .where('status', '==', 'pending')
@@ -613,20 +616,30 @@ export async function GET(request: NextRequest) {
               .get()
               .catch(() => null);
 
+            const isAlftDoc = (data: any) => {
+              const toolCode = String(data?.toolCode || '').trim().toUpperCase();
+              const docType = String(data?.documentType || '').trim().toLowerCase();
+              return toolCode === 'ALFT' || docType.includes('alft');
+            };
+
             standaloneSnap?.docs?.forEach((docSnap: any) => {
               const data = docSnap.data() || {};
+              const alft = isAlftDoc(data);
+              if (alft && !reviewPrefs.allowAlft) return;
+              if (!alft && !reviewPrefs.allowStandalone) return;
+
               const memberName = String(data.memberName || '').trim() || 'Member';
-              const docType = String(data.documentType || '').trim() || 'Standalone upload';
+              const docType = String(data.documentType || '').trim() || (alft ? 'ALFT Tool' : 'Standalone upload');
               const dueDate = formatIso(data.createdAt || data.updatedAt || new Date());
               reviewTasks.push({
-                id: `review-standalone-${docSnap.id}`,
-                title: 'Standalone Upload Intake',
+                id: `${alft ? 'review-alft' : 'review-standalone'}-${docSnap.id}`,
+                title: alft ? 'ALFT Upload Intake' : 'Standalone Upload Intake',
                 description: docType,
                 memberName,
                 memberClientId: String(data.medicalRecordNumber || data.kaiserMrn || data.mediCalNumber || '').trim(),
                 healthPlan: String(data.healthPlan || '').trim(),
                 taskType: 'review',
-                reviewKind: 'standalone',
+                reviewKind: alft ? 'alft' : 'standalone',
                 priority: 'High',
                 status: 'pending',
                 dueDate,
@@ -639,7 +652,9 @@ export async function GET(request: NextRequest) {
                 notes: '',
                 source: 'standalone_uploads',
                 standaloneUploadId: docSnap.id,
-                actionUrl: `/admin/standalone-uploads?focus=${encodeURIComponent(docSnap.id)}`
+                actionUrl: alft
+                  ? `/admin/standalone-uploads?focus=${encodeURIComponent(docSnap.id)}&filter=alft`
+                  : `/admin/standalone-uploads?focus=${encodeURIComponent(docSnap.id)}`
               });
             });
           }

@@ -156,27 +156,59 @@ export async function POST(request: NextRequest) {
 
     let electronNotified = false;
     try {
-      const targetUid = await resolveUidByEmail(admin, adminDb, notifyTo);
-      if (targetUid) {
-        await adminDb.collection('staff_notifications').add({
-          userId: targetUid,
-          title: 'ALFT Tool uploaded',
-          message: `${memberName} • ${uploaderName} • ${uploadDate}`,
-          memberName,
-          type: 'alft_upload',
-          priority: 'Priority',
-          status: 'Open',
-          isRead: false,
-          source: 'sw-portal',
-          createdBy: uploaderUid,
-          createdByName: uploaderName,
-          senderName: uploaderName,
-          senderId: uploaderUid,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          actionUrl: focusUrl(intakeId),
-          intakeId,
-          alftUploadDate: uploadDate || null,
+      const settingsSnap = await adminDb.collection('system_settings').doc('review_notifications').get();
+      const settings = settingsSnap.exists ? settingsSnap.data() : null;
+      const globalEnabled = (settings as any)?.enabled === undefined ? true : Boolean((settings as any)?.enabled);
+      const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
+
+      const recipientUids: string[] = [];
+      const recipientMetaByUid = new Map<string, any>();
+      if (globalEnabled) {
+        Object.entries(recipients).forEach(([key, raw]) => {
+          const r = raw || {};
+          if (!Boolean(r?.enabled)) return;
+          if (!Boolean(r?.alft)) return;
+          const uid = String(r?.uid || '').trim() || (!String(key).includes('@') ? String(key).trim() : '');
+          if (!uid) return;
+          if (!recipientUids.includes(uid)) recipientUids.push(uid);
+          recipientMetaByUid.set(uid, r);
         });
+      }
+
+      // Backward-compatible fallback (previous behavior) if no recipients configured.
+      if (recipientUids.length === 0) {
+        const targetUid = await resolveUidByEmail(admin, adminDb, notifyTo);
+        if (targetUid) recipientUids.push(targetUid);
+      }
+
+      if (recipientUids.length > 0) {
+        await Promise.all(
+          recipientUids.map((uid) => {
+            const meta = recipientMetaByUid.get(uid) || {};
+            const recipientName = String(meta?.name || meta?.email || 'Staff').trim() || 'Staff';
+            return adminDb.collection('staff_notifications').add({
+              userId: uid,
+              recipientName,
+              title: 'ALFT Tool uploaded',
+              message: `${memberName} • ${uploaderName} • ${uploadDate}`,
+              memberName,
+              type: 'alft_upload',
+              priority: 'Priority',
+              status: 'Open',
+              isRead: false,
+              source: 'sw-portal',
+              createdBy: uploaderUid,
+              createdByName: uploaderName,
+              senderName: uploaderName,
+              senderId: uploaderUid,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              actionUrl: focusUrl(intakeId),
+              intakeId,
+              standaloneUploadId: intakeId,
+              alftUploadDate: uploadDate || null,
+            });
+          })
+        );
         electronNotified = true;
       }
     } catch (e) {

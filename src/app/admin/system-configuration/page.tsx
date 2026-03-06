@@ -19,7 +19,7 @@ const systemTools = [
   },
   {
     title: 'Review Notifications',
-    description: 'Choose who receives Electron pop-ups for doc uploads (CS Summary, documents, eligibility, standalone)',
+    description: 'Choose who receives Electron pop-ups for doc uploads (CS Summary, documents, eligibility, standalone, ALFT)',
     icon: Bell,
     href: '/admin/system-configuration/review-notifications',
     color: 'text-indigo-600'
