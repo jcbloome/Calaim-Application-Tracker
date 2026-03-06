@@ -281,6 +281,9 @@ export default function CclChecksPage() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <div className="text-sm font-medium">Type A violations</div>
+                <div className="text-xs text-muted-foreground leading-snug">
+                  Enter the total count. Use comments only to summarize serious items (e.g., wandered from facility, elder abuse).
+                </div>
                 <Input
                   type="number"
                   min={0}
@@ -290,6 +293,9 @@ export default function CclChecksPage() {
               </div>
               <div className="space-y-1.5">
                 <div className="text-sm font-medium">Type B violations</div>
+                <div className="text-xs text-muted-foreground leading-snug">
+                  Enter the total count. Only note serious violations in comments if they may relate to our member.
+                </div>
                 <Input
                   type="number"
                   min={0}
@@ -301,7 +307,7 @@ export default function CclChecksPage() {
             <div className="space-y-1.5">
               <div className="text-sm font-medium">Serious violations / comments</div>
               <Textarea
-                placeholder="Optional notes…"
+                placeholder='Only summarize serious violations (ex: "wandered from facility", "elder abuse"). Do not flag unless you believe it pertains to our member.'
                 value={form.seriousViolationComments}
                 onChange={(e) => setForm((p) => ({ ...p, seriousViolationComments: e.target.value }))}
               />

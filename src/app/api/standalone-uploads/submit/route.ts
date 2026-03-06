@@ -100,6 +100,62 @@ export async function POST(request: NextRequest) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // Notify staff recipients (Electron + My Notifications) based on review notification settings.
+    try {
+      const settingsSnap = await adminDb.collection('system_settings').doc('review_notifications').get();
+      const settings = settingsSnap.exists ? settingsSnap.data() : null;
+      const globalEnabled = (settings as any)?.enabled === undefined ? true : Boolean((settings as any)?.enabled);
+      if (globalEnabled) {
+        const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
+        const recipientUids: string[] = [];
+        const recipientMetaByUid = new Map<string, any>();
+
+        Object.entries(recipients).forEach(([key, raw]) => {
+          const r = raw || {};
+          if (!Boolean(r?.enabled)) return;
+          if (!Boolean(r?.standalone)) return;
+          const uid = String(r?.uid || '').trim() || (!String(key).includes('@') ? String(key).trim() : '');
+          if (!uid) return;
+          if (!recipientUids.includes(uid)) recipientUids.push(uid);
+          recipientMetaByUid.set(uid, r);
+        });
+
+        if (recipientUids.length > 0) {
+          const mrnLabel = medicalRecordNumber ? `MRN ${medicalRecordNumber}` : 'MRN —';
+          const basePayload: Record<string, any> = {
+            title: 'Standalone Upload',
+            message: `${memberName || 'Member'} — ${healthPlan} • ${mrnLabel}\n${documentType}\nUploader: ${uploaderEmail || uploaderName}`,
+            type: 'standalone_upload',
+            priority: 'Priority',
+            status: 'Open',
+            isRead: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            source: 'portal',
+            actionUrl: `/admin/standalone-uploads?focus=${encodeURIComponent(ref.id)}`,
+            standaloneUploadId: ref.id,
+            memberName,
+            healthPlan,
+            medicalRecordNumber: medicalRecordNumber || null,
+            documentType,
+          };
+
+          await Promise.all(
+            recipientUids.map((uid) => {
+              const meta = recipientMetaByUid.get(uid) || {};
+              const recipientName = String(meta?.name || meta?.email || 'Staff').trim() || 'Staff';
+              return adminDb.collection('staff_notifications').add({
+                ...basePayload,
+                userId: uid,
+                recipientName,
+              });
+            })
+          );
+        }
+      }
+    } catch (notifyError) {
+      console.error('🔔 Standalone upload staff notification failed:', notifyError);
+    }
+
     return NextResponse.json({ success: true, id: ref.id });
   } catch (error: any) {
     console.error('[standalone-uploads/submit] Error:', error);

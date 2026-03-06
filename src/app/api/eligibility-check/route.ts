@@ -116,11 +116,19 @@ export async function POST(request: NextRequest) {
       console.error('📧 Eligibility confirmation email failed:', emailError);
     }
 
-    // Notify staff recipients (Electron + My Notifications) using the same
-    // recipient list as CS Summary review alerts.
+    // Notify staff recipients (Electron + My Notifications) using review notification settings.
     try {
       const settingsSnap = await firestore.collection('system_settings').doc('review_notifications').get();
       const settings = settingsSnap.exists ? settingsSnap.data() : null;
+      const globalEnabled = (settings as any)?.enabled === undefined ? true : Boolean((settings as any)?.enabled);
+      if (!globalEnabled) {
+        return NextResponse.json({
+          success: true,
+          message: 'Eligibility check submitted successfully',
+          checkId: docRef.id,
+          estimatedResponse: '1 business day'
+        });
+      }
       const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
       const recipientUids: string[] = [];
       const recipientMetaByUid = new Map<string, any>();
@@ -128,8 +136,7 @@ export async function POST(request: NextRequest) {
       Object.entries(recipients).forEach(([key, raw]) => {
         const r = raw || {};
         if (!Boolean(r?.enabled)) return;
-        // Eligibility checks are handled by the same group as CS Summary review.
-        if (!Boolean(r?.csSummary)) return;
+        if (!Boolean(r?.eligibility)) return;
         const uid = String(r?.uid || '').trim() || (!String(key).includes('@') ? String(key).trim() : '');
         if (!uid) return;
         if (!recipientUids.includes(uid)) recipientUids.push(uid);

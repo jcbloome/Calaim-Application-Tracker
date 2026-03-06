@@ -19,6 +19,8 @@ type RecipientSettings = {
   enabled: boolean;
   csSummary: boolean;
   documents: boolean;
+  eligibility: boolean;
+  standalone: boolean;
   label?: string;
   email?: string;
 };
@@ -157,6 +159,8 @@ export default function ReviewNotificationsPage() {
         enabled: Boolean(existing.enabled),
         csSummary: Boolean(existing.csSummary),
         documents: Boolean(existing.documents),
+        eligibility: Boolean((existing as any).eligibility),
+        standalone: Boolean((existing as any).standalone),
         email: existing.email || email,
         label: existing.label || label
       };
@@ -165,6 +169,8 @@ export default function ReviewNotificationsPage() {
       enabled: false,
       csSummary: false,
       documents: false,
+      eligibility: false,
+      standalone: false,
       email,
       label
     };
@@ -235,7 +241,7 @@ export default function ReviewNotificationsPage() {
             Review Notifications
           </h1>
           <p className="text-muted-foreground mt-1">
-            Choose which staff receive Electron pop-ups when CS Summaries or documents need review.
+            Choose which staff receive review pop-ups for doc uploads (CS Summary, documents, eligibility checks, standalone intakes).
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -257,9 +263,9 @@ export default function ReviewNotificationsPage() {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-1">
-              <Label className="text-base font-medium">Enable review pop-ups</Label>
+              <Label className="text-base font-medium">Enable doc upload notifications</Label>
               <p className="text-sm text-muted-foreground">
-                If disabled, no one will receive CS Summary/document review pop-ups.
+                If disabled, no one will receive doc upload/review pop-ups.
               </p>
             </div>
             <Switch
@@ -354,6 +360,26 @@ export default function ReviewNotificationsPage() {
                           disabled={!r.enabled}
                           onCheckedChange={(checked) =>
                             updateRecipient(person.uid, { documents: Boolean(checked) }, person.email, person.label)
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-muted-foreground">Eligibility</Label>
+                        <Switch
+                          checked={r.eligibility}
+                          disabled={!r.enabled}
+                          onCheckedChange={(checked) =>
+                            updateRecipient(person.uid, { eligibility: Boolean(checked) } as any, person.email, person.label)
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-muted-foreground">Standalone</Label>
+                        <Switch
+                          checked={r.standalone}
+                          disabled={!r.enabled}
+                          onCheckedChange={(checked) =>
+                            updateRecipient(person.uid, { standalone: Boolean(checked) } as any, person.email, person.label)
                           }
                         />
                       </div>

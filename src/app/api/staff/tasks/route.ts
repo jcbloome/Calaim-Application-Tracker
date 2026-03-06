@@ -70,12 +70,16 @@ export async function GET(request: NextRequest) {
         const recipientEnabled = Boolean(recipient?.enabled);
         const allowCs = Boolean(recipient?.csSummary);
         const allowDocs = Boolean(recipient?.documents);
+        const allowEligibility = Boolean(recipient?.eligibility);
+        const allowStandalone = Boolean(recipient?.standalone);
         return {
           enabled,
           pollIntervalSeconds,
           recipientEnabled,
           allowCs,
           allowDocs,
+          allowEligibility,
+          allowStandalone,
         };
       } catch {
         return {
@@ -84,12 +88,14 @@ export async function GET(request: NextRequest) {
           recipientEnabled: false,
           allowCs: false,
           allowDocs: false,
+          allowEligibility: false,
+          allowStandalone: false,
         };
       }
     };
 
     const reviewPrefs = onlyFollowUp
-      ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false }
+      ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false, allowEligibility: false, allowStandalone: false }
       : await loadReviewNotificationRecipient();
 
     const fetchAllDocs = async (
@@ -412,7 +418,11 @@ export async function GET(request: NextRequest) {
 
       // Review-needed tasks (CS Summary + Documents), controlled by Super Admin toggles.
       try {
-        if (reviewPrefs.enabled && reviewPrefs.recipientEnabled && (reviewPrefs.allowCs || reviewPrefs.allowDocs)) {
+        if (
+          reviewPrefs.enabled &&
+          reviewPrefs.recipientEnabled &&
+          (reviewPrefs.allowCs || reviewPrefs.allowDocs || reviewPrefs.allowEligibility || reviewPrefs.allowStandalone)
+        ) {
           const maxItems = 60;
 
           const buildMemberClientId = (data: any) => {
@@ -554,6 +564,83 @@ export async function GET(request: NextRequest) {
             groupFlagSnap?.docs?.forEach((docSnap: any) => {
               const ownerUid = docSnap.ref?.parent?.parent?.id || null;
               pushDocTask(docSnap, ownerUid);
+            });
+          }
+
+          if (reviewPrefs.allowEligibility) {
+            const eligSnap = await adminDb
+              .collection('eligibilityChecks')
+              .where('status', 'in', ['pending', 'in_progress'])
+              .limit(maxItems)
+              .get()
+              .catch(() => null);
+
+            eligSnap?.docs?.forEach((docSnap: any) => {
+              const data = docSnap.data() || {};
+              const memberName = String(data.memberName || `${data.memberFirstName || ''} ${data.memberLastName || ''}`).trim() || 'Member';
+              const dueDate = formatIso(data.timestamp || data.updatedAt || data.createdAt || new Date());
+              reviewTasks.push({
+                id: `review-elig-${docSnap.id}`,
+                title: 'Eligibility Check Needs Review',
+                description: `${String(data.healthPlan || '').trim() || '—'} • ${String(data.county || '').trim() || '—'}`,
+                memberName,
+                memberClientId: String(data.memberMrn || '').trim(),
+                healthPlan: String(data.healthPlan || '').trim(),
+                taskType: 'review',
+                reviewKind: 'elig',
+                priority: 'High',
+                status: 'pending',
+                dueDate,
+                assignedBy: 'system',
+                assignedByName: 'System',
+                assignedTo: userId,
+                assignedToName: staffName,
+                createdAt: dueDate,
+                updatedAt: dueDate,
+                notes: '',
+                source: 'eligibilityChecks',
+                eligibilityCheckId: docSnap.id,
+                actionUrl: `/admin/eligibility-checks?checkId=${encodeURIComponent(docSnap.id)}`
+              });
+            });
+          }
+
+          if (reviewPrefs.allowStandalone) {
+            const standaloneSnap = await adminDb
+              .collection('standalone_upload_submissions')
+              .where('status', '==', 'pending')
+              .limit(maxItems)
+              .get()
+              .catch(() => null);
+
+            standaloneSnap?.docs?.forEach((docSnap: any) => {
+              const data = docSnap.data() || {};
+              const memberName = String(data.memberName || '').trim() || 'Member';
+              const docType = String(data.documentType || '').trim() || 'Standalone upload';
+              const dueDate = formatIso(data.createdAt || data.updatedAt || new Date());
+              reviewTasks.push({
+                id: `review-standalone-${docSnap.id}`,
+                title: 'Standalone Upload Intake',
+                description: docType,
+                memberName,
+                memberClientId: String(data.medicalRecordNumber || data.kaiserMrn || data.mediCalNumber || '').trim(),
+                healthPlan: String(data.healthPlan || '').trim(),
+                taskType: 'review',
+                reviewKind: 'standalone',
+                priority: 'High',
+                status: 'pending',
+                dueDate,
+                assignedBy: 'system',
+                assignedByName: 'System',
+                assignedTo: userId,
+                assignedToName: staffName,
+                createdAt: dueDate,
+                updatedAt: dueDate,
+                notes: '',
+                source: 'standalone_uploads',
+                standaloneUploadId: docSnap.id,
+                actionUrl: `/admin/standalone-uploads?focus=${encodeURIComponent(docSnap.id)}`
+              });
             });
           }
 

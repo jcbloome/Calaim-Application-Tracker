@@ -50,7 +50,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
-import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
@@ -1228,6 +1228,17 @@ function ApplicationDetailPageContent() {
   
   const applicationId = params.applicationId as string;
   const appUserId = searchParams.get('userId');
+
+  type StandaloneUploadRow = {
+    id: string;
+    status: string;
+    documentType?: string;
+    memberName?: string;
+    healthPlan?: string;
+    medicalRecordNumber?: string;
+    createdAtMs: number;
+    files: Array<{ fileName: string; downloadURL: string; storagePath?: string }>;
+  };
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
@@ -1235,6 +1246,13 @@ function ApplicationDetailPageContent() {
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [intakeImportOpen, setIntakeImportOpen] = useState(false);
+  const [intakeRequirementTitle, setIntakeRequirementTitle] = useState<string>('');
+  const [intakeLoading, setIntakeLoading] = useState(false);
+  const [intakeError, setIntakeError] = useState<string>('');
+  const [intakeUploads, setIntakeUploads] = useState<StandaloneUploadRow[]>([]);
+  const [intakeSearch, setIntakeSearch] = useState<string>('');
+  const [intakeSelectedFileKey, setIntakeSelectedFileKey] = useState<string>(''); // `${uploadId}:${index}`
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string; email: string; role?: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [interofficeNote, setInterofficeNote] = useState<{
@@ -2193,14 +2211,26 @@ function ApplicationDetailPageContent() {
           const existingForm = existingForms.get(update.name!);
           if (existingForm) {
               // Staff internal uploads should not trigger "needs review" notifications.
-              const shouldAutoAcknowledge = update.status === 'Completed' && Boolean(update.filePath || update.downloadURL);
+              // Standalone intake imports MUST remain un-acknowledged so they appear in staff review queues.
+              const source = String((update as any)?.source || (existingForm as any)?.source || '').trim().toLowerCase();
+              const isStandalone =
+                source === 'standalone_upload' ||
+                Boolean((update as any)?.standaloneUploadId) ||
+                Boolean((existingForm as any)?.standaloneUploadId);
+              const shouldAutoAcknowledge =
+                update.status === 'Completed' && Boolean(update.filePath || update.downloadURL) && !isStandalone;
               existingForms.set(update.name!, {
                 ...existingForm,
                 ...update,
                 ...(shouldAutoAcknowledge ? { acknowledged: true } : {})
               });
           } else if (update.name) {
-              const shouldAutoAcknowledge = update.status === 'Completed' && Boolean((update as any).filePath || (update as any).downloadURL);
+              const source = String((update as any)?.source || '').trim().toLowerCase();
+              const isStandalone = source === 'standalone_upload' || Boolean((update as any)?.standaloneUploadId);
+              const shouldAutoAcknowledge =
+                update.status === 'Completed' &&
+                Boolean((update as any).filePath || (update as any).downloadURL) &&
+                !isStandalone;
               existingForms.set(update.name, {
                 name: update.name,
                 status: update.status || 'Pending',
@@ -2274,6 +2304,140 @@ function ApplicationDetailPageContent() {
     const label = sanitizeFileComponent(getDocumentLabel(formName));
     const ext = getFileExtension(originalFileName);
     return `${memberName} - ${label}${ext}`;
+  };
+
+  const loadMemberStandaloneIntakes = async () => {
+    if (!firestore || !application) return;
+    const mrn = String(application.memberMrn || '').trim();
+    const memberLast = String(application.memberLastName || '').trim().toLowerCase();
+    const memberFirst = String(application.memberFirstName || '').trim().toLowerCase();
+    const memberNeedle = `${memberFirst} ${memberLast}`.trim();
+
+    setIntakeLoading(true);
+    setIntakeError('');
+    try {
+      const snap = await getDocs(
+        query(collection(firestore, 'standalone_upload_submissions'), where('status', '==', 'pending'), limit(250))
+      );
+      const rows: StandaloneUploadRow[] = snap.docs.map((d) => {
+        const data = d.data() as any;
+        const createdAtMs = (() => {
+          const raw = data?.createdAt || data?.submittedAt || data?.updatedAt || null;
+          try {
+            if (raw?.toDate) return raw.toDate().getTime();
+            const ms = new Date(raw).getTime();
+            return Number.isNaN(ms) ? 0 : ms;
+          } catch {
+            return 0;
+          }
+        })();
+        const files = Array.isArray(data?.files) ? data.files : [];
+        const normalizedFiles = files
+          .map((f: any) => ({
+            fileName: String(f?.fileName || '').trim(),
+            downloadURL: String(f?.downloadURL || '').trim(),
+            storagePath: String(f?.storagePath || '').trim() || undefined,
+          }))
+          .filter((f: any) => Boolean(f.fileName && f.downloadURL))
+          .slice(0, 15);
+
+        return {
+          id: d.id,
+          status: String(data?.status || 'pending'),
+          documentType: String(data?.documentType || '').trim() || undefined,
+          memberName: String(data?.memberName || '').trim() || undefined,
+          healthPlan: String(data?.healthPlan || '').trim() || undefined,
+          medicalRecordNumber:
+            String(data?.medicalRecordNumber || data?.mrn || data?.memberMrn || data?.kaiserMrn || '').trim() || undefined,
+          createdAtMs,
+          files: normalizedFiles,
+        };
+      });
+
+      const filtered = rows
+        .filter((r) => r.status === 'pending')
+        .filter((r) => {
+          if (mrn && r.medicalRecordNumber) return r.medicalRecordNumber === mrn;
+          const name = String(r.memberName || '').toLowerCase();
+          if (memberLast && name.includes(memberLast)) return true;
+          if (memberNeedle && name.includes(memberNeedle)) return true;
+          return false;
+        })
+        .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0));
+
+      setIntakeUploads(filtered);
+    } catch (e: any) {
+      console.error('Failed to load standalone intakes:', e);
+      setIntakeError(e?.message || 'Failed to load standalone uploads.');
+      setIntakeUploads([]);
+    } finally {
+      setIntakeLoading(false);
+    }
+  };
+
+  const importStandaloneIntoSlot = async (params: { fileKey: string; requirementTitle: string }) => {
+    if (!firestore || !application || !docRef || !user?.uid) return;
+    const [uploadId, idxRaw] = String(params.fileKey || '').split(':');
+    const idx = Number(idxRaw);
+    const row = intakeUploads.find((r) => r.id === uploadId);
+    const file = row?.files?.[idx];
+    if (!row || !file || !params.requirementTitle) {
+      toast({ variant: 'destructive', title: 'Select a file', description: 'Choose a standalone upload file to import.' });
+      return;
+    }
+
+    const standardFileName = buildStandardFileName(params.requirementTitle, file.fileName || 'document.pdf');
+
+    try {
+      await handleFormStatusUpdate([
+        {
+          name: params.requirementTitle,
+          status: 'Completed',
+          type: 'Upload',
+          fileName: standardFileName,
+          filePath: file.storagePath || null,
+          downloadURL: file.downloadURL || null,
+          dateCompleted: Timestamp.now(),
+          acknowledged: false,
+          acknowledgedBy: null,
+          acknowledgedByUid: null,
+          acknowledgedDate: null,
+          source: 'standalone_upload',
+          standaloneUploadId: row.id,
+        } as any,
+      ]);
+
+      await setDoc(
+        doc(firestore, 'standalone_upload_submissions', row.id),
+        {
+          status: 'assigned',
+          assignedAt: serverTimestamp(),
+          assignedByUid: user.uid,
+          assignedApplicationId: applicationId,
+          assignedApplicationUserId: appUserId || null,
+          assignedRequirementTitle: params.requirementTitle,
+          updatedAt: serverTimestamp(),
+        } as any,
+        { merge: true }
+      );
+
+      toast({
+        title: 'Imported',
+        description: `Standalone upload attached to "${params.requirementTitle}".`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+
+      setIntakeImportOpen(false);
+      setIntakeSelectedFileKey('');
+      setIntakeSearch('');
+    } catch (e: any) {
+      console.error('Failed to import standalone upload:', e);
+      toast({
+        variant: 'destructive',
+        title: 'Import failed',
+        description: e?.message || 'Unable to attach standalone upload to this slot.',
+      });
+    }
   };
 
   const buildStorageFileName = (standardFileName: string) =>
@@ -3081,6 +3245,21 @@ function ApplicationDetailPageContent() {
                         <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading} multiple={isMultiple} />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        setIntakeRequirementTitle(req.title);
+                        setIntakeImportOpen(true);
+                        setIntakeSelectedFileKey('');
+                        setIntakeSearch('');
+                        void loadMemberStandaloneIntakes();
+                      }}
+                      disabled={isUploading || !firestore}
+                    >
+                      Import from Standalone Uploads
+                    </Button>
                 </div>
             );
         default:
@@ -3094,6 +3273,118 @@ function ApplicationDetailPageContent() {
 
   return (
     <div className="grid w-full min-w-0 grid-cols-1 lg:grid-cols-3 gap-8">
+      <Dialog
+        open={intakeImportOpen}
+        onOpenChange={(open) => {
+          setIntakeImportOpen(open);
+          if (!open) {
+            setIntakeSelectedFileKey('');
+            setIntakeSearch('');
+            setIntakeError('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle className="min-w-0">
+              Import from Standalone Uploads
+            </DialogTitle>
+            <DialogDescription className="min-w-0">
+              Attach a pending standalone intake upload into this slot: <span className="font-medium">{intakeRequirementTitle || '—'}</span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <div className="flex-1 min-w-0">
+                <Label htmlFor="intake-search" className="sr-only">Search</Label>
+                <Input
+                  id="intake-search"
+                  value={intakeSearch}
+                  onChange={(e) => setIntakeSearch(e.target.value)}
+                  placeholder="Search document type / filename…"
+                />
+              </div>
+              <Button type="button" variant="secondary" onClick={() => void loadMemberStandaloneIntakes()} disabled={intakeLoading || !firestore}>
+                {intakeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+                Refresh
+              </Button>
+            </div>
+
+            {intakeError && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Unable to load standalone uploads</AlertTitle>
+                <AlertDescription className="break-words">{intakeError}</AlertDescription>
+              </Alert>
+            )}
+
+            {!intakeError && !intakeLoading && intakeUploads.length === 0 && (
+              <div className="text-sm text-muted-foreground">
+                No pending standalone uploads found for this member.
+              </div>
+            )}
+
+            <RadioGroup value={intakeSelectedFileKey} onValueChange={setIntakeSelectedFileKey} className="space-y-3">
+              {(intakeUploads || [])
+                .filter((u) => {
+                  const q = String(intakeSearch || '').trim().toLowerCase();
+                  if (!q) return true;
+                  const hay = `${u.documentType || ''} ${u.memberName || ''} ${u.medicalRecordNumber || ''} ${u.files.map(f => f.fileName).join(' ')}`.toLowerCase();
+                  return hay.includes(q);
+                })
+                .slice(0, 50)
+                .map((u) => (
+                  <Card key={u.id} className="shadow-sm">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-start justify-between gap-2 min-w-0">
+                        <span className="truncate">{u.documentType || 'Standalone upload'}</span>
+                        <Badge variant="outline" className="shrink-0">
+                          {u.createdAtMs ? new Date(u.createdAtMs).toLocaleDateString() : '—'}
+                        </Badge>
+                      </CardTitle>
+                      <CardDescription className="min-w-0">
+                        <span className="truncate block">{u.memberName || '—'}</span>
+                        <span className="truncate block">
+                          {u.healthPlan ? `${u.healthPlan} • ` : ''}{u.medicalRecordNumber ? `MRN ${u.medicalRecordNumber}` : 'MRN —'}
+                        </span>
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <div className="space-y-2">
+                        {u.files.map((f, idx) => {
+                          const key = `${u.id}:${idx}`;
+                          return (
+                            <div key={key} className="flex items-start gap-2">
+                              <RadioGroupItem value={key} id={`intake-file-${key}`} />
+                              <label htmlFor={`intake-file-${key}`} className="min-w-0 text-sm leading-snug cursor-pointer">
+                                <span className="block truncate font-medium">{f.fileName}</span>
+                                <span className="block text-xs text-muted-foreground truncate">{u.id}</span>
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+            </RadioGroup>
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIntakeImportOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void importStandaloneIntoSlot({ fileKey: intakeSelectedFileKey, requirementTitle: intakeRequirementTitle })}
+                disabled={!intakeSelectedFileKey || !intakeRequirementTitle}
+              >
+                Attach to slot
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <div className="lg:col-span-2 min-w-0 space-y-8">
          {servicesDeclined && (
             <Alert variant="destructive">
@@ -3128,7 +3419,16 @@ function ApplicationDetailPageContent() {
             </CardTitle>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardDescription>
-                Submitted by {application.referrerName || user?.displayName} | {application.pathway} ({application.healthPlan})
+                {(() => {
+                  const name = String(application.referrerName || user?.displayName || 'User').trim();
+                  const email = String((application as any)?.referrerEmail || '').trim();
+                  const by = email ? `${name} (${email})` : name;
+                  return (
+                    <>
+                      Submitted by {by} | {application.pathway} ({application.healthPlan})
+                    </>
+                  );
+                })()}
                 </CardDescription>
             </div>
             </CardHeader>
@@ -3336,8 +3636,8 @@ function ApplicationDetailPageContent() {
                 return (
                     <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
                         <CardHeader className="pb-4">
-                            <div className="flex justify-between items-start gap-4">
-                                <CardTitle className="text-lg flex items-center gap-2">
+                            <div className="flex justify-between items-start gap-4 min-w-0">
+                                <CardTitle className="text-lg flex items-center gap-2 min-w-0">
                                   {req.title}
                                   {isSummary && isNewCsSummary && (
                                     <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200 text-xs">
@@ -3351,41 +3651,43 @@ function ApplicationDetailPageContent() {
                                   ) : null}
                                 </CardTitle>
                                 {status === 'Completed' && (
-                                  <div className="flex items-center gap-2">
-                                    {isReviewed ? (
-                                      <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200 text-xs">
-                                        Reviewed
-                                      </Badge>
-                                    ) : needsReview ? (
-                                      <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
-                                        Needs review
-                                      </Badge>
-                                    ) : null}
-                                    <div className="flex items-center gap-2">
-                                      <Checkbox
-                                        id={`reviewed-${req.id}`}
-                                        checked={isReviewed}
-                                        onCheckedChange={(checked) => {
-                                          if (isSummary) {
-                                            handleApplicationReviewed(Boolean(checked));
-                                          } else {
-                                            handleFormReviewed(req.title, Boolean(checked));
-                                          }
-                                        }}
-                                      />
-                                      <Label
-                                        htmlFor={`reviewed-${req.id}`}
-                                        className="text-xs text-muted-foreground cursor-pointer select-none"
-                                      >
-                                        {isReviewed ? 'Reviewed' : 'Mark reviewed'}
-                                      </Label>
+                                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                    <div className="flex flex-wrap items-center justify-end gap-2 max-w-[260px]">
+                                      {isReviewed ? (
+                                        <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200 text-xs">
+                                          Reviewed
+                                        </Badge>
+                                      ) : needsReview ? (
+                                        <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200 text-xs">
+                                          Needs review
+                                        </Badge>
+                                      ) : null}
+                                      <div className="flex items-center gap-2">
+                                        <Checkbox
+                                          id={`reviewed-${req.id}`}
+                                          checked={isReviewed}
+                                          onCheckedChange={(checked) => {
+                                            if (isSummary) {
+                                              handleApplicationReviewed(Boolean(checked));
+                                            } else {
+                                              handleFormReviewed(req.title, Boolean(checked));
+                                            }
+                                          }}
+                                        />
+                                        <Label
+                                          htmlFor={`reviewed-${req.id}`}
+                                          className="text-xs text-muted-foreground cursor-pointer select-none"
+                                        >
+                                          {isReviewed ? 'Reviewed' : 'Mark reviewed'}
+                                        </Label>
+                                      </div>
                                     </div>
                                     {isReviewed && (() => {
                                       const meta = getReviewerMeta(req.title, formInfo);
                                       if (!meta.name && !meta.dateLabel) return null;
                                       const parts = [meta.dateLabel, meta.name].filter(Boolean);
                                       return (
-                                        <div className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                        <div className="text-[11px] text-muted-foreground leading-tight text-right max-w-[260px] whitespace-normal break-words">
                                           {parts.join(' · ')}
                                         </div>
                                       );

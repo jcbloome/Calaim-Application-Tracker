@@ -4,12 +4,12 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ClipboardCheck, FileText, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, getDocs, collectionGroup, limit, query, where } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,8 @@ export default function AdminDashboardPage() {
   const [allApplications, setAllApplications] = useState<WithId<Application & FormValues>[]>([]);
   const [isLoadingApps, setIsLoadingApps] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [standaloneUploads, setStandaloneUploads] = useState<any[]>([]);
+  const [eligibilityChecks, setEligibilityChecks] = useState<any[]>([]);
   const [seenMap, setSeenMap] = useState<Record<string, boolean>>({});
   const [logSort, setLogSort] = useState<{ key: 'time' | 'member' | 'by'; dir: 'asc' | 'desc' }>({
     key: 'time',
@@ -116,6 +118,26 @@ export default function AdminDashboardPage() {
         const apps = [...userApps, ...adminApps];
         
         setAllApplications(apps);
+
+        // Standalone uploads intake (pending)
+        try {
+          const snap = await getDocs(
+            query(collection(firestore, 'standalone_upload_submissions'), where('status', '==', 'pending'), limit(500))
+          );
+          setStandaloneUploads(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+        } catch {
+          setStandaloneUploads([]);
+        }
+
+        // Eligibility checks (pending/in-progress)
+        try {
+          const res = await fetch('/api/admin/eligibility-checks', { method: 'GET' });
+          const data = (await res.json().catch(() => ({}))) as any;
+          const checks = Array.isArray(data?.checks) ? data.checks : [];
+          setEligibilityChecks(checks);
+        } catch {
+          setEligibilityChecks([]);
+        }
     } catch (err: any) {
         setError(err);
     } finally {
@@ -126,6 +148,11 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     fetchApps();
   }, [fetchApps]);
+
+  const buildAppUrl = (applicationId: string, appUserId?: string | null) => {
+    if (appUserId) return `/admin/applications/${applicationId}?userId=${encodeURIComponent(appUserId)}`;
+    return `/admin/applications/${applicationId}`;
+  };
 
   // Keep the dashboard log fresh without hammering Firestore.
   useEffect(() => {
@@ -139,14 +166,15 @@ export default function AdminDashboardPage() {
   const newItemLog = useMemo(() => {
     const items: Array<{
       key: string;
-      kind: 'doc' | 'cs';
+      kind: 'doc' | 'cs' | 'elig' | 'standalone';
       createdAtMs: number;
       memberName: string;
       pathway: string;
       healthPlan: string;
       itemName: string;
       byName: string;
-      applicationId: string;
+      applicationId?: string;
+      openHref: string;
       appUserId?: string | null;
       appPath?: string;
       formIndex?: number;
@@ -187,6 +215,7 @@ export default function AdminDashboardPage() {
           itemName: 'CS Summary',
           byName,
           applicationId: app.id,
+          openHref: buildAppUrl(app.id, appUserId),
           appUserId,
           appPath,
           formIndex: summaryIndex,
@@ -220,6 +249,7 @@ export default function AdminDashboardPage() {
           itemName: String(form.name || 'Document'),
           byName,
           applicationId: app.id,
+          openHref: buildAppUrl(app.id, appUserId),
           appUserId,
           appPath,
           formIndex: idx,
@@ -227,11 +257,77 @@ export default function AdminDashboardPage() {
       });
     });
 
+    // Eligibility checks needing review
+    (eligibilityChecks || []).forEach((check: any) => {
+      const status = String(check?.status || '').trim().toLowerCase();
+      const needsReview = status === 'pending' || status === 'in-progress';
+      if (!needsReview) return;
+
+      const createdAtMs = (() => {
+        const v = check?.timestamp || check?.createdAt || check?.requestedAt;
+        try {
+          return v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+        } catch {
+          return Date.now();
+        }
+      })();
+      if (createdAtMs < cutoff) return;
+
+      const memberName = String(check?.memberName || `${check?.memberFirstName || ''} ${check?.memberLastName || ''}`.trim()).trim() || 'Unknown Member';
+      const healthPlan = String(check?.healthPlan || '').trim();
+      const byName = String(check?.requesterName || `${check?.requesterFirstName || ''} ${check?.requesterLastName || ''}`.trim()).trim() || 'Requester';
+
+      items.push({
+        key: `elig-${String(check?.id || '').trim() || memberName}-${createdAtMs}`,
+        kind: 'elig',
+        createdAtMs,
+        memberName,
+        pathway: '',
+        healthPlan,
+        itemName: 'Eligibility check',
+        byName,
+        openHref: `/admin/eligibility-checks?checkId=${encodeURIComponent(String(check?.id || '').trim())}`,
+      });
+    });
+
+    // Standalone uploads intake needing review
+    (standaloneUploads || []).forEach((row: any) => {
+      const status = String(row?.status || '').trim().toLowerCase();
+      if (status !== 'pending') return;
+
+      const createdAtMs = (() => {
+        const v = row?.createdAt || row?.updatedAt;
+        try {
+          return v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+        } catch {
+          return Date.now();
+        }
+      })();
+      if (createdAtMs < cutoff) return;
+
+      const memberName = String(row?.memberName || `${row?.memberFirstName || ''} ${row?.memberLastName || ''}`.trim()).trim() || 'Unknown Member';
+      const healthPlan = String(row?.healthPlan || '').trim();
+      const byName = String(row?.uploaderName || row?.uploaderEmail || '').trim() || 'Uploader';
+      const itemName = String(row?.documentType || 'Standalone upload').trim() || 'Standalone upload';
+
+      items.push({
+        key: `standalone-${String(row?.id || '').trim() || memberName}-${createdAtMs}`,
+        kind: 'standalone',
+        createdAtMs,
+        memberName,
+        pathway: '',
+        healthPlan,
+        itemName,
+        byName,
+        openHref: `/admin/standalone-uploads?focus=${encodeURIComponent(String(row?.id || '').trim())}`,
+      });
+    });
+
     return items
       .filter((i) => Number.isFinite(i.createdAtMs))
       .sort((a, b) => b.createdAtMs - a.createdAtMs)
       .slice(0, 100);
-  }, [allApplications]);
+  }, [allApplications, eligibilityChecks, standaloneUploads]);
 
   const filteredAndSortedLog = useMemo(() => {
     const inDateRange = (ms: number) => {
@@ -264,20 +360,12 @@ export default function AdminDashboardPage() {
     });
   }, [logEndDate, logFilterMode, logMonth, logSort.dir, logSort.key, logStartDate, newItemLog]);
 
-  const buildAppUrl = (applicationId: string, appUserId?: string | null) => {
-    if (appUserId) return `/admin/applications/${applicationId}?userId=${encodeURIComponent(appUserId)}`;
-    return `/admin/applications/${applicationId}`;
-  };
-
   const csSummaryStats = useMemo(() => {
     const result = {
       received: 0,
       needsReview: 0,
-      reviewed: 0,
       hnNeedsReview: 0,
       kaiserNeedsReview: 0,
-      hnReviewed: 0,
-      kaiserReviewed: 0,
     };
 
     if (!allApplications) return result;
@@ -294,11 +382,7 @@ export default function AdminDashboardPage() {
       const isKaiser = plan.includes('kaiser');
       const isHn = plan.includes('health net');
 
-      if (app.applicationChecked) {
-        result.reviewed += 1;
-        if (isKaiser) result.kaiserReviewed += 1;
-        if (isHn) result.hnReviewed += 1;
-      } else {
+      if (!app.applicationChecked) {
         result.needsReview += 1;
         if (isKaiser) result.kaiserNeedsReview += 1;
         if (isHn) result.hnNeedsReview += 1;
@@ -312,11 +396,8 @@ export default function AdminDashboardPage() {
     const result = {
       received: 0,
       needsReview: 0,
-      reviewed: 0,
       hnNeedsReview: 0,
       kaiserNeedsReview: 0,
-      hnReviewed: 0,
-      kaiserReviewed: 0,
     };
 
     if (!allApplications) return result;
@@ -333,11 +414,7 @@ export default function AdminDashboardPage() {
         const isKaiser = plan.includes('kaiser');
         const isHn = plan.includes('health net');
 
-        if (form.acknowledged) {
-          result.reviewed += 1;
-          if (isKaiser) result.kaiserReviewed += 1;
-          if (isHn) result.hnReviewed += 1;
-        } else {
+        if (!form.acknowledged) {
           result.needsReview += 1;
           if (isKaiser) result.kaiserNeedsReview += 1;
           if (isHn) result.hnNeedsReview += 1;
@@ -348,12 +425,30 @@ export default function AdminDashboardPage() {
     return result;
   }, [allApplications]);
 
+  const eligibilityStats = useMemo(() => {
+    const result = {
+      needsReview: 0,
+      hnNeedsReview: 0,
+      kaiserNeedsReview: 0,
+    };
+
+    (eligibilityChecks || []).forEach((check: any) => {
+      const status = String(check?.status || '').trim().toLowerCase();
+      if (status !== 'pending' && status !== 'in-progress') return;
+      result.needsReview += 1;
+      const plan = String(check?.healthPlan || '').toLowerCase();
+      if (plan.includes('kaiser')) result.kaiserNeedsReview += 1;
+      if (plan.includes('health net')) result.hnNeedsReview += 1;
+    });
+
+    return result;
+  }, [eligibilityChecks]);
+
   if (isAdminLoading || isLoadingApps) {
     return (
       <div className="space-y-6">
         {/* Stats Cards Skeleton */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Skeleton className="h-32 rounded-lg" />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <Skeleton className="h-32 rounded-lg" />
           <Skeleton className="h-32 rounded-lg" />
           <Skeleton className="h-32 rounded-lg" />
@@ -384,7 +479,7 @@ export default function AdminDashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="border-l-4 border-amber-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">CS Summary Needs Review</CardTitle>
@@ -415,23 +510,6 @@ export default function AdminDashboardPage() {
                   K(CS) {csSummaryStats.kaiserNeedsReview}
                 </Badge>
               </Link>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-l-4 border-green-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">CS Summary Reviewed</CardTitle>
-            <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{csSummaryStats.reviewed}</div>
-            <div className="flex flex-wrap gap-2 text-xs">
-              <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-                HN(CS) {csSummaryStats.hnReviewed}
-              </Badge>
-              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
-                K(CS) {csSummaryStats.kaiserReviewed}
-              </Badge>
             </div>
           </CardContent>
         </Card>
@@ -468,19 +546,31 @@ export default function AdminDashboardPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-green-500">
+        <Card className="border-l-4 border-amber-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Documents Reviewed</CardTitle>
-            <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Eligibility Check Needs Review</CardTitle>
+            <AlertCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{documentStats.reviewed}</div>
+            <Link
+              href="/admin/eligibility-checks"
+              className="inline-block text-2xl font-bold hover:underline"
+              aria-label="View eligibility checks needing review"
+            >
+              {eligibilityStats.needsReview}
+            </Link>
             <div className="flex flex-wrap gap-2 text-xs">
-              <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-                HN(D) {documentStats.hnReviewed}
+              <Badge
+                variant="outline"
+                className="bg-green-100 text-green-800 border-green-200"
+              >
+                HN(E) {eligibilityStats.hnNeedsReview}
               </Badge>
-              <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">
-                K(D) {documentStats.kaiserReviewed}
+              <Badge
+                variant="outline"
+                className="bg-blue-100 text-blue-800 border-blue-200"
+              >
+                K(E) {eligibilityStats.kaiserNeedsReview}
               </Badge>
             </div>
           </CardContent>
@@ -492,7 +582,7 @@ export default function AdminDashboardPage() {
           <div>
             <CardTitle>New items log</CardTitle>
             <CardDescription>
-              Live list of documents and CS summaries that need review/acknowledgement. Marking reviewed will remove them from Action Items and suppress notifications.
+              Live list of items that need review/processing (CS summaries, documents, eligibility checks, and standalone upload intakes).
             </CardDescription>
           </div>
           <Button variant="outline" onClick={() => fetchApps()} disabled={isLoadingApps}>
@@ -645,8 +735,25 @@ export default function AdminDashboardPage() {
                       <td className="py-2 pr-3">{e.healthPlan || '-'}</td>
                       <td className="py-2 pr-3">{e.pathway || '-'}</td>
                       <td className="py-2 pr-3">
-                        <Badge variant="outline" className={e.kind === 'doc' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-200 text-amber-800'}>
-                          {e.kind === 'doc' ? 'Document' : 'CS Summary'}
+                        <Badge
+                          variant="outline"
+                          className={
+                            e.kind === 'doc'
+                              ? 'bg-green-50 border-green-200 text-green-800'
+                              : e.kind === 'cs'
+                                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                : e.kind === 'elig'
+                                  ? 'bg-purple-50 border-purple-200 text-purple-800'
+                                  : 'bg-orange-50 border-orange-200 text-orange-800'
+                          }
+                        >
+                          {e.kind === 'doc'
+                            ? 'Document'
+                            : e.kind === 'cs'
+                              ? 'CS Summary'
+                              : e.kind === 'elig'
+                                ? 'Eligibility'
+                                : 'Standalone'}
                         </Badge>
                         <span className="ml-2">{e.itemName}</span>
                       </td>
@@ -660,7 +767,7 @@ export default function AdminDashboardPage() {
                       </td>
                       <td className="py-2 text-right whitespace-nowrap space-x-2">
                         <Button asChild size="sm" variant="outline">
-                          <Link href={buildAppUrl(e.applicationId, e.appUserId)}>Open</Link>
+                          <Link href={e.openHref}>Open</Link>
                         </Button>
                       </td>
                     </tr>

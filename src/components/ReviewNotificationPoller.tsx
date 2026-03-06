@@ -14,17 +14,31 @@ const clampPollSeconds = (value: number) => {
 type SeenState = {
   cs: { count: number; latestMs: number };
   docs: { count: number; latestMs: number };
+  elig: { count: number; latestMs: number };
+  standalone: { count: number; latestMs: number };
 };
 
 const makeStorageKey = (uid: string) => `review-notification-seen:${uid}`;
 
 const readSeen = (uid: string): SeenState => {
   if (typeof window === 'undefined') {
-    return { cs: { count: 0, latestMs: 0 }, docs: { count: 0, latestMs: 0 } };
+    return {
+      cs: { count: 0, latestMs: 0 },
+      docs: { count: 0, latestMs: 0 },
+      elig: { count: 0, latestMs: 0 },
+      standalone: { count: 0, latestMs: 0 },
+    };
   }
   try {
     const raw = localStorage.getItem(makeStorageKey(uid));
-    if (!raw) return { cs: { count: 0, latestMs: 0 }, docs: { count: 0, latestMs: 0 } };
+    if (!raw) {
+      return {
+        cs: { count: 0, latestMs: 0 },
+        docs: { count: 0, latestMs: 0 },
+        elig: { count: 0, latestMs: 0 },
+        standalone: { count: 0, latestMs: 0 },
+      };
+    }
     const parsed = JSON.parse(raw) as Partial<SeenState>;
     return {
       cs: {
@@ -35,9 +49,22 @@ const readSeen = (uid: string): SeenState => {
         count: Number(parsed?.docs?.count || 0),
         latestMs: Number(parsed?.docs?.latestMs || 0),
       },
+      elig: {
+        count: Number((parsed as any)?.elig?.count || 0),
+        latestMs: Number((parsed as any)?.elig?.latestMs || 0),
+      },
+      standalone: {
+        count: Number((parsed as any)?.standalone?.count || 0),
+        latestMs: Number((parsed as any)?.standalone?.latestMs || 0),
+      },
     };
   } catch {
-    return { cs: { count: 0, latestMs: 0 }, docs: { count: 0, latestMs: 0 } };
+    return {
+      cs: { count: 0, latestMs: 0 },
+      docs: { count: 0, latestMs: 0 },
+      elig: { count: 0, latestMs: 0 },
+      standalone: { count: 0, latestMs: 0 },
+    };
   }
 };
 
@@ -132,7 +159,9 @@ export function ReviewNotificationPoller() {
 
       const allowCs = Boolean(reviewPrefs?.allowCs);
       const allowDocs = Boolean(reviewPrefs?.allowDocs);
-      if (!allowCs && !allowDocs) {
+      const allowElig = Boolean(reviewPrefs?.allowEligibility);
+      const allowStandalone = Boolean(reviewPrefs?.allowStandalone);
+      if (!allowCs && !allowDocs && !allowElig && !allowStandalone) {
         return intervalSeconds;
       }
 
@@ -143,41 +172,81 @@ export function ReviewNotificationPoller() {
       const docTasks = allowDocs
         ? reviewTasks.filter((t) => t?.reviewKind === 'docs' || String(t?.title || '').toLowerCase().includes('document'))
         : [];
+      const eligTasks = allowElig
+        ? reviewTasks.filter((t) => t?.reviewKind === 'elig' || String(t?.title || '').toLowerCase().includes('elig'))
+        : [];
+      const standaloneTasks = allowStandalone
+        ? reviewTasks.filter((t) => t?.reviewKind === 'standalone' || String(t?.title || '').toLowerCase().includes('standalone'))
+        : [];
 
       const csCount = csTasks.length;
       const docsCount = docTasks.length;
+      const eligCount = eligTasks.length;
+      const standaloneCount = standaloneTasks.length;
 
       const csLatestMs = Math.max(...csTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
       const docsLatestMs = Math.max(...docTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
+      const eligLatestMs = Math.max(...eligTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
+      const standaloneLatestMs = Math.max(...standaloneTasks.map((t) => toMs(t?.dueDate || t?.updatedAt || t?.createdAt)), 0);
 
       const csIsNew = allowCs && csCount > 0 && (csLatestMs > seen.cs.latestMs || csCount > seen.cs.count);
       const docsIsNew = allowDocs && docsCount > 0 && (docsLatestMs > seen.docs.latestMs || docsCount > seen.docs.count);
+      const eligIsNew = allowElig && eligCount > 0 && (eligLatestMs > seen.elig.latestMs || eligCount > seen.elig.count);
+      const standaloneIsNew =
+        allowStandalone &&
+        standaloneCount > 0 &&
+        (standaloneLatestMs > seen.standalone.latestMs || standaloneCount > seen.standalone.count);
 
-      if (!csIsNew && !docsIsNew) {
+      if (!csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew) {
         return;
       }
 
       const title =
-        csIsNew && !docsIsNew
+        csIsNew && !docsIsNew && !eligIsNew && !standaloneIsNew
           ? 'CS Summary received'
-          : docsIsNew && !csIsNew
+          : docsIsNew && !csIsNew && !eligIsNew && !standaloneIsNew
             ? 'Documents received'
+            : eligIsNew && !csIsNew && !docsIsNew && !standaloneIsNew
+              ? 'Eligibility check received'
+              : standaloneIsNew && !csIsNew && !docsIsNew && !eligIsNew
+                ? 'Standalone upload received'
             : 'Review items received';
       const parts: string[] = [];
-      if (csCount > 0 && shouldCheckCs) {
+      if (allowCs && csCount > 0) {
         parts.push(`${csCount} CS Summary${csCount === 1 ? '' : 'ies'} to review`);
       }
-      if (docsCount > 0 && shouldCheckDocs) {
+      if (allowDocs && docsCount > 0) {
         parts.push(`${docsCount} upload${docsCount === 1 ? '' : 's'} to acknowledge`);
+      }
+      if (allowElig && eligCount > 0) {
+        parts.push(`${eligCount} eligibility check${eligCount === 1 ? '' : 's'} to review`);
+      }
+      if (allowStandalone && standaloneCount > 0) {
+        parts.push(`${standaloneCount} standalone intake${standaloneCount === 1 ? '' : 's'} to triage`);
       }
       const message = parts.length > 0 ? parts.join(' • ') : 'New items require review.';
 
-      const actionUrl =
-        csIsNew && allowCs
-          ? '/admin/applications?review=cs'
-          : '/admin/applications?review=docs';
+      const actionUrl = csIsNew
+        ? '/admin/applications?review=cs'
+        : docsIsNew
+          ? '/admin/applications?review=docs'
+          : eligIsNew
+            ? '/admin/eligibility-checks'
+            : '/admin/standalone-uploads';
 
       const reviewNotes = [
+        ...standaloneTasks.slice(0, 4).map((t) => ({
+          kind: 'standalone' as const,
+          title: 'Standalone upload received',
+          message: t?.memberName ? `${t.memberName}${t?.description ? ` — ${t.description}` : ''}` : String(t?.description || t?.title || ''),
+          timestamp: t?.dueDate || t?.createdAt,
+        })),
+        ...eligTasks.slice(0, 4).map((t) => ({
+          kind: 'elig' as const,
+          title: 'Eligibility check received',
+          message: t?.memberName ? `${t.memberName}${t?.description ? ` — ${t.description}` : ''}` : String(t?.description || t?.title || ''),
+          timestamp: t?.dueDate || t?.createdAt,
+        })),
         ...docTasks.slice(0, 4).map((t) => ({
           kind: 'docs' as const,
           title: 'Doc uploads received',
@@ -195,7 +264,11 @@ export function ReviewNotificationPoller() {
       if (isRealDesktop) {
         try {
           window.desktopNotifications?.setReviewPillSummary?.({
-            count: (allowCs ? csCount : 0) + (allowDocs ? docsCount : 0),
+            count:
+              (allowCs ? csCount : 0) +
+              (allowDocs ? docsCount : 0) +
+              (allowElig ? eligCount : 0) +
+              (allowStandalone ? standaloneCount : 0),
             notes: reviewNotes.map((n) => ({
               title: n.title,
               message: n.message,
@@ -224,7 +297,12 @@ export function ReviewNotificationPoller() {
         // Web: small, color-coded card first; click expands, then click message opens Applications.
         showNotification({
           keyId: 'review-needed-summary',
-          type: csIsNew && docsIsNew ? 'warning' : csIsNew ? 'task' : 'success',
+          type:
+            [csIsNew, docsIsNew, eligIsNew, standaloneIsNew].filter(Boolean).length > 1
+              ? 'warning'
+              : csIsNew || eligIsNew
+                ? 'task'
+                : 'success',
           title,
           message,
           author: 'System',
@@ -259,6 +337,14 @@ export function ReviewNotificationPoller() {
         docs: {
           count: allowDocs ? docsCount : seen.docs.count,
           latestMs: allowDocs ? Math.max(seen.docs.latestMs, docsLatestMs) : seen.docs.latestMs,
+        },
+        elig: {
+          count: allowElig ? eligCount : seen.elig.count,
+          latestMs: allowElig ? Math.max(seen.elig.latestMs, eligLatestMs) : seen.elig.latestMs,
+        },
+        standalone: {
+          count: allowStandalone ? standaloneCount : seen.standalone.count,
+          latestMs: allowStandalone ? Math.max(seen.standalone.latestMs, standaloneLatestMs) : seen.standalone.latestMs,
         },
       });
       return intervalSeconds;

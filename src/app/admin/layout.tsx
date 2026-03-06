@@ -99,7 +99,6 @@ const adminNavLinks = [
       { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
       { href: '/admin/standalone-uploads', label: 'Standalone Upload Intake', icon: UploadCloud },
       { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield },
-      { href: '/admin/member-activity', label: 'Member Activity', icon: Activity },
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
@@ -157,6 +156,7 @@ const superAdminNavLinks = [
       { href: '/admin/application-progression', label: 'Application Progression', icon: ListChecks },
       { href: '/admin/global-task-tracker', label: 'Global Task Tracker', icon: ClipboardList },
       { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },
+      { href: '/admin/member-activity', label: 'Member Activity Tracking', icon: Activity },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
       { href: '/admin/era-parser', label: 'ERA Parser', icon: Receipt },
@@ -190,6 +190,7 @@ function AdminHeader() {
   const [kaiserCsCount, setKaiserCsCount] = useState(0);
   const [kaiserDocCount, setKaiserDocCount] = useState(0);
   const [eligibilityPendingCount, setEligibilityPendingCount] = useState(0);
+  const [standalonePendingCount, setStandalonePendingCount] = useState(0);
   const [priorityNotesCount, setPriorityNotesCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [alftPendingCount, setAlftPendingCount] = useState(0);
@@ -199,7 +200,16 @@ function AdminHeader() {
     recipientEnabled: boolean;
     allowDocs: boolean;
     allowCs: boolean;
-  }>({ enabled: true, recipientEnabled: false, allowDocs: false, allowCs: false });
+    allowEligibility: boolean;
+    allowStandalone: boolean;
+  }>({
+    enabled: true,
+    recipientEnabled: false,
+    allowDocs: false,
+    allowCs: false,
+    allowEligibility: false,
+    allowStandalone: false,
+  });
   // In admin, show the review popup whenever there are pending review items.
   // Use an in-memory baseline so we don't spam repeatedly while the page is open,
   // but refreshing the page will show the reminder again (like interoffice notes).
@@ -280,11 +290,20 @@ function AdminHeader() {
           recipientEnabled: Boolean(recipient?.enabled),
           allowDocs: Boolean(recipient?.documents),
           allowCs: Boolean(recipient?.csSummary),
+          allowEligibility: Boolean(recipient?.eligibility),
+          allowStandalone: Boolean(recipient?.standalone),
         });
       },
       () => {
         // If prefs cannot be loaded, keep notifications disabled (explicit authorization required).
-        setReviewPopupPrefs({ enabled: true, recipientEnabled: false, allowDocs: false, allowCs: false });
+        setReviewPopupPrefs({
+          enabled: true,
+          recipientEnabled: false,
+          allowDocs: false,
+          allowCs: false,
+          allowEligibility: false,
+          allowStandalone: false,
+        });
       }
     );
     return () => unsubscribe();
@@ -412,6 +431,9 @@ function AdminHeader() {
       let uploadCount = 0;
       let docsLatestMs = 0;
       const docNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
+      let standaloneCount = 0;
+      let standaloneLatestMs = 0;
+      const standaloneNotes: Array<{ message: string; timestampMs: number; url: string; author: string }> = [];
 
       const docsByApp = new Map<
         string,
@@ -532,12 +554,11 @@ function AdminHeader() {
           return;
         }
 
-        uploadCount += 1;
-        if (isKaiser) nextKaiserDocs += 1;
-        else if (isHn) nextHnDocs += 1;
-        docsLatestMs = Math.max(docsLatestMs, ms);
-        const label = docType || 'Document';
-        docNotes.push({ message: `${memberName} — ${label}`, timestampMs: ms, url, author });
+        // Non-CS standalone intakes are tracked separately from application "docs needing acknowledgement".
+        standaloneCount += 1;
+        standaloneLatestMs = Math.max(standaloneLatestMs, ms);
+        const label = docType || 'Standalone upload';
+        standaloneNotes.push({ message: `${memberName} — ${label}`, timestampMs: ms, url, author });
 
         const key = `standalone-${String(u?.id || '')}`;
         const current = docsByApp.get(key) || {
@@ -558,6 +579,7 @@ function AdminHeader() {
       
       setNewCsSummaryCount(csSummaryCount);
       setNewUploadCount(uploadCount);
+      setStandalonePendingCount(standaloneCount);
       setHnCsCount(nextHnCs);
       setHnDocCount(nextHnDocs);
       setKaiserCsCount(nextKaiserCs);
@@ -569,6 +591,12 @@ function AdminHeader() {
       // - Docs: show in pill, but DO NOT auto-expand (high volume/noisy).
       const allowDocsDesktop = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowDocs);
       const allowCsDesktop = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowCs);
+      const allowStandaloneDesktop = Boolean(
+        reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowStandalone
+      );
+      const allowEligibilityDesktop = Boolean(
+        reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowEligibility
+      );
 
       // Web popups for document uploads are intentionally disabled (too noisy).
       const allowDocsPopup = false;
@@ -622,8 +650,37 @@ function AdminHeader() {
                   actionUrl: d.url || '/admin/applications?review=docs',
                 }))
             : [];
-          const reviewCount = (allowCsDesktop ? csSummaryCount : 0) + (allowDocsDesktop ? uploadCount : 0);
-          const notes = [...csItems, ...docItems];
+          const standaloneItems = allowStandaloneDesktop
+            ? standaloneNotes
+                .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
+                .slice(0, 6)
+                .map((d) => ({
+                  title: 'Standalone upload received',
+                  message: d.message,
+                  kind: 'standalone',
+                  memberName: '',
+                  timestamp: d.timestampMs ? new Date(d.timestampMs).toLocaleString() : undefined,
+                  actionUrl: d.url || '/admin/standalone-uploads',
+                }))
+            : [];
+          const eligibilityItems = allowEligibilityDesktop && eligibilityPendingCount > 0
+            ? [
+                {
+                  title: 'Eligibility checks pending',
+                  message: `${eligibilityPendingCount} eligibility check${eligibilityPendingCount === 1 ? '' : 's'} need review`,
+                  kind: 'elig',
+                  memberName: '',
+                  timestamp: new Date().toLocaleString(),
+                  actionUrl: '/admin/eligibility-checks',
+                },
+              ]
+            : [];
+          const reviewCount =
+            (allowCsDesktop ? csSummaryCount : 0) +
+            (allowDocsDesktop ? uploadCount : 0) +
+            (allowStandaloneDesktop ? standaloneCount : 0) +
+            (allowEligibilityDesktop ? eligibilityPendingCount : 0);
+          const notes = [...csItems, ...docItems, ...standaloneItems, ...eligibilityItems];
           const shouldSend = reviewCount > 0 || desktopReviewInitializedRef.current;
           if (shouldSend) {
             window.desktopNotifications?.setReviewPillSummary?.({
@@ -903,6 +960,13 @@ function AdminHeader() {
         href: '/admin/eligibility-checks',
       },
       {
+        key: 'standalone',
+        label: 'Standalone',
+        count: standalonePendingCount,
+        dot: 'bg-sky-600',
+        href: '/admin/standalone-uploads',
+      },
+      {
         key: 'alft',
         label: 'ALFT',
         count: alftPendingCount,
@@ -936,14 +1000,17 @@ function AdminHeader() {
     const allowReviewForMe = Boolean(reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled);
     const showCs = allowReviewForMe && Boolean(reviewPopupPrefs.allowCs) && newCsSummaryCount > 0;
     const showDocs = allowReviewForMe && Boolean(reviewPopupPrefs.allowDocs) && newUploadCount > 0;
+    const showStandalone = allowReviewForMe && Boolean(reviewPopupPrefs.allowStandalone) && standalonePendingCount > 0;
     const csLabel = showCs
       ? (newCsSummaryCount === 1 && csIsNewFlag ? 'CS(!)' : `CS(${newCsSummaryCount})`)
       : null;
     const dLabel = showDocs ? `D(${newUploadCount})` : null;
+    const sLabel = showStandalone ? `S(${standalonePendingCount})` : null;
     const notesLabel = priorityNotesCount > 0 ? `Notes(${priorityNotesCount})` : null;
     const items: Array<{ key: string; label: string; href: string; dot: string; dim?: boolean; title?: string }> = [];
     if (csLabel) items.push({ key: 'cs', label: csLabel, href: '/admin/applications?review=cs', dot: 'bg-orange-500' });
     if (dLabel) items.push({ key: 'docs', label: dLabel, href: '/admin/applications?review=docs', dot: 'bg-green-600' });
+    if (sLabel) items.push({ key: 'standalone', label: sLabel, href: '/admin/standalone-uploads', dot: 'bg-sky-600' });
     if (notesLabel) items.push({ key: 'notes', label: notesLabel, href: '/admin/my-notes', dot: 'bg-blue-600' });
 
     if (items.length === 0) return null;
