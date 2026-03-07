@@ -253,7 +253,7 @@ export function ReviewNotificationPoller() {
           : eligIsNew
             ? '/admin/eligibility-checks'
             : alftIsNew
-              ? '/admin/standalone-uploads?filter=alft'
+              ? '/admin/alft-tracker'
               : '/admin/standalone-uploads';
 
       const reviewNotes = [

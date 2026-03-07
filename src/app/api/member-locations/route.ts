@@ -19,6 +19,8 @@ interface CalAIMMember {
   customaryCity?: string;
   healthPlan?: string;
   pathway?: string;
+  mco?: string;
+  diversionOrTransition?: string;
   status?: string;
   kaiserStatus?: string;
   calaimStatus?: string;
@@ -232,10 +234,24 @@ export async function GET(request: NextRequest) {
       const customaryCounty = record.CustomaryCounty || record.customary_county || '';
       const customaryCity = record.CustomaryCity || record.customary_city || '';
       
-      // Use same health plan mapping as authorization tracker
-      const healthPlan = record.CalAIM_MCO || record.CalAIM_MCP || record.HealthPlan || record.MC_Plan || 
-                        record.Health_Plan || record.MCP || record.MCO || record.Plan_Name || 'Unknown';
-      const pathway = record.Pathway || record.pathway || '';
+      const mco =
+        record.CalAIM_MCO ||
+        record.CalAIM_MCP ||
+        record.HealthPlan ||
+        record.MC_Plan ||
+        record.Health_Plan ||
+        record.MCP ||
+        record.MCO ||
+        record.Plan_Name ||
+        'Unknown';
+      const diversionOrTransition =
+        record.SNF_Diversion_or_Transition ||
+        record.Snf_Diversion_or_Transition ||
+        record.snf_diversion_or_transition ||
+        '';
+      // Keep compatibility for existing downstream fields, but prefer the requested SNF_Diversion_or_Transition.
+      const healthPlan = mco;
+      const pathway = diversionOrTransition || record.Pathway || record.pathway || '';
       
       // Use EXACT same CalAIM_Status field as authorization tracker
       const status = getStatusValue(record) || 'Unknown';
@@ -265,6 +281,8 @@ export async function GET(request: NextRequest) {
         customaryCity,
         healthPlan,
         pathway,
+        mco,
+        diversionOrTransition,
         status,
         kaiserStatus,
         calaimStatus: status,
@@ -282,6 +300,33 @@ export async function GET(request: NextRequest) {
     console.log(`📊 Total processed authorized members: ${members.length}`);
 
     const filteredMembers = members;
+
+    const cleanKey = (value: unknown, fallback: string) => {
+      const s = String(value ?? '').trim();
+      return s || fallback;
+    };
+
+    const toTopList = (counts: Map<string, number>) =>
+      Array.from(counts.entries())
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
+
+    const byHealthPlanMap = new Map<string, number>();
+    const byPathwayMap = new Map<string, number>();
+    filteredMembers.forEach((m) => {
+      const plan = cleanKey((m as any)?.mco || (m as any)?.healthPlan, 'Unknown');
+      const path = cleanKey((m as any)?.diversionOrTransition || (m as any)?.pathway, 'Unknown');
+      byHealthPlanMap.set(plan, (byHealthPlanMap.get(plan) || 0) + 1);
+      byPathwayMap.set(path, (byPathwayMap.get(path) || 0) + 1);
+    });
+
+    const byCountyList = Object.values(membersByCounty)
+      .map((c: any) => ({
+        name: cleanKey(c?.county, 'Unknown'),
+        value: Number(c?.totalMembers || 0),
+      }))
+      .filter((x) => x.value > 0)
+      .sort((a, b) => b.value - a.value);
     
     // Show some examples of authorized members
     if (filteredMembers.length > 0) {
@@ -422,6 +467,9 @@ export async function GET(request: NextRequest) {
         counties: Object.keys(membersByCounty).length,
         cities: Object.keys(membersByCity).length,
         rcfesWithMembers: Object.keys(membersByRCFE).length,
+        byCounty: byCountyList,
+        byHealthPlan: toTopList(byHealthPlanMap),
+        byPathway: toTopList(byPathwayMap),
         breakdown: {
           active: filteredMembers.filter(m => m.status === 'Active' || m.calaimStatus === 'Active').length,
           kaiser: filteredMembers.filter(m => m.healthPlan === 'Kaiser').length,

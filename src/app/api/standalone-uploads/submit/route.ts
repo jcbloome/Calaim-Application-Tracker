@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             source: 'portal',
             actionUrl: isAlft
-              ? `/admin/standalone-uploads?focus=${encodeURIComponent(ref.id)}&filter=alft`
+              ? `/admin/alft-tracker?focus=${encodeURIComponent(ref.id)}`
               : `/admin/standalone-uploads?focus=${encodeURIComponent(ref.id)}`,
             standaloneUploadId: ref.id,
             memberName,

@@ -67,6 +67,10 @@ export default function SWSignOffPage() {
   const [geolocation, setGeolocation] = useState<{ latitude: number; longitude: number; accuracy?: number } | null>(null);
   const [geoAddress, setGeoAddress] = useState<string>('');
   const [loadingGeoAddress, setLoadingGeoAddress] = useState(false);
+  const [geoPermission, setGeoPermission] = useState<'unknown' | 'granted' | 'prompt' | 'denied'>('unknown');
+  const [geoErrorMessage, setGeoErrorMessage] = useState<string>('');
+  const [geoOverrideEnabled, setGeoOverrideEnabled] = useState(false);
+  const [geoOverrideReason, setGeoOverrideReason] = useState('');
 
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
@@ -143,12 +147,39 @@ export default function SWSignOffPage() {
     void loadCandidates();
   }, [claimDay, isSocialWorker, loadCandidates, rcfeId, swLoading]);
 
+  const refreshGeoPermission = async () => {
+    try {
+      const anyNav: any = navigator as any;
+      const perms = anyNav?.permissions;
+      if (!perms?.query) {
+        setGeoPermission('unknown');
+        return;
+      }
+      const status = await perms.query({ name: 'geolocation' });
+      const state = String(status?.state || '').toLowerCase();
+      if (state === 'granted' || state === 'prompt' || state === 'denied') {
+        setGeoPermission(state as any);
+      } else {
+        setGeoPermission('unknown');
+      }
+    } catch {
+      setGeoPermission('unknown');
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    void refreshGeoPermission();
+  }, []);
+
   const verifyLocation = async () => {
     if (!navigator?.geolocation) {
       toast({ title: 'Location not available', description: 'This device does not support location services.' });
       return;
     }
     try {
+      setGeoErrorMessage('');
+      await refreshGeoPermission();
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 12_000 });
       });
@@ -157,13 +188,29 @@ export default function SWSignOffPage() {
         longitude: pos.coords.longitude,
         accuracy: typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : undefined,
       });
+      // If override was enabled due to permission/signal trouble, turn geo-tagging back on once we capture a valid location.
+      setGeoOverrideEnabled(false);
+      setGeoOverrideReason('');
       toast({ title: 'Location captured', description: 'Location will be attached to the sign-off.' });
-    } catch {
+    } catch (err: any) {
+      const code = Number(err?.code || 0);
+      const isDenied = code === 1;
+      const isUnavailable = code === 2;
+      const isTimeout = code === 3;
+      const message = isDenied
+        ? 'Location permission was blocked. Please tap “Verify location” and allow permission, or enable Location in your phone/browser settings.'
+        : isUnavailable
+          ? 'Location couldn’t be determined (signal unavailable). Step outside for better signal and tap “Verify location” again.'
+          : isTimeout
+            ? 'Location request timed out. Step outside for better signal and tap “Verify location” again.'
+            : 'Please allow location permissions to submit sign-off.';
+      setGeoErrorMessage(message);
       toast({
         title: 'Location required',
-        description: 'Please allow location permissions to submit sign-off.',
+        description: message,
         variant: 'destructive',
       });
+      await refreshGeoPermission();
     }
   };
 
@@ -205,7 +252,7 @@ export default function SWSignOffPage() {
     staffName.trim() &&
     staffTitle.trim() &&
     signature.trim() &&
-    Boolean(geolocation) &&
+    (Boolean(geolocation) || (geoOverrideEnabled && geoOverrideReason.trim().length >= 8)) &&
     !submitting;
 
   const submitSignOff = async () => {
@@ -215,8 +262,18 @@ export default function SWSignOffPage() {
     }
     if (!canSubmit) return;
     if (!geolocation) {
-      toast({ title: 'Location required', description: 'Please verify location before submitting.', variant: 'destructive' });
-      return;
+      if (!geoOverrideEnabled) {
+        toast({
+          title: 'Location required',
+          description: 'Please verify location before submitting, or use the override (reason required).',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (geoOverrideReason.trim().length < 8) {
+        toast({ title: 'Override reason required', description: 'Please enter a short reason (at least 8 characters).', variant: 'destructive' });
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -234,6 +291,8 @@ export default function SWSignOffPage() {
         signature: signature.trim(),
         signedAt,
         geolocation,
+        geolocationOverride: !geolocation ? Boolean(geoOverrideEnabled) : false,
+        geolocationOverrideReason: !geolocation ? geoOverrideReason.trim() : '',
         socialWorkerName: swName,
       };
 
@@ -256,6 +315,8 @@ export default function SWSignOffPage() {
       setAttestRcfeStaffOnly(false);
       setSignedAt(new Date().toISOString());
       setGeolocation(null);
+      setGeoOverrideEnabled(false);
+      setGeoOverrideReason('');
       await loadCandidates();
 
       // After a successful submission, the next action is usually to select another RCFE/member.
@@ -536,19 +597,73 @@ export default function SWSignOffPage() {
                   </div>
                 </div>
               ) : (
-                <span className="text-destructive">Location required to submit</span>
+                <div className="space-y-1">
+                  <div className="text-destructive font-medium">Location required to submit</div>
+                  <div className="text-xs text-muted-foreground leading-snug">
+                    You must allow geolocation permission on your phone. When you tap <span className="font-semibold">Verify location</span>, your browser should prompt you.
+                    {geoPermission !== 'unknown' ? (
+                      <>
+                        {' '}
+                        Current permission: <span className="font-semibold">{geoPermission}</span>.
+                      </>
+                    ) : null}
+                  </div>
+                  {geoErrorMessage ? <div className="text-xs text-destructive">{geoErrorMessage}</div> : null}
+                  {geoPermission === 'denied' ? (
+                    <div className="text-xs text-muted-foreground">
+                      If you previously blocked location, you may need to enable it in your phone/browser settings, then come back and tap Verify again.
+                    </div>
+                  ) : null}
+                </div>
               )}
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Button className="w-full sm:w-auto" type="button" variant="outline" onClick={verifyLocation}>
                 <MapPin className="h-4 w-4 mr-2" />
-                Verify location (required)
+                {geolocation ? 'Re-check location' : 'Verify location (required)'}
               </Button>
+              {!geolocation ? (
+                <Button
+                  className="w-full sm:w-auto"
+                  type="button"
+                  variant={geoOverrideEnabled ? 'secondary' : 'outline'}
+                  onClick={() => {
+                    const next = !geoOverrideEnabled;
+                    setGeoOverrideEnabled(next);
+                    if (!next) setGeoOverrideReason('');
+                  }}
+                >
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  {geoOverrideEnabled ? 'Override enabled' : 'Override (no geo)'}
+                </Button>
+              ) : null}
               <Button className="w-full sm:w-auto" type="button" onClick={() => void setSignedAt(new Date().toISOString())} variant="outline">
                 Set time to now
               </Button>
             </div>
           </div>
+
+          {!geolocation && geoOverrideEnabled ? (
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="space-y-2">
+                <div className="font-medium text-slate-900">Override enabled (submit without geo-stamp)</div>
+                <div className="text-xs text-muted-foreground">
+                  Use this only if location can’t be captured due to signal/permission issues. If you step outside and get better signal, tap <span className="font-semibold">Verify location</span> again—location tagging will automatically re-enable.
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="geoOverrideReason">Reason (required)</Label>
+                  <Textarea
+                    id="geoOverrideReason"
+                    value={geoOverrideReason}
+                    onChange={(e) => setGeoOverrideReason(e.target.value)}
+                    placeholder="Example: Poor signal indoors; stepped outside but still no GPS fix; browser permission prompt not appearing."
+                    rows={3}
+                  />
+                </div>
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
           <Button className="w-full" size="lg" disabled={!canSubmit} onClick={() => void submitSignOff()}>
             <Send className="h-4 w-4 mr-2" />

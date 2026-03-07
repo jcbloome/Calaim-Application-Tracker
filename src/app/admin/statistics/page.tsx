@@ -477,7 +477,7 @@ export default function AdminStatisticsPage() {
         */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             <StatCard title="Applications by County" borderColor="border-blue-500">
-                <DataList data={stats.byCounty} />
+                <DataList data={memberData?.byCounty || stats.byCounty} />
             </StatCard>
 
             <StatCard title="Top 10 Cities" borderColor="border-sky-500">
@@ -485,11 +485,11 @@ export default function AdminStatisticsPage() {
             </StatCard>
             
             <StatCard title="Applications by Health Plan" borderColor="border-green-500">
-                <DataList data={stats.byHealthPlan} />
+                <DataList data={memberData?.byHealthPlan || stats.byHealthPlan} />
             </StatCard>
 
             <StatCard title="Applications by Pathway" borderColor="border-orange-500">
-                <DataList data={stats.byPathway} />
+                <DataList data={memberData?.byPathway || stats.byPathway} />
             </StatCard>
 
             {/* CalAIM Program Status Card */}

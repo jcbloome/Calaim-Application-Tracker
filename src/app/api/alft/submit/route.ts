@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
     const kaiserMrn =
       kaiserMrnRaw || (medicalRecordNumber && planLower.includes('kaiser') ? medicalRecordNumber : '');
 
-    const focusUrl = (id: string) => `/admin/standalone-uploads?focus=${encodeURIComponent(id)}&filter=alft`;
+    const focusUrl = (id: string) => `/admin/alft-tracker?focus=${encodeURIComponent(id)}`;
 
     const ref = await adminDb.collection('standalone_upload_submissions').add({
       status: 'pending',

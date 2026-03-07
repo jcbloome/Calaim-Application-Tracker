@@ -83,6 +83,9 @@ export async function POST(req: NextRequest) {
           } as const)
         : null;
     const locationVerified = Boolean(geolocation);
+    const geolocationOverride = Boolean(body?.geolocationOverride);
+    const geolocationOverrideReason = String(body?.geolocationOverrideReason || '').trim();
+    const locationOverridden = Boolean(!geolocation && geolocationOverride);
 
     if (!rcfeId) return NextResponse.json({ success: false, error: 'rcfeId is required' }, { status: 400 });
     if (!claimDay) {
@@ -103,11 +106,20 @@ export async function POST(req: NextRequest) {
     if (!staffTitle) {
       return NextResponse.json({ success: false, error: 'RCFE staff title is required' }, { status: 400 });
     }
-    if (!geolocation) {
+    if (!geolocation && !geolocationOverride) {
       return NextResponse.json(
         {
           success: false,
           error: 'Geolocation is required for sign-off. Please allow location permissions and verify location.',
+        },
+        { status: 400 }
+      );
+    }
+    if (!geolocation && geolocationOverride && geolocationOverrideReason.length < 8) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Geolocation override reason is required (min 8 characters).',
         },
         { status: 400 }
       );
@@ -415,6 +427,8 @@ export async function POST(req: NextRequest) {
               signedAt: signedAtIso,
               geolocation,
               locationVerified,
+              geolocationOverride: locationOverridden,
+              geolocationOverrideReason: locationOverridden ? geolocationOverrideReason : '',
             },
             submittedAt: nowIso,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -455,6 +469,8 @@ export async function POST(req: NextRequest) {
               rcfeStaffName: staffName,
               rcfeStaffTitle: staffTitle,
               rcfeStaffGeolocation: geolocation,
+              rcfeStaffGeolocationOverride: locationOverridden,
+              rcfeStaffGeolocationOverrideReason: locationOverridden ? geolocationOverrideReason : '',
               claimId,
               claimNumber,
               serviceLineId,
@@ -540,6 +556,7 @@ export async function POST(req: NextRequest) {
       totalVisits: visits.length,
       status: 'signed_off',
       locationVerified,
+      locationOverridden,
       geolocation,
     });
   } catch (error: any) {

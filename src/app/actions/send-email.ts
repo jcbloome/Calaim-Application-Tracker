@@ -15,6 +15,7 @@ import EligibilityCheckConfirmationEmail from '@/components/emails/EligibilityCh
 import EligibilityCheckResultEmail from '@/components/emails/EligibilityCheckResultEmail';
 import SwClaimReminderEmail, { type SwClaimReminderItem } from '@/components/emails/SwClaimReminderEmail';
 import AlftUploadEmail from '@/components/emails/AlftUploadEmail';
+import AlftSignatureRequestEmail from '@/components/emails/AlftSignatureRequestEmail';
 import * as admin from 'firebase-admin';
 
 // Note: Firebase Admin is initialized in a central file (e.g., src/ai/dev.ts).
@@ -121,6 +122,16 @@ interface AlftUploadPayload {
     uploaderName: string;
     uploaderEmail?: string;
     intakeUrl: string;
+}
+
+interface AlftSignatureRequestPayload {
+    to: string;
+    recipientName: string;
+    recipientRoleLabel: 'RN' | 'MSW';
+    memberName: string;
+    mrn?: string;
+    reviewedDateLabel?: string;
+    signUrl: string;
 }
 
 async function getBccRecipients(): Promise<string[]> {
@@ -510,6 +521,44 @@ export const sendAlftUploadEmail = async (payload: AlftUploadPayload) => {
 
     if (error) {
         console.error('Resend ALFT Upload Error:', error);
+        throw new Error(error.message);
+    }
+
+    return data;
+};
+
+export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureRequestPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const signUrlRaw = String(payload.signUrl || '').trim();
+    const signUrl = signUrlRaw.startsWith('http') ? signUrlRaw : `${baseUrl}${signUrlRaw.startsWith('/') ? '' : '/'}${signUrlRaw}`;
+
+    const emailHtml = await renderAsync(
+        AlftSignatureRequestEmail({
+            recipientName: String(payload.recipientName || '').trim() || 'Staff',
+            recipientRoleLabel: payload.recipientRoleLabel,
+            memberName: String(payload.memberName || '').trim() || 'Member',
+            mrn: String(payload.mrn || '').trim() || undefined,
+            reviewedDateLabel: String(payload.reviewedDateLabel || '').trim() || undefined,
+            signUrl,
+        })
+    );
+
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const { data, error } = await resend.emails.send({
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `Signature requested (${payload.recipientRoleLabel}) — ${memberName}`,
+        html: emailHtml,
+    });
+
+    if (error) {
+        console.error('Resend ALFT Signature Request Error:', error);
         throw new Error(error.message);
     }
 

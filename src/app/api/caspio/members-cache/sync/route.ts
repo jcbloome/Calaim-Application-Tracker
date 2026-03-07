@@ -46,6 +46,7 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'Member_County',
   'MemberCity',
   'CalAIM_MCO',
+  'SNF_Diversion_or_Transition',
   'CalAIM_Status',
   'Kaiser_Status',
   'Kaiser_ID_Status',

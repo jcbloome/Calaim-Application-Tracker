@@ -55,6 +55,7 @@ export interface CaspioMember {
   Member_County: string;
   CalAIM_MCO: string;
   CalAIM_Status: string;
+  SNF_Diversion_or_Transition?: string;
   Social_Worker_Assigned: string;
   Kaiser_User_Assignment: string;
   Hold_For_Social_Worker: string;
@@ -345,7 +346,7 @@ export function transformCaspioMember(member: CaspioMember): any {
     Hold_For_Social_Worker_Visit: hold,
     RCFE_Name: member.RCFE_Name || '',
     RCFE_Address: member.RCFE_Address || '',
-    pathway: member.Pathway || 'Unknown',
+    pathway: (member as any)?.SNF_Diversion_or_Transition || member.Pathway || 'Unknown',
     last_updated: member.last_updated || new Date().toISOString()
   };
 }

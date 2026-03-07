@@ -98,6 +98,7 @@ const adminNavLinks = [
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
       { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
       { href: '/admin/standalone-uploads', label: 'Standalone Upload Intake', icon: UploadCloud },
+      { href: '/admin/alft-tracker', label: 'ALFT Tracker', icon: UploadCloud },
       { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield },
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
@@ -691,7 +692,7 @@ function AdminHeader() {
                   kind: 'alft',
                   memberName: '',
                   timestamp: d.timestampMs ? new Date(d.timestampMs).toLocaleString() : undefined,
-                  actionUrl: d.url || '/admin/standalone-uploads?filter=alft',
+                  actionUrl: d.url || '/admin/alft-tracker',
                 }))
             : [];
           const eligibilityItems = allowEligibilityDesktop && eligibilityPendingCount > 0
@@ -1003,7 +1004,7 @@ function AdminHeader() {
         label: 'ALFT',
         count: alftPendingCount,
         dot: 'bg-purple-600',
-        href: '/admin/standalone-uploads?filter=alft',
+        href: '/admin/alft-tracker',
       },
     ];
 
