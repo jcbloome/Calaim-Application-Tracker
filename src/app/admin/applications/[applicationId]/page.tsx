@@ -595,6 +595,174 @@ function StaffApplicationTracker({ application }: { application: Application }) 
     );
 }
 
+function PushToCaspioDialog({
+    application,
+    buttonVariant = "outline",
+    buttonClassName = "w-full justify-start gap-2"
+}: {
+    application: Application;
+    buttonVariant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
+    buttonClassName?: string;
+}) {
+    const firestore = useFirestore();
+    const { toast } = useToast();
+    const [isOpen, setIsOpen] = useState(false);
+    const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
+    const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
+
+    const docRef = useMemoFirebase(() => {
+        if (!firestore || !application.userId || !application.id) return null;
+        return doc(firestore, `users/${application.userId}/applications`, application.id);
+    }, [firestore, application.id, application.userId]);
+
+    useEffect(() => {
+        if (!isOpen || typeof window === 'undefined') return;
+        try {
+            const stored = localStorage.getItem('calaim_cs_caspio_mapping');
+            if (!stored) {
+                setCaspioMappingPreview(null);
+                return;
+            }
+            const parsed = JSON.parse(stored);
+            if (parsed && typeof parsed === 'object') {
+                setCaspioMappingPreview(parsed);
+                return;
+            }
+            setCaspioMappingPreview(null);
+        } catch (error) {
+            console.warn('Failed to load Caspio mapping preview:', error);
+            setCaspioMappingPreview(null);
+        }
+    }, [isOpen]);
+
+    const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
+        setIsSendingToCaspio(true);
+        try {
+            const functions = getFunctions();
+            const publishToCaspio = httpsCallable(functions, 'publishCsSummaryToCaspioSimple');
+
+            const result = await publishToCaspio({
+                applicationData: application,
+                mapping: mappingOverride || caspioMappingPreview || null,
+            });
+            const data = result.data as any;
+
+            if (data?.success) {
+                toast({
+                    title: 'Pushed to Caspio',
+                    description: data.message || 'Successfully published to Caspio.',
+                    className: 'bg-green-100 text-green-900 border-green-200',
+                });
+
+                if (docRef) {
+                    await setDoc(
+                        docRef,
+                        {
+                            caspioSent: true,
+                            caspioSentDate: serverTimestamp(),
+                            lastUpdated: serverTimestamp(),
+                        },
+                        { merge: true }
+                    );
+                }
+                setIsOpen(false);
+            } else {
+                toast({
+                    variant: 'destructive',
+                    title: 'Caspio Error',
+                    description: data?.message || 'Failed to publish to Caspio.',
+                });
+            }
+        } catch (error: any) {
+            let errorMessage = 'Failed to send to Caspio';
+            if (error?.code === 'functions/already-exists') {
+                errorMessage = 'This member already exists in Caspio database';
+            } else if (error?.code === 'functions/failed-precondition') {
+                errorMessage = 'Caspio credentials not configured properly';
+            } else if (error?.message) {
+                errorMessage = error.message;
+            }
+            toast({ variant: 'destructive', title: 'Error', description: errorMessage });
+        } finally {
+            setIsSendingToCaspio(false);
+        }
+    };
+
+    const isAlreadySent = Boolean((application as any)?.caspioSent);
+    return (
+        <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
+            <AlertDialogTrigger asChild>
+                <Button variant={buttonVariant} className={buttonClassName} disabled={isSendingToCaspio || isAlreadySent}>
+                    {isSendingToCaspio ? (
+                        <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Pushing to Caspio...
+                        </>
+                    ) : isAlreadySent ? (
+                        <>
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            Already pushed to Caspio
+                        </>
+                    ) : (
+                        <>
+                            <Database className="mr-2 h-4 w-4" />
+                            Push to Caspio
+                        </>
+                    )}
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="max-w-3xl">
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Confirm push to Caspio</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This will publish CS Summary fields into `CalAIM_tbl_Members` using the locked mapping.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+
+                {caspioMappingPreview && Object.keys(caspioMappingPreview).length > 0 ? (
+                    <div className="space-y-3">
+                        <div className="text-sm text-muted-foreground">
+                            Mapped fields: {Object.keys(caspioMappingPreview).length}
+                        </div>
+                        <div className="max-h-64 overflow-y-auto rounded border p-3 text-xs">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                                {Object.entries(caspioMappingPreview).map(([csField, caspioField]) => {
+                                    const value = (application as any)?.[csField];
+                                    return (
+                                        <div key={`${csField}-${caspioField}`} className="font-mono">
+                                            {csField} → {caspioField}
+                                            <span className="text-muted-foreground">: {value ?? '—'}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <Alert variant="destructive">
+                        <AlertTitle>No locked mapping found</AlertTitle>
+                        <AlertDescription>
+                            Lock a mapping first in `Admin → Caspio Test` (saves `calaim_cs_caspio_mapping`), then come back here.
+                        </AlertDescription>
+                    </Alert>
+                )}
+
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={() => {
+                            void sendToCaspio(caspioMappingPreview);
+                        }}
+                        disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0 || isSendingToCaspio}
+                    >
+                        Confirm & Push
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}
+
 function AdminActions({ application }: { application: Application }) {
     const { isAdmin, isSuperAdmin } = useAdmin();
     const [notes, setNotes] = useState('');
@@ -4417,6 +4585,8 @@ function ApplicationDetailPageContent() {
                 </div>
               </DialogContent>
             </Dialog>
+
+            <PushToCaspioDialog application={application} />
 
             <Dialog>
               <DialogTrigger asChild>
