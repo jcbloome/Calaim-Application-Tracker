@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -112,7 +112,9 @@ export default function SWRosterPage() {
   const { user, isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -124,6 +126,9 @@ export default function SWRosterPage() {
   const [loadingMonthStatuses, setLoadingMonthStatuses] = useState(false);
   const [monthStatusesLoaded, setMonthStatusesLoaded] = useState(false);
   const [monthStatusesFailed, setMonthStatusesFailed] = useState(false);
+  const [monthStatusesMonth, setMonthStatusesMonth] = useState<string | null>(null);
+  const [statusIconsLastRefreshAt, setStatusIconsLastRefreshAt] = useState<string | null>(null);
+  const [statusIconsLastRefreshOk, setStatusIconsLastRefreshOk] = useState<boolean | null>(null);
 
   const [pinnedRcfeIds, setPinnedRcfeIds] = useState<string[]>([]);
   const [recentMembers, setRecentMembers] = useState<RecentMember[]>([]);
@@ -132,9 +137,15 @@ export default function SWRosterPage() {
 
   const [draftsToday, setDraftsToday] = useState<DraftVisit[]>([]);
   const [loadingDraftsToday, setLoadingDraftsToday] = useState(false);
+  const [rosterLastRefreshAt, setRosterLastRefreshAt] = useState<string | null>(null);
+  const [rosterLastRefreshOk, setRosterLastRefreshOk] = useState<boolean | null>(null);
+  const [draftsLastRefreshAt, setDraftsLastRefreshAt] = useState<string | null>(null);
+  const [draftsLastRefreshOk, setDraftsLastRefreshOk] = useState<boolean | null>(null);
+  const [refreshingAll, setRefreshingAll] = useState(false);
 
   const refreshRoster = useCallback(async () => {
     if (!user?.email) return;
+    const startedAt = new Date().toISOString();
     setLoading(true);
     setError(null);
     try {
@@ -149,9 +160,13 @@ export default function SWRosterPage() {
       const nextFacilities = Array.isArray(data?.rcfeList) ? (data.rcfeList as RosterFacility[]) : [];
       setFacilities(nextFacilities);
       setHasLoadedOnce(true);
+      setRosterLastRefreshAt(startedAt);
+      setRosterLastRefreshOk(true);
     } catch (e: any) {
       setError(e?.message || 'Failed to load roster.');
       setHasLoadedOnce(true);
+      setRosterLastRefreshAt(startedAt);
+      setRosterLastRefreshOk(false);
     } finally {
       setLoading(false);
     }
@@ -183,10 +198,13 @@ export default function SWRosterPage() {
       setMonthRows([]);
       setMonthStatusesLoaded(false);
       setMonthStatusesFailed(false);
+      setMonthStatusesMonth(null);
+      setStatusIconsLastRefreshAt(null);
+      setStatusIconsLastRefreshOk(null);
       return;
     }
+    const startedAt = new Date().toISOString();
     setLoadingMonthStatuses(true);
-    setMonthStatusesLoaded(false);
     setMonthStatusesFailed(false);
     try {
       const idToken = await auth.currentUser.getIdToken();
@@ -216,21 +234,25 @@ export default function SWRosterPage() {
       setMonthStatuses(map);
       setMonthStatusesLoaded(true);
       setMonthStatusesFailed(false);
+      setMonthStatusesMonth(statusMonth);
+      setStatusIconsLastRefreshAt(startedAt);
+      setStatusIconsLastRefreshOk(true);
     } catch (e: any) {
-      // best-effort: roster should still work without statuses
-      setMonthStatuses({});
-      setMonthRows([]);
-      setMonthStatusesLoaded(false);
+      // Best-effort: keep last-known icons if we have them.
       setMonthStatusesFailed(true);
+      setStatusIconsLastRefreshAt(startedAt);
+      setStatusIconsLastRefreshOk(false);
       toast({
         title: 'Couldn’t load status icons',
-        description: e?.message || 'Monthly statuses failed to load. You can still use the roster; retry from Assignments.',
+        description:
+          e?.message ||
+          (monthStatusesLoaded ? 'Using last known status icons. You can retry from the roster.' : 'Status icons failed to load. You can retry from the roster.'),
         variant: 'destructive',
       });
     } finally {
       setLoadingMonthStatuses(false);
     }
-  }, [auth, auth?.currentUser, statusMonth, toast]);
+  }, [auth, auth?.currentUser, monthStatusesLoaded, statusMonth, toast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -323,12 +345,69 @@ export default function SWRosterPage() {
     setQuery(q);
   }, [searchParams]);
 
+  // Persist roster preferences per SW (month/sort/search/needs-action).
+  const prefsKey = useMemo(() => {
+    const email = String((user as any)?.email || '').trim().toLowerCase();
+    return email ? `swRosterPrefs_v2_${email}` : 'swRosterPrefs_v2';
+  }, [user]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
+    try {
+      const raw = window.localStorage.getItem(prefsKey);
+      const prefs = safeJsonParse<any>(raw, null);
+      if (!prefs) return;
+
+      const urlQ = String(searchParams?.get('q') || '').trim();
+      if (!urlQ && typeof prefs.query === 'string') setQuery(prefs.query);
+      if (typeof prefs.statusMonth === 'string' && /^\d{4}-\d{2}$/.test(prefs.statusMonth)) setStatusMonth(prefs.statusMonth);
+      if (prefs.facilitySort === 'assigned' || prefs.facilitySort === 'rcfe-az' || prefs.facilitySort === 'rcfe-za') setFacilitySort(prefs.facilitySort);
+      if (typeof prefs.needsActionOnly === 'boolean') setNeedsActionOnly(prefs.needsActionOnly);
+    } catch {
+      // ignore
+    }
+    // run once per key
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefsKey, isLoading, isSocialWorker]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
+    try {
+      window.localStorage.setItem(
+        prefsKey,
+        JSON.stringify({
+          statusMonth,
+          facilitySort,
+          query,
+          needsActionOnly,
+          updatedAt: new Date().toISOString(),
+        })
+      );
+      const email = String((user as any)?.email || '').trim().toLowerCase();
+      const monthKey = email ? `swPortalStatusMonth_v1_${email}` : 'swPortalStatusMonth_v1';
+      window.localStorage.setItem(monthKey, String(statusMonth));
+    } catch {
+      // ignore
+    }
+  }, [facilitySort, isLoading, isSocialWorker, needsActionOnly, prefsKey, query, statusMonth, user]);
+
   useEffect(() => {
     if (isLoading) return;
     if (!isSocialWorker) return;
     if (!hasLoadedOnce) return;
     void refreshMonthStatuses();
   }, [hasLoadedOnce, isLoading, isSocialWorker, refreshMonthStatuses]);
+
+  // Changing month should prompt a fresh status refresh for that month.
+  useEffect(() => {
+    setStatusIconsLastRefreshAt(null);
+    setStatusIconsLastRefreshOk(null);
+    setMonthStatusesMonth(null);
+    if (!hasLoadedOnce) return;
+    void refreshMonthStatuses();
+  }, [hasLoadedOnce, refreshMonthStatuses, statusMonth]);
 
   // Auto-refresh status icons while roster is open.
   useEffect(() => {
@@ -351,6 +430,7 @@ export default function SWRosterPage() {
       setDraftsToday([]);
       return;
     }
+    const startedAt = new Date().toISOString();
     setLoadingDraftsToday(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
@@ -362,9 +442,13 @@ export default function SWRosterPage() {
       if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load drafts (HTTP ${res.status})`);
       const visits = Array.isArray(data?.visits) ? (data.visits as DraftVisit[]) : [];
       setDraftsToday(visits.slice(0, 50));
+      setDraftsLastRefreshAt(startedAt);
+      setDraftsLastRefreshOk(true);
     } catch {
       // best-effort only
       setDraftsToday([]);
+      setDraftsLastRefreshAt(startedAt);
+      setDraftsLastRefreshOk(false);
     } finally {
       setLoadingDraftsToday(false);
     }
@@ -375,6 +459,51 @@ export default function SWRosterPage() {
     if (!isSocialWorker) return;
     void refreshDraftsToday();
   }, [isLoading, isSocialWorker, refreshDraftsToday]);
+
+  // Keyboard shortcuts for speed:
+  // - / focus search
+  // - N start next questionnaire
+  // - R refresh all
+  // - P print
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = String(target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || (target as any)?.isContentEditable) return;
+
+      const key = String(e.key || '');
+      if (key === '/') {
+        e.preventDefault();
+        searchInputRef.current?.focus?.();
+        return;
+      }
+      if (key === 'r' || key === 'R') {
+        e.preventDefault();
+        void refreshAll();
+        return;
+      }
+      if (key === 'p' || key === 'P') {
+        e.preventDefault();
+        window.print();
+        return;
+      }
+      if (key === 'n' || key === 'N') {
+        e.preventDefault();
+        const next = nextQuestionnaire;
+        if (!next) return;
+        router.push(
+          `/sw-visit-verification?rcfeId=${encodeURIComponent(next.rcfeId)}&memberId=${encodeURIComponent(next.memberId)}`
+        );
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isLoading, isSocialWorker, nextQuestionnaire, refreshAll, router]);
 
   const needsQuestionnaire = useMemo(() => {
     if (!monthStatusesLoaded) return [];
@@ -430,7 +559,7 @@ export default function SWRosterPage() {
           .filter(Boolean) as RosterFacility[]);
 
     if (!needsActionOnly) return searched;
-    if (!monthStatusesLoaded) return searched;
+    if (!statusIconsReady) return searched;
 
     const out: RosterFacility[] = [];
     for (const f of searched) {
@@ -443,7 +572,7 @@ export default function SWRosterPage() {
       if (keep.length > 0) out.push({ ...f, members: keep });
     }
     return out;
-  }, [facilities, monthStatuses, monthStatusesLoaded, needsActionOnly, query]);
+  }, [facilities, monthStatuses, needsActionOnly, query, statusIconsReady]);
 
   const sortFacilities = useCallback((list: RosterFacility[]) => {
     if (facilitySort === 'assigned') return list;
@@ -465,6 +594,57 @@ export default function SWRosterPage() {
     const memberCount = facilities.reduce((sum, f) => sum + (Array.isArray(f.members) ? f.members.length : 0), 0);
     return { facilityCount, memberCount };
   }, [facilities]);
+
+  const statusIconsLastRefreshLabel = useMemo(() => {
+    if (!statusIconsLastRefreshAt) return '';
+    try {
+      return new Date(statusIconsLastRefreshAt).toLocaleString();
+    } catch {
+      return String(statusIconsLastRefreshAt);
+    }
+  }, [statusIconsLastRefreshAt]);
+
+  const rosterLastRefreshLabel = useMemo(() => {
+    if (!rosterLastRefreshAt) return '';
+    try {
+      return new Date(rosterLastRefreshAt).toLocaleString();
+    } catch {
+      return String(rosterLastRefreshAt);
+    }
+  }, [rosterLastRefreshAt]);
+
+  const draftsLastRefreshLabel = useMemo(() => {
+    if (!draftsLastRefreshAt) return '';
+    try {
+      return new Date(draftsLastRefreshAt).toLocaleString();
+    } catch {
+      return String(draftsLastRefreshAt);
+    }
+  }, [draftsLastRefreshAt]);
+
+  const statusIconsReady = monthStatusesLoaded && monthStatusesMonth === statusMonth;
+
+  const refreshAll = useCallback(async () => {
+    if (refreshingAll) return;
+    setRefreshingAll(true);
+    try {
+      await refreshRoster();
+      await refreshMonthStatuses();
+      await refreshDraftsToday();
+    } finally {
+      setRefreshingAll(false);
+    }
+  }, [refreshDraftsToday, refreshMonthStatuses, refreshRoster, refreshingAll]);
+
+  const draftsByMemberId = useMemo(() => {
+    const map = new Map<string, DraftVisit>();
+    draftsToday.forEach((d) => {
+      const memberId = String(d?.memberId || '').trim();
+      if (!memberId) return;
+      if (!map.has(memberId)) map.set(memberId, d);
+    });
+    return map;
+  }, [draftsToday]);
 
   const formatAddressLine = useCallback((f: { address?: string; city?: string; zip?: string }) => {
     const addr = String(f?.address || '').trim();
@@ -527,6 +707,24 @@ export default function SWRosterPage() {
               <span>Cache last updated: {lastSync}</span>
             ) : null}
             <span className="inline-flex items-center gap-2">
+              <span>• Roster:</span>
+              <span>
+                {rosterLastRefreshLabel
+                  ? `Last refresh ${rosterLastRefreshLabel}${rosterLastRefreshOk === false ? ' (failed)' : ''}`
+                  : 'Not loaded yet'}
+              </span>
+              <span className="text-muted-foreground">(If your roster is missing, refresh it here.)</span>
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span>• Status icons:</span>
+              <span>
+                {statusIconsLastRefreshLabel
+                  ? `Last refresh ${statusIconsLastRefreshLabel}${statusIconsLastRefreshOk === false ? ' (failed)' : ''}`
+                  : 'Not loaded yet'}
+              </span>
+              <span className="text-muted-foreground">(Auto-updates while open; if icons are missing, refresh here.)</span>
+            </span>
+            <span className="inline-flex items-center gap-2">
               <span>• Month:</span>
               <Select value={statusMonth} onValueChange={setStatusMonth}>
                 <SelectTrigger className="h-7 w-[190px] bg-white">
@@ -580,6 +778,10 @@ export default function SWRosterPage() {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button className="w-full sm:w-auto" onClick={() => void refreshAll()} disabled={refreshingAll || loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshingAll ? 'animate-spin' : ''}`} />
+            {refreshingAll ? 'Refreshing…' : 'Refresh all'}
+          </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => void refreshRoster()} disabled={loading}>
             <RefreshCw className="h-4 w-4 mr-2" />
             {loading ? 'Refreshing…' : 'Refresh list'}
@@ -737,7 +939,7 @@ export default function SWRosterPage() {
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2">
             <Search className="h-4 w-4 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type to search…" />
+            <Input ref={searchInputRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type to search…" />
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-md border bg-white px-3 py-2">
@@ -745,12 +947,12 @@ export default function SWRosterPage() {
               <Switch
                 checked={needsActionOnly}
                 onCheckedChange={(v) => setNeedsActionOnly(Boolean(v))}
-                disabled={!monthStatusesLoaded}
+                disabled={!statusIconsReady}
               />
               <span className="text-sm text-muted-foreground">Needs action only</span>
             </div>
 
-            {!monthStatusesLoaded ? (
+            {!statusIconsReady ? (
               <Button
                 type="button"
                 size="sm"
@@ -765,9 +967,14 @@ export default function SWRosterPage() {
             ) : null}
           </div>
 
-          {!monthStatusesLoaded ? (
+          {!statusIconsReady ? (
             <div className="text-xs text-muted-foreground">
               The “Needs action” filter requires status icons for the selected month. Click “Load status icons” above.
+            </div>
+          ) : statusIconsLastRefreshLabel ? (
+            <div className="text-xs text-muted-foreground">
+              Status icons last refreshed: {statusIconsLastRefreshLabel}
+              {statusIconsLastRefreshOk === false ? ' (failed)' : ''}. Auto-updates while open.
             </div>
           ) : null}
         </CardContent>
@@ -1014,7 +1221,8 @@ export default function SWRosterPage() {
                         </TableCell>
                       </TableRow>
                       {(f.members || []).map((m) => {
-                        const s = monthStatuses[String(m.id || '').trim()];
+                        const draft = draftsByMemberId.get(String(m.id || '').trim());
+                        const s = statusIconsReady ? monthStatuses[String(m.id || '').trim()] : undefined;
                         const flags = computeSwVisitStatusFlags(s);
                         return (
                           <TableRow key={`${f.id}-${m.id}`}>
@@ -1057,6 +1265,11 @@ export default function SWRosterPage() {
                                     HOLD REMOVED
                                   </span>
                                 ) : null}
+                                {draft ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                    Draft
+                                  </span>
+                                ) : null}
                                 <span className="ml-1 inline-flex shrink-0 items-center gap-2">
                                   <span className="inline-flex items-center gap-1">
                                     {renderStatusIcon({
@@ -1087,7 +1300,23 @@ export default function SWRosterPage() {
                                     <span className="text-[10px] text-muted-foreground">P</span>
                                   </span>
                                 </span>
-                                {flags.nextAction === 'questionnaire' ? (
+                                {draft ? (
+                                  <Button asChild size="sm" variant="outline" className="ml-2 shrink-0">
+                                    <Link
+                                      href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(draft.rcfeId || f.id || '').trim())}&memberId=${encodeURIComponent(String(m.id || '').trim())}`}
+                                      onClick={() =>
+                                        trackRecentMember({
+                                          memberId: String(m.id || '').trim(),
+                                          memberName: String(m.name || '').trim(),
+                                          rcfeId: String(f.id || '').trim(),
+                                          rcfeName: String(f.name || '').trim(),
+                                        })
+                                      }
+                                    >
+                                      Resume draft
+                                    </Link>
+                                  </Button>
+                                ) : flags.nextAction === 'questionnaire' ? (
                                   <Button asChild size="sm" variant="outline" className="ml-2 shrink-0">
                                     <Link
                                       href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id || '').trim())}&memberId=${encodeURIComponent(String(m.id || '').trim())}`}
@@ -1105,7 +1334,7 @@ export default function SWRosterPage() {
                                   </Button>
                                 ) : null}
                               </div>
-                              {monthStatusesLoaded && s?.visitDay ? (
+                              {statusIconsReady && s?.visitDay ? (
                                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                                   <Clock className="h-3.5 w-3.5" />
                                   <span>This month: {String(s.visitDay).slice(0, 10)}</span>
