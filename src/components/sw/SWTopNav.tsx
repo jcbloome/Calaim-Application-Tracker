@@ -9,6 +9,13 @@ import { useSocialWorker } from '@/hooks/use-social-worker';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   ClipboardCheck,
   FileBarChart,
   Users,
@@ -19,18 +26,27 @@ import {
   UploadCloud,
   ShieldCheck,
   ClipboardList,
+  ChevronDown,
 } from 'lucide-react';
 
-const links = [
+type NavLink = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
+
+const primaryLinks: readonly NavLink[] = [
   { href: '/sw-portal/queue', label: 'Queue', icon: ListTodo },
   { href: '/sw-portal/roster', label: 'Roster', icon: Users },
+] as const;
+
+const tasksLinks: readonly NavLink[] = [
+  { href: '/sw-visit-verification', label: 'Questionnaire', icon: ClipboardCheck },
+  { href: '/sw-portal/sign-off', label: 'Sign Off', icon: FileBarChart },
+  { href: '/sw-portal/claims', label: 'Claims', icon: ReceiptText },
+  { href: '/sw-portal/ccl-checks', label: 'CCL Checks', icon: ShieldCheck },
+] as const;
+
+const moreLinks: readonly NavLink[] = [
+  { href: '/sw-portal/end-of-day', label: 'End of day', icon: ClipboardList },
   { href: '/sw-portal/status-log', label: 'Status Log', icon: CheckCircle2 },
   { href: '/sw-portal/alft-upload', label: 'ALFT Upload', icon: UploadCloud },
-  { href: '/sw-portal/claims', label: 'Claims', icon: ReceiptText },
-  { href: '/sw-portal/sign-off', label: 'Sign Off', icon: FileBarChart },
-  { href: '/sw-portal/ccl-checks', label: 'CCL Checks', icon: ShieldCheck },
-  { href: '/sw-portal/end-of-day', label: 'End of day', icon: ClipboardList },
-  { href: '/sw-visit-verification', label: 'Questionnaire', icon: ClipboardCheck },
   { href: '/sw-portal/instructions', label: 'Instructions', icon: BookOpenText },
 ] as const;
 
@@ -53,6 +69,14 @@ function CountPill({ value }: { value: number }) {
     <span className="ml-1 inline-flex items-center justify-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800">
       {value > 99 ? '99+' : value}
     </span>
+  );
+}
+
+function isActiveHref(pathname: string, href: string) {
+  return (
+    pathname === href ||
+    pathname.startsWith(`${href}/`) ||
+    (href === '/sw-visit-verification' && pathname.startsWith('/sw-portal/visit-verification'))
   );
 }
 
@@ -224,16 +248,16 @@ export function SWTopNav({ className }: { className?: string }) {
     } as Record<string, number>;
   }, [counts]);
 
+  const tasksActive = useMemo(() => tasksLinks.some((l) => isActiveHref(pathname, l.href)), [pathname]);
+  const moreActive = useMemo(() => moreLinks.some((l) => isActiveHref(pathname, l.href)), [pathname]);
+
   return (
     <nav
       className={cn('flex items-center gap-1 overflow-x-auto whitespace-nowrap py-1', className)}
       aria-label="Social Worker navigation"
     >
-      {links.map((l) => {
-        const active =
-          pathname === l.href ||
-          pathname.startsWith(`${l.href}/`) ||
-          (l.href === '/sw-visit-verification' && pathname.startsWith('/sw-portal/visit-verification'));
+      {primaryLinks.map((l) => {
+        const active = isActiveHref(pathname, l.href);
         const Icon = l.icon;
         return (
           <Link
@@ -252,6 +276,97 @@ export function SWTopNav({ className }: { className?: string }) {
           </Link>
         );
       })}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              'shrink-0 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              tasksActive
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+            aria-label="Tasks menu"
+          >
+            <ClipboardCheck className="h-4 w-4" />
+            <span className="inline-flex items-center gap-1">
+              Tasks <ChevronDown className="h-4 w-4 opacity-80" />
+            </span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {tasksLinks.map((l) => {
+            const active = isActiveHref(pathname, l.href);
+            const Icon = l.icon;
+            return (
+              <DropdownMenuItem
+                key={l.href}
+                asChild
+                className={cn(active && 'bg-accent text-accent-foreground')}
+              >
+                <Link href={l.href} className="inline-flex w-full items-center">
+                  <Icon className="h-4 w-4" />
+                  <span className="inline-flex items-center">
+                    {l.label}
+                    <CountPill value={pillsByHref[l.href] || 0} />
+                  </span>
+                </Link>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              'shrink-0 inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              moreActive
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+            aria-label="More menu"
+          >
+            <BookOpenText className="h-4 w-4" />
+            <span className="inline-flex items-center gap-1">
+              More <ChevronDown className="h-4 w-4 opacity-80" />
+            </span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {moreLinks.map((l, idx) => {
+            const active = isActiveHref(pathname, l.href);
+            const Icon = l.icon;
+            const item = (
+              <DropdownMenuItem
+                key={l.href}
+                asChild
+                className={cn(active && 'bg-accent text-accent-foreground')}
+              >
+                <Link href={l.href} className="inline-flex w-full items-center">
+                  <Icon className="h-4 w-4" />
+                  <span className="inline-flex items-center">
+                    {l.label}
+                    <CountPill value={pillsByHref[l.href] || 0} />
+                  </span>
+                </Link>
+              </DropdownMenuItem>
+            );
+            if (idx === 1) {
+              return (
+                <React.Fragment key={l.href}>
+                  <DropdownMenuSeparator />
+                  {item}
+                </React.Fragment>
+              );
+            }
+            return item;
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </nav>
   );
 }

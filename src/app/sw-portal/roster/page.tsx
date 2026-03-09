@@ -538,6 +538,8 @@ export default function SWRosterPage() {
     return pinnedRcfeIds.map((id) => byId.get(String(id || '').trim())).filter(Boolean) as RosterFacility[];
   }, [facilities, pinnedRcfeIds]);
 
+  const statusIconsReady = monthStatusesLoaded && monthStatusesMonth === statusMonth;
+
   const filteredFacilities = useMemo(() => {
     const q = query.trim().toLowerCase();
     const searched = !q
@@ -622,7 +624,7 @@ export default function SWRosterPage() {
     }
   }, [draftsLastRefreshAt]);
 
-  const statusIconsReady = monthStatusesLoaded && monthStatusesMonth === statusMonth;
+  // statusIconsReady is declared above filteredFacilities (used there).
 
   const refreshAll = useCallback(async () => {
     if (refreshingAll) return;
