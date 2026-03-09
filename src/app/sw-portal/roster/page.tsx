@@ -128,7 +128,7 @@ export default function SWRosterPage() {
   const [pinnedRcfeIds, setPinnedRcfeIds] = useState<string[]>([]);
   const [recentMembers, setRecentMembers] = useState<RecentMember[]>([]);
 
-  const [printNeedsActionOnly, setPrintNeedsActionOnly] = useState(false);
+  const [needsActionOnly, setNeedsActionOnly] = useState(false);
 
   const [draftsToday, setDraftsToday] = useState<DraftVisit[]>([]);
   const [loadingDraftsToday, setLoadingDraftsToday] = useState(false);
@@ -411,24 +411,39 @@ export default function SWRosterPage() {
 
   const filteredFacilities = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return facilities;
+    const searched = !q
+      ? facilities
+      : (facilities
+          .map((f) => {
+            const members = Array.isArray(f.members) ? f.members : [];
+            const matchedMembers = members.filter((m) => String(m?.name || '').toLowerCase().includes(q));
+            const facilityHit =
+              String(f.name || '').toLowerCase().includes(q) ||
+              String(f.address || '').toLowerCase().includes(q) ||
+              String(f.city || '').toLowerCase().includes(q) ||
+              String(f.zip || '').toLowerCase().includes(q) ||
+              String(f.county || '').toLowerCase().includes(q);
+            if (facilityHit) return f;
+            if (matchedMembers.length === 0) return null;
+            return { ...f, members: matchedMembers };
+          })
+          .filter(Boolean) as RosterFacility[]);
 
-    return facilities
-      .map((f) => {
-        const members = Array.isArray(f.members) ? f.members : [];
-        const matchedMembers = members.filter((m) => String(m?.name || '').toLowerCase().includes(q));
-        const facilityHit =
-          String(f.name || '').toLowerCase().includes(q) ||
-          String(f.address || '').toLowerCase().includes(q) ||
-          String(f.city || '').toLowerCase().includes(q) ||
-          String(f.zip || '').toLowerCase().includes(q) ||
-          String(f.county || '').toLowerCase().includes(q);
-        if (facilityHit) return f;
-        if (matchedMembers.length === 0) return null;
-        return { ...f, members: matchedMembers };
-      })
-      .filter(Boolean) as RosterFacility[];
-  }, [facilities, query]);
+    if (!needsActionOnly) return searched;
+    if (!monthStatusesLoaded) return searched;
+
+    const out: RosterFacility[] = [];
+    for (const f of searched) {
+      const members = Array.isArray(f.members) ? f.members : [];
+      const keep = members.filter((m) => {
+        const s = monthStatuses[String(m.id || '').trim()];
+        const flags = computeSwVisitStatusFlags(s);
+        return Boolean(flags.needsAction);
+      });
+      if (keep.length > 0) out.push({ ...f, members: keep });
+    }
+    return out;
+  }, [facilities, monthStatuses, monthStatusesLoaded, needsActionOnly, query]);
 
   const sortFacilities = useCallback((list: RosterFacility[]) => {
     if (facilitySort === 'assigned') return list;
@@ -443,22 +458,7 @@ export default function SWRosterPage() {
 
   const displayFacilities = useMemo(() => sortFacilities(filteredFacilities), [filteredFacilities, sortFacilities]);
 
-  const printFacilities = useMemo(() => {
-    if (!printNeedsActionOnly) return sortFacilities(filteredFacilities);
-    if (!monthStatusesLoaded) return sortFacilities(filteredFacilities);
-
-    const out: RosterFacility[] = [];
-    for (const f of filteredFacilities) {
-      const members = Array.isArray(f.members) ? f.members : [];
-      const keep = members.filter((m) => {
-        const s = monthStatuses[String(m.id || '').trim()];
-        const flags = computeSwVisitStatusFlags(s);
-        return Boolean(flags.needsAction);
-      });
-      if (keep.length > 0) out.push({ ...f, members: keep });
-    }
-    return sortFacilities(out);
-  }, [filteredFacilities, monthStatuses, monthStatusesLoaded, printNeedsActionOnly, sortFacilities]);
+  const printFacilities = useMemo(() => sortFacilities(filteredFacilities), [filteredFacilities, sortFacilities]);
 
   const totals = useMemo(() => {
     const facilityCount = facilities.length;
@@ -580,13 +580,6 @@ export default function SWRosterPage() {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2 text-xs text-muted-foreground">
-            <span className="font-medium text-slate-900">Print</span>
-            <div className="flex items-center gap-2">
-              <Switch checked={printNeedsActionOnly} onCheckedChange={(v) => setPrintNeedsActionOnly(Boolean(v))} />
-              <span>Needs action only</span>
-            </div>
-          </div>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => void refreshRoster()} disabled={loading}>
             <RefreshCw className="h-4 w-4 mr-2" />
             {loading ? 'Refreshing…' : 'Refresh list'}
@@ -741,9 +734,42 @@ export default function SWRosterPage() {
           <CardTitle className="text-base">Search</CardTitle>
           <CardDescription>Filter by home name, address, or member name.</CardDescription>
         </CardHeader>
-        <CardContent className="flex items-center gap-2">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type to search…" />
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type to search…" />
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-md border bg-white px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={needsActionOnly}
+                onCheckedChange={(v) => setNeedsActionOnly(Boolean(v))}
+                disabled={!monthStatusesLoaded}
+              />
+              <span className="text-sm text-muted-foreground">Needs action only</span>
+            </div>
+
+            {!monthStatusesLoaded ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void refreshMonthStatuses()}
+                disabled={loadingMonthStatuses || !hasLoadedOnce}
+                className="gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingMonthStatuses ? 'animate-spin' : ''}`} />
+                Load status icons
+              </Button>
+            ) : null}
+          </div>
+
+          {!monthStatusesLoaded ? (
+            <div className="text-xs text-muted-foreground">
+              The “Needs action” filter requires status icons for the selected month. Click “Load status icons” above.
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
