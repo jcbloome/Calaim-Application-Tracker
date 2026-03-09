@@ -73,6 +73,10 @@ export default function SWPortalError({
             <summary className="cursor-pointer">Technical details</summary>
             <pre className="mt-2 whitespace-pre-wrap break-words">{String(error?.message || 'Unknown error')}</pre>
             {error?.digest ? <pre className="mt-2 whitespace-pre-wrap break-words">Digest: {error.digest}</pre> : null}
+            {error?.stack ? <pre className="mt-2 whitespace-pre-wrap break-words">{String(error.stack)}</pre> : null}
+            {typeof window !== 'undefined' ? (
+              <pre className="mt-2 whitespace-pre-wrap break-words">URL: {String(window.location?.href || '')}</pre>
+            ) : null}
           </details>
         </div>
       </div>
