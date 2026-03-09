@@ -211,7 +211,19 @@ function ReviewPageComponent() {
                         <Section title="ISP &amp; RCFE Information" editLink={getEditLink(4)} isReadOnly={isReadOnly}>
                             <Field label="ISP Contact Name" value={`${application.ispFirstName} ${application.ispLastName}`} />
                             <Field label="ISP Contact Phone" value={application.ispPhone} />
-                            <Field label="ISP Assessment Location" value={application.ispAddress} fullWidth />
+                            <Field
+                                label="ISP Assessment Location"
+                                value={[
+                                  String(application.ispAddress || '').trim(),
+                                  String(application.ispCity || '').trim(),
+                                  [String(application.ispState || '').trim(), String(application.ispZip || '').trim()].filter(Boolean).join(' '),
+                                ]
+                                  .filter(Boolean)
+                                  .join(', ')
+                                  .replace(/,\s*,/g, ', ')
+                                  .trim()}
+                                fullWidth
+                            />
                             <Field label="On ALW Waitlist?" value={application.onALWWaitlist} />
                             <Field label="Has Preferred RCFE?" value={application.hasPrefRCFE} />
                             <Field label="RCFE Name" value={application.rcfeName} fullWidth />

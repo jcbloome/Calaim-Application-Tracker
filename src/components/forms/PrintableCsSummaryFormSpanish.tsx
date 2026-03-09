@@ -273,7 +273,10 @@ export function PrintableCsSummaryFormSpanish({
         width: 'half'
       }),
       buildField({ label: 'Nombre de la Instalación de la Evaluación del ISP', value: data.ispFacilityName, width: 'half' }),
-      buildField({ label: 'Dirección de la Evaluación del ISP', value: data.ispAddress, required: true, width: 'full' }),
+      buildField({ label: 'Dirección de la Evaluación del ISP', value: data.ispAddress, required: true, width: 'half' }),
+      buildField({ label: 'Ciudad (ISP)', value: data.ispCity, required: true, width: 'half' }),
+      buildField({ label: 'Estado (ISP)', value: data.ispState, required: true, width: 'half' }),
+      buildField({ label: 'Código Postal (ISP)', value: data.ispZip, required: true, width: 'half' }),
     ]),
     buildSection('Sección 9: CalAIM vs. Assisted Living Waiver (ALW)', [
       React.createElement('div', {

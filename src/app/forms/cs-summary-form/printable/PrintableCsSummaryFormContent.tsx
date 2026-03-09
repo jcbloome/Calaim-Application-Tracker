@@ -256,7 +256,12 @@ export function PrintableCsSummaryFormContent() {
                         <Field label="Type of Location" />
                         <Field label="Facility Name" />
                     </div>
-                    <Field label="Street Address" description="Street Address, City, State, ZIP." />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
+                        <Field label="Street Address" />
+                        <Field label="City" />
+                        <Field label="State" />
+                        <Field label="ZIP Code" />
+                    </div>
                     
                 <h3 className="text-sm font-medium text-gray-800 mt-4">Section 9: CalAIM vs. Assisted Living Waiver (ALW)</h3>
                 <div className="mt-2 p-3 border border-gray-300 text-xs text-gray-700">

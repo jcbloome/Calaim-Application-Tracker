@@ -104,6 +104,9 @@ export type Application = {
   ispEmail?: string;
   ispLocationType?: string;
   ispAddress?: string;
+  ispCity?: string;
+  ispState?: string;
+  ispZip?: string;
   ispFacilityName?: string;
   onALWWaitlist?: 'Yes' | 'No' | 'Unknown';
   monthlyIncome?: string;

@@ -254,7 +254,15 @@ function transformToCaspioFormat(firebaseData: any): CaspioApplication {
     ISPPhone: firebaseData.ispPhone || '',
     ISPEmail: firebaseData.ispEmail || '',
     ISPLocationType: firebaseData.ispLocationType || '',
-    ISPAddress: firebaseData.ispAddress || '',
+    ISPAddress: [
+      String(firebaseData.ispAddress || '').trim(),
+      String(firebaseData.ispCity || '').trim(),
+      [String(firebaseData.ispState || '').trim(), String(firebaseData.ispZip || '').trim()].filter(Boolean).join(' '),
+    ]
+      .filter(Boolean)
+      .join(', ')
+      .replace(/,\s*,/g, ', ')
+      .trim(),
     ISPFacilityName: firebaseData.ispFacilityName || '',
     OnALWWaitlist: firebaseData.onALWWaitlist || 'Unknown',
     Has_Selected_RCFE: firebaseData.hasPrefRCFE || 'No',

@@ -129,6 +129,62 @@ export default function Step4() {
                         <FormMessage />
                     </FormItem>
                 )} />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <FormField
+                    control={control}
+                    name="ispCity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) => field.onChange(formatName(e.target.value))}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={control}
+                    name="ispState"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) => field.onChange(String(e.target.value || '').toUpperCase())}
+                            placeholder="CA"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={control}
+                    name="ispZip"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Zip <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) => field.onChange(String(e.target.value || '').trim())}
+                            inputMode="numeric"
+                            placeholder="90000"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
             </div>
           </CardContent>
       </Card>

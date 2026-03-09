@@ -35,7 +35,7 @@ const steps = [
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
   { id: 4, name: 'ISP & Facility Selection', fields: [
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail', 
-      'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip', 'ispCounty', 
+      'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip',
       'onALWWaitlist', 'hasPrefRCFE', 
       'rcfeName', 'rcfeAddress', 'rcfePreferredCities',
       'rcfeAdminFirstName', 'rcfeAdminLastName', 'rcfeAdminPhone', 'rcfeAdminEmail',

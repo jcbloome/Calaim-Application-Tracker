@@ -557,7 +557,25 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           label="ISP Assessment Address"
           value={data.ispAddress}
           required
-          width="full"
+          width="half"
+        />
+        <PrintableField
+          label="ISP Assessment City"
+          value={data.ispCity}
+          required
+          width="half"
+        />
+        <PrintableField
+          label="ISP Assessment State"
+          value={data.ispState}
+          required
+          width="half"
+        />
+        <PrintableField
+          label="ISP Assessment Zip"
+          value={data.ispZip}
+          required
+          width="half"
         />
 
       </PrintableFormSection>

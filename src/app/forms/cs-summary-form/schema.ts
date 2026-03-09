@@ -110,6 +110,9 @@ export const formSchema = z.object({
     ispEmail: requiredEmail,
     ispLocationType: requiredString,
     ispAddress: requiredString,
+    ispCity: requiredString,
+    ispState: requiredString,
+    ispZip: requiredString,
     ispFacilityName: requiredString,
     onALWWaitlist: z.enum(['Yes', 'No', 'Unknown'], { errorMap: () => ({ message: ' ' }) }),
     ackRoomAndBoard: z.boolean().refine(val => val === true, {

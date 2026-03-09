@@ -250,7 +250,21 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                      <Section title="ISP & RCFE Information">
                         <QuickViewField label="ISP Contact Name" value={`${application.ispFirstName} ${application.ispLastName}`} />
                         <QuickViewField label="ISP Contact Phone" value={application.ispPhone} />
-                        <QuickViewField label="ISP Assessment Location" value={application.ispAddress} fullWidth />
+                        <QuickViewField
+                          label="ISP Assessment Location"
+                          value={[
+                            String(application.ispAddress || '').trim(),
+                            String(application.ispCity || '').trim(),
+                            [String(application.ispState || '').trim(), String(application.ispZip || '').trim()]
+                              .filter(Boolean)
+                              .join(' '),
+                          ]
+                            .filter(Boolean)
+                            .join(', ')
+                            .replace(/,\s*,/g, ', ')
+                            .trim()}
+                          fullWidth
+                        />
                         <QuickViewField label="On ALW Waitlist?" value={application.onALWWaitlist} />
                         <QuickViewField label="Has Preferred RCFE?" value={application.hasPrefRCFE} />
                         <QuickViewField label="RCFE Name" value={application.rcfeName} fullWidth />
