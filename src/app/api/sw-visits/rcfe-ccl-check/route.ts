@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
         typeAViolations: Number(data?.typeAViolations ?? 0) || 0,
         typeBViolations: Number(data?.typeBViolations ?? 0) || 0,
         seriousViolationComments: clean(data?.seriousViolationComments, 4000),
+        acknowledged: Boolean(data?.acknowledged),
         checkedAt: data?.checkedAt?.toDate?.()?.toISOString?.() || clean(data?.checkedAt, 50) || '',
         checkedByName: clean(data?.checkedByName, 140),
         checkedByEmail: clean(data?.checkedByEmail, 200),
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
     const typeA = Number(body?.typeAViolations ?? NaN);
     const typeB = Number(body?.typeBViolations ?? NaN);
     const seriousViolationComments = clean(body?.seriousViolationComments, 4000);
+    const acknowledged = body?.acknowledged === true;
 
     if (!rcfeId) return NextResponse.json({ success: false, error: 'rcfeId is required' }, { status: 400 });
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
@@ -103,6 +105,12 @@ export async function POST(req: NextRequest) {
     }
     if (!Number.isFinite(typeA) || typeA < 0 || !Number.isFinite(typeB) || typeB < 0) {
       return NextResponse.json({ success: false, error: 'typeAViolations/typeBViolations must be 0 or greater' }, { status: 400 });
+    }
+    if (!acknowledged) {
+      return NextResponse.json(
+        { success: false, error: 'Acknowledgement is required to complete the monthly CCL check.' },
+        { status: 400 }
+      );
     }
 
     const docId = safeDocId(`${rcfeId}_${month}`);
@@ -118,6 +126,11 @@ export async function POST(req: NextRequest) {
         typeBViolations: Math.floor(typeB),
         seriousViolationComments,
         facilitySearchUrl: 'https://www.ccld.dss.ca.gov/carefacilitysearch/',
+        acknowledged: true,
+        acknowledgedByUid: uid,
+        acknowledgedByEmail: email,
+        acknowledgedByName: clean(body?.checkedByName, 140) || email,
+        acknowledgedAt: admin.firestore.FieldValue.serverTimestamp(),
         checkedByUid: uid,
         checkedByEmail: email,
         checkedByName: clean(body?.checkedByName, 140) || email,

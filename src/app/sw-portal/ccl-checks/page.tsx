@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
@@ -13,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
 
@@ -41,6 +43,7 @@ export default function CclChecksPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const { user, isSocialWorker, isLoading: swLoading } = useSocialWorker();
+  const searchParams = useSearchParams();
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
 
@@ -51,6 +54,8 @@ export default function CclChecksPage() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<DueItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [prefillLoading, setPrefillLoading] = useState(false);
   const [form, setForm] = useState({
     latestReportDate: '',
     typeAViolations: 0,
@@ -125,8 +130,37 @@ export default function CclChecksPage() {
 
   const missingCount = useMemo(() => items.filter((i) => !i.checkExists).length, [items]);
 
+  const prefillExisting = useCallback(
+    async (item: DueItem) => {
+      if (!auth?.currentUser) return;
+      setPrefillLoading(true);
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const qs = new URLSearchParams({ rcfeId: item.rcfeId, month: item.month });
+        const res = await fetch(`/api/sw-visits/rcfe-ccl-check?${qs.toString()}`, {
+          headers: { authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.success) return;
+        const check = data?.check;
+        if (!check) return;
+        setForm({
+          latestReportDate: String(check?.latestReportDate || '').slice(0, 10),
+          typeAViolations: Number(check?.typeAViolations ?? 0) || 0,
+          typeBViolations: Number(check?.typeBViolations ?? 0) || 0,
+          seriousViolationComments: String(check?.seriousViolationComments || ''),
+        });
+        setAcknowledged(Boolean(check?.acknowledged));
+      } finally {
+        setPrefillLoading(false);
+      }
+    },
+    [auth?.currentUser]
+  );
+
   const openDialog = (item: DueItem) => {
     setActive(item);
+    setAcknowledged(false);
     setForm({
       latestReportDate: '',
       typeAViolations: 0,
@@ -134,7 +168,19 @@ export default function CclChecksPage() {
       seriousViolationComments: '',
     });
     setOpen(true);
+    void prefillExisting(item);
   };
+
+  // Deep-link support: /sw-portal/ccl-checks?rcfeId=...&month=YYYY-MM
+  useEffect(() => {
+    if (!isSocialWorker) return;
+    if (open) return;
+    const rcfeId = String(searchParams?.get('rcfeId') || '').trim();
+    const month = String(searchParams?.get('month') || '').trim();
+    if (!rcfeId || !month) return;
+    const match = items.find((i) => String(i.rcfeId).trim() === rcfeId && String(i.month).trim() === month);
+    if (match) openDialog(match);
+  }, [isSocialWorker, items, open, searchParams]);
 
   const save = async () => {
     if (!auth?.currentUser || !active) return;
@@ -153,6 +199,7 @@ export default function CclChecksPage() {
           typeAViolations: Number(form.typeAViolations || 0),
           typeBViolations: Number(form.typeBViolations || 0),
           seriousViolationComments: form.seriousViolationComments,
+          acknowledged: Boolean(acknowledged),
           checkedByName: String((user as any)?.displayName || swEmail || 'Social Worker').trim(),
         }),
       });
@@ -250,7 +297,7 @@ export default function CclChecksPage() {
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <Badge variant={i.checkExists ? 'secondary' : 'destructive'}>{i.checkExists ? 'Complete' : 'Required'}</Badge>
                     <Button type="button" onClick={() => openDialog(i)} disabled={saving}>
-                      Complete check
+                      {i.checkExists ? 'View / re-check' : 'Complete check'}
                     </Button>
                   </div>
                 </div>
@@ -274,6 +321,12 @@ export default function CclChecksPage() {
           </DialogHeader>
 
           <div className="space-y-3">
+            {prefillLoading ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading existing check…
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <div className="text-sm font-medium">Latest violation report date</div>
               <Input type="date" value={form.latestReportDate} onChange={(e) => setForm((p) => ({ ...p, latestReportDate: e.target.value }))} />
@@ -312,11 +365,31 @@ export default function CclChecksPage() {
                 onChange={(e) => setForm((p) => ({ ...p, seriousViolationComments: e.target.value }))}
               />
             </div>
+
+            <div className="rounded-md border bg-muted/30 p-3">
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="ccl-ack"
+                  checked={acknowledged}
+                  onCheckedChange={(v) => setAcknowledged(Boolean(v))}
+                />
+                <label htmlFor="ccl-ack" className="text-sm leading-snug">
+                  I confirm I checked the Community Care Licensing site for this RCFE for{' '}
+                  <span className="font-mono">{active?.month || ''}</span>. This acknowledgement is required even if Type
+                  A and Type B violations are 0.
+                </label>
+              </div>
+            </div>
+
             <div className="flex items-center justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                 Cancel
               </Button>
-              <Button type="button" onClick={() => void save()} disabled={saving || !form.latestReportDate}>
+              <Button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving || prefillLoading || !form.latestReportDate || !acknowledged}
+              >
                 {saving ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
