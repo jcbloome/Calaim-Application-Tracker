@@ -262,15 +262,6 @@ export async function POST(req: NextRequest) {
         const seq = Number.isFinite(curNext) && curNext > 0 ? Math.floor(curNext) : 1;
         const claimNumber = `SW-${visitMonth.replace('-', '')}-${String(seq).padStart(6, '0')}`;
         createdClaimNumber = claimNumber;
-        tx.set(
-          counterRef,
-          {
-            month: visitMonth,
-            next: seq + 1,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
 
         // Enforce monthly lock for each member.
         const lockRefs = visits.map((v) =>
@@ -297,6 +288,18 @@ export async function POST(req: NextRequest) {
           err.conflicts = conflicts;
           throw err;
         }
+
+        // All transaction reads must occur before any writes.
+        // Now that we've read claim + counter + lock docs, we can safely write.
+        tx.set(
+          counterRef,
+          {
+            month: visitMonth,
+            next: seq + 1,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
 
         // Write/refresh locks
         lockRefs.forEach((ref, idx) => {
