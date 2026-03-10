@@ -460,6 +460,32 @@ export default function SWRosterPage() {
     void refreshDraftsToday();
   }, [isLoading, isSocialWorker, refreshDraftsToday]);
 
+  const needsQuestionnaire = useMemo(() => {
+    if (!monthStatusesLoaded) return [];
+    const rows: Array<{ memberId: string; memberName: string; rcfeId: string; rcfeName: string }> = [];
+    for (const f of facilities) {
+      for (const m of f.members || []) {
+        const s = monthStatuses[String(m.id || '').trim()];
+        const flags = computeSwVisitStatusFlags(s);
+        if (flags.nextAction === 'questionnaire') {
+          rows.push({
+            memberId: String(m.id || '').trim(),
+            memberName: String(m.name || '').trim(),
+            rcfeId: String(f.id || '').trim(),
+            rcfeName: String(f.name || '').trim(),
+          });
+        }
+      }
+    }
+    rows.sort((a, b) => (a.rcfeName || '').localeCompare(b.rcfeName || '') || (a.memberName || '').localeCompare(b.memberName || ''));
+    return rows;
+  }, [facilities, monthStatuses, monthStatusesLoaded]);
+
+  const nextQuestionnaire = useMemo(() => {
+    if (!needsQuestionnaire || needsQuestionnaire.length === 0) return null;
+    return needsQuestionnaire[0];
+  }, [needsQuestionnaire]);
+
   // Keyboard shortcuts for speed:
   // - / focus search
   // - N start next questionnaire
@@ -495,41 +521,13 @@ export default function SWRosterPage() {
         e.preventDefault();
         const next = nextQuestionnaire;
         if (!next) return;
-        router.push(
-          `/sw-visit-verification?rcfeId=${encodeURIComponent(next.rcfeId)}&memberId=${encodeURIComponent(next.memberId)}`
-        );
+        router.push(`/sw-visit-verification?rcfeId=${encodeURIComponent(next.rcfeId)}&memberId=${encodeURIComponent(next.memberId)}`);
         return;
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isLoading, isSocialWorker, nextQuestionnaire, refreshAll, router]);
-
-  const needsQuestionnaire = useMemo(() => {
-    if (!monthStatusesLoaded) return [];
-    const rows: Array<{ memberId: string; memberName: string; rcfeId: string; rcfeName: string }> = [];
-    for (const f of facilities) {
-      for (const m of f.members || []) {
-        const s = monthStatuses[String(m.id || '').trim()];
-        const flags = computeSwVisitStatusFlags(s);
-        if (flags.nextAction === 'questionnaire') {
-          rows.push({
-            memberId: String(m.id || '').trim(),
-            memberName: String(m.name || '').trim(),
-            rcfeId: String(f.id || '').trim(),
-            rcfeName: String(f.name || '').trim(),
-          });
-        }
-      }
-    }
-    rows.sort((a, b) => (a.rcfeName || '').localeCompare(b.rcfeName || '') || (a.memberName || '').localeCompare(b.memberName || ''));
-    return rows;
-  }, [facilities, monthStatuses, monthStatusesLoaded]);
-
-  const nextQuestionnaire = useMemo(() => {
-    if (!needsQuestionnaire || needsQuestionnaire.length === 0) return null;
-    return needsQuestionnaire[0];
-  }, [needsQuestionnaire]);
 
   const pinnedFacilities = useMemo(() => {
     if (!pinnedRcfeIds || pinnedRcfeIds.length === 0) return [];
