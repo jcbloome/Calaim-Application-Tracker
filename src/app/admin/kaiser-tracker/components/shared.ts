@@ -26,6 +26,8 @@ export interface KaiserMember {
   created_at: string;
   Kaiser_Tier_Level_Received_Date?: string;
   ILS_RCFE_Sent_For_Contract_Date?: string;
+  RCFE_Name?: string;
+  RCFE_Admin_Email?: string;
 }
 
 export const getMemberKey = (member: KaiserMember, index: number) =>

@@ -77,6 +77,8 @@ export async function GET(request: NextRequest) {
         Social_Worker_Assigned: member.Social_Worker_Assigned || '',
         Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
         RCFE_Name: member.RCFE_Name,
+        RCFE_Admin_Name: member.RCFE_Admin_Name || member.RCFE_Administrator || member.RCFE_Admin || '',
+        RCFE_Admin_Email: member.RCFE_Admin_Email || member.RCFE_Administrator_Email || member.RCFE_AdminEmail || '',
         RCFE_Address: member.RCFE_Address,
         RCFE_City: member.RCFE_City,
         RCFE_Zip: member.RCFE_Zip,
@@ -86,7 +88,8 @@ export async function GET(request: NextRequest) {
         workflow_notes: member.workflow_notes || '',
         last_updated: member.Date_Modified || member.last_updated || new Date().toISOString(),
         created_at: member.Date_Created || member.created_at || new Date().toISOString(),
-        Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || member.Kaiser_T038_Requested || member.Kaiser_T2038_Requested || '',
+        Kaiser_T2038_Requested: member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date || member.Kaiser_T038_Requested || '',
+        Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || member.Kaiser_T2038_Requested || member.Kaiser_T038_Requested || '',
         Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || member.Kaiser_T038_Received || member.Kaiser_T2038_Received || '',
         Kaiser_Tier_Level_Requested: member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || member.Tier_Level_Request_Date || member.Tier_Level_Requested_Date || member.Tier_Request_Date || '',
         Kaiser_Tier_Level_Requested_Date:
@@ -458,6 +461,8 @@ export async function GET(request: NextRequest) {
       // Kaiser Tracker expects Staff_Assigned field (using Kaiser_User_Assignment for staff assignments)
       Staff_Assigned: member.Kaiser_User_Assignment || member.Staff_Assigned || '',
       RCFE_Name: member.RCFE_Name,
+      RCFE_Admin_Name: member.RCFE_Admin_Name || member.RCFE_Administrator || member.RCFE_Admin || '',
+      RCFE_Admin_Email: member.RCFE_Admin_Email || member.RCFE_Administrator_Email || member.RCFE_AdminEmail || '',
       RCFE_Address: member.RCFE_Address,
       RCFE_City: member.RCFE_City,
       RCFE_Zip: member.RCFE_Zip,
@@ -469,7 +474,8 @@ export async function GET(request: NextRequest) {
       created_at: member.Date_Created || new Date().toISOString(),
       
       // ILS Report Date Fields - try multiple possible field names
-      Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || member.Kaiser_T038_Requested || member.Kaiser_T2038_Requested || '',
+      Kaiser_T2038_Requested: member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date || member.Kaiser_T038_Requested || '',
+      Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || member.Kaiser_T2038_Requested || member.Kaiser_T038_Requested || '',
       Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || member.Kaiser_T038_Received || member.Kaiser_T2038_Received || '',
       Kaiser_Tier_Level_Requested: member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || member.Tier_Level_Request_Date || member.Tier_Level_Requested_Date || member.Tier_Request_Date || '',
       Kaiser_Tier_Level_Requested_Date:

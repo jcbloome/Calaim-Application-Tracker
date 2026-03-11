@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { getNextKaiserStatus, getKaiserStatusesInOrder, KAISER_STATUS_PROGRESSION, getKaiserStatusById, normalizeKaiserStatusName } from '@/lib/kaiser-status-progression';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -243,6 +244,99 @@ function KaiserTrackerPageContent() {
     county: 'all',
     staffAssigned: 'all'
   });
+  const [rcfeWeeklySettings, setRcfeWeeklySettings] = useState<Record<string, { enabled: boolean; rcfeName: string; rcfeAdminEmail: string }>>({});
+  const [rcfeWeeklyLoading, setRcfeWeeklyLoading] = useState(false);
+  const [rcfeWeeklySavingKey, setRcfeWeeklySavingKey] = useState<string | null>(null);
+
+  const normalizeRcfeKey = (name: string, email: string) =>
+    `${String(name || '').trim().toLowerCase()}|${String(email || '').trim().toLowerCase()}`;
+
+  const rcfeRows = useMemo(() => {
+    const rowsByKey = new Map<string, { rcfeName: string; rcfeAdminEmail: string; memberCount: number }>();
+    for (const m of members) {
+      const rcfeName = String((m as any)?.RCFE_Name || '').trim();
+      const rcfeAdminEmail = String((m as any)?.RCFE_Admin_Email || '').trim().toLowerCase();
+      if (!rcfeName || !rcfeAdminEmail) continue;
+      const key = normalizeRcfeKey(rcfeName, rcfeAdminEmail);
+      const prev = rowsByKey.get(key);
+      if (!prev) {
+        rowsByKey.set(key, { rcfeName, rcfeAdminEmail, memberCount: 1 });
+      } else {
+        prev.memberCount += 1;
+        rowsByKey.set(key, prev);
+      }
+    }
+    return Array.from(rowsByKey.values()).sort(
+      (a, b) => a.rcfeName.localeCompare(b.rcfeName) || a.rcfeAdminEmail.localeCompare(b.rcfeAdminEmail)
+    );
+  }, [members]);
+
+  const loadRcfeWeeklySettings = async () => {
+    try {
+      if (!auth?.currentUser) return;
+      setRcfeWeeklyLoading(true);
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-rcfe-weekly-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, action: 'get' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to load RCFE weekly settings');
+      const entries = (data?.entries || {}) as Record<string, any>;
+      const next: Record<string, { enabled: boolean; rcfeName: string; rcfeAdminEmail: string }> = {};
+      Object.entries(entries).forEach(([k, v]: [string, any]) => {
+        next[k] = {
+          enabled: Boolean(v?.enabled),
+          rcfeName: String(v?.rcfeName || ''),
+          rcfeAdminEmail: String(v?.rcfeAdminEmail || '').toLowerCase(),
+        };
+      });
+      setRcfeWeeklySettings(next);
+    } catch (e: any) {
+      console.error('Failed to load RCFE weekly settings:', e);
+    } finally {
+      setRcfeWeeklyLoading(false);
+    }
+  };
+
+  const toggleRcfeWeekly = async (rcfeName: string, rcfeAdminEmail: string, enabled: boolean) => {
+    const key = normalizeRcfeKey(rcfeName, rcfeAdminEmail);
+    setRcfeWeeklySavingKey(key);
+    try {
+      if (!auth?.currentUser) throw new Error('You must be signed in');
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-rcfe-weekly-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          action: 'set',
+          rcfeName,
+          rcfeAdminEmail,
+          enabled,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to update RCFE weekly toggle');
+      setRcfeWeeklySettings((prev) => ({
+        ...prev,
+        [key]: { enabled, rcfeName, rcfeAdminEmail: String(rcfeAdminEmail || '').toLowerCase() },
+      }));
+      toast({
+        title: 'RCFE weekly email updated',
+        description: `${rcfeName}: ${enabled ? 'enabled' : 'disabled'}`,
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Update failed',
+        description: e?.message || 'Could not update RCFE weekly toggle',
+        variant: 'destructive',
+      });
+    } finally {
+      setRcfeWeeklySavingKey(null);
+    }
+  };
 
   // Calculate status summary using the defined Kaiser status order
   const statusSummary = useMemo(() => {
@@ -748,6 +842,8 @@ function KaiserTrackerPageContent() {
           Kaiser_Status: member?.Kaiser_Status || member?.Kaiser_ID_Status || '',
           CalAIM_Status: member?.CalAIM_Status || 'No Status',
           Staff_Assigned: staffAssigned,
+          RCFE_Name: member?.RCFE_Name || '',
+          RCFE_Admin_Email: member?.RCFE_Admin_Email || member?.RCFE_Administrator_Email || '',
           Next_Step_Due_Date: member?.Next_Step_Due_Date || '',
           workflow_step: member?.workflow_step || '',
           workflow_notes: member?.workflow_notes || '',
@@ -904,6 +1000,7 @@ function KaiserTrackerPageContent() {
     // Only fetch data when user manually clicks sync button, not on page load
     // fetchCaspioData();
     loadKaiserStatusOptions();
+    loadRcfeWeeklySettings().catch(() => {});
   }, []);
 
   if (isAdminLoading) {
@@ -968,6 +1065,48 @@ function KaiserTrackerPageContent() {
         normalizeCalaimStatus={normalizeCalaimStatus}
         openMemberModal={openMemberModal}
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">RCFE Weekly Confirmation Emails</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Toggle weekly auto-email to each RCFE admin asking to confirm whether ILS has contacted them.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {rcfeWeeklyLoading ? (
+            <div className="text-sm text-muted-foreground">Loading RCFE weekly settings...</div>
+          ) : rcfeRows.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No RCFE rows with admin email found in current Kaiser member data.</div>
+          ) : (
+            <div className="space-y-2">
+              {rcfeRows.map((row) => {
+                const key = normalizeRcfeKey(row.rcfeName, row.rcfeAdminEmail);
+                const enabled = Boolean(rcfeWeeklySettings[key]?.enabled);
+                const saving = rcfeWeeklySavingKey === key;
+                return (
+                  <div key={key} className="flex items-center justify-between rounded-md border p-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-sm truncate">{row.rcfeName}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {row.rcfeAdminEmail} • {row.memberCount} Kaiser member{row.memberCount === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{enabled ? 'On' : 'Off'}</span>
+                      <Switch
+                        checked={enabled}
+                        disabled={saving}
+                        onCheckedChange={(next) => void toggleRcfeWeekly(row.rcfeName, row.rcfeAdminEmail, Boolean(next))}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <KaiserStaffAssignments
         allStaff={allStaff}
