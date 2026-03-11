@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/firebase';
-import Link from 'next/link';
 import { 
   FileText, 
   Save, 
@@ -50,6 +49,19 @@ interface ILSReportMember {
   RCFE_Name?: string;
   RCFE_Admin_Name?: string;
   RCFE_Admin_Email?: string;
+}
+
+interface IlsQueueChangeLogRow {
+  id: string;
+  memberName: string;
+  clientId2?: string;
+  queue: string;
+  changes?: Record<string, any>;
+  changedByEmail?: string;
+  createdAtIso?: string;
+  dateKey?: string;
+  queueChangeFlag?: boolean;
+  eventType?: string;
 }
 
 type QueueKey = 't2038_auth_only_email' | 't2038_requested' | 'tier_level_requested' | 'rb_sent_pending_ils_contract';
@@ -164,6 +176,9 @@ export default function ILSReportEditorPage() {
   const [cardEditTierReceivedDate, setCardEditTierReceivedDate] = useState('');
   const [cardEditRbReceivedDate, setCardEditRbReceivedDate] = useState('');
   const [t2038ModalOpen, setT2038ModalOpen] = useState(false);
+  const [isLoadingIlsLog, setIsLoadingIlsLog] = useState(false);
+  const [ilsLogRows, setIlsLogRows] = useState<IlsQueueChangeLogRow[]>([]);
+  const [ilsLogSearch, setIlsLogSearch] = useState('');
   const { toast } = useToast();
 
   // Load Kaiser members for ILS report
@@ -335,9 +350,37 @@ export default function ILSReportEditorPage() {
       body: JSON.stringify({
         idToken,
         action: 'create',
+        eventType: 'queue_change',
+        queueChangeFlag: true,
         ...payload,
       }),
     });
+  };
+
+  const loadIlsChangeLog = async () => {
+    try {
+      if (!auth?.currentUser) return;
+      setIsLoadingIlsLog(true);
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/ils-change-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, action: 'list', limit: 300 }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to load ILS queue change log');
+      }
+      setIlsLogRows(Array.isArray(data?.rows) ? data.rows : []);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Log Load Failed',
+        description: error?.message || 'Could not load ILS queue change log.',
+      });
+    } finally {
+      setIsLoadingIlsLog(false);
+    }
   };
 
   const openCardEdit = (queue: 'tier_level_requested' | 'rb_sent_pending_ils_contract', memberId: string) => {
@@ -374,6 +417,7 @@ export default function ILSReportEditorPage() {
       queue: cardEditQueue,
       changes,
     });
+    await loadIlsChangeLog();
     setCardEditOpen(false);
     setCardEditQueue(null);
     setCardEditMemberId('');
@@ -717,6 +761,27 @@ export default function ILSReportEditorPage() {
     };
   }, [queues.rbPendingIlsContract, queues.t2038AuthOnly, queues.t2038Requested, queues.tierRequested]);
 
+  const ilsLogFilteredRows = useMemo(() => {
+    const q = ilsLogSearch.trim().toLowerCase();
+    if (!q) return ilsLogRows;
+    return ilsLogRows.filter((r) => {
+      const memberName = String(r.memberName || '').toLowerCase();
+      const clientId2 = String(r.clientId2 || '').toLowerCase();
+      const queue = String(r.queue || '').toLowerCase();
+      const changedBy = String(r.changedByEmail || '').toLowerCase();
+      return memberName.includes(q) || clientId2.includes(q) || queue.includes(q) || changedBy.includes(q);
+    });
+  }, [ilsLogRows, ilsLogSearch]);
+
+  const queueLabel = (value: string) => {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === 'tier_level_requested') return 'Tier Level Requested';
+    if (v === 'rb_sent_pending_ils_contract') return 'R & B Sent Pending ILS Contract';
+    if (v === 't2038_requested') return 'T2038 Requested';
+    if (v === 't2038_auth_only_email') return 'T2038 Auth Only Email';
+    return value || 'Unknown Queue';
+  };
+
   // Save comments to localStorage
   const saveComments = () => {
     if (reportComments.trim()) {
@@ -738,6 +803,10 @@ export default function ILSReportEditorPage() {
       setReportComments('');
     }
   }, [reportDate]);
+
+  useEffect(() => {
+    loadIlsChangeLog().catch(() => {});
+  }, [auth?.currentUser?.uid]);
 
   // Removed auto-loading useEffect - now only loads when "Load Members" button is pressed
 
@@ -770,14 +839,14 @@ export default function ILSReportEditorPage() {
   return (
     <div className="container mx-auto py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">ILS Member Update</h1>
           <p className="text-muted-foreground">
             Review and update key Kaiser timeline dates (then generate a printable report if needed)
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <FileText className="h-5 w-5 text-muted-foreground" />
           <span className="text-sm text-muted-foreground">Member Update</span>
         </div>
@@ -808,12 +877,12 @@ export default function ILSReportEditorPage() {
                 />
               </div>
               
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   onClick={loadMembers}
                   disabled={isLoading}
                   variant="outline"
-                  className="bg-green-50 hover:bg-green-100 border-green-200"
+                  className="w-full sm:w-auto justify-start bg-green-50 hover:bg-green-100 border-green-200"
                 >
                   {isLoading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -832,7 +901,7 @@ export default function ILSReportEditorPage() {
                     })
                   }
                   disabled={members.length === 0}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="w-full sm:w-auto justify-start bg-blue-600 hover:bg-blue-700"
                 >
                   <Printer className="mr-2 h-4 w-4" />
                   Generate Tier + R&B PDF
@@ -848,18 +917,16 @@ export default function ILSReportEditorPage() {
                   }
                   disabled={members.length === 0}
                   variant="outline"
+                  className="w-full sm:w-auto justify-start"
                 >
                   <Printer className="mr-2 h-4 w-4" />
                   T2038 PDF
                 </Button>
 
-                <Button variant="outline" asChild>
-                  <Link href="/admin/ils-report-editor/change-log">ILS Change Log</Link>
-                </Button>
-
                 <Button
                   type="button"
                   variant="outline"
+                  className="w-full sm:w-auto justify-start"
                   onClick={() => setT2038ModalOpen(true)}
                   disabled={queues.t2038AuthOnly.length === 0}
                 >
@@ -878,7 +945,7 @@ export default function ILSReportEditorPage() {
                 rows={6}
                 className="resize-none"
               />
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-muted-foreground">
                   These comments will be included in the printable report for ILS
                 </p>
@@ -887,6 +954,7 @@ export default function ILSReportEditorPage() {
                   size="sm"
                   variant="outline"
                   disabled={!reportComments.trim()}
+                  className="w-full sm:w-auto"
                 >
                   <Save className="mr-2 h-3 w-3" />
                   Save Comments
@@ -991,14 +1059,14 @@ export default function ILSReportEditorPage() {
                   </div>
                   <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>Member / MRN / Birth Date</span>
-                    <span className="font-medium">Request Date</span>
+                    <span className="hidden sm:inline font-medium">Request Date</span>
                   </div>
                   <div className="space-y-1 text-sm">
                     {q.rows.length === 0 ? (
                       <div className="text-muted-foreground">None</div>
                     ) : (
                       q.rows.slice(0, 60).map((r) => (
-                        <div key={`${q.key}-${r.id}`} className="flex items-start justify-between gap-2">
+                        <div key={`${q.key}-${r.id}`} className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
                             <div className="truncate font-medium">{r.memberName || '—'}</div>
                             <div className="text-xs text-muted-foreground">
@@ -1024,7 +1092,7 @@ export default function ILSReportEditorPage() {
                               </>
                             ) : null}
                           </div>
-                          <div className="shrink-0 text-right">
+                          <div className="shrink-0 text-left sm:text-right">
                             <div className="text-xs font-mono text-muted-foreground">
                               {r.requestedDate ? format(new Date(`${r.requestedDate}T00:00:00`), 'MM/dd/yyyy') : '—'}
                             </div>
@@ -1052,6 +1120,69 @@ export default function ILSReportEditorPage() {
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                ILS Queue Change Log
+              </CardTitle>
+              <CardDescription>
+                Queue edits are flagged here immediately after save.
+              </CardDescription>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={loadIlsChangeLog} disabled={isLoadingIlsLog} className="w-full sm:w-auto">
+              {isLoadingIlsLog ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Refresh Log
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Input
+              placeholder="Search by member, Client ID2, queue, or email"
+              value={ilsLogSearch}
+              onChange={(e) => setIlsLogSearch(e.target.value)}
+              className="w-full sm:max-w-xl"
+            />
+            <Badge variant="secondary" className="self-start sm:self-auto">{ilsLogFilteredRows.length}</Badge>
+          </div>
+          <div className="max-h-[340px] overflow-y-auto space-y-2 pr-1">
+            {ilsLogFilteredRows.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No queue changes logged yet.</div>
+            ) : (
+              ilsLogFilteredRows.slice(0, 150).map((row) => {
+                const changeEntries = Object.entries(row.changes || {});
+                return (
+                  <div key={`ils-log-${row.id}`} className="rounded-md border p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className="bg-amber-100 text-amber-900 border-amber-200">Queue Change</Badge>
+                      <Badge variant="outline">{queueLabel(row.queue)}</Badge>
+                      <div className="text-xs text-muted-foreground">
+                        {row.createdAtIso ? format(new Date(row.createdAtIso), 'MM/dd/yyyy h:mm a') : 'Time unavailable'}
+                      </div>
+                    </div>
+                    <div className="mt-1 text-sm">
+                      <span className="font-medium">{row.memberName || 'Member'}</span>
+                      {row.clientId2 ? <span className="text-muted-foreground"> • Client ID2: {row.clientId2}</span> : null}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Changed by: {row.changedByEmail || 'Unknown'}
+                    </div>
+                    {changeEntries.length > 0 ? (
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {changeEntries.map(([key, value]) => `${key}: ${String(value || '—')}`).join(' • ')}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </CardContent>
       </Card>
 

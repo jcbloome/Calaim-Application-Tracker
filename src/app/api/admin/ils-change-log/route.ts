@@ -55,6 +55,8 @@ export async function POST(req: NextRequest) {
       const memberName = String(body?.memberName || '').trim() || 'Member';
       const queue = String(body?.queue || '').trim() || 'unknown';
       const changes = body?.changes && typeof body.changes === 'object' ? body.changes : {};
+      const eventType = String(body?.eventType || 'queue_change').trim() || 'queue_change';
+      const queueChangeFlag = Boolean(body?.queueChangeFlag ?? true);
       const now = new Date();
       const dateKey = now.toISOString().slice(0, 10);
 
@@ -64,6 +66,8 @@ export async function POST(req: NextRequest) {
         clientId2,
         memberName,
         queue,
+        eventType,
+        queueChangeFlag,
         changes,
         changedByUid: authz.uid,
         changedByEmail: authz.email,

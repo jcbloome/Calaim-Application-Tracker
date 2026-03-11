@@ -38,10 +38,6 @@ export function KaiserSummaryCards({
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
 
-  const rnVisitNeededMembers = members.filter((m) => getEffectiveKaiserStatus(m) === 'RN Visit Needed');
-  const rnVisitNeededCount = rnVisitNeededMembers.length;
-  const rnVisitNeededPct = members.length > 0 ? ((rnVisitNeededCount / members.length) * 100).toFixed(1) : '0';
-
   // Consolidated ILS updates:
   // - T2038 Auth Only Email
   // - H2022 Requested
@@ -52,11 +48,19 @@ export function KaiserSummaryCards({
     { key: 't2038', label: 'T2038 Auth Only', accepts: ['t2038 auth only email', 't2308 auth only'] },
     { key: 'h2022', label: 'H2022 Requested', accepts: ['h2022 requested'] },
     { key: 'tier', label: 'Tier Level Requested', accepts: ['tier level requested'] },
-    { key: 'rb', label: 'R&B Sent', accepts: ['r b signed', 'r b sent'] },
     {
-      key: 'ilsContract',
-      label: 'Pending ILS Contract',
-      accepts: ['ils contract email needed', 'ils rcfe contract email needed', 'ils sent for contract'],
+      key: 'rb',
+      label: 'R&B Sent',
+      accepts: [
+        'r b signed',
+        'r b sent',
+        'r&b sent pending ils contract',
+        'r & b sent pending ils contract',
+        // Keep legacy workflow labels rolled into R&B Sent.
+        'ils contract email needed',
+        'ils rcfe contract email needed',
+        'ils sent for contract',
+      ],
     },
   ] as const;
 
@@ -86,35 +90,7 @@ export function KaiserSummaryCards({
   );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-      {/* RN Visit Needed Consolidated Card */}
-      <Card className="bg-white border-l-4 border-l-amber-500 shadow">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarClock className="h-4 w-4 text-gray-400" />
-            RN Visit Needed
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <button
-            type="button"
-            className="w-full rounded-md border border-amber-200 bg-amber-50 p-3 text-left hover:bg-amber-100"
-            onClick={() =>
-              openMemberModal(
-                rnVisitNeededMembers,
-                'RN Visit Needed',
-                `${rnVisitNeededCount} members currently in RN Visit Needed`,
-                'kaiser_status',
-                'RN Visit Needed'
-              )
-            }
-          >
-            <div className="text-xl font-bold text-amber-700">{rnVisitNeededCount}</div>
-            <div className="text-xs text-amber-900/80">{rnVisitNeededPct}% of all Kaiser members</div>
-          </button>
-        </CardContent>
-      </Card>
-
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
       {/* ILS Member Updates Consolidated Card */}
       <Card className="bg-white border-l-4 border-l-cyan-500 shadow">
         <CardHeader className="pb-2">

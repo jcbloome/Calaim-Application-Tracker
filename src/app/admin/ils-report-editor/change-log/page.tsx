@@ -96,19 +96,19 @@ export default function IlsChangeLogPage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">ILS Change Log</h1>
           <p className="text-sm text-muted-foreground">Track daily and historical ILS updates for Tier and RCFE contract milestones.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button variant="outline" asChild className="w-full sm:w-auto">
             <Link href="/admin/ils-report-editor">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to ILS Member Update
             </Link>
           </Button>
-          <Button variant="outline" onClick={() => void loadAllChanges()} disabled={isLoading}>
+          <Button variant="outline" onClick={() => void loadAllChanges()} disabled={isLoading} className="w-full sm:w-auto">
             <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -168,7 +168,7 @@ export default function IlsChangeLogPage() {
                 const changedAt = row.createdAtIso ? new Date(row.createdAtIso) : null;
                 return (
                   <div key={row.id} className="rounded-md border p-2">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                       <div className="text-sm font-medium truncate">
                         {row.memberName || 'Member'} {row.clientId2 ? <span className="text-muted-foreground">({row.clientId2})</span> : null}
                       </div>
