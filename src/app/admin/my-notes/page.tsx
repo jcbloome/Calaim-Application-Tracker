@@ -65,10 +65,12 @@ interface StaffNotification {
 function MyNotesContent() {
   // Use the smart installer endpoint that redirects to the latest GitHub asset.
   const installerDownloadUrl = '/installapp';
+  const macInstallerDownloadUrl = '/installapp?platform=mac';
   const [installerMeta, setInstallerMeta] = useState<{
     version: string | null;
     sha256: string | null;
-  }>({ version: null, sha256: null });
+    macReleaseUrl: string | null;
+  }>({ version: null, sha256: null, macReleaseUrl: null });
   const { user, isAdmin, isLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -119,7 +121,8 @@ function MyNotesContent() {
         if (!isMounted || !data) return;
         setInstallerMeta({
           version: data.version || null,
-          sha256: data.sha256 || null
+          sha256: data.sha256 || null,
+          macReleaseUrl: data.macReleaseUrl || null,
         });
       })
       .catch(() => null);
@@ -954,12 +957,21 @@ function MyNotesContent() {
           <div className="flex flex-col items-end gap-1 text-right">
             <Button asChild variant="outline" size="sm">
               <a href={installerDownloadUrl} target="_blank" rel="noreferrer">
-                Download Desktop Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
+                Download Windows Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
+              </a>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <a
+                href={installerMeta.macReleaseUrl || macInstallerDownloadUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Download Mac Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
               </a>
             </Button>
             {installerMeta.sha256 && (
               <span className="text-[10px] text-muted-foreground">
-                SHA256: {installerMeta.sha256.slice(0, 10)}…
+                Windows SHA256: {installerMeta.sha256.slice(0, 10)}…
               </span>
             )}
           </div>

@@ -41,8 +41,10 @@ const getDesktopPackageVersion = async () => {
 
 const getLatestGithubInstaller = async (): Promise<{
   version: string | null;
-  url: string | null;
-  name: string | null;
+  windowsUrl: string | null;
+  windowsName: string | null;
+  macUrl: string | null;
+  macName: string | null;
 }> => {
   try {
     const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
@@ -53,19 +55,31 @@ const getLatestGithubInstaller = async (): Promise<{
         'User-Agent': 'Connect-CalAIM-Tracker'
       }
     });
-    if (!res.ok) return { version: null, url: null, name: null };
+    if (!res.ok) {
+      return { version: null, windowsUrl: null, windowsName: null, macUrl: null, macName: null };
+    }
     const data = await res.json() as any;
     const tag = String(data?.tag_name || '');
     const version = tag.replace(/^v/i, '') || null;
     const assets = Array.isArray(data?.assets) ? data.assets : [];
     const exe = assets.find((a: any) => typeof a?.name === 'string' && a.name.toLowerCase().endsWith('.exe'));
+    const dmg = assets.find((a: any) => typeof a?.name === 'string' && a.name.toLowerCase().endsWith('.dmg'));
+    const macZip = assets.find(
+      (a: any) =>
+        typeof a?.name === 'string' &&
+        a.name.toLowerCase().endsWith('.zip') &&
+        a.name.toLowerCase().includes('mac')
+    );
+    const mac = dmg || macZip || null;
     return {
       version,
-      url: exe?.browser_download_url || null,
-      name: exe?.name || null
+      windowsUrl: exe?.browser_download_url || null,
+      windowsName: exe?.name || null,
+      macUrl: mac?.browser_download_url || null,
+      macName: mac?.name || null,
     };
   } catch {
-    return { version: null, url: null, name: null };
+    return { version: null, windowsUrl: null, windowsName: null, macUrl: null, macName: null };
   }
 };
 
@@ -106,18 +120,29 @@ const getLocalInstallerMeta = async () => {
   }
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   const installerUrl = getInstallerUrl();
+  const platform = String(new URL(request.url).searchParams.get('platform') || '')
+    .trim()
+    .toLowerCase();
   const localMeta = await getLocalInstallerMeta();
 
   // If the deployed site has an older local installer, prefer redirecting to the latest GitHub release
   // so "My Notifications" always offers the correct download.
   const latestYml = await getLatestFromLatestYml();
-  const latest = latestYml.url ? latestYml : await getLatestGithubInstaller();
-  if (latest.url) {
+  const latest = await getLatestGithubInstaller();
+  const latestWindowsUrl = latestYml.url || latest.windowsUrl || null;
+  const latestWindowsName = latestYml.name || latest.windowsName || null;
+
+  if (platform === 'mac') {
+    if (latest.macUrl) return Response.redirect(latest.macUrl, 302);
+    return Response.redirect(fallbackInstallerUrl, 302);
+  }
+
+  if (latestWindowsUrl) {
     const localVersion = (localMeta?.version || null) as string | null;
     if (!localVersion || !latest.version || localVersion !== latest.version) {
-      return Response.redirect(latest.url, 302);
+      return Response.redirect(latestWindowsUrl, 302);
     }
   }
 
@@ -138,7 +163,7 @@ export async function GET() {
     }
   } catch {
     // Prefer redirecting directly to GitHub (more reliable than proxying large binaries).
-    const remoteUrl = latest.url || localMeta?.releaseUrl || installerUrl;
+    const remoteUrl = latestWindowsUrl || localMeta?.releaseUrl || installerUrl;
     if (remoteUrl) {
       return Response.redirect(remoteUrl, 302);
     }
@@ -152,7 +177,7 @@ export async function GET() {
     process.env.DESKTOP_INSTALLER_VERSION ||
     (await getDesktopPackageVersion());
   const filename = version
-    ? `Connect-CalAIM-Desktop-Setup-${version}.exe`
+    ? (latestWindowsName || `Connect-CalAIM-Desktop-Setup-${version}.exe`)
     : 'Connect-CalAIM-Desktop-Setup.exe';
 
   headers.set(

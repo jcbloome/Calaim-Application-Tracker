@@ -35,8 +35,10 @@ const getDesktopPackageVersion = async () => {
 
 const getLatestGithubInstaller = async (): Promise<{
   version: string | null;
-  url: string | null;
-  name: string | null;
+  windowsUrl: string | null;
+  windowsName: string | null;
+  macUrl: string | null;
+  macName: string | null;
 }> => {
   try {
     const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
@@ -47,19 +49,31 @@ const getLatestGithubInstaller = async (): Promise<{
         'User-Agent': 'Connect-CalAIM-Tracker'
       }
     });
-    if (!res.ok) return { version: null, url: null, name: null };
+    if (!res.ok) {
+      return { version: null, windowsUrl: null, windowsName: null, macUrl: null, macName: null };
+    }
     const data = await res.json() as any;
     const tag = String(data?.tag_name || '');
     const version = tag.replace(/^v/i, '') || null;
     const assets = Array.isArray(data?.assets) ? data.assets : [];
     const exe = assets.find((a: any) => typeof a?.name === 'string' && a.name.toLowerCase().endsWith('.exe'));
+    const dmg = assets.find((a: any) => typeof a?.name === 'string' && a.name.toLowerCase().endsWith('.dmg'));
+    const macZip = assets.find(
+      (a: any) =>
+        typeof a?.name === 'string' &&
+        a.name.toLowerCase().endsWith('.zip') &&
+        a.name.toLowerCase().includes('mac')
+    );
+    const mac = dmg || macZip || null;
     return {
       version,
-      url: exe?.browser_download_url || null,
-      name: exe?.name || null
+      windowsUrl: exe?.browser_download_url || null,
+      windowsName: exe?.name || null,
+      macUrl: mac?.browser_download_url || null,
+      macName: mac?.name || null,
     };
   } catch {
-    return { version: null, url: null, name: null };
+    return { version: null, windowsUrl: null, windowsName: null, macUrl: null, macName: null };
   }
 };
 
@@ -91,7 +105,9 @@ export async function GET() {
   const meta = await fs.readFile(localMetaPath, 'utf8').then(JSON.parse).catch(() => null);
 
   const latestYml = await getLatestFromLatestYml();
-  const latest = latestYml.url ? latestYml : await getLatestGithubInstaller();
+  const latest = await getLatestGithubInstaller();
+  const windowsReleaseUrl = latestYml.url || latest.windowsUrl || null;
+  const windowsFilename = latestYml.name || latest.windowsName || null;
 
   const version =
     latest.version ||
@@ -103,8 +119,10 @@ export async function GET() {
 
   return Response.json({
     version,
-    filename: latest.name || meta?.filename || null,
-    releaseUrl: latest.url || meta?.releaseUrl || installerUrl,
+    filename: windowsFilename || meta?.filename || null,
+    releaseUrl: windowsReleaseUrl || meta?.releaseUrl || installerUrl,
+    macFilename: latest.macName || null,
+    macReleaseUrl: latest.macUrl || null,
     sha256: meta?.sha256 || null
   });
 }
