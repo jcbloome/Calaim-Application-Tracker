@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { FileText, Plus, Save, User } from 'lucide-react';
 import type { KaiserMember } from './shared';
-import { formatBirthDate, getMemberKey } from './shared';
+import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey } from './shared';
 
 export interface StaffMemberManagementModalProps {
   isOpen: boolean;
@@ -120,7 +120,7 @@ export function StaffMemberManagementModal({
                       <div>
                         <label className="text-sm font-medium text-gray-700 mb-2 block">Kaiser Status</label>
                         <Badge variant="outline" className="text-sm">
-                          {member.Kaiser_Status || 'Not set'}
+                          {getEffectiveKaiserStatus(member)}
                         </Badge>
                       </div>
 

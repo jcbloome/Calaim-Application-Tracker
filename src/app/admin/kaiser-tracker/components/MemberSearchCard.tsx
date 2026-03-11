@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import type { KaiserMember } from './shared';
-import { getMemberKey } from './shared';
+import { getEffectiveKaiserStatus, getMemberKey } from './shared';
 
 export interface MemberSearchCardProps {
   members: KaiserMember[];
@@ -68,7 +68,7 @@ export function MemberSearchCard({ members, searchTerm, onSearchTermChange }: Me
                       </div>
                       <div className="flex gap-2 mt-2">
                         <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                          {member.Kaiser_Status}
+                          {getEffectiveKaiserStatus(member)}
                         </Badge>
                         <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
                           {member.CalAIM_Status}

@@ -294,7 +294,7 @@ function KaiserTrackerPageContent() {
       assignments[staffName].members.push(member);
         
         // Count status breakdown
-        const status = normalizeLabel(member.Kaiser_Status, 'No Status');
+        const status = getEffectiveKaiserStatus(member);
         assignments[staffName].statusBreakdown[status] = (assignments[staffName].statusBreakdown[status] || 0) + 1;
         
     });
@@ -655,7 +655,7 @@ function KaiserTrackerPageContent() {
           memberEmail: member?.memberEmail || '',
           client_ID2: member?.Client_ID2 || 'N/A',
           pathway: member?.pathway || 'Unknown',
-          Kaiser_Status: member?.Kaiser_Status || member?.Kaiser_ID_Status || 'No Status',
+          Kaiser_Status: member?.Kaiser_Status || member?.Kaiser_ID_Status || '',
           CalAIM_Status: member?.CalAIM_Status || 'No Status',
           Staff_Assigned: staffAssigned,
           Next_Step_Due_Date: member?.Next_Step_Due_Date || '',
@@ -799,8 +799,11 @@ function KaiserTrackerPageContent() {
       const s = getEffectiveKaiserStatus(m);
       if (s) seen.add(s);
     }
-    const unknown = Array.from(seen).filter((s) => !known.includes(s)).sort();
-    return [...known, ...unknown];
+    const unknown = Array.from(seen)
+      .filter((s) => !known.includes(s) && s !== 'Unknown')
+      .sort();
+    const withUnknown = known.includes('Unknown') ? known : [...known, 'Unknown'];
+    return [...withUnknown, ...unknown];
   }, [kaiserStatusOptions, members]);
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
   const availableCalAIMStatuses = CALAIM_STATUS_OPTIONS;

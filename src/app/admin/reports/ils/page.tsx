@@ -4,7 +4,9 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAdmin } from '@/hooks/use-admin';
+import { useAuth } from '@/firebase';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { Loader2, Printer, ArrowLeft, Users, AlertCircle, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
@@ -22,6 +24,7 @@ type ILSMember = {
   pathway: string;
   healthPlan: string;
   ILS_View: string;
+  Tier_Level_Request_Date?: string;
   bestContactFirstName: string;
   bestContactLastName: string;
   bestContactPhone: string;
@@ -33,14 +36,109 @@ type ILSMember = {
 
 export default function IlsReportPage() {
   const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const auth = useAuth();
 
   const [ilsMembers, setIlsMembers] = useState<ILSMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accessLoading, setAccessLoading] = useState(true);
+  const [canAccessIlsPage, setCanAccessIlsPage] = useState(false);
+  const [commentsByClientId, setCommentsByClientId] = useState<Record<string, { noteText: string; updatedAt?: string; updatedByEmail?: string }>>({});
+  const [draftCommentByClientId, setDraftCommentByClientId] = useState<Record<string, string>>({});
+  const [savingCommentByClientId, setSavingCommentByClientId] = useState<Record<string, boolean>>({});
+
+  const checkIlsAccess = useCallback(async () => {
+    if (!auth?.currentUser) {
+      setCanAccessIlsPage(false);
+      setAccessLoading(false);
+      return;
+    }
+    if (isSuperAdmin) {
+      setCanAccessIlsPage(true);
+      setAccessLoading(false);
+      return;
+    }
+    setAccessLoading(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/ils-member-access', {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      setCanAccessIlsPage(Boolean(res.ok && data?.success && data?.canAccessIlsMembersPage));
+    } catch {
+      setCanAccessIlsPage(false);
+    } finally {
+      setAccessLoading(false);
+    }
+  }, [auth, isSuperAdmin]);
+
+  useEffect(() => {
+    if (isAdminLoading) return;
+    void checkIlsAccess();
+  }, [checkIlsAccess, isAdminLoading]);
+
+  const fetchIlsComments = useCallback(async (clientIds: string[]) => {
+    if (!auth?.currentUser) return;
+    const ids = clientIds.map((x) => String(x || '').trim()).filter(Boolean);
+    if (ids.length === 0) {
+      setCommentsByClientId({});
+      setDraftCommentByClientId({});
+      return;
+    }
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const qs = new URLSearchParams({ clientIds: ids.join(',') });
+      const res = await fetch(`/api/admin/ils-member-comments?${qs.toString()}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) return;
+      const map = (data?.comments || {}) as Record<string, { noteText: string; updatedAt?: string; updatedByEmail?: string }>;
+      setCommentsByClientId(map);
+      setDraftCommentByClientId((prev) => {
+        const next = { ...prev };
+        Object.keys(map).forEach((id) => {
+          if (next[id] === undefined) next[id] = String(map[id]?.noteText || '');
+        });
+        return next;
+      });
+    } catch {
+      // ignore
+    }
+  }, [auth]);
+
+  const saveIlsComment = useCallback(async (clientId2: string) => {
+    const id = String(clientId2 || '').trim();
+    if (!id || !auth?.currentUser) return;
+    const noteText = String(draftCommentByClientId[id] || '').trim();
+    setSavingCommentByClientId((prev) => ({ ...prev, [id]: true }));
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/ils-member-comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ clientId2: id, noteText }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to save note');
+      setCommentsByClientId((prev) => ({
+        ...prev,
+        [id]: {
+          noteText,
+          updatedAt: new Date().toISOString(),
+        },
+      }));
+    } catch {
+      // ignore
+    } finally {
+      setSavingCommentByClientId((prev) => ({ ...prev, [id]: false }));
+    }
+  }, [auth, draftCommentByClientId]);
 
   const fetchILSMembers = useCallback(async () => {
-    if (isAdminLoading || !isSuperAdmin) {
-      if (!isAdminLoading) setIsLoading(false);
+    if (isAdminLoading || accessLoading || !canAccessIlsPage) {
+      if (!isAdminLoading && !accessLoading) setIsLoading(false);
       return;
     }
 
@@ -49,7 +147,10 @@ export default function IlsReportPage() {
     
     try {
       console.log('📥 Fetching ILS members from API...');
-      const response = await fetch('/api/ils-members');
+      const idToken = await auth.currentUser.getIdToken();
+      const response = await fetch('/api/ils-members', {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -68,6 +169,7 @@ export default function IlsReportPage() {
         });
         
         setIlsMembers(sortedMembers);
+        void fetchIlsComments(sortedMembers.map((m: ILSMember) => m.client_ID2));
       } else {
         console.error('❌ Failed to fetch ILS members:', data);
         setError(data.error || 'Failed to fetch ILS members from Caspio');
@@ -78,14 +180,14 @@ export default function IlsReportPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [isSuperAdmin, isAdminLoading]);
+  }, [accessLoading, canAccessIlsPage, fetchIlsComments, isAdminLoading]);
 
   // Disabled automatic loading - only load when user clicks sync button
   // useEffect(() => {
   //   fetchILSMembers();
   // }, [fetchILSMembers]);
 
-  if (isAdminLoading) {
+  if (isAdminLoading || accessLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -94,13 +196,13 @@ export default function IlsReportPage() {
     );
   }
 
-  if (!isSuperAdmin) {
+  if (!canAccessIlsPage) {
     return (
       <div className="flex items-center justify-center h-full">
         <Alert className="max-w-md">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            You need Super Admin access to view the ILS Report.
+            You do not have access to the ILS Member page.
           </AlertDescription>
         </Alert>
       </div>
@@ -172,8 +274,10 @@ export default function IlsReportPage() {
                     <TableHead>CalAIM Status</TableHead>
                     <TableHead>Kaiser Status</TableHead>
                     <TableHead>Pathway</TableHead>
+                    <TableHead>Tier Level Request Date</TableHead>
                     <TableHead>Primary Contact</TableHead>
                     <TableHead>Contact Phone</TableHead>
+                    <TableHead>Comments / Notes</TableHead>
                     <TableHead>Last Updated</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -202,12 +306,50 @@ export default function IlsReportPage() {
                       </TableCell>
                       <TableCell>{member.pathway || 'N/A'}</TableCell>
                       <TableCell>
+                        {member.Tier_Level_Request_Date
+                          ? format(new Date(member.Tier_Level_Request_Date), 'MMM d, yyyy')
+                          : 'N/A'}
+                      </TableCell>
+                      <TableCell>
                         {member.bestContactFirstName && member.bestContactLastName 
                           ? `${member.bestContactFirstName} ${member.bestContactLastName}`
                           : 'N/A'
                         }
                       </TableCell>
                       <TableCell>{member.bestContactPhone || 'N/A'}</TableCell>
+                      <TableCell className="min-w-[260px]">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={
+                              draftCommentByClientId[member.client_ID2] ??
+                              commentsByClientId[member.client_ID2]?.noteText ??
+                              ''
+                            }
+                            onChange={(e) =>
+                              setDraftCommentByClientId((prev) => ({
+                                ...prev,
+                                [member.client_ID2]: e.target.value,
+                              }))
+                            }
+                            placeholder="Add comment/note"
+                            className="h-8 text-xs"
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={Boolean(savingCommentByClientId[member.client_ID2])}
+                            onClick={() => void saveIlsComment(member.client_ID2)}
+                          >
+                            {savingCommentByClientId[member.client_ID2] ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
+                          </Button>
+                        </div>
+                        {commentsByClientId[member.client_ID2]?.updatedAt ? (
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            Updated {format(new Date(commentsByClientId[member.client_ID2].updatedAt as string), 'MMM d, yyyy p')}
+                            {commentsByClientId[member.client_ID2]?.updatedByEmail ? ` by ${commentsByClientId[member.client_ID2].updatedByEmail}` : ''}
+                          </div>
+                        ) : null}
+                      </TableCell>
                       <TableCell>
                         {member.lastUpdated 
                           ? format(new Date(member.lastUpdated), 'MMM d, yyyy')

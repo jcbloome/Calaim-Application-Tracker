@@ -33,7 +33,7 @@ export const hasMeaningfulValue = (value: unknown) => {
   const s = value != null ? String(value).trim() : '';
   if (!s) return false;
   const lower = s.toLowerCase();
-  return lower !== 'null' && lower !== 'undefined' && lower !== 'n/a';
+  return lower !== 'null' && lower !== 'undefined' && lower !== 'n/a' && lower !== 'no status';
 };
 
 export const getEffectiveKaiserStatus = (member: Partial<KaiserMember> & Record<string, any>): string => {
@@ -46,7 +46,16 @@ export const getEffectiveKaiserStatus = (member: Partial<KaiserMember> & Record<
     hasMeaningfulValue(member?.Kaiser_T2038_Received);
 
   if (hasAuthEmail && !hasOfficialAuth) return 'T2038 Auth Only Email';
-  return normalizeKaiserStatusName(String(member?.Kaiser_Status || 'No Status'));
+
+  const raw =
+    member?.Kaiser_Status ??
+    member?.Kaiser_ID_Status ??
+    member?.KaiserIdStatus ??
+    member?.KaiserStatus ??
+    '';
+  if (!hasMeaningfulValue(raw)) return 'Unknown';
+
+  return normalizeKaiserStatusName(String(raw));
 };
 
 export const getStatusColor = (status: string): string => {

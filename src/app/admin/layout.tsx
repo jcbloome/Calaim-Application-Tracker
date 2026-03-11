@@ -1574,6 +1574,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     const allowNonAdmin =
       pathname?.startsWith('/admin/my-notes') ||
+      pathname?.startsWith('/admin/reports/ils') ||
       pathname === '/admin/desktop-notification-window' ||
       pathname === '/admin/desktop-chat-window';
 
@@ -1646,6 +1647,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
       const allowNonAdmin =
         pathname?.startsWith('/admin/my-notes') ||
+        pathname?.startsWith('/admin/reports/ils') ||
         pathname === '/admin/desktop-notification-window' ||
         pathname === '/admin/desktop-chat-window';
 

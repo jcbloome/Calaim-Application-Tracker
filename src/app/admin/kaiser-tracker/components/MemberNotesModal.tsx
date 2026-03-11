@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar, MessageSquare, RefreshCw } from 'lucide-react';
 import type { KaiserMember } from './shared';
-import { formatBirthDate } from './shared';
+import { formatBirthDate, getEffectiveKaiserStatus } from './shared';
 
 export interface MemberNotesModalProps {
   isOpen: boolean;
@@ -79,7 +79,7 @@ export function MemberNotesModal({
           </DialogTitle>
           <DialogDescription>
             DOB: {formatBirthDate(member)} | MRN: {member.memberMrn} | County: {member.memberCounty} | Kaiser Status:{' '}
-            {member.Kaiser_Status}
+            {getEffectiveKaiserStatus(member)}
           </DialogDescription>
         </DialogHeader>
 

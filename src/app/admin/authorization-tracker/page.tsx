@@ -103,6 +103,20 @@ const getHealthPlanBadgeClass = (plan?: string) => {
   return 'bg-gray-50 text-gray-700 border-gray-200';
 };
 
+const normalizePlanForFilter = (plan?: string) => {
+  const normalized = String(plan || '').toLowerCase().trim();
+  if (normalized.includes('health net')) return 'health net';
+  if (normalized.includes('kaiser')) return 'kaiser';
+  return normalized || 'unknown';
+};
+
+const normalizePlanForDisplay = (plan?: string) => {
+  const normalized = String(plan || '').toLowerCase().trim();
+  if (normalized.includes('health net')) return 'Health Net';
+  if (normalized.includes('kaiser')) return 'Kaiser';
+  return String(plan || 'Unknown').trim() || 'Unknown';
+};
+
 const isKaiserPlan = (plan?: string) => String(plan || '').toLowerCase().includes('kaiser');
 
 const isEndDateWithinDays = (endDate?: string, withinDays: number = 30) => {
@@ -140,6 +154,7 @@ export default function AuthorizationTracker() {
   const [showExpiringOnly, setShowExpiringOnly] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [selectedPlanMetric, setSelectedPlanMetric] = useState<'all' | 'urgent' | 't2038Active' | 'h2022Active'>('all');
   
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string>('memberName');
@@ -326,6 +341,7 @@ export default function AuthorizationTracker() {
   const handleMonthClick = (monthName: string) => {
     setSelectedMonth(monthName);
     setSelectedFilter('all'); // Reset other filters when using month filter
+    setSelectedPlanMetric('all');
     // Scroll to the members table
     setTimeout(() => {
       const tableElement = document.querySelector('[data-testid="members-table"]');
@@ -339,10 +355,26 @@ export default function AuthorizationTracker() {
   const clearFilters = () => {
     setSelectedFilter('all');
     setSelectedMonth('all');
+    setSelectedPlanMetric('all');
     setSearchTerm('');
     setSelectedMCO('all');
     setSelectedStatus('all');
     setShowExpiringOnly(false);
+  };
+
+  const handleMcoMetricClick = (mcoFilter: string, metric: 'urgent' | 't2038Active' | 'h2022Active') => {
+    setSelectedMCO(mcoFilter);
+    setSelectedPlanMetric(metric);
+    setSelectedFilter('all');
+    setSelectedMonth('all');
+    setSelectedStatus('all');
+    setShowExpiringOnly(false);
+    setTimeout(() => {
+      const tableElement = document.querySelector('[data-testid="members-table"]');
+      if (tableElement) {
+        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
   };
 
   // Handle column sorting
@@ -382,6 +414,12 @@ export default function AuthorizationTracker() {
         member.h2022Status === selectedStatus;
       
       const matchesExpiring = !showExpiringOnly || member.needsAttention;
+
+      const matchesPlanMetric =
+        selectedPlanMetric === 'all' ||
+        (selectedPlanMetric === 'urgent' && member.needsAttention) ||
+        (selectedPlanMetric === 't2038Active' && member.t2038Status === 'active') ||
+        (selectedPlanMetric === 'h2022Active' && member.h2022Status === 'active');
       
       // Card-based filtering
       const matchesCardFilter = selectedFilter === 'all' || 
@@ -423,7 +461,7 @@ export default function AuthorizationTracker() {
         return t2038ExpiresInMonth || h2022ExpiresInMonth;
       })();
       
-      return matchesSearch && matchesMCO && matchesStatus && matchesExpiring && matchesCardFilter && matchesMonthFilter;
+      return matchesSearch && matchesMCO && matchesStatus && matchesExpiring && matchesCardFilter && matchesMonthFilter && matchesPlanMetric;
     });
 
     // Then sort
@@ -471,11 +509,13 @@ export default function AuthorizationTracker() {
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, selectedFilter, selectedMonth, sortColumn, sortDirection]);
+  }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, selectedFilter, selectedMonth, selectedPlanMetric, sortColumn, sortDirection]);
 
   // Summary stats and monthly expiration data
   const stats = useMemo(() => {
     const total = members.length;
+    const kaiserCount = members.filter(m => String(m.healthPlan || '').toLowerCase().includes('kaiser')).length;
+    const healthNetCount = members.filter(m => String(m.healthPlan || '').toLowerCase().includes('health net')).length;
     const needingAttention = members.filter(m => m.needsAttention).length;
     const t2038Expiring = members.filter(m => m.t2038Status === 'expiring').length;
     const h2022Expiring = members.filter(m => m.h2022Status === 'expiring').length;
@@ -513,20 +553,23 @@ export default function AuthorizationTracker() {
     
     // MCO breakdown
     const mcoBreakdown = members.reduce((acc, member) => {
-      const mco = member.healthPlan || 'Unknown';
+      const mco = normalizePlanForDisplay(member.healthPlan);
+      const filterValue = normalizePlanForFilter(member.healthPlan);
       if (!acc[mco]) {
-        acc[mco] = { total: 0, needsAttention: 0, t2038Active: 0, h2022Active: 0 };
+        acc[mco] = { total: 0, needsAttention: 0, t2038Active: 0, h2022Active: 0, filterValue };
       }
       acc[mco].total++;
       if (member.needsAttention) acc[mco].needsAttention++;
       if (member.t2038Status === 'active') acc[mco].t2038Active++;
       if (member.h2022Status === 'active') acc[mco].h2022Active++;
       return acc;
-    }, {} as Record<string, { total: number; needsAttention: number; t2038Active: number; h2022Active: number }>);
+    }, {} as Record<string, { total: number; needsAttention: number; t2038Active: number; h2022Active: number; filterValue: string }>);
     
     
     return { 
       total, 
+      kaiserCount,
+      healthNetCount,
       needingAttention, 
       t2038Expiring, 
       h2022Expiring, 
@@ -774,19 +817,38 @@ export default function AuthorizationTracker() {
                   <div className="flex items-center gap-4">
                     <div className="text-center">
                       <div className="text-xs text-muted-foreground">Urgent</div>
-                      <div className={`font-semibold ${
-                        data.needsAttention > 0 ? 'text-red-600' : 'text-green-600'
-                      }`}>
+                      <button
+                        type="button"
+                        className={`font-semibold hover:underline ${
+                          data.needsAttention > 0 ? 'text-red-600' : 'text-green-600'
+                        }`}
+                        onClick={() => handleMcoMetricClick(data.filterValue, 'urgent')}
+                        title={`Show ${mco} members with urgent items`}
+                      >
                         {data.needsAttention}
-                      </div>
+                      </button>
                     </div>
                     <div className="text-center">
                       <div className="text-xs text-muted-foreground">T2038</div>
-                      <div className="font-semibold text-blue-600">{data.t2038Active}</div>
+                      <button
+                        type="button"
+                        className="font-semibold text-blue-600 hover:underline"
+                        onClick={() => handleMcoMetricClick(data.filterValue, 't2038Active')}
+                        title={`Show ${mco} members with active T2038`}
+                      >
+                        {data.t2038Active}
+                      </button>
                     </div>
                     <div className="text-center">
                       <div className="text-xs text-muted-foreground">H2022</div>
-                      <div className="font-semibold text-purple-600">{data.h2022Active}</div>
+                      <button
+                        type="button"
+                        className="font-semibold text-purple-600 hover:underline"
+                        onClick={() => handleMcoMetricClick(data.filterValue, 'h2022Active')}
+                        title={`Show ${mco} members with active H2022`}
+                      >
+                        {data.h2022Active}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -812,15 +874,35 @@ export default function AuthorizationTracker() {
             
             <Select value={selectedMCO} onValueChange={setSelectedMCO}>
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Health Plan" />
+                <SelectValue placeholder="Kaiser vs Health Net" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Health Plans</SelectItem>
                 <SelectItem value="kaiser">Kaiser</SelectItem>
                 <SelectItem value="health net">Health Net</SelectItem>
-                <SelectItem value="anthem">Anthem</SelectItem>
               </SelectContent>
             </Select>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant={selectedMCO === 'kaiser' ? 'default' : 'outline'}
+                onClick={() => setSelectedMCO('kaiser')}
+              >
+                Kaiser ({stats.kaiserCount})
+              </Button>
+              <Button
+                variant={selectedMCO === 'health net' ? 'default' : 'outline'}
+                onClick={() => setSelectedMCO('health net')}
+              >
+                Health Net ({stats.healthNetCount})
+              </Button>
+              <Button
+                variant={selectedMCO === 'all' ? 'default' : 'outline'}
+                onClick={() => setSelectedMCO('all')}
+              >
+                All ({stats.total})
+              </Button>
+            </div>
             
             <Select value={selectedStatus} onValueChange={setSelectedStatus}>
               <SelectTrigger className="w-[150px]">
@@ -843,7 +925,7 @@ export default function AuthorizationTracker() {
               Expiring Only
             </Button>
             
-            {(selectedFilter !== 'all' || selectedMonth !== 'all') && (
+            {(selectedFilter !== 'all' || selectedMonth !== 'all' || selectedPlanMetric !== 'all') && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">
                   Filtered by: <span className="font-medium">
@@ -853,6 +935,12 @@ export default function AuthorizationTracker() {
                     {selectedFilter === 'kaiserH2022Critical' && 'Kaiser H2022 ≤30 days'}
                     {selectedFilter === 'expired' && 'Expired'}
                     {selectedMonth !== 'all' && `Expiring in ${selectedMonth}`}
+                    {selectedPlanMetric === 'urgent' && (selectedFilter !== 'all' || selectedMonth !== 'all') ? ' • ' : ''}
+                    {selectedPlanMetric === 'urgent' && 'Urgent (by health plan)'}
+                    {selectedPlanMetric === 't2038Active' && (selectedFilter !== 'all' || selectedMonth !== 'all') ? ' • ' : ''}
+                    {selectedPlanMetric === 't2038Active' && 'T2038 Active (by health plan)'}
+                    {selectedPlanMetric === 'h2022Active' && (selectedFilter !== 'all' || selectedMonth !== 'all') ? ' • ' : ''}
+                    {selectedPlanMetric === 'h2022Active' && 'H2022 Active (by health plan)'}
                   </span>
                 </span>
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -880,6 +968,7 @@ export default function AuthorizationTracker() {
                 setSelectedMCO('all');
                 setSelectedStatus('all');
                 setShowExpiringOnly(false);
+                setSelectedPlanMetric('all');
                 setSortColumn('memberName');
                 setSortDirection('asc');
               }}

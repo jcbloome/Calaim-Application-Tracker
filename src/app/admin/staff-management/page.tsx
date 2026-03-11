@@ -28,6 +28,8 @@ interface StaffMember {
     isClaimsStaff?: boolean;
 }
 
+const ILS_MEMBER_TARGET_EMAIL = 'jhernandez@ilshealth.com';
+
 type ReviewRecipientSettings = {
     enabled: boolean;
     csSummary: boolean;
@@ -64,6 +66,9 @@ export default function StaffManagementPage() {
     const [staffNameFilter, setStaffNameFilter] = useState('');
     const [staffRoleFilter, setStaffRoleFilter] = useState<'all' | 'Admin' | 'Super Admin'>('all');
     const [notificationRecipientsHadField, setNotificationRecipientsHadField] = useState<boolean | null>(null);
+    const [ilsMemberAllowedEmails, setIlsMemberAllowedEmails] = useState<string[]>([]);
+    const [ilsWeeklyEmailEnabled, setIlsWeeklyEmailEnabled] = useState(false);
+    const [ilsWeeklyEmailRecipients, setIlsWeeklyEmailRecipients] = useState<string[]>([]);
 
     // Global admin portal access (master switch)
     const [adminPortalEnabled, setAdminPortalEnabled] = useState(true);
@@ -297,7 +302,7 @@ export default function StaffManagementPage() {
     const fetchNotificationRecipients = async () => {
         if (!firestore) return;
         try {
-            const [notificationsSnap, adminAccessSnap, reviewSnap, appAccessSnap] = await Promise.all([
+            const [notificationsSnap, adminAccessSnap, reviewSnap, appAccessSnap, ilsAccessSnap] = await Promise.all([
                 getDoc(doc(firestore, 'system_settings', 'notifications')).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'system_settings/notifications', operation: 'get' }));
                     throw e;
@@ -305,6 +310,7 @@ export default function StaffManagementPage() {
                 getDoc(doc(firestore, 'system_settings', 'admin_access')).catch(() => null),
                 getDoc(doc(firestore, 'system_settings', 'review_notifications')).catch(() => null),
                 getDoc(doc(firestore, 'system_settings', 'app_access')).catch(() => null),
+                getDoc(doc(firestore, 'system_settings', 'ils_member_access')).catch(() => null),
             ]);
 
             if (notificationsSnap?.exists()) {
@@ -345,6 +351,17 @@ export default function StaffManagementPage() {
                 setReviewPopupsEnabled(true);
                 setReviewPollIntervalSeconds(180);
                 setReviewRecipients({});
+            }
+
+            if (ilsAccessSnap?.exists()) {
+                const data = ilsAccessSnap.data() as any;
+                setIlsMemberAllowedEmails(Array.isArray(data?.allowedEmails) ? data.allowedEmails : []);
+                setIlsWeeklyEmailEnabled(Boolean(data?.weeklyEmailEnabled));
+                setIlsWeeklyEmailRecipients(Array.isArray(data?.weeklyEmailRecipients) ? data.weeklyEmailRecipients : []);
+            } else {
+                setIlsMemberAllowedEmails([]);
+                setIlsWeeklyEmailEnabled(false);
+                setIlsWeeklyEmailRecipients([]);
             }
         } catch (error) {
              console.error("Error fetching notification settings:", error);
@@ -513,6 +530,29 @@ export default function StaffManagementPage() {
         queueAutoSave();
     };
 
+    const toggleIlsMemberTargetAccess = (checked: boolean) => {
+        const email = ILS_MEMBER_TARGET_EMAIL;
+        setIlsMemberAllowedEmails((prev) => {
+            const set = new Set((prev || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean));
+            if (checked) set.add(email);
+            else set.delete(email);
+            return Array.from(set);
+        });
+        queueAutoSave();
+    };
+
+    const toggleIlsWeeklyTargetEmail = (checked: boolean) => {
+        const email = ILS_MEMBER_TARGET_EMAIL;
+        setIlsWeeklyEmailEnabled(Boolean(checked));
+        setIlsWeeklyEmailRecipients((prev) => {
+            const set = new Set((prev || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean));
+            if (checked) set.add(email);
+            else set.delete(email);
+            return Array.from(set);
+        });
+        queueAutoSave();
+    };
+
     const handleSaveNotifications = async (options?: { silentSuccess?: boolean }) => {
         if (!firestore) return;
         setIsSavingNotifications(true);
@@ -550,6 +590,18 @@ export default function StaffManagementPage() {
                 updatedBy: currentUser?.uid || null,
             };
 
+            const ilsAccessRef = doc(firestore, 'system_settings', 'ils_member_access');
+            const ilsAccessData = {
+                allowedEmails: Array.from(new Set((ilsMemberAllowedEmails || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean))),
+                weeklyEmailEnabled: Boolean(ilsWeeklyEmailEnabled),
+                weeklyEmailRecipients: Array.from(
+                    new Set((ilsWeeklyEmailRecipients || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean))
+                ),
+                weeklySendDay: 'wednesday',
+                updatedAt: new Date(),
+                updatedBy: currentUser?.uid || null,
+            };
+
             await Promise.all([
                 setDoc(notificationsRef, notificationsData, { merge: true }).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: notificationsRef.path, operation: 'update', requestResourceData: notificationsData }));
@@ -565,6 +617,10 @@ export default function StaffManagementPage() {
                 }),
                 setDoc(reviewRef, reviewData, { merge: true }).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: reviewRef.path, operation: 'update', requestResourceData: reviewData }));
+                    throw e;
+                }),
+                setDoc(ilsAccessRef, ilsAccessData, { merge: true }).catch(e => {
+                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: ilsAccessRef.path, operation: 'update', requestResourceData: ilsAccessData }));
                     throw e;
                 }),
             ]);
@@ -852,6 +908,42 @@ export default function StaffManagementPage() {
                             />
                         </div>
                     ) : null}
+
+                    <div className="mb-4 p-3 border rounded-lg bg-blue-50/40">
+                        <div className="flex items-center gap-2 mb-2">
+                            <CalendarCheck className="h-4 w-4 text-blue-700" />
+                            <div className="text-sm font-semibold text-blue-900">ILS Member Page Access (specific user)</div>
+                        </div>
+                        <div className="text-xs text-blue-900/80 mb-3">
+                            Configure page-only access for <span className="font-semibold">{ILS_MEMBER_TARGET_EMAIL}</span> to open
+                            <span className="font-mono"> /admin/reports/ils</span>, add comments/notes per member, and optionally receive the weekly ILS list every Wednesday.
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="flex items-center justify-between gap-3 rounded-md border border-blue-200 bg-white px-3 py-2">
+                                <Label htmlFor="ils-page-access-jhernandez" className="text-sm font-medium">
+                                    ILS page access (only this page)
+                                </Label>
+                                <Switch
+                                    id="ils-page-access-jhernandez"
+                                    checked={ilsMemberAllowedEmails.map((x) => String(x).toLowerCase()).includes(ILS_MEMBER_TARGET_EMAIL)}
+                                    onCheckedChange={(v) => toggleIlsMemberTargetAccess(Boolean(v))}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between gap-3 rounded-md border border-blue-200 bg-white px-3 py-2">
+                                <Label htmlFor="ils-weekly-email-jhernandez" className="text-sm font-medium">
+                                    Send ILS list every Wednesday
+                                </Label>
+                                <Switch
+                                    id="ils-weekly-email-jhernandez"
+                                    checked={
+                                        ilsWeeklyEmailEnabled &&
+                                        ilsWeeklyEmailRecipients.map((x) => String(x).toLowerCase()).includes(ILS_MEMBER_TARGET_EMAIL)
+                                    }
+                                    onCheckedChange={(v) => toggleIlsWeeklyTargetEmail(Boolean(v))}
+                                />
+                            </div>
+                        </div>
+                    </div>
 
                     <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4 p-3 border rounded-lg bg-muted/20">
                         <div className="flex items-center justify-between gap-4">

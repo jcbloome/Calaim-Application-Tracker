@@ -159,7 +159,7 @@ export function MemberListModal({
 
                           <div className="flex gap-2 mt-2">
                             <Badge variant="outline" className={`text-xs ${getStatusColor(effectiveKaiserStatus)}`}>
-                              Kaiser: {effectiveKaiserStatus || 'No Status'}
+                              Kaiser: {effectiveKaiserStatus}
                             </Badge>
                             <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                               CalAIM: {member.CalAIM_Status || 'No Status'}
