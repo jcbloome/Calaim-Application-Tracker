@@ -1,0 +1,68 @@
+name: Build Desktop Mac
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_to_release:
+        description: "Also upload to GitHub release tag?"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      release_tag:
+        description: "Release tag (required if upload_to_release=true), e.g. v3.0.26"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        run: npm ci
+        working-directory: desktop
+
+      - name: Build macOS desktop artifacts
+        run: npm run dist:mac
+        working-directory: desktop
+
+      - name: Upload mac artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-mac-release
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload artifacts to release tag
+        if: ${{ github.event.inputs.upload_to_release == 'true' && github.event.inputs.release_tag != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          files: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+
+      - name: Validate release inputs
+        if: ${{ github.event.inputs.upload_to_release == 'true' && github.event.inputs.release_tag == '' }}
+        run: |
+          echo "upload_to_release=true requires release_tag input."
+          exit 1
