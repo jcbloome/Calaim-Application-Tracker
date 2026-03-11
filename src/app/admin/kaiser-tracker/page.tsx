@@ -684,7 +684,8 @@ function KaiserTrackerPageContent() {
       const syncRes = await fetch('/api/caspio/members-cache/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'incremental' }),
+        // Use full sync for Kaiser Tracker to avoid stale status counts when Caspio Date_Modified is not updated.
+        body: JSON.stringify({ idToken, mode: 'full' }),
       });
       const syncData = await syncRes.json().catch(() => ({}));
       if (!syncRes.ok || !(syncData as any)?.success) {
