@@ -141,7 +141,10 @@ export default function SWRosterPage() {
   const [rosterLastRefreshOk, setRosterLastRefreshOk] = useState<boolean | null>(null);
   const [draftsLastRefreshAt, setDraftsLastRefreshAt] = useState<string | null>(null);
   const [draftsLastRefreshOk, setDraftsLastRefreshOk] = useState<boolean | null>(null);
-  const [refreshingAll, setRefreshingAll] = useState(false);
+  const [rosterMonthLocked, setRosterMonthLocked] = useState<string | null>(null);
+  const [newAssignmentsSinceLastMonthCount, setNewAssignmentsSinceLastMonthCount] = useState(0);
+  const [noAssignmentsSinceLastMonth, setNoAssignmentsSinceLastMonth] = useState(false);
+  const currentRosterMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
 
   const refreshRoster = useCallback(async () => {
     if (!user?.email) return;
@@ -151,7 +154,9 @@ export default function SWRosterPage() {
     try {
       // Use the SW assignments endpoint that resolves SW_ID/name from cache.
       // This is more reliable than exact-email matching in Caspio fields.
-      const res = await fetch(`/api/sw-visits?socialWorkerId=${encodeURIComponent(user.email)}`);
+      const res = await fetch(
+        `/api/sw-visits?socialWorkerId=${encodeURIComponent(user.email)}&month=${encodeURIComponent(currentRosterMonth)}`
+      );
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || `Failed to load roster (HTTP ${res.status})`);
@@ -159,6 +164,9 @@ export default function SWRosterPage() {
 
       const nextFacilities = Array.isArray(data?.rcfeList) ? (data.rcfeList as RosterFacility[]) : [];
       setFacilities(nextFacilities);
+      setRosterMonthLocked(String(data?.rosterMonth || currentRosterMonth));
+      setNewAssignmentsSinceLastMonthCount(Number(data?.newAssignmentsSinceLastMonthCount || 0));
+      setNoAssignmentsSinceLastMonth(Boolean(data?.noAssignmentsSinceLastMonth));
       setHasLoadedOnce(true);
       setRosterLastRefreshAt(startedAt);
       setRosterLastRefreshOk(true);
@@ -170,7 +178,7 @@ export default function SWRosterPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.email]);
+  }, [currentRosterMonth, user?.email]);
 
   const [statusMonth, setStatusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [facilitySort, setFacilitySort] = useState<'assigned' | 'rcfe-az' | 'rcfe-za'>('assigned');
@@ -489,7 +497,6 @@ export default function SWRosterPage() {
   // Keyboard shortcuts for speed:
   // - / focus search
   // - N start next questionnaire
-  // - R refresh all
   // - P print
   useEffect(() => {
     if (isLoading) return;
@@ -507,11 +514,6 @@ export default function SWRosterPage() {
         searchInputRef.current?.focus?.();
         return;
       }
-      if (key === 'r' || key === 'R') {
-        e.preventDefault();
-        void refreshAll();
-        return;
-      }
       if (key === 'p' || key === 'P') {
         e.preventDefault();
         window.print();
@@ -527,7 +529,7 @@ export default function SWRosterPage() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isLoading, isSocialWorker, nextQuestionnaire, refreshAll, router]);
+  }, [isLoading, isSocialWorker, nextQuestionnaire, router]);
 
   const pinnedFacilities = useMemo(() => {
     if (!pinnedRcfeIds || pinnedRcfeIds.length === 0) return [];
@@ -624,18 +626,6 @@ export default function SWRosterPage() {
 
   // statusIconsReady is declared above filteredFacilities (used there).
 
-  const refreshAll = useCallback(async () => {
-    if (refreshingAll) return;
-    setRefreshingAll(true);
-    try {
-      await refreshRoster();
-      await refreshMonthStatuses();
-      await refreshDraftsToday();
-    } finally {
-      setRefreshingAll(false);
-    }
-  }, [refreshDraftsToday, refreshMonthStatuses, refreshRoster, refreshingAll]);
-
   const draftsByMemberId = useMemo(() => {
     const map = new Map<string, DraftVisit>();
     draftsToday.forEach((d) => {
@@ -692,8 +682,8 @@ export default function SWRosterPage() {
     <div className="container mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between print:hidden">
         <div>
-          <h1 className="text-3xl font-bold">Weekly Roster</h1>
-          <p className="text-muted-foreground">Your current assigned RCFEs and members.</p>
+          <h1 className="text-3xl font-bold">Monthly Roster</h1>
+          <p className="text-muted-foreground">This is your locked roster for the month.</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary" className="gap-1">
               <Building2 className="h-3.5 w-3.5" />
@@ -703,6 +693,14 @@ export default function SWRosterPage() {
               <Users className="h-3.5 w-3.5" />
               {totals.memberCount} member{totals.memberCount === 1 ? '' : 's'}
             </Badge>
+            {rosterMonthLocked ? (
+              <Badge variant="outline">Roster month: {rosterMonthLocked}</Badge>
+            ) : null}
+            {noAssignmentsSinceLastMonth ? (
+              <Badge variant="outline">No assignments since last month</Badge>
+            ) : (
+              <Badge variant="outline">New since last month: {newAssignmentsSinceLastMonthCount}</Badge>
+            )}
             {lastSync ? (
               <span>Cache last updated: {lastSync}</span>
             ) : null}
@@ -713,7 +711,7 @@ export default function SWRosterPage() {
                   ? `Last refresh ${rosterLastRefreshLabel}${rosterLastRefreshOk === false ? ' (failed)' : ''}`
                   : 'Not loaded yet'}
               </span>
-              <span className="text-muted-foreground">(If your roster is missing, refresh it here.)</span>
+              <span className="text-muted-foreground">(Auto-synced monthly; no manual sync needed.)</span>
             </span>
             <span className="inline-flex items-center gap-2">
               <span>• Status icons:</span>
@@ -778,23 +776,6 @@ export default function SWRosterPage() {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <Button className="w-full sm:w-auto" onClick={() => void refreshAll()} disabled={refreshingAll || loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshingAll ? 'animate-spin' : ''}`} />
-            {refreshingAll ? 'Refreshing…' : 'Refresh all'}
-          </Button>
-          <Button className="w-full sm:w-auto" variant="outline" onClick={() => void refreshRoster()} disabled={loading}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            {loading ? 'Refreshing…' : 'Refresh list'}
-          </Button>
-          <Button
-            className="w-full sm:w-auto"
-            variant="outline"
-            onClick={() => void refreshMonthStatuses()}
-            disabled={loadingMonthStatuses || !hasLoadedOnce}
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            {loadingMonthStatuses ? 'Refreshing…' : 'Refresh status icons'}
-          </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
             Print / Save PDF
@@ -1124,7 +1105,7 @@ export default function SWRosterPage() {
             <CardHeader>
               <CardTitle className="text-base">Load your roster</CardTitle>
               <CardDescription>
-                Tap <span className="font-semibold">Refresh list</span> to load your assigned members from the weekly cache.
+                Your monthly roster loads automatically from the monthly snapshot.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1135,7 +1116,7 @@ export default function SWRosterPage() {
             <CardHeader>
               <CardTitle className="text-base">No assignments found</CardTitle>
               <CardDescription>
-                If this seems wrong, your assignments may not be set yet or the weekly cache hasn’t refreshed.
+                If this seems wrong, your assignments may not be set yet or the monthly snapshot has not been created yet.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1144,7 +1125,7 @@ export default function SWRosterPage() {
         {/* Print-only: always render the compact list for clean PDF output */}
         <div className="hidden print:block space-y-4">
           <div className="text-center">
-            <div className="text-xl font-bold">Weekly Roster</div>
+            <div className="text-xl font-bold">Monthly Roster</div>
             {lastSync ? <div className="text-xs text-muted-foreground">Cache last updated: {lastSync}</div> : null}
           </div>
           {printFacilities.map((f) => (

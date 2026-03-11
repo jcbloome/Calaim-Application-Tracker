@@ -228,11 +228,40 @@ function swMatchesMember(params: {
   return false;
 }
 
+const toRosterMonth = (value: unknown): string => {
+  const raw = String(value ?? '').trim();
+  if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const monthStartFromYyyyMm = (yyyyMm: string): Date => {
+  const [yRaw, mRaw] = String(yyyyMm || '').split('-');
+  const y = Number(yRaw);
+  const m = Number(mRaw);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+  }
+  return new Date(y, m - 1, 1, 0, 0, 0, 0);
+};
+
+const snapshotDocIdForSwMonth = (socialWorkerId: string, rosterMonth: string) => {
+  const normalized = String(socialWorkerId || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `${normalized || 'unknown_sw'}__${rosterMonth}`;
+};
+
 // GET: Fetch SW's assigned members by RCFE
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const socialWorkerId = searchParams.get('socialWorkerId');
+    const rosterMonth = toRosterMonth(searchParams.get('month'));
+    const forceRefresh = searchParams.get('refresh') === '1';
     
     if (!socialWorkerId) {
       return NextResponse.json({ 
@@ -248,6 +277,39 @@ export async function GET(req: NextRequest) {
     const adminDb = adminModule.adminDb;
 
     const requestedEmail = String(socialWorkerId || '').trim().toLowerCase();
+    const snapshotDocId = snapshotDocIdForSwMonth(requestedEmail || String(socialWorkerId || ''), rosterMonth);
+    const rosterSnapshotRef = adminDb.collection('sw_roster_monthly_snapshots').doc(snapshotDocId);
+
+    // SW roster is month-locked: use snapshot for the selected month unless explicit refresh=1.
+    if (!forceRefresh) {
+      try {
+        const snap = await rosterSnapshotRef.get();
+        if (snap.exists) {
+          const s = snap.data() as any;
+          return NextResponse.json({
+            success: true,
+            rcfeList: Array.isArray(s?.rcfeList) ? s.rcfeList : [],
+            totalMembers: Number(s?.totalMembers || 0),
+            totalRCFEs: Number(s?.totalRCFEs || 0),
+            membersOnHold: Number(s?.membersOnHold || 0),
+            membersSuspended: Number(s?.membersSuspended || 0),
+            membersSuspendedHold: Number(s?.membersSuspendedHold || 0),
+            membersSuspendedAuthExpired: Number(s?.membersSuspendedAuthExpired || 0),
+            cacheStatus: s?.cacheStatus || null,
+            assignmentOverrides: s?.assignmentOverrides || null,
+            totalAssignedAuthorized: Number(s?.totalAssignedAuthorized || 0),
+            totalAssignedAll: Number(s?.totalAssignedAll || 0),
+            rosterMonth: String(s?.rosterMonth || rosterMonth),
+            monthlyLocked: true,
+            snapshotCreatedAt: String(s?.snapshotCreatedAt || ''),
+            newAssignmentsSinceLastMonthCount: Number(s?.newAssignmentsSinceLastMonthCount || 0),
+            noAssignmentsSinceLastMonth: Number(s?.newAssignmentsSinceLastMonthCount || 0) === 0,
+          });
+        }
+      } catch {
+        // fall through to compute and write snapshot
+      }
+    }
 
     // Admin-managed SW assignment overrides (source-of-truth during transitions).
     // These overrides can temporarily differ from Caspio cache fields.
@@ -567,8 +629,7 @@ export async function GET(req: NextRequest) {
     const getWeekFlags = (member: any): { isNewAssignment: boolean; isHoldRemoved: boolean } => {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const weekStart = new Date(todayStart);
-      weekStart.setDate(weekStart.getDate() - 7);
+      const monthStart = monthStartFromYyyyMm(rosterMonth);
 
       const assignmentChangedAt =
         parseIsoDate(
@@ -582,7 +643,7 @@ export async function GET(req: NextRequest) {
         parseIsoDate(member?.holdChangedAt ?? member?.hold_changed_at ?? '') || null;
 
       const isRecent = (d: Date | null) =>
-        Boolean(d && d.getTime() >= weekStart.getTime() && d.getTime() <= todayStart.getTime());
+        Boolean(d && d.getTime() >= monthStart.getTime() && d.getTime() <= todayStart.getTime());
 
       const isNewAssignment = isRecent(assignmentChangedAt);
 
@@ -662,6 +723,11 @@ export async function GET(req: NextRequest) {
       memberCount: rcfe.members.length
     }));
 
+    const newAssignmentsSinceLastMonthCount = assignedMembers.reduce((sum, member) => {
+      const flags = getWeekFlags(member);
+      return sum + (flags.isNewAssignment ? 1 : 0);
+    }, 0);
+
     console.log(`✅ Found ${assignedMembers.length} assigned members across ${rcfeList.length} RCFEs`);
     if (suspendedAnyCount > 0) {
       console.log(
@@ -688,7 +754,7 @@ export async function GET(req: NextRequest) {
       // best-effort only
     }
 
-    return NextResponse.json({
+    const responseBody = {
       success: true,
       rcfeList,
       totalMembers: assignedMembers.length,
@@ -707,8 +773,29 @@ export async function GET(req: NextRequest) {
         : null,
       // Extra diagnostics (safe for SW portal UI / admin debugging).
       totalAssignedAuthorized: assignedAuthorized.length,
-      totalAssignedAll: assignedAll.length
-    });
+      totalAssignedAll: assignedAll.length,
+      rosterMonth,
+      monthlyLocked: true,
+      snapshotCreatedAt: new Date().toISOString(),
+      newAssignmentsSinceLastMonthCount,
+      noAssignmentsSinceLastMonth: newAssignmentsSinceLastMonthCount === 0,
+    };
+
+    // Persist month snapshot so SW roster remains stable throughout the month.
+    try {
+      await rosterSnapshotRef.set(
+        {
+          ...responseBody,
+          socialWorkerId: String(socialWorkerId || '').trim(),
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch {
+      // best-effort only; still return computed roster
+    }
+
+    return NextResponse.json(responseBody);
 
   } catch (error: any) {
     console.error('❌ Error fetching SW assignments:', error);
