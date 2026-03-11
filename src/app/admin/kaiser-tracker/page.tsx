@@ -127,6 +127,13 @@ const kaiserWorkflow = {
 };
 
 const FALLBACK_KAISER_STATUS_ORDER = getKaiserStatusesInOrder().map((status) => status.status);
+const PINNED_TOP_STATUS = 'T2038 received, Need First Contact';
+const normalizeStatusText = (value: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 
 const CALAIM_STATUS_OPTIONS = [
   'Authorized',
@@ -914,7 +921,11 @@ function KaiserTrackerPageContent() {
       .filter((s) => !known.includes(s) && s !== 'Unknown')
       .sort();
     const withUnknown = known.includes('Unknown') ? known : [...known, 'Unknown'];
-    return [...withUnknown, ...unknown];
+    const merged = [...withUnknown, ...unknown];
+    const pinnedNormalized = normalizeStatusText(PINNED_TOP_STATUS);
+    const pinnedIndex = merged.findIndex((s) => normalizeStatusText(s) === pinnedNormalized);
+    if (pinnedIndex <= 0) return merged;
+    return [merged[pinnedIndex], ...merged.slice(0, pinnedIndex), ...merged.slice(pinnedIndex + 1)];
   }, [kaiserStatusOptions, members]);
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
   const availableCalAIMStatuses = CALAIM_STATUS_OPTIONS;

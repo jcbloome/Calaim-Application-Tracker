@@ -6,6 +6,14 @@ import { CheckCircle, Users } from 'lucide-react';
 import type { KaiserMember } from './shared';
 import { getEffectiveKaiserStatus } from './shared';
 
+const PINNED_TOP_STATUS = 'T2038 received, Need First Contact';
+const normalizeStatusText = (value: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
 export interface StaffAssignmentData {
   count: number;
   members: KaiserMember[];
@@ -130,7 +138,14 @@ export function KaiserStaffAssignments({
                       <h4 className="text-xs font-semibold text-gray-700 mb-2">Current Status</h4>
                       <div className="space-y-1 max-h-32 overflow-y-auto">
                         {Object.entries(assignment.statusBreakdown)
-                          .sort(([, a], [, b]) => b - a)
+                          .sort(([statusA, countA], [statusB, countB]) => {
+                            const pinned = normalizeStatusText(PINNED_TOP_STATUS);
+                            const aPinned = normalizeStatusText(statusA) === pinned;
+                            const bPinned = normalizeStatusText(statusB) === pinned;
+                            if (aPinned && !bPinned) return -1;
+                            if (!aPinned && bPinned) return 1;
+                            return countB - countA;
+                          })
                           .map(([status, count]) => (
                             <div key={`${staffName}-status-${status}`} className="flex justify-between items-center text-xs">
                               <span className="truncate pr-2" title={status}>
