@@ -129,20 +129,9 @@ export function KaiserStaffAssignments({
                     <div>
                       <h4 className="text-xs font-semibold text-gray-700 mb-2">Current Status</h4>
                       <div className="space-y-1 max-h-32 overflow-y-auto">
-                        {(() => {
-                          const entries = Object.entries(assignment.statusBreakdown).sort(([, a], [, b]) => b - a);
-                          const top = entries.slice(0, 5);
-                          const hasUnknown = entries.some(([s]) => s === 'Unknown');
-                          const unknownInTop = top.some(([s]) => s === 'Unknown');
-                          if (hasUnknown && !unknownInTop) {
-                            const unknownEntry = entries.find(([s]) => s === 'Unknown');
-                            if (unknownEntry) {
-                              // Ensure "Unknown" is visible even if not in top 5.
-                              return [...top.slice(0, Math.max(0, top.length - 1)), unknownEntry];
-                            }
-                          }
-                          return top;
-                        })().map(([status, count]) => (
+                        {Object.entries(assignment.statusBreakdown)
+                          .sort(([, a], [, b]) => b - a)
+                          .map(([status, count]) => (
                             <div key={`${staffName}-status-${status}`} className="flex justify-between items-center text-xs">
                               <span className="truncate pr-2" title={status}>
                                 {status}
