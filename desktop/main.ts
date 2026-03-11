@@ -8,7 +8,6 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let notificationWindow: BrowserWindow | null = null;
 let statusWindow: BrowserWindow | null = null;
-let chatWindow: BrowserWindow | null = null;
 let notificationTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
 let notificationWindowLoaded = false;
@@ -36,7 +35,6 @@ type DesktopPreferences = {
   snoozedUntilMs: number;
   showNotes: boolean;
   showReview: boolean;
-  chatAlertsEnabled: boolean;
   pillPosition: { x: number; y: number } | null;
   snoozedNoteUntilById: Record<string, number>;
 };
@@ -49,18 +47,13 @@ const prefsStore = new Store<DesktopPreferences>({
     snoozedUntilMs: 0,
     showNotes: true,
     showReview: true,
-    chatAlertsEnabled: true,
     pillPosition: null,
     snoozedNoteUntilById: {},
   },
 });
 
-let chatPendingCount = 0;
-let chatCountInitialized = false;
-let lastChatNotifyAtMs = 0;
-let chatAlertsEnabled = Boolean(prefsStore.get('chatAlertsEnabled'));
-
 let trayDefaultIconPath: string | null = null;
+let trayDefaultIconImage: Electron.NativeImage | null = null;
 let trayUsingChatIcon = false;
 let cachedChatTrayIcon: Electron.NativeImage | null = null;
 let cachedChatNotifyIcon: Electron.NativeImage | null = null;
@@ -102,25 +95,42 @@ const getChatNotifyIcon = () => {
   }
 };
 
+const getDefaultTrayImage = () => {
+  try {
+    const fallbackSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#2563eb"/>
+  <path d="M18 22h28v6H18zm0 12h20v6H18z" fill="#ffffff"/>
+</svg>`;
+    const img = nativeImage.createFromDataURL(makeSvgDataUrl(fallbackSvg));
+    if (process.platform === 'win32') return img.resize({ width: 16, height: 16 });
+    return img;
+  } catch {
+    return nativeImage.createEmpty();
+  }
+};
+
 const updateTrayIcon = () => {
-  if (!tray || !trayDefaultIconPath) return;
-  // Windows tray icons are extremely picky; our dynamically-generated SVG chat icon
-  // can render as an invisible/blank icon in the notification area. Keep the real
-  // app icon in the tray on Windows, and surface chat via tooltip/menu + native toast.
+  if (!tray) return;
+  const baseIcon = trayDefaultIconImage
+    || (trayDefaultIconPath ? nativeImage.createFromPath(trayDefaultIconPath) : null)
+    || getDefaultTrayImage();
+  // Windows tray icons are extremely picky; dynamically-generated SVG icons can render
+  // as invisible/blank in the notification area. Keep the real app icon on Windows.
   if (process.platform === 'win32') {
     trayUsingChatIcon = false;
     try {
-      tray.setImage(trayDefaultIconPath);
+      tray.setImage(baseIcon.isEmpty() ? getDefaultTrayImage() : baseIcon);
     } catch {
       // ignore
     }
     return;
   }
-  const shouldUseChat = chatPendingCount > 0;
-  if (trayUsingChatIcon === shouldUseChat) return;
-  trayUsingChatIcon = shouldUseChat;
+  const shouldUseAlertIcon = pillSummary.count > 0;
+  if (trayUsingChatIcon === shouldUseAlertIcon) return;
+  trayUsingChatIcon = shouldUseAlertIcon;
   try {
-    tray.setImage(shouldUseChat ? getChatTrayIcon() : trayDefaultIconPath);
+    tray.setImage(shouldUseAlertIcon ? getChatTrayIcon() : (baseIcon.isEmpty() ? getDefaultTrayImage() : baseIcon));
   } catch {
     // ignore
   }
@@ -128,10 +138,7 @@ const updateTrayIcon = () => {
 
 const updateTrayToolTip = () => {
   if (!tray) return;
-  const parts: string[] = [];
-  parts.push(`${pillSummary.count} pending`);
-  if (chatPendingCount > 0) parts.push(`${chatPendingCount} chat`);
-  tray.setToolTip(`Connect CalAIM Desktop (${parts.join(', ')})`);
+  tray.setToolTip(`Connect CalAIM Desktop (${pillSummary.count} pending)`);
   updateTrayIcon();
 };
 
@@ -182,12 +189,6 @@ const applySuppressionFilters = (notes: PillItem[]) => {
   }
 
   return (notes || []).filter((note) => {
-    const rawType = String((note as any)?.type || '').toLowerCase();
-    const isChat = Boolean((note as any)?.isChatOnly) || rawType.includes('chat');
-    if (isChat) {
-      // Chat can be shown in the pill (same notification system), but is user-togglable.
-      return Boolean(chatAlertsEnabled);
-    }
     const noteId = String(note.noteId || '').trim();
     if (noteId) {
       const until = Number(snoozedNoteUntilById[noteId] || 0);
@@ -631,44 +632,6 @@ const openStaffStatusWindow = () => {
   }
 };
 
-const openChatWindow = () => {
-  try {
-    if (chatWindow && !chatWindow.isDestroyed()) {
-      chatWindow.show();
-      chatWindow.focus();
-      return;
-    }
-
-    chatWindow = new BrowserWindow({
-      width: 980,
-      height: 720,
-      show: false,
-      title: 'Staff Chat',
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-
-    const url = getExternalUrl('/admin/desktop-chat-window');
-    chatWindow.loadURL(url).catch(() => undefined);
-    chatWindow.once('ready-to-show', () => {
-      try {
-        chatWindow?.show();
-      } catch {
-        // ignore
-      }
-    });
-    chatWindow.on('closed', () => {
-      chatWindow = null;
-    });
-  } catch {
-    // ignore
-  }
-};
-
 const openInMainWindow = (route?: string) => {
   const target = getExternalUrl(route || '/admin/my-notes');
   try {
@@ -723,7 +686,6 @@ const buildTrayMenu = () => {
   const snoozeActive = snoozeUntil > Date.now();
   const snoozeLabel = snoozeActive ? `Snoozed until: ${formatSnoozeLabel(snoozeUntil)}` : 'Not snoozed';
   const suppressionCounts = countActiveSuppressions();
-  const chatSuffix = chatPendingCount > 0 ? ` (${chatPendingCount})` : '';
   const template: Array<Electron.MenuItemConstructorOptions> = [
     {
       label: 'Open Notifications',
@@ -735,10 +697,6 @@ const buildTrayMenu = () => {
           // ignore
         }
       }
-    },
-    {
-      label: `Open Chat 💬${chatSuffix}`,
-      click: () => openChatWindow(),
     },
     { type: 'separator' },
     {
@@ -813,18 +771,6 @@ const buildTrayMenu = () => {
     {
       label: `${notificationState.showReview ? 'Hide' : 'Show'} CS/Docs Review Alerts`,
       click: () => setFilters({ showReview: !notificationState.showReview }),
-    },
-    {
-      label: chatAlertsEnabled ? 'Disable Chat Alerts' : 'Enable Chat Alerts',
-      click: () => {
-        chatAlertsEnabled = !chatAlertsEnabled;
-        try {
-          prefsStore.set('chatAlertsEnabled', chatAlertsEnabled);
-        } catch {
-          // ignore
-        }
-        updateTrayMenu();
-      }
     },
     { type: 'separator' },
     {
@@ -1706,19 +1652,46 @@ const showMinimizedPill = () => {
 };
 
 const createTray = () => {
-  const packagedIcon = path.join(app.getAppPath(), 'assets', 'tray.ico');
-  const resourcesIcon = path.join(process.resourcesPath, 'assets', 'tray.ico');
-  const distIcon = path.join(__dirname, 'assets', 'tray.ico');
-  const sourceIcon = path.join(__dirname, '..', 'assets', 'tray.ico');
-  const iconPath = fs.existsSync(packagedIcon)
-    ? packagedIcon
-    : fs.existsSync(resourcesIcon)
-      ? resourcesIcon
-      : fs.existsSync(distIcon)
-        ? distIcon
-        : sourceIcon;
+  const iconNamesByPlatform = process.platform === 'darwin'
+    ? ['trayTemplate.png', 'tray.png', 'tray.ico']
+    : process.platform === 'win32'
+      ? ['tray.ico', 'tray.png']
+      : ['tray.png', 'tray.ico'];
+  const iconSearchRoots = [
+    path.join(app.getAppPath(), 'assets'),
+    path.join(process.resourcesPath, 'assets'),
+    path.join(__dirname, 'assets'),
+    path.join(__dirname, '..', 'assets'),
+  ];
+
+  let iconPath: string | null = null;
+  for (const root of iconSearchRoots) {
+    for (const fileName of iconNamesByPlatform) {
+      const candidate = path.join(root, fileName);
+      if (fs.existsSync(candidate)) {
+        iconPath = candidate;
+        break;
+      }
+    }
+    if (iconPath) break;
+  }
+
+  const trayImage = iconPath ? nativeImage.createFromPath(iconPath) : getDefaultTrayImage();
+  const finalTrayImage =
+    process.platform === 'darwin' && !trayImage.isEmpty()
+      ? (() => {
+          try {
+            trayImage.setTemplateImage(true);
+          } catch {
+            // ignore
+          }
+          return trayImage;
+        })()
+      : trayImage;
+
   trayDefaultIconPath = iconPath;
-  tray = new Tray(iconPath);
+  trayDefaultIconImage = finalTrayImage.isEmpty() ? null : finalTrayImage;
+  tray = new Tray(finalTrayImage.isEmpty() ? getDefaultTrayImage() : finalTrayImage);
   updateTrayToolTip();
 
   updateTrayMenu();
@@ -1988,15 +1961,6 @@ ipcMain.handle('desktop:notify', (_event, payload: { title: string; body: string
 
 ipcMain.on('desktop:openNotifications', (_event, payload?: { url?: string }) => {
   const url = String(payload?.url || '/admin/my-notes');
-  // Opening chat should not dismiss the priority note pill.
-  if (url.startsWith('/admin/desktop-chat-window')) {
-    openChatWindow();
-    // Keep the pill visible; don't close the window.
-    if (notificationWindow) {
-      renderNotificationPill();
-    }
-    return;
-  }
   openInMainWindow(url);
   closeNotificationWindow();
 });
@@ -2130,18 +2094,6 @@ ipcMain.on('desktop:setPendingCount', (_event, count: number) => {
   if (notificationWindow) {
     renderNotificationPill();
   }
-});
-
-ipcMain.on('desktop:setChatPendingCount', (_event, count: number) => {
-  const next = Math.max(0, Number(count || 0));
-  const prev = chatPendingCount;
-  chatPendingCount = next;
-  updateTrayToolTip();
-  updateTrayMenu();
-
-  // Chat alerts are now delivered via the same pill UI (with a distinct color/label),
-  // so we do not also emit a separate native system notification here.
-  void prev;
 });
 
 ipcMain.handle('desktop:checkForUpdates', async () => {

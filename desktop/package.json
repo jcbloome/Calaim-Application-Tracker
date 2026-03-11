@@ -9,12 +9,13 @@
     "dev": "npm run build && electron dist/main.js",
     "pack": "npm run build && electron-builder --dir",
     "dist:win": "npm run build && electron-builder --win",
-    "publish:win": "npm run dist:win && node -e \"const v=require('./package.json').version; const {execSync}=require('child_process'); const exe=`release/Connect-CalAIM-Desktop-Setup-${v}.exe`; const blockmap=`${exe}.blockmap`; const cmd=`gh release upload v${v} \\\"${exe}\\\" \\\"${blockmap}\\\" \\\"release/latest.yml\\\" --clobber`; execSync(cmd,{stdio:'inherit'});\""
+    "dist:mac": "npm run build && electron-builder --mac dmg zip",
+    "publish:win": "npm run dist:win && node -e \"const v=require('./package.json').version; const {execSync}=require('child_process'); const exe=`release/Connect-CalAIM-Desktop-win-${v}.exe`; const blockmap=`${exe}.blockmap`; const cmd=`gh release upload v${v} \\\"${exe}\\\" \\\"${blockmap}\\\" \\\"release/latest.yml\\\" --clobber`; execSync(cmd,{stdio:'inherit'});\""
   },
   "build": {
     "appId": "com.connectionsilos.calaimdesktop",
     "productName": "Connect CalAIM Desktop",
-    "artifactName": "Connect-CalAIM-Desktop-Setup-${version}.${ext}",
+    "artifactName": "Connect-CalAIM-Desktop-${os}-${version}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -26,6 +27,13 @@
     "win": {
       "target": "nsis",
       "icon": "assets/tray.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.medical"
     },
     "nsis": {
       "oneClick": false,

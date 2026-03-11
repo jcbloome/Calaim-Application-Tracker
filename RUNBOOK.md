@@ -41,6 +41,7 @@ From repo root:
 - **Run**: `npm run desktop:dev`
 - **Build**: `npm run desktop:build`
 - **Create Windows installer**: `npm run desktop:dist:win`
+- **Create macOS build (DMG + ZIP)**: `npm run desktop:dist:mac`
 
 Desktop URL override:
 - **`CALAIM_DESKTOP_URL`** (defaults to `https://connectcalaim.com` per `README.md`)

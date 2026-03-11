@@ -134,18 +134,6 @@ export default function DesktopChatWindowClient() {
     );
   }, [activeThreadMessages, firestore, myUid, selectedThreadId]);
 
-  // If running inside Electron with the desktop bridge, keep the tray chat count updated here too.
-  useEffect(() => {
-    try {
-      if (typeof window === 'undefined') return;
-      if (window.desktopNotifications?.setChatPendingCount) {
-        window.desktopNotifications.setChatPendingCount(unreadChatCount);
-      }
-    } catch {
-      // ignore
-    }
-  }, [unreadChatCount]);
-
   const loadAdminStaff = useCallback(async () => {
     if (!firestore) return;
     if (!myUid) return;

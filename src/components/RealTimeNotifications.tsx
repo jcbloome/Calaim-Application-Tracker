@@ -124,10 +124,9 @@ export function RealTimeNotifications() {
     webAppNotificationsEnabled: true,
     suppressWebWhenDesktopActive: true
   });
-  const chatUnreadRef = useRef<{ initialized: boolean; count: number }>({ initialized: false, count: 0 });
   const desktopPriorityPillRef = useRef<
     Array<{
-      kind?: 'note' | 'docs' | 'cs' | 'chat';
+      kind?: 'note' | 'docs' | 'cs';
       source?: string;
       clientId2?: string;
       title: string;
@@ -140,27 +139,9 @@ export function RealTimeNotifications() {
       senderId?: string;
       replyUrl?: string;
       actionUrl?: string;
-      isChatOnly?: boolean;
       type?: string;
     }>
   >([]);
-  const desktopChatPillRef = useRef<
-    Array<{
-      kind?: 'note' | 'docs' | 'cs' | 'chat';
-      title: string;
-      message: string;
-      author?: string;
-      recipientName?: string;
-      timestamp?: string;
-      noteId?: string;
-      senderId?: string;
-      actionUrl?: string;
-      isChatOnly?: boolean;
-      type?: string;
-    }>
-  >([]);
-  const desktopChatOpenPanelRef = useRef(false);
-  const desktopOpenPanelHoldUntilMsRef = useRef(0);
 
   const desktopEffectivePaused = Boolean(desktopState?.effectivePaused);
 
@@ -169,32 +150,18 @@ export function RealTimeNotifications() {
       if (typeof window === 'undefined') return;
       if (!window.desktopNotifications?.setPillSummary) return;
       const priorityNotes = desktopPriorityPillRef.current || [];
-      const chatNotes = desktopChatPillRef.current || [];
-      const combined = [...chatNotes, ...priorityNotes];
-      const count = combined.length;
-      const openPanel = Boolean(params?.openPanel) || Boolean(desktopChatOpenPanelRef.current);
-      if (desktopChatOpenPanelRef.current) {
-        desktopChatOpenPanelRef.current = false;
-      }
-
-      const title =
-        chatNotes.length > 0 && priorityNotes.length === 0
-          ? 'Unread chat'
-          : count === 1
-            ? 'Priority item'
-            : 'Priority items';
-      const message =
-        chatNotes.length > 0 && priorityNotes.length === 0
-          ? (count === 1 ? '1 unread chat message' : `${count} unread chat messages`)
-          : (count === 1 ? '1 priority item pending' : `${count} priority items pending`);
+      const count = priorityNotes.length;
+      const openPanel = Boolean(params?.openPanel);
+      const title = count === 1 ? 'Priority item' : 'Priority items';
+      const message = count === 1 ? '1 priority item pending' : `${count} priority items pending`;
 
       window.desktopNotifications.setPillSummary({
         count,
         openPanel,
-        notes: combined as any,
+        notes: priorityNotes as any,
         title,
         message,
-        actionUrl: chatNotes.length > 0 ? '/admin/desktop-chat-window' : '/admin/my-notes',
+        actionUrl: '/admin/my-notes',
       });
     } catch {
       // ignore
@@ -205,7 +172,6 @@ export function RealTimeNotifications() {
     try {
       if (typeof window === 'undefined') return;
       window.desktopNotifications?.setPendingCount?.(0);
-      window.desktopNotifications?.setChatPendingCount?.(0);
       window.desktopNotifications?.setPillSummary?.({ count: 0, openPanel: false, notes: [] });
     } catch {
       // ignore
@@ -227,116 +193,11 @@ export function RealTimeNotifications() {
     }
     try {
       window.desktopNotifications?.setPendingCount?.(desktopPriorityPillRef.current?.length || 0);
-      window.desktopNotifications?.setChatPendingCount?.(desktopChatPillRef.current?.length || 0);
     } catch {
       // ignore
     }
     emitDesktopPill({ openPanel: false });
   }, [clearDesktopIndicators, desktopEffectivePaused, emitDesktopPill]);
-
-  // Chat-only messages are handled in the dedicated chat window, but we still track an unread count
-  // for Electron tray badge purposes. We also surface chat through the same Electron pill UI.
-  useEffect(() => {
-    if (!user?.uid) return;
-    if (!firestore) return;
-    if (typeof window === 'undefined') return;
-
-    const qy = query(
-      collection(firestore, 'staff_notifications'),
-      where('userId', '==', user.uid),
-      where('isChatOnly', '==', true)
-    );
-
-    const unsub = onSnapshot(
-      qy,
-      (snapshot) => {
-        let unread = 0;
-        const unreadNotes: Array<{
-          kind: 'chat';
-          title: string;
-          message: string;
-          author?: string;
-          recipientName?: string;
-          timestamp?: string;
-          noteId?: string;
-          senderId?: string;
-          actionUrl?: string;
-          isChatOnly: boolean;
-          type: string;
-        }> = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data() as any;
-          if (Boolean(data?.isRead)) return;
-          unread += 1;
-          const ts: any = data?.timestamp;
-          const dt: Date =
-            ts?.toDate?.() ||
-            (data?.createdAt?.toDate?.() as any) ||
-            (data?.createdAt ? new Date(data.createdAt) : null) ||
-            new Date();
-          unreadNotes.push({
-            kind: 'chat',
-            title: 'Chat',
-            message: sanitizeNoteMessage(data?.message) || '',
-            author: sanitizeFieldLabel(data?.senderName) || undefined,
-            recipientName: user?.displayName || user?.email || 'Staff',
-            timestamp: dt?.toLocaleString?.() || undefined,
-            noteId: docSnap.id,
-            senderId: String(data?.senderId || '').trim() || undefined,
-            actionUrl: String(data?.actionUrl || '/admin/desktop-chat-window').trim() || '/admin/desktop-chat-window',
-            isChatOnly: true,
-            type: 'interoffice_chat',
-          });
-        });
-
-        const prev = chatUnreadRef.current;
-        chatUnreadRef.current = { initialized: true, count: unread };
-
-        try {
-          // Electron: update tray chat count (handled by main process).
-          if (window.desktopNotifications?.setChatPendingCount && unread !== prev.count) {
-            window.desktopNotifications.setChatPendingCount(desktopEffectivePaused ? 0 : unread);
-          }
-        } catch {
-          // ignore
-        }
-
-        // Desktop pill: show latest unread chat items (most recent first).
-        unreadNotes.sort((a, b) => Date.parse(String(b.timestamp || '')) - Date.parse(String(a.timestamp || '')));
-        desktopChatPillRef.current = unreadNotes.slice(0, 8);
-        if (prev.initialized && unread > prev.count) {
-          desktopChatOpenPanelRef.current = true;
-          // Prevent other pill emissions (e.g. note polling) from immediately collapsing the panel.
-          // The desktop app will auto-minimize after it expands.
-          desktopOpenPanelHoldUntilMsRef.current = Date.now() + 4000;
-        }
-        if (desktopEffectivePaused) {
-          clearDesktopIndicators();
-        } else {
-          emitDesktopPill();
-        }
-      },
-      () => {
-        try {
-          if (window.desktopNotifications?.setChatPendingCount && chatUnreadRef.current.count !== 0) {
-            window.desktopNotifications.setChatPendingCount(0);
-          }
-        } catch {
-          // ignore
-        }
-        chatUnreadRef.current = { initialized: true, count: 0 };
-        desktopChatPillRef.current = [];
-        desktopOpenPanelHoldUntilMsRef.current = 0;
-        if (desktopEffectivePaused) {
-          clearDesktopIndicators();
-        } else {
-          emitDesktopPill();
-        }
-      }
-    );
-
-    return () => unsub();
-  }, [clearDesktopIndicators, desktopEffectivePaused, emitDesktopPill, firestore, user?.email, user?.displayName, user?.uid]);
 
   // Super Admin global toggles for web in-app notifications (stored in system_settings/notifications).
   useEffect(() => {
@@ -935,8 +796,7 @@ export function RealTimeNotifications() {
             const desktopIsRecent =
               Boolean(desktopLatest?.timestamp) &&
               Date.now() - desktopLatest.timestamp.getTime() <= recentThresholdMs;
-            const holdOpen = Date.now() < desktopOpenPanelHoldUntilMsRef.current;
-            const openPanel = Boolean(hasNewPriority || hasNewUrgent || desktopIsRecent || holdOpen);
+            const openPanel = Boolean(hasNewPriority || hasNewUrgent || desktopIsRecent);
 
             desktopPriorityPillRef.current = desktopPending.map((note) => ({
               kind: 'note',

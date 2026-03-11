@@ -21,3 +21,8 @@ npm run desktop:dist:win
 - Keep certificates out of the repo.
 - If `CSC_LINK` is not set, the installer will be unsigned.
 - Use a trusted EV certificate to minimize SmartScreen prompts.
+
+## macOS signing note
+
+- `npm run dist:mac` now generates unsigned `.dmg` and `.zip` artifacts.
+- For broad macOS trust (Gatekeeper/notarization), add an Apple Developer ID certificate and notarization config in Electron Builder before distribution.

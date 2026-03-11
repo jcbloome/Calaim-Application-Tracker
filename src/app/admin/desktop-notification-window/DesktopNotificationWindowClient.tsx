@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUser } from '@/firebase';
 import { useFirestore } from '@/firebase';
-import { MessageSquareText, Target } from 'lucide-react';
+import { Target } from 'lucide-react';
 import {
   addDoc,
   collection,
@@ -47,7 +47,7 @@ type PillStatePayload = {
   activeNote?: {
     title: string;
     message: string;
-    kind?: 'note' | 'docs' | 'cs' | 'chat';
+    kind?: 'note' | 'docs' | 'cs';
     source?: string;
     clientId2?: string;
     author?: string;
@@ -62,7 +62,7 @@ type PillStatePayload = {
   notes?: Array<{
     title: string;
     message: string;
-    kind?: 'note' | 'docs' | 'cs' | 'chat';
+    kind?: 'note' | 'docs' | 'cs';
     source?: string;
     clientId2?: string;
     author?: string;
@@ -88,7 +88,6 @@ const accentClassForKind = (kind?: string) => {
   const k = String(kind || '').toLowerCase().trim();
   if (k === 'docs') return 'border-l-green-600';
   if (k === 'cs') return 'border-l-orange-500';
-  if (k === 'chat') return 'border-l-purple-600';
   return 'border-l-blue-600';
 };
 
@@ -96,7 +95,6 @@ const dotClassForKind = (kind?: string) => {
   const k = String(kind || '').toLowerCase().trim();
   if (k === 'docs') return 'bg-green-600';
   if (k === 'cs') return 'bg-orange-500';
-  if (k === 'chat') return 'bg-purple-600';
   return 'bg-blue-600';
 };
 
@@ -104,7 +102,6 @@ const incomingLabelForKind = (kind?: string) => {
   const k = String(kind || '').toLowerCase().trim();
   if (k === 'cs') return 'Incoming CS Summary';
   if (k === 'docs') return 'Incoming document';
-  if (k === 'chat') return 'Incoming chat';
   return 'Incoming member note';
 };
 
@@ -195,24 +192,20 @@ export default function DesktopNotificationWindowClient() {
   const count = Number(pillState?.count || 0);
   const activeIndex = Math.max(0, Number(pillState?.activeIndex || 0));
   const active = pillState?.activeNote || null;
-  const activeKind = String(active?.kind || '').toLowerCase();
-  const isChat = activeKind === 'chat';
   const incomingLabel = incomingLabelForKind(active?.kind);
   const breakdownLabel = useMemo(() => {
     const notes = Array.isArray(pillState?.notes) ? pillState!.notes! : [];
     if (notes.length === 0) return '';
-    const counts: Record<string, number> = { cs: 0, note: 0, chat: 0, docs: 0 };
+    const counts: Record<string, number> = { cs: 0, note: 0, docs: 0 };
     let csHasNew = false;
     notes.forEach((n: any) => {
       const k = String(n?.kind || 'note').toLowerCase().trim();
       if (k === 'cs') counts.cs += 1;
-      else if (k === 'chat') counts.chat += 1;
       else if (k === 'docs') counts.docs += 1;
       else counts.note += 1;
       if (k === 'cs' && Boolean(n?.isNew)) csHasNew = true;
     });
     const parts: string[] = [];
-    if (counts.chat) parts.push(`Chat(${counts.chat})`);
     if (counts.cs) {
       // Show CS(!) when there is exactly one newly-arrived CS summary.
       parts.push(counts.cs === 1 && csHasNew ? 'CS(!)' : `CS(${counts.cs})`);
@@ -330,9 +323,7 @@ export default function DesktopNotificationWindowClient() {
   const handleOpen = useCallback(() => {
     const kind = String(active?.kind || '').toLowerCase();
     const url =
-      kind === 'chat'
-        ? String(active?.actionUrl || '/admin/desktop-chat-window')
-        : kind === 'cs'
+      kind === 'cs'
           ? String(active?.actionUrl || pillState?.actionUrl || '/admin/applications?review=cs')
           : kind === 'docs'
             ? String(active?.actionUrl || pillState?.actionUrl || '/admin/applications?review=docs')
@@ -350,14 +341,6 @@ export default function DesktopNotificationWindowClient() {
   const handleNavigate = useCallback((delta: number) => {
     try {
       window.desktopNotificationPill?.navigate?.(delta);
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const handleOpenChat = useCallback(() => {
-    try {
-      window.desktopNotificationPill?.open?.('/admin/desktop-chat-window');
     } catch {
       // ignore
     }
@@ -499,7 +482,7 @@ export default function DesktopNotificationWindowClient() {
     user?.uid
   ]);
 
-  const canSetFollowUp = Boolean(active) && String(active?.kind || '').toLowerCase() !== 'cs' && String(active?.kind || '').toLowerCase() !== 'chat';
+  const canSetFollowUp = Boolean(active) && String(active?.kind || '').toLowerCase() !== 'cs';
 
   const handleSaveFollowUp = useCallback(async () => {
     if (!firestore) return;
@@ -708,11 +691,7 @@ export default function DesktopNotificationWindowClient() {
                 {breakdownLabel || (count === 1 ? '1 pending item' : `${count} pending items`)}
               </div>
               <div className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                {isChat ? (
-                  <MessageSquareText className="h-4 w-4 text-purple-700 motion-safe:animate-[pulse_2s_ease-in-out_infinite]" />
-                ) : (
-                  <Target className="h-4 w-4 text-blue-700 motion-safe:animate-[pulse_2s_ease-in-out_infinite]" />
-                )}
+                <Target className="h-4 w-4 text-blue-700 motion-safe:animate-[pulse_2s_ease-in-out_infinite]" />
                 {incomingLabel}
               </div>
               {!isOnline ? (
@@ -734,13 +713,6 @@ export default function DesktopNotificationWindowClient() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="text-xs px-2 py-1 rounded-md border hover:bg-slate-50"
-                onClick={handleOpenChat}
-              >
-                Open Chat
-              </button>
               <button
                 type="button"
                 className="text-xs px-2 py-1 rounded-md border hover:bg-slate-50"
@@ -844,9 +816,7 @@ export default function DesktopNotificationWindowClient() {
                 className="text-xs px-3 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800"
                 onClick={handleOpen}
               >
-                {String(active?.kind || '').toLowerCase() === 'chat'
-                  ? 'Open Chat'
-                  : String(active?.kind || '').toLowerCase() === 'cs'
+                {String(active?.kind || '').toLowerCase() === 'cs'
                     ? 'Open CS review'
                     : String(active?.kind || '').toLowerCase() === 'docs'
                       ? 'Open docs review'

@@ -20,14 +20,13 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
   notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) =>
     ipcRenderer.invoke('desktop:notify', payload),
   setPendingCount: (count: number) => ipcRenderer.send('desktop:setPendingCount', count),
-  setChatPendingCount: (count: number) => ipcRenderer.send('desktop:setChatPendingCount', count),
   setPillSummary: (payload: {
     count: number;
     openPanel?: boolean;
     notes?: Array<{
       title: string;
       message: string;
-      kind?: 'note' | 'docs' | 'cs' | 'chat';
+      kind?: 'note' | 'docs' | 'cs';
       source?: string;
       clientId2?: string;
       author?: string;
@@ -55,7 +54,7 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
     notes?: Array<{
       title: string;
       message: string;
-      kind?: 'note' | 'docs' | 'cs' | 'chat';
+      kind?: 'note' | 'docs' | 'cs';
       memberName?: string;
       timestamp?: string;
       actionUrl?: string;

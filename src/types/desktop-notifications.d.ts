@@ -24,14 +24,13 @@ declare global {
       refreshApp?: () => Promise<boolean>;
       notify: (payload: { title: string; body: string; openOnNotify?: boolean; actionUrl?: string }) => Promise<boolean>;
       setPendingCount: (count: number) => void;
-      setChatPendingCount?: (count: number) => void;
       setPillSummary?: (payload: {
         count: number;
         openPanel?: boolean;
         notes?: Array<{
           title: string;
           message: string;
-          kind?: 'note' | 'docs' | 'cs' | 'chat';
+          kind?: 'note' | 'docs' | 'cs';
           source?: string;
           clientId2?: string;
           author?: string;
@@ -58,7 +57,7 @@ declare global {
         notes?: Array<{
           title: string;
           message: string;
-          kind?: 'note' | 'docs' | 'cs' | 'chat';
+          kind?: 'note' | 'docs' | 'cs';
           memberName?: string;
           timestamp?: string;
           actionUrl?: string;
