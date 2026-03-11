@@ -290,7 +290,6 @@ export function PrintableCsSummaryFormContent() {
                         <li>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</li>
                         <li>Tell them the person plans to move into a licensed RCFE.</li>
                         <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
-                        <li>Pro tip: Ask the RCFE for their License Number and a draft Admission Agreement. SSA will need a signed version to update the check.</li>
                     </ul>
                 </div>
 
@@ -336,7 +335,6 @@ export function PrintableCsSummaryFormContent() {
                             <li>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</li>
                             <li>Tell them the person plans to move into a licensed RCFE.</li>
                             <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
-                            <li>Pro tip: Ask the RCFE for their License Number and a draft Admission Agreement.</li>
                         </ul>
                     </div>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-3 p-4 border rounded-lg bg-gray-50 text-xs">
