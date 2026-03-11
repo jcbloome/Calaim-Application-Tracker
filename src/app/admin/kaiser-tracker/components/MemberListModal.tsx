@@ -134,7 +134,7 @@ export function MemberListModal({
           ) : (
             <div className="space-y-3">
               {members.map((member, index) => {
-                const assigned = String(member.Kaiser_User_Assignment || member.Staff_Assigned || '').trim();
+                const assigned = String(member.Staff_Assigned || member.Kaiser_User_Assignment || '').trim();
                 const effectiveKaiserStatus = getEffectiveKaiserStatus(member);
 
                 return (

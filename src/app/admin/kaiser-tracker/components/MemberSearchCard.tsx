@@ -64,7 +64,7 @@ export function MemberSearchCard({ members, searchTerm, onSearchTermChange }: Me
                       </div>
                       <div className="text-sm text-gray-600 mt-1">
                         <span className="font-medium">Assigned:</span>{' '}
-                        {String(member.Kaiser_User_Assignment || member.Staff_Assigned || '').trim() || 'Unassigned'}
+                        {String(member.Staff_Assigned || member.Kaiser_User_Assignment || '').trim() || 'Unassigned'}
                       </div>
                       <div className="flex gap-2 mt-2">
                         <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">

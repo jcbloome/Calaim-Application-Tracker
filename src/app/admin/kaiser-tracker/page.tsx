@@ -270,6 +270,17 @@ function KaiserTrackerPageContent() {
     return s;
   };
 
+  const getStaffAssignmentValue = (member: any): string =>
+    String(
+      member?.Staff_Assigned ||
+        member?.Kaiser_User_Assignment ||
+        member?.Staff_Assignment ||
+        member?.Assigned_Staff ||
+        member?.kaiser_user_assignment ||
+        member?.SW_ID ||
+        ''
+    ).trim();
+
   // Calculate staff assignments dynamically from actual data
   const staffAssignments = useMemo(() => {
     const assignments: Record<string, { 
@@ -284,7 +295,7 @@ function KaiserTrackerPageContent() {
 
     members.forEach(member => {
       // Use normalized staff so numeric IDs (107, 224, 33, 48) count as Unassigned
-      const staffName = normalizeStaffForSummary(String(member.Kaiser_User_Assignment || member.Staff_Assigned || '').trim());
+      const staffName = normalizeStaffForSummary(getStaffAssignmentValue(member));
       
       // Initialize staff if not exists
       if (!assignments[staffName]) {
@@ -730,9 +741,16 @@ function KaiserTrackerPageContent() {
         console.log('🔍 FRONTEND ALL FIELDS:', Object.keys(firstMember).sort());
       }
       
-      // Clean and process the data (numeric-only staff IDs → treat as unassigned)
+      // Clean and process the data (prefer explicit staff-name fields; numeric-only IDs remain unassigned)
       const cleanMembers = data.map((member: any, index: number) => {
-        const rawStaff = member?.Kaiser_User_Assignment || member?.kaiser_user_assignment || member?.SW_ID || '';
+        const rawStaff =
+          member?.Staff_Assigned ||
+          member?.Staff_Assignment ||
+          member?.Assigned_Staff ||
+          member?.Kaiser_User_Assignment ||
+          member?.kaiser_user_assignment ||
+          member?.SW_ID ||
+          '';
         const staffVal = rawStaff != null ? String(rawStaff).trim() : '';
         const staffAssigned = !staffVal || /^\d+$/.test(staffVal) ? '' : staffVal;
         return {
@@ -807,7 +825,7 @@ function KaiserTrackerPageContent() {
         if (CALAIM_STATUS_MAP[normalized] !== filters.calaimStatus) return false;
       }
       if (filters.county !== 'all' && member.memberCounty !== filters.county) return false;
-      if (filters.staffAssigned !== 'all' && String(member.Kaiser_User_Assignment || member.Staff_Assigned || '') !== filters.staffAssigned) return false;
+      if (filters.staffAssigned !== 'all' && getStaffAssignmentValue(member) !== filters.staffAssigned) return false;
       return true;
     });
   };
@@ -836,8 +854,8 @@ function KaiserTrackerPageContent() {
         bValue = b.CalAIM_Status;
               break;
       case 'staff':
-        aValue = String(a.Kaiser_User_Assignment || a.Staff_Assigned || '');
-        bValue = String(b.Kaiser_User_Assignment || b.Staff_Assigned || '');
+        aValue = getStaffAssignmentValue(a);
+        bValue = getStaffAssignmentValue(b);
               break;
             default:
               return 0;
@@ -900,7 +918,7 @@ function KaiserTrackerPageContent() {
   }, [kaiserStatusOptions, members]);
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
   const availableCalAIMStatuses = CALAIM_STATUS_OPTIONS;
-  const staffMembers = [...new Set(members.map(m => String(m.Kaiser_User_Assignment || m.Staff_Assigned || '')).filter(Boolean).map(String))];
+  const staffMembers = [...new Set(members.map(m => getStaffAssignmentValue(m)).filter(Boolean).map(String))];
 
   // Load data on component mount
   useEffect(() => {
