@@ -53,6 +53,7 @@ import {
   UserCheck,
   FileBarChart,
   UploadCloud,
+  Download,
   Receipt,
   Search
 } from 'lucide-react';
@@ -136,6 +137,7 @@ const adminNavLinks = [
       { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
       { isDivider: true, label: 'Kaiser', icon: Heart },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },

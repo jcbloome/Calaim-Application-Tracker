@@ -203,6 +203,31 @@ export default function ReportsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="h-5 w-5" />
+              Kaiser Room &amp; Board Docs
+            </CardTitle>
+            <CardDescription>
+              Search completed Kaiser Room &amp; Board signed uploads and quickly open the member application.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <Link href="/admin/kaiser-room-board-docs">
+                <Button className="w-full" variant="outline">
+                  <Eye className="h-4 w-4 mr-2" />
+                  View Signed R&amp;B Docs
+                </Button>
+              </Link>
+              <p className="text-xs text-muted-foreground">
+                Includes direct download links and app links for finished Kaiser room and board documents.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Quick Stats Overview */}
