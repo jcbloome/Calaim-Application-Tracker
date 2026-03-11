@@ -128,12 +128,38 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
   }
   if (key === 't2038_requested') {
     const requested = Boolean(toYmd(member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date));
-    const received = Boolean(toYmd(member.Kaiser_T2038_Received_Date));
+    const received =
+      hasMeaningfulValue(
+        (member as any).Kaiser_T2038_Received_Date ||
+          (member as any).Kaiser_T2038_Received ||
+          (member as any).Kaiser_T038_Received
+      ) ||
+      Boolean(
+        toYmd(
+          (member as any).Kaiser_T2038_Received_Date ||
+            (member as any).Kaiser_T2038_Received ||
+            (member as any).Kaiser_T038_Received
+        )
+      );
     return requested && !received;
   }
   if (key === 'tier_level_requested') {
     const requested = Boolean(toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date));
-    const received = Boolean(toYmd(member.Kaiser_Tier_Level_Received_Date));
+    const received =
+      hasMeaningfulValue(
+        (member as any).Kaiser_Tier_Level_Received_Date ||
+          (member as any).Kaiser_Tier_Level_Received ||
+          (member as any).Tier_Level_Received_Date ||
+          (member as any).Tier_Received_Date
+      ) ||
+      Boolean(
+        toYmd(
+          (member as any).Kaiser_Tier_Level_Received_Date ||
+            (member as any).Kaiser_Tier_Level_Received ||
+            (member as any).Tier_Level_Received_Date ||
+            (member as any).Tier_Received_Date
+        )
+      );
     // Show only members still pending with ILS (requested exists, received not set).
     return requested && !received;
   }
@@ -141,7 +167,7 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
   // show only pending members (requested exists or status matches), but hide once H2022 received is set.
   const rbPendingByStatus = status === 'r&b sent pending ils contract' || status === 'r & b sent pending ils contract';
   const rbRequested = Boolean(toYmd(member.Kaiser_H2022_Requested));
-  const rbReceived = Boolean(toYmd(member.Kaiser_H2022_Received));
+  const rbReceived = hasMeaningfulValue(member.Kaiser_H2022_Received) || Boolean(toYmd(member.Kaiser_H2022_Received));
   return (rbPendingByStatus || rbRequested) && !rbReceived;
 };
 
@@ -225,7 +251,11 @@ export default function ILSReportEditorPage() {
             // Use the date fields directly from the API response
             Kaiser_T2038_Requested: toYmd(member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date),
             Kaiser_T2038_Requested_Date: toYmd(member.Kaiser_T2038_Requested_Date),
-            Kaiser_T2038_Received_Date: toYmd(member.Kaiser_T2038_Received_Date),
+            Kaiser_T2038_Received_Date: toYmd(
+              member.Kaiser_T2038_Received_Date ||
+                member.Kaiser_T2038_Received ||
+                member.Kaiser_T038_Received
+            ),
             Kaiser_Tier_Level: String(member.Kaiser_Tier_Level || member.Tier_Level || '').trim(),
             Kaiser_Tier_Level_Requested: toYmd(
               member.Kaiser_Tier_Level_Requested ||
@@ -241,7 +271,12 @@ export default function ILSReportEditorPage() {
                 member.Tier_Level_Requested_Date ||
                 member.Tier_Request_Date
             ),
-            Kaiser_Tier_Level_Received_Date: toYmd(member.Kaiser_Tier_Level_Received_Date),
+            Kaiser_Tier_Level_Received_Date: toYmd(
+              member.Kaiser_Tier_Level_Received_Date ||
+                member.Kaiser_Tier_Level_Received ||
+                member.Tier_Level_Received_Date ||
+                member.Tier_Received_Date
+            ),
             Kaiser_H2022_Requested: toYmd(member.Kaiser_H2022_Requested),
             Kaiser_H2022_Received: toYmd(member.Kaiser_H2022_Received),
             memberCounty: member.memberCounty,

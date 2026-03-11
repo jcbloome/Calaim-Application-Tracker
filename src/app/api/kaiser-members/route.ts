@@ -99,7 +99,12 @@ export async function GET(request: NextRequest) {
           member.Tier_Level_Requested_Date ||
           member.Tier_Request_Date ||
           '',
-        Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
+        Kaiser_Tier_Level_Received_Date:
+          member.Kaiser_Tier_Level_Received_Date ||
+          member.Kaiser_Tier_Level_Received ||
+          member.Tier_Level_Received_Date ||
+          member.Tier_Received_Date ||
+          '',
         ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
         ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
         Kaiser_H2022_Requested: member.Kaiser_H2022_Requested || '',
@@ -485,7 +490,12 @@ export async function GET(request: NextRequest) {
         member.Tier_Level_Requested_Date ||
         member.Tier_Request_Date ||
         '',
-      Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
+      Kaiser_Tier_Level_Received_Date:
+        member.Kaiser_Tier_Level_Received_Date ||
+        member.Kaiser_Tier_Level_Received ||
+        member.Tier_Level_Received_Date ||
+        member.Tier_Received_Date ||
+        '',
       ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
       ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
       Kaiser_H2022_Requested: member.Kaiser_H2022_Requested || '',
