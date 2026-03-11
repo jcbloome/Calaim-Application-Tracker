@@ -195,6 +195,7 @@ function AdminHeader() {
   const [priorityNotesCount, setPriorityNotesCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [alftPendingCount, setAlftPendingCount] = useState(0);
+  const [kTierCount, setKTierCount] = useState(0);
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
@@ -328,6 +329,37 @@ function AdminHeader() {
       }
     );
     return () => unsubscribe();
+  }, [firestore]);
+
+  // Action item counter: Kaiser Tier updates entered by ILS (show until Kaiser status changes).
+  useEffect(() => {
+    if (!firestore) return;
+    const qy = query(collection(firestore, 'caspio_members_cache'), where('CalAIM_MCO', '==', 'Kaiser'), limit(5000));
+    const normalize = (value: unknown) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    const hasDate = (value: unknown) => {
+      const s = String(value ?? '').trim().toLowerCase();
+      return Boolean(s) && s !== 'null' && s !== 'undefined' && s !== 'n/a';
+    };
+    const unsub = onSnapshot(
+      qy,
+      (snap) => {
+        let next = 0;
+        snap.forEach((docSnap) => {
+          const row = docSnap.data() as any;
+          const status = normalize(row?.Kaiser_Status || row?.Kaiser_ID_Status || '');
+          if (status !== 'tier level requested') return;
+          if (hasDate(row?.Kaiser_Tier_Level_Received_Date || row?.Kaiser_Tier_Level_Received)) next += 1;
+        });
+        setKTierCount(next);
+      },
+      () => setKTierCount(0)
+    );
+    return () => unsub();
   }, [firestore]);
 
   // Keep Action items counts aligned with the Electron pill summary (Chat + Priority Notes).
@@ -1006,6 +1038,13 @@ function AdminHeader() {
         dot: 'bg-purple-600',
         href: '/admin/alft-tracker',
       },
+      {
+        key: 'k-tier',
+        label: 'K-Tier',
+        count: kTierCount,
+        dot: 'bg-indigo-600',
+        href: '/admin/kaiser-tracker',
+      },
     ];
 
     return (
@@ -1021,8 +1060,17 @@ function AdminHeader() {
             title={item.count > 0 ? "View matching applications" : "No matching applications right now"}
           >
             <span className={`h-2 w-2 rounded-full ${item.dot}`} />
-            <span className="font-semibold text-foreground">{item.label}</span>
-            <span className="text-muted-foreground">{item.count}</span>
+            {item.key === 'k-tier' ? (
+              <>
+                <span className="font-semibold text-foreground">K-Tier</span>
+                <span className="text-muted-foreground">{item.count}</span>
+              </>
+            ) : (
+              <>
+                <span className="font-semibold text-foreground">{item.label}</span>
+                <span className="text-muted-foreground">{item.count}</span>
+              </>
+            )}
           </Link>
         ))}
       </div>

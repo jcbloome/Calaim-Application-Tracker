@@ -68,6 +68,11 @@ export function KaiserSummaryCards({
     return null;
   };
 
+  const hasDate = (value: unknown) => {
+    const s = String(value || '').trim().toLowerCase();
+    return Boolean(s) && s !== 'null' && s !== 'undefined' && s !== 'n/a';
+  };
+
   const ilsMemberUpdatesMembers = members.filter((m) => Boolean(getIlsBucketKey(getEffectiveKaiserStatus(m))));
   const ilsMemberUpdatesCount = ilsMemberUpdatesMembers.length;
   const ilsMemberUpdatesPct = members.length > 0 ? ((ilsMemberUpdatesCount / members.length) * 100).toFixed(1) : '0';
@@ -75,6 +80,10 @@ export function KaiserSummaryCards({
     ...m,
     count: ilsMemberUpdatesMembers.filter((x) => getIlsBucketKey(getEffectiveKaiserStatus(x)) === m.key).length,
   }));
+
+  const tierActionMembers = members.filter(
+    (m) => normalize(getEffectiveKaiserStatus(m)) === 'tier level requested' && hasDate((m as any)?.Kaiser_Tier_Level_Received_Date)
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -138,6 +147,25 @@ export function KaiserSummaryCards({
                 <span className="font-semibold text-slate-700">{row.count}</span>
               </div>
             ))}
+          </div>
+          <div className="border-t pt-2 space-y-1">
+            <div className="text-[11px] font-semibold text-slate-700">Action Items</div>
+            <button
+              type="button"
+              className="w-full flex items-center justify-between text-[11px] text-muted-foreground hover:text-slate-800 hover:underline"
+              onClick={() =>
+                openMemberModal(
+                  tierActionMembers,
+                  'Tier Action Items',
+                  `${tierActionMembers.length} members where ILS updated Tier Level Received Date (clears after Kaiser status moves forward)`,
+                  'kaiser_status',
+                  'tier_action_items'
+                )
+              }
+            >
+              <span className="truncate pr-2">{`Tier (${tierActionMembers.length})`}</span>
+              <span className="font-semibold text-slate-700">{tierActionMembers.length}</span>
+            </button>
           </div>
         </CardContent>
       </Card>

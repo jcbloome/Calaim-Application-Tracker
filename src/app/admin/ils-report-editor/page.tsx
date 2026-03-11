@@ -8,36 +8,37 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/firebase';
 import { 
   FileText, 
-  Download, 
   Save, 
-  RefreshCw, 
+  RefreshCw,
   Calendar,
   AlertTriangle,
-  CheckCircle2,
   Clock,
   Loader2,
-  Edit,
-  Eye,
+  Pencil,
   Printer,
   MessageSquare,
   Database
 } from 'lucide-react';
 import { format } from 'date-fns';
-import Link from 'next/link';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface ILSReportMember {
   id: string;
   memberName: string;
   memberMrn: string;
+  birthDate?: string;
   client_ID2: string;
   Kaiser_Status: string;
   Kaiser_T2038_Requested_Date?: string;
   Kaiser_T2038_Received_Date?: string;
+  Kaiser_Tier_Level?: string;
+  Kaiser_Tier_Level_Requested?: string;
   Kaiser_Tier_Level_Requested_Date?: string;
   Kaiser_Tier_Level_Received_Date?: string;
   Kaiser_H2022_Requested?: string;
@@ -46,7 +47,7 @@ interface ILSReportMember {
   kaiser_user_assignment?: string;
 }
 
-type QueueKey = 't2038_auth_only_email' | 'h2022_requested' | 'tier_level_requested' | 'rb_sent_pending_ils_contract';
+type QueueKey = 't2038_auth_only_email' | 'tier_level_requested' | 'rb_sent_pending_ils_contract';
 
 const hasMeaningfulValue = (value: any) => {
   const s = value != null ? String(value).trim() : '';
@@ -109,14 +110,9 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
     return status === 't2038 auth only email';
   }
   if (key === 'tier_level_requested') {
-    const requested = Boolean(toYmd(member.Kaiser_Tier_Level_Requested_Date));
+    const requested = Boolean(toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date));
     const received = Boolean(toYmd(member.Kaiser_Tier_Level_Received_Date));
     return status === 'tier level requested' || (requested && !received);
-  }
-  if (key === 'h2022_requested') {
-    const requested = Boolean(toYmd(member.Kaiser_H2022_Requested));
-    const received = Boolean(toYmd(member.Kaiser_H2022_Received));
-    return status === 'h2022 requested' || (requested && !received);
   }
   // R&B Sent Pending ILS Contract (bottleneck stage).
   // Use the exact Caspio status label only (avoid pulling in adjacent workflow statuses).
@@ -124,9 +120,10 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
 };
 
 const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
-  if (key === 'tier_level_requested') return toYmd(member.Kaiser_Tier_Level_Requested_Date);
-  if (key === 'h2022_requested') return toYmd(member.Kaiser_H2022_Requested);
+  if (key === 'tier_level_requested')
+    return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
   if (key === 't2038_auth_only_email') return toYmd(member.Kaiser_T2038_Requested_Date);
+  if (key === 'rb_sent_pending_ils_contract') return toYmd(member.Kaiser_H2022_Requested);
   return '';
 };
 
@@ -147,10 +144,14 @@ export default function ILSReportEditorPage() {
   const [members, setMembers] = useState<ILSReportMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [editingMember, setEditingMember] = useState<string | null>(null);
-  const [showEditor, setShowEditor] = useState(false);
   const [reportDate, setReportDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [reportComments, setReportComments] = useState('');
+  const [cardEditOpen, setCardEditOpen] = useState(false);
+  const [cardEditQueue, setCardEditQueue] = useState<'tier_level_requested' | 'rb_sent_pending_ils_contract' | null>(null);
+  const [cardEditMemberId, setCardEditMemberId] = useState('');
+  const [cardEditTierLevel, setCardEditTierLevel] = useState('');
+  const [cardEditTierReceivedDate, setCardEditTierReceivedDate] = useState('');
+  const [cardEditRbReceivedDate, setCardEditRbReceivedDate] = useState('');
   const { toast } = useToast();
 
   // Load Kaiser members for ILS report
@@ -187,12 +188,27 @@ export default function ILSReportEditorPage() {
             id: member.id || member.Client_ID2,
             memberName: `${member.memberFirstName} ${member.memberLastName}`,
             memberMrn: member.memberMrn,
+            birthDate: toYmd(member.Birth_Date || member.birthDate),
             client_ID2: member.client_ID2 || member.Client_ID2,
             Kaiser_Status: effectiveStatus,
             // Use the date fields directly from the API response
             Kaiser_T2038_Requested_Date: toYmd(member.Kaiser_T2038_Requested_Date),
             Kaiser_T2038_Received_Date: toYmd(member.Kaiser_T2038_Received_Date),
-            Kaiser_Tier_Level_Requested_Date: toYmd(member.Kaiser_Tier_Level_Requested_Date),
+            Kaiser_Tier_Level: String(member.Kaiser_Tier_Level || member.Tier_Level || '').trim(),
+            Kaiser_Tier_Level_Requested: toYmd(
+              member.Kaiser_Tier_Level_Requested ||
+                member.Kaiser_Tier_Level_Requested_Date ||
+                member.Tier_Level_Request_Date ||
+                member.Tier_Level_Requested_Date ||
+                member.Tier_Request_Date
+            ),
+            Kaiser_Tier_Level_Requested_Date: toYmd(
+              member.Kaiser_Tier_Level_Requested ||
+                member.Kaiser_Tier_Level_Requested_Date ||
+                member.Tier_Level_Request_Date ||
+                member.Tier_Level_Requested_Date ||
+                member.Tier_Request_Date
+            ),
             Kaiser_Tier_Level_Received_Date: toYmd(member.Kaiser_Tier_Level_Received_Date),
             Kaiser_H2022_Requested: toYmd(member.Kaiser_H2022_Requested),
             Kaiser_H2022_Received: toYmd(member.Kaiser_H2022_Received),
@@ -207,19 +223,16 @@ export default function ILSReportEditorPage() {
             (m: ILSReportMember) =>
               queueIncludes(m, 't2038_auth_only_email') ||
               queueIncludes(m, 'tier_level_requested') ||
-              queueIncludes(m, 'h2022_requested') ||
               queueIncludes(m, 'rb_sent_pending_ils_contract')
           )
           .sort((a: ILSReportMember, b: ILSReportMember) => {
             const aDates = [
               ymdSortKey(queueRequestedDate(a, 't2038_auth_only_email')),
-              ymdSortKey(queueRequestedDate(a, 'h2022_requested')),
               ymdSortKey(queueRequestedDate(a, 'tier_level_requested')),
               ymdSortKey(queueRequestedDate(a, 'rb_sent_pending_ils_contract')),
             ].sort();
             const bDates = [
               ymdSortKey(queueRequestedDate(b, 't2038_auth_only_email')),
-              ymdSortKey(queueRequestedDate(b, 'h2022_requested')),
               ymdSortKey(queueRequestedDate(b, 'tier_level_requested')),
               ymdSortKey(queueRequestedDate(b, 'rb_sent_pending_ils_contract')),
             ].sort();
@@ -276,8 +289,6 @@ export default function ILSReportEditorPage() {
           description: 'Member dates saved successfully',
           className: 'bg-green-100 text-green-900 border-green-200',
         });
-        
-        setEditingMember(null);
       }
     } catch (error: any) {
       toast({
@@ -290,8 +301,37 @@ export default function ILSReportEditorPage() {
     }
   };
 
+  const openCardEdit = (queue: 'tier_level_requested' | 'rb_sent_pending_ils_contract', memberId: string) => {
+    const member = members.find((m) => String(m.id || '') === String(memberId || ''));
+    if (!member) return;
+    setCardEditQueue(queue);
+    setCardEditMemberId(String(member.id || ''));
+    setCardEditTierLevel(String(member.Kaiser_Tier_Level || '').trim());
+    setCardEditTierReceivedDate(toYmd(member.Kaiser_Tier_Level_Received_Date));
+    setCardEditRbReceivedDate(toYmd(member.Kaiser_H2022_Received));
+    setCardEditOpen(true);
+  };
+
+  const handleSaveCardEdit = async () => {
+    if (!cardEditQueue || !cardEditMemberId) return;
+    const updates: Partial<ILSReportMember> = {};
+    if (cardEditQueue === 'tier_level_requested') {
+      updates.Kaiser_Tier_Level = String(cardEditTierLevel || '').trim();
+      updates.Kaiser_Tier_Level_Received_Date = toYmd(cardEditTierReceivedDate);
+    } else if (cardEditQueue === 'rb_sent_pending_ils_contract') {
+      updates.Kaiser_H2022_Received = toYmd(cardEditRbReceivedDate);
+    }
+    await saveMemberDates(cardEditMemberId, updates);
+    setCardEditOpen(false);
+    setCardEditQueue(null);
+    setCardEditMemberId('');
+  };
+
   // Generate printable PDF report
-  const generatePrintableReport = () => {
+  const generatePrintableReport = (opts?: { includeT2038?: boolean; title?: string; downloadName?: string }) => {
+    const includeT2038 = Boolean(opts?.includeT2038);
+    const reportTitle = opts?.title || 'ILS Member Update';
+    const downloadName = opts?.downloadName || `ILS_Member_Update_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`;
     const escapeHtml = (value: any) => {
       const s = value != null ? String(value) : '';
       return s
@@ -309,6 +349,7 @@ export default function ILSReportEditorPage() {
           id: String(m.id || ''),
           memberName: String(m.memberName || '').trim(),
           memberMrn: String(m.memberMrn || '').trim(),
+          birthDate: toYmd(m.birthDate),
           requestedDate: queueRequestedDate(m, key),
         }))
         .sort((a, b) => {
@@ -321,17 +362,15 @@ export default function ILSReportEditorPage() {
     };
 
     const queues = {
-      t2038AuthOnly: makeRows('t2038_auth_only_email'),
-      h2022Requested: makeRows('h2022_requested'),
       tierRequested: makeRows('tier_level_requested'),
       rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
+      t2038AuthOnly: makeRows('t2038_auth_only_email'),
     };
 
     const uniqueMemberIds = new Set<string>([
-      ...queues.t2038AuthOnly.map((r) => r.id).filter(Boolean),
-      ...queues.h2022Requested.map((r) => r.id).filter(Boolean),
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
+      ...(includeT2038 ? queues.t2038AuthOnly.map((r) => r.id).filter(Boolean) : []),
     ]);
 
     const reportData = {
@@ -348,7 +387,7 @@ export default function ILSReportEditorPage() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ILS Member Update - ${format(new Date(reportDate), 'MMM dd, yyyy')}</title>
+    <title>${escapeHtml(reportTitle)} - ${format(new Date(reportDate), 'MMM dd, yyyy')}</title>
     <style>
         body { 
             font-family: Arial, sans-serif; 
@@ -460,7 +499,7 @@ export default function ILSReportEditorPage() {
 </head>
 <body>
     <div class="header">
-        <h1>ILS Member Update</h1>
+        <h1>${escapeHtml(reportTitle)}</h1>
         <div class="report-date">Report Date: ${format(new Date(reportDate), 'MMMM dd, yyyy')}</div>
         <div class="report-date">Kaiser bottleneck members</div>
     </div>
@@ -478,20 +517,23 @@ export default function ILSReportEditorPage() {
 
     <div class="summary">
       <div class="pill"><strong>Total members in queues:</strong> ${reportData.totalMembers}</div>
-      <div class="pill"><strong>T2038 Auth Only Email:</strong> ${reportData.queues.t2038AuthOnly.length}</div>
-      <div class="pill"><strong>H2022 Requested:</strong> ${reportData.queues.h2022Requested.length}</div>
+      ${includeT2038
+        ? `<div class="pill"><strong>T2038 Auth Only Email:</strong> ${reportData.queues.t2038AuthOnly.length}</div>`
+        : `
       <div class="pill"><strong>Tier Level Requested:</strong> ${reportData.queues.tierRequested.length}</div>
       <div class="pill"><strong>R &amp; B Pending ILS Contract:</strong> ${reportData.queues.rbPendingIlsContract.length}</div>
+      `}
     </div>
 
     <div class="grid">
-      ${[
-        { key: 't2038AuthOnly', label: 'T2038 Auth Only Email' },
-        { key: 'h2022Requested', label: 'H2022 Requested' },
-        { key: 'tierRequested', label: 'Tier Level Requested' },
-        { key: 'rbPendingIlsContract', label: 'R & B Sent Pending ILS Contract' },
-      ].map((q) => {
-        const rows = (reportData.queues as any)[q.key] as Array<{ memberName: string; memberMrn: string; requestedDate: string }>;
+      ${(includeT2038
+        ? [{ key: 't2038AuthOnly', label: 'T2038 Auth Only Email' }]
+        : [
+            { key: 'tierRequested', label: 'Tier Level Requested' },
+            { key: 'rbPendingIlsContract', label: 'R & B Sent Pending ILS Contract' },
+          ]
+      ).map((q) => {
+        const rows = (reportData.queues as any)[q.key] as Array<{ memberName: string; memberMrn: string; birthDate?: string; requestedDate: string }>;
         return `
           <div class="card">
             <h2>${q.label} (${rows.length})</h2>
@@ -499,15 +541,15 @@ export default function ILSReportEditorPage() {
               <thead>
                 <tr>
                   <th>Member</th>
-                  <th>MRN</th>
-                  <th>Requested</th>
+                  <th>MRN / Birth Date</th>
+                  <th>Request Date</th>
                 </tr>
               </thead>
               <tbody>
                 ${rows.length === 0 ? `<tr><td colspan="3" style="color:#777;">None</td></tr>` : rows.map((r) => `
                   <tr>
                     <td><strong>${escapeHtml(r.memberName || '—')}</strong></td>
-                    <td>${escapeHtml(r.memberMrn || '—')}</td>
+                    <td>${escapeHtml(r.memberMrn || '—')}<br><span style="color:#666;">Birth Date: ${escapeHtml(r.birthDate ? format(new Date(`${r.birthDate}T00:00:00`), 'MM/dd/yyyy') : '—')}</span></td>
                     <td>${escapeHtml(r.requestedDate ? format(new Date(`${r.requestedDate}T00:00:00`), 'MM/dd/yyyy') : '—')}</td>
                   </tr>
                 `).join('')}
@@ -545,7 +587,7 @@ export default function ILSReportEditorPage() {
       // Fallback: download as HTML file
       const link = document.createElement('a');
       link.href = url;
-      link.download = `ILS_Member_Update_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`;
+      link.download = downloadName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -567,6 +609,7 @@ export default function ILSReportEditorPage() {
           id: String(m.id || ''),
           memberName: String(m.memberName || '').trim(),
           memberMrn: String(m.memberMrn || '').trim(),
+          birthDate: toYmd(m.birthDate),
           requestedDate: queueRequestedDate(m, key),
         }))
         .sort((a, b) => {
@@ -578,10 +621,9 @@ export default function ILSReportEditorPage() {
     };
 
     return {
-      t2038AuthOnly: makeRows('t2038_auth_only_email'),
-      h2022Requested: makeRows('h2022_requested'),
       tierRequested: makeRows('tier_level_requested'),
       rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
+      t2038AuthOnly: makeRows('t2038_auth_only_email'),
     };
   }, [members]);
 
@@ -589,18 +631,16 @@ export default function ILSReportEditorPage() {
   const stats = useMemo(() => {
     const uniqueMemberIds = new Set<string>([
       ...queues.t2038AuthOnly.map((r) => r.id).filter(Boolean),
-      ...queues.h2022Requested.map((r) => r.id).filter(Boolean),
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
     ]);
     return {
       totalInQueues: uniqueMemberIds.size,
       t2038AuthOnly: queues.t2038AuthOnly.length,
-      h2022Requested: queues.h2022Requested.length,
       tierRequested: queues.tierRequested.length,
       rbPendingIlsContract: queues.rbPendingIlsContract.length,
     };
-  }, [queues.h2022Requested, queues.rbPendingIlsContract, queues.t2038AuthOnly, queues.tierRequested]);
+  }, [queues.rbPendingIlsContract, queues.t2038AuthOnly, queues.tierRequested]);
 
   // Save comments to localStorage
   const saveComments = () => {
@@ -709,21 +749,33 @@ export default function ILSReportEditorPage() {
                 </Button>
                 
                 <Button
-                  onClick={generatePrintableReport}
+                  onClick={() =>
+                    generatePrintableReport({
+                      includeT2038: false,
+                      title: 'ILS Member Update - Tier + R&B Queues',
+                      downloadName: `ILS_Tier_RB_Queues_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
+                    })
+                  }
                   disabled={members.length === 0}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   <Printer className="mr-2 h-4 w-4" />
-                  Generate PDF Report
+                  Generate Tier + R&B PDF
                 </Button>
 
                 <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowEditor((v) => !v)}
+                  onClick={() =>
+                    generatePrintableReport({
+                      includeT2038: true,
+                      title: 'T2038 Auth Only Email Queue',
+                      downloadName: `T2038_Auth_Only_Queue_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
+                    })
+                  }
                   disabled={members.length === 0}
+                  variant="outline"
                 >
-                  {showEditor ? 'Hide editor' : 'Show editor'}
+                  <Printer className="mr-2 h-4 w-4" />
+                  T2038 PDF
                 </Button>
               </div>
             </div>
@@ -758,7 +810,7 @@ export default function ILSReportEditorPage() {
       </Card>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -787,18 +839,6 @@ export default function ILSReportEditorPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-indigo-600">{stats.h2022Requested}</p>
-                <p className="text-xs text-muted-foreground">H2022 Requested</p>
-              </div>
-              <Clock className="h-4 w-4 text-indigo-600" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
                 <p className="text-2xl font-bold text-blue-600">{stats.tierRequested}</p>
                 <p className="text-xs text-muted-foreground">Tier Level Requested</p>
               </div>
@@ -811,8 +851,8 @@ export default function ILSReportEditorPage() {
       {/* Compact visual "graph" of requested queues */}
       <Card>
         <CardHeader>
-          <CardTitle>Requested queues (compact)</CardTitle>
-          <CardDescription>Member name • MRN • date requested</CardDescription>
+          <CardTitle>Requested queues</CardTitle>
+          <CardDescription>Member name • MRN • Birth Date • Request Date</CardDescription>
         </CardHeader>
         <CardContent>
           {members.length === 0 ? (
@@ -821,16 +861,37 @@ export default function ILSReportEditorPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {(
                 [
-                  { key: 't2038AuthOnly' as const, label: 'T2038 Auth Only Email', rows: queues.t2038AuthOnly },
-                  { key: 'h2022Requested' as const, label: 'H2022 Requested', rows: queues.h2022Requested },
-                  { key: 'tierRequested' as const, label: 'Tier Level Requested', rows: queues.tierRequested },
-                  { key: 'rbPendingIlsContract' as const, label: 'R & B Sent Pending ILS Contract', rows: queues.rbPendingIlsContract },
+                  {
+                    key: 'tierRequested' as const,
+                    queueKey: 'tier_level_requested' as const,
+                    label: 'Tier Level Requested',
+                    rows: queues.tierRequested,
+                    editable: true,
+                  },
+                  {
+                    key: 'rbPendingIlsContract' as const,
+                    queueKey: 'rb_sent_pending_ils_contract' as const,
+                    label: 'R & B Sent Pending ILS Contract',
+                    rows: queues.rbPendingIlsContract,
+                    editable: true,
+                  },
+                  {
+                    key: 't2038AuthOnly' as const,
+                    queueKey: 't2038_auth_only_email' as const,
+                    label: 'T2038 Auth Only Email',
+                    rows: queues.t2038AuthOnly,
+                    editable: false,
+                  },
                 ] as const
               ).map((q) => (
                 <div key={q.key} className="rounded-lg border p-3">
                   <div className="flex items-center justify-between mb-2">
                     <div className="font-medium">{q.label}</div>
                     <Badge variant="secondary">{q.rows.length}</Badge>
+                  </div>
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>Member / MRN / Birth Date</span>
+                    <span className="font-medium">Request Date</span>
                   </div>
                   <div className="space-y-1 text-sm">
                     {q.rows.length === 0 ? (
@@ -843,9 +904,29 @@ export default function ILSReportEditorPage() {
                             <div className="text-xs text-muted-foreground">
                               MRN: <span className="font-mono">{r.memberMrn || '—'}</span>
                             </div>
+                            <div className="text-xs text-muted-foreground">
+                              Birth Date:{' '}
+                              <span className="font-mono">
+                                {r.birthDate ? format(new Date(`${r.birthDate}T00:00:00`), 'MM/dd/yyyy') : '—'}
+                              </span>
+                            </div>
                           </div>
-                          <div className="shrink-0 text-xs font-mono text-muted-foreground">
-                            {r.requestedDate ? format(new Date(`${r.requestedDate}T00:00:00`), 'MM/dd/yyyy') : '—'}
+                          <div className="shrink-0 text-right">
+                            <div className="text-xs font-mono text-muted-foreground">
+                              {r.requestedDate ? format(new Date(`${r.requestedDate}T00:00:00`), 'MM/dd/yyyy') : '—'}
+                            </div>
+                            {q.editable ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-1 text-[11px] mt-1"
+                                onClick={() => openCardEdit(q.queueKey, r.id)}
+                              >
+                                <Pencil className="h-3 w-3 mr-1" />
+                                Edit
+                              </Button>
+                            ) : null}
                           </div>
                         </div>
                       ))
@@ -881,285 +962,66 @@ export default function ILSReportEditorPage() {
         </Card>
       )}
 
-      {/* Members Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Editable details (optional)</CardTitle>
-          <CardDescription>
-            Use this only if you need to correct dates; the PDF is generated from the compact queues above.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {!showEditor ? (
-            <div className="text-sm text-muted-foreground">Click “Show editor” to edit member date fields.</div>
-          ) : isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin mr-2" />
-              <span>Loading members...</span>
-            </div>
-          ) : members.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Database className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No members loaded</h3>
-              <p className="mb-6">Click “Load Members” to fetch the requested queues from Caspio</p>
-              <Button 
-                onClick={loadMembers} 
-                variant="default" 
-                className="bg-green-600 hover:bg-green-700"
-                size="lg"
-              >
-                <Database className="mr-2 h-4 w-4" />
-                Load Members from Caspio
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {members.map((member) => (
-                <MemberEditCard
-                  key={member.id}
-                  member={member}
-                  isEditing={editingMember === member.id}
-                  isSaving={isSaving}
-                  onEdit={() => setEditingMember(member.id)}
-                  onCancel={() => setEditingMember(null)}
-                  onSave={(updates) => saveMemberDates(member.id, updates)}
+      <Dialog open={cardEditOpen} onOpenChange={setCardEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {cardEditQueue === 'tier_level_requested' ? 'Edit Tier Level Requested' : 'Edit R & B Sent Pending ILS Contract'}
+            </DialogTitle>
+            <DialogDescription>
+              Update ILS fields directly from this queue row.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {cardEditQueue === 'tier_level_requested' ? (
+              <>
+                <div className="space-y-2">
+                  <Label>Tier Level</Label>
+                  <Select value={cardEditTierLevel || 'none'} onValueChange={(v) => setCardEditTierLevel(v === 'none' ? '' : v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select tier level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not set</SelectItem>
+                      <SelectItem value="1">1</SelectItem>
+                      <SelectItem value="2">2</SelectItem>
+                      <SelectItem value="3">3</SelectItem>
+                      <SelectItem value="4">4</SelectItem>
+                      <SelectItem value="5">5</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Tier Level Received Date</Label>
+                  <Input
+                    type="date"
+                    value={cardEditTierReceivedDate}
+                    onChange={(e) => setCardEditTierReceivedDate(e.target.value)}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label>R &amp; B Sent Pending ILS Contract Received Date</Label>
+                <Input
+                  type="date"
+                  value={cardEditRbReceivedDate}
+                  onChange={(e) => setCardEditRbReceivedDate(e.target.value)}
                 />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// Member Edit Card Component
-interface MemberEditCardProps {
-  member: ILSReportMember;
-  isEditing: boolean;
-  isSaving: boolean;
-  onEdit: () => void;
-  onCancel: () => void;
-  onSave: (updates: Partial<ILSReportMember>) => void;
-}
-
-function MemberEditCard({ member, isEditing, isSaving, onEdit, onCancel, onSave }: MemberEditCardProps) {
-  const [editData, setEditData] = useState<Partial<ILSReportMember>>({});
-
-  useEffect(() => {
-    if (isEditing) {
-      setEditData({
-        Kaiser_T2038_Requested_Date: toYmd(member.Kaiser_T2038_Requested_Date),
-        Kaiser_T2038_Received_Date: toYmd(member.Kaiser_T2038_Received_Date),
-        Kaiser_Tier_Level_Requested_Date: toYmd(member.Kaiser_Tier_Level_Requested_Date),
-        Kaiser_Tier_Level_Received_Date: toYmd(member.Kaiser_Tier_Level_Received_Date),
-        Kaiser_H2022_Requested: toYmd(member.Kaiser_H2022_Requested),
-        Kaiser_H2022_Received: toYmd(member.Kaiser_H2022_Received),
-      });
-    }
-  }, [isEditing, member]);
-
-  const handleSave = () => {
-    onSave(editData);
-  };
-
-  const getStatusColor = (status: string) => {
-    if (status.includes('T2038')) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    if (status.includes('Tier')) return 'bg-blue-100 text-blue-800 border-blue-200';
-    return 'bg-purple-100 text-purple-800 border-purple-200';
-  };
-
-  return (
-    <div className="border rounded-lg p-4 space-y-4">
-      {/* Member Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <h3 className="font-medium">{member.memberName}</h3>
-            <Badge variant="outline" className="text-xs">
-              MRN: {member.memberMrn}
-            </Badge>
-            <Badge variant="outline" className="text-xs">
-              ID: {member.client_ID2}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge className={getStatusColor(member.Kaiser_Status)}>
-              {member.Kaiser_Status}
-            </Badge>
-            {member.memberCounty && (
-              <span className="text-sm text-muted-foreground">{member.memberCounty} County</span>
+              </div>
             )}
-            {member.kaiser_user_assignment && (
-              <span className="text-sm text-muted-foreground">Assigned: {member.kaiser_user_assignment}</span>
-            )}
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <Link href={`/admin/applications/${member.id}`}>
-            <Button size="sm" variant="outline">
-              <Eye className="mr-2 h-3 w-3" />
-              View
-            </Button>
-          </Link>
-          
-          {!isEditing ? (
-            <Button size="sm" onClick={onEdit}>
-              <Edit className="mr-2 h-3 w-3" />
-              Edit Dates
-            </Button>
-          ) : (
-            <div className="flex gap-1">
-              <Button size="sm" onClick={handleSave} disabled={isSaving}>
-                {isSaving ? (
-                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-3 w-3" />
-                )}
-                Save
-              </Button>
-              <Button size="sm" variant="outline" onClick={onCancel} disabled={isSaving}>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCardEditOpen(false)} disabled={isSaving}>
                 Cancel
               </Button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Date Fields */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* T2038 Process */}
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">T2038 Process</Label>
-          <div className="space-y-2">
-            <div>
-              <Label className="text-xs text-muted-foreground">Requested Date</Label>
-              {isEditing ? (
-                <Input
-                  type="date"
-                  value={toYmd(editData.Kaiser_T2038_Requested_Date)}
-                  onChange={(e) => setEditData(prev => ({ ...prev, Kaiser_T2038_Requested_Date: e.target.value }))}
-                  className="text-xs"
-                />
-              ) : (
-                <div className="text-sm">
-                  {formatYmd(member.Kaiser_T2038_Requested_Date) ? 
-                    formatYmd(member.Kaiser_T2038_Requested_Date) : 
-                    <span className="text-muted-foreground">Not set</span>
-                  }
-                </div>
-              )}
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Received Date</Label>
-              {isEditing ? (
-                <Input
-                  type="date"
-                  value={toYmd(editData.Kaiser_T2038_Received_Date)}
-                  onChange={(e) => setEditData(prev => ({ ...prev, Kaiser_T2038_Received_Date: e.target.value }))}
-                  className="text-xs"
-                />
-              ) : (
-                <div className="text-sm">
-                  {formatYmd(member.Kaiser_T2038_Received_Date) ? 
-                    formatYmd(member.Kaiser_T2038_Received_Date) : 
-                    <span className="text-muted-foreground">Not set</span>
-                  }
-                </div>
-              )}
+              <Button onClick={handleSaveCardEdit} disabled={isSaving}>
+                {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save
+              </Button>
             </div>
           </div>
-        </div>
-
-        {/* Tier Level Process */}
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">Tier Level Process</Label>
-          <div className="space-y-2">
-            <div>
-              <Label className="text-xs text-muted-foreground">Requested Date</Label>
-              {isEditing ? (
-                <Input
-                  type="date"
-                  value={toYmd(editData.Kaiser_Tier_Level_Requested_Date)}
-                  onChange={(e) => setEditData(prev => ({ ...prev, Kaiser_Tier_Level_Requested_Date: e.target.value }))}
-                  className="text-xs"
-                />
-              ) : (
-                <div className="text-sm">
-                  {formatYmd(member.Kaiser_Tier_Level_Requested_Date) ? 
-                    formatYmd(member.Kaiser_Tier_Level_Requested_Date) : 
-                    <span className="text-muted-foreground">Not set</span>
-                  }
-                </div>
-              )}
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Received Date</Label>
-              {isEditing ? (
-                <Input
-                  type="date"
-                  value={toYmd(editData.Kaiser_Tier_Level_Received_Date)}
-                  onChange={(e) => setEditData(prev => ({ ...prev, Kaiser_Tier_Level_Received_Date: e.target.value }))}
-                  className="text-xs"
-                />
-              ) : (
-                <div className="text-sm">
-                  {formatYmd(member.Kaiser_Tier_Level_Received_Date) ? 
-                    formatYmd(member.Kaiser_Tier_Level_Received_Date) : 
-                    <span className="text-muted-foreground">Not set</span>
-                  }
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* H2022 Contract */}
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">H2022 Contract</Label>
-          <div className="space-y-2">
-            <div>
-              <Label className="text-xs text-muted-foreground">Requested Date</Label>
-              {isEditing ? (
-                <Input
-                  type="date"
-                  value={toYmd(editData.Kaiser_H2022_Requested)}
-                  onChange={(e) => setEditData((prev) => ({ ...prev, Kaiser_H2022_Requested: e.target.value }))}
-                  className="text-xs"
-                />
-              ) : (
-                <div className="text-sm">
-                  {formatYmd(member.Kaiser_H2022_Requested) ? (
-                    formatYmd(member.Kaiser_H2022_Requested)
-                  ) : (
-                    <span className="text-muted-foreground">Not set</span>
-                  )}
-                </div>
-              )}
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Received Date</Label>
-              {isEditing ? (
-                <Input
-                  type="date"
-                  value={toYmd(editData.Kaiser_H2022_Received)}
-                  onChange={(e) => setEditData((prev) => ({ ...prev, Kaiser_H2022_Received: e.target.value }))}
-                  className="text-xs"
-                />
-              ) : (
-                <div className="text-sm">
-                  {formatYmd(member.Kaiser_H2022_Received) ? (
-                    formatYmd(member.Kaiser_H2022_Received)
-                  ) : (
-                    <span className="text-muted-foreground">Not set</span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

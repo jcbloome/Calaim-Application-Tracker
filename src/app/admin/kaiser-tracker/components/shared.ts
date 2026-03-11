@@ -24,6 +24,8 @@ export interface KaiserMember {
   workflow_notes: string;
   last_updated: string;
   created_at: string;
+  Kaiser_Tier_Level_Received_Date?: string;
+  ILS_RCFE_Sent_For_Contract_Date?: string;
 }
 
 export const getMemberKey = (member: KaiserMember, index: number) =>

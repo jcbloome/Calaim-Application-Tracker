@@ -88,7 +88,14 @@ export async function GET(request: NextRequest) {
         created_at: member.Date_Created || member.created_at || new Date().toISOString(),
         Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || member.Kaiser_T038_Requested || member.Kaiser_T2038_Requested || '',
         Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || member.Kaiser_T038_Received || member.Kaiser_T2038_Received || '',
-        Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date || member.Kaiser_Tier_Level_Requested || '',
+        Kaiser_Tier_Level_Requested: member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || member.Tier_Level_Request_Date || member.Tier_Level_Requested_Date || member.Tier_Request_Date || '',
+        Kaiser_Tier_Level_Requested_Date:
+          member.Kaiser_Tier_Level_Requested ||
+          member.Kaiser_Tier_Level_Requested_Date ||
+          member.Tier_Level_Request_Date ||
+          member.Tier_Level_Requested_Date ||
+          member.Tier_Request_Date ||
+          '',
         Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
         ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
         ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',
@@ -464,7 +471,14 @@ export async function GET(request: NextRequest) {
       // ILS Report Date Fields - try multiple possible field names
       Kaiser_T2038_Requested_Date: member.Kaiser_T2038_Requested_Date || member.Kaiser_T038_Requested || member.Kaiser_T2038_Requested || '',
       Kaiser_T2038_Received_Date: member.Kaiser_T2038_Received_Date || member.Kaiser_T038_Received || member.Kaiser_T2038_Received || '',
-      Kaiser_Tier_Level_Requested_Date: member.Kaiser_Tier_Level_Requested_Date || member.Kaiser_Tier_Level_Requested || '',
+      Kaiser_Tier_Level_Requested: member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || member.Tier_Level_Request_Date || member.Tier_Level_Requested_Date || member.Tier_Request_Date || '',
+      Kaiser_Tier_Level_Requested_Date:
+        member.Kaiser_Tier_Level_Requested ||
+        member.Kaiser_Tier_Level_Requested_Date ||
+        member.Tier_Level_Request_Date ||
+        member.Tier_Level_Requested_Date ||
+        member.Tier_Request_Date ||
+        '',
       Kaiser_Tier_Level_Received_Date: member.Kaiser_Tier_Level_Received_Date || member.Kaiser_Tier_Level_Received || '',
       ILS_RCFE_Sent_For_Contract_Date: member.ILS_RCFE_Sent_For_Contract_Date || member.ILS_RCFE_Sent_For_Contract || '',
       ILS_RCFE_Received_Contract_Date: member.ILS_RCFE_Received_Contract_Date || member.ILS_RCFE_Received_Contract || '',

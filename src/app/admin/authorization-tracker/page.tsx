@@ -663,12 +663,9 @@ export default function AuthorizationTracker() {
         <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'all' ? 'ring-2 ring-blue-500' : ''}`} 
               onClick={() => handleCardClick('all')}>
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-blue-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Members</p>
-                <p className="text-2xl font-bold">{stats.total}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Members</p>
+              <p className="text-2xl font-bold">{stats.total}</p>
             </div>
           </CardContent>
         </Card>
@@ -676,12 +673,9 @@ export default function AuthorizationTracker() {
         <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'needsAttention' ? 'ring-2 ring-red-500' : ''}`} 
               onClick={() => handleCardClick('needsAttention')}>
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Need Attention</p>
-                <p className="text-2xl font-bold text-red-600">{stats.needingAttention}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Need Attention</p>
+              <p className="text-2xl font-bold text-red-600">{stats.needingAttention}</p>
             </div>
           </CardContent>
         </Card>
@@ -689,12 +683,9 @@ export default function AuthorizationTracker() {
         <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 't2038Expiring' ? 'ring-2 ring-orange-500' : ''}`} 
               onClick={() => handleCardClick('t2038Expiring')}>
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-orange-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">T2038 Expiring</p>
-                <p className="text-2xl font-bold text-orange-600">{stats.t2038Expiring}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">T2038 Expiring</p>
+              <p className="text-2xl font-bold text-orange-600">{stats.t2038Expiring}</p>
             </div>
           </CardContent>
         </Card>
@@ -702,12 +693,9 @@ export default function AuthorizationTracker() {
         <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'h2022Expiring' ? 'ring-2 ring-purple-500' : ''}`} 
               onClick={() => handleCardClick('h2022Expiring')}>
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Building className="h-4 w-4 text-purple-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">H2022 Expiring</p>
-                <p className="text-2xl font-bold text-purple-600">{stats.h2022Expiring}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">H2022 Expiring</p>
+              <p className="text-2xl font-bold text-purple-600">{stats.h2022Expiring}</p>
             </div>
           </CardContent>
         </Card>
@@ -717,12 +705,9 @@ export default function AuthorizationTracker() {
           onClick={() => handleCardClick('kaiserH2022Critical')}
         >
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Kaiser H2022 ≤30d</p>
-                <p className="text-2xl font-bold text-red-600">{stats.kaiserH2022Critical}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Kaiser H2022 ≤30d</p>
+              <p className="text-2xl font-bold text-red-600">{stats.kaiserH2022Critical}</p>
             </div>
           </CardContent>
         </Card>
@@ -730,12 +715,9 @@ export default function AuthorizationTracker() {
         <Card className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'expired' ? 'ring-2 ring-red-500' : ''}`} 
               onClick={() => handleCardClick('expired')}>
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <X className="h-4 w-4 text-red-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Expired</p>
-                <p className="text-2xl font-bold text-red-600">{stats.expired}</p>
-              </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Expired</p>
+              <p className="text-2xl font-bold text-red-600">{stats.expired}</p>
             </div>
           </CardContent>
         </Card>

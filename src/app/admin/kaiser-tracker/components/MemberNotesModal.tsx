@@ -27,6 +27,13 @@ export interface MemberNotesModalProps {
   };
   onNewNoteChange: (note: any) => void;
   onCreateNote: () => void;
+  ilsDateDraft: {
+    tierLevelReceivedDate: string;
+    ilsContractSentDate: string;
+  };
+  isSavingIlsDates: boolean;
+  onIlsDateDraftChange: (draft: { tierLevelReceivedDate: string; ilsContractSentDate: string }) => void;
+  onSaveIlsDates: () => void;
 }
 
 export function MemberNotesModal({
@@ -38,6 +45,10 @@ export function MemberNotesModal({
   newNote,
   onNewNoteChange,
   onCreateNote,
+  ilsDateDraft,
+  isSavingIlsDates,
+  onIlsDateDraftChange,
+  onSaveIlsDates,
 }: MemberNotesModalProps) {
   if (!isOpen || !member) return null;
 
@@ -155,6 +166,46 @@ export function MemberNotesModal({
 
           {/* Add New Note */}
           <div className="space-y-4">
+            <div className="rounded-lg border p-3 space-y-3 bg-slate-50">
+              <h3 className="text-sm font-semibold">ILS Date Updates</h3>
+              <p className="text-xs text-muted-foreground">
+                Save these when ILS completes updates. This triggers staff desktop notifications and Tier/ILS Contract action
+                items while the member stays in current status.
+              </p>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">Tier Level Received Date</label>
+                  <Input
+                    type="date"
+                    value={ilsDateDraft.tierLevelReceivedDate}
+                    onChange={(e) =>
+                      onIlsDateDraftChange({
+                        ...ilsDateDraft,
+                        tierLevelReceivedDate: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">ILS Contract Sent Date</label>
+                  <Input
+                    type="date"
+                    value={ilsDateDraft.ilsContractSentDate}
+                    onChange={(e) =>
+                      onIlsDateDraftChange({
+                        ...ilsDateDraft,
+                        ilsContractSentDate: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+              <Button onClick={onSaveIlsDates} disabled={isSavingIlsDates} className="w-full" variant="secondary">
+                {isSavingIlsDates ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save ILS Dates
+              </Button>
+            </div>
+
             <h3 className="text-lg font-medium">Add New Note</h3>
 
             <div className="space-y-4">

@@ -224,6 +224,11 @@ function KaiserTrackerPageContent() {
     notes: any[];
     isLoadingNotes: boolean;
   }>({ isOpen: false, member: null, notes: [], isLoadingNotes: false });
+  const [ilsDateDraft, setIlsDateDraft] = useState({
+    tierLevelReceivedDate: '',
+    ilsContractSentDate: '',
+  });
+  const [isSavingIlsDates, setIsSavingIlsDates] = useState(false);
 
   const [newNote, setNewNote] = useState({
     noteText: '',
@@ -381,6 +386,91 @@ function KaiserTrackerPageContent() {
         notes: [],
         isLoadingNotes: false
       }));
+    }
+  };
+
+  const toInputDate = (value: any): string => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    try {
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toISOString().slice(0, 10);
+    } catch {
+      return '';
+    }
+  };
+
+  useEffect(() => {
+    const m = memberNotesModal.member;
+    if (!memberNotesModal.isOpen || !m) return;
+    setIlsDateDraft({
+      tierLevelReceivedDate: toInputDate((m as any)?.Kaiser_Tier_Level_Received_Date),
+      ilsContractSentDate: toInputDate((m as any)?.ILS_RCFE_Sent_For_Contract_Date),
+    });
+  }, [memberNotesModal.isOpen, memberNotesModal.member]);
+
+  const handleSaveIlsDates = async () => {
+    const member = memberNotesModal.member;
+    if (!member) return;
+    setIsSavingIlsDates(true);
+    try {
+      if (!auth?.currentUser) throw new Error('You must be signed in');
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-ils-dates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          clientId2: member.client_ID2,
+          memberName: `${member.memberFirstName} ${member.memberLastName}`.trim(),
+          tierLevelReceivedDate: ilsDateDraft.tierLevelReceivedDate,
+          ilsContractSentDate: ilsDateDraft.ilsContractSentDate,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to save ILS dates (HTTP ${res.status})`);
+      }
+
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.client_ID2 === member.client_ID2
+            ? {
+                ...m,
+                Kaiser_Tier_Level_Received_Date: ilsDateDraft.tierLevelReceivedDate || '',
+                ILS_RCFE_Sent_For_Contract_Date: ilsDateDraft.ilsContractSentDate || '',
+              }
+            : m
+        )
+      );
+      setMemberNotesModal((prev) => ({
+        ...prev,
+        member: prev.member
+          ? ({
+              ...prev.member,
+              Kaiser_Tier_Level_Received_Date: ilsDateDraft.tierLevelReceivedDate || '',
+              ILS_RCFE_Sent_For_Contract_Date: ilsDateDraft.ilsContractSentDate || '',
+            } as any)
+          : prev.member,
+      }));
+
+      toast({
+        title: 'ILS dates saved',
+        description:
+          data?.notificationsSent > 0
+            ? `Saved and notified ${data.notificationsSent} authorized staff.`
+            : 'Saved successfully.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Save failed',
+        description: error?.message || 'Could not save ILS dates.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingIlsDates(false);
     }
   };
 
@@ -895,10 +985,7 @@ function KaiserTrackerPageContent() {
         members={modalMembers}
         title={modalTitle}
         description={modalDescription}
-        onMemberClick={(member) => {
-          // Handle member click if needed
-          console.log('Member clicked:', member);
-        }}
+        onMemberClick={handleMemberClick}
         filters={filters}
         onFilterChange={handleFilterChange}
         onClearFilters={handleClearFilters}
@@ -927,6 +1014,10 @@ function KaiserTrackerPageContent() {
         newNote={newNote}
         onNewNoteChange={setNewNote}
         onCreateNote={handleCreateNote}
+        ilsDateDraft={ilsDateDraft}
+        isSavingIlsDates={isSavingIlsDates}
+        onIlsDateDraftChange={setIlsDateDraft}
+        onSaveIlsDates={handleSaveIlsDates}
       />
             </div>
   );
