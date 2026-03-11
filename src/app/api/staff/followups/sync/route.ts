@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
     const start = normalizeString(body?.start);
     const end = normalizeString(body?.end);
     const modeRaw = normalizeString(body?.mode);
-    const mode: 'auto' | 'full' | 'incremental' =
-      modeRaw === 'full' || modeRaw === 'incremental' ? (modeRaw as any) : 'auto';
+    const mode: 'full' | 'incremental' =
+      modeRaw === 'incremental' ? 'incremental' : 'full';
 
     if (!userId) {
       return NextResponse.json({ success: false, error: 'userId is required' }, { status: 400 });
@@ -78,9 +78,7 @@ export async function POST(request: NextRequest) {
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
 
-    const shouldIncremental =
-      mode === 'incremental' ||
-      (mode === 'auto' && Boolean(lastCursorIso || lastSyncAtIso));
+    const shouldIncremental = mode === 'incremental' && Boolean(lastCursorIso || lastSyncAtIso);
 
     // Use lastCursorIso when available. Add a small lookback window to catch late edits.
     const lookbackMs = 24 * 60 * 60 * 1000;

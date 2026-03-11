@@ -834,7 +834,7 @@ function MyTasksPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.uid,
-          mode: 'incremental',
+          mode: 'full',
           start: start.toISOString(),
           end: end.toISOString(),
         }),
@@ -876,6 +876,7 @@ function MyTasksPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.uid,
+          mode: 'full',
           // No start/end = import all open follow-ups with dates
         }),
       });

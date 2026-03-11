@@ -54,6 +54,7 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'Kaiser_Next_Step_Date',
   'T2038_Auth_Email_Kaiser',
   'Social_Worker_Assigned',
+  'SW_One_Time_Kaiser',
   'Hold_For_Social_Worker',
   // Newer Caspio schema uses this field for SW visit holds.
   'Hold_For_Social_Worker_Visit',
@@ -410,7 +411,7 @@ async function fetchUpdatedMembersFromCaspio(params: {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const mode = (String(body?.mode || 'incremental') as SyncMode) || 'incremental';
+    const mode = (String(body?.mode || 'full') as SyncMode) || 'full';
 
     // Allow trusted schedulers (Cloud Scheduler / GitHub Actions) to call this endpoint without an interactive admin idToken.
     // Matches the existing `/api/cron/reminders` pattern: Authorization: Bearer ${CRON_SECRET}

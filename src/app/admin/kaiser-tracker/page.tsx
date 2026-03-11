@@ -679,7 +679,7 @@ function KaiserTrackerPageContent() {
         throw new Error('You must be signed in to sync.');
       }
 
-      // On-demand incremental sync from Caspio → Firestore cache.
+      // On-demand full sync from Caspio → Firestore cache.
       const idToken = await auth.currentUser.getIdToken();
       const syncRes = await fetch('/api/caspio/members-cache/sync', {
         method: 'POST',

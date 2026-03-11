@@ -187,12 +187,12 @@ export default function ILSReportEditorPage() {
     try {
       if (!auth?.currentUser) throw new Error('You must be signed in to sync.');
 
-      // On-demand incremental sync from Caspio → Firestore cache, then read from cache.
+      // On-demand full sync from Caspio → Firestore cache, then read from cache.
       const idToken = await auth.currentUser.getIdToken();
       const syncRes = await fetch('/api/caspio/members-cache/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'incremental' }),
+        body: JSON.stringify({ idToken, mode: 'full' }),
       });
       const syncData = await syncRes.json().catch(() => ({} as any));
       if (!syncRes.ok || !syncData?.success) {

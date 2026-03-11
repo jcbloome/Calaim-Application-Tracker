@@ -199,7 +199,7 @@ export default function AdminStatisticsPage() {
       const res = await fetch('/api/caspio/members-cache/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'incremental' }),
+        body: JSON.stringify({ idToken, mode: 'full' }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !(data as any)?.success) {

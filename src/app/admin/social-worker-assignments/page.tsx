@@ -26,6 +26,7 @@ interface Member {
   CalAIM_MCO: string;
   CalAIM_Status: string;
   Social_Worker_Assigned: string;
+  SW_One_Time_Kaiser?: string;
   Staff_Assigned: string;
   Hold_For_Social_Worker: string;
   RCFE_Name: string;
@@ -478,7 +479,7 @@ export default function SocialWorkerAssignmentsPage() {
       const syncRes = await fetch('/api/caspio/members-cache/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'incremental' }),
+        body: JSON.stringify({ idToken, mode: 'full' }),
       });
       const syncData = await syncRes.json().catch(() => ({} as any));
       if (!syncRes.ok || !(syncData as any)?.success) {
@@ -732,7 +733,8 @@ export default function SocialWorkerAssignmentsPage() {
       const matchesSearch = !searchTerm || 
         member.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.Client_ID2.toString().includes(searchTerm) ||
-        (member.Social_Worker_Assigned || '').toLowerCase().includes(searchTerm.toLowerCase());
+        (member.Social_Worker_Assigned || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (member.SW_One_Time_Kaiser || '').toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesSW = selectedSocialWorker === 'all' || 
         (member.Social_Worker_Assigned || 'Unassigned') === selectedSocialWorker;
@@ -1272,6 +1274,7 @@ export default function SocialWorkerAssignmentsPage() {
                       >
                         Social Worker
                       </SortableHeader>
+                      <TableHead>Kaiser_ALFT</TableHead>
                       <SortableHeader 
                         field="RCFE_Name" 
                         currentSortField={sortField} 
@@ -1294,14 +1297,14 @@ export default function SocialWorkerAssignmentsPage() {
                   <TableBody>
                     {isLoadingMembers ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8">
+                        <TableCell colSpan={10} className="text-center py-8">
                           <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
                           Loading members...
                         </TableCell>
                       </TableRow>
                     ) : filteredMembers.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                           No members found matching the current filters.
                         </TableCell>
                       </TableRow>
@@ -1345,6 +1348,15 @@ export default function SocialWorkerAssignmentsPage() {
                               <Badge variant="destructive" className="text-xs">
                                 Unassigned
                               </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {String(member.SW_One_Time_Kaiser || '').trim() ? (
+                              <Badge variant="secondary" className="text-xs">
+                                {String(member.SW_One_Time_Kaiser || '').trim()}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Not set</span>
                             )}
                           </TableCell>
                           <TableCell>

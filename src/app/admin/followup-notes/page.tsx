@@ -217,7 +217,7 @@ export default function FollowUpNotesPage() {
           userId: user.uid,
           start: monthStart.toISOString(),
           end: monthEnd.toISOString(),
-          mode: 'auto',
+          mode: 'full',
         }),
       });
       const data = await res.json().catch(() => ({} as any));
@@ -253,6 +253,7 @@ export default function FollowUpNotesPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           userId: user.uid,
+          mode: 'full',
           // No start/end = import all open follow-ups with dates
         }),
       });
