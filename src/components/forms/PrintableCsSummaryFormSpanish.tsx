@@ -309,7 +309,7 @@ export function PrintableCsSummaryFormSpanish({
         ]),
         React.createElement('div', { key: 'nmohc-4' }, [
           React.createElement('p', { className: 'font-semibold' }, '2. Verificación con Seguro Social (La llamada "pre-mudanza")'),
-          React.createElement('p', null, 'Contacte a SSA al 1-800-772-1213 o visite una oficina local para una entrevista de arreglo de vivienda.'),
+          React.createElement('p', null, 'Visite en persona una oficina local del Seguro Social para una entrevista de arreglo de vivienda y para confirmar la elegibilidad de NMOHC y el monto del suplemento.'),
           React.createElement('ul', { className: 'list-disc pl-5 mt-2 space-y-1' }, [
             React.createElement('li', { key: 'nmohc-4a' }, 'Indique que la persona planea mudarse a un RCFE con licencia.'),
             React.createElement('li', { key: 'nmohc-4b' }, 'Solicite el nuevo cálculo de pago SSI basado en la tarifa NMOHC 2026.'),

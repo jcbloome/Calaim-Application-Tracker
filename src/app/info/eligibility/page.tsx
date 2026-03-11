@@ -31,7 +31,7 @@ const infoSections = [
         </div>,
         <div className="mt-4">
           <strong>2. Verification with Social Security (The "Pre-Move" Call)</strong>
-          <p>Contact SSA at 1-800-772-1213 or visit a local office for a living arrangement interview.</p>
+          <p>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</p>
           <ul className="list-disc pl-5 mt-2 space-y-1">
             <li>Tell them the person plans to move into a licensed RCFE.</li>
             <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>

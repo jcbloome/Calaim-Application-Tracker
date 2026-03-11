@@ -287,7 +287,7 @@ export function PrintableCsSummaryFormContent() {
                     </ul>
                     <p><strong>2. Verification with Social Security (The "Pre-Move" Call)</strong></p>
                     <ul className="list-disc pl-5 space-y-1">
-                        <li>Contact SSA at 1-800-772-1213 or visit a local office for a living arrangement interview.</li>
+                        <li>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</li>
                         <li>Tell them the person plans to move into a licensed RCFE.</li>
                         <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
                         <li>Pro tip: Ask the RCFE for their License Number and a draft Admission Agreement. SSA will need a signed version to update the check.</li>
@@ -333,7 +333,7 @@ export function PrintableCsSummaryFormContent() {
                         </ul>
                         <p><strong>3. Verification with Social Security (The "Pre-Move" Call)</strong></p>
                         <ul className="list-disc pl-5 space-y-1">
-                            <li>Call SSA at 1-800-772-1213 or visit a local office for a living arrangement interview.</li>
+                            <li>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</li>
                             <li>Tell them the person plans to move into a licensed RCFE.</li>
                             <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
                             <li>Pro tip: Ask the RCFE for their License Number and a draft Admission Agreement.</li>
