@@ -134,11 +134,15 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
   if (key === 'tier_level_requested') {
     const requested = Boolean(toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date));
     const received = Boolean(toYmd(member.Kaiser_Tier_Level_Received_Date));
-    return status === 'tier level requested' || (requested && !received);
+    // Show only members still pending with ILS (requested exists, received not set).
+    return requested && !received;
   }
-  // R&B Sent Pending ILS Contract (bottleneck stage).
-  // Use the exact Caspio status label only (avoid pulling in adjacent workflow statuses).
-  return status === 'r&b sent pending ils contract' || status === 'r & b sent pending ils contract';
+  // R&B Sent Pending ILS Contract:
+  // show only pending members (requested exists or status matches), but hide once H2022 received is set.
+  const rbPendingByStatus = status === 'r&b sent pending ils contract' || status === 'r & b sent pending ils contract';
+  const rbRequested = Boolean(toYmd(member.Kaiser_H2022_Requested));
+  const rbReceived = Boolean(toYmd(member.Kaiser_H2022_Received));
+  return (rbPendingByStatus || rbRequested) && !rbReceived;
 };
 
 const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
