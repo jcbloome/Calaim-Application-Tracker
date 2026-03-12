@@ -401,7 +401,9 @@ export default function LoginActivityTracker() {
                           <WifiOff className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium truncate text-xs">{session.userName || session.displayName || session.userEmail || session.email || 'Unknown User'}</p>
+                          <p className="font-medium truncate text-xs">
+                            {session.userName || session.displayName || session.userEmail || session.email || session.userId || 'Unknown User'}
+                          </p>
                           <p className="text-xs text-muted-foreground truncate">{session.userEmail || session.email || 'No email'}</p>
                           <div className="text-xs">
                             <Badge variant={online ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 h-4">
@@ -477,8 +479,15 @@ export default function LoginActivityTracker() {
                     .map((log) => {
                     const userEmail = log.userEmail || log.email || '';
                     const userType = normalizeRole(log);
-                    const userName = log.userName || log.displayName || userEmail || 'Unknown User';
-                    const action = log.action || log.type || log.event || 'unknown';
+                    const userName = log.userName || log.displayName || userEmail || log.userId || 'Unknown User';
+                    const rawAction = String(log.action || log.type || log.event || '').trim().toLowerCase();
+                    const action =
+                      rawAction === 'login' ||
+                      rawAction === 'logout' ||
+                      rawAction === 'session_timeout' ||
+                      rawAction === 'forced_logout'
+                        ? rawAction
+                        : '';
                     const isSuccess = log.success !== false;
                     const typeBadge = getUserTypeBadge(userType);
                     
@@ -498,12 +507,14 @@ export default function LoginActivityTracker() {
                             >
                               {typeBadge.label}
                             </Badge>
-                            <Badge 
-                              variant={getActionBadgeVariant(action, isSuccess)} 
-                              className="text-xs px-1.5 py-0 h-4 shrink-0"
-                            >
-                              {action}
-                            </Badge>
+                            {action ? (
+                              <Badge
+                                variant={getActionBadgeVariant(action, isSuccess)}
+                                className="text-xs px-1.5 py-0 h-4 shrink-0"
+                              >
+                                {action}
+                              </Badge>
+                            ) : null}
                             <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
                               <Clock className="h-3 w-3" />
                               {formatTimestamp(log.timestamp)}
