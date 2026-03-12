@@ -8,8 +8,9 @@ import { collection, Timestamp, getDocs, collectionGroup } from 'firebase/firest
 import type { Application, StaffTracker, StaffMember } from '@/lib/definitions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import Link from 'next/link';
-import { Loader2, CheckCircle2, XCircle, Circle, Filter, Calendar, User } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Circle, Filter, Calendar, User, Search } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -90,6 +91,7 @@ function ProgressTrackerPageClient() {
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const [filters, setFilters] = useState<string[]>([]);
   const [showMissingOnly, setShowMissingOnly] = useState(false);
+  const [lastNameSearch, setLastNameSearch] = useState('');
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [trackers, setTrackers] = useState<Map<string, StaffTracker>>(new Map());
@@ -192,15 +194,20 @@ function ProgressTrackerPageClient() {
         )
       : sorted;
 
-    if (filters.length === 0) {
-        return missingOnlyFiltered;
-    }
+    const componentFiltered = filters.length === 0
+      ? missingOnlyFiltered
+      : missingOnlyFiltered.filter(app => {
+          return filters.every(filterKey => getComponentStatus(app, filterKey) === 'Pending');
+        });
 
-    return missingOnlyFiltered.filter(app => {
-        return filters.every(filterKey => getComponentStatus(app, filterKey) === 'Pending');
-    });
+    const searchTerm = lastNameSearch.trim().toLowerCase();
+    if (!searchTerm) return componentFiltered;
 
-  }, [applications, filters, showMissingOnly])
+    return componentFiltered.filter((app) =>
+      String(app.memberLastName || '').trim().toLowerCase().includes(searchTerm)
+    );
+
+  }, [applications, filters, showMissingOnly, lastNameSearch])
 
   return (
     <div className="space-y-6">
@@ -221,6 +228,21 @@ function ProgressTrackerPageClient() {
                     <CardDescription>Select one or more components to find applications that are missing all of the selected documents.</CardDescription>
                 </CardHeader>
                 <CardContent>
+                    <div className="mb-4">
+                      <Label htmlFor="last-name-search" className="text-sm font-medium mb-2 block">
+                        Search by member last name
+                      </Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id="last-name-search"
+                          value={lastNameSearch}
+                          onChange={(e) => setLastNameSearch(e.target.value)}
+                          placeholder="Type last name..."
+                          className="pl-9"
+                        />
+                      </div>
+                    </div>
                     <div className="flex items-center gap-2 mb-4">
                       <Checkbox
                         id="missing-docs-only"
