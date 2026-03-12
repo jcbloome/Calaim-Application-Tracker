@@ -995,6 +995,9 @@ function KaiserTrackerPageContent() {
         </p>
       )}
 
+      {/* Member Search (moved to top of page content) */}
+      <MemberSearchCard members={members} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} />
+
       {/* Summary Cards - Compact */}
       <KaiserSummaryCards
         members={members}
@@ -1012,8 +1015,6 @@ function KaiserTrackerPageContent() {
         openStaffMemberModal={openStaffMemberModal}
         openMemberModal={openMemberModal}
       />
-
-      <MemberSearchCard members={members} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} />
 
       {/* Member List Modal */}
       <MemberListModal
