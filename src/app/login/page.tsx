@@ -27,22 +27,7 @@ import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-
-async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
-    if (!firestore || !user) return;
-    try {
-        await addDoc(collection(firestore, 'loginLogs'), {
-            userId: user.uid,
-            email: user.email,
-            displayName: user.displayName,
-            role: role,
-            timestamp: serverTimestamp(),
-        });
-    } catch (error) {
-        console.error("Error tracking login:", error);
-    }
-}
+import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
 
 export default function LoginPage() {
   const auth = useAuth();
@@ -177,9 +162,23 @@ export default function LoginPage() {
         // If the user isn't an admin, admin-session will fail. Ignore and continue as a normal user.
       }
 
-      // Track the login event
-      console.log('🔍 User Login Debug: Tracking login event');
-      await trackLogin(firestore, userCredential.user, 'User');
+      // Track login + online portal session.
+      await trackLoginActivityClient(firestore, {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        displayName: userCredential.user.displayName,
+        role: 'User',
+        action: 'login',
+        portal: 'user',
+      });
+      await setPortalSessionOnlineClient(firestore, {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        displayName: userCredential.user.displayName,
+        role: 'User',
+        portal: 'user',
+        sessionType: 'user',
+      });
       
       console.log('🔍 User Login Debug: Showing success toast');
       enhancedToast.success('Successfully signed in!', 'Redirecting to your dashboard...');

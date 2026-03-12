@@ -5,14 +5,14 @@ import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Loader2, Users, Bell, Save, ShieldCheck, Mail, UserPlus, RotateCcw, Trash2, ReceiptText } from 'lucide-react';
+import { Loader2, Users, Bell, ShieldCheck, Mail, Trash2, ReceiptText, CalendarCheck, UserPlus, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { collection, doc, writeBatch, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
-import { NotificationManager } from '@/components/NotificationManager';
 import NotificationSettings from '@/components/NotificationSettings';
 import StaffAssignmentNotificationSystem from '@/components/StaffAssignmentNotificationSystem';
+import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,9 +26,11 @@ interface StaffMember {
     isKaiserStaff?: boolean;
     isHealthNetStaff?: boolean;
     isClaimsStaff?: boolean;
+    hasRegistered?: boolean;
 }
 
 const ILS_MEMBER_TARGET_EMAIL = 'jhernandez@ilshealth.com';
+const JOCELYN_FALLBACK_EMAIL = 'jocelyn@ilshealth.com';
 
 type ReviewRecipientSettings = {
     enabled: boolean;
@@ -54,6 +56,7 @@ export default function StaffManagementPage() {
     const [staffList, setStaffList] = useState<StaffMember[]>([]);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
     const [notificationRecipients, setNotificationRecipients] = useState<string[]>([]);
+    const [interofficeElectronEnabled, setInterofficeElectronEnabled] = useState(true);
     const [ilsNotePermissions, setIlsNotePermissions] = useState<string[]>([]);
     const [swVisitDeletePermissions, setSwVisitDeletePermissions] = useState<string[]>([]);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
@@ -62,9 +65,10 @@ export default function StaffManagementPage() {
     const [newStaffEmail, setNewStaffEmail] = useState('');
     const [newStaffRole, setNewStaffRole] = useState<'Admin' | 'Super Admin'>('Admin');
     const [isAddingStaff, setIsAddingStaff] = useState(false);
+    const [showAddStaffForm, setShowAddStaffForm] = useState(false);
     const [createdStaff, setCreatedStaff] = useState<null | { email: string; role: string; uid: string; tempPassword: string }>(null);
     const [staffNameFilter, setStaffNameFilter] = useState('');
-    const [staffRoleFilter, setStaffRoleFilter] = useState<'all' | 'Admin' | 'Super Admin'>('all');
+    const [staffRoleFilter, setStaffRoleFilter] = useState<'all' | 'Admin' | 'Super Admin' | 'Staff'>('all');
     const [notificationRecipientsHadField, setNotificationRecipientsHadField] = useState<boolean | null>(null);
     const [ilsMemberAllowedEmails, setIlsMemberAllowedEmails] = useState<string[]>([]);
     const [ilsWeeklyEmailEnabled, setIlsWeeklyEmailEnabled] = useState(false);
@@ -82,12 +86,24 @@ export default function StaffManagementPage() {
 
     // Electron review popups (incoming forms)
     const [reviewPopupsEnabled, setReviewPopupsEnabled] = useState(true);
+    const [alftElectronEnabled, setAlftElectronEnabled] = useState(true);
     const [reviewPollIntervalSeconds, setReviewPollIntervalSeconds] = useState(180);
     const [reviewRecipients, setReviewRecipients] = useState<Record<string, ReviewRecipientSettings>>({});
     const [isAutoSaving, setIsAutoSaving] = useState(false);
     const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const autoSaveInFlightRef = useRef(false);
     const autoSaveQueuedRef = useRef(false);
+    const toMillis = (value: any): number => {
+        try {
+            if (!value) return 0;
+            if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
+            if (typeof value?.toDate === 'function') return Number(value.toDate()?.getTime?.()) || 0;
+            const parsed = new Date(value).getTime();
+            return Number.isFinite(parsed) ? parsed : 0;
+        } catch {
+            return 0;
+        }
+    };
 
     // Redirect if not super admin
     useEffect(() => {
@@ -153,6 +169,9 @@ export default function StaffManagementPage() {
 
             let staff: StaffMember[] = canonicalStaffIds.map(uid => {
                 const userData = users[uid] || {};
+                const createdAtMs = toMillis(userData.createdAt);
+                const updatedAtMs = toMillis(userData.updatedAt);
+                const hasRegistered = updatedAtMs > 0 && (!createdAtMs || updatedAtMs - createdAtMs > 60_000);
                 return {
                     uid,
                     role: superAdminIds.has(uid) ? 'Super Admin' : adminIds.has(uid) ? 'Admin' : 'Staff',
@@ -162,6 +181,7 @@ export default function StaffManagementPage() {
                     isKaiserStaff: Boolean(userData.isKaiserStaff),
                     isHealthNetStaff: Boolean(userData.isHealthNetStaff),
                     isClaimsStaff: Boolean(userData.isClaimsStaff),
+                    hasRegistered,
                 };
             });
 
@@ -318,12 +338,14 @@ export default function StaffManagementPage() {
                 const rawRecipientUids = (data as any)?.recipientUids;
                 setNotificationRecipientsHadField(rawRecipientUids !== undefined);
                 setNotificationRecipients(Array.isArray(rawRecipientUids) ? rawRecipientUids : []);
+                setInterofficeElectronEnabled(Boolean((data as any)?.interofficeElectronEnabled ?? (data as any)?.interofficeNotificationsEnabled ?? true));
                 setIlsNotePermissions(data?.ilsNotePermissions || []);
                 setSwVisitDeletePermissions((data as any)?.swVisitDeletePermissions || []);
                 setWebAppNotificationsEnabled(Boolean((data as any)?.webAppNotificationsEnabled ?? true));
                 setSuppressWebWhenDesktopActive(Boolean((data as any)?.suppressWebWhenDesktopActive ?? true));
             } else {
                 setNotificationRecipientsHadField(false);
+                setInterofficeElectronEnabled(true);
             }
 
             if (adminAccessSnap?.exists()) {
@@ -345,10 +367,12 @@ export default function StaffManagementPage() {
             if (reviewSnap?.exists()) {
                 const data = reviewSnap.data() as any;
                 setReviewPopupsEnabled(Boolean(data?.enabled ?? true));
+                setAlftElectronEnabled(Boolean(data?.alftElectronEnabled ?? true));
                 setReviewPollIntervalSeconds(Number(data?.pollIntervalSeconds || 180));
                 setReviewRecipients((data?.recipients || {}) as Record<string, ReviewRecipientSettings>);
             } else {
                 setReviewPopupsEnabled(true);
+                setAlftElectronEnabled(true);
                 setReviewPollIntervalSeconds(180);
                 setReviewRecipients({});
             }
@@ -489,31 +513,72 @@ export default function StaffManagementPage() {
         }
     };
 
-    const handleNotificationToggle = (uid: string, checked: boolean) => {
-        setNotificationRecipients(prev => 
-            checked ? [...prev, uid] : prev.filter(id => id !== uid)
+    const handleInterofficeElectronCardToggle = (
+        uid: string,
+        checked: boolean,
+        staff?: StaffMember,
+        current?: ReviewRecipientSettings
+    ) => {
+        const enable = Boolean(checked);
+        setNotificationRecipients((prev) =>
+            enable ? Array.from(new Set([...prev, uid])) : prev.filter((id) => id !== uid)
         );
-        queueAutoSave();
+        setReviewRecipient(
+            uid,
+            {
+                enabled: enable,
+                documents: enable,
+                csSummary: enable,
+                // Keep ALFT selection untouched when enabling; force off when disabling.
+                alft: enable ? current?.alft : false,
+            },
+            staff
+        );
     };
 
-    const staffUids = useMemo(() => {
-        return Array.from(new Set(staffList.map((s) => String(s.uid || '').trim()).filter(Boolean)));
+    const superAdminCount = useMemo(
+        () => staffList.filter((member) => member.role === 'Super Admin').length,
+        [staffList]
+    );
+    const staffCount = useMemo(
+        () => staffList.filter((member) => member.role !== 'Super Admin').length,
+        [staffList]
+    );
+    const jocelynEmail = useMemo(() => {
+        const match = staffList.find((member) => {
+            const haystack = `${member.firstName} ${member.lastName} ${member.email}`.toLowerCase();
+            return haystack.includes('jocelyn');
+        });
+        return String(match?.email || JOCELYN_FALLBACK_EMAIL).trim().toLowerCase();
     }, [staffList]);
 
-    const interofficeAllEnabled = useMemo(() => {
-        if (!staffUids.length) return false;
-        const recipientSet = new Set((notificationRecipients || []).map((x) => String(x || '').trim()).filter(Boolean));
-        return staffUids.every((uid) => recipientSet.has(uid));
-    }, [notificationRecipients, staffUids]);
-
-    const handleInterofficeToggleAll = (checked: boolean) => {
-        const enable = Boolean(checked);
-        if (enable) {
-            setNotificationRecipients(staffUids);
-        } else {
-            setNotificationRecipients([]);
+    const scrollToSection = (sectionId: string) => {
+        if (typeof window === 'undefined') return;
+        const element = document.getElementById(sectionId);
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
-        queueAutoSave();
+    };
+
+    const controlButtons: Array<{ id: string; label: string }> = [
+        { id: 'add-staff-section', label: 'Add new staff' },
+        { id: 'staff-permissions-section', label: 'Staff access & settings' },
+        { id: 'super-admins-section', label: 'Super Admins' },
+        { id: 'staff-section', label: 'Staff' },
+        { id: 'global-controls-section', label: 'Global access controls' },
+        { id: 'email-notifications-section', label: 'Email notifications' },
+        { id: 'desktop-controls-section', label: 'Desktop notification controls' },
+        { id: 'staff-assignment-section', label: 'Staff assignment & rotation' },
+        { id: 'advanced-notifications-section', label: 'Advanced notification settings' },
+    ];
+
+    const handleRoleChange = async (uid: string, nextRole: StaffMember['role']) => {
+        if (!uid) return;
+        if (nextRole === 'Staff') {
+            await handleSetAdminAccessForUser(uid, false, 'Staff');
+            return;
+        }
+        await handleSetAdminAccessForUser(uid, true, nextRole);
     };
 
     const handleIlsNoteToggle = (uid: string, checked: boolean) => {
@@ -530,8 +595,9 @@ export default function StaffManagementPage() {
         queueAutoSave();
     };
 
-    const toggleIlsMemberTargetAccess = (checked: boolean) => {
-        const email = ILS_MEMBER_TARGET_EMAIL;
+    const toggleIlsMemberTargetAccess = (targetEmail: string, checked: boolean) => {
+        const email = String(targetEmail || '').trim().toLowerCase();
+        if (!email) return;
         setIlsMemberAllowedEmails((prev) => {
             const set = new Set((prev || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean));
             if (checked) set.add(email);
@@ -541,8 +607,9 @@ export default function StaffManagementPage() {
         queueAutoSave();
     };
 
-    const toggleIlsWeeklyTargetEmail = (checked: boolean) => {
-        const email = ILS_MEMBER_TARGET_EMAIL;
+    const toggleIlsWeeklyTargetEmail = (targetEmail: string, checked: boolean) => {
+        const email = String(targetEmail || '').trim().toLowerCase();
+        if (!email) return;
         setIlsWeeklyEmailEnabled(Boolean(checked));
         setIlsWeeklyEmailRecipients((prev) => {
             const set = new Set((prev || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean));
@@ -560,6 +627,8 @@ export default function StaffManagementPage() {
             const notificationsRef = doc(firestore, 'system_settings', 'notifications');
             const notificationsData = {
                 recipientUids: notificationRecipients,
+                interofficeNotificationsEnabled: Boolean(interofficeElectronEnabled),
+                interofficeElectronEnabled: Boolean(interofficeElectronEnabled),
                 ilsNotePermissions: ilsNotePermissions,
                 swVisitDeletePermissions: swVisitDeletePermissions,
                 webAppNotificationsEnabled: Boolean(webAppNotificationsEnabled),
@@ -584,6 +653,7 @@ export default function StaffManagementPage() {
             const reviewRef = doc(firestore, 'system_settings', 'review_notifications');
             const reviewData = {
                 enabled: Boolean(reviewPopupsEnabled),
+                alftElectronEnabled: Boolean(alftElectronEnabled),
                 pollIntervalSeconds: Math.max(30, Math.min(3600, Math.round(Number(reviewPollIntervalSeconds || 180)))),
                 recipients: reviewRecipients,
                 updatedAt: new Date(),
@@ -733,38 +803,94 @@ export default function StaffManagementPage() {
     }
 
     return (
-        <div className="container mx-auto p-6 space-y-6">
+        <div className="container mx-auto max-w-7xl p-6 space-y-6">
             {/* Header */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                    <Users className="h-8 w-8 text-primary" />
-                    <div>
-                        <h1 className="text-3xl font-bold">Staff Management</h1>
-                        <p className="text-muted-foreground">
-                            Manage staff assignments, notifications, and permissions
-                        </p>
+            <Card className="border-border/70 shadow-sm">
+                <CardContent className="pt-6">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="rounded-lg bg-primary/10 p-2">
+                                <Users className="h-6 w-6 text-primary" />
+                            </div>
+                            <div>
+                                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Staff Management</h1>
+                                <p className="text-sm text-muted-foreground">
+                                    Manage access, staffing, and notification systems from one page.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <Badge variant="secondary">Super Admins: {superAdminCount}</Badge>
+                            <Badge variant="secondary">Staff: {staffCount}</Badge>
+                            <Badge variant={isAutoSaving ? 'default' : 'outline'}>
+                                {isAutoSaving ? 'Auto-saving changes...' : 'All changes synced'}
+                            </Badge>
+                        </div>
                     </div>
-                </div>
-            </div>
+                </CardContent>
+            </Card>
 
-            {/* Add New Staff */}
-            <Card>
+            <Card className="border-border/70 shadow-sm">
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <UserPlus className="h-5 w-5" />
-                        Add New Staff Member
-                    </CardTitle>
+                    <CardTitle className="text-lg">System controls</CardTitle>
                     <CardDescription>
-                        Create a staff account in Firebase Auth (pre-approve access)
+                        Jump directly to any section. Everything below is grouped by function.
                     </CardDescription>
                 </CardHeader>
+                <CardContent className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                    {controlButtons.map((item) => (
+                        <Button
+                            key={item.id}
+                            variant="outline"
+                            className="justify-start"
+                            onClick={() => scrollToSection(item.id)}
+                        >
+                            {item.label}
+                        </Button>
+                    ))}
+                </CardContent>
+            </Card>
+
+            <div className="space-y-6">
+
+            <Card id="add-staff-section" className="border-border/70 shadow-sm">
+                <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="flex items-center gap-2">
+                                <UserPlus className="h-5 w-5" />
+                                Add New Staff Member
+                            </CardTitle>
+                            <CardDescription>
+                                Keep this collapsed when focusing on Staff Access & Settings.
+                            </CardDescription>
+                        </div>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowAddStaffForm((prev) => !prev)}
+                            className="shrink-0"
+                        >
+                            {showAddStaffForm ? (
+                                <>
+                                    <ChevronUp className="mr-2 h-4 w-4" />
+                                    Collapse
+                                </>
+                            ) : (
+                                <>
+                                    <ChevronDown className="mr-2 h-4 w-4" />
+                                    Expand
+                                </>
+                            )}
+                        </Button>
+                    </div>
+                </CardHeader>
+                {showAddStaffForm && (
                 <CardContent>
                     <Alert className="mb-4">
                         <AlertTitle>How this works</AlertTitle>
                         <AlertDescription>
-                            Staff cannot access the admin portal unless you create their account here (or in Firebase Auth) and assign a role.
-                            After you create them, send them the temporary password and have them sign in at <span className="font-mono">/admin/login</span>.
-                            They can then use “Forgot your password?” to set their own password.
+                            Create staff here, then share the temporary password so they can sign in and reset it.
                         </AlertDescription>
                     </Alert>
 
@@ -784,27 +910,27 @@ export default function StaffManagementPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-2">
-                            <Label htmlFor="firstName">First Name</Label>
+                            <Label htmlFor="newStaffFirstName">First Name</Label>
                             <Input
-                                id="firstName"
+                                id="newStaffFirstName"
                                 value={newStaffFirstName}
                                 onChange={(e) => setNewStaffFirstName(e.target.value)}
                                 placeholder="Enter first name"
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="lastName">Last Name</Label>
+                            <Label htmlFor="newStaffLastName">Last Name</Label>
                             <Input
-                                id="lastName"
+                                id="newStaffLastName"
                                 value={newStaffLastName}
                                 onChange={(e) => setNewStaffLastName(e.target.value)}
                                 placeholder="Enter last name"
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="email">Email</Label>
+                            <Label htmlFor="newStaffEmail">Email</Label>
                             <Input
-                                id="email"
+                                id="newStaffEmail"
                                 type="email"
                                 value={newStaffEmail}
                                 onChange={(e) => setNewStaffEmail(e.target.value)}
@@ -827,6 +953,8 @@ export default function StaffManagementPage() {
                         </div>
                     </div>
                 </CardContent>
+                )}
+                {showAddStaffForm && (
                 <CardFooter>
                     <Button onClick={handleAddStaff} disabled={isAddingStaff}>
                         {isAddingStaff ? (
@@ -842,153 +970,54 @@ export default function StaffManagementPage() {
                         )}
                     </Button>
                 </CardFooter>
+                )}
             </Card>
 
             {/* Staff List & Permissions */}
-            <Card>
+            <Card id="staff-permissions-section" className="border-border/70 shadow-sm">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <ShieldCheck className="h-5 w-5" />
-                        Staff Permissions & Notifications
+                        Staff Access & Settings
                     </CardTitle>
                     <CardDescription>
-                        Manage staff roles, notification preferences, and special permissions
+                        Manage staff roles, permissions, and notification toggles
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4 p-3 border rounded-lg bg-muted/20">
-                        <div className="flex items-center justify-between gap-4">
+                    <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="flex items-center justify-between gap-4 p-3 border rounded-lg bg-muted/20">
                             <div className="space-y-1">
                                 <div className="text-sm font-semibold">Manage access (global)</div>
-                                <div className="text-xs text-muted-foreground">
-                                    Turn off to block Admin logins (Super Admins can still log in).
-                                </div>
+                                <div className="text-xs text-muted-foreground">Admin portal on/off for non-super admins.</div>
                             </div>
                             <Switch
                                 checked={adminPortalEnabled}
                                 onCheckedChange={(v) => { setAdminPortalEnabled(Boolean(v)); queueAutoSave(); }}
                             />
                         </div>
-                        <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center justify-between gap-4 p-3 border rounded-lg bg-muted/20">
                             <div className="space-y-1">
                                 <div className="text-sm font-semibold">Application access (master switch)</div>
-                                <div className="text-xs text-muted-foreground">
-                                    Turn off to block all users from the app (except <span className="font-semibold">jason@carehomefinders.com</span>).
-                                </div>
+                                <div className="text-xs text-muted-foreground">Global on/off for user app access.</div>
                             </div>
                             <Switch
                                 checked={appAccessEnabled}
                                 onCheckedChange={(v) => { setAppAccessEnabled(Boolean(v)); queueAutoSave(); }}
                             />
                         </div>
-                        <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center justify-between gap-4 p-3 border rounded-lg bg-muted/20">
                             <div className="space-y-1">
-                                <div className="text-sm font-semibold">Electron notifications (incoming forms)</div>
-                                <div className="text-xs text-muted-foreground">
-                                    Controls CS Summary + Documents review popups for selected staff.
-                                </div>
+                                <div className="text-sm font-semibold">Interoffice + Electron tray alerts</div>
+                                <div className="text-xs text-muted-foreground">Single master on/off for interoffice priority alerts and Electron tray popups.</div>
                             </div>
                             <Switch
-                                checked={reviewPopupsEnabled}
-                                onCheckedChange={(v) => { setReviewPopupsEnabled(Boolean(v)); queueAutoSave(); }}
+                                checked={interofficeElectronEnabled}
+                                onCheckedChange={(v) => { setInterofficeElectronEnabled(Boolean(v)); queueAutoSave(); }}
                             />
                         </div>
                     </div>
-
-                    {!appAccessEnabled ? (
-                        <div className="mb-4 space-y-2 p-3 border rounded-lg bg-amber-50">
-                            <div className="text-sm font-semibold text-amber-900">Master switch message (optional)</div>
-                            <div className="text-xs text-amber-900/80">
-                                This message is shown to blocked users when access is disabled.
-                            </div>
-                            <Input
-                                value={appAccessMessage}
-                                onChange={(e) => { setAppAccessMessage(e.target.value); queueAutoSave(); }}
-                                placeholder="Example: Maintenance in progress. Please try again at 2pm."
-                            />
-                        </div>
-                    ) : null}
-
-                    <div className="mb-4 p-3 border rounded-lg bg-blue-50/40">
-                        <div className="flex items-center gap-2 mb-2">
-                            <CalendarCheck className="h-4 w-4 text-blue-700" />
-                            <div className="text-sm font-semibold text-blue-900">ILS Member Page Access (specific user)</div>
-                        </div>
-                        <div className="text-xs text-blue-900/80 mb-3">
-                            Configure page-only access for <span className="font-semibold">{ILS_MEMBER_TARGET_EMAIL}</span> to open
-                            <span className="font-mono"> /admin/reports/ils</span>, add comments/notes per member, and optionally receive the weekly ILS list every Wednesday.
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div className="flex items-center justify-between gap-3 rounded-md border border-blue-200 bg-white px-3 py-2">
-                                <Label htmlFor="ils-page-access-jhernandez" className="text-sm font-medium">
-                                    ILS page access (only this page)
-                                </Label>
-                                <Switch
-                                    id="ils-page-access-jhernandez"
-                                    checked={ilsMemberAllowedEmails.map((x) => String(x).toLowerCase()).includes(ILS_MEMBER_TARGET_EMAIL)}
-                                    onCheckedChange={(v) => toggleIlsMemberTargetAccess(Boolean(v))}
-                                />
-                            </div>
-                            <div className="flex items-center justify-between gap-3 rounded-md border border-blue-200 bg-white px-3 py-2">
-                                <Label htmlFor="ils-weekly-email-jhernandez" className="text-sm font-medium">
-                                    Send ILS list every Wednesday
-                                </Label>
-                                <Switch
-                                    id="ils-weekly-email-jhernandez"
-                                    checked={
-                                        ilsWeeklyEmailEnabled &&
-                                        ilsWeeklyEmailRecipients.map((x) => String(x).toLowerCase()).includes(ILS_MEMBER_TARGET_EMAIL)
-                                    }
-                                    onCheckedChange={(v) => toggleIlsWeeklyTargetEmail(Boolean(v))}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4 p-3 border rounded-lg bg-muted/20">
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="space-y-1">
-                                <div className="text-sm font-semibold">Web in-app notifications</div>
-                                <div className="text-xs text-muted-foreground">
-                                    Turns on/off the web notification cards for staff notes.
-                                </div>
-                            </div>
-                            <Switch
-                                checked={webAppNotificationsEnabled}
-                                onCheckedChange={(v) => { setWebAppNotificationsEnabled(Boolean(v)); queueAutoSave(); }}
-                            />
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                            <div className="space-y-1">
-                                <div className="text-sm font-semibold">Suppress web when Electron is active</div>
-                                <div className="text-xs text-muted-foreground">
-                                    Prevents duplicate notifications inside the desktop app.
-                                </div>
-                            </div>
-                            <Switch
-                                checked={suppressWebWhenDesktopActive}
-                                onCheckedChange={(v) => { setSuppressWebWhenDesktopActive(Boolean(v)); queueAutoSave(); }}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="space-y-2">
-                            <Label htmlFor="reviewPollIntervalSeconds">Electron poll interval (seconds)</Label>
-                            <Input
-                                id="reviewPollIntervalSeconds"
-                                type="number"
-                                min={30}
-                                max={3600}
-                                value={String(reviewPollIntervalSeconds)}
-                                onChange={(e) => setReviewPollIntervalSeconds(Number(e.target.value))}
-                                placeholder="180"
-                            />
-                            <div className="text-xs text-muted-foreground">Minimum 30 seconds. Maximum 1 hour.</div>
-                        </div>
-                    </div>
-
-                    <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div className="space-y-2">
                             <Label htmlFor="staffNameFilter">Filter by name or email</Label>
                             <Input
@@ -1009,21 +1038,8 @@ export default function StaffManagementPage() {
                                 <option value="all">All</option>
                                 <option value="Admin">Admin</option>
                                 <option value="Super Admin">Super Admin</option>
+                                <option value="Staff">Staff</option>
                             </select>
-                        </div>
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2 h-10">
-                                <Label className="text-sm font-medium">Interoffice notes (all staff)</Label>
-                                <Switch
-                                    checked={interofficeAllEnabled}
-                                    onCheckedChange={(v) => handleInterofficeToggleAll(Boolean(v))}
-                                    disabled={staffUids.length === 0}
-                                    aria-label="Toggle interoffice notes for all staff"
-                                />
-                            </div>
-                            <div className="text-xs text-muted-foreground leading-snug">
-                                Global toggle for who receives interoffice note notifications.
-                            </div>
                         </div>
                     </div>
                     {isLoadingStaff ? (
@@ -1066,6 +1082,11 @@ export default function StaffManagementPage() {
                                         label: (staff?.firstName || staff?.lastName) ? `${staff?.firstName || ''} ${staff?.lastName || ''}`.trim() : staff?.email,
                                     } satisfies ReviewRecipientSettings;
                                     const notificationsEnabled = notificationRecipients.includes(staff.uid);
+                                    const interofficeElectronChecked = Boolean(
+                                        notificationsEnabled &&
+                                        reviewRecipient.enabled &&
+                                        (reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.alft)
+                                    );
 
                                     return (
                                     <div key={staff.uid} className="p-3 border rounded-lg">
@@ -1075,29 +1096,41 @@ export default function StaffManagementPage() {
                                                 {(staff.firstName || staff.lastName) ? `${staff.firstName} ${staff.lastName}`.trim() : (staff.email || staff.uid)}
                                             </h3>
                                             <p className="text-xs text-muted-foreground">{staff.email || staff.uid}</p>
-                                            <span className={`inline-flex px-2 py-0.5 text-xs rounded-full ${
-                                                staff.role === 'Super Admin' 
-                                                    ? 'bg-red-100 text-red-800' 
-                                                    : 'bg-blue-100 text-blue-800'
-                                            }`}>
-                                                {staff.role}
-                                            </span>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className={`inline-flex px-2 py-0.5 text-xs rounded-full ${
+                                                    staff.role === 'Super Admin'
+                                                        ? 'bg-red-100 text-red-800'
+                                                        : 'bg-blue-100 text-blue-800'
+                                                }`}>
+                                                    {staff.role}
+                                                </span>
+                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${
+                                                    staff.hasRegistered
+                                                        ? 'bg-emerald-100 text-emerald-800'
+                                                        : 'bg-amber-100 text-amber-800'
+                                                }`}>
+                                                    {staff.hasRegistered ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+                                                    {staff.hasRegistered ? 'Registered' : 'Pending first login'}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <Label className="text-xs text-muted-foreground">Access</Label>
-                                            <Switch
-                                                checked={staff.role === 'Admin' || staff.role === 'Super Admin'}
-                                                disabled={staff.uid === currentUser?.uid}
-                                                onCheckedChange={(checked) => {
-                                                    const enable = Boolean(checked);
-                                                    handleSetAdminAccessForUser(
-                                                        staff.uid,
-                                                        enable,
-                                                        enable ? 'Admin' : staff.role
-                                                    ).catch(() => undefined);
-                                                }}
-                                            />
-                                        </div>
+                                <div className="flex items-center gap-2">
+                                    <Label htmlFor={`role-select-${staff.uid}`} className="text-xs text-muted-foreground">Role</Label>
+                                    <select
+                                        id={`role-select-${staff.uid}`}
+                                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                                        value={staff.role}
+                                        disabled={staff.uid === currentUser?.uid}
+                                        onChange={(e) => {
+                                            const nextRole = e.target.value as StaffMember['role'];
+                                            handleRoleChange(staff.uid, nextRole).catch(() => undefined);
+                                        }}
+                                    >
+                                        <option value="Super Admin">Super Admin</option>
+                                        <option value="Admin">Admin</option>
+                                        <option value="Staff">Staff</option>
+                                    </select>
+                                </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         <div className="flex items-center justify-between gap-3">
@@ -1144,17 +1177,18 @@ export default function StaffManagementPage() {
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
-                                                <Bell className={`h-4 w-4 ${notificationsEnabled ? 'text-primary' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`notif-${staff.uid}`} className="text-sm font-medium">Interoffice notes</Label>
+                                                <Bell className={`h-4 w-4 ${interofficeElectronChecked ? 'text-primary' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`interoffice-electron-${staff.uid}`} className="text-sm font-medium">Interoffice + Electron</Label>
                                             </div>
                                             <Checkbox 
-                                                id={`notif-${staff.uid}`} 
-                                                checked={notificationsEnabled} 
+                                                id={`interoffice-electron-${staff.uid}`}
+                                                checked={interofficeElectronChecked}
+                                                disabled={!interofficeElectronEnabled}
                                                 onCheckedChange={(checked) => {
                                                     const nextValue = Boolean(checked);
-                                                    handleNotificationToggle(staff.uid, nextValue);
+                                                    handleInterofficeElectronCardToggle(staff.uid, nextValue, staff, reviewRecipient);
                                                 }} 
-                                                aria-label={`Toggle interoffice notes for ${staff.email}`} 
+                                                aria-label={`Toggle interoffice and electron alerts for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
@@ -1181,38 +1215,6 @@ export default function StaffManagementPage() {
                                                 aria-label={`Toggle SW visit delete permissions for ${staff.email}`}
                                             />
                                         </div>
-                                        {/* Incoming forms review notifications (Doc uploads / CS Summary) */}
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-2">
-                                                <Bell className={`h-4 w-4 ${Boolean(reviewRecipient.documents || reviewRecipient.csSummary) ? 'text-indigo-600' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`review-docs-${staff.uid}`} className="text-sm font-medium">Doc uploads</Label>
-                                            </div>
-                                            <Checkbox
-                                                id={`review-docs-${staff.uid}`}
-                                                checked={Boolean(reviewRecipient.documents || reviewRecipient.csSummary)}
-                                                disabled={!reviewPopupsEnabled}
-                                                onCheckedChange={(checked) => {
-                                                    const nextValue = Boolean(checked);
-                                                    setReviewRecipient(
-                                                      staff.uid,
-                                                      {
-                                                        documents: nextValue,
-                                                        csSummary: nextValue,
-                                                        enabled: nextValue,
-                                                        // When enabling, default both plans on unless explicitly set.
-                                                        ...(nextValue
-                                                          ? {
-                                                              kaiserUploads: reviewRecipient.kaiserUploads ?? true,
-                                                              healthNetUploads: reviewRecipient.healthNetUploads ?? true,
-                                                            }
-                                                          : {}),
-                                                      },
-                                                      staff
-                                                    );
-                                                }}
-                                                aria-label={`Toggle document upload review notifications for ${staff.email}`}
-                                            />
-                                        </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <Bell className={`h-4 w-4 ${Boolean(reviewRecipient.alft) ? 'text-purple-700' : 'text-muted-foreground'}`} />
@@ -1221,7 +1223,7 @@ export default function StaffManagementPage() {
                                             <Checkbox
                                                 id={`review-alft-${staff.uid}`}
                                                 checked={Boolean(reviewRecipient.alft)}
-                                                disabled={!reviewPopupsEnabled}
+                                                disabled={!reviewPopupsEnabled || !alftElectronEnabled}
                                                 onCheckedChange={(checked) => {
                                                     const nextValue = Boolean(checked);
                                                     const keepEnabled = nextValue || Boolean(reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone);
@@ -1241,13 +1243,47 @@ export default function StaffManagementPage() {
 
                                 return (
                                     <>
-                                        <div className="space-y-4">
+                                        <div id="super-admins-section" className="space-y-4">
                                             <div className="text-xs font-semibold text-muted-foreground">Super Admins</div>
                                             {superAdmins.length > 0 ? superAdmins.map(renderCard) : (
                                                 <div className="text-sm text-muted-foreground">No Super Admins match your filters.</div>
                                             )}
+                                            <div className="p-3 border rounded-lg bg-emerald-50/40 border-emerald-200">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <CalendarCheck className="h-4 w-4 text-emerald-700" />
+                                                    <div className="text-sm font-semibold text-emerald-900">Special ILS - Jocelyn</div>
+                                                </div>
+                                                <div className="text-xs text-emerald-900/80 mb-3">
+                                                    Dedicated ILS controls for <span className="font-semibold">{jocelynEmail}</span>.
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-white px-3 py-2">
+                                                        <Label htmlFor="superadmin-ils-page-access-jocelyn" className="text-sm font-medium">
+                                                            ILS page access
+                                                        </Label>
+                                                        <Switch
+                                                            id="superadmin-ils-page-access-jocelyn"
+                                                            checked={ilsMemberAllowedEmails.map((x) => String(x).toLowerCase()).includes(jocelynEmail)}
+                                                            onCheckedChange={(v) => toggleIlsMemberTargetAccess(jocelynEmail, Boolean(v))}
+                                                        />
+                                                    </div>
+                                                    <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-white px-3 py-2">
+                                                        <Label htmlFor="superadmin-ils-weekly-email-jocelyn" className="text-sm font-medium">
+                                                            Weekly ILS email (Wednesday)
+                                                        </Label>
+                                                        <Switch
+                                                            id="superadmin-ils-weekly-email-jocelyn"
+                                                            checked={
+                                                                ilsWeeklyEmailEnabled &&
+                                                                ilsWeeklyEmailRecipients.map((x) => String(x).toLowerCase()).includes(jocelynEmail)
+                                                            }
+                                                            onCheckedChange={(v) => toggleIlsWeeklyTargetEmail(jocelynEmail, Boolean(v))}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="space-y-4">
+                                        <div id="staff-section" className="space-y-4">
                                             <div className="text-xs font-semibold text-muted-foreground">Staff</div>
                                             {nonSuperAdmins.length > 0 ? nonSuperAdmins.map(renderCard) : (
                                                 <div className="text-sm text-muted-foreground">No staff match your filters.</div>
@@ -1261,72 +1297,204 @@ export default function StaffManagementPage() {
                         <p className="text-center text-muted-foreground py-8">No staff members found.</p>
                     )}
                 </CardContent>
-                {staffList.length > 0 && (
-                    <CardFooter>
-                        <Button onClick={handleSaveNotifications} disabled={isSavingNotifications} className="w-full sm:w-auto">
-                            {isSavingNotifications ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="mr-2 h-4 w-4" />
-                                    Save All Settings
-                                </>
-                            )}
-                        </Button>
+                {staffList.length > 0 ? (
+                    <CardFooter className="pt-0">
+                        <div className="text-xs text-muted-foreground">
+                            Settings on this page save automatically.
+                        </div>
                     </CardFooter>
-                )}
+                ) : null}
             </Card>
 
-            {/* Notification Management */}
-            <Card>
+            <Card id="global-controls-section" className="border-border/70 shadow-sm">
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Bell className="h-5 w-5" />
-                        Staff Review Email Alerts (SendGrid)
-                    </CardTitle>
-                    <CardDescription>
-                        Controls staff-facing emails for doc uploads (includes CS Summary). This does not affect user/referrer reminder emails (Resend).
-                    </CardDescription>
+                    <CardTitle className="text-lg">Global access controls</CardTitle>
+                    <CardDescription>System-wide access switches for admins and app users.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                    <NotificationManager />
+                <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between gap-4 p-3 border rounded-lg bg-muted/20">
+                        <div className="space-y-1">
+                            <div className="text-sm font-semibold">Manage access (global)</div>
+                            <div className="text-xs text-muted-foreground">
+                                Turn off to block Admin logins (Super Admins can still log in).
+                            </div>
+                        </div>
+                        <Switch
+                            checked={adminPortalEnabled}
+                            onCheckedChange={(v) => { setAdminPortalEnabled(Boolean(v)); queueAutoSave(); }}
+                        />
+                    </div>
+                    <div className="flex items-center justify-between gap-4 p-3 border rounded-lg bg-muted/20">
+                        <div className="space-y-1">
+                            <div className="text-sm font-semibold">Application access (master switch)</div>
+                            <div className="text-xs text-muted-foreground">
+                                Turn off to block all users from the app (except <span className="font-semibold">jason@carehomefinders.com</span>).
+                            </div>
+                        </div>
+                        <Switch
+                            checked={appAccessEnabled}
+                            onCheckedChange={(v) => { setAppAccessEnabled(Boolean(v)); queueAutoSave(); }}
+                        />
+                    </div>
+                    {!appAccessEnabled ? (
+                        <div className="md:col-span-2 space-y-2 p-3 border rounded-lg bg-amber-50">
+                            <div className="text-sm font-semibold text-amber-900">Master switch message (optional)</div>
+                            <div className="text-xs text-amber-900/80">
+                                This message is shown to blocked users when access is disabled.
+                            </div>
+                            <Input
+                                value={appAccessMessage}
+                                onChange={(e) => { setAppAccessMessage(e.target.value); queueAutoSave(); }}
+                                placeholder="Example: Maintenance in progress. Please try again at 2pm."
+                            />
+                        </div>
+                    ) : null}
                 </CardContent>
             </Card>
 
-            {/* Staff Assignment Notification System */}
-            <Card>
+            <Card id="email-notifications-section" className="border-border/70 shadow-sm">
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <RotateCcw className="h-5 w-5" />
-                        Staff Assignment & Rotation System
-                    </CardTitle>
-                    <CardDescription>
-                        Configure automatic staff assignments and rotation schedules
-                    </CardDescription>
+                    <CardTitle className="text-lg">Email notifications</CardTitle>
+                    <CardDescription>Configure ILS access and weekly email behavior.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="p-3 border rounded-lg bg-blue-50/40">
+                        <div className="flex items-center gap-2 mb-2">
+                            <CalendarCheck className="h-4 w-4 text-blue-700" />
+                            <div className="text-sm font-semibold text-blue-900">ILS Member Access - John</div>
+                        </div>
+                        <div className="text-xs text-blue-900/80 mb-3">
+                            Configure page-only access for <span className="font-semibold">{ILS_MEMBER_TARGET_EMAIL}</span> to open
+                            <span className="font-mono"> /admin/reports/ils</span>, add comments/notes per member, and optionally receive the weekly ILS list every Wednesday.
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                            <div className="flex items-center justify-between gap-3 rounded-md border border-blue-200 bg-white px-3 py-2">
+                                <Label htmlFor="ils-page-access-jhernandez" className="text-sm font-medium">
+                                    ILS page access (only this page)
+                                </Label>
+                                <Switch
+                                    id="ils-page-access-jhernandez"
+                                    checked={ilsMemberAllowedEmails.map((x) => String(x).toLowerCase()).includes(ILS_MEMBER_TARGET_EMAIL)}
+                                    onCheckedChange={(v) => toggleIlsMemberTargetAccess(ILS_MEMBER_TARGET_EMAIL, Boolean(v))}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between gap-3 rounded-md border border-blue-200 bg-white px-3 py-2">
+                                <Label htmlFor="ils-weekly-email-jhernandez" className="text-sm font-medium">
+                                    Send ILS list every Wednesday
+                                </Label>
+                                <Switch
+                                    id="ils-weekly-email-jhernandez"
+                                    checked={
+                                        ilsWeeklyEmailEnabled &&
+                                        ilsWeeklyEmailRecipients.map((x) => String(x).toLowerCase()).includes(ILS_MEMBER_TARGET_EMAIL)
+                                    }
+                                    onCheckedChange={(v) => toggleIlsWeeklyTargetEmail(ILS_MEMBER_TARGET_EMAIL, Boolean(v))}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card id="desktop-controls-section" className="border-border/70 shadow-sm">
+                <CardHeader>
+                    <CardTitle className="text-lg">Desktop notification controls</CardTitle>
+                    <CardDescription>Electron and web notification behavior for staff alerts.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 border rounded-lg bg-muted/20">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-sm font-semibold">ALFT Electron activation (global)</div>
+                                <div className="text-xs text-muted-foreground">
+                                    Master on/off for ALFT Electron notifications.
+                                </div>
+                            </div>
+                            <Switch
+                                checked={alftElectronEnabled}
+                                onCheckedChange={(v) => { setAlftElectronEnabled(Boolean(v)); queueAutoSave(); }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-sm font-semibold">Electron notifications (incoming forms)</div>
+                                <div className="text-xs text-muted-foreground">
+                                    Controls CS Summary + Documents review popups for selected staff.
+                                </div>
+                            </div>
+                            <Switch
+                                checked={reviewPopupsEnabled}
+                                onCheckedChange={(v) => { setReviewPopupsEnabled(Boolean(v)); queueAutoSave(); }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-sm font-semibold">Web in-app notifications</div>
+                                <div className="text-xs text-muted-foreground">
+                                    Turns on/off the web notification cards for staff notes.
+                                </div>
+                            </div>
+                            <Switch
+                                checked={webAppNotificationsEnabled}
+                                onCheckedChange={(v) => { setWebAppNotificationsEnabled(Boolean(v)); queueAutoSave(); }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-sm font-semibold">Suppress web when Electron is active</div>
+                                <div className="text-xs text-muted-foreground">
+                                    Prevents duplicate notifications inside the desktop app.
+                                </div>
+                            </div>
+                            <Switch
+                                checked={suppressWebWhenDesktopActive}
+                                onCheckedChange={(v) => { setSuppressWebWhenDesktopActive(Boolean(v)); queueAutoSave(); }}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="max-w-sm space-y-2">
+                        <Label htmlFor="reviewPollIntervalSeconds">Electron poll interval (seconds)</Label>
+                        <Input
+                            id="reviewPollIntervalSeconds"
+                            type="number"
+                            min={30}
+                            max={3600}
+                            value={String(reviewPollIntervalSeconds)}
+                            onChange={(e) => {
+                                const next = Number(e.target.value);
+                                if (Number.isFinite(next)) {
+                                    setReviewPollIntervalSeconds(next);
+                                    queueAutoSave();
+                                }
+                            }}
+                            placeholder="180"
+                        />
+                        <div className="text-xs text-muted-foreground">Minimum 30 seconds. Maximum 1 hour.</div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card id="staff-assignment-section" className="border-border/70 shadow-sm">
+                <CardHeader>
+                    <CardTitle className="text-lg">Staff assignment &amp; rotation</CardTitle>
+                    <CardDescription>Configure automatic staff assignments and rotation schedules.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <StaffAssignmentNotificationSystem />
                 </CardContent>
             </Card>
 
-            {/* Additional Notification Settings */}
-            <Card>
+            <Card id="advanced-notifications-section" className="border-border/70 shadow-sm">
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Bell className="h-5 w-5" />
-                        Advanced Notification Settings
-                    </CardTitle>
-                    <CardDescription>
-                        Configure notification templates and delivery preferences
-                    </CardDescription>
+                    <CardTitle className="text-lg">Advanced notification settings</CardTitle>
+                    <CardDescription>Configure notification templates and delivery behavior.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <NotificationSettings />
                 </CardContent>
             </Card>
+            </div>
         </div>
     );
 }

@@ -9,19 +9,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/firebase';
+import { auth, useFirestore } from '@/firebase';
 import { Loader2, AlertCircle, Eye, EyeOff, Lock } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 import { useAuthState } from 'react-firebase-hooks/auth';
+import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
 
 
 export default function SWLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  const firestore = useFirestore();
   const [currentUser, authLoading] = useAuthState(auth);
   
   const [email, setEmail] = useState('');
@@ -174,6 +176,22 @@ export default function SWLoginPage() {
 
       // Record daily login marker (forces a fresh sign-in each day).
       writeStoredSwLoginDay(getTodayLocalDayKey());
+      await trackLoginActivityClient(firestore, {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        displayName: userCredential.user.displayName,
+        role: 'Social Worker',
+        action: 'login',
+        portal: 'sw',
+      });
+      await setPortalSessionOnlineClient(firestore, {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        displayName: userCredential.user.displayName,
+        role: 'Social Worker',
+        portal: 'sw',
+        sessionType: 'sw',
+      });
 
       toast({
         title: 'Login Successful',

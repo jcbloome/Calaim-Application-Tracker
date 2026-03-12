@@ -120,9 +120,11 @@ export function RealTimeNotifications() {
   const [webToastPolicy, setWebToastPolicy] = useState<{
     webAppNotificationsEnabled: boolean;
     suppressWebWhenDesktopActive: boolean;
+    interofficeNotificationsEnabled: boolean;
   }>({
     webAppNotificationsEnabled: true,
-    suppressWebWhenDesktopActive: true
+    suppressWebWhenDesktopActive: true,
+    interofficeNotificationsEnabled: true
   });
   const desktopPriorityPillRef = useRef<
     Array<{
@@ -209,7 +211,8 @@ export function RealTimeNotifications() {
         const data = snap.data() as any;
         setWebToastPolicy({
           webAppNotificationsEnabled: Boolean(data?.webAppNotificationsEnabled ?? true),
-          suppressWebWhenDesktopActive: Boolean(data?.suppressWebWhenDesktopActive ?? true)
+          suppressWebWhenDesktopActive: Boolean(data?.suppressWebWhenDesktopActive ?? true),
+          interofficeNotificationsEnabled: Boolean(data?.interofficeNotificationsEnabled ?? true)
         });
       } catch (error) {
         console.warn('Failed to load web toast policy:', error);
@@ -557,6 +560,9 @@ export function RealTimeNotifications() {
         snapshot.forEach((docSnap) => {
           total += 1;
           const data = docSnap.data() as StaffNotification;
+          const noteType = String((data as any)?.type || '').toLowerCase();
+          const isInterofficeType = noteType.includes('interoffice');
+          if (isInterofficeType && !webToastPolicy.interofficeNotificationsEnabled) return;
           if (data.status === 'Closed') return;
           if (data.isRead === true) return;
 
@@ -903,7 +909,7 @@ export function RealTimeNotifications() {
     return () => {
       unsubscribe();
     };
-  }, [user, firestore]);
+  }, [user, firestore, webToastPolicy.interofficeNotificationsEnabled]);
 
   return null;
 }

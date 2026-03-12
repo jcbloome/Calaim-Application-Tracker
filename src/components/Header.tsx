@@ -18,6 +18,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { useState } from 'react';
 import Image from 'next/image';
 import { useAdmin } from '@/hooks/use-admin';
+import { useFirestore } from '@/firebase';
+import { setPortalSessionOfflineClient, trackLoginActivityClient } from '@/lib/login-activity-client';
 
 const navLinks = [
     { href: "/info", label: "Program Information" },
@@ -30,10 +32,27 @@ const navLinks = [
 export function Header() {
   const { user, isUserLoading, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const [isSheetOpen, setSheetOpen] = useState(false);
 
   const handleSignOut = async () => {
+    try {
+      if (firestore && user?.uid) {
+        const role = isSuperAdmin ? 'Super Admin' : (isAdmin ? 'Admin' : 'User');
+        await trackLoginActivityClient(firestore, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          role,
+          action: 'logout',
+          portal: isAdmin ? 'admin' : 'user',
+        });
+        await setPortalSessionOfflineClient(firestore, user.uid);
+      }
+    } catch {
+      // best-effort only
+    }
     if (auth) {
         await auth.signOut();
     }
@@ -48,6 +67,22 @@ export function Header() {
 
   const handleSwitchRole = async () => {
     // Sign out and redirect to login selection
+    try {
+      if (firestore && user?.uid) {
+        const role = isSuperAdmin ? 'Super Admin' : (isAdmin ? 'Admin' : 'User');
+        await trackLoginActivityClient(firestore, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          role,
+          action: 'logout',
+          portal: isAdmin ? 'admin' : 'user',
+        });
+        await setPortalSessionOfflineClient(firestore, user.uid);
+      }
+    } catch {
+      // best-effort only
+    }
     if (auth) {
         await auth.signOut();
     }

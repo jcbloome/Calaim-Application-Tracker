@@ -17,12 +17,12 @@ import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2, Mail, Bell } from 'lucide-react';
+import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2, Mail, Bell, RefreshCw } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import { ApplicationCardSkeleton, ApplicationTableSkeleton } from '@/components/ApplicationCardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
-import type { WithId } from '@/firebase';
+import { useUser, type WithId } from '@/firebase';
 import {
   Dialog,
   DialogContent,
@@ -106,6 +106,22 @@ const getPlanBadgeClass = (app: WithId<Application & FormValues>) => {
   if (plan.includes('health net')) return 'bg-green-100 text-green-800 border-green-200';
   if (plan.includes('kaiser')) return 'bg-blue-100 text-blue-800 border-blue-200';
   return 'bg-gray-100 text-gray-800 border-gray-200';
+};
+
+const getProcessStatusFromApp = (
+  app: WithId<Application & FormValues>,
+  overrides?: Record<string, string>
+) => {
+  const override = String(overrides?.[app.id] || '').trim();
+  if (override) return override;
+  const plan = String(app.healthPlan || '').toLowerCase();
+  if (plan.includes('kaiser')) {
+    return String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || '').trim();
+  }
+  if (plan.includes('health net')) {
+    return String((app as any)?.Health_Net_Process_Status || (app as any)?.healthNetStatus || '').trim();
+  }
+  return '';
 };
 
 const QuickViewField = ({ label, value, fullWidth = false }: { label: string, value?: string | number | boolean | null, fullWidth?: boolean }) => (
@@ -324,8 +340,70 @@ export const AdminApplicationsTable = ({
 }) => {
   const { toast } = useToast();
   const { user } = useAdmin();
+  const { user: firebaseUser } = useUser();
   const [confirmingApps, setConfirmingApps] = useState<Set<string>>(new Set());
   const [sendingReminders, setSendingReminders] = useState<Set<string>>(new Set());
+  const [syncingProcessStatusIds, setSyncingProcessStatusIds] = useState<Set<string>>(new Set());
+  const [processStatusOverrides, setProcessStatusOverrides] = useState<Record<string, string>>({});
+
+  const handleSyncProcessStatus = async (app: WithId<Application & FormValues>) => {
+    if (!firebaseUser) return;
+    const clientId2 = String((app as any)?.client_ID2 || '').trim();
+    if (!clientId2) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Client ID',
+        description: `Cannot sync process status for ${app.memberFirstName} ${app.memberLastName}.`,
+      });
+      return;
+    }
+    if (syncingProcessStatusIds.has(app.id)) return;
+
+    setSyncingProcessStatusIds((prev) => new Set(prev).add(app.id));
+    try {
+      const idToken = await firebaseUser.getIdToken();
+      const response = await fetch('/api/admin/process-status/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          applicationId: app.id,
+          appUserId: app.userId || '',
+          source: (app as any)?.source || '',
+          clientId2,
+          healthPlan: String(app.healthPlan || ''),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Sync failed (HTTP ${response.status})`);
+      }
+
+      const processStatus = String(data?.processStatus || '').trim();
+      if (processStatus) {
+        setProcessStatusOverrides((prev) => ({ ...prev, [app.id]: processStatus }));
+      }
+
+      toast({
+        title: 'Process status synced',
+        description: `${app.memberFirstName} ${app.memberLastName}: ${processStatus || 'No status found'}`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      console.error('Error syncing process status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Sync failed',
+        description: error?.message || 'Could not sync process status from Caspio.',
+      });
+    } finally {
+      setSyncingProcessStatusIds((prev) => {
+        const next = new Set(prev);
+        next.delete(app.id);
+        return next;
+      });
+    }
+  };
 
   const handleConfirmCsSummary = async (app: WithId<Application & FormValues>) => {
     if (confirmingApps.has(app.id)) return;
@@ -475,6 +553,7 @@ export const AdminApplicationsTable = ({
               const planLabel = getPlanBadgeLabel(app);
               const planBadgeClass = getPlanBadgeClass(app);
               const csSummaryIsNew = isNewCsSummary(app);
+              const processStatus = getProcessStatusFromApp(app, processStatusOverrides);
 
               return (
               <TableRow key={app.uniqueKey || `app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -555,8 +634,28 @@ export const AdminApplicationsTable = ({
                   </Badge>
                 </TableCell>
                  <TableCell className="hidden lg:table-cell">
-                    <div>{app.healthPlan}</div>
+                    <div className="flex items-center gap-2">
+                      <span>{app.healthPlan}</span>
+                      {processStatus ? (
+                        <span className="text-xs text-muted-foreground">• {processStatus}</span>
+                      ) : null}
+                    </div>
                     <div className="text-xs text-muted-foreground">{app.pathway}</div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 mt-1 text-xs"
+                      disabled={syncingProcessStatusIds.has(app.id)}
+                      onClick={() => handleSyncProcessStatus(app)}
+                    >
+                      {syncingProcessStatusIds.has(app.id) ? (
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                      )}
+                      Sync
+                    </Button>
                 </TableCell>
                 <TableCell className="text-right">
                    <div className="inline-flex items-center gap-2">
@@ -661,6 +760,7 @@ export const AdminApplicationsTable = ({
             const planLabel = getPlanBadgeLabel(app);
             const planBadgeClass = getPlanBadgeClass(app);
             const csSummaryIsNew = isNewCsSummary(app);
+            const processStatus = getProcessStatusFromApp(app, processStatusOverrides);
 
             return (
               <div key={app.uniqueKey || `mobile-app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -711,6 +811,24 @@ export const AdminApplicationsTable = ({
                       {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yy')}`}
                       • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
                       {(app as any).assignedStaff && ` • Staff: ${(app as any).assignedStaff}`}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                      <span>{app.healthPlan}{processStatus ? ` • ${processStatus}` : ''}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1.5 text-[10px]"
+                        disabled={syncingProcessStatusIds.has(app.id)}
+                        onClick={() => handleSyncProcessStatus(app)}
+                      >
+                        {syncingProcessStatusIds.has(app.id) ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                        )}
+                        Sync
+                      </Button>
                     </div>
                     {showInlineTracker && (
                       <div className="mt-2">

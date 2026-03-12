@@ -12,6 +12,8 @@ import {
   Clock,
   RefreshCw,
   Calendar,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -73,6 +75,7 @@ export default function LoginActivityTracker() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterAction, setFilterAction] = useState<string>('all');
+  const [filterRole, setFilterRole] = useState<string>('all');
   const [socialWorkerEmails, setSocialWorkerEmails] = useState<Set<string>>(new Set());
   const [rnEmails, setRnEmails] = useState<Set<string>>(new Set());
 
@@ -126,9 +129,9 @@ export default function LoginActivityTracker() {
       const logsCollection = collection(db, 'loginLogs');
       
       let logsQuery = query(
-        logsCollection, 
+        logsCollection,
         orderBy('timestamp', 'desc'), 
-        limit(50)
+        limit(300)
       );
 
       if (filterAction !== 'all') {
@@ -136,7 +139,7 @@ export default function LoginActivityTracker() {
           logsCollection,
           where('action', '==', filterAction),
           orderBy('timestamp', 'desc'),
-          limit(50)
+          limit(300)
         );
       }
 
@@ -283,6 +286,15 @@ export default function LoginActivityTracker() {
     return 'user';
   };
 
+  const normalizeRole = (log: LoginLog): 'staff' | 'socialWorker' | 'rn' | 'user' => {
+    const explicit = String(log.userRole || log.role || '').trim().toLowerCase();
+    if (explicit.includes('super') || explicit.includes('admin') || explicit.includes('staff')) return 'staff';
+    if (explicit.includes('social')) return 'socialWorker';
+    if (explicit === 'rn' || explicit.includes('nurse')) return 'rn';
+    if (explicit.includes('user')) return 'user';
+    return getUserType(log.userEmail || log.email || '');
+  };
+
   const getUserTypeBadge = (userType: 'staff' | 'socialWorker' | 'rn' | 'user') => {
     switch (userType) {
       case 'staff':
@@ -374,13 +386,28 @@ export default function LoginActivityTracker() {
                 <p className="text-center text-muted-foreground py-4 text-xs">No active sessions</p>
               ) : (
                 <div className="space-y-1">
-                  {activeSessions.map((session) => (
+                  {activeSessions.map((session) => {
+                    const online = Boolean((session as any)?.isOnline) && (() => {
+                      const ts = (session as any)?.lastActivity;
+                      const date = ts?.toDate ? ts.toDate() : new Date(ts || 0);
+                      return Date.now() - date.getTime() < 15 * 60 * 1000;
+                    })();
+                    return (
                     <div key={session.id} className="p-2 border rounded text-xs hover:bg-gray-50">
                       <div className="flex items-center gap-2">
-                        <User className="h-3 w-3 text-blue-500 flex-shrink-0" />
+                        {online ? (
+                          <Wifi className="h-3 w-3 text-emerald-600 flex-shrink-0" />
+                        ) : (
+                          <WifiOff className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        )}
                         <div className="min-w-0 flex-1">
                           <p className="font-medium truncate text-xs">{session.userName || session.displayName || session.userEmail || session.email || 'Unknown User'}</p>
                           <p className="text-xs text-muted-foreground truncate">{session.userEmail || session.email || 'No email'}</p>
+                          <div className="text-xs">
+                            <Badge variant={online ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 h-4">
+                              {online ? 'Online' : 'Offline'}
+                            </Badge>
+                          </div>
                           <p className="text-xs text-muted-foreground flex items-center gap-1">
                             <Clock className="h-3 w-3" />
                             {formatTimestamp(session.lastActivity)}
@@ -388,7 +415,7 @@ export default function LoginActivityTracker() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               )}
             </div>
@@ -403,27 +430,53 @@ export default function LoginActivityTracker() {
                 <Calendar className="h-4 w-4" />
                 Login History ({loginLogs.length})
               </CardTitle>
-              <Select value={filterAction} onValueChange={setFilterAction}>
-                <SelectTrigger className="w-20 h-6 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="login">Login</SelectItem>
-                  <SelectItem value="logout">Logout</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Select value={filterRole} onValueChange={setFilterRole}>
+                  <SelectTrigger className="w-24 h-6 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Role</SelectItem>
+                    <SelectItem value="staff">Staff</SelectItem>
+                    <SelectItem value="socialWorker">SW</SelectItem>
+                    <SelectItem value="rn">RN</SelectItem>
+                    <SelectItem value="user">User</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filterAction} onValueChange={setFilterAction}>
+                  <SelectTrigger className="w-24 h-6 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Action</SelectItem>
+                    <SelectItem value="login">Login</SelectItem>
+                    <SelectItem value="logout">Logout</SelectItem>
+                    <SelectItem value="session_timeout">Timeout</SelectItem>
+                    <SelectItem value="forced_logout">Forced</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
             <div className="max-h-64 overflow-y-auto">
-              {loginLogs.length === 0 ? (
+              {loginLogs.filter((log) => {
+                const role = normalizeRole(log);
+                if (filterRole !== 'all' && role !== filterRole) return false;
+                return true;
+              }).length === 0 ? (
                 <p className="text-center text-muted-foreground py-4 text-xs">No login logs found</p>
               ) : (
                 <div className="space-y-1">
-                  {loginLogs.map((log) => {
+                  {loginLogs
+                    .filter((log) => {
+                      const role = normalizeRole(log);
+                      if (filterRole !== 'all' && role !== filterRole) return false;
+                      return true;
+                    })
+                    .map((log) => {
                     const userEmail = log.userEmail || log.email || '';
-                    const userType = getUserType(userEmail);
+                    const userType = normalizeRole(log);
                     const userName = log.userName || log.displayName || userEmail || 'Unknown User';
                     const action = log.action || log.type || log.event || 'unknown';
                     const isSuccess = log.success !== false;

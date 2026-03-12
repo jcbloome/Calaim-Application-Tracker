@@ -4,7 +4,7 @@ import React, { ReactNode, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSocialWorker } from '@/hooks/use-social-worker';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import {
   LogOut,
   Loader2,
@@ -15,12 +15,14 @@ import { Input } from '@/components/ui/input';
 import Image from 'next/image';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, msUntilNextLocalMidnight, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 import { SWTopNav } from '@/components/sw/SWTopNav';
+import { setPortalSessionOfflineClient, trackLoginActivityClient } from '@/lib/login-activity-client';
 
 export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, socialWorkerData, isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
+  const firestore = useFirestore();
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [headerSearch, setHeaderSearch] = useState('');
 
@@ -32,6 +34,21 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
   ).trim() || 'Social Worker';
 
   const handleSignOut = useCallback(async (target: string = '/sw-login') => {
+    try {
+      if (firestore && user?.uid) {
+        await trackLoginActivityClient(firestore, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          role: 'Social Worker',
+          action: 'logout',
+          portal: 'sw',
+        });
+        await setPortalSessionOfflineClient(firestore, user.uid);
+      }
+    } catch {
+      // best-effort only
+    }
     if (auth) {
       await auth.signOut();
     }
@@ -41,7 +58,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
       // ignore
     }
     router.push(target);
-  }, [auth, router]);
+  }, [auth, firestore, router, user?.displayName, user?.email, user?.uid]);
 
   useEffect(() => {
     if (isLoading) return;

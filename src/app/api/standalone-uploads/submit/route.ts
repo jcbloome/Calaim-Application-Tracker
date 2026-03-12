@@ -105,26 +105,30 @@ export async function POST(request: NextRequest) {
       const settingsSnap = await adminDb.collection('system_settings').doc('review_notifications').get();
       const settings = settingsSnap.exists ? settingsSnap.data() : null;
       const globalEnabled = (settings as any)?.enabled === undefined ? true : Boolean((settings as any)?.enabled);
+      const alftElectronEnabled = (settings as any)?.alftElectronEnabled === undefined ? true : Boolean((settings as any)?.alftElectronEnabled);
       if (globalEnabled) {
         const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
         const recipientUids: string[] = [];
         const recipientMetaByUid = new Map<string, any>();
 
         const isAlft = String(documentType || '').trim().toLowerCase().includes('alft');
+        const canNotifyType = !isAlft || alftElectronEnabled;
 
-        Object.entries(recipients).forEach(([key, raw]) => {
-          const r = raw || {};
-          if (!Boolean(r?.enabled)) return;
-          if (isAlft) {
-            if (!Boolean(r?.alft)) return;
-          } else {
-            if (!Boolean(r?.standalone)) return;
-          }
-          const uid = String(r?.uid || '').trim() || (!String(key).includes('@') ? String(key).trim() : '');
-          if (!uid) return;
-          if (!recipientUids.includes(uid)) recipientUids.push(uid);
-          recipientMetaByUid.set(uid, r);
-        });
+        if (canNotifyType) {
+          Object.entries(recipients).forEach(([key, raw]) => {
+            const r = raw || {};
+            if (!Boolean(r?.enabled)) return;
+            if (isAlft) {
+              if (!Boolean(r?.alft)) return;
+            } else {
+              if (!Boolean(r?.standalone)) return;
+            }
+            const uid = String(r?.uid || '').trim() || (!String(key).includes('@') ? String(key).trim() : '');
+            if (!uid) return;
+            if (!recipientUids.includes(uid)) recipientUids.push(uid);
+            recipientMetaByUid.set(uid, r);
+          });
+        }
 
         if (recipientUids.length > 0) {
           const mrnLabel = medicalRecordNumber ? `MRN ${medicalRecordNumber}` : 'MRN —';

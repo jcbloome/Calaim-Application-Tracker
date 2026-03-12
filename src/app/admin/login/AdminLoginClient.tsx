@@ -7,8 +7,7 @@ import {
   setPersistence,
   browserSessionPersistence,
   browserLocalPersistence,
-  onAuthStateChanged,
-  type User
+  onAuthStateChanged
 } from 'firebase/auth';
 import type { AuthError } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -27,22 +26,7 @@ import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import Image from 'next/image';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-
-async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
-  if (!firestore || !user) return;
-  try {
-    await addDoc(collection(firestore, 'loginLogs'), {
-      userId: user.uid,
-      email: user.email,
-      displayName: user.displayName,
-      role: role,
-      timestamp: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error('Error tracking login:', error);
-  }
-}
+import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
 
 export default function AdminLoginClient() {
   const auth = useAuth();
@@ -175,7 +159,24 @@ export default function AdminLoginClient() {
         });
       });
 
-      await trackLogin(firestore, userCredential.user, 'Admin');
+      const tokenResult = await userCredential.user.getIdTokenResult().catch(() => null);
+      const role = Boolean((tokenResult?.claims as any)?.superAdmin) ? 'Super Admin' : 'Admin';
+      await trackLoginActivityClient(firestore, {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        displayName: userCredential.user.displayName,
+        role,
+        action: 'login',
+        portal: 'admin',
+      });
+      await setPortalSessionOnlineClient(firestore, {
+        uid: userCredential.user.uid,
+        email: userCredential.user.email,
+        displayName: userCredential.user.displayName,
+        role,
+        portal: 'admin',
+        sessionType: 'admin',
+      });
 
       toast({
         title: 'Sign In Successful!',

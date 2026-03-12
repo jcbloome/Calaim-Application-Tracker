@@ -46,6 +46,7 @@ import {
   ChevronDown,
   Target,
   Wrench,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
@@ -289,25 +290,44 @@ function StaffAssignmentDropdown({
 // Get Kaiser statuses in proper sort order
 const kaiserSteps = getKaiserStatusesInOrder().map(status => status.status);
 
-const healthNetSteps = [
-  'Application Received',
-  'in Review',
-  'Needs Additional Documents',
-  'Requested Additional Documents',
-  'Needs RN Virtual Visit',
-  'RN Virtual Visit Complete',
-  'ISP Reviewed',
-  'Need RCFE',
-  'RCFEs Sent to Family',
-  'RCFE Selected',
-  'Needs ISP Sent for Signature',
-  'ISP Signed',
-  'Needs Auth Request',
-  'Auth Request Sent',
-  'Auth Received',
-  'RCFE/Family Informed Auth Status',
-  'Member Placed'
+const HEALTH_NET_PROCESS_STATUS_OPTIONS = [
+  '1- On Hold (Not Interested)',
+  '2- On Hold (Not Yet HN)',
+  '3- Waiting for Papers',
+  '4- Ready to Process',
+  '5- ISP in Progress',
+  '6- Submitted, Waiting for Auth',
+  '7- Authorized',
 ];
+
+const parseNumericPrefix = (value: string): number => {
+  const match = String(value || '').trim().match(/^(\d+)\s*-/);
+  const n = match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+};
+
+const normalizeHealthNetStatusLabel = (value: string) =>
+  String(value || '')
+    .trim()
+    .replace(/^\d+\s*-\s*/, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const healthNetSteps = [...HEALTH_NET_PROCESS_STATUS_OPTIONS].sort((a, b) => {
+  const byPrefix = parseNumericPrefix(a) - parseNumericPrefix(b);
+  if (byPrefix !== 0) return byPrefix;
+  return a.localeCompare(b);
+});
+
+const resolveHealthNetStatus = (raw: string): string => {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  const exact = healthNetSteps.find((s) => s === value);
+  if (exact) return exact;
+  const normalized = normalizeHealthNetStatusLabel(value);
+  return healthNetSteps.find((s) => normalizeHealthNetStatusLabel(s) === normalized) || '';
+};
 
 const calaimTrackingOptions = [
   'CalAIM Eligible',
@@ -1413,6 +1433,7 @@ function ApplicationDetailPageContent() {
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncingProcessStatus, setIsSyncingProcessStatus] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [intakeImportOpen, setIntakeImportOpen] = useState(false);
   const [intakeRequirementTitle, setIntakeRequirementTitle] = useState<string>('');
@@ -1425,7 +1446,7 @@ function ApplicationDetailPageContent() {
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [interofficeNote, setInterofficeNote] = useState<{
     recipientIds: string[];
-    priority: 'Regular' | 'Immediate';
+    priority: 'Regular' | 'Priority' | 'Immediate';
     message: string;
     followUpDate?: string;
   }>({
@@ -1624,7 +1645,15 @@ function ApplicationDetailPageContent() {
     return String(kaiserWorkflowOptions[idx + 1] || '').trim();
   }, [isKaiserPlan, kaiserCurrentStatus, kaiserWorkflowOptions]);
 
-  const healthNetCurrentStatus = String((application as any)?.healthNetStatus || healthNetSteps[0] || '').trim();
+  const healthNetCurrentStatus = useMemo(() => {
+    const raw = String(
+      (application as any)?.Health_Net_Process_Status ||
+      (application as any)?.healthNetProcessStatus ||
+      (application as any)?.healthNetStatus ||
+      ''
+    ).trim();
+    return resolveHealthNetStatus(raw) || healthNetSteps[0] || '';
+  }, [application]);
   const healthNetNextStatus = useMemo(() => {
     if (!isHealthNetPlan) return '';
     const idx = healthNetSteps.findIndex((s) => s === healthNetCurrentStatus);
@@ -1632,6 +1661,12 @@ function ApplicationDetailPageContent() {
     if (idx >= healthNetSteps.length - 1) return '';
     return String(healthNetSteps[idx + 1] || '').trim();
   }, [isHealthNetPlan, healthNetCurrentStatus]);
+
+  const processStatusLabel = useMemo(() => {
+    if (isKaiserPlan) return String((application as any)?.kaiserStatus || '').trim();
+    if (isHealthNetPlan) return String(healthNetCurrentStatus || '').trim();
+    return '';
+  }, [application, isKaiserPlan, isHealthNetPlan, healthNetCurrentStatus]);
 
   const effectiveNextStep = useMemo(() => {
     if (isKaiserPlan) return String(kaiserNextStatus || '').trim();
@@ -1765,7 +1800,7 @@ function ApplicationDetailPageContent() {
     return ((application as any)?.interofficeNotes || []) as Array<{
       id?: string;
       message?: string;
-      priority?: 'Regular' | 'Immediate';
+      priority?: 'Regular' | 'Priority' | 'Immediate';
       createdAt?: string;
       createdByName?: string;
       recipientId?: string;
@@ -1962,9 +1997,38 @@ function ApplicationDetailPageContent() {
       return;
     }
 
+    let interofficeEnabled = true;
+    let allowedRecipients: Set<string> | null = null;
+    try {
+      const settingsSnap = await getDoc(doc(firestore, 'system_settings', 'notifications'));
+      if (settingsSnap.exists()) {
+        const data = settingsSnap.data() as any;
+        interofficeEnabled = Boolean(data?.interofficeElectronEnabled ?? data?.interofficeNotificationsEnabled ?? true);
+        const recipientsField = (data?.recipientUids || []) as unknown;
+        if (Array.isArray(recipientsField) && recipientsField.length > 0) {
+          allowedRecipients = new Set(recipientsField.map((v) => String(v || '').trim()).filter(Boolean));
+        }
+      }
+    } catch {
+      // Fail-open if settings are unreadable.
+    }
+
+    if (!interofficeEnabled) {
+      toast({
+        variant: 'destructive',
+        title: 'Interoffice Notes Disabled',
+        description: 'Global interoffice note activation is currently turned off.'
+      });
+      return;
+    }
+
     const memberName = `${application.memberFirstName} ${application.memberLastName}`;
     const clientId2 = (application as any)?.client_ID2 || application.id;
-    const recipients = staffList.filter((staff) => interofficeNote.recipientIds.includes(staff.uid));
+    const recipients = staffList.filter((staff) => {
+      if (!interofficeNote.recipientIds.includes(staff.uid)) return false;
+      if (!allowedRecipients) return true;
+      return allowedRecipients.has(String(staff.uid || '').trim());
+    });
     if (recipients.length === 0) {
       toast({
         variant: 'destructive',
@@ -1973,7 +2037,12 @@ function ApplicationDetailPageContent() {
       });
       return;
     }
-    const priorityValue = interofficeNote.priority === 'Immediate' ? 'Urgent' : 'Low';
+    const priorityValue =
+      interofficeNote.priority === 'Immediate'
+        ? 'Urgent'
+        : interofficeNote.priority === 'Priority'
+          ? 'Priority'
+          : 'Low';
     const noteRecords = recipients.map((recipient) => ({
       id: `interoffice-${Date.now()}-${recipient.uid}`,
       message: interofficeNote.message.trim(),
@@ -3049,6 +3118,65 @@ function ApplicationDetailPageContent() {
       { id: 'decl-elig-check', name: 'Declaration of Eligibility' },
   ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
 
+  const syncProcessStatusFromCaspio = async () => {
+    if (!application?.id || !user) return;
+    const clientId2 = String((application as any)?.client_ID2 || '').trim();
+    if (!clientId2) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Client ID',
+        description: 'Cannot sync process status because client_ID2 is missing.',
+      });
+      return;
+    }
+
+    setIsSyncingProcessStatus(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/admin/process-status/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          applicationId: application.id,
+          appUserId: appUserId || '',
+          source: (application as any)?.source || '',
+          clientId2,
+          healthPlan: String((application as any)?.healthPlan || ''),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Sync failed (HTTP ${response.status})`);
+      }
+
+      setApplication((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          kaiserStatus: data?.kaiserStatus || (prev as any)?.kaiserStatus || '',
+          healthNetStatus: data?.healthNetStatus || (prev as any)?.healthNetStatus || '',
+          Health_Net_Process_Status: data?.healthNetStatus || (prev as any)?.Health_Net_Process_Status || '',
+        } as any;
+      });
+
+      toast({
+        title: 'Process status synced',
+        description: `Pulled latest process status from Caspio for client ${clientId2}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      console.error('Error syncing process status from Caspio:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Sync failed',
+        description: error?.message || 'Could not sync process status from Caspio.',
+      });
+    } finally {
+      setIsSyncingProcessStatus(false);
+    }
+  };
+
   // Update application progression status
   const updateProgressionStatus = async (status: string, statusType: 'kaiser' | 'healthNet') => {
     if (!docRef || !application) return;
@@ -3594,10 +3722,26 @@ function ApplicationDetailPageContent() {
                   return (
                     <>
                       Submitted by {by} | {application.pathway} ({application.healthPlan})
+                      {processStatusLabel ? ` • Process: ${processStatusLabel}` : ''}
                     </>
                   );
                 })()}
                 </CardDescription>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={syncProcessStatusFromCaspio}
+                  disabled={isSyncingProcessStatus || !String((application as any)?.client_ID2 || '').trim()}
+                  className="self-start sm:self-auto"
+                >
+                  {isSyncingProcessStatus ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Sync Process Status
+                </Button>
             </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -3746,7 +3890,7 @@ function ApplicationDetailPageContent() {
                     {application.healthPlan?.toLowerCase().includes('kaiser')
                       ? `Progression: ${(application as any)?.kaiserStatus || kaiserSteps[0]}`
                       : application.healthPlan?.toLowerCase().includes('health net')
-                        ? `Progression: ${(application as any)?.healthNetStatus || healthNetSteps[0]}`
+                        ? `Progression: ${healthNetCurrentStatus || healthNetSteps[0]}`
                         : null}
                   </div>
                 </div>
@@ -4228,7 +4372,7 @@ function ApplicationDetailPageContent() {
                                   (application as any)?.healthPlan?.toLowerCase?.().includes('kaiser')
                                     ? ((application as any)?.kaiserStatus || '')
                                     : (application as any)?.healthPlan?.toLowerCase?.().includes('health net')
-                                      ? ((application as any)?.healthNetStatus || '')
+                                      ? (healthNetCurrentStatus || '')
                                       : ''
                                 ).trim() || '—'}
                               </div>
@@ -4357,7 +4501,7 @@ function ApplicationDetailPageContent() {
                     <Label htmlFor="interoffice-priority">Priority</Label>
                     <Select
                       value={interofficeNote.priority}
-                      onValueChange={(value: 'Regular' | 'Immediate') =>
+                      onValueChange={(value: 'Regular' | 'Priority' | 'Immediate') =>
                         setInterofficeNote((prev) => ({ ...prev, priority: value }))
                       }
                     >
@@ -4366,6 +4510,7 @@ function ApplicationDetailPageContent() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Regular">Regular (no desktop popup)</SelectItem>
+                        <SelectItem value="Priority">Priority (desktop tray popup)</SelectItem>
                         <SelectItem value="Immediate">Immediate (desktop popup)</SelectItem>
                       </SelectContent>
                     </Select>

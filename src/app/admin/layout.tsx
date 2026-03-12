@@ -61,6 +61,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth, useFirestore } from '@/firebase';
+import { setPortalSessionOfflineClient, trackLoginActivityClient } from '@/lib/login-activity-client';
 import { useGlobalNotifications } from '@/components/NotificationProvider';
 import { StaffNotificationBell } from '@/components/StaffNotificationBell';
 import { SocialWorkerRedirect } from '@/components/SocialWorkerRedirect';
@@ -160,6 +161,7 @@ const superAdminNavLinks = [
       { href: '/admin/global-task-tracker', label: 'Global Task Tracker', icon: ClipboardList },
       { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },
       { href: '/admin/member-activity', label: 'Member Activity Tracking', icon: Activity },
+      { href: '/admin/login-activity', label: 'Login Activity Tracker', icon: Activity },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
       { href: '/admin/era-parser', label: 'ERA Parser', icon: Receipt },
@@ -201,6 +203,7 @@ function AdminHeader() {
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
+    alftElectronEnabled: boolean;
     recipientEnabled: boolean;
     allowDocs: boolean;
     allowCs: boolean;
@@ -209,6 +212,7 @@ function AdminHeader() {
     allowAlft: boolean;
   }>({
     enabled: true,
+    alftElectronEnabled: true,
     recipientEnabled: false,
     allowDocs: false,
     allowCs: false,
@@ -293,6 +297,7 @@ function AdminHeader() {
         const recipient = byUid || byEmailKey || byEmailField || null;
         setReviewPopupPrefs({
           enabled,
+          alftElectronEnabled: Boolean(data?.alftElectronEnabled ?? true),
           recipientEnabled: Boolean(recipient?.enabled),
           allowDocs: Boolean(recipient?.documents),
           allowCs: Boolean(recipient?.csSummary),
@@ -305,6 +310,7 @@ function AdminHeader() {
         // If prefs cannot be loaded, keep notifications disabled (explicit authorization required).
         setReviewPopupPrefs({
           enabled: true,
+          alftElectronEnabled: true,
           recipientEnabled: false,
           allowDocs: false,
           allowCs: false,
@@ -402,6 +408,22 @@ function AdminHeader() {
   }, [firestore, user?.uid]);
 
   const handleSignOut = async () => {
+    try {
+      if (firestore && user?.uid) {
+        const role = isSuperAdmin ? 'Super Admin' : (isAdmin ? 'Admin' : 'Staff');
+        await trackLoginActivityClient(firestore, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          role,
+          action: 'logout',
+          portal: 'admin',
+        });
+        await setPortalSessionOfflineClient(firestore, user.uid);
+      }
+    } catch {
+      // best-effort logging only
+    }
     if (auth) {
       await auth.signOut();
     }
@@ -648,7 +670,10 @@ function AdminHeader() {
         reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowEligibility
       );
       const allowAlftDesktop = Boolean(
-        reviewPopupPrefs.enabled && reviewPopupPrefs.recipientEnabled && reviewPopupPrefs.allowAlft
+        reviewPopupPrefs.enabled &&
+        reviewPopupPrefs.alftElectronEnabled &&
+        reviewPopupPrefs.recipientEnabled &&
+        reviewPopupPrefs.allowAlft
       );
 
       // Web popups for document uploads are intentionally disabled (too noisy).
