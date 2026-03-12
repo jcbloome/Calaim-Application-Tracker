@@ -71,6 +71,7 @@ function MyNotesContent() {
     sha256: string | null;
     macReleaseUrl: string | null;
   }>({ version: null, sha256: null, macReleaseUrl: null });
+  const hasMacInstaller = Boolean(installerMeta.macReleaseUrl);
   const { user, isAdmin, isLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -960,15 +961,21 @@ function MyNotesContent() {
                 Download Windows Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
               </a>
             </Button>
-            <Button asChild variant="outline" size="sm">
-              <a
-                href={installerMeta.macReleaseUrl || macInstallerDownloadUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Download Mac Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
-              </a>
-            </Button>
+            {hasMacInstaller ? (
+              <Button asChild variant="outline" size="sm">
+                <a
+                  href={installerMeta.macReleaseUrl || macInstallerDownloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Download Mac Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
+                </a>
+              </Button>
+            ) : (
+              <span className="text-[11px] text-muted-foreground">
+                Mac installer not published yet for this release.
+              </span>
+            )}
             {installerMeta.sha256 && (
               <span className="text-[10px] text-muted-foreground">
                 Windows SHA256: {installerMeta.sha256.slice(0, 10)}…
