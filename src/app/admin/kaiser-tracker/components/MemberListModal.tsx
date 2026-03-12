@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { User, X } from 'lucide-react';
+import { MessageSquare, User, X } from 'lucide-react';
 import type { KaiserMember } from './shared';
 import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor } from './shared';
 
@@ -150,6 +150,10 @@ export function MemberListModal({
                             <h3 className="font-medium">
                               {member.memberFirstName} {member.memberLastName}
                             </h3>
+                          </div>
+                          <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700">
+                            <MessageSquare className="h-3 w-3" />
+                            Click card to open member notes
                           </div>
 
                           <p className="text-sm text-muted-foreground mt-1">
