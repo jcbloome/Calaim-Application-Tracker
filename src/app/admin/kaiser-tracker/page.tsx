@@ -791,9 +791,11 @@ function KaiserTrackerPageContent() {
         };
       });
 
+      const normalizeAllowedCalaim = (value: string) =>
+        normalizeCalaimStatus(String(value || '')).replace(/[_-]+/g, ' ');
       const allowedCalaim = new Set(['authorized', 'pending']);
       const eligibleMembers = cleanMembers.filter((member: KaiserMember) => {
-        const calaim = normalizeCalaimStatus(String(member.CalAIM_Status || ''));
+        const calaim = normalizeAllowedCalaim(String(member.CalAIM_Status || ''));
         if (!allowedCalaim.has(calaim)) return false;
         const effectiveKaiserStatus = getEffectiveKaiserStatus(member);
         return Boolean(effectiveKaiserStatus && effectiveKaiserStatus !== 'Unknown');
