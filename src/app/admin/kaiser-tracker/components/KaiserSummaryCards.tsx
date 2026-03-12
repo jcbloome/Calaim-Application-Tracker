@@ -77,6 +77,16 @@ export function KaiserSummaryCards({
     return Boolean(s) && s !== 'null' && s !== 'undefined' && s !== 'n/a';
   };
 
+  const toValidDate = (value: unknown): Date | null => {
+    if (!hasDate(value)) return null;
+    try {
+      const d = new Date(String(value));
+      return Number.isNaN(d.getTime()) ? null : d;
+    } catch {
+      return null;
+    }
+  };
+
   const ilsMemberUpdatesMembers = members.filter((m) => Boolean(getIlsBucketKey(getEffectiveKaiserStatus(m))));
   const ilsMemberUpdatesCount = ilsMemberUpdatesMembers.length;
   const ilsMemberUpdatesPct = members.length > 0 ? ((ilsMemberUpdatesCount / members.length) * 100).toFixed(1) : '0';
@@ -85,9 +95,16 @@ export function KaiserSummaryCards({
     count: ilsMemberUpdatesMembers.filter((x) => getIlsBucketKey(getEffectiveKaiserStatus(x)) === m.key).length,
   }));
 
-  const tierActionMembers = members.filter(
-    (m) => normalize(getEffectiveKaiserStatus(m)) === 'tier level requested' && hasDate((m as any)?.Kaiser_Tier_Level_Received_Date)
-  );
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const oneMonthOut = new Date(startOfToday);
+  oneMonthOut.setDate(oneMonthOut.getDate() + 30);
+  const h2022ExpiringMembers = members.filter((m) => {
+    const endDate = toValidDate((m as any)?.Authorization_End_Date_H2022);
+    if (!endDate) return false;
+    const endDay = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    return endDay >= startOfToday && endDay <= oneMonthOut;
+  });
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
@@ -125,22 +142,21 @@ export function KaiserSummaryCards({
             ))}
           </div>
           <div className="border-t pt-2 space-y-1">
-            <div className="text-[11px] font-semibold text-slate-700">Action Items</div>
             <button
               type="button"
-              className="w-full flex items-center justify-between text-[11px] text-muted-foreground hover:text-slate-800 hover:underline"
+              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-blue-700 hover:bg-blue-50 hover:underline"
               onClick={() =>
                 openMemberModal(
-                  tierActionMembers,
-                  'Tier Action Items',
-                  `${tierActionMembers.length} members where ILS updated Tier Level Received Date (clears after Kaiser status moves forward)`,
+                  h2022ExpiringMembers,
+                  'H2022 Ending Within 1 Month',
+                  `${h2022ExpiringMembers.length} Kaiser members with Authorization_End_Date_H2022 in the next 30 days`,
                   'kaiser_status',
-                  'tier_action_items'
+                  'h2022_expiring_30_days'
                 )
               }
             >
-              <span className="truncate pr-2">{`Tier (${tierActionMembers.length})`}</span>
-              <span className="font-semibold text-slate-700">{tierActionMembers.length}</span>
+              <span className="truncate pr-2">H2022 ending within 1 month</span>
+              <span className="font-semibold text-blue-700">{h2022ExpiringMembers.length}</span>
             </button>
           </div>
         </CardContent>

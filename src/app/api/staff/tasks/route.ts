@@ -3,6 +3,9 @@ import { adminDb } from '@/firebase-admin';
 import { normalizePriorityLabel } from '@/lib/notification-utils';
 import { FieldPath } from 'firebase-admin/firestore';
 
+const H2022_VISIT_ALERT_EMAIL = 'john@carehomefinders.com';
+const H2022_VISIT_ALERT_WINDOW_DAYS = 30;
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -403,6 +406,74 @@ export async function GET(request: NextRequest) {
         });
       } catch (memberError) {
         console.warn('Failed to load member follow-up notes:', memberError);
+      }
+
+      // System follow-up alerts for Kaiser H2022 ending within 30 days.
+      // These are calendar-visible tasks for the assigned staff daily agenda.
+      try {
+        if (staffEmail === H2022_VISIT_ALERT_EMAIL) {
+          const normalizeIso = (value: any) => {
+            if (!value) return '';
+            try {
+              const parsed = value?.toDate?.() || new Date(String(value));
+              const ms = parsed?.getTime?.();
+              if (!ms || Number.isNaN(ms)) return '';
+              return new Date(ms).toISOString();
+            } catch {
+              return '';
+            }
+          };
+
+          const startOfToday = new Date();
+          startOfToday.setHours(0, 0, 0, 0);
+
+          const kaiserMembersSnap = await adminDb
+            .collection('caspio_members_cache')
+            .where('CalAIM_MCO', '==', 'Kaiser')
+            .limit(5000)
+            .get();
+
+          kaiserMembersSnap.docs.forEach((docSnap) => {
+            const data = docSnap.data() as Record<string, any>;
+            const memberClientId = String(data?.Client_ID2 || data?.client_ID2 || '').trim();
+            const firstName = String(data?.Senior_First || '').trim();
+            const lastName = String(data?.Senior_Last || '').trim();
+            const memberName = `${firstName} ${lastName}`.trim() || String(data?.Senior_Last_First_ID || '').trim() || 'Kaiser member';
+            const h2022EndIso = normalizeIso(data?.Authorization_End_Date_H2022);
+            if (!h2022EndIso) return;
+
+            const h2022EndDate = new Date(h2022EndIso);
+            const diffDays = Math.floor((h2022EndDate.getTime() - startOfToday.getTime()) / (24 * 60 * 60 * 1000));
+            if (diffDays < 0 || diffDays > H2022_VISIT_ALERT_WINDOW_DAYS) return;
+
+            followUpTasks.push({
+              id: `h2022-expiring-${memberClientId || docSnap.id}-${h2022EndIso.slice(0, 10)}`,
+              title: `Kaiser H2022 ending soon: ${memberName}`,
+              description: `H2022 ends in ${diffDays} day${diffDays === 1 ? '' : 's'}. Set up next MSW visit.`,
+              memberName,
+              memberClientId: memberClientId || undefined,
+              healthPlan: 'Kaiser',
+              taskType: 'follow_up',
+              priority: diffDays <= 7 ? 'Urgent' : 'Priority',
+              status: 'pending',
+              dueDate: h2022EndIso,
+              assignedBy: 'system',
+              assignedByName: 'System',
+              assignedTo: userId,
+              assignedToName: staffName,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              notes: 'Auto-flagged because Kaiser H2022 authorization end date is within 30 days.',
+              source: 'applications',
+              actionUrl: memberClientId
+                ? `/admin/member-notes?clientId2=${encodeURIComponent(memberClientId)}`
+                : '/admin/kaiser-tracker',
+              currentKaiserStatus: String(data?.Kaiser_Status || '').trim() || undefined,
+            });
+          });
+        }
+      } catch (h2022Error) {
+        console.warn('Failed to build H2022 expiring follow-up alerts:', h2022Error);
       }
 
       // Optional date range filtering for calendar requests.
