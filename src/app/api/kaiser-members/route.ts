@@ -1,18 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
-import { getKaiserStatusesInOrder } from '@/lib/kaiser-status-progression';
 
 type CacheValue = { expiresAt: number; value: any; inFlight?: Promise<any> };
 const g = globalThis as any;
 const CACHE_KEY = '__api_kaiser_members_cache_v1__';
 const CACHE_TTL_MS = 5 * 60 * 1000;
-
-// Helper function to assign sample Kaiser statuses for demo purposes
-function getRandomKaiserStatus(index: number): string {
-  const ordered = getKaiserStatusesInOrder().map((s) => s.status);
-  if (ordered.length === 0) return 'Pending';
-  return ordered[index % ordered.length];
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,7 +34,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const transformedMembers = cached.map((member: any, index: number) => ({
+      const transformedMembers = cached.map((member: any) => ({
         id: member.Client_ID2 || member.client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
         Client_ID2: member.Client_ID2 || member.client_ID2,
         client_ID2: member.Client_ID2 || member.client_ID2,
@@ -68,7 +60,7 @@ export async function GET(request: NextRequest) {
         memberEmail: member.Member_Email || member.memberEmail || '',
         CalAIM_MCO: member.CalAIM_MCO,
         CalAIM_Status: member.CalAIM_Status || 'No CalAIM Status',
-        Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || member.Status || getRandomKaiserStatus(index),
+        Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
         Kaiser_ID_Status: member.Kaiser_ID_Status,
         SW_ID: member.SW_ID,
         Kaiser_User_Assignment: member.Kaiser_User_Assignment,
@@ -436,7 +428,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform the data to match expected format
-      const transformedMembers = (membersData.Result || []).map((member: any, index: number) => ({
+      const transformedMembers = (membersData.Result || []).map((member: any) => ({
       id: member.Client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
       Client_ID2: member.Client_ID2,
       client_ID2: member.Client_ID2, // Duplicate for compatibility
@@ -454,7 +446,7 @@ export async function GET(request: NextRequest) {
       memberEmail: member.memberEmail || member.Member_Email || '',
       CalAIM_MCO: member.CalAIM_MCO,
       CalAIM_Status: member.CalAIM_Status || 'No CalAIM Status',
-      Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || member.Status || getRandomKaiserStatus(index),
+      Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
       Kaiser_ID_Status: member.Kaiser_ID_Status,
       SW_ID: member.SW_ID,
       Kaiser_User_Assignment: member.Kaiser_User_Assignment,

@@ -127,7 +127,14 @@ const kaiserWorkflow = {
 };
 
 const FALLBACK_KAISER_STATUS_ORDER = getKaiserStatusesInOrder().map((status) => status.status);
-const PINNED_TOP_STATUS = 'T2038 received, Need First Contact';
+const PINNED_TOP_STATUSES = [
+  'RN Visit Needed',
+  'RCFE Needed',
+  'T2038 received, Need First Contact',
+];
+const PINNED_TOP_STATUS_ALIASES: Record<string, string[]> = {
+  'T2038 received, Need First Contact': ['T2038 received, Needs First Contact'],
+};
 const normalizeStatusText = (value: string) =>
   String(value || '')
     .trim()
@@ -784,12 +791,20 @@ function KaiserTrackerPageContent() {
         };
       });
 
-      setMembers(cleanMembers);
+      const allowedCalaim = new Set(['authorized', 'pending']);
+      const eligibleMembers = cleanMembers.filter((member: KaiserMember) => {
+        const calaim = normalizeCalaimStatus(String(member.CalAIM_Status || ''));
+        if (!allowedCalaim.has(calaim)) return false;
+        const effectiveKaiserStatus = getEffectiveKaiserStatus(member);
+        return Boolean(effectiveKaiserStatus && effectiveKaiserStatus !== 'Unknown');
+      });
+
+      setMembers(eligibleMembers);
       
       if (!opts?.quiet) {
         toast({
           title: "Data synced",
-          description: `Loaded ${cleanMembers.length} Kaiser members`,
+          description: `Loaded ${eligibleMembers.length} Kaiser members (Authorized/Pending with valid Kaiser status)`,
         });
       }
     } catch (error) {
@@ -912,6 +927,17 @@ function KaiserTrackerPageContent() {
   // Get unique values for filter dropdowns
   const allKaiserStatuses = useMemo(() => {
     const known = kaiserStatusOptions;
+    const dedupeByNormalized = (values: string[]) => {
+      const seen = new Set<string>();
+      const deduped: string[] = [];
+      values.forEach((value) => {
+        const normalized = normalizeStatusText(value);
+        if (!normalized || seen.has(normalized)) return;
+        seen.add(normalized);
+        deduped.push(value);
+      });
+      return deduped;
+    };
     const seen = new Set<string>();
     for (const m of members) {
       const s = getEffectiveKaiserStatus(m);
@@ -921,11 +947,27 @@ function KaiserTrackerPageContent() {
       .filter((s) => !known.includes(s) && s !== 'Unknown')
       .sort();
     const withUnknown = known.includes('Unknown') ? known : [...known, 'Unknown'];
-    const merged = [...withUnknown, ...unknown];
-    const pinnedNormalized = normalizeStatusText(PINNED_TOP_STATUS);
-    const pinnedIndex = merged.findIndex((s) => normalizeStatusText(s) === pinnedNormalized);
-    if (pinnedIndex <= 0) return merged;
-    return [merged[pinnedIndex], ...merged.slice(0, pinnedIndex), ...merged.slice(pinnedIndex + 1)];
+    const merged = dedupeByNormalized([...withUnknown, ...unknown]);
+    const normalizeTargets = (target: string) => {
+      const aliases = PINNED_TOP_STATUS_ALIASES[target] || [];
+      return new Set([normalizeStatusText(target), ...aliases.map((a) => normalizeStatusText(a))]);
+    };
+
+    const orderedPinned: string[] = [];
+    const used = new Set<string>();
+
+    PINNED_TOP_STATUSES.forEach((target) => {
+      const normalizedTargets = normalizeTargets(target);
+      const match = merged.find((status) => normalizedTargets.has(normalizeStatusText(status)));
+      if (!match) return;
+      const normalizedMatch = normalizeStatusText(match);
+      if (used.has(normalizedMatch)) return;
+      used.add(normalizedMatch);
+      orderedPinned.push(match);
+    });
+
+    const remaining = merged.filter((status) => !used.has(normalizeStatusText(status)));
+    return [...orderedPinned, ...remaining];
   }, [kaiserStatusOptions, members]);
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
   const availableCalAIMStatuses = CALAIM_STATUS_OPTIONS;
