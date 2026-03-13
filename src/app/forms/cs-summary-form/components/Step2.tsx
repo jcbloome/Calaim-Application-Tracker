@@ -89,7 +89,7 @@ export default function Step2() {
                        <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                                 <SelectTrigger>
-                                    <SelectValue placeholder="Select a location type" />
+                                    <SelectValue />
                                 </SelectTrigger>
                             </FormControl>
                             <SelectContent>
@@ -152,7 +152,7 @@ export default function Step2() {
                   <Select onValueChange={field.onChange} value={field.value ?? ''}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a county" />
+                        <SelectValue />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -197,7 +197,7 @@ export default function Step2() {
                               <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={copyAddress}>
                                     <FormControl>
                                         <SelectTrigger>
-                                            <SelectValue placeholder="Select a location type" />
+                                            <SelectValue />
                                         </SelectTrigger>
                                     </FormControl>
                                     <SelectContent>
@@ -266,7 +266,7 @@ export default function Step2() {
                               <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={copyAddress}>
                                 <FormControl>
                                   <SelectTrigger>
-                                    <SelectValue placeholder="Select a county" />
+                                    <SelectValue />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>

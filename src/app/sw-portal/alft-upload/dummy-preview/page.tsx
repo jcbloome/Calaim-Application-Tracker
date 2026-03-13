@@ -10,17 +10,17 @@ const DUMMY_SECTIONS = [
     'Agency: ILS Health',
     'Assessment Date: 2026-03-04',
     'Plan ID: PLAN-ALFT-1022',
-    'Member Name: Jane Member',
+    'Member Name: Leo Lara',
     'Assessor/CM Name: Social Worker Example',
     'Purpose: Initial',
   ]),
   section('DEMOGRAPHIC', [
-    'First / Middle / Last: Jane A Member',
-    'MRN Number: 000012345',
+    'First / Middle / Last: Leo A Lara',
+    'MRN Number: 000045678',
     'Phone Number: (555) 555-1212',
-    'Date of Birth / Sex: 1948-02-14 / Female',
+    'Date of Birth / Sex: 1950-07-21 / Male',
     'Primary Language: English',
-    'Marital Status: Widowed',
+    'Marital Status: Married',
   ]),
   section('CURRENT PHYSICAL LOCATION', [
     'Street: 123 Main St',
@@ -71,7 +71,7 @@ export default function AlftDummyPreviewPage() {
     <div className="max-w-4xl mx-auto py-6 px-4 space-y-4 alft-dummy-preview">
       <Card>
         <CardHeader className="border-b">
-          <CardTitle className="text-center tracking-wide">ALF TRANSITION ASSESSMENT (DUMMY PREVIEW)</CardTitle>
+          <CardTitle className="text-center tracking-wide">ALF TRANSITION ASSESSMENT (DUMMY PREVIEW - LEO LARA)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
           <div className="flex justify-end print:hidden">

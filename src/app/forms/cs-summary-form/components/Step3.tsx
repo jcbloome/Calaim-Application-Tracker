@@ -156,7 +156,6 @@ export default function Step3() {
                       <Textarea
                         {...field}
                         value={field.value ?? ''}
-                        placeholder="Provide a brief explanation for why the member is at risk for institutionalization..."
                       />
                     </FormControl>
                     <FormMessage />

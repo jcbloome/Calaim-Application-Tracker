@@ -72,7 +72,7 @@ export default function Step4() {
                     </FormItem>
                 )} />
                  <FormField control={control} name="ispPhone" render={({ field }) => (
-                    <FormItem><FormLabel>ISP Contact Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>ISP Contact Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
               <FormField control={control} name="ispEmail" render={({ field }) => (
@@ -101,7 +101,7 @@ export default function Step4() {
                           <Select onValueChange={field.onChange} value={field.value ?? ''}>
                               <FormControl>
                                   <SelectTrigger>
-                                      <SelectValue placeholder="Select a location type" />
+                                      <SelectValue />
                                   </SelectTrigger>
                               </FormControl>
                               <SelectContent>
@@ -158,7 +158,6 @@ export default function Step4() {
                             {...field}
                             value={field.value ?? ''}
                             onChange={(e) => field.onChange(String(e.target.value || '').toUpperCase())}
-                            placeholder="CA"
                           />
                         </FormControl>
                         <FormMessage />
@@ -177,7 +176,6 @@ export default function Step4() {
                             value={field.value ?? ''}
                             onChange={(e) => field.onChange(String(e.target.value || '').trim())}
                             inputMode="numeric"
-                            placeholder="90000"
                           />
                         </FormControl>
                         <FormMessage />
@@ -302,7 +300,6 @@ export default function Step4() {
                           {...field}
                           value={field.value ?? ''}
                           onChange={e => field.onChange(formatName(e.target.value))}
-                          placeholder="Enter up to 3 cities, separated by commas"
                         />
                       </FormControl>
                       <FormDescription>Example: Los Angeles, Long Beach, Pasadena</FormDescription>
@@ -328,7 +325,7 @@ export default function Step4() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="rcfeAdminPhone" render={({ field }) => (
-                        <FormItem><FormLabel>Administrator Phone {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput placeholder="(xxx) xxx-xxxx" {...field} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Administrator Phone {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="rcfeAdminEmail" render={({ field }) => (
                         <FormItem>

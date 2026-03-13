@@ -174,7 +174,7 @@ export default function Step1({
                 <FormItem>
                   <FormLabel>Date of Birth <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} placeholder="MM/DD/YYYY" />
+                    <Input {...field} value={field.value ?? ''} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

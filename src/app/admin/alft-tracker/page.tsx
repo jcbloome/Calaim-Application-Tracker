@@ -657,11 +657,16 @@ export default function AdminAlftTrackerPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold">ALFT Tracker</h1>
           <p className="text-muted-foreground">
-            Internal workflow: SW form submitted -> staff review -> RN review/revisions -> SW signature -> final RN sign-off -> send completed packet.
+            Internal workflow: SW form submitted to staff review, then RN review/revisions, then SW signature, then final RN sign-off, then send completed packet.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={filtered.length > 0 ? 'secondary' : 'outline'}>{filtered.length} pending</Badge>
+          <Button variant="outline" asChild>
+            <Link href="/sw-portal/alft-upload/dummy-preview" target="_blank" rel="noreferrer">
+              View dummy ALFT (Leo Lara)
+            </Link>
+          </Button>
           <Button variant="outline" onClick={() => setSearch('')} disabled={!search}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Clear search
