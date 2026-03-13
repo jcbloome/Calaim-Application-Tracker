@@ -252,7 +252,7 @@ export default function SWSignOffPage() {
     staffName.trim() &&
     staffTitle.trim() &&
     signature.trim() &&
-    (Boolean(geolocation) || (geoOverrideEnabled && geoOverrideReason.trim().length >= 8)) &&
+    (Boolean(geolocation) || geoOverrideEnabled) &&
     !submitting;
 
   const submitSignOff = async () => {
@@ -268,10 +268,6 @@ export default function SWSignOffPage() {
           description: 'Please verify location before submitting, or use the override (reason required).',
           variant: 'destructive',
         });
-        return;
-      }
-      if (geoOverrideReason.trim().length < 8) {
-        toast({ title: 'Override reason required', description: 'Please enter a short reason (at least 8 characters).', variant: 'destructive' });
         return;
       }
     }
@@ -292,7 +288,9 @@ export default function SWSignOffPage() {
         signedAt,
         geolocation,
         geolocationOverride: !geolocation ? Boolean(geoOverrideEnabled) : false,
-        geolocationOverrideReason: !geolocation ? geoOverrideReason.trim() : '',
+        geolocationOverrideReason: !geolocation
+          ? (geoOverrideReason.trim() || 'Geolocation unavailable at sign-off time; proceeding with override.')
+          : '',
         socialWorkerName: swName,
       };
 
@@ -407,6 +405,7 @@ export default function SWSignOffPage() {
           <h1 className="text-2xl font-bold">Sign Off</h1>
           <p className="text-muted-foreground">
             RCFE staff acknowledges the Social Worker is present at the facility. This does not confirm each member was visited.
+            After submission, a monthly visit list is sent to admins for confirmation.
           </p>
         </div>
         <Button className="w-full sm:w-auto" variant="outline" onClick={() => void loadCandidates()} disabled={loadingVisits || !rcfeId}>
@@ -543,6 +542,7 @@ export default function SWSignOffPage() {
           <CardTitle className="text-base">RCFE staff signature</CardTitle>
           <CardDescription>
             RCFE staff acknowledges the Social Worker is present at this facility on this date. This does not confirm individual member visits.
+            The signed-off monthly visit list is shared with admins for confirmation.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -650,9 +650,10 @@ export default function SWSignOffPage() {
                 <div className="font-medium text-slate-900">Override enabled (submit without geo-stamp)</div>
                 <div className="text-xs text-muted-foreground">
                   Use this only if location can’t be captured due to signal/permission issues. If you step outside and get better signal, tap <span className="font-semibold">Verify location</span> again—location tagging will automatically re-enable.
+                  If you leave the reason blank, a default reason is auto-added so you can keep moving to the next RCFE.
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="geoOverrideReason">Reason (required)</Label>
+                  <Label htmlFor="geoOverrideReason">Reason (optional)</Label>
                   <Textarea
                     id="geoOverrideReason"
                     value={geoOverrideReason}
