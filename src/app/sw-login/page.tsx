@@ -65,6 +65,7 @@ export default function SWLoginPage() {
   // If already signed in and has SW claim, redirect to portal.
   // On first visit while logged out, we skip any SW verification and just show the form.
   useEffect(() => {
+    if (isLoading) return;
     if (authLoading) return;
     if (!currentUser) return;
 
@@ -92,7 +93,7 @@ export default function SWLoginPage() {
     };
 
     void run();
-  }, [authLoading, currentUser, router]);
+  }, [authLoading, currentUser, isLoading, router]);
 
   useEffect(() => {
     const reason = String(searchParams?.get('reason') || '').trim().toLowerCase();
@@ -117,6 +118,9 @@ export default function SWLoginPage() {
 
     void (async () => {
       const normalizedEmail = email.trim().toLowerCase();
+      // Clear any stale daily marker before a fresh SW sign-in.
+      // This prevents the "new day" effect from signing out immediately during first-login bootstrap.
+      clearStoredSwLoginDay();
 
       // Ensure session isolation doesn't immediately sign us out after auth state flips.
       try {
