@@ -67,10 +67,10 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const canSign = useMemo(() => {
     const role = data?.signerRole;
     if (!role) return false;
-    if (role === 'rn') return !data?.rn?.signedAtMs;
-    if (role === 'msw') {
-      if (!data?.rn?.signedAtMs) return false; // enforce RN first
-      return !data?.msw?.signedAtMs;
+    if (role === 'msw') return !data?.msw?.signedAtMs;
+    if (role === 'rn') {
+      if (!data?.msw?.signedAtMs) return false; // enforce SW first
+      return !data?.rn?.signedAtMs;
     }
     return false;
   }, [data]);
@@ -353,8 +353,8 @@ export function AlftSignatureClient({ token }: { token: string }) {
         <CardHeader>
           <CardTitle>Your signature</CardTitle>
           <CardDescription>
-            {data?.signerRole === 'msw' && !data?.rn?.signedAtMs
-              ? 'Waiting for RN signature first. You will be able to sign once the RN has signed.'
+            {data?.signerRole === 'rn' && !data?.msw?.signedAtMs
+              ? 'Waiting for Social Worker signature first. You can sign after the SW signature is complete.'
               : 'Draw your signature below, then confirm your name and submit.'}
           </CardDescription>
         </CardHeader>

@@ -17,6 +17,15 @@ type SubmitBody = {
     mediCalNumber?: string;
     kaiserMrn?: string;
   };
+  alftForm?: {
+    formVersion?: string;
+    facilityName?: string;
+    priorityLevel?: string;
+    transitionSummary?: string;
+    barriersAndRisks?: string;
+    requestedActions?: string;
+    additionalNotes?: string;
+  };
   files?: Array<{ fileName?: string; downloadURL?: string; storagePath?: string }>;
 };
 
@@ -78,8 +87,17 @@ export async function POST(request: NextRequest) {
       }))
       .filter((f) => Boolean(f.fileName && f.downloadURL && f.storagePath))
       .slice(0, 10);
-    if (normalizedFiles.length === 0) {
-      return NextResponse.json({ success: false, error: 'Missing uploaded files' }, { status: 400 });
+    const alftForm = {
+      formVersion: clean(body?.alftForm?.formVersion, 40) || 'placeholder-v1',
+      facilityName: clean(body?.alftForm?.facilityName, 180) || null,
+      priorityLevel: clean(body?.alftForm?.priorityLevel, 40) || 'Routine',
+      transitionSummary: clean(body?.alftForm?.transitionSummary, 4000),
+      barriersAndRisks: clean(body?.alftForm?.barriersAndRisks, 4000) || null,
+      requestedActions: clean(body?.alftForm?.requestedActions, 4000),
+      additionalNotes: clean(body?.alftForm?.additionalNotes, 4000) || null,
+    };
+    if (!alftForm.transitionSummary || !alftForm.requestedActions) {
+      return NextResponse.json({ success: false, error: 'Missing ALFT summary or requested actions' }, { status: 400 });
     }
 
     const adminModule = await import('@/firebase-admin');
@@ -119,6 +137,7 @@ export async function POST(request: NextRequest) {
       toolCode: 'ALFT',
       documentType: 'ALFT Tool',
       files: normalizedFiles,
+      alftForm,
       uploaderUid,
       uploaderEmail: uploaderEmail || null,
       uploaderName,
@@ -131,6 +150,9 @@ export async function POST(request: NextRequest) {
       mediCalNumber: mediCalNumber || null,
       kaiserMrn: kaiserMrn || null,
       alftUploadDate: uploadDate || null,
+      workflowStatus: 'staff_review',
+      workflowStage: 'submitted_by_sw',
+      workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });

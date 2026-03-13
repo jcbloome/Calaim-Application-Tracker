@@ -230,17 +230,16 @@ export async function POST(req: NextRequest) {
     if (existingSignedAt) {
       return NextResponse.json({ success: false, error: 'This signer has already completed signing.' }, { status: 409 });
     }
-    // Enforce signing order: RN first, then MSW.
-    if (signerRole === 'msw') {
-      const rnSigned = Boolean(data?.signers?.rn?.signedAt);
-      if (!rnSigned) {
+    // Enforce signing order: SW first, then final RN sign-off.
+    if (signerRole === 'rn') {
+      const mswSigned = Boolean(data?.signers?.msw?.signedAt);
+      if (!mswSigned) {
         return NextResponse.json(
-          { success: false, error: 'Waiting for RN signature. Please try again after the RN has signed.' },
+          { success: false, error: 'Waiting for Social Worker signature. Please sign after the SW has signed.' },
           { status: 409 }
         );
       }
     }
-
     const requestId = doc.id;
     const intakeId = clean(data?.intakeId, 200);
     const memberName = clean(data?.memberName, 180) || 'Member';
@@ -261,12 +260,27 @@ export async function POST(req: NextRequest) {
       { merge: true }
     );
 
+    if (signerRole === 'msw') {
+      await adminDb.collection('alft_signature_requests').doc(requestId).set(
+        {
+          status: 'awaiting_rn_final',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
     // Update intake summary status (for tracker visibility).
     if (intakeId) {
       const patch: any = {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
       patch[`alftSignature.${signerRole}SignedAt`] = admin.firestore.FieldValue.serverTimestamp();
+      if (signerRole === 'msw') {
+        patch.workflowStatus = 'awaiting_rn_final_signature';
+        patch.workflowStage = 'awaiting_rn_signature';
+        patch.workflowUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
+      }
       await adminDb.collection('standalone_upload_submissions').doc(intakeId).set(patch, { merge: true }).catch(() => null);
     }
 
@@ -342,6 +356,9 @@ export async function POST(req: NextRequest) {
               signaturePagePdfStoragePath: signaturePdfPath,
               packetPdfStoragePath: packetPdfPath,
             },
+            workflowStatus: 'completed_ready_for_send',
+            workflowStage: 'completed',
+            workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true }

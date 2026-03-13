@@ -134,6 +134,18 @@ interface AlftSignatureRequestPayload {
     signUrl: string;
 }
 
+interface AlftCompletedWorkflowPayload {
+    to: string;
+    memberName: string;
+    mrn?: string;
+    intakeId: string;
+    summary?: string;
+    packetUrl?: string;
+    signaturePageUrl?: string;
+    originalFiles?: Array<{ fileName?: string; downloadURL?: string }>;
+    revisionFiles?: Array<{ fileName?: string; downloadURL?: string }>;
+}
+
 async function getBccRecipients(): Promise<string[]> {
     try {
         const firestore = admin.firestore();
@@ -559,6 +571,71 @@ export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureReques
 
     if (error) {
         console.error('Resend ALFT Signature Request Error:', error);
+        throw new Error(error.message);
+    }
+
+    return data;
+};
+
+export const sendAlftCompletedWorkflowEmail = async (payload: AlftCompletedWorkflowPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const mrn = String(payload.mrn || '').trim();
+    const intakeId = String(payload.intakeId || '').trim();
+    const summary = String(payload.summary || '').trim();
+    const packetUrl = String(payload.packetUrl || '').trim();
+    const signaturePageUrl = String(payload.signaturePageUrl || '').trim();
+    const originals = Array.isArray(payload.originalFiles) ? payload.originalFiles : [];
+    const revisions = Array.isArray(payload.revisionFiles) ? payload.revisionFiles : [];
+
+    const listItems = [
+        ...(packetUrl ? [`<li><a href="${packetUrl}">Final packet PDF</a></li>`] : []),
+        ...(signaturePageUrl ? [`<li><a href="${signaturePageUrl}">Signature page PDF</a></li>`] : []),
+        ...originals
+            .slice(0, 10)
+            .map((f) => {
+                const name = String(f?.fileName || 'Original attachment');
+                const url = String(f?.downloadURL || '').trim();
+                return url ? `<li><a href="${url}">Original: ${name}</a></li>` : '';
+            })
+            .filter(Boolean),
+        ...revisions
+            .slice(0, 10)
+            .map((f) => {
+                const name = String(f?.fileName || 'Revision attachment');
+                const url = String(f?.downloadURL || '').trim();
+                return url ? `<li><a href="${url}">Revision: ${name}</a></li>` : '';
+            })
+            .filter(Boolean),
+    ];
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.45;">
+        <h2 style="margin-bottom: 8px;">ALFT Completed Form</h2>
+        <p style="margin-top: 0;">A completed internal ALFT workflow form is ready for review.</p>
+        <p><strong>Member:</strong> ${memberName}${mrn ? ` &nbsp; | &nbsp; <strong>MRN:</strong> ${mrn}` : ''}</p>
+        <p><strong>Intake ID:</strong> ${intakeId || '—'}</p>
+        ${summary ? `<p><strong>Summary:</strong> ${summary}</p>` : ''}
+        <p><strong>Files:</strong></p>
+        <ul>${listItems.length > 0 ? listItems.join('') : '<li>No file links available</li>'}</ul>
+        <p style="font-size: 12px; color: #64748b;">Sent by CalAIM Tracker ALFT workflow.</p>
+      </div>
+    `;
+
+    const { data, error } = await resend.emails.send({
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `ALFT completed: ${memberName}`,
+        html,
+    });
+
+    if (error) {
+        console.error('Resend ALFT Completed Error:', error);
         throw new Error(error.message);
     }
 

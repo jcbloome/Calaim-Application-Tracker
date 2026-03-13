@@ -47,7 +47,7 @@ const moreLinks: readonly NavLink[] = [
   { href: '/sw-portal/end-of-day', label: 'End of day', icon: ClipboardList },
   { href: '/sw-portal/status-log', label: 'Status Log', icon: CheckCircle2 },
   { href: '/sw-portal/alft-upload', label: 'ALFT Upload', icon: UploadCloud },
-  { href: '/sw-portal/instructions', label: 'Instructions', icon: BookOpenText },
+  { href: '/sw-portal/instructions', label: 'Primer', icon: BookOpenText },
 ] as const;
 
 type NavCounts = {

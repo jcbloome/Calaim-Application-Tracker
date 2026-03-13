@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     const docPayload = {
       intakeId,
       requestId,
-      status: 'requested',
+      status: 'requested_signatures',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       reviewedAt: new Date(reviewedAtMs),
@@ -147,12 +147,17 @@ export async function POST(req: NextRequest) {
         {
           alftSignature: {
             requestId,
-            status: 'requested',
+            status: 'requested_signatures',
             requestedAt: admin.firestore.FieldValue.serverTimestamp(),
             reviewedAt: new Date(reviewedAtMs),
             rnEmail,
             mswEmail,
+            mswRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+            rnRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
+          workflowStatus: 'awaiting_sw_then_rn_signature',
+          workflowStage: 'requested_sw_then_rn_signature',
+          workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -161,13 +166,13 @@ export async function POST(req: NextRequest) {
     const adminSignUrl = `/admin/alft-sign/${encodeURIComponent(rnToken)}`;
     const swSignUrl = `/sw-portal/alft-sign/${encodeURIComponent(mswToken)}`;
 
-    // RN Electron/My Notifications.
+    // Notify RN now; signing order is enforced on the signature page (MSW first, RN final).
     try {
       await adminDb.collection('staff_notifications').add({
         userId: rnUid,
         recipientName: rnName,
-        title: 'ALFT signature requested',
-        message: `${memberName} • MRN ${mrn || '—'}\nPlease open and sign in the tracker.`,
+        title: 'ALFT final RN sign-off requested',
+        message: `${memberName} • MRN ${mrn || '—'}\nPlease complete final RN sign-off after SW signature is done.`,
         memberName,
         type: 'alft_signature_request',
         priority: 'Priority',
@@ -184,10 +189,9 @@ export async function POST(req: NextRequest) {
         alftSignatureRequestId: requestId,
       });
     } catch {
-      // ignore (email is still sent)
+      // ignore notification issues
     }
 
-    // Emails (RN + MSW)
     const reviewedDateLabel = formatDate(reviewedAtMs);
     const rnEmailResult = await sendAlftSignatureRequestEmail({
       to: rnEmail,

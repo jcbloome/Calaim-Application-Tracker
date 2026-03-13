@@ -49,6 +49,12 @@ export default function SwAlftUploadPage() {
   const [uploadDate, setUploadDate] = useState<string>(() => todayLocalKey()); // YYYY-MM-DD
   const [kaiserMrn, setKaiserMrn] = useState('');
   const [socialWorkerName, setSocialWorkerName] = useState(swRealName);
+  const [facilityName, setFacilityName] = useState('');
+  const [priorityLevel, setPriorityLevel] = useState('Routine');
+  const [transitionSummary, setTransitionSummary] = useState('');
+  const [barriersAndRisks, setBarriersAndRisks] = useState('');
+  const [requestedActions, setRequestedActions] = useState('');
+  const [additionalNotes, setAdditionalNotes] = useState('');
 
   // If the SW profile name loads after first render, auto-populate the field.
   useEffect(() => {
@@ -95,10 +101,6 @@ export default function SwAlftUploadPage() {
       });
       return;
     }
-    if (!files || files.length === 0) {
-      toast({ title: 'Select a file', description: 'Upload the completed ALFT Tool.', variant: 'destructive' });
-      return;
-    }
     if (isUploading) return;
 
     setIsUploading(true);
@@ -109,7 +111,7 @@ export default function SwAlftUploadPage() {
       const safeMember = sanitizePathSegment(memberName);
       const uploadRoot = `user_uploads/${user.uid}/sw-portal/alft/${safeMember}_${timestamp}`;
 
-      const uploadPromises = Array.from(files)
+      const uploadPromises = Array.from(files || [])
         .slice(0, 5)
         .map((file, idx) => {
           const safeFile = sanitizePathSegment(file.name);
@@ -143,6 +145,15 @@ export default function SwAlftUploadPage() {
           uploader: { ...uploaderParts, email: swEmail, displayName: swName },
           uploadDate: upDate,
           member: { firstName: first, lastName: last, name: memberName, healthPlan: 'Kaiser', kaiserMrn: mrn, medicalRecordNumber: mrn },
+          alftForm: {
+            formVersion: 'placeholder-v1',
+            facilityName: facilityName.trim(),
+            priorityLevel: priorityLevel.trim() || 'Routine',
+            transitionSummary: transitionSummary.trim(),
+            barriersAndRisks: barriersAndRisks.trim(),
+            requestedActions: requestedActions.trim(),
+            additionalNotes: additionalNotes.trim(),
+          },
           files: results.map((r) => ({ fileName: r.fileName, downloadURL: r.downloadURL, storagePath: r.storagePath })),
         }),
       });
@@ -162,6 +173,12 @@ export default function SwAlftUploadPage() {
       setUploadDate(todayLocalKey());
       setKaiserMrn('');
       setSocialWorkerName(swRealName);
+      setFacilityName('');
+      setPriorityLevel('Routine');
+      setTransitionSummary('');
+      setBarriersAndRisks('');
+      setRequestedActions('');
+      setAdditionalNotes('');
       setUploadProgress(0);
     } catch (err: any) {
       toast({
@@ -200,10 +217,10 @@ export default function SwAlftUploadPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UploadCloud className="h-5 w-5" />
-            ALFT Tool Upload (Kaiser)
+            ALFT Internal Form + Upload (Kaiser)
           </CardTitle>
           <CardDescription>
-            Upload the completed Assisted Living Facility Transitions (ALFT) tool. This creates an intake item for staff.
+            Placeholder internal ALFT form for easy edits. This creates an intake workflow item for staff/RN/sign-off without Adobe.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -252,6 +269,16 @@ export default function SwAlftUploadPage() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="facilityName">Facility / RCFE name (optional)</Label>
+              <Input
+                id="facilityName"
+                value={facilityName}
+                onChange={(e) => setFacilityName(e.target.value)}
+                placeholder="Facility name"
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="swName">Social worker name</Label>
               <Input
                 id="swName"
@@ -280,15 +307,73 @@ export default function SwAlftUploadPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="file">ALFT file (PDF or images)</Label>
+              <Label htmlFor="priorityLevel">Priority</Label>
+              <Input
+                id="priorityLevel"
+                value={priorityLevel}
+                onChange={(e) => setPriorityLevel(e.target.value)}
+                placeholder="Routine / Urgent / Priority"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="transitionSummary">Transition summary</Label>
+              <textarea
+                id="transitionSummary"
+                value={transitionSummary}
+                onChange={(e) => setTransitionSummary(e.target.value)}
+                className="min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="Brief summary of current transition status and goals..."
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="barriersAndRisks">Barriers / risks (optional)</Label>
+              <textarea
+                id="barriersAndRisks"
+                value={barriersAndRisks}
+                onChange={(e) => setBarriersAndRisks(e.target.value)}
+                className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="Any barriers, concerns, or risks..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="requestedActions">Requested actions</Label>
+              <textarea
+                id="requestedActions"
+                value={requestedActions}
+                onChange={(e) => setRequestedActions(e.target.value)}
+                className="min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="What should staff/RN review or update?"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="additionalNotes">Additional notes (optional)</Label>
+              <textarea
+                id="additionalNotes"
+                value={additionalNotes}
+                onChange={(e) => setAdditionalNotes(e.target.value)}
+                className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="Anything else the team should know..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="file">Attachments (PDF/images/docs)</Label>
               <Input
                 id="file"
                 type="file"
                 multiple
                 onChange={(e) => setFiles(e.target.files)}
                 disabled={isUploading}
-                required
               />
+              <div className="text-xs text-muted-foreground">
+                Attach source PDF or supporting files if available. Up to 5 files.
+              </div>
             </div>
 
             {isUploading ? (
@@ -299,7 +384,7 @@ export default function SwAlftUploadPage() {
             ) : null}
 
             <Button type="submit" disabled={isUploading} className="w-full">
-              {isUploading ? 'Uploading…' : 'Upload ALFT'}
+              {isUploading ? 'Submitting…' : 'Submit ALFT form'}
             </Button>
           </form>
         </CardContent>

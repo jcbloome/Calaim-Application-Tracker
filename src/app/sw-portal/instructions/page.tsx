@@ -9,9 +9,9 @@ export default function SWInstructionsPage() {
   return (
     <div className="container mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold">Social Worker Portal Instructions</h1>
+        <h1 className="text-2xl font-bold">Social Worker Portal Primer</h1>
         <p className="text-sm text-muted-foreground">
-          Quick guide for monthly questionnaires, RCFE sign-off, and claim submission.
+          Step-by-step guide for roster, questionnaires, sign-off, CCL checks, and claim submission.
         </p>
       </div>
 
@@ -26,6 +26,36 @@ export default function SWInstructionsPage() {
           </div>
         </AlertDescription>
       </Alert>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Quick workflow order (every visit day)</CardTitle>
+          <CardDescription>Use this sequence so visits and claims process correctly.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ol className="list-decimal pl-5 space-y-1 text-sm">
+            <li>Open <strong>Roster</strong> and confirm today&apos;s assigned members.</li>
+            <li>Complete each member&apos;s <strong>Questionnaire</strong> (drafts are okay while you work).</li>
+            <li>At the end of that RCFE visit, complete <strong>Sign Off</strong> with RCFE staff + location.</li>
+            <li>Run required <strong>CCL checks</strong> (if pending) for draft claims.</li>
+            <li>Submit in <strong>Claims</strong> once sign-off/check requirements are complete.</li>
+          </ol>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>First-time setup checklist</CardTitle>
+          <CardDescription>Complete once per device/browser.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="list-disc pl-5 space-y-1 text-sm">
+            <li>Allow location services for this site/app (required for sign-off).</li>
+            <li>Use one browser/profile for SW work to avoid session confusion.</li>
+            <li>Open the Primer from the top nav if you need a quick refresher.</li>
+          </ul>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -113,7 +143,7 @@ export default function SWInstructionsPage() {
             <li>Open <strong>Sign Off</strong> for the RCFE/day.</li>
             <li>Staff selects the members visited (drafts) and provides name/signature.</li>
             <li>
-              Capture geolocation at sign-off time. If location is blocked, sign-off may fail or be incomplete.
+              Capture geolocation at sign-off time. If location is blocked, use override only when needed.
             </li>
             <li>Submit to finalize the visit(s) and create the claim.</li>
           </ul>
@@ -127,6 +157,28 @@ export default function SWInstructionsPage() {
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">5</Badge>
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              CCL checks (before claim submission when required)
+            </span>
+          </CardTitle>
+          <CardDescription>Complete any missing RCFE CCL checks shown in your Tasks workflow.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ul className="list-disc pl-5 space-y-1 text-sm">
+            <li>If CCL is missing for an RCFE/month, complete it before final claim submission.</li>
+            <li>Use the <strong>CCL Checks</strong> page to clear missing items.</li>
+          </ul>
+          <Button asChild variant="outline">
+            <Link href="/sw-portal/ccl-checks">Open CCL Checks</Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">6</Badge>
             <span className="flex items-center gap-2">
               <DollarSign className="h-4 w-4" />
               Submit Claims
@@ -148,7 +200,7 @@ export default function SWInstructionsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">6</Badge>
+            <Badge variant="secondary">7</Badge>
             <span className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4" />
               Status Log (current month + past months)

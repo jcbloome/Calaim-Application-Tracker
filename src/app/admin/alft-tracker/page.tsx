@@ -43,6 +43,15 @@ type StandaloneUpload = {
   healthPlan?: string;
   medicalRecordNumber?: string | null;
   alftUploadDate?: string | null;
+  alftForm?: {
+    formVersion?: string;
+    facilityName?: string | null;
+    priorityLevel?: string | null;
+    transitionSummary?: string | null;
+    barriersAndRisks?: string | null;
+    requestedActions?: string | null;
+    additionalNotes?: string | null;
+  } | null;
 
   // Workflow / tracking fields (stored on the intake doc).
   alftRnUid?: string | null;
@@ -213,6 +222,7 @@ export default function AdminAlftTrackerPage() {
   const [revProgress, setRevProgress] = useState(0);
 
   const [sigRequestingId, setSigRequestingId] = useState('');
+  const [sendingCompletedId, setSendingCompletedId] = useState('');
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
   const [sigDialog, setSigDialog] = useState<{
     intakeId: string;
@@ -250,6 +260,7 @@ export default function AdminAlftTrackerPage() {
             healthPlan: toLabel(r.healthPlan) || undefined,
             medicalRecordNumber: r.medicalRecordNumber ?? r.kaiserMrn ?? r.mediCalNumber ?? null,
             alftUploadDate: toLabel(r.alftUploadDate) || null,
+            alftForm: (r as any)?.alftForm || null,
 
             alftRnUid: toLabel(r.alftRnUid) || null,
             alftRnName: toLabel(r.alftRnName) || null,
@@ -508,6 +519,27 @@ export default function AdminAlftTrackerPage() {
     void requestSignatures(row);
   };
 
+  const sendCompletedToJh = async (row: StandaloneUpload) => {
+    if (!auth?.currentUser) return;
+    if (!row?.id || sendingCompletedId) return;
+    setSendingCompletedId(row.id);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/alft/workflow/send-completed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, intakeId: row.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) throw new Error(String(data?.error || `Send failed (HTTP ${res.status})`));
+      toast({ title: 'Completed ALFT emailed', description: `Sent to ${String(data?.to || 'JHernandez@ilshealth.com')}.` });
+    } catch (e: any) {
+      toast({ title: 'Could not send completed email', description: e?.message || 'Send failed.', variant: 'destructive' });
+    } finally {
+      setSendingCompletedId('');
+    }
+  };
+
   const requestSignatures = async (row: StandaloneUpload) => {
     if (!auth?.currentUser) {
       toast({ title: 'Not signed in', description: 'Please sign in again.', variant: 'destructive' });
@@ -549,7 +581,7 @@ export default function AdminAlftTrackerPage() {
       setSigDialogOpen(true);
       toast({
         title: 'Signature request sent',
-        description: `RN email: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.msw?.emailSent ? 'sent' : 'not sent'}`,
+        description: `SW signs first, RN signs final. RN email: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.msw?.emailSent ? 'sent' : 'not sent'}`,
       });
     } catch (e: any) {
       toast({ title: 'Could not request signatures', description: e?.message || 'Request failed.', variant: 'destructive' });
@@ -625,7 +657,7 @@ export default function AdminAlftTrackerPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold">ALFT Tracker</h1>
           <p className="text-muted-foreground">
-            Step 1) Received + assign RN • Step 2) RN downloads/revises/re-uploads • Step 3) Staff reviews + sends for signatures.
+            Internal workflow: SW form submitted -> staff review -> RN review/revisions -> SW signature -> final RN sign-off -> send completed packet.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -723,6 +755,16 @@ export default function AdminAlftTrackerPage() {
                       </TableCell>
                       <TableCell className="min-w-[260px]">
                         <div className="space-y-1">
+                          {r.alftForm?.transitionSummary ? (
+                            <div className="rounded border bg-muted/30 p-2 text-[11px]">
+                              <div className="font-semibold">SW placeholder form</div>
+                              <div className="truncate">
+                                {r.alftForm?.facilityName ? `${r.alftForm.facilityName} • ` : ''}
+                                {r.alftForm?.priorityLevel || 'Routine'}
+                              </div>
+                              <div className="line-clamp-2 text-muted-foreground">{r.alftForm.transitionSummary}</div>
+                            </div>
+                          ) : null}
                           {(r.files || []).slice(0, 2).map((f) => (
                             <a
                               key={f.downloadURL}
@@ -801,7 +843,17 @@ export default function AdminAlftTrackerPage() {
                               }
                             >
                               <Send className="h-4 w-4 mr-2" />
-                              {sigRequestingId === r.id ? 'Requesting…' : 'Request signatures'}
+                              {sigRequestingId === r.id ? 'Requesting…' : 'Request SW signature (RN final)'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void sendCompletedToJh(r)}
+                              disabled={sendingCompletedId === r.id || !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath)}
+                              title={!Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath) ? 'Complete signatures first' : 'Send completed form + attachments via email'}
+                            >
+                              <Send className="h-4 w-4 mr-2" />
+                              {sendingCompletedId === r.id ? 'Sending…' : 'Email completed to JHernandez'}
                             </Button>
                             <Button size="sm" onClick={() => void markCompleted(r)}>
                               <CheckCircle2 className="h-4 w-4 mr-2" />
@@ -939,7 +991,7 @@ export default function AdminAlftTrackerPage() {
           <DialogHeader>
             <DialogTitle>Signature request sent</DialogTitle>
             <DialogDescription>
-              Emails were sent to the RN and MSW (Social Worker uploader). RN also received an Electron notification.
+              Emails were sent to the RN and MSW uploader. Signing order is Social Worker first, then final RN sign-off.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
