@@ -105,6 +105,7 @@ interface MemberVisitQuestionnaire {
   visitSummary: {
     totalScore: number;
     flagged: boolean;
+    additionalComments?: string;
   };
 }
 
@@ -199,6 +200,15 @@ export default function SWVisitVerification() {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [questionStep, setQuestionStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const [capturedGeolocation, setCapturedGeolocation] = useState<{
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+    capturedAt: string;
+  } | null>(null);
+  const [locationPermissionStatus, setLocationPermissionStatus] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  const [locationMessage, setLocationMessage] = useState('');
 
   // Initialize questionnaire data
   const [questionnaire, setQuestionnaire] = useState<MemberVisitQuestionnaire>({
@@ -266,7 +276,8 @@ export default function SWVisitVerification() {
 
     visitSummary: {
       totalScore: 0,
-      flagged: false
+      flagged: false,
+      additionalComments: ''
     },
   });
   
@@ -897,6 +908,7 @@ export default function SWVisitVerification() {
       visitSummary: {
         totalScore: 0,
         flagged: false,
+        additionalComments: '',
       },
     });
     setQuestionStep(1);
@@ -1049,7 +1061,7 @@ export default function SWVisitVerification() {
             notes: '',
             flagForReview: false,
           },
-          visitSummary: { totalScore: 0, flagged: false },
+          visitSummary: { totalScore: 0, flagged: false, additionalComments: '' },
         });
       }
       setQuestionStep(1);
@@ -1255,6 +1267,67 @@ export default function SWVisitVerification() {
     return d.toLocaleString(undefined, { month: 'long', year: 'numeric' });
   }, [questionnaire.visitDate]);
 
+  const requestLocationTracking = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    if (!navigator.geolocation) {
+      setLocationPermissionStatus('denied');
+      setLocationMessage('Geolocation is not supported on this device/browser.');
+      toast({
+        title: 'Geolocation not supported',
+        description: 'Use a browser/device with location services enabled.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsRequestingLocation(true);
+    setLocationMessage('');
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          // Use a longer timeout for poor indoor/field signal conditions.
+          timeout: 20_000,
+          maximumAge: 0,
+        });
+      });
+
+      const nextGeo = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        capturedAt: new Date().toISOString(),
+      };
+      setCapturedGeolocation(nextGeo);
+      setLocationPermissionStatus('granted');
+      setLocationMessage(`Location captured (±${Math.round(position.coords.accuracy)}m).`);
+      toast({
+        title: 'Location ready',
+        description: 'Location permission granted and captured for this questionnaire.',
+      });
+    } catch (error: any) {
+      const code = Number(error?.code || 0);
+      setLocationPermissionStatus(code === 1 ? 'denied' : 'unknown');
+      setCapturedGeolocation(null);
+      const msg =
+        code === 1
+          ? 'Location permission denied. Please allow location services and try again.'
+          : code === 2
+            ? 'Location unavailable. Move to a better signal area and retry.'
+            : code === 3
+              ? 'Location request timed out. Retry when GPS/network is stronger.'
+              : 'Unable to capture location right now.';
+      setLocationMessage(msg);
+      toast({
+        title: 'Location not captured',
+        description: msg,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRequestingLocation(false);
+    }
+  }, [toast]);
+
   const submitQuestionnaire = async () => {
     // Validate all required fields before submission
     const validationErrors = validateCompleteForm();
@@ -1269,22 +1342,23 @@ export default function SWVisitVerification() {
     
     setIsLoading(true);
     try {
-      // Get current location for verification
-      let geolocation = null;
-      if (navigator.geolocation) {
+      // Prefer already-captured location from explicit permission button.
+      let geolocation: any = capturedGeolocation;
+      if (!geolocation && navigator.geolocation) {
         try {
           const position = await new Promise<GeolocationPosition>((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
               enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 60000
+              timeout: 20_000,
+              maximumAge: 0
             });
           });
           
           geolocation = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy
+            accuracy: position.coords.accuracy,
+            capturedAt: new Date().toISOString(),
           };
           
           console.log('📍 Location captured:', geolocation);
@@ -1857,6 +1931,35 @@ export default function SWVisitVerification() {
                   <CardTitle>1. Where did you meet the member? <span className="text-red-500">*</span></CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-3">
+                    <div className="text-sm font-semibold text-blue-900">Phone location setup (required for accurate verification)</div>
+                    <div className="text-xs text-blue-900/90 space-y-1">
+                      <div><span className="font-medium">iPhone:</span> Settings → Privacy & Security → Location Services → turn ON; set browser/app location to <span className="font-medium">While Using</span>.</div>
+                      <div><span className="font-medium">Android:</span> Settings → Location → turn ON; allow location permission for your browser/app as <span className="font-medium">Allow while using app</span>.</div>
+                      <div>You can turn location services OFF again after completing visits if needed.</div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void requestLocationTracking()}
+                        disabled={isRequestingLocation}
+                      >
+                        <MapPin className="h-4 w-4 mr-2" />
+                        {isRequestingLocation ? 'Requesting location...' : 'Allow location tracking'}
+                      </Button>
+                      {capturedGeolocation ? (
+                        <Badge className="bg-emerald-600 hover:bg-emerald-600">
+                          Captured ±{Math.round(Number(capturedGeolocation.accuracy || 0))}m
+                        </Badge>
+                      ) : null}
+                      {locationPermissionStatus === 'denied' ? (
+                        <Badge variant="destructive">Permission denied</Badge>
+                      ) : null}
+                    </div>
+                    {locationMessage ? <div className="text-xs text-blue-900/80">{locationMessage}</div> : null}
+                  </div>
+
                   <div className="space-y-2">
                     <div className="text-sm font-medium">
                       Member room number <span className="text-red-500">*</span>
@@ -2385,6 +2488,23 @@ export default function SWVisitVerification() {
                     <div className="text-xs text-slate-600">
                       This check is completed after sign-off (desktop-friendly) on the CCL Checks page.
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Additional comments (optional)</label>
+                    <Textarea
+                      placeholder="Any extra comments about this visit..."
+                      value={String(questionnaire.visitSummary.additionalComments || '')}
+                      onChange={(e) =>
+                        setQuestionnaire((prev) => ({
+                          ...prev,
+                          visitSummary: {
+                            ...prev.visitSummary,
+                            additionalComments: e.target.value,
+                          },
+                        }))
+                      }
+                    />
                   </div>
 
                 </CardContent>
