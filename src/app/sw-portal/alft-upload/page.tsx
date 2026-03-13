@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth, useStorage } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
@@ -38,6 +39,7 @@ const sanitizePathSegment = (value: string) =>
     .slice(0, 140);
 
 export default function SwAlftUploadPage() {
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const auth = useAuth();
   const storage = useStorage();
@@ -161,12 +163,57 @@ export default function SwAlftUploadPage() {
   const [exactPacketAnswers, setExactPacketAnswers] = useState<Record<string, string | string[]>>(() =>
     createInitialExactAlftAnswers()
   );
+  const prefillAppliedRef = useRef(false);
+
+  const prefillFromQuery = useMemo(
+    () => ({
+      firstName: (searchParams.get('memberFirstName') || searchParams.get('firstName') || '').trim(),
+      lastName: (searchParams.get('memberLastName') || searchParams.get('lastName') || '').trim(),
+      dob: (searchParams.get('memberDob') || searchParams.get('dob') || '').trim(),
+      mrn: (searchParams.get('memberMrn') || searchParams.get('mrn') || '').trim(),
+      address: (searchParams.get('currentAddress') || searchParams.get('address') || '').trim(),
+      city: (searchParams.get('currentCity') || searchParams.get('city') || '').trim(),
+      state: (searchParams.get('currentState') || searchParams.get('state') || '').trim(),
+      zip: (searchParams.get('currentZip') || searchParams.get('zip') || '').trim(),
+      phone: (searchParams.get('memberPhone') || searchParams.get('phone') || '').trim(),
+    }),
+    [searchParams]
+  );
 
   // If the SW profile name loads after first render, auto-populate the field.
   useEffect(() => {
     if (!swRealName) return;
     setSocialWorkerName((prev) => (prev && !prev.includes('@') ? prev : swRealName));
   }, [swRealName]);
+
+  useEffect(() => {
+    if (prefillAppliedRef.current) return;
+    if (!prefillFromQuery.firstName && !prefillFromQuery.lastName && !prefillFromQuery.mrn) return;
+    prefillAppliedRef.current = true;
+
+    if (prefillFromQuery.firstName) setMemberFirstName(prefillFromQuery.firstName);
+    if (prefillFromQuery.lastName) setMemberLastName(prefillFromQuery.lastName);
+    if (prefillFromQuery.mrn) setKaiserMrn(prefillFromQuery.mrn);
+    if (prefillFromQuery.dob) setMemberDob(prefillFromQuery.dob);
+    if (prefillFromQuery.phone) setMemberPhone(prefillFromQuery.phone);
+    if (prefillFromQuery.address) setCurrentStreet(prefillFromQuery.address);
+    if (prefillFromQuery.city) setCurrentCity(prefillFromQuery.city);
+    if (prefillFromQuery.state) setCurrentState(prefillFromQuery.state);
+    if (prefillFromQuery.zip) setCurrentZip(prefillFromQuery.zip);
+
+    setExactPacketAnswers((prev) => ({
+      ...prev,
+      p1_first_name: prefillFromQuery.firstName || String(prev.p1_first_name || ''),
+      p1_last_name: prefillFromQuery.lastName || String(prev.p1_last_name || ''),
+      p1_dob: prefillFromQuery.dob || String(prev.p1_dob || ''),
+      p1_mrn: prefillFromQuery.mrn || String(prev.p1_mrn || ''),
+      p1_phone: prefillFromQuery.phone || String(prev.p1_phone || ''),
+      p2_current_street: prefillFromQuery.address || String(prev.p2_current_street || ''),
+      p2_current_city: prefillFromQuery.city || String(prev.p2_current_city || ''),
+      p2_current_state: prefillFromQuery.state || String(prev.p2_current_state || ''),
+      p2_current_zip: prefillFromQuery.zip || String(prev.p2_current_zip || ''),
+    }));
+  }, [prefillFromQuery.firstName, prefillFromQuery.lastName, prefillFromQuery.dob, prefillFromQuery.mrn, prefillFromQuery.address, prefillFromQuery.city, prefillFromQuery.state, prefillFromQuery.zip, prefillFromQuery.phone]);
 
   const uploaderParts = useMemo(() => {
     const cleaned = socialWorkerName.replace(/\s+/g, ' ').trim();
@@ -1351,10 +1398,15 @@ export default function SwAlftUploadPage() {
             ) : null}
 
             <div className="flex flex-col sm:flex-row gap-2 print:hidden">
-              <Button type="button" variant="outline" onClick={handlePrint} className="sm:w-1/2">
+              <Button type="button" variant="outline" asChild className="sm:flex-1">
+                <a href="/sw-portal/alft-upload/dummy-preview" target="_blank" rel="noreferrer">
+                  View dummy PDF preview
+                </a>
+              </Button>
+              <Button type="button" variant="outline" onClick={handlePrint} className="sm:flex-1">
                 Print / Save PDF
               </Button>
-              <Button type="submit" disabled={isUploading} className="sm:w-1/2">
+              <Button type="submit" disabled={isUploading} className="sm:flex-1">
                 {isUploading ? 'Submitting…' : 'Submit ALFT form'}
               </Button>
             </div>

@@ -1,11 +1,11 @@
 
 'use client';
 
-import React, { useMemo, Suspense } from 'react';
+import React, { Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
 import { Button } from '@/components/ui/button';
@@ -24,7 +24,7 @@ const Field = ({ label, value, fullWidth = false }: { label: string; value?: str
     </div>
 );
 
-const Section = ({ title, children, editLink, isReadOnly, isAdminView }: { title: string; children: React.ReactNode; editLink: string, isReadOnly: boolean, isAdminView: boolean }) => (
+const Section = ({ title, children, editLink, isReadOnly }: { title: string; children: React.ReactNode; editLink: string, isReadOnly: boolean }) => (
     <div className="relative">
         {!isReadOnly && (
             <Button asChild variant="ghost" size="sm" className="absolute top-0 right-0">
@@ -71,7 +71,7 @@ const formatDate = (date: any) => {
             try {
                 const parsedDate = parse(date, 'MM/dd/yyyy', new Date());
                 return format(parsedDate, 'PPP');
-            } catch (e) {
+            } catch {
                 return date;
             }
         }
@@ -80,7 +80,7 @@ const formatDate = (date: any) => {
             if (!isNaN(parsedDate.getTime())) {
                 return format(parsedDate, 'PPP');
             }
-        } catch (e) {
+        } catch {
             // Fallthrough
         }
     }
@@ -88,6 +88,20 @@ const formatDate = (date: any) => {
         return format(date.toDate(), 'PPP');
     }
     return 'Invalid Date';
+};
+
+const toHtmlDate = (date: any) => {
+    if (!date) return '';
+    if (typeof date === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
+        const [month, day, year] = date.split('/');
+        return `${year}-${month}-${day}`;
+    }
+    if (date && typeof date.toDate === 'function') {
+        const d = date.toDate();
+        if (!isNaN(d.getTime())) return format(d, 'yyyy-MM-dd');
+    }
+    const parsed = new Date(String(date));
+    return isNaN(parsed.getTime()) ? '' : format(parsed, 'yyyy-MM-dd');
 };
 
 
@@ -207,6 +221,19 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
       ? `/admin/applications/${applicationId}?userId=${appUserId}`
       : `/forms/cs-summary-form?applicationId=${applicationId}&step=4`;
 
+    const alftPrefillParams = new URLSearchParams({
+      memberFirstName: String(application.memberFirstName || ''),
+      memberLastName: String(application.memberLastName || ''),
+      memberDob: toHtmlDate(application.memberDob),
+      memberMrn: String(application.memberMrn || ''),
+      currentAddress: String(application.currentAddress || ''),
+      currentCity: String(application.currentCity || ''),
+      currentState: String(application.currentState || ''),
+      currentZip: String(application.currentZip || ''),
+      memberPhone: String(application.bestContactPhone || application.referrerPhone || ''),
+    });
+    const alftPrefillHref = `/sw-portal/alft-upload?${alftPrefillParams.toString()}`;
+
     const getCapacityStatus = (hasLegalRepValue: Application['hasLegalRep']) => {
         switch(hasLegalRepValue) {
             case 'notApplicable':
@@ -244,7 +271,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-8">
-                        <Section title="Member Information" editLink={getEditLink(1)} isReadOnly={isReadOnly} isAdminView={isAdminView}>
+                        <Section title="Member Information" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
                             <Field label="First Name" value={application.memberFirstName} />
                             <Field label="Last Name" value={application.memberLastName} />
                             <Field label="Date of Birth" value={dobFormatted} />
@@ -257,7 +284,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
 
                         <Separator />
 
-                        <Section title="Referrer Information" editLink={getEditLink(1)} isReadOnly={isReadOnly} isAdminView={isAdminView}>
+                        <Section title="Referrer Information" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
                             <Field label="Name" value={application.referrerName} />
                             <Field label="Email" value={application.referrerEmail} />
                             <Field label="Phone" value={application.referrerPhone} />
@@ -267,7 +294,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                         
                          <Separator />
 
-                        <Section title="Primary Contact" editLink={getEditLink(1)} isReadOnly={isReadOnly} isAdminView={isAdminView}>
+                        <Section title="Primary Contact" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
                             <Field label="First Name" value={application.bestContactFirstName} />
                             <Field label="Last Name" value={application.bestContactLastName} />
                             <Field label="Relationship" value={application.bestContactRelationship} />
@@ -278,7 +305,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                         
                         <Separator />
                         
-                         <Section title="Legal Representative" editLink={getEditLink(1)} isReadOnly={isReadOnly} isAdminView={isAdminView}>
+                         <Section title="Legal Representative" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
                             <Field label="Member Capacity Status" value={getCapacityStatus(application.hasLegalRep)} />
                             <Field label="Legal Representative Selection" value={application.hasLegalRep} />
                             <Field label="Representative First Name" value={application.repFirstName} />
@@ -290,7 +317,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
 
                         <Separator />
 
-                        <Section title="Location Information" editLink={getEditLink(2)} isReadOnly={isReadOnly} isAdminView={isAdminView}>
+                        <Section title="Location Information" editLink={getEditLink(2)} isReadOnly={isReadOnly}>
                             <Field label="Current Location Type" value={application.currentLocation} />
                             <Field label="Current Address" value={`${application.currentAddress || ''}, ${application.currentCity || ''}, ${application.currentState || ''} ${application.currentZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} fullWidth />
                             <Field label="Customary Residence Location Type" value={application.customaryLocationType} />
@@ -299,7 +326,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
 
                         <Separator />
 
-                        <Section title="Health Plan &amp; Pathway" editLink={getEditLink(3)} isReadOnly={isReadOnly} isAdminView={isAdminView}>
+                        <Section title="Health Plan &amp; Pathway" editLink={getEditLink(3)} isReadOnly={isReadOnly}>
                             <Field label="Health Plan" value={application.healthPlan} />
                             {application.healthPlan === 'Other' && (
                                 <>
@@ -313,7 +340,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                         
                         <Separator />
 
-                        <Section title="ISP &amp; RCFE Information" editLink={getEditLink(4)} isReadOnly={isReadOnly} isAdminView={isAdminView}>
+                        <Section title="ISP &amp; RCFE Information" editLink={getEditLink(4)} isReadOnly={isReadOnly}>
                             <Field label="ISP Contact Name" value={`${application.ispFirstName} ${application.ispLastName}`} />
                             <Field label="ISP Contact Phone" value={application.ispPhone} />
                             <Field
@@ -348,10 +375,17 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
 
                         {!isReadOnly && !isAdminView && (
                             <div className="pt-6 border-t">
-                                <Button className="w-full" size="lg" onClick={handleConfirm}>
-                                    <Send className="mr-2 h-4 w-4" />
-                                    Confirm &amp; Continue to Pathway
-                                </Button>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <Button variant="outline" asChild size="lg">
+                                        <Link href={alftPrefillHref}>
+                                            Open ALFT Tool with Prefill
+                                        </Link>
+                                    </Button>
+                                    <Button size="lg" onClick={handleConfirm}>
+                                        <Send className="mr-2 h-4 w-4" />
+                                        Confirm &amp; Continue to Pathway
+                                    </Button>
+                                </div>
                             </div>
                         )}
 
