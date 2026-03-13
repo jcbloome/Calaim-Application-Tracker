@@ -7,6 +7,7 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+const SW_ROSTER_MATCHER_VERSION = '2026-03-name-fuzzy-1';
 
 interface VisitSubmission {
   visitId: string;
@@ -176,6 +177,52 @@ function swMatchesMember(params: {
       .map((t) => t.trim())
       .filter((t) => t.length >= 2);
 
+  const isSingleEditAway = (aRaw: string, bRaw: string): boolean => {
+    const a = String(aRaw || '').trim();
+    const b = String(bRaw || '').trim();
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const la = a.length;
+    const lb = b.length;
+    if (Math.abs(la - lb) > 1) return false;
+    let i = 0;
+    let j = 0;
+    let edits = 0;
+    while (i < la && j < lb) {
+      if (a[i] === b[j]) {
+        i += 1;
+        j += 1;
+        continue;
+      }
+      edits += 1;
+      if (edits > 1) return false;
+      if (la > lb) {
+        i += 1;
+      } else if (lb > la) {
+        j += 1;
+      } else {
+        i += 1;
+        j += 1;
+      }
+    }
+    if (i < la || j < lb) edits += 1;
+    return edits <= 1;
+  };
+
+  const tokensLooselyMatch = (needleTokenRaw: string, hayTokenRaw: string) => {
+    const needleToken = String(needleTokenRaw || '').trim();
+    const hayToken = String(hayTokenRaw || '').trim();
+    if (!needleToken || !hayToken) return false;
+    if (needleToken === hayToken) return true;
+    if (needleToken.length >= 4 && hayToken.length >= 4) {
+      if (needleToken.startsWith(hayToken) || hayToken.startsWith(needleToken)) return true;
+    }
+    if (needleToken.length >= 5 && hayToken.length >= 5 && isSingleEditAway(needleToken, hayToken)) {
+      return true;
+    }
+    return false;
+  };
+
   const needleLower = rawNeedle.toLowerCase();
   const needleNorm = normalize(rawNeedle);
   const needleTokens = tokenize(rawNeedle);
@@ -204,10 +251,14 @@ function swMatchesMember(params: {
   // Token-subset match: if all needle tokens appear in the assigned name tokens, treat as match.
   // Example: "Frodo Baggins" <-> "Baggins, Frodo"
   if (needleTokens.length >= 2) {
-    const swTokenSet = new Set(tokenize(swAssignedRaw));
-    const staffTokenSet = new Set(tokenize(staffAssignedRaw));
-    const allIn = (set: Set<string>) => needleTokens.every((t) => set.has(t));
-    if (allIn(swTokenSet) || allIn(staffTokenSet)) return true;
+    const swTokens = tokenize(swAssignedRaw);
+    const staffTokens = tokenize(staffAssignedRaw);
+    const allExactIn = (list: string[]) => needleTokens.every((t) => list.includes(t));
+    if (allExactIn(swTokens) || allExactIn(staffTokens)) return true;
+
+    const allLooseIn = (list: string[]) =>
+      needleTokens.every((needleToken) => list.some((hayToken) => tokensLooselyMatch(needleToken, hayToken)));
+    if (allLooseIn(swTokens) || allLooseIn(staffTokens)) return true;
   }
 
   // If the identifier looks like an email, try matching on local-part fragments.
@@ -246,15 +297,6 @@ const monthStartFromYyyyMm = (yyyyMm: string): Date => {
   return new Date(y, m - 1, 1, 0, 0, 0, 0);
 };
 
-const snapshotDocIdForSwMonth = (socialWorkerId: string, rosterMonth: string) => {
-  const normalized = String(socialWorkerId || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return `${normalized || 'unknown_sw'}__${rosterMonth}`;
-};
-
 // GET: Fetch SW's assigned members by RCFE
 export async function GET(req: NextRequest) {
   try {
@@ -277,39 +319,6 @@ export async function GET(req: NextRequest) {
     const adminDb = adminModule.adminDb;
 
     const requestedEmail = String(socialWorkerId || '').trim().toLowerCase();
-    const snapshotDocId = snapshotDocIdForSwMonth(requestedEmail || String(socialWorkerId || ''), rosterMonth);
-    const rosterSnapshotRef = adminDb.collection('sw_roster_monthly_snapshots').doc(snapshotDocId);
-
-    // SW roster is month-locked: use snapshot for the selected month unless explicit refresh=1.
-    if (!forceRefresh) {
-      try {
-        const snap = await rosterSnapshotRef.get();
-        if (snap.exists) {
-          const s = snap.data() as any;
-          return NextResponse.json({
-            success: true,
-            rcfeList: Array.isArray(s?.rcfeList) ? s.rcfeList : [],
-            totalMembers: Number(s?.totalMembers || 0),
-            totalRCFEs: Number(s?.totalRCFEs || 0),
-            membersOnHold: Number(s?.membersOnHold || 0),
-            membersSuspended: Number(s?.membersSuspended || 0),
-            membersSuspendedHold: Number(s?.membersSuspendedHold || 0),
-            membersSuspendedAuthExpired: Number(s?.membersSuspendedAuthExpired || 0),
-            cacheStatus: s?.cacheStatus || null,
-            assignmentOverrides: s?.assignmentOverrides || null,
-            totalAssignedAuthorized: Number(s?.totalAssignedAuthorized || 0),
-            totalAssignedAll: Number(s?.totalAssignedAll || 0),
-            rosterMonth: String(s?.rosterMonth || rosterMonth),
-            monthlyLocked: true,
-            snapshotCreatedAt: String(s?.snapshotCreatedAt || ''),
-            newAssignmentsSinceLastMonthCount: Number(s?.newAssignmentsSinceLastMonthCount || 0),
-            noAssignmentsSinceLastMonth: Number(s?.newAssignmentsSinceLastMonthCount || 0) === 0,
-          });
-        }
-      } catch {
-        // fall through to compute and write snapshot
-      }
-    }
 
     // Admin-managed SW assignment overrides (source-of-truth during transitions).
     // These overrides can temporarily differ from Caspio cache fields.
@@ -439,7 +448,9 @@ export async function GET(req: NextRequest) {
           .limit(1)
           .get();
         const swId = swSnap.empty ? '' : String(swSnap.docs[0].data()?.sw_id || '').trim();
+        const swName = swSnap.empty ? '' : String(swSnap.docs[0].data()?.name || '').trim();
         if (swId) needles.push(swId);
+        if (swName) needles.push(swName);
       }
     } catch {
       // best-effort only
@@ -775,25 +786,13 @@ export async function GET(req: NextRequest) {
       totalAssignedAuthorized: assignedAuthorized.length,
       totalAssignedAll: assignedAll.length,
       rosterMonth,
-      monthlyLocked: true,
-      snapshotCreatedAt: new Date().toISOString(),
+      monthlyLocked: false,
+      snapshotCreatedAt: null,
       newAssignmentsSinceLastMonthCount,
       noAssignmentsSinceLastMonth: newAssignmentsSinceLastMonthCount === 0,
+      matcherVersion: SW_ROSTER_MATCHER_VERSION,
+      forceRefreshApplied: forceRefresh,
     };
-
-    // Persist month snapshot so SW roster remains stable throughout the month.
-    try {
-      await rosterSnapshotRef.set(
-        {
-          ...responseBody,
-          socialWorkerId: String(socialWorkerId || '').trim(),
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-    } catch {
-      // best-effort only; still return computed roster
-    }
 
     return NextResponse.json(responseBody);
 

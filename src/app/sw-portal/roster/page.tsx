@@ -141,9 +141,9 @@ export default function SWRosterPage() {
   const [rosterLastRefreshOk, setRosterLastRefreshOk] = useState<boolean | null>(null);
   const [draftsLastRefreshAt, setDraftsLastRefreshAt] = useState<string | null>(null);
   const [draftsLastRefreshOk, setDraftsLastRefreshOk] = useState<boolean | null>(null);
-  const [rosterMonthLocked, setRosterMonthLocked] = useState<string | null>(null);
   const [newAssignmentsSinceLastMonthCount, setNewAssignmentsSinceLastMonthCount] = useState(0);
   const [noAssignmentsSinceLastMonth, setNoAssignmentsSinceLastMonth] = useState(false);
+  const [requestingQuickSync, setRequestingQuickSync] = useState(false);
   const currentRosterMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
 
   const refreshRoster = useCallback(async () => {
@@ -164,7 +164,6 @@ export default function SWRosterPage() {
 
       const nextFacilities = Array.isArray(data?.rcfeList) ? (data.rcfeList as RosterFacility[]) : [];
       setFacilities(nextFacilities);
-      setRosterMonthLocked(String(data?.rosterMonth || currentRosterMonth));
       setNewAssignmentsSinceLastMonthCount(Number(data?.newAssignmentsSinceLastMonthCount || 0));
       setNoAssignmentsSinceLastMonth(Boolean(data?.noAssignmentsSinceLastMonth));
       setHasLoadedOnce(true);
@@ -179,6 +178,36 @@ export default function SWRosterPage() {
       setLoading(false);
     }
   }, [currentRosterMonth, user?.email]);
+
+  const requestQuickSync = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    setRequestingQuickSync(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/sw-visits/request-refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          message:
+            'Please run a quick Sync from Caspio for social worker assignment updates. SW roster appears out of date.',
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (${res.status})`);
+      toast({
+        title: 'Quick sync request sent',
+        description: `Notified ${Number(data?.notified || 0)} admin account(s).`,
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Could not request quick sync',
+        description: e?.message || 'Please contact an admin to run Sync from Caspio.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRequestingQuickSync(false);
+    }
+  }, [auth, toast]);
 
   const [statusMonth, setStatusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [facilitySort, setFacilitySort] = useState<'assigned' | 'rcfe-az' | 'rcfe-za'>('assigned');
@@ -682,8 +711,8 @@ export default function SWRosterPage() {
     <div className="container mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between print:hidden">
         <div>
-          <h1 className="text-3xl font-bold">Monthly Roster</h1>
-          <p className="text-muted-foreground">This is your locked roster for the month.</p>
+          <h1 className="text-3xl font-bold">Social Worker Roster</h1>
+          <p className="text-muted-foreground">Live assignment roster from the latest Caspio cache sync.</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary" className="gap-1">
               <Building2 className="h-3.5 w-3.5" />
@@ -693,9 +722,6 @@ export default function SWRosterPage() {
               <Users className="h-3.5 w-3.5" />
               {totals.memberCount} member{totals.memberCount === 1 ? '' : 's'}
             </Badge>
-            {rosterMonthLocked ? (
-              <Badge variant="outline">Roster month: {rosterMonthLocked}</Badge>
-            ) : null}
             {noAssignmentsSinceLastMonth ? (
               <Badge variant="outline">No assignments since last month</Badge>
             ) : (
@@ -711,7 +737,7 @@ export default function SWRosterPage() {
                   ? `Last refresh ${rosterLastRefreshLabel}${rosterLastRefreshOk === false ? ' (failed)' : ''}`
                   : 'Not loaded yet'}
               </span>
-              <span className="text-muted-foreground">(Auto-synced monthly; no manual sync needed.)</span>
+              <span className="text-muted-foreground">(Reflects daily Caspio sync; use refresh for latest.)</span>
             </span>
             <span className="inline-flex items-center gap-2">
               <span>• Status icons:</span>
@@ -776,6 +802,24 @@ export default function SWRosterPage() {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <Button
+            className="w-full sm:w-auto"
+            variant="outline"
+            onClick={() => void refreshRoster()}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh roster
+          </Button>
+          <Button
+            className="w-full sm:w-auto"
+            variant="outline"
+            onClick={() => void requestQuickSync()}
+            disabled={requestingQuickSync}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${requestingQuickSync ? 'animate-spin' : ''}`} />
+            Request quick sync (admin)
+          </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
             Print / Save PDF
@@ -1105,7 +1149,7 @@ export default function SWRosterPage() {
             <CardHeader>
               <CardTitle className="text-base">Load your roster</CardTitle>
               <CardDescription>
-                Your monthly roster loads automatically from the monthly snapshot.
+                Your roster loads from the latest Caspio assignment cache.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1116,7 +1160,7 @@ export default function SWRosterPage() {
             <CardHeader>
               <CardTitle className="text-base">No assignments found</CardTitle>
               <CardDescription>
-                If this seems wrong, your assignments may not be set yet or the monthly snapshot has not been created yet.
+                If this seems wrong, assignments may be pending sync. Use “Request quick sync (admin)” above.
               </CardDescription>
             </CardHeader>
           </Card>

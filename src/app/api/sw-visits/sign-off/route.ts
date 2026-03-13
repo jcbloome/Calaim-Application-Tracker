@@ -111,6 +111,8 @@ export async function POST(request: NextRequest) {
 
     const claimDay = String(signOffData?.claimDay || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
     const signedAtIso = String(signOffData?.signOffData?.signedAt || '').trim() || new Date().toISOString();
+    const signedAtDate = new Date(signedAtIso);
+    const signedAtSafeDate = Number.isNaN(signedAtDate.getTime()) ? new Date() : signedAtDate;
 
     const visitIds: string[] = Array.isArray(signOffData?.completedVisits)
       ? signOffData.completedVisits
@@ -159,6 +161,9 @@ export async function POST(request: NextRequest) {
           signedOff: true,
           status: 'signed_off',
           signedOffAt: signedAtIso,
+          submittedAt: signedAtSafeDate.toISOString(),
+          submittedAtTs: admin.firestore.Timestamp.fromDate(signedAtSafeDate),
+          completedAt: signedAtSafeDate.toISOString(),
           signOffId: recordRef.id,
           rcfeStaffName: String(signOffData.signOffData.rcfeStaffName || ''),
           rcfeStaffTitle: String(signOffData.signOffData.rcfeStaffTitle || ''),

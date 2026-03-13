@@ -67,14 +67,66 @@ export async function GET(req: NextRequest) {
 
     const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const cutoffTs = admin.firestore.Timestamp.fromDate(cutoffDate);
-    const snap = await adminDb
+    const toMillis = (value: any): number => {
+      if (!value) return 0;
+      if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
+      if (typeof value?.seconds === 'number' && Number.isFinite(value.seconds)) return Math.floor(Number(value.seconds) * 1000);
+      const d = new Date(String(value));
+      const ms = d.getTime();
+      return Number.isFinite(ms) ? ms : 0;
+    };
+
+    const primarySnap = await adminDb
       .collection('sw_visit_records')
       .where('submittedAtTs', '>=', cutoffTs)
       .orderBy('submittedAtTs', 'desc')
       .limit(1000)
       .get();
 
-    const visits = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    // Backfill-safe: older records created through draft/sign-off may not have submittedAtTs.
+    // Pull recent updated rows as a fallback and merge by id.
+    const fallbackSnap = await adminDb
+      .collection('sw_visit_records')
+      .where('updatedAt', '>=', cutoffTs)
+      .orderBy('updatedAt', 'desc')
+      .limit(1000)
+      .get();
+
+    const byId = new Map<string, any>();
+    primarySnap.docs.forEach((doc) => {
+      byId.set(doc.id, { id: doc.id, ...doc.data() });
+    });
+
+    fallbackSnap.docs.forEach((doc) => {
+      if (byId.has(doc.id)) return;
+      const data = doc.data() as any;
+      const status = String(data?.status || '').trim().toLowerCase();
+      if (status === 'draft') return;
+      byId.set(doc.id, { id: doc.id, ...data });
+    });
+
+    const cutoffMs = cutoffDate.getTime();
+    const visits = Array.from(byId.values())
+      .filter((visit) => {
+        const submittedMs = toMillis((visit as any)?.submittedAtTs);
+        const updatedMs = toMillis((visit as any)?.updatedAt);
+        const createdMs = toMillis((visit as any)?.createdAt);
+        return Math.max(submittedMs, updatedMs, createdMs) >= cutoffMs;
+      })
+      .sort((a, b) => {
+        const aMs = Math.max(
+          toMillis((a as any)?.submittedAtTs),
+          toMillis((a as any)?.updatedAt),
+          toMillis((a as any)?.createdAt)
+        );
+        const bMs = Math.max(
+          toMillis((b as any)?.submittedAtTs),
+          toMillis((b as any)?.updatedAt),
+          toMillis((b as any)?.createdAt)
+        );
+        return bMs - aMs;
+      })
+      .slice(0, 1000);
 
     return NextResponse.json({ success: true, visits, days });
   } catch (error: any) {

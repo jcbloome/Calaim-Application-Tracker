@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -111,9 +111,97 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
   const [detailTitle, setDetailTitle] = useState<string>('');
   const [detailMembers, setDetailMembers] = useState<Array<{ memberId: string; memberName: string; rcfeName?: string; rcfeAddress?: string }>>([]);
 
+  const loadTrackingData = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (!auth?.currentUser) {
+        setVisitRecords([]);
+        return;
+      }
+      const idToken = await auth.currentUser.getIdToken();
+      // Load real visit records (Firestore-backed)
+      const days = dateFilter === 'all' ? '30' : dateFilter;
+      const visitsResponse = await fetch(`/api/sw-visits/records?days=${encodeURIComponent(days)}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      if (visitsResponse.ok) {
+        const visitsData = await visitsResponse.json().catch(() => ({}));
+        const visitsRaw = Array.isArray((visitsData as any)?.visits) ? (visitsData as any).visits : [];
+        const toYyyyMmDd = (value: any): string => {
+          if (!value) return '';
+          if (typeof value === 'string') return value.slice(0, 10);
+          if (typeof value === 'number') return new Date(value).toISOString().slice(0, 10);
+          if (typeof value?.toDate === 'function') return value.toDate().toISOString().slice(0, 10);
+          return '';
+        };
+        const normalized = visitsRaw.map((v: any) => ({
+          ...v,
+          id: String(v?.id || v?.visitId || ''),
+          visitId: String(v?.visitId || v?.id || ''),
+          memberId: String(v?.memberId || '').trim() || undefined,
+          rcfeId: String(v?.rcfeId || '').trim() || undefined,
+          socialWorkerEmail: String(v?.socialWorkerEmail || '').trim() || undefined,
+          socialWorkerUid: String(v?.socialWorkerUid || '').trim() || undefined,
+          socialWorkerName: String(v?.socialWorkerName || v?.socialWorkerId || ''),
+          memberName: String(v?.memberName || ''),
+          memberRoomNumber: String(v?.memberRoomNumber || v?.raw?.memberRoomNumber || '').trim() || undefined,
+          rcfeName: String(v?.rcfeName || ''),
+          rcfeAddress: String(v?.rcfeAddress || ''),
+          visitDate: String(v?.visitDate || ''),
+          completedAt: String(v?.completedAt || v?.submittedAt || ''),
+          totalScore: Number(v?.totalScore || 0),
+          flagged: Boolean(v?.flagged),
+          flagReasons: Array.isArray(v?.flagReasons) ? v.flagReasons : [],
+          signedOff: Boolean(v?.signedOff),
+          geolocationVerified: Boolean(v?.geolocationVerified),
+          questionnaireAnswers: Array.isArray(v?.questionnaireAnswers) ? v.questionnaireAnswers : [],
+          status: (v?.status as VisitRecord['status']) || (v?.signedOff ? 'signed_off' : v?.flagged ? 'flagged' : 'pending_signoff'),
+          claimSubmitted: Boolean(v?.claimSubmitted),
+          claimMonth: String(v?.claimMonth || ''),
+          claimPaid: Boolean(v?.claimPaid),
+          claimSubmittedAt: toYyyyMmDd(v?.claimSubmittedAt) || toYyyyMmDd(v?.submittedAt),
+          claimPaidAt: toYyyyMmDd(v?.claimPaidAt),
+        })) as VisitRecord[];
+        setVisitRecords(normalized);
+      } else {
+        setVisitRecords([]);
+      }
+    } catch (error) {
+      console.error('Error loading tracking data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [auth, dateFilter]);
+
   useEffect(() => {
-    loadTrackingData();
-  }, [dateFilter]);
+    void loadTrackingData();
+  }, [loadTrackingData]);
+
+  useEffect(() => {
+    if (!auth?.currentUser) return;
+    const intervalId = window.setInterval(() => {
+      void loadTrackingData();
+    }, 15000);
+    return () => window.clearInterval(intervalId);
+  }, [auth, loadTrackingData]);
+
+  useEffect(() => {
+    if (!auth?.currentUser) return;
+    const onFocus = () => {
+      void loadTrackingData();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void loadTrackingData();
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [auth, loadTrackingData]);
 
   useEffect(() => {
     const load = async () => {
@@ -192,68 +280,6 @@ export default function SWVisitTrackingPage(): React.JSX.Element {
       setDetailError(e?.message || 'Failed to load members');
     } finally {
       setDetailLoading(false);
-    }
-  };
-
-  const loadTrackingData = async () => {
-    setLoading(true);
-    try {
-      if (!auth?.currentUser) {
-        setVisitRecords([]);
-        return;
-      }
-      const idToken = await auth.currentUser.getIdToken();
-      // Load real visit records (Firestore-backed)
-      const days = dateFilter === 'all' ? '30' : dateFilter;
-      const visitsResponse = await fetch(`/api/sw-visits/records?days=${encodeURIComponent(days)}`, {
-        headers: { authorization: `Bearer ${idToken}` },
-      });
-      if (visitsResponse.ok) {
-        const visitsData = await visitsResponse.json().catch(() => ({}));
-        const visitsRaw = Array.isArray((visitsData as any)?.visits) ? (visitsData as any).visits : [];
-        const toYyyyMmDd = (value: any): string => {
-          if (!value) return '';
-          if (typeof value === 'string') return value.slice(0, 10);
-          if (typeof value === 'number') return new Date(value).toISOString().slice(0, 10);
-          if (typeof value?.toDate === 'function') return value.toDate().toISOString().slice(0, 10);
-          return '';
-        };
-        const normalized = visitsRaw.map((v: any) => ({
-          ...v,
-          id: String(v?.id || v?.visitId || ''),
-          visitId: String(v?.visitId || v?.id || ''),
-          memberId: String(v?.memberId || '').trim() || undefined,
-          rcfeId: String(v?.rcfeId || '').trim() || undefined,
-          socialWorkerEmail: String(v?.socialWorkerEmail || '').trim() || undefined,
-          socialWorkerUid: String(v?.socialWorkerUid || '').trim() || undefined,
-          socialWorkerName: String(v?.socialWorkerName || v?.socialWorkerId || ''),
-          memberName: String(v?.memberName || ''),
-          memberRoomNumber: String(v?.memberRoomNumber || v?.raw?.memberRoomNumber || '').trim() || undefined,
-          rcfeName: String(v?.rcfeName || ''),
-          rcfeAddress: String(v?.rcfeAddress || ''),
-          visitDate: String(v?.visitDate || ''),
-          completedAt: String(v?.completedAt || v?.submittedAt || ''),
-          totalScore: Number(v?.totalScore || 0),
-          flagged: Boolean(v?.flagged),
-          flagReasons: Array.isArray(v?.flagReasons) ? v.flagReasons : [],
-          signedOff: Boolean(v?.signedOff),
-          geolocationVerified: Boolean(v?.geolocationVerified),
-          questionnaireAnswers: Array.isArray(v?.questionnaireAnswers) ? v.questionnaireAnswers : [],
-          status: (v?.status as VisitRecord['status']) || (v?.signedOff ? 'signed_off' : v?.flagged ? 'flagged' : 'pending_signoff'),
-          claimSubmitted: Boolean(v?.claimSubmitted),
-          claimMonth: String(v?.claimMonth || ''),
-          claimPaid: Boolean(v?.claimPaid),
-          claimSubmittedAt: toYyyyMmDd(v?.claimSubmittedAt) || toYyyyMmDd(v?.submittedAt),
-          claimPaidAt: toYyyyMmDd(v?.claimPaidAt),
-        })) as VisitRecord[];
-        setVisitRecords(normalized);
-      } else {
-        setVisitRecords([]);
-      }
-    } catch (error) {
-      console.error('Error loading tracking data:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
