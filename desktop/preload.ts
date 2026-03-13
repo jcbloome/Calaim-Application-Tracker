@@ -11,6 +11,7 @@ const sendRendererError = (payload: any) => {
 contextBridge.exposeInMainWorld('desktopNotifications', {
   getState: () => ipcRenderer.invoke('desktop:getState'),
   setPaused: (paused: boolean) => ipcRenderer.invoke('desktop:setPaused', paused),
+  setAllowAfterHours: (allowAfterHours: boolean) => ipcRenderer.invoke('desktop:setAllowAfterHours', allowAfterHours),
   setSnooze: (untilMs: number) => ipcRenderer.invoke('desktop:setSnooze', { untilMs }),
   clearSnooze: () => ipcRenderer.invoke('desktop:clearSnooze'),
   snoozeNote: (noteId: string, untilMs: number) => ipcRenderer.invoke('desktop:snoozeNote', { noteId, untilMs }),

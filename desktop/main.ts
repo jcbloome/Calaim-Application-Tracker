@@ -698,6 +698,12 @@ const buildTrayMenu = () => {
         }
       }
     },
+    {
+      label: 'Open Staff Chat',
+      click: () => {
+        openInMainWindow('/admin/desktop-chat-window');
+      }
+    },
     { type: 'separator' },
     {
       label: `Business hours: ${notificationState.isWithinBusinessHours ? 'Active' : 'Silent'}`,
@@ -1843,6 +1849,19 @@ ipcMain.handle('desktop:setPaused', (_event, paused: boolean) => {
   notificationState.pausedByUser = Boolean(paused);
   try {
     prefsStore.set('pausedByUser', notificationState.pausedByUser);
+  } catch {
+    // ignore
+  }
+  computeEffectivePaused();
+  broadcastState();
+  updateTrayMenu();
+  return { ...notificationState };
+});
+
+ipcMain.handle('desktop:setAllowAfterHours', (_event, allowAfterHours: boolean) => {
+  notificationState.allowAfterHours = Boolean(allowAfterHours);
+  try {
+    prefsStore.set('allowAfterHours', notificationState.allowAfterHours);
   } catch {
     // ignore
   }

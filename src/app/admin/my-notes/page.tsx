@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2, Trash2 } from 'lucide-react';
+import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2, Trash2, Wifi, WifiOff } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
@@ -110,6 +110,7 @@ function MyNotesContent() {
   const [followUpFilter, setFollowUpFilter] = useState<'all' | 'required'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'sender' | 'priority'>('newest');
   const [desktopActive, setDesktopActive] = useState(false);
+  const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
   const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(false);
   const [webAppNotificationsEnabled, setWebAppNotificationsEnabled] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<StaffNotification | null>(null);
@@ -250,10 +251,14 @@ function MyNotesContent() {
     setDesktopActive(true);
     let unsubscribe: (() => void) | undefined;
     window.desktopNotifications.getState()
-      .then(() => setDesktopActive(true))
+      .then((state) => {
+        setDesktopActive(true);
+        setDesktopState(state);
+      })
       .catch(() => setDesktopActive(true));
-    unsubscribe = window.desktopNotifications.onChange(() => {
+    unsubscribe = window.desktopNotifications.onChange((state) => {
       setDesktopActive(true);
+      setDesktopState(state);
     });
     return () => {
       if (unsubscribe) unsubscribe();
@@ -306,6 +311,34 @@ function MyNotesContent() {
       notifyNotificationSettingsChanged();
     } catch (error) {
       console.warn('Failed to update notification settings:', error);
+    }
+  };
+
+  const updateAfterHoursSetting = async (nextValue: boolean) => {
+    if (typeof window === 'undefined') return;
+    if (!window.desktopNotifications?.setAllowAfterHours) {
+      toast({
+        title: 'Desktop app update needed',
+        description: 'Please update/restart Electron to use after-hours activation.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    try {
+      const nextState = await window.desktopNotifications.setAllowAfterHours(nextValue);
+      setDesktopState(nextState);
+      toast({
+        title: nextValue ? 'After-hours alerts enabled' : 'After-hours alerts disabled',
+        description: nextValue
+          ? 'Electron will stay active outside business hours.'
+          : 'Electron will be silent outside business hours unless re-enabled.'
+      });
+    } catch {
+      toast({
+        title: 'Could not update Electron setting',
+        description: 'Please try again.',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -858,7 +891,8 @@ function MyNotesContent() {
   }, [sortedNotifications]);
 
   const recentNotifications = showAllNotes ? threadHeadNotifications : threadHeadNotifications.slice(0, 5);
-  const desktopActiveDisplay = desktopActive || suppressWebWhenDesktopActive;
+  const activeElectronCount = staffList.filter((staff) => Boolean(isElectronActiveByUid[staff.uid])).length;
+  const inactiveElectronCount = Math.max(0, staffList.length - activeElectronCount);
 
   const threadMap = useMemo(() => {
     const map = new Map<string, StaffNotification[]>();
@@ -955,6 +989,15 @@ function MyNotesContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button asChild variant={chatMode ? 'outline' : 'default'} size="sm">
+            <Link href="/admin/my-notes">Notifications</Link>
+          </Button>
+          <Button asChild variant={chatMode ? 'default' : 'outline'} size="sm">
+            <Link href="/admin/my-notes?chat=1">Chat feed</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/admin/desktop-chat-window">Open staff chat</Link>
+          </Button>
           <div className="flex flex-col items-end gap-1 text-right">
             <Button asChild variant="outline" size="sm">
               <a href={installerDownloadUrl} target="_blank" rel="noreferrer">
@@ -1357,6 +1400,65 @@ function MyNotesContent() {
           )}
         </div>
         <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Action Items</CardTitle>
+              <CardDescription>
+                Quick controls and status checks for Electron notifications.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {desktopActive ? (
+                <div className="flex items-center justify-between gap-3 rounded border px-3 py-2">
+                  <div className="text-sm text-muted-foreground">
+                    {desktopState?.allowAfterHours
+                      ? 'After-hours activation is ON'
+                      : 'After-hours activation is OFF'}
+                  </div>
+                  <Switch
+                    checked={Boolean(desktopState?.allowAfterHours)}
+                    onCheckedChange={(next) => {
+                      void updateAfterHoursSetting(Boolean(next));
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground rounded border px-3 py-2">
+                  Electron desktop app not detected on this device.
+                </div>
+              )}
+
+              <details className="rounded border px-3 py-2">
+                <summary className="cursor-pointer list-none text-sm font-medium flex items-center justify-between">
+                  <span>Staff Electron status</span>
+                  <span className="text-xs text-muted-foreground">
+                    {activeElectronCount} active / {inactiveElectronCount} inactive
+                  </span>
+                </summary>
+                <div className="mt-3 space-y-2">
+                  {isLoadingStaff ? (
+                    <div className="text-sm text-muted-foreground">Loading staff list...</div>
+                  ) : staffList.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No staff found.</div>
+                  ) : (
+                    staffList.map((staff) => {
+                      const active = Boolean(isElectronActiveByUid[staff.uid]);
+                      return (
+                        <div key={`status-${staff.uid}`} className="flex items-center justify-between rounded border px-2 py-1.5 text-sm">
+                          <span className="truncate pr-2">{staff.name}</span>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                            {active ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                            {active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </details>
+            </CardContent>
+          </Card>
+
           <Card id="compose-note">
             <CardHeader>
               <CardTitle>Send Staff Note</CardTitle>

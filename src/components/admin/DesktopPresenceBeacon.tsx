@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 
 function isElectronRuntime() {
@@ -16,6 +16,7 @@ export function DesktopPresenceBeacon() {
   const firestore = useFirestore();
   const { user } = useUser();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastAppliedCommandIdRef = useRef<string>('');
 
   useEffect(() => {
     if (!firestore || !user?.uid) return;
@@ -71,6 +72,47 @@ export function DesktopPresenceBeacon() {
       }
       void heartbeat(false);
     };
+  }, [firestore, user?.uid]);
+
+  useEffect(() => {
+    if (!firestore || !user?.uid) return;
+    if (!isElectronRuntime()) return;
+    const uid = String(user.uid).trim();
+    if (!uid) return;
+
+    const ref = doc(firestore, 'desktop_control_commands', uid);
+    const unsub = onSnapshot(
+      ref,
+      async (snap) => {
+        const data = snap.data() as any;
+        if (!data) return;
+        const commandId = String(data?.commandId || data?.updatedAt?.seconds || '').trim();
+        if (!commandId) return;
+        if (commandId === lastAppliedCommandIdRef.current) return;
+        lastAppliedCommandIdRef.current = commandId;
+
+        try {
+          const allowAfterHours = Boolean(data?.allowAfterHours);
+          const resumeNotifications = Boolean(data?.resumeNotifications);
+          const dn = (window as any).desktopNotifications;
+          if (!dn) return;
+
+          const state = await dn.getState?.();
+          if (dn.setAllowAfterHours && state && Boolean(state.allowAfterHours) !== allowAfterHours) {
+            await dn.setAllowAfterHours(allowAfterHours);
+          }
+          if (resumeNotifications && dn.setPaused && state?.pausedByUser) {
+            await dn.setPaused(false);
+          }
+        } catch {
+          // ignore remote control command failures
+        }
+      },
+      () => {
+        // ignore
+      }
+    );
+    return () => unsub();
   }, [firestore, user?.uid]);
 
   return null;

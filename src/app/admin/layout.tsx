@@ -1,6 +1,6 @@
 'use client';
 
-import React, { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import React, { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import appPackage from '../../../package.json';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -55,7 +55,10 @@ import {
   UploadCloud,
   Download,
   Receipt,
-  Search
+  Search,
+  Wifi,
+  WifiOff,
+  Monitor
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -84,10 +87,11 @@ import {
 import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { collection, collectionGroup, doc, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
+import { collection, collectionGroup, doc, documentId, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
 import { isPriorityOrUrgent } from '@/lib/notification-utils';
+import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 
 const adminNavLinks = [
   {
@@ -162,6 +166,7 @@ const superAdminNavLinks = [
       { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },
       { href: '/admin/member-activity', label: 'Member Activity Tracking', icon: Activity },
       { href: '/admin/login-activity', label: 'Login Activity Tracker', icon: Activity },
+      { href: '/admin/electron-controls', label: 'Electron Controls', icon: Monitor },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
       { href: '/admin/era-parser', label: 'ERA Parser', icon: Receipt },
@@ -201,6 +206,9 @@ function AdminHeader() {
   const [alftPendingCount, setAlftPendingCount] = useState(0);
   const [kTierCount, setKTierCount] = useState(0);
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
+  const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
+  const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
+  const { isActiveByUid: isElectronActiveByUid } = useDesktopPresenceMap(staffUids);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
     alftElectronEnabled: boolean;
@@ -406,6 +414,50 @@ function AdminHeader() {
     );
     return () => unsub();
   }, [firestore, user?.uid]);
+
+  useEffect(() => {
+    const loadAdminStaff = async () => {
+      if (!firestore) return;
+      try {
+        const [adminSnap, superAdminSnap] = await Promise.all([
+          getDocs(collection(firestore, 'roles_admin')),
+          getDocs(collection(firestore, 'roles_super_admin'))
+        ]);
+        const adminIds = adminSnap.docs.map((docItem) => docItem.id);
+        const superAdminIds = superAdminSnap.docs.map((docItem) => docItem.id);
+        const allIds = Array.from(new Set([...adminIds, ...superAdminIds]));
+        if (allIds.length === 0) {
+          setStaffList([]);
+          return;
+        }
+
+        const chunks: string[][] = [];
+        for (let i = 0; i < allIds.length; i += 10) {
+          chunks.push(allIds.slice(i, i + 10));
+        }
+
+        const users: Array<{ uid: string; name: string }> = [];
+        for (const chunk of chunks) {
+          const usersSnap = await getDocs(
+            query(collection(firestore, 'users'), where(documentId(), 'in', chunk))
+          );
+          usersSnap.forEach((docItem) => {
+            const data = docItem.data() as any;
+            users.push({
+              uid: docItem.id,
+              name: String(data?.displayName || data?.email || docItem.id),
+            });
+          });
+        }
+
+        users.sort((a, b) => a.name.localeCompare(b.name));
+        setStaffList(users);
+      } catch {
+        setStaffList([]);
+      }
+    };
+    loadAdminStaff();
+  }, [firestore]);
 
   const handleSignOut = async () => {
     try {
@@ -1142,6 +1194,52 @@ function AdminHeader() {
     );
   };
 
+  const renderElectronStatusDropdown = () => {
+    const activeCount = staffList.filter((staff) => Boolean(isElectronActiveByUid[staff.uid])).length;
+    const inactiveCount = Math.max(0, staffList.length - activeCount);
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-7 px-2 text-xs">
+            Electron status
+            <span className="ml-1 text-muted-foreground">
+              {activeCount}/{staffList.length}
+            </span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-72">
+          <DropdownMenuLabel>Staff Electron status</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <div className="px-2 pb-2 text-xs text-muted-foreground">
+            {activeCount} active • {inactiveCount} inactive
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {staffList.length === 0 ? (
+              <DropdownMenuItem disabled>No staff found.</DropdownMenuItem>
+            ) : (
+              staffList.map((staff) => {
+                const active = Boolean(isElectronActiveByUid[staff.uid]);
+                return (
+                  <DropdownMenuItem key={`electron-${staff.uid}`} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{staff.name}</span>
+                    <span className={cn(
+                      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]',
+                      active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                    )}>
+                      {active ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                      {active ? 'Active' : 'Inactive'}
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })
+            )}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
   const isHrefActive = (href?: string | null) => {
     const h = String(href || '').trim();
     if (!h) return false;
@@ -1547,6 +1645,7 @@ function AdminHeader() {
             </span>
             <div className="flex items-center gap-2">
               {renderPillAlignedBadges()}
+              {renderElectronStatusDropdown()}
             </div>
           </div>
           {renderPlanBadges()}

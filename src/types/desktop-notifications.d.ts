@@ -16,6 +16,7 @@ declare global {
       __shim?: boolean;
       getState: () => Promise<DesktopNotificationState>;
       setPaused: (paused: boolean) => Promise<DesktopNotificationState>;
+      setAllowAfterHours?: (allowAfterHours: boolean) => Promise<DesktopNotificationState>;
       setSnooze?: (untilMs: number) => Promise<DesktopNotificationState>;
       clearSnooze?: () => Promise<DesktopNotificationState>;
       snoozeNote?: (noteId: string, untilMs: number) => Promise<boolean>;
