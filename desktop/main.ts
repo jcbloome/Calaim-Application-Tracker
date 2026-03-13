@@ -698,12 +698,6 @@ const buildTrayMenu = () => {
         }
       }
     },
-    {
-      label: 'Open Staff Chat',
-      click: () => {
-        openInMainWindow('/admin/desktop-chat-window');
-      }
-    },
     { type: 'separator' },
     {
       label: `Business hours: ${notificationState.isWithinBusinessHours ? 'Active' : 'Silent'}`,

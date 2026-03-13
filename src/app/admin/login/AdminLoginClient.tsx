@@ -39,6 +39,7 @@ export default function AdminLoginClient() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [loginPhase, setLoginPhase] = useState<'idle' | 'auth' | 'bootstrap'>('idle');
   const [error, setError] = useState<string | null>(null);
 
   const getSafeAdminRedirect = (rawRedirect: string | null): string => {
@@ -94,6 +95,7 @@ export default function AdminLoginClient() {
   const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setLoginPhase('auth');
     setError(null);
 
     if (!auth || !firestore) {
@@ -155,6 +157,7 @@ export default function AdminLoginClient() {
 
       // Force refresh to pick up custom claims (admin)
       await userCredential.user.getIdToken(true);
+      setLoginPhase('bootstrap');
 
       // Ensure the freshly-set admin claim is actually visible before redirecting.
       // Without this, the admin layout guard can briefly see a non-admin token and bounce back to /admin/login.
@@ -227,6 +230,7 @@ export default function AdminLoginClient() {
       setError(errorMessage);
     }).finally(() => {
       setIsLoading(false);
+      setLoginPhase('idle');
     });
   };
 
@@ -287,7 +291,17 @@ export default function AdminLoginClient() {
                 </Alert>
               }
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing In...</> : <><LogIn className="mr-2 h-4 w-4" />Sign In</>}
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {loginPhase === 'bootstrap' ? 'Finalizing Admin Access...' : 'Signing In...'}
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="mr-2 h-4 w-4" />
+                    Sign In
+                  </>
+                )}
               </Button>
             </form>
 

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, getDocs, query, where, documentId } from 'firebase/firestore';
-import { AlertTriangle, Loader2, MessageSquare, Power, Search, Wifi, WifiOff } from 'lucide-react';
+import { collection, getDocs, onSnapshot, query, where, documentId } from 'firebase/firestore';
+import { AlertTriangle, Loader2, Power, Search, Send, Wifi, WifiOff } from 'lucide-react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore, useAuth } from '@/firebase';
 import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
@@ -33,8 +33,10 @@ export default function ElectronControlsPage() {
   const [search, setSearch] = useState('');
   const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
   const [updating, setUpdating] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [statusError, setStatusError] = useState('');
+  const [remoteAllowAfterHoursByUid, setRemoteAllowAfterHoursByUid] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!isLoading && !isSuperAdmin) {
@@ -101,7 +103,7 @@ export default function ElectronControlsPage() {
   }, [firestore, isSuperAdmin]);
 
   const staffUids = useMemo(() => staff.map((s) => s.uid), [staff]);
-  const { isActiveByUid } = useDesktopPresenceMap(staffUids);
+  const { isActiveByUid, presenceByUid } = useDesktopPresenceMap(staffUids);
 
   const filteredStaff = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -117,6 +119,45 @@ export default function ElectronControlsPage() {
     () => filteredStaff.filter((s) => Boolean(isActiveByUid[s.uid])).length,
     [filteredStaff, isActiveByUid]
   );
+
+  useEffect(() => {
+    if (!firestore || !isSuperAdmin) return;
+    if (staffUids.length === 0) {
+      setRemoteAllowAfterHoursByUid({});
+      return;
+    }
+    const chunks: string[][] = [];
+    for (let i = 0; i < staffUids.length; i += 10) chunks.push(staffUids.slice(i, i + 10));
+    const unsubs = chunks.map((chunk) => {
+      const qy = query(collection(firestore, 'desktop_control_commands'), where(documentId(), 'in', chunk));
+      return onSnapshot(
+        qy,
+        (snap) => {
+          const next: Record<string, boolean> = {};
+          chunk.forEach((uid) => {
+            next[uid] = false;
+          });
+          snap.forEach((d) => {
+            const data = d.data() as any;
+            next[d.id] = Boolean(data?.allowAfterHours);
+          });
+          setRemoteAllowAfterHoursByUid((prev) => ({ ...prev, ...next }));
+        },
+        () => {
+          // ignore
+        }
+      );
+    });
+    return () => {
+      unsubs.forEach((u) => {
+        try {
+          u();
+        } catch {
+          // ignore
+        }
+      });
+    };
+  }, [firestore, isSuperAdmin, staffUids]);
 
   const setUidChecked = useCallback((uid: string, checked: boolean) => {
     setSelectedUids((prev) => {
@@ -175,6 +216,50 @@ export default function ElectronControlsPage() {
     }
   }, [auth, selectedUids, user?.uid]);
 
+  const sendTestPopup = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    const targets = Array.from(selectedUids);
+    if (targets.length === 0) {
+      setStatusError('Select at least one staff member to send a test popup.');
+      return;
+    }
+    setSendingTest(true);
+    setStatusError('');
+    setStatusMessage('');
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/electron-test-note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          targetUids: targets,
+          message: 'Test Electron popup from Super Admin controls.',
+          priority: 'Priority',
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Request failed (${res.status})`);
+      }
+      setStatusMessage(`Sent test popup to ${Number(data?.targets || 0)} staff.`);
+    } catch (error: any) {
+      setStatusError(error?.message || 'Failed to send test popup.');
+    } finally {
+      setSendingTest(false);
+    }
+  }, [auth, selectedUids]);
+
+  const getPausedReason = useCallback((uid: string) => {
+    const p = presenceByUid[uid];
+    if (!p) return 'Unknown';
+    if (!p.effectivePaused) return 'Not paused';
+    if (p.pausedByUser) return 'Paused by user';
+    if (p.snoozedUntilMs > Date.now()) return `Snoozed until ${new Date(p.snoozedUntilMs).toLocaleString()}`;
+    if (!p.allowAfterHours) return 'After-hours silent';
+    return 'Paused';
+  }, [presenceByUid]);
+
   if (isLoading || (!isAdmin && !isLoading) || (!isSuperAdmin && !isLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -195,10 +280,6 @@ export default function ElectronControlsPage() {
             Activate or deactivate Electron after-hours messaging for all staff or selected staff.
           </CardDescription>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => router.push('/admin/desktop-chat-window')}>
-              <MessageSquare className="mr-2 h-4 w-4" />
-              Open Staff Chat
-            </Button>
             <Button variant="outline" onClick={() => router.push('/admin/my-notes')}>
               Open My Notifications
             </Button>
@@ -247,6 +328,10 @@ export default function ElectronControlsPage() {
             <Button variant="outline" disabled={updating} onClick={() => void applyRemoteSetting(false, 'all')}>
               Deactivate all
             </Button>
+            <Button variant="secondary" disabled={sendingTest} onClick={() => void sendTestPopup()}>
+              {sendingTest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Send test popup (selected)
+            </Button>
           </div>
 
           {statusMessage ? (
@@ -265,25 +350,41 @@ export default function ElectronControlsPage() {
             <div className="rounded-md border">
               <div className="grid grid-cols-12 gap-2 border-b bg-slate-50/60 px-3 py-2 text-xs font-medium text-muted-foreground">
                 <div className="col-span-1">Pick</div>
-                <div className="col-span-4">Staff</div>
-                <div className="col-span-4">Email</div>
+                <div className="col-span-3">Staff</div>
+                <div className="col-span-3">Email</div>
                 <div className="col-span-2">Role</div>
+                <div className="col-span-1">Remote</div>
                 <div className="col-span-1">Live</div>
+                <div className="col-span-1">Paused</div>
               </div>
               <div className="max-h-[62vh] overflow-auto">
                 {filteredStaff.map((s) => {
                   const checked = selectedUids.has(s.uid);
                   const active = Boolean(isActiveByUid[s.uid]);
+                  const remoteAfterHours = Boolean(remoteAllowAfterHoursByUid[s.uid]);
+                  const presence = presenceByUid[s.uid];
+                  const lastSeen = presence?.lastSeenAtMs ? new Date(presence.lastSeenAtMs).toLocaleTimeString() : '—';
                   return (
                     <div key={s.uid} className="grid grid-cols-12 gap-2 border-b px-3 py-2 text-sm last:border-b-0">
                       <div className="col-span-1 flex items-center">
                         <Checkbox checked={checked} onCheckedChange={(v) => setUidChecked(s.uid, Boolean(v))} />
                       </div>
-                      <div className="col-span-4 truncate font-medium" title={s.label}>{s.label}</div>
-                      <div className="col-span-4 truncate text-muted-foreground" title={s.email}>{s.email}</div>
+                      <div className="col-span-3 truncate font-medium" title={s.label}>{s.label}</div>
+                      <div className="col-span-3 truncate text-muted-foreground" title={s.email}>{s.email}</div>
                       <div className="col-span-2 truncate text-muted-foreground">{s.role}</div>
                       <div className="col-span-1 flex items-center">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${remoteAfterHours ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {remoteAfterHours ? 'ON' : 'OFF'}
+                        </span>
+                      </div>
+                      <div className="col-span-1 flex items-center">
                         {active ? <Wifi className="h-4 w-4 text-emerald-600" /> : <WifiOff className="h-4 w-4 text-slate-400" />}
+                      </div>
+                      <div className="col-span-1 truncate text-xs text-muted-foreground" title={`${getPausedReason(s.uid)} • Last seen ${lastSeen}`}>
+                        {presence?.effectivePaused ? 'Yes' : 'No'}
+                      </div>
+                      <div className="col-span-12 mt-1 rounded bg-slate-50 px-2 py-1 text-[11px] text-muted-foreground">
+                        Last seen: {lastSeen} • Route: {presence?.currentPath || '—'} • {getPausedReason(s.uid)}
                       </div>
                     </div>
                   );

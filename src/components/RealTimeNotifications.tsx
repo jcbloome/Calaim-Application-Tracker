@@ -552,10 +552,16 @@ export function RealTimeNotifications() {
       notificationsQuery,
       (snapshot) => {
         const pending: NotificationData[] = [];
+        const deliveryCandidates: string[] = [];
         let hasNew = false;
         let hasNewPriority = false;
         let hasNewUrgent = false;
         let total = 0;
+        const shouldTrackDesktopDelivery =
+          typeof window !== 'undefined' &&
+          Boolean(window.desktopNotifications) &&
+          !Boolean(window.desktopNotifications?.__shim) &&
+          !desktopEffectivePaused;
 
         snapshot.forEach((docSnap) => {
           total += 1;
@@ -565,6 +571,9 @@ export function RealTimeNotifications() {
           if (isInterofficeType && !webToastPolicy.interofficeNotificationsEnabled) return;
           if (data.status === 'Closed') return;
           if (data.isRead === true) return;
+          if (shouldTrackDesktopDelivery && !Boolean((data as any)?.desktopDeliveredAt)) {
+            deliveryCandidates.push(docSnap.id);
+          }
 
           const priority = normalizePriorityLabel(data.priority);
           const isUrgent = priority === 'Urgent';
@@ -614,6 +623,17 @@ export function RealTimeNotifications() {
         });
 
         pendingNotesRef.current = new Map(pending.map((item) => [item.id, item]));
+        if (deliveryCandidates.length > 0) {
+          const ids = Array.from(new Set(deliveryCandidates)).slice(0, 50);
+          void Promise.all(
+            ids.map((id) =>
+              updateDoc(doc(firestore, 'staff_notifications', id), {
+                desktopDeliveredAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              }).catch(() => undefined)
+            )
+          );
+        }
         
 
         if (flushTimeoutRef.current) {
@@ -909,7 +929,7 @@ export function RealTimeNotifications() {
     return () => {
       unsubscribe();
     };
-  }, [user, firestore, webToastPolicy.interofficeNotificationsEnabled]);
+  }, [desktopEffectivePaused, user, firestore, webToastPolicy.interofficeNotificationsEnabled]);
 
   return null;
 }

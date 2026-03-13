@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
+import { usePathname } from 'next/navigation';
 
 function isElectronRuntime() {
   try {
@@ -15,8 +16,10 @@ function isElectronRuntime() {
 export function DesktopPresenceBeacon() {
   const firestore = useFirestore();
   const { user } = useUser();
+  const pathname = usePathname();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastAppliedCommandIdRef = useRef<string>('');
+  const heartbeatRef = useRef<(active: boolean) => Promise<void>>(async () => undefined);
 
   useEffect(() => {
     if (!firestore || !user?.uid) return;
@@ -36,6 +39,16 @@ export function DesktopPresenceBeacon() {
           desktopState = null;
         }
         const snoozedUntilMs = Number((desktopState as any)?.snoozedUntilMs || 0) || 0;
+        const pausedReason =
+          Boolean((desktopState as any)?.pausedByUser)
+            ? 'paused_by_user'
+            : Number((desktopState as any)?.snoozedUntilMs || 0) > Date.now()
+              ? 'snoozed'
+              : Boolean((desktopState as any)?.effectivePaused) && !Boolean((desktopState as any)?.allowAfterHours)
+                ? 'after_hours'
+                : Boolean((desktopState as any)?.effectivePaused)
+                  ? 'paused'
+                  : 'none';
         await setDoc(
           ref,
           {
@@ -47,6 +60,8 @@ export function DesktopPresenceBeacon() {
             allowAfterHours: Boolean((desktopState as any)?.allowAfterHours),
             effectivePaused: Boolean((desktopState as any)?.effectivePaused),
             snoozedUntilMs: snoozedUntilMs || 0,
+            pausedReason,
+            currentPath: String(pathname || ''),
           },
           { merge: true }
         );
@@ -54,6 +69,7 @@ export function DesktopPresenceBeacon() {
         // Ignore presence failures (rules/network).
       }
     };
+    heartbeatRef.current = heartbeat;
 
     // Mark active immediately, then refresh periodically.
     void heartbeat(true);
@@ -71,6 +87,32 @@ export function DesktopPresenceBeacon() {
         timerRef.current = null;
       }
       void heartbeat(false);
+    };
+  }, [firestore, pathname, user?.uid]);
+
+  useEffect(() => {
+    if (!firestore || !user?.uid) return;
+    if (!isElectronRuntime()) return;
+
+    const pingActive = () => {
+      void heartbeatRef.current(true);
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        pingActive();
+      }
+    };
+
+    window.addEventListener('focus', pingActive);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('popstate', pingActive);
+    window.addEventListener('hashchange', pingActive);
+    return () => {
+      window.removeEventListener('focus', pingActive);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('popstate', pingActive);
+      window.removeEventListener('hashchange', pingActive);
     };
   }, [firestore, user?.uid]);
 

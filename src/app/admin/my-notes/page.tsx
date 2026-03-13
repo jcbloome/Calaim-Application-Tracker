@@ -50,6 +50,7 @@ interface StaffNotification {
   priority: 'General' | 'Priority' | 'Urgent' | string;
   isRead: boolean;
   createdAt: any;
+  desktopDeliveredAt?: any;
   authorName: string;
   recipientName?: string;
   recipientId: string;
@@ -168,6 +169,7 @@ function MyNotesContent() {
             priority: data.priority || 'General',
             isRead: Boolean(data.isRead),
             createdAt: data.timestamp || data.createdAt,
+            desktopDeliveredAt: data.desktopDeliveredAt || undefined,
             authorName: data.createdByName || data.senderName || 'System',
             recipientName: data.recipientName || data.recipient || data.recipientDisplayName || undefined,
             recipientId: data.userId || user.uid,
@@ -989,14 +991,8 @@ function MyNotesContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button asChild variant={chatMode ? 'outline' : 'default'} size="sm">
+          <Button asChild variant="default" size="sm">
             <Link href="/admin/my-notes">Notifications</Link>
-          </Button>
-          <Button asChild variant={chatMode ? 'default' : 'outline'} size="sm">
-            <Link href="/admin/my-notes?chat=1">Chat feed</Link>
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/admin/desktop-chat-window">Open staff chat</Link>
           </Button>
           <div className="flex flex-col items-end gap-1 text-right">
             <Button asChild variant="outline" size="sm">
@@ -1202,6 +1198,15 @@ function MyNotesContent() {
                             )}
                             <Badge variant="outline">
                               {notification.status || 'Open'}
+                            </Badge>
+                            <Badge variant="outline" className={
+                              notification.isRead
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : notification.desktopDeliveredAt
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                            }>
+                              {notification.isRead ? 'Read' : notification.desktopDeliveredAt ? 'Delivered' : 'Queued'}
                             </Badge>
                             {!notification.isRead && (
                               <Badge variant="default" className="bg-blue-600">

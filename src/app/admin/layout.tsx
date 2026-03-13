@@ -208,7 +208,7 @@ function AdminHeader() {
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
-  const { isActiveByUid: isElectronActiveByUid } = useDesktopPresenceMap(staffUids);
+  const { isActiveByUid: isElectronActiveByUid, presenceByUid } = useDesktopPresenceMap(staffUids);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
     alftElectronEnabled: boolean;
@@ -419,13 +419,15 @@ function AdminHeader() {
     const loadAdminStaff = async () => {
       if (!firestore) return;
       try {
-        const [adminSnap, superAdminSnap] = await Promise.all([
+        const [adminSnap, superAdminSnap, staffSnap] = await Promise.all([
           getDocs(collection(firestore, 'roles_admin')),
-          getDocs(collection(firestore, 'roles_super_admin'))
+          getDocs(collection(firestore, 'roles_super_admin')),
+          getDocs(query(collection(firestore, 'users'), where('isStaff', '==', true)))
         ]);
         const adminIds = adminSnap.docs.map((docItem) => docItem.id);
         const superAdminIds = superAdminSnap.docs.map((docItem) => docItem.id);
-        const allIds = Array.from(new Set([...adminIds, ...superAdminIds]));
+        const staffIds = staffSnap.docs.map((docItem) => docItem.id);
+        const allIds = Array.from(new Set([...adminIds, ...superAdminIds, ...staffIds])).filter((id) => !String(id).includes('@'));
         if (allIds.length === 0) {
           setStaffList([]);
           return;
@@ -1220,15 +1222,21 @@ function AdminHeader() {
             ) : (
               staffList.map((staff) => {
                 const active = Boolean(isElectronActiveByUid[staff.uid]);
+                const silent = Boolean(presenceByUid[staff.uid]?.effectivePaused);
+                const statusLabel = active ? (silent ? 'Silent' : 'Active') : 'Inactive';
                 return (
                   <DropdownMenuItem key={`electron-${staff.uid}`} className="flex items-center justify-between gap-2">
                     <span className="truncate">{staff.name}</span>
                     <span className={cn(
                       'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]',
-                      active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                      active
+                        ? silent
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-emerald-50 text-emerald-700'
+                        : 'bg-slate-100 text-slate-600'
                     )}>
                       {active ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                      {active ? 'Active' : 'Inactive'}
+                      {statusLabel}
                     </span>
                   </DropdownMenuItem>
                 );

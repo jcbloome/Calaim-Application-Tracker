@@ -23,6 +23,15 @@ export function useDesktopPresenceMap(
   options?: { activeWindowMs?: number }
 ): {
   isActiveByUid: Record<string, boolean>;
+  presenceByUid: Record<string, {
+    active: boolean;
+    lastSeenAtMs: number;
+    pausedByUser: boolean;
+    allowAfterHours: boolean;
+    effectivePaused: boolean;
+    snoozedUntilMs: number;
+    currentPath?: string;
+  }>;
 } {
   const firestore = useFirestore();
   const activeWindowMs = options?.activeWindowMs ?? 2 * 60 * 1000;
@@ -35,11 +44,21 @@ export function useDesktopPresenceMap(
   }, [uids]);
 
   const [isActiveByUid, setIsActiveByUid] = useState<Record<string, boolean>>({});
+  const [presenceByUid, setPresenceByUid] = useState<Record<string, {
+    active: boolean;
+    lastSeenAtMs: number;
+    pausedByUser: boolean;
+    allowAfterHours: boolean;
+    effectivePaused: boolean;
+    snoozedUntilMs: number;
+    currentPath?: string;
+  }>>({});
 
   useEffect(() => {
     if (!firestore) return;
     if (stableUids.length === 0) {
       setIsActiveByUid({});
+      setPresenceByUid({});
       return;
     }
 
@@ -67,6 +86,39 @@ export function useDesktopPresenceMap(
             chunkState[docSnap.id] = Boolean(active && fresh);
           });
           setIsActiveByUid((prev) => ({ ...prev, ...chunkState }));
+          const nextPresenceChunk: Record<string, {
+            active: boolean;
+            lastSeenAtMs: number;
+            pausedByUser: boolean;
+            allowAfterHours: boolean;
+            effectivePaused: boolean;
+            snoozedUntilMs: number;
+            currentPath?: string;
+          }> = {};
+          chunk.forEach((uid) => {
+            nextPresenceChunk[uid] = {
+              active: false,
+              lastSeenAtMs: 0,
+              pausedByUser: false,
+              allowAfterHours: true,
+              effectivePaused: false,
+              snoozedUntilMs: 0,
+              currentPath: '',
+            };
+          });
+          snap.forEach((docSnap) => {
+            const data = docSnap.data() as any;
+            nextPresenceChunk[docSnap.id] = {
+              active: Boolean(data?.active),
+              lastSeenAtMs: toMs(data?.lastSeenAt),
+              pausedByUser: Boolean(data?.pausedByUser),
+              allowAfterHours: Boolean(data?.allowAfterHours),
+              effectivePaused: Boolean(data?.effectivePaused),
+              snoozedUntilMs: Number(data?.snoozedUntilMs || 0) || 0,
+              currentPath: String(data?.currentPath || '').trim(),
+            };
+          });
+          setPresenceByUid((prev) => ({ ...prev, ...nextPresenceChunk }));
         },
         () => {
           // If permission/rules prevent reads, fail silently.
@@ -86,6 +138,6 @@ export function useDesktopPresenceMap(
     };
   }, [firestore, stableUids, activeWindowMs]);
 
-  return { isActiveByUid };
+  return { isActiveByUid, presenceByUid };
 }
 
