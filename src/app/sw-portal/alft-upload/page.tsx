@@ -157,6 +157,20 @@ export default function SwAlftUploadPage() {
   const [rnReviewerDate, setRnReviewerDate] = useState('');
   const [mswSignatureName, setMswSignatureName] = useState('');
   const [mswSignatureDate, setMswSignatureDate] = useState('');
+  const [page1Notes, setPage1Notes] = useState('');
+  const [page2Notes, setPage2Notes] = useState('');
+  const [page3Notes, setPage3Notes] = useState('');
+  const [page4Notes, setPage4Notes] = useState('');
+  const [page5Notes, setPage5Notes] = useState('');
+  const [page6Notes, setPage6Notes] = useState('');
+  const [page7Notes, setPage7Notes] = useState('');
+  const [page8Notes, setPage8Notes] = useState('');
+  const [page9Notes, setPage9Notes] = useState('');
+  const [page10Notes, setPage10Notes] = useState('');
+  const [page11Notes, setPage11Notes] = useState('');
+  const [page12Notes, setPage12Notes] = useState('');
+  const [page13Notes, setPage13Notes] = useState('');
+  const [page14Notes, setPage14Notes] = useState('');
 
   // If the SW profile name loads after first render, auto-populate the field.
   useEffect(() => {
@@ -249,7 +263,7 @@ export default function SwAlftUploadPage() {
           member: { firstName: first, lastName: last, name: memberName, healthPlan: 'Kaiser', kaiserMrn: mrn, medicalRecordNumber: mrn },
           alftForm: {
             formVersion: 'placeholder-v1',
-            stage: 'stage1-stage2-stage3',
+            stage: 'stage1-stage2-stage3-full14',
             headerInformation: {
               agencyName: agencyName.trim() || null,
               assessmentDate: upDate,
@@ -382,6 +396,22 @@ export default function SwAlftUploadPage() {
                 mswSignatureDate: mswSignatureDate.trim() || null,
               },
             },
+            fullPacketPages: {
+              page1HeaderAndDemographic: page1Notes.trim() || null,
+              page2LocationAndIncome: page2Notes.trim() || null,
+              page3MemoryScreen: page3Notes.trim() || null,
+              page4GeneralHealthAndAdlPart1: page4Notes.trim() || null,
+              page5AdlPart2AndIadlStart: page5Notes.trim() || null,
+              page6IadlContinuation: page6Notes.trim() || null,
+              page7HealthConditionsChecklist: page7Notes.trim() || null,
+              page8TherapiesAndSpecialtyCare: page8Notes.trim() || null,
+              page9MentalHealthBehaviorPart1: page9Notes.trim() || null,
+              page10MentalHealthNutrition: page10Notes.trim() || null,
+              page11MedicationsDirectivesEnvironment: page11Notes.trim() || null,
+              page12SelfReportVisionHearingLiving: page12Notes.trim() || null,
+              page13MedicationGrid: page13Notes.trim() || null,
+              page14RnMswCommentaryAndSignature: page14Notes.trim() || null,
+            },
             facilityName: facilityName.trim(),
             priorityLevel: priorityLevel.trim() || 'Routine',
             transitionSummary: transitionSummary.trim(),
@@ -509,6 +539,20 @@ export default function SwAlftUploadPage() {
       setRnReviewerDate('');
       setMswSignatureName('');
       setMswSignatureDate('');
+      setPage1Notes('');
+      setPage2Notes('');
+      setPage3Notes('');
+      setPage4Notes('');
+      setPage5Notes('');
+      setPage6Notes('');
+      setPage7Notes('');
+      setPage8Notes('');
+      setPage9Notes('');
+      setPage10Notes('');
+      setPage11Notes('');
+      setPage12Notes('');
+      setPage13Notes('');
+      setPage14Notes('');
       setUploadProgress(0);
     } catch (err: any) {
       toast({
@@ -520,6 +564,10 @@ export default function SwAlftUploadPage() {
       setIsUploading(false);
       setUploadProgress(0);
     }
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   if (isLoading) {
@@ -542,7 +590,7 @@ export default function SwAlftUploadPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6 alft-print-root">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -562,7 +610,7 @@ export default function SwAlftUploadPage() {
             </AlertDescription>
           </Alert>
 
-          <form onSubmit={handleUpload} className="space-y-4">
+          <form onSubmit={handleUpload} className="space-y-4 alft-print-form">
             <div className="rounded-md border p-3 space-y-3">
               <div className="text-sm font-semibold">Stage 1: Header and demographics</div>
 
@@ -1225,6 +1273,70 @@ export default function SwAlftUploadPage() {
               </div>
             </div>
 
+            <div className="rounded-md border p-3 space-y-3">
+              <div className="text-sm font-semibold">Full 14-page ALFT packet capture</div>
+              <div className="text-xs text-muted-foreground">
+                Use these page sections to capture any details from each original PDF page that are not already represented above.
+              </div>
+
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 1: Header + demographic</summary>
+                <textarea value={page1Notes} onChange={(e) => setPage1Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 2: Location + living + income</summary>
+                <textarea value={page2Notes} onChange={(e) => setPage2Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 3: Memory screening</summary>
+                <textarea value={page3Notes} onChange={(e) => setPage3Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 4: General health + ADL part 1</summary>
+                <textarea value={page4Notes} onChange={(e) => setPage4Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 5: ADL part 2 + IADL start</summary>
+                <textarea value={page5Notes} onChange={(e) => setPage5Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 6: IADL continuation</summary>
+                <textarea value={page6Notes} onChange={(e) => setPage6Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 7: Health conditions checklist</summary>
+                <textarea value={page7Notes} onChange={(e) => setPage7Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 8: Therapies + specialty care</summary>
+                <textarea value={page8Notes} onChange={(e) => setPage8Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 9: Mental health/behavior part 1</summary>
+                <textarea value={page9Notes} onChange={(e) => setPage9Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 10: Mental health + nutrition</summary>
+                <textarea value={page10Notes} onChange={(e) => setPage10Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 11: Medications + directives + environment</summary>
+                <textarea value={page11Notes} onChange={(e) => setPage11Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 12: Vision/hearing/living arrangement</summary>
+                <textarea value={page12Notes} onChange={(e) => setPage12Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 13: Medication grid continuation</summary>
+                <textarea value={page13Notes} onChange={(e) => setPage13Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+              <details className="rounded border p-2">
+                <summary className="cursor-pointer text-sm font-medium">Page 14: RN/MSW commentary + signature</summary>
+                <textarea value={page14Notes} onChange={(e) => setPage14Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              </details>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="swName">Social worker name</Label>
               <Input
@@ -1309,7 +1421,7 @@ export default function SwAlftUploadPage() {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 print:hidden">
               <Label htmlFor="file">Attachments (PDF/images/docs)</Label>
               <Input
                 id="file"
@@ -1324,18 +1436,62 @@ export default function SwAlftUploadPage() {
             </div>
 
             {isUploading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground print:hidden">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Uploading… {uploadProgress}%
               </div>
             ) : null}
 
-            <Button type="submit" disabled={isUploading} className="w-full">
-              {isUploading ? 'Submitting…' : 'Submit ALFT form'}
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-2 print:hidden">
+              <Button type="button" variant="outline" onClick={handlePrint} className="sm:w-1/2">
+                Print / Save PDF
+              </Button>
+              <Button type="submit" disabled={isUploading} className="sm:w-1/2">
+                {isUploading ? 'Submitting…' : 'Submit ALFT form'}
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: letter;
+            margin: 0.5in;
+          }
+          .alft-print-root {
+            max-width: none !important;
+          }
+          .alft-print-root .card,
+          .alft-print-root [class*='rounded-md border'] {
+            border: 1px solid #d4d4d8 !important;
+            box-shadow: none !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .alft-print-root details > * {
+            display: block !important;
+          }
+          .alft-print-root details > summary {
+            list-style: none;
+            margin-bottom: 0.35rem;
+          }
+          .alft-print-root input,
+          .alft-print-root select,
+          .alft-print-root textarea {
+            border: 1px solid #d4d4d8 !important;
+            color: #111827 !important;
+            background: #ffffff !important;
+          }
+          .alft-print-root textarea {
+            min-height: 72px !important;
+          }
+          .alft-print-root a {
+            color: #111827 !important;
+            text-decoration: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
