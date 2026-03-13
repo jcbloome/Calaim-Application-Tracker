@@ -66,12 +66,12 @@ const DUMMY_SECTIONS = [
   ]),
 ];
 
-export default function AlftDummyPreviewPage() {
+export default function AdminAlftDummyPreviewPage() {
   return (
     <div className="max-w-4xl mx-auto py-6 px-4 space-y-4 alft-dummy-preview">
       <Card>
         <CardHeader className="border-b">
-          <CardTitle className="text-center tracking-wide">ALF TRANSITION ASSESSMENT (DUMMY PREVIEW - LEO LARA)</CardTitle>
+          <CardTitle className="text-center tracking-wide">ALF TRANSITION ASSESSMENT (DUMMY PREVIEW - ILS)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
           <div className="flex justify-end print:hidden">
@@ -116,4 +116,3 @@ export default function AlftDummyPreviewPage() {
     </div>
   );
 }
-
