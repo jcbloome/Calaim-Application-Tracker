@@ -19,6 +19,15 @@ type SubmitBody = {
   };
   alftForm?: {
     formVersion?: string;
+    stage?: string;
+    headerInformation?: Record<string, unknown>;
+    demographics?: Record<string, unknown>;
+    physicalLocation?: Record<string, unknown>;
+    homeAddress?: Record<string, unknown>;
+    mailingAddress?: Record<string, unknown>;
+    screening?: Record<string, unknown>;
+    clinicalAssessment?: Record<string, unknown>;
+    stage3Assessment?: Record<string, unknown>;
     facilityName?: string;
     priorityLevel?: string;
     transitionSummary?: string;
@@ -30,6 +39,21 @@ type SubmitBody = {
 };
 
 const clean = (v: unknown, max = 300) => String(v ?? '').trim().slice(0, max);
+const cleanDeep = (value: unknown): any => {
+  if (typeof value === 'string') return clean(value, 4000);
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
+  if (Array.isArray(value)) return value.slice(0, 100).map((item) => cleanDeep(item));
+  if (value && typeof value === 'object') {
+    const out: Record<string, any> = {};
+    Object.entries(value as Record<string, unknown>)
+      .slice(0, 200)
+      .forEach(([k, v]) => {
+        out[clean(k, 80)] = cleanDeep(v);
+      });
+    return out;
+  }
+  return null;
+};
 
 async function resolveUidByEmail(admin: any, adminDb: any, emailRaw: string): Promise<string> {
   const email = clean(emailRaw, 200).toLowerCase();
@@ -89,6 +113,15 @@ export async function POST(request: NextRequest) {
       .slice(0, 10);
     const alftForm = {
       formVersion: clean(body?.alftForm?.formVersion, 40) || 'placeholder-v1',
+      stage: clean(body?.alftForm?.stage, 40) || null,
+      headerInformation: cleanDeep(body?.alftForm?.headerInformation || null),
+      demographics: cleanDeep(body?.alftForm?.demographics || null),
+      physicalLocation: cleanDeep(body?.alftForm?.physicalLocation || null),
+      homeAddress: cleanDeep(body?.alftForm?.homeAddress || null),
+      mailingAddress: cleanDeep(body?.alftForm?.mailingAddress || null),
+      screening: cleanDeep(body?.alftForm?.screening || null),
+      clinicalAssessment: cleanDeep(body?.alftForm?.clinicalAssessment || null),
+      stage3Assessment: cleanDeep(body?.alftForm?.stage3Assessment || null),
       facilityName: clean(body?.alftForm?.facilityName, 180) || null,
       priorityLevel: clean(body?.alftForm?.priorityLevel, 40) || 'Routine',
       transitionSummary: clean(body?.alftForm?.transitionSummary, 4000),
