@@ -29,6 +29,7 @@ type SubmitBody = {
     clinicalAssessment?: Record<string, unknown>;
     stage3Assessment?: Record<string, unknown>;
     fullPacketPages?: Record<string, unknown>;
+    exactPacketAnswers?: Record<string, unknown>;
     facilityName?: string;
     priorityLevel?: string;
     transitionSummary?: string;
@@ -124,6 +125,7 @@ export async function POST(request: NextRequest) {
       clinicalAssessment: cleanDeep(body?.alftForm?.clinicalAssessment || null),
       stage3Assessment: cleanDeep(body?.alftForm?.stage3Assessment || null),
       fullPacketPages: cleanDeep(body?.alftForm?.fullPacketPages || null),
+      exactPacketAnswers: cleanDeep(body?.alftForm?.exactPacketAnswers || null),
       facilityName: clean(body?.alftForm?.facilityName, 180) || null,
       priorityLevel: clean(body?.alftForm?.priorityLevel, 40) || 'Routine',
       transitionSummary: clean(body?.alftForm?.transitionSummary, 4000),
