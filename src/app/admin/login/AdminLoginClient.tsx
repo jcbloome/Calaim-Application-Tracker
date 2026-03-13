@@ -41,6 +41,32 @@ export default function AdminLoginClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const getSafeAdminRedirect = (rawRedirect: string | null): string => {
+    const fallback = '/admin';
+    const redirect = String(rawRedirect || '').trim();
+    if (!redirect || !redirect.startsWith('/')) return fallback;
+
+    // Prevent redirect loops back to the admin login page.
+    if (redirect.startsWith('/admin/login')) {
+      try {
+        const query = redirect.includes('?') ? redirect.split('?')[1] : '';
+        const nestedRedirect = new URLSearchParams(query).get('redirect');
+        if (
+          nestedRedirect &&
+          nestedRedirect.startsWith('/') &&
+          !nestedRedirect.startsWith('/admin/login')
+        ) {
+          return nestedRedirect;
+        }
+      } catch {
+        // ignore malformed nested redirects
+      }
+      return fallback;
+    }
+
+    return redirect;
+  };
+
   const safeLocalStorageSet = (key: string, value: string) => {
     try {
       localStorage.setItem(key, value);
@@ -184,9 +210,7 @@ export default function AdminLoginClient() {
       });
 
       const redirectTo = searchParams.get('redirect');
-      const safeRedirect = redirectTo && redirectTo.startsWith('/')
-        ? redirectTo
-        : '/admin';
+      const safeRedirect = getSafeAdminRedirect(redirectTo);
       router.replace(safeRedirect);
     })().catch((err) => {
       const authError = err as AuthError;

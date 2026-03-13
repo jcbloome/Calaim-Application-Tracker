@@ -1896,10 +1896,20 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   // Desktop windows should be a minimal shell (no header/sidebar/context menu).
   if (isDesktopNotificationWindow) {
-    return <div className="min-h-screen bg-transparent">{children}</div>;
+    return (
+      <>
+        <DesktopPresenceBeacon />
+        <div className="min-h-screen bg-transparent">{children}</div>
+      </>
+    );
   }
   if (isDesktopChatWindow) {
-    return <div className="min-h-screen bg-slate-50">{children}</div>;
+    return (
+      <>
+        <DesktopPresenceBeacon />
+        <div className="min-h-screen bg-slate-50">{children}</div>
+      </>
+    );
   }
   
   // If loading is done and user is an admin, show the full admin layout.
