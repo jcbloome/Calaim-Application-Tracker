@@ -37,171 +37,6 @@ const sanitizePathSegment = (value: string) =>
     .replace(/\s+/g, '_')
     .slice(0, 140);
 
-const PAGE_TEMPLATE_1 = `Header and Demographic
-- Agency:
-- Assessment Date:
-- Plan ID:
-- Assessment purpose (Initial / Change of Condition / Review):
-- Member full name:
-- Assessor/CM name:
-- Referral date:
-- Other responder name/relationship (if applicable):
-`;
-const PAGE_TEMPLATE_2 = `Location, Living, and Income
-- Current physical location (street/city/state/zip):
-- Location type:
-- Facility name (if applicable):
-- Home address (if different):
-- Mailing address (if different):
-- Assessment site:
-- APS risk level:
-- Imminent nursing home risk:
-- ALWP waitlist + agency:
-- Previous unsuccessful placements:
-- Primary caregiver:
-- Living situation:
-- Income sources + monthly amounts:
-`;
-const PAGE_TEMPLATE_3 = `Memory Screening
-- Memory/cognitive diagnosis reported:
-- Client answering questions?:
-- 3-word repeat score:
-- Year orientation result:
-- Month orientation result:
-- Day orientation result:
-- 3-word recall score:
-- Alert/oriented to (time/place/person/event):
-- Cognitive problems present?:
-- Notes:
-`;
-const PAGE_TEMPLATE_4 = `General Health + ADL (Part 1)
-- Falls in last 6 months:
-- Fall risk present:
-- Fall-risk reason:
-- ER visits in last 60 days:
-- Hospital admissions in last 60 days:
-- ADL level: Bathing
-- ADL level: Dressing
-- ADL level: Eating
-- ADL level: Using bathroom
-- Notes and summary:
-`;
-const PAGE_TEMPLATE_5 = `ADL (Part 2) + IADL Start
-- ADL level: Transferring
-- ADL level: Walking/Mobility
-- DME used:
-- IADL level: Heavy chores
-- IADL level: Light housekeeping
-- Notes and summary:
-`;
-const PAGE_TEMPLATE_6 = `IADL Continuation
-- IADL level: Telephone
-- IADL level: Managing money
-- IADL level: Preparing meals
-- IADL level: Shopping
-- IADL level: Managing medication
-- IADL level: Transportation
-- Section notes and summary:
-`;
-const PAGE_TEMPLATE_7 = `Health Conditions and Therapies Checklist
-- Alzheimer/Dementia severity:
-- Memory/judgment impairment:
-- Arthritis/pain:
-- Asthma:
-- Cancer:
-- CHF/swelling:
-- Depression:
-- Diabetes:
-- COPD/lung disease:
-- Cardiac history:
-- Blood pressure/cholesterol:
-- HIV/AIDS:
-- Hospice/Palliative:
-- Kidney problems/dialysis:
-- Incontinence:
-- Stroke:
-- Severe mental illness:
-- SUD:
-- TBI:
-- Other diagnosis:
-`;
-const PAGE_TEMPLATE_8 = `Therapies and Specialty Care
-- Catheter type + frequency/day:
-- Dialysis schedule:
-- Insulin assistance frequency:
-- IV fluids/medications:
-- Ostomy care:
-- Oxygen type + liters:
-- PT/OT/ST:
-- Radiation/chemo:
-- Suctioning:
-- Tube feeding:
-- Respiratory therapy:
-- Wound care stage + location:
-- Home health/skilled nursing:
-- Visit frequency and duties:
-- Notes and summary:
-`;
-const PAGE_TEMPLATE_9 = `Mental Health / Behavior (Part 1)
-- Mental condition diagnosis:
-- Suicidal/self-harm thoughts:
-- Behavior frequency: forgetful/confused
-- Behavior frequency: wandering
-- Behavior frequency: agitated/disruptive
-- Behavior frequency: sexually inappropriate
-- Behavior frequency: verbally hostile
-- Behavior frequency: physically aggressive
-- Behavior frequency: self-injury
-- Behavior frequency: suicidal expression
-- Notes:
-`;
-const PAGE_TEMPLATE_10 = `Mental Health (Part 2) + Nutrition
-- Behavior frequency: hallucinations
-- Behavior frequency: other
-- Supervision needed:
-- Weight change in recent months:
-- Amount of weight change:
-- Intentional change?:
-- Special diet(s):
-- Diet type details:
-- Duration on diet:
-- Reason for diet:
-- Notes and summary:
-`;
-const PAGE_TEMPLATE_11 = `Medications, Directives, Environment
-- 3 or more meds/day:
-- Medication reconciliation completed:
-- Physicians list completed:
-- Advance directive present:
-- Directive type(s):
-- Education provided:
-- Proxy/POA/guardianship copy obtained:
-- Environmental safety (clutter/comfort/safe):
-- Notes:
-`;
-const PAGE_TEMPLATE_12 = `Self-Reported Health, Vision, Hearing, Living Arrangement
-- Overall self-rated health:
-- Religious/spiritual treatment restrictions:
-- Desired activities/events:
-- Family support:
-- Vision problems/eye exam/object bumping/change:
-- Hearing problems/phone clarity/change:
-- Additional notes:
-`;
-const PAGE_TEMPLATE_13 = `Medication Grid
-Use one line per medication:
-Medication | Dose | Frequency | Taken as Prescribed (Y/N) | Administration Method | Prescriber
-`;
-const PAGE_TEMPLATE_14 = `RN/MSW Commentary and Signature
-- Additional RN commentary:
-- RN print name:
-- RN date:
-- RN license number:
-- Role selected (MSW/RN):
-- Signature details:
-- Final notes:
-`;
-
 export default function SwAlftUploadPage() {
   const { toast } = useToast();
   const auth = useAuth();
@@ -323,20 +158,6 @@ export default function SwAlftUploadPage() {
   const [rnReviewerDate, setRnReviewerDate] = useState('');
   const [mswSignatureName, setMswSignatureName] = useState('');
   const [mswSignatureDate, setMswSignatureDate] = useState('');
-  const [page1Notes, setPage1Notes] = useState(PAGE_TEMPLATE_1);
-  const [page2Notes, setPage2Notes] = useState(PAGE_TEMPLATE_2);
-  const [page3Notes, setPage3Notes] = useState(PAGE_TEMPLATE_3);
-  const [page4Notes, setPage4Notes] = useState(PAGE_TEMPLATE_4);
-  const [page5Notes, setPage5Notes] = useState(PAGE_TEMPLATE_5);
-  const [page6Notes, setPage6Notes] = useState(PAGE_TEMPLATE_6);
-  const [page7Notes, setPage7Notes] = useState(PAGE_TEMPLATE_7);
-  const [page8Notes, setPage8Notes] = useState(PAGE_TEMPLATE_8);
-  const [page9Notes, setPage9Notes] = useState(PAGE_TEMPLATE_9);
-  const [page10Notes, setPage10Notes] = useState(PAGE_TEMPLATE_10);
-  const [page11Notes, setPage11Notes] = useState(PAGE_TEMPLATE_11);
-  const [page12Notes, setPage12Notes] = useState(PAGE_TEMPLATE_12);
-  const [page13Notes, setPage13Notes] = useState(PAGE_TEMPLATE_13);
-  const [page14Notes, setPage14Notes] = useState(PAGE_TEMPLATE_14);
   const [exactPacketAnswers, setExactPacketAnswers] = useState<Record<string, string | string[]>>(() =>
     createInitialExactAlftAnswers()
   );
@@ -432,7 +253,7 @@ export default function SwAlftUploadPage() {
           member: { firstName: first, lastName: last, name: memberName, healthPlan: 'Kaiser', kaiserMrn: mrn, medicalRecordNumber: mrn },
           alftForm: {
             formVersion: 'placeholder-v1',
-            stage: 'stage1-stage2-stage3-full14',
+            stage: 'exact-1to1',
             headerInformation: {
               agencyName: agencyName.trim() || null,
               assessmentDate: upDate,
@@ -565,22 +386,6 @@ export default function SwAlftUploadPage() {
                 mswSignatureDate: mswSignatureDate.trim() || null,
               },
             },
-            fullPacketPages: {
-              page1HeaderAndDemographic: page1Notes.trim() || null,
-              page2LocationAndIncome: page2Notes.trim() || null,
-              page3MemoryScreen: page3Notes.trim() || null,
-              page4GeneralHealthAndAdlPart1: page4Notes.trim() || null,
-              page5AdlPart2AndIadlStart: page5Notes.trim() || null,
-              page6IadlContinuation: page6Notes.trim() || null,
-              page7HealthConditionsChecklist: page7Notes.trim() || null,
-              page8TherapiesAndSpecialtyCare: page8Notes.trim() || null,
-              page9MentalHealthBehaviorPart1: page9Notes.trim() || null,
-              page10MentalHealthNutrition: page10Notes.trim() || null,
-              page11MedicationsDirectivesEnvironment: page11Notes.trim() || null,
-              page12SelfReportVisionHearingLiving: page12Notes.trim() || null,
-              page13MedicationGrid: page13Notes.trim() || null,
-              page14RnMswCommentaryAndSignature: page14Notes.trim() || null,
-            },
             exactPacketAnswers,
             facilityName: facilityName.trim(),
             priorityLevel: priorityLevel.trim() || 'Routine',
@@ -709,20 +514,6 @@ export default function SwAlftUploadPage() {
       setRnReviewerDate('');
       setMswSignatureName('');
       setMswSignatureDate('');
-      setPage1Notes(PAGE_TEMPLATE_1);
-      setPage2Notes(PAGE_TEMPLATE_2);
-      setPage3Notes(PAGE_TEMPLATE_3);
-      setPage4Notes(PAGE_TEMPLATE_4);
-      setPage5Notes(PAGE_TEMPLATE_5);
-      setPage6Notes(PAGE_TEMPLATE_6);
-      setPage7Notes(PAGE_TEMPLATE_7);
-      setPage8Notes(PAGE_TEMPLATE_8);
-      setPage9Notes(PAGE_TEMPLATE_9);
-      setPage10Notes(PAGE_TEMPLATE_10);
-      setPage11Notes(PAGE_TEMPLATE_11);
-      setPage12Notes(PAGE_TEMPLATE_12);
-      setPage13Notes(PAGE_TEMPLATE_13);
-      setPage14Notes(PAGE_TEMPLATE_14);
       setExactPacketAnswers(createInitialExactAlftAnswers());
       setUploadProgress(0);
     } catch (err: any) {
@@ -1442,70 +1233,6 @@ export default function SwAlftUploadPage() {
                 <Input placeholder="MSW signature name" value={mswSignatureName} onChange={(e) => setMswSignatureName(e.target.value)} />
                 <Input type="date" value={mswSignatureDate} onChange={(e) => setMswSignatureDate(e.target.value)} />
               </div>
-            </div>
-
-            <div className="rounded-md border p-3 space-y-3">
-              <div className="text-sm font-semibold">Full 14-page ALFT packet capture</div>
-              <div className="text-xs text-muted-foreground">
-                Use these page sections to capture any details from each original PDF page that are not already represented above.
-              </div>
-
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 1: Header + demographic</summary>
-                <textarea value={page1Notes} onChange={(e) => setPage1Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 2: Location + living + income</summary>
-                <textarea value={page2Notes} onChange={(e) => setPage2Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 3: Memory screening</summary>
-                <textarea value={page3Notes} onChange={(e) => setPage3Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 4: General health + ADL part 1</summary>
-                <textarea value={page4Notes} onChange={(e) => setPage4Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 5: ADL part 2 + IADL start</summary>
-                <textarea value={page5Notes} onChange={(e) => setPage5Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 6: IADL continuation</summary>
-                <textarea value={page6Notes} onChange={(e) => setPage6Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 7: Health conditions checklist</summary>
-                <textarea value={page7Notes} onChange={(e) => setPage7Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 8: Therapies + specialty care</summary>
-                <textarea value={page8Notes} onChange={(e) => setPage8Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 9: Mental health/behavior part 1</summary>
-                <textarea value={page9Notes} onChange={(e) => setPage9Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 10: Mental health + nutrition</summary>
-                <textarea value={page10Notes} onChange={(e) => setPage10Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 11: Medications + directives + environment</summary>
-                <textarea value={page11Notes} onChange={(e) => setPage11Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 12: Vision/hearing/living arrangement</summary>
-                <textarea value={page12Notes} onChange={(e) => setPage12Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 13: Medication grid continuation</summary>
-                <textarea value={page13Notes} onChange={(e) => setPage13Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
-              <details className="rounded border p-2">
-                <summary className="cursor-pointer text-sm font-medium">Page 14: RN/MSW commentary + signature</summary>
-                <textarea value={page14Notes} onChange={(e) => setPage14Notes(e.target.value)} className="mt-2 min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              </details>
             </div>
 
             <ExactAlftQuestionnaire
