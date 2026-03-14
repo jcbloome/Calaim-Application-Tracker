@@ -49,6 +49,14 @@ const frequencyOptions: QuestionOption[] = [
   { value: 'nearly_every_day', label: 'Nearly every day' },
 ];
 
+const formatPromptLabel = (label: string) => {
+  const qMatch = label.match(/^Q(\d+)\s*:\s*(.+)$/i);
+  if (qMatch) return `${qMatch[1]}. ${qMatch[2]}`;
+  const nMatch = label.match(/^(\d+)\.\s*(.+)$/);
+  if (nMatch) return `${nMatch[1]}. ${nMatch[2]}`;
+  return label;
+};
+
 export const EXACT_ALFT_PAGES: ExactPage[] = [
   {
     id: 'page1',
@@ -307,8 +315,8 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       { id: 'p4_adl_dressing', label: 'Q26 ADL Dressing', type: 'select', options: adlScale },
       { id: 'p4_adl_eating', label: 'Q26 ADL Eating', type: 'select', options: adlScale },
       { id: 'p4_adl_bathroom', label: 'Q26 ADL Using bathroom', type: 'select', options: adlScale },
-      { id: 'p5_adl_transferring', label: 'ADL Transferring', type: 'select', options: adlScale },
-      { id: 'p5_adl_walking_mobility', label: 'ADL Walking/Mobility', type: 'select', options: adlScale },
+      { id: 'p5_adl_transferring', label: 'Q26 ADL Transferring', type: 'select', options: adlScale },
+      { id: 'p5_adl_walking_mobility', label: 'Q26 ADL Walking/Mobility', type: 'select', options: adlScale },
       {
         id: 'p5_dme',
         label: 'DME used (check all)',
@@ -589,6 +597,12 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
         type: 'textarea',
         rows: 8,
       },
+      {
+        id: 'p14_post_med_table_commentary',
+        label: 'Post-medication table commentary (large section)',
+        type: 'textarea',
+        rows: 12,
+      },
       { id: 'p14_additional_details', label: 'Additional details / RN commentary', type: 'textarea', rows: 4 },
       { id: 'p14_print_name', label: 'Print name', type: 'text' },
       { id: 'p14_date', label: 'Date', type: 'text' },
@@ -645,7 +659,7 @@ export function ExactAlftQuestionnaire({
               const value = answers[q.id] ?? (q.type === 'checkboxGroup' ? [] : '');
               return (
                 <div key={q.id} className="space-y-1">
-                  <Label className="text-xs">{q.label}</Label>
+                  <Label className="text-xs">{formatPromptLabel(q.label)}</Label>
 
                   {q.type === 'text' ? (
                     <Input

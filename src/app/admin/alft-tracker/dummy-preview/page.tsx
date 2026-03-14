@@ -57,6 +57,8 @@ const DUMMY_OVERRIDES: Record<string, AnswerValue> = {
   p2_facility_name: 'Example RCFE',
   p13_medication_table:
     'Amlodipine | 5mg | Daily | Y | Oral | Dr. Nguyen\nMetformin | 500mg | BID | Y | Oral | Dr. Nguyen\nVitamin D | 1000 IU | Daily | Y | Oral | Dr. Patel',
+  p14_post_med_table_commentary:
+    'Large commentary section: Member medication response, adherence notes, side effects observed, transition risks, family concerns, and follow-up plan details are documented here for clinical handoff.',
   p14_additional_details: 'Member appropriate for transition support plan. Family support available. Safety plan reviewed.',
   p14_print_name: 'RN Example',
   p14_date: '2026-03-04',
@@ -65,6 +67,14 @@ const DUMMY_OVERRIDES: Record<string, AnswerValue> = {
 };
 
 const optionLabel = (q: Question, value: string) => q.options?.find((opt) => opt.value === value)?.label || value;
+
+const formatPromptLabel = (label: string) => {
+  const qMatch = label.match(/^Q(\d+)\s*:\s*(.+)$/i);
+  if (qMatch) return `${qMatch[1]}. ${qMatch[2]}`;
+  const nMatch = label.match(/^(\d+)\.\s*(.+)$/);
+  if (nMatch) return `${nMatch[1]}. ${nMatch[2]}`;
+  return label;
+};
 
 function toDefaultValue(q: Question): AnswerValue {
   if (q.type === 'checkboxGroup') return q.options?.slice(0, 1).map((opt) => opt.value) || [];
@@ -86,6 +96,10 @@ function isOptionQuestion(q: Question) {
 
 function isLongTextQuestion(q: Question) {
   return q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary');
+}
+
+function isLargeCommentaryQuestion(q: Question) {
+  return q.id === 'p14_post_med_table_commentary';
 }
 
 function Dot({ selected }: { selected: boolean }) {
@@ -175,7 +189,7 @@ export default function AdminAlftDummyPreviewPage() {
                       key={`editor-field-${q.id}`}
                       className={`rounded border border-zinc-100 bg-zinc-50 p-2 ${isLongTextQuestion(q) ? 'xl:col-span-2' : ''}`}
                     >
-                      <div className="mb-1 text-[11px] font-medium leading-tight text-zinc-800">{q.label}</div>
+                      <div className="mb-1 text-[11px] font-medium leading-tight text-zinc-800">{formatPromptLabel(q.label)}</div>
 
                       {q.type === 'text' ? (
                         <input
@@ -255,10 +269,10 @@ export default function AdminAlftDummyPreviewPage() {
               </header>
 
               <div className="grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
-                {questions.map((q, idx) => (
+                {questions.map((q) => (
                   <div key={q.id} className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongTextQuestion(q) ? 'md:col-span-2' : ''}`}>
                     <div className="font-semibold leading-tight">
-                      {idx + 1}. {q.label}
+                      {formatPromptLabel(q.label)}
                     </div>
                     {isOptionQuestion(q) && q.options?.length ? (
                       <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
@@ -276,7 +290,11 @@ export default function AdminAlftDummyPreviewPage() {
                         })}
                       </div>
                     ) : (
-                      <div className="answer-line mt-1 border-b border-zinc-500 pb-0.5 text-zinc-900 whitespace-pre-wrap">
+                      <div
+                        className={`answer-line mt-1 border-b border-zinc-500 pb-0.5 text-zinc-900 whitespace-pre-wrap ${
+                          isLargeCommentaryQuestion(q) ? 'large-commentary-box' : ''
+                        }`}
+                      >
                         {String(answers[q.id] || '').trim() || ' '}
                       </div>
                     )}
@@ -318,6 +336,12 @@ export default function AdminAlftDummyPreviewPage() {
         }
         .answer-line {
           min-height: 0.7rem;
+        }
+        .large-commentary-box {
+          min-height: 120px;
+          border: 1px solid #71717a;
+          padding: 6px;
+          background: #fafafa;
         }
         .logo-slot {
           min-width: 68px;
