@@ -57,8 +57,8 @@ const DUMMY_OVERRIDES: Record<string, AnswerValue> = {
   p2_facility_name: 'Example RCFE',
   p13_medication_table:
     'Amlodipine | 5mg | Daily | Y | Oral | Dr. Nguyen\nMetformin | 500mg | BID | Y | Oral | Dr. Nguyen\nVitamin D | 1000 IU | Daily | Y | Oral | Dr. Patel',
-  p14_post_med_table_commentary:
-    'Large commentary section: Member medication response, adherence notes, side effects observed, transition risks, family concerns, and follow-up plan details are documented here for clinical handoff.',
+  p13_commentary_section:
+    'Member medication response, adherence notes, side effects observed, transition risks, family concerns, and follow-up plan details are documented here for clinical handoff.',
   p14_additional_details: 'Member appropriate for transition support plan. Family support available. Safety plan reviewed.',
   p14_print_name: 'RN Example',
   p14_date: '2026-03-04',
@@ -99,7 +99,7 @@ function isLongTextQuestion(q: Question) {
 }
 
 function isLargeCommentaryQuestion(q: Question) {
-  return q.id === 'p14_post_med_table_commentary';
+  return q.id === 'p13_commentary_section';
 }
 
 function Dot({ selected }: { selected: boolean }) {

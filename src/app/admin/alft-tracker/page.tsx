@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Loader2, UploadCloud, ExternalLink, RefreshCw, UserCheck, CheckCircle2, Send, Download } from 'lucide-react';
+import { ExactAlftQuestionnaire, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import {
   addDoc,
   collection,
@@ -45,6 +46,7 @@ type StandaloneUpload = {
   alftUploadDate?: string | null;
   alftForm?: {
     formVersion?: string;
+    exactPacketAnswers?: Record<string, unknown> | null;
     facilityName?: string | null;
     priorityLevel?: string | null;
     transitionSummary?: string | null;
@@ -88,6 +90,26 @@ type StandaloneUpload = {
     uploadedAt?: any;
     note?: string | null;
   }>;
+  uploaderUid?: string | null;
+  alftCollaboration?: {
+    allowAllPartiesEdit?: boolean;
+    editableRoleKeys?: string[];
+    editableUids?: string[];
+    createdByUid?: string | null;
+    lastEditedByUid?: string | null;
+    lastEditedAt?: any;
+  } | null;
+  alftEditHistory?: Array<{
+    editedAt?: any;
+    editedAtIso?: string | null;
+    editedByUid?: string | null;
+    editedByName?: string | null;
+    editedByEmail?: string | null;
+    changedFields?: string[];
+    changedExactQuestionIds?: string[];
+    changedExactQuestionCount?: number;
+    note?: string | null;
+  }>;
 };
 
 type StaffOption = { uid: string; label: string; email: string; role: 'Admin' | 'Super Admin' | 'Staff' };
@@ -120,6 +142,15 @@ const fmtTimeline = (ms: number) => {
   } catch {
     return '';
   }
+};
+
+const valueChanged = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
+
+const toEditHistoryMs = (entry: any): number => {
+  const viaTs = toMs(entry?.editedAt);
+  if (viaTs > 0) return viaTs;
+  const viaIso = toMs(entry?.editedAtIso);
+  return viaIso > 0 ? viaIso : 0;
 };
 
 type TimelineItem = { key: string; label: string; ms: number; by?: string };
@@ -233,6 +264,17 @@ export default function AdminAlftTrackerPage() {
     mswEmailSent: boolean;
   } | null>(null);
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [editRow, setEditRow] = useState<StandaloneUpload | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editExactAnswers, setEditExactAnswers] = useState<Record<string, string | string[]>>(() =>
+    createInitialExactAlftAnswers()
+  );
+  const [editTransitionSummary, setEditTransitionSummary] = useState('');
+  const [editRequestedActions, setEditRequestedActions] = useState('');
+  const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
+  const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
+
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
     if (focus) setFocusId(focus);
@@ -256,11 +298,13 @@ export default function AdminAlftTrackerPage() {
             files: Array.isArray(r.files) ? r.files : [],
             uploaderName: toLabel(r.uploaderName) || undefined,
             uploaderEmail: toLabel(r.uploaderEmail) || undefined,
+            uploaderUid: toLabel(r.uploaderUid) || null,
             memberName: toLabel(r.memberName),
             healthPlan: toLabel(r.healthPlan) || undefined,
             medicalRecordNumber: r.medicalRecordNumber ?? r.kaiserMrn ?? r.mediCalNumber ?? null,
             alftUploadDate: toLabel(r.alftUploadDate) || null,
             alftForm: (r as any)?.alftForm || null,
+            alftCollaboration: (r as any)?.alftCollaboration || null,
 
             alftRnUid: toLabel(r.alftRnUid) || null,
             alftRnName: toLabel(r.alftRnName) || null,
@@ -278,6 +322,7 @@ export default function AdminAlftTrackerPage() {
             alftSignature: (r as any)?.alftSignature || null,
 
             alftRevisions: Array.isArray(r.alftRevisions) ? r.alftRevisions : [],
+            alftEditHistory: Array.isArray((r as any)?.alftEditHistory) ? (r as any).alftEditHistory : [],
           }))
           .filter((r) => isAlft(r)) as StandaloneUpload[];
         setRows(mapped);
@@ -353,6 +398,44 @@ export default function AdminAlftTrackerPage() {
     setAssignOpen(true);
   }, []);
 
+  const canEditAlftRow = useCallback(
+    (row: StandaloneUpload) => {
+      const uid = String(user?.uid || '').trim();
+      if (!uid) return false;
+      if (isAdmin) return true;
+      const collab = (row as any)?.alftCollaboration || {};
+      if (Boolean(collab?.allowAllPartiesEdit)) {
+        const editableUids = Array.isArray(collab?.editableUids) ? collab.editableUids.map((x: any) => String(x || '').trim()) : [];
+        if (editableUids.includes(uid)) return true;
+      }
+      return [row.uploaderUid, row.alftRnUid, row.alftStaffUid].map((v) => String(v || '').trim()).includes(uid);
+    },
+    [isAdmin, user?.uid]
+  );
+
+  const openEdit = useCallback((row: StandaloneUpload) => {
+    const seed = createInitialExactAlftAnswers();
+    const raw = row?.alftForm?.exactPacketAnswers;
+    const merged: Record<string, string | string[]> = { ...seed };
+    if (raw && typeof raw === 'object') {
+      Object.entries(raw as Record<string, unknown>).forEach(([k, v]) => {
+        if (Array.isArray(v)) merged[k] = v.map((x) => String(x || ''));
+        else merged[k] = String(v ?? '');
+      });
+    }
+    // Backward compatibility after renaming the post-med list commentary field.
+    if (!String(merged.p13_commentary_section || '').trim() && String((merged as any).p14_post_med_table_commentary || '').trim()) {
+      merged.p13_commentary_section = String((merged as any).p14_post_med_table_commentary || '');
+    }
+    setEditExactAnswers(merged);
+    setEditTransitionSummary(String(row?.alftForm?.transitionSummary || ''));
+    setEditRequestedActions(String(row?.alftForm?.requestedActions || ''));
+    setEditBarriersAndRisks(String(row?.alftForm?.barriersAndRisks || ''));
+    setEditAdditionalNotes(String(row?.alftForm?.additionalNotes || ''));
+    setEditRow(row);
+    setEditOpen(true);
+  }, []);
+
   const sendAssignmentNotification = async (targetUid: string, payload: Record<string, any>) => {
     if (!firestore) return;
     const uid = String(targetUid || '').trim();
@@ -401,6 +484,10 @@ export default function AdminAlftTrackerPage() {
               alftRnName: selected.label,
               alftRnEmail: selected.email,
               alftRnAssignedAt: serverTimestamp(),
+              'alftCollaboration.allowAllPartiesEdit': true,
+              'alftCollaboration.editableRoleKeys': ['social_worker', 'staff', 'rn', 'admin', 'super_admin'],
+              'alftCollaboration.editableUids': arrayUnion(selected.uid),
+              'alftCollaboration.updatedAt': serverTimestamp(),
             }
           : {
               ...base,
@@ -408,6 +495,10 @@ export default function AdminAlftTrackerPage() {
               alftStaffName: selected.label,
               alftStaffEmail: selected.email,
               alftStaffAssignedAt: serverTimestamp(),
+              'alftCollaboration.allowAllPartiesEdit': true,
+              'alftCollaboration.editableRoleKeys': ['social_worker', 'staff', 'rn', 'admin', 'super_admin'],
+              'alftCollaboration.editableUids': arrayUnion(selected.uid),
+              'alftCollaboration.updatedAt': serverTimestamp(),
             };
       await updateDoc(doc(firestore, 'standalone_upload_submissions', assignRow.id), patch);
 
@@ -517,6 +608,75 @@ export default function AdminAlftTrackerPage() {
 
   const markSentForSignature = (row: StandaloneUpload) => {
     void requestSignatures(row);
+  };
+
+  const saveEdit = async () => {
+    if (!firestore || !editRow || editSaving) return;
+    const summary = String(editTransitionSummary || '').trim();
+    const actions = String(editRequestedActions || '').trim();
+    if (!summary || !actions) {
+      toast({
+        title: 'Missing required fields',
+        description: 'Transition summary and requested actions are required.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    try {
+      setEditSaving(true);
+      const uid = String(user?.uid || '').trim();
+      const actorName = String((user as any)?.displayName || (user as any)?.email || 'Staff').trim();
+      const actorEmail = String((user as any)?.email || '').trim();
+      const previousForm = editRow.alftForm || {};
+      const previousExact = ((previousForm as any)?.exactPacketAnswers || {}) as Record<string, unknown>;
+      const changedFields: string[] = [];
+      if (valueChanged(previousForm?.transitionSummary, summary)) changedFields.push('transitionSummary');
+      if (valueChanged(previousForm?.requestedActions, actions)) changedFields.push('requestedActions');
+      if (valueChanged(previousForm?.barriersAndRisks || null, String(editBarriersAndRisks || '').trim() || null)) changedFields.push('barriersAndRisks');
+      if (valueChanged(previousForm?.additionalNotes || null, String(editAdditionalNotes || '').trim() || null)) changedFields.push('additionalNotes');
+
+      const exactKeys = Array.from(new Set([...Object.keys(previousExact || {}), ...Object.keys(editExactAnswers || {})]));
+      const changedExactQuestionIds = exactKeys
+        .filter((k) => valueChanged((previousExact as any)?.[k], (editExactAnswers as any)?.[k]))
+        .slice(0, 40);
+      if (changedExactQuestionIds.length > 0) changedFields.push('exactPacketAnswers');
+
+      const historyEntry = {
+        editedAt: serverTimestamp(),
+        editedAtIso: new Date().toISOString(),
+        editedByUid: uid || null,
+        editedByName: actorName || null,
+        editedByEmail: actorEmail || null,
+        changedFields,
+        changedExactQuestionIds,
+        changedExactQuestionCount: changedExactQuestionIds.length,
+        note: changedFields.length ? null : 'No value changes detected',
+      };
+
+      await updateDoc(doc(firestore, 'standalone_upload_submissions', editRow.id), {
+        'alftForm.exactPacketAnswers': editExactAnswers,
+        'alftForm.transitionSummary': summary,
+        'alftForm.requestedActions': actions,
+        'alftForm.barriersAndRisks': String(editBarriersAndRisks || '').trim() || null,
+        'alftForm.additionalNotes': String(editAdditionalNotes || '').trim() || null,
+        alftEditHistory: arrayUnion(historyEntry),
+        'alftCollaboration.allowAllPartiesEdit': true,
+        'alftCollaboration.editableRoleKeys': ['social_worker', 'staff', 'rn', 'admin', 'super_admin'],
+        ...(uid ? { 'alftCollaboration.editableUids': arrayUnion(uid), 'alftCollaboration.lastEditedByUid': uid } : {}),
+        'alftCollaboration.lastEditedAt': serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      } as any);
+      toast({
+        title: 'ALFT form updated',
+        description: 'Changes saved. This intake stays editable for SW, staff, RN, and admin users.',
+      });
+      setEditOpen(false);
+      setEditRow(null);
+    } catch (e: any) {
+      toast({ title: 'Could not save ALFT form', description: e?.message || 'Save failed.', variant: 'destructive' });
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const sendCompletedToJh = async (row: StandaloneUpload) => {
@@ -715,6 +875,10 @@ export default function AdminAlftTrackerPage() {
                   const focused = focusId && r.id === focusId;
                   const stage = computeStage(r);
                   const latestRevision = (r.alftRevisions || []).slice(-1)[0];
+                  const recentEdits = (r.alftEditHistory || [])
+                    .slice()
+                    .sort((a: any, b: any) => toEditHistoryMs(b) - toEditHistoryMs(a))
+                    .slice(0, 3);
                   const sw = r.uploaderName || r.uploaderEmail || 'Social Worker';
                   return (
                     <TableRow key={r.id} className={focused ? 'bg-amber-50' : ''}>
@@ -800,11 +964,45 @@ export default function AdminAlftTrackerPage() {
                               </div>
                             </div>
                           ) : null}
+                          {recentEdits.length > 0 ? (
+                            <div className="pt-1">
+                              <div className="text-xs font-semibold">Edit history</div>
+                              <div className="space-y-1">
+                                {recentEdits.map((h: any, idx: number) => {
+                                  const who = toLabel(h?.editedByName || h?.editedByEmail) || 'User';
+                                  const when = fmtTimeline(toEditHistoryMs(h)) || toLabel(h?.editedAtIso) || '—';
+                                  const fieldList = Array.isArray(h?.changedFields) ? h.changedFields : [];
+                                  const exactCount = Number(h?.changedExactQuestionCount || 0);
+                                  return (
+                                    <div key={`${who}-${when}-${idx}`} className="rounded border bg-muted/20 px-2 py-1 text-[11px]">
+                                      <div className="truncate">
+                                        <span className="font-medium">{who}</span>
+                                        <span className="text-muted-foreground"> • {when}</span>
+                                      </div>
+                                      <div className="text-muted-foreground truncate">
+                                        {fieldList.length > 0 ? fieldList.join(', ') : 'no field changes'}
+                                        {exactCount > 0 ? ` • exact questions: ${exactCount}` : ''}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell className="text-right whitespace-nowrap">
                         <div className="flex flex-col gap-2 items-end">
                           <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEdit(r)}
+                              disabled={!canEditAlftRow(r)}
+                              title={!canEditAlftRow(r) ? 'No edit permission for this intake' : 'Edit ALFT form'}
+                            >
+                              Edit ALFT form
+                            </Button>
                             <Button size="sm" variant="outline" onClick={() => openAssign(r, 'rn')} disabled={staffLoading}>
                               <UserCheck className="h-4 w-4 mr-2" />
                               Assign RN
@@ -902,6 +1100,79 @@ export default function AdminAlftTrackerPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit ALFT form</DialogTitle>
+            <DialogDescription>
+              Collaborative edit mode. This form remains editable by social worker, staff, RN, and admin users.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md border p-3">
+              <div className="text-sm font-medium">{editRow?.memberName || '—'}</div>
+              <div className="text-xs text-muted-foreground font-mono">{editRow?.medicalRecordNumber || '—'}</div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-transition-summary">Transition summary</Label>
+              <textarea
+                id="edit-transition-summary"
+                value={editTransitionSummary}
+                onChange={(e) => setEditTransitionSummary(e.target.value)}
+                className="min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-requested-actions">Requested actions</Label>
+              <textarea
+                id="edit-requested-actions"
+                value={editRequestedActions}
+                onChange={(e) => setEditRequestedActions(e.target.value)}
+                className="min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-barriers">Barriers / risks</Label>
+              <textarea
+                id="edit-barriers"
+                value={editBarriersAndRisks}
+                onChange={(e) => setEditBarriersAndRisks(e.target.value)}
+                className="min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-notes">Additional notes</Label>
+              <textarea
+                id="edit-notes"
+                value={editAdditionalNotes}
+                onChange={(e) => setEditAdditionalNotes(e.target.value)}
+                className="min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+
+            <ExactAlftQuestionnaire
+              answers={editExactAnswers}
+              onChange={(id, value) =>
+                setEditExactAnswers((prev) => ({
+                  ...prev,
+                  [id]: value,
+                }))
+              }
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSaving}>
+              Cancel
+            </Button>
+            <Button onClick={() => void saveEdit()} disabled={editSaving}>
+              {editSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Save ALFT form
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
         <DialogContent className="max-w-lg">

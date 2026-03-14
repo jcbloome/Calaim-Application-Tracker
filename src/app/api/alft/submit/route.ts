@@ -185,6 +185,13 @@ export async function POST(request: NextRequest) {
       mediCalNumber: mediCalNumber || null,
       kaiserMrn: kaiserMrn || null,
       alftUploadDate: uploadDate || null,
+      // Foundation for collaborative ALFT editing by SW, staff, RN, and admins.
+      alftCollaboration: {
+        allowAllPartiesEdit: true,
+        editableRoleKeys: ['social_worker', 'staff', 'rn', 'admin', 'super_admin'],
+        editableUids: uploaderUid ? [uploaderUid] : [],
+        createdByUid: uploaderUid || null,
+      },
       workflowStatus: 'staff_review',
       workflowStage: 'submitted_by_sw',
       workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),

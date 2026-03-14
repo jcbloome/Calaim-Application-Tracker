@@ -598,8 +598,8 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
         rows: 8,
       },
       {
-        id: 'p14_post_med_table_commentary',
-        label: 'Post-medication table commentary (large section)',
+        id: 'p13_commentary_section',
+        label: 'Commentary section',
         type: 'textarea',
         rows: 12,
       },
