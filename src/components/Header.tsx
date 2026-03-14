@@ -14,8 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useRouter } from 'next/navigation';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
@@ -34,7 +33,16 @@ export function Header() {
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
-  const [isSheetOpen, setSheetOpen] = useState(false);
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [isMobileMenuOpen]);
 
   const handleSignOut = async () => {
     try {
@@ -161,57 +169,91 @@ export function Header() {
           )}
         </nav>
         <div className="lg:hidden">
-            <Sheet open={isSheetOpen} onOpenChange={setSheetOpen}>
-                <SheetTrigger asChild>
-                    <Button variant="outline" size="icon">
-                        <Menu className="h-5 w-5" />
-                        <span className="sr-only">Open menu</span>
-                    </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-full max-w-xs">
-                    <SheetHeader className="sr-only">
-                        <SheetTitle>Mobile Menu</SheetTitle>
-                        <SheetDescription>Navigation links for mobile view.</SheetDescription>
-                    </SheetHeader>
-                    <div className="flex flex-col h-full">
-                        <nav className="flex flex-col gap-4 py-8">
-                             {navLinks.map(link => (
-                                <Link key={link.href} href={link.href} className="text-lg font-medium text-foreground hover:text-primary" onClick={() => setSheetOpen(false)}>
-                                    {link.label}
-                                </Link>
-                            ))}
-                            <Link href="/contact" className="text-lg font-medium text-primary border-t pt-4 mt-2" onClick={() => setSheetOpen(false)}>
-                                Contact Us
-                            </Link>
-                        </nav>
-                        <div className="mt-auto border-t pt-6">
-                             {(isUserLoading || isAdminLoading) ? (
-                                <div className="h-10 w-full rounded-md bg-muted animate-pulse" />
-                            ) : showUserSession ? (
-                                <div className="flex flex-col gap-4">
-                                     <p className="text-sm text-muted-foreground text-center truncate">{user.displayName || user.email}</p>
-                                      <Button onClick={() => { router.push('/profile'); setSheetOpen(false); }} variant="outline" className="w-full">
-                                        <UserCog className="mr-2 h-4 w-4" />
-                                        My Profile
-                                     </Button>
-                                     <Button onClick={() => { handleSignOut(); setSheetOpen(false); }} className="w-full">
-                                        <LogOut className="mr-2 h-4 w-4" />
-                                        Log out
-                                     </Button>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col gap-4">
-                                    <Button asChild className="w-full">
-                                        <Link href="/login" onClick={() => setSheetOpen(false)}><LogIn className="mr-2 h-4 w-4" />Login</Link>
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </SheetContent>
-            </Sheet>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-main-nav"
+          >
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">Open menu</span>
+          </Button>
         </div>
       </div>
+      {isMobileMenuOpen ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close menu overlay"
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div
+            id="mobile-main-nav"
+            className="absolute left-0 right-0 top-full z-50 border-t bg-card px-4 pb-5 pt-4 shadow-lg lg:hidden"
+          >
+            <div className="flex flex-col gap-3">
+              <nav className="flex flex-col gap-3">
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="text-base font-medium text-foreground hover:text-primary"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+                <Link
+                  href="/contact"
+                  className="mt-1 border-t pt-3 text-base font-medium text-primary"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Contact Us
+                </Link>
+              </nav>
+              <div className="mt-2 border-t pt-3">
+                {(isUserLoading || isAdminLoading) ? (
+                  <div className="h-10 w-full rounded-md bg-muted animate-pulse" />
+                ) : showUserSession ? (
+                  <div className="flex flex-col gap-3">
+                    <p className="truncate text-sm text-muted-foreground">{user.displayName || user.email}</p>
+                    <Button
+                      onClick={() => {
+                        router.push('/profile');
+                        setMobileMenuOpen(false);
+                      }}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      <UserCog className="mr-2 h-4 w-4" />
+                      My Profile
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleSignOut();
+                        setMobileMenuOpen(false);
+                      }}
+                      className="w-full"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Log out
+                    </Button>
+                  </div>
+                ) : (
+                  <Button asChild className="w-full">
+                    <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+                      <LogIn className="mr-2 h-4 w-4" />
+                      Login
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
     </header>
   );
 }

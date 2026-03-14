@@ -84,7 +84,6 @@ import {
   NavigationMenuList,
   navigationMenuTriggerStyle,
 } from '@/components/ui/navigation-menu';
-import { Sheet, SheetContent, SheetTrigger, SheetClose, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { collection, collectionGroup, doc, documentId, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
@@ -187,6 +186,7 @@ function AdminHeader() {
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(new Set());
   const [hoveredSubmenu, setHoveredSubmenu] = useState<string | null>(null);
   const [headerSearch, setHeaderSearch] = useState('');
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
   const [headerSearchLoading, setHeaderSearchLoading] = useState(false);
   const headerSearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -506,6 +506,15 @@ function AdminHeader() {
   const handleMouseLeave = () => {
     setHoveredSubmenu(null);
   };
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [isMobileMenuOpen]);
 
   useEffect(() => {
     if (!firestore || !user?.uid) return;
@@ -1556,95 +1565,101 @@ function AdminHeader() {
           </DropdownMenu>
 
           {/* Mobile Menu */}
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="sm" className="lg:hidden">
-                <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle menu</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-80">
-              <SheetHeader>
-                <SheetTitle>Navigation</SheetTitle>
-                <SheetDescription>
-                  Access all admin features and tools
-                </SheetDescription>
-              </SheetHeader>
-              <div className="mt-6 space-y-4">
-                {combinedNavLinks.map((navItem) => (
-                  <div key={navItem.label}>
-                    {navItem.isSubmenu ? (
-                      <div>
-                        <Button
-                          variant="ghost"
-                          onClick={() => toggleSubmenu(navItem.label)}
-                          onMouseEnter={() => handleMouseEnter(navItem.label)}
-                          onMouseLeave={handleMouseLeave}
-                          className="w-full justify-between text-left font-medium"
-                        >
-                          <div className="flex items-center gap-3">
-                            <navItem.icon className="h-4 w-4" />
-                            {navItem.label}
-                          </div>
-                          <ChevronRight 
-                            className={cn(
-                              "h-4 w-4 transition-transform",
-                              openSubmenus.has(navItem.label) && "rotate-90"
-                            )}
-                          />
-                        </Button>
-                        {openSubmenus.has(navItem.label) && (
-                          <div className="ml-6 mt-2 space-y-2">
-                            {navItem.submenuItems?.map((item, index) => (
-                              item.isDivider ? (
-                                <div key={index} className="py-2">
-                                  <div className="border-t border-border" />
-                                  <p className="mt-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    {item.label}
-                                  </p>
-                                </div>
-                              ) : (
-                                <SheetClose asChild key={item.href}>
-                                  <Link
-                                    href={item.href}
-                                    className={cn(
-                                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
-                                      isHrefActive(item.href) && "bg-accent text-accent-foreground font-medium"
-                                    )}
-                                  >
-                                    <item.icon className="h-4 w-4" />
-                                    {item.label}
-                                    {navItem.label === 'Dashboard' && item.href === '/admin' && (
-                                      <span className="ml-auto flex items-center gap-2" />
-                                    )}
-                                  </Link>
-                                </SheetClose>
-                              )
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <SheetClose asChild>
-                        <Link
-                          href={navItem.href || '#'}
-                          className={cn(
-                            "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-                            pathname === navItem.href && "bg-accent text-accent-foreground"
-                          )}
-                        >
-                          <navItem.icon className="h-4 w-4" />
-                          {navItem.label}
-                        </Link>
-                      </SheetClose>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </SheetContent>
-          </Sheet>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="lg:hidden"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="admin-mobile-nav"
+          >
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">Toggle menu</span>
+          </Button>
         </div>
       </div>
+      {isMobileMenuOpen ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close admin menu overlay"
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div
+            id="admin-mobile-nav"
+            className="absolute left-0 right-0 top-full z-50 border-t bg-card px-4 pb-5 pt-4 shadow-lg lg:hidden"
+          >
+            <div className="space-y-4">
+              {combinedNavLinks.map((navItem) => (
+                <div key={navItem.label}>
+                  {navItem.isSubmenu ? (
+                    <div>
+                      <Button
+                        variant="ghost"
+                        onClick={() => toggleSubmenu(navItem.label)}
+                        onMouseEnter={() => handleMouseEnter(navItem.label)}
+                        onMouseLeave={handleMouseLeave}
+                        className="w-full justify-between text-left font-medium"
+                      >
+                        <div className="flex items-center gap-3">
+                          <navItem.icon className="h-4 w-4" />
+                          {navItem.label}
+                        </div>
+                        <ChevronRight
+                          className={cn(
+                            "h-4 w-4 transition-transform",
+                            openSubmenus.has(navItem.label) && "rotate-90"
+                          )}
+                        />
+                      </Button>
+                      {openSubmenus.has(navItem.label) && (
+                        <div className="ml-6 mt-2 space-y-2">
+                          {navItem.submenuItems?.map((item, index) =>
+                            item.isDivider ? (
+                              <div key={index} className="py-2">
+                                <div className="border-t border-border" />
+                                <p className="mt-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                  {item.label}
+                                </p>
+                              </div>
+                            ) : (
+                              <Link
+                                key={item.href}
+                                href={item.href}
+                                onClick={() => setMobileMenuOpen(false)}
+                                className={cn(
+                                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
+                                  isHrefActive(item.href) && "bg-accent text-accent-foreground font-medium"
+                                )}
+                              >
+                                <item.icon className="h-4 w-4" />
+                                {item.label}
+                              </Link>
+                            )
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <Link
+                      href={navItem.href || '#'}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                        pathname === navItem.href && "bg-accent text-accent-foreground"
+                      )}
+                    >
+                      <navItem.icon className="h-4 w-4" />
+                      {navItem.label}
+                    </Link>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : null}
       <div className="border-t border-border bg-muted/30">
         <div className="container mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">

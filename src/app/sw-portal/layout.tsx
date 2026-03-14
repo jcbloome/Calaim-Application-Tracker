@@ -8,7 +8,8 @@ import { useAuth, useFirestore } from '@/firebase';
 import {
   LogOut,
   Loader2,
-  Search
+  Search,
+  Menu
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,20 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const firestore = useFirestore();
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [headerSearch, setHeaderSearch] = useState('');
+  const [isMobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const mobileNavLinks = [
+    { href: '/sw-portal/queue', label: 'Queue' },
+    { href: '/sw-portal/roster', label: 'Roster' },
+    { href: '/sw-visit-verification', label: 'Questionnaire' },
+    { href: '/sw-portal/sign-off', label: 'Sign Off' },
+    { href: '/sw-portal/claims', label: 'Claims' },
+    { href: '/sw-portal/ccl-checks', label: 'CCL Checks' },
+    { href: '/sw-portal/end-of-day', label: 'End of day' },
+    { href: '/sw-portal/status-log', label: 'Status Log' },
+    { href: '/sw-portal/alft-upload', label: 'ALFT Upload' },
+    { href: '/sw-portal/instructions', label: 'Primer' },
+  ];
 
   const swName = String(
     (socialWorkerData as any)?.displayName ||
@@ -93,6 +108,15 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(t);
   }, [handleSignOut, isLoading, isSocialWorker, pathname]);
 
+  useEffect(() => {
+    if (!isMobileNavOpen) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileNavOpen(false);
+    };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [isMobileNavOpen]);
+
   // Show loading while checking social worker status or redirecting
   if (isLoading || isRedirecting) {
     return (
@@ -115,7 +139,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
       {/* Header */}
       <div className="bg-card border-b sticky top-0 z-40">
         <div className="container mx-auto px-4 py-2 sm:px-6">
-          <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
+          <div className="flex items-center gap-3">
             <Link href="/sw-portal/roster" className="shrink-0">
               <Image
                 src="/calaimlogopdf.png"
@@ -127,9 +151,20 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
               />
             </Link>
 
-            <SWTopNav className="shrink-0" />
+            <SWTopNav className="hidden md:flex shrink-0" />
 
             <div className="ml-auto shrink-0 flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="md:hidden"
+                onClick={() => setMobileNavOpen((prev) => !prev)}
+                aria-expanded={isMobileNavOpen}
+                aria-controls="sw-mobile-nav"
+              >
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Toggle menu</span>
+              </Button>
               {/* Global search (SW) */}
               <div className="hidden md:block w-[280px]">
                 <form
@@ -153,15 +188,56 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
                   </div>
                 </form>
               </div>
-              <div className="text-sm font-semibold text-foreground max-w-[160px] sm:max-w-[240px] truncate">
+              <div className="hidden md:block text-sm font-semibold text-foreground max-w-[160px] sm:max-w-[240px] truncate">
                 {swName}
               </div>
-              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="hidden md:inline-flex">
                 <LogOut className="h-4 w-4 mr-2" />
                 Sign Out
               </Button>
             </div>
           </div>
+          {isMobileNavOpen ? (
+            <>
+              <button
+                type="button"
+                aria-label="Close social worker menu overlay"
+                className="fixed inset-0 z-40 bg-black/40 md:hidden"
+                onClick={() => setMobileNavOpen(false)}
+              />
+              <div
+                id="sw-mobile-nav"
+                className="absolute left-0 right-0 top-full z-50 border-t bg-card px-4 pb-5 pt-4 shadow-lg md:hidden"
+              >
+                <div className="space-y-2">
+                  {mobileNavLinks.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMobileNavOpen(false)}
+                      className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+                <div className="mt-3 border-t pt-3">
+                  <div className="mb-2 text-sm font-semibold text-foreground truncate">{swName}</div>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      void handleSignOut();
+                      setMobileNavOpen(false);
+                    }}
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sign Out
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
 
