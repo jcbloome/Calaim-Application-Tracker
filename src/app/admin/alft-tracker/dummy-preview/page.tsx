@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
 
@@ -98,6 +100,9 @@ function Dot({ selected }: { selected: boolean }) {
 }
 
 export default function AdminAlftDummyPreviewPage() {
+  const searchParams = useSearchParams();
+  const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
+
   const initialAnswers = useMemo<Record<string, AnswerValue>>(() => {
     const next: Record<string, AnswerValue> = {};
     SOURCE.forEach((page) => {
@@ -124,7 +129,25 @@ export default function AdminAlftDummyPreviewPage() {
 
   return (
     <div className="alft-dummy-preview mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
-      <div className="mb-4 space-y-3 rounded-md border border-zinc-300 bg-white p-3 print:hidden">
+      <div className="mb-4 flex items-center justify-end gap-2 rounded-md border border-zinc-300 bg-white p-3 print:hidden">
+        {!isPdfView ? (
+          <Button variant="outline" asChild>
+            <Link href="/admin/alft-tracker/dummy-preview?view=pdf">
+              View PDF layout
+            </Link>
+          </Button>
+        ) : (
+          <Button variant="outline" asChild>
+            <Link href="/admin/alft-tracker/dummy-preview">Back to editor</Link>
+          </Button>
+        )}
+        <Button onClick={() => window.print()} variant="outline">
+          Print / Save PDF
+        </Button>
+      </div>
+
+      {!isPdfView ? (
+        <div className="mb-4 space-y-3 rounded-md border border-zinc-300 bg-white p-3 print:hidden">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="text-sm font-semibold">ALFT Dummy Editor (Admin)</div>
@@ -133,9 +156,6 @@ export default function AdminAlftDummyPreviewPage() {
           <div className="flex gap-2">
             <Button onClick={() => setAnswers(initialAnswers)} variant="outline">
               Reset demo values
-            </Button>
-            <Button onClick={() => window.print()} variant="outline">
-              Print / Save PDF
             </Button>
           </div>
         </div>
@@ -210,7 +230,8 @@ export default function AdminAlftDummyPreviewPage() {
             );
           })}
         </div>
-      </div>
+        </div>
+      ) : null}
 
       <div className="space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {

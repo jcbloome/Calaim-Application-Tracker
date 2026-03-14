@@ -1399,7 +1399,7 @@ export default function SwAlftUploadPage() {
 
             <div className="flex flex-col sm:flex-row gap-2 print:hidden">
               <Button type="button" variant="outline" asChild className="sm:flex-1">
-                <a href="/admin/alft-tracker/dummy-preview" target="_blank" rel="noreferrer">
+                <a href="/admin/alft-tracker/dummy-preview">
                   View dummy PDF preview
                 </a>
               </Button>

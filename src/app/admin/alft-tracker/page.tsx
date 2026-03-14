@@ -663,7 +663,7 @@ export default function AdminAlftTrackerPage() {
         <div className="flex items-center gap-2">
           <Badge variant={filtered.length > 0 ? 'secondary' : 'outline'}>{filtered.length} pending</Badge>
           <Button variant="outline" asChild>
-            <Link href="/admin/alft-tracker/dummy-preview" target="_blank" rel="noreferrer">
+            <Link href="/admin/alft-tracker/dummy-preview">
               View dummy ALFT (ILS PDF preview)
             </Link>
           </Button>
