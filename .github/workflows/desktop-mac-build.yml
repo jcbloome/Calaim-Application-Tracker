@@ -41,6 +41,8 @@ jobs:
       - name: Build macOS desktop artifacts
         run: npm run dist:mac
         working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload mac artifacts
         uses: actions/upload-artifact@v4
