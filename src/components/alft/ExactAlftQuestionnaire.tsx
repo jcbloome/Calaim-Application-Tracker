@@ -50,7 +50,7 @@ const frequencyOptions: QuestionOption[] = [
 ];
 
 const formatPromptLabel = (label: string) => {
-  const qMatch = label.match(/^Q(\d+)\s*:\s*(.+)$/i);
+  const qMatch = label.match(/^Q(\d+)\s*:?\s*(.+)$/i);
   if (qMatch) return `${qMatch[1]}. ${qMatch[2]}`;
   const nMatch = label.match(/^(\d+)\.\s*(.+)$/);
   if (nMatch) return `${nMatch[1]}. ${nMatch[2]}`;
@@ -106,10 +106,10 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       { id: 'p1_ethnicity_hispanic', label: 'Hispanic/Latino', type: 'radio', options: yesNoOptions },
       { id: 'p1_ethnicity_other', label: 'Ethnicity other detail', type: 'text' },
       { id: 'p1_primary_language', label: 'Primary Language', type: 'text' },
-      { id: 'p1_limited_english', label: 'Limited ability in English?', type: 'radio', options: yesNoOptions },
+      { id: 'p1_limited_english', label: 'Q1: Does client have limited ability to read, write, speaking, or understanding English?', type: 'radio', options: yesNoOptions },
       {
         id: 'p1_marital_status',
-        label: 'Marital Status',
+        label: 'Q2: Marital Status',
         type: 'select',
         options: [
           { value: 'married', label: 'Married' },
@@ -126,7 +126,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
     id: 'page2',
     title: 'Page 2: Addresses, Site, Risk, Living Situation, Income',
     questions: [
-      { id: 'p2_current_street', label: 'Current Physical Location Street', type: 'text' },
+      { id: 'p2_current_street', label: 'Q3: Assessor/CM current physical location address - Street', type: 'text' },
       { id: 'p2_current_city', label: 'Current Physical Location City', type: 'text' },
       { id: 'p2_current_state', label: 'Current Physical Location State', type: 'text' },
       { id: 'p2_current_zip', label: 'Current Physical Location Zip', type: 'text' },
@@ -145,17 +145,17 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       },
       { id: 'p2_current_type_other', label: 'Current location type other detail', type: 'text' },
       { id: 'p2_facility_name', label: 'Facility name (if type is facility)', type: 'text' },
-      { id: 'p2_home_street', label: 'Home Address Street (if different)', type: 'text' },
+      { id: 'p2_home_street', label: 'Q4: Home address (if different from current physical location) - Street', type: 'text' },
       { id: 'p2_home_city', label: 'Home Address City', type: 'text' },
       { id: 'p2_home_state', label: 'Home Address State', type: 'text' },
       { id: 'p2_home_zip', label: 'Home Address Zip', type: 'text' },
-      { id: 'p2_mail_street', label: 'Mailing Address Street (if different)', type: 'text' },
+      { id: 'p2_mail_street', label: 'Q5: Mailing address (if different from current physical location) - Street', type: 'text' },
       { id: 'p2_mail_city', label: 'Mailing Address City', type: 'text' },
       { id: 'p2_mail_state', label: 'Mailing Address State', type: 'text' },
       { id: 'p2_mail_zip', label: 'Mailing Address Zip', type: 'text' },
       {
         id: 'p2_assessment_site',
-        label: 'Assessment Site',
+        label: 'Q6: Assessor/CM assessment site',
         type: 'select',
         options: [
           { value: 'home', label: 'Home' },
@@ -180,7 +180,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       },
       {
         id: 'p2_imminent_nursing_home_risk',
-        label: 'Imminent risk of nursing home placement?',
+        label: 'Q7: Imminent risk of nursing home placement?',
         type: 'select',
         options: [
           { value: 'yes', label: 'Yes' },
@@ -188,14 +188,14 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
           { value: 'not_applicable', label: 'Not Applicable' },
         ],
       },
-      { id: 'p2_alwp_waitlist', label: 'Member on ALWP waitlist?', type: 'radio', options: yesNoOptions },
+      { id: 'p2_alwp_waitlist', label: 'Q8: Is member on the ALWP waitlist?', type: 'radio', options: yesNoOptions },
       { id: 'p2_alwp_agency', label: 'ALWP agency (if yes)', type: 'text' },
-      { id: 'p2_previous_unsuccessful_placements', label: 'Previous unsuccessful placements?', type: 'radio', options: yesNoOptions },
+      { id: 'p2_previous_unsuccessful_placements', label: 'Q9: Has member had previous unsuccessful placements?', type: 'radio', options: yesNoOptions },
       { id: 'p2_previous_placement_explain', label: 'Explain previous unsuccessful placements', type: 'textarea', rows: 3 },
-      { id: 'p2_primary_caregiver', label: 'Primary caregiver?', type: 'radio', options: yesNoOptions },
+      { id: 'p2_primary_caregiver', label: 'Q10: Is there a primary caregiver?', type: 'radio', options: yesNoOptions },
       {
         id: 'p2_living_situation',
-        label: 'Living Situation',
+        label: 'Q11: Living situation',
         type: 'select',
         options: [
           { value: 'with_primary_caregiver', label: 'With Primary Caregiver' },
@@ -204,7 +204,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
         ],
       },
       { id: 'p2_living_situation_other', label: 'With other (specify)', type: 'text' },
-      { id: 'p2_income_ssi', label: 'Social Security (SSI) $/Mo', type: 'text' },
+      { id: 'p2_income_ssi', label: 'Q12: Social Security (SSI) $/Mo', type: 'text' },
       { id: 'p2_income_retirement', label: 'Retirement $/Mo', type: 'text' },
       { id: 'p2_income_ssdi', label: 'SSDI $/Mo', type: 'text' },
       { id: 'p2_income_other', label: 'Other income $/Mo', type: 'text' },

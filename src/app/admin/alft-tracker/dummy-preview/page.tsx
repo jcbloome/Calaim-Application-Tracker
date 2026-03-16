@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
@@ -69,7 +70,7 @@ const DUMMY_OVERRIDES: Record<string, AnswerValue> = {
 const optionLabel = (q: Question, value: string) => q.options?.find((opt) => opt.value === value)?.label || value;
 
 const formatPromptLabel = (label: string) => {
-  const qMatch = label.match(/^Q(\d+)\s*:\s*(.+)$/i);
+  const qMatch = label.match(/^Q(\d+)\s*:?\s*(.+)$/i);
   if (qMatch) return `${qMatch[1]}. ${qMatch[2]}`;
   const nMatch = label.match(/^(\d+)\.\s*(.+)$/);
   if (nMatch) return `${nMatch[1]}. ${nMatch[2]}`;
@@ -254,18 +255,24 @@ export default function AdminAlftDummyPreviewPage() {
           return (
             <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5">
               <header className="mb-2 border-b border-zinc-400 pb-1.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="logo-slot rounded-sm border border-zinc-400 bg-zinc-50 px-2 py-1 text-[9px] text-zinc-600">
-                    Logo area
-                  </div>
+                <div className="flex flex-col items-center gap-1">
+                  <Image
+                    src="/ils-logo.png"
+                    alt="Independent Living Systems"
+                    width={300}
+                    height={84}
+                    className="h-[36px] w-auto object-contain"
+                    priority={layout.number === 1}
+                  />
                   <div className="text-center text-[12px] font-semibold tracking-wide">ALF TRANSITION ASSESSMENT</div>
-                  <div className="w-[68px]" aria-hidden />
                 </div>
                 <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-700">
                   <span>Dummy Packet (ILS - Leo Lara)</span>
                   <span>Page {layout.number} of 14</span>
                 </div>
-                <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">{layout.title}</div>
+                <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
+                  {layout.number}. {layout.title}
+                </div>
               </header>
 
               <div className="grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
@@ -343,10 +350,6 @@ export default function AdminAlftDummyPreviewPage() {
           padding: 6px;
           background: #fafafa;
         }
-        .logo-slot {
-          min-width: 68px;
-          text-align: center;
-        }
         @media print {
           @page {
             size: letter;
@@ -370,9 +373,6 @@ export default function AdminAlftDummyPreviewPage() {
           .alft-page:last-child {
             page-break-after: auto;
             break-after: auto;
-          }
-          .logo-slot {
-            background: #fff !important;
           }
         }
       `}</style>
