@@ -170,6 +170,7 @@ export function Header() {
         </nav>
         <div className="lg:hidden">
           <Button
+            type="button"
             variant="outline"
             size="icon"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
@@ -191,7 +192,7 @@ export function Header() {
           />
           <div
             id="mobile-main-nav"
-            className="absolute left-0 right-0 top-full z-50 border-t bg-card px-4 pb-5 pt-4 shadow-lg lg:hidden"
+            className="fixed inset-x-0 top-20 z-[60] max-h-[calc(100dvh-5rem)] overflow-y-auto border-t bg-card px-4 pb-5 pt-4 shadow-lg lg:hidden"
           >
             <div className="flex flex-col gap-3">
               <nav className="flex flex-col gap-3">
@@ -220,6 +221,7 @@ export function Header() {
                   <div className="flex flex-col gap-3">
                     <p className="truncate text-sm text-muted-foreground">{user.displayName || user.email}</p>
                     <Button
+                      type="button"
                       onClick={() => {
                         router.push('/profile');
                         setMobileMenuOpen(false);
@@ -231,6 +233,7 @@ export function Header() {
                       My Profile
                     </Button>
                     <Button
+                      type="button"
                       onClick={() => {
                         void handleSignOut();
                         setMobileMenuOpen(false);
