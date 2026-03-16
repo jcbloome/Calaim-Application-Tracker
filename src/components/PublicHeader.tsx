@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
+import { Menu } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 const navLinks = [
   { href: '/info', label: 'Program Information' },
@@ -13,6 +15,17 @@ const navLinks = [
 ];
 
 export function PublicHeader() {
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [isMobileMenuOpen]);
+
   return (
     <header className="bg-card/80 backdrop-blur-sm border-b sticky top-0 z-40">
       <div className="container mx-auto flex items-center justify-between h-20 px-4 sm:px-6">
@@ -49,35 +62,64 @@ export function PublicHeader() {
           </div>
         </nav>
 
-        {/* Mobile menu without JS (details/summary). */}
+        {/* Mobile menu */}
         <div className="lg:hidden">
-          <details className="relative">
-            <summary className="list-none">
-              <Button variant="outline" size="sm">Menu</Button>
-            </summary>
-            <div className="absolute right-0 mt-2 w-64 rounded-md border bg-white shadow-lg p-2">
-              <div className="flex flex-col">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="public-mobile-nav"
+          >
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">Open menu</span>
+          </Button>
+        </div>
+      </div>
+      {isMobileMenuOpen ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close menu overlay"
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div
+            id="public-mobile-nav"
+            className="fixed inset-x-0 top-20 z-[60] max-h-[calc(100dvh-5rem)] overflow-y-auto border-t bg-card px-4 pb-5 pt-4 shadow-lg lg:hidden"
+          >
+            <div className="flex flex-col gap-3">
+              <nav className="flex flex-col gap-3">
                 {navLinks.map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
-                    className="rounded-md px-3 py-2 text-sm hover:bg-accent"
+                    className="text-base font-medium text-foreground hover:text-primary"
+                    onClick={() => setMobileMenuOpen(false)}
                   >
                     {link.label}
                   </Link>
                 ))}
-                <div className="my-2 border-t" />
-                <Link href="/contact" className="rounded-md px-3 py-2 text-sm hover:bg-accent">
+                <Link
+                  href="/contact"
+                  className="mt-1 border-t pt-3 text-base font-medium text-primary"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
                   Contact Us
                 </Link>
-                <Link href="/login" className="rounded-md px-3 py-2 text-sm font-medium text-primary hover:bg-accent">
-                  Login
-                </Link>
+              </nav>
+              <div className="mt-2 border-t pt-3">
+                <Button asChild className="w-full">
+                  <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+                    Login
+                  </Link>
+                </Button>
               </div>
             </div>
-          </details>
-        </div>
-      </div>
+          </div>
+        </>
+      ) : null}
     </header>
   );
 }
