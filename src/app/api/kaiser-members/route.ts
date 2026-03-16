@@ -6,6 +6,34 @@ const g = globalThis as any;
 const CACHE_KEY = '__api_kaiser_members_cache_v1__';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+const normalizeCalaimStatus = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const CALAIM_STATUS_ALIASES: Record<string, string> = {
+  authorized: 'Authorized',
+  pending: 'Pending',
+  'non active': 'Non_Active',
+  'member died': 'Member Died',
+  died: 'Member Died',
+  'authorized on hold': 'Authorized on hold',
+  h2022: 'H2022',
+  'authorization ended': 'Authorization Ended',
+  denied: 'Denied',
+  'not interested': 'Not interested',
+  'pending to switch': 'Pending to switch',
+};
+
+const toCanonicalCalaimStatus = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'No CalAIM Status';
+  return CALAIM_STATUS_ALIASES[normalizeCalaimStatus(raw)] || raw;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const preferCaspio = request.nextUrl.searchParams.get('refresh') === '1' || request.nextUrl.searchParams.get('source') === 'caspio';
@@ -59,7 +87,13 @@ export async function GET(request: NextRequest) {
         memberPhone: member.Member_Phone || member.memberPhone || '',
         memberEmail: member.Member_Email || member.memberEmail || '',
         CalAIM_MCO: member.CalAIM_MCO,
-        CalAIM_Status: member.CalAIM_Status || 'No CalAIM Status',
+        CalAIM_Status: toCanonicalCalaimStatus(
+          member.CalAIM_Status ??
+            member.calaim_status ??
+            member.CALAIM_STATUS ??
+            member.CalAIMStatus ??
+            ''
+        ),
         Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
         Kaiser_ID_Status: member.Kaiser_ID_Status,
         SW_ID: member.SW_ID,
@@ -445,7 +479,13 @@ export async function GET(request: NextRequest) {
       memberPhone: member.memberPhone || member.Member_Phone || '',
       memberEmail: member.memberEmail || member.Member_Email || '',
       CalAIM_MCO: member.CalAIM_MCO,
-      CalAIM_Status: member.CalAIM_Status || 'No CalAIM Status',
+      CalAIM_Status: toCanonicalCalaimStatus(
+        member.CalAIM_Status ??
+          member.calaim_status ??
+          member.CALAIM_STATUS ??
+          member.CalAIMStatus ??
+          ''
+      ),
       Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
       Kaiser_ID_Status: member.Kaiser_ID_Status,
       SW_ID: member.SW_ID,

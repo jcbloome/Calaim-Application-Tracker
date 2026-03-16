@@ -157,12 +157,36 @@ const CALAIM_STATUS_OPTIONS = [
 const CALAIM_STATUSES = CALAIM_STATUS_OPTIONS;
 
 const normalizeCalaimStatus = (value: string) =>
-  value.trim().toLowerCase().replace(/\s+/g, ' ');
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+const CALAIM_STATUS_ALIASES: Record<string, string> = {
+  authorized: 'Authorized',
+  pending: 'Pending',
+  'non active': 'Non_Active',
+  'member died': 'Member Died',
+  died: 'Member Died',
+  'authorized on hold': 'Authorized on hold',
+  h2022: 'H2022',
+  'authorization ended': 'Authorization Ended',
+  denied: 'Denied',
+  'not interested': 'Not interested',
+  'pending to switch': 'Pending to switch',
+};
 
 const CALAIM_STATUS_MAP = CALAIM_STATUS_OPTIONS.reduce((acc, status) => {
   acc[normalizeCalaimStatus(status)] = status;
   return acc;
 }, {} as Record<string, string>);
+
+const toCanonicalCalaimStatus = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'No Status';
+  return CALAIM_STATUS_ALIASES[normalizeCalaimStatus(raw)] || raw;
+};
 
 const toDateValue = (value: any): Date | null => {
   if (!value) return null;
@@ -779,7 +803,13 @@ function KaiserTrackerPageContent() {
           client_ID2: member?.Client_ID2 || 'N/A',
           pathway: member?.pathway || 'Unknown',
           Kaiser_Status: member?.Kaiser_Status || member?.Kaiser_ID_Status || '',
-          CalAIM_Status: member?.CalAIM_Status || 'No Status',
+          CalAIM_Status: toCanonicalCalaimStatus(
+            member?.CalAIM_Status ??
+              member?.calaim_status ??
+              member?.CALAIM_STATUS ??
+              member?.CalAIMStatus ??
+              ''
+          ),
           Staff_Assigned: staffAssigned,
           RCFE_Name: member?.RCFE_Name || '',
           RCFE_Admin_Email: member?.RCFE_Admin_Email || member?.RCFE_Administrator_Email || '',
