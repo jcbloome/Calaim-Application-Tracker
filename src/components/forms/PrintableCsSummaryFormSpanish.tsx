@@ -234,15 +234,23 @@ export function PrintableCsSummaryFormSpanish({
         required: true,
         width: 'full'
       }),
-      data.pathway === 'SNF Diversion'
-        ? buildField({
-            label: 'Razón para la Desviación de SNF',
-            value: data.snfDiversionReason,
-            type: 'textarea',
-            width: 'full',
-            rows: 3
-          })
-        : null,
+      React.createElement('div', {
+        key: 'snf-diversion-reason-lines',
+        className: 'col-span-full mb-4 print:mb-6'
+      }, [
+        React.createElement('label', {
+          key: 'snf-diversion-reason-label',
+          className: 'mb-2 block text-sm font-medium text-gray-700 print:text-black'
+        }, 'Razón para la Desviación de SNF (completar cuando se seleccione Desviación de SNF)'),
+        React.createElement('div', { key: 'snf-diversion-reason-lines-wrap', className: 'space-y-2' },
+          Array.from({ length: 5 }).map((_, idx) =>
+            React.createElement('div', {
+              key: `snf-diversion-line-${idx}`,
+              className: 'h-5 border-b-2 border-gray-400 print:border-black'
+            })
+          )
+        )
+      ]),
     ].filter(Boolean)),
     buildSection('Sección 8: Plan de Servicio Individual (ISP)', [
       React.createElement('div', {
@@ -360,7 +368,7 @@ export function PrintableCsSummaryFormSpanish({
       buildField({ label: 'Nombre del Administrador del RCFE', value: data.rcfeAdminFirstName, width: 'half' }),
       buildField({ label: 'Apellido del Administrador del RCFE', value: data.rcfeAdminLastName, width: 'half' }),
       buildField({ label: 'Teléfono del Administrador', value: data.rcfeAdminPhone, width: 'half' }),
-      buildField({ label: 'Correo Electrónico del Administrador', value: data.rcfeAdminEmail, width: 'full' }),
+      buildField({ label: 'Correo Electrónico del Administrador', value: data.rcfeAdminEmail, width: 'half' }),
     ]),
     null
   ];

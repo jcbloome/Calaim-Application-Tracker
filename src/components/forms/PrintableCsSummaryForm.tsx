@@ -468,15 +468,16 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           width="full"
         />
         
-        {data.pathway === 'SNF Diversion' && (
-          <PrintableField
-            label="Reason for SNF Diversion"
-            value={data.snfDiversionReason}
-            type="textarea"
-            width="full"
-            rows={3}
-          />
-        )}
+        <div className="col-span-full mb-4 print:mb-6">
+          <label className="mb-2 block text-sm font-medium text-gray-700 print:text-black">
+            Reason for SNF Diversion (complete when SNF Diversion is selected)
+          </label>
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, idx) => (
+              <div key={`snf-diversion-line-${idx}`} className="h-5 border-b-2 border-gray-400 print:border-black" />
+            ))}
+          </div>
+        </div>
       </PrintableFormSection>
 
       {/* ISP & Facility Information */}
@@ -719,7 +720,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         <PrintableField
           label="Administrator Email"
           value={data.rcfeAdminEmail}
-          width="full"
+          width="half"
         />
       </PrintableFormSection>
 

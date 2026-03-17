@@ -25,10 +25,10 @@ export function PrintableField({
   rows = 3
 }: PrintableFieldProps) {
   const widthClasses = {
-    full: 'w-full',
-    half: 'w-full sm:w-1/2',
-    third: 'w-full sm:w-1/3',
-    quarter: 'w-full sm:w-1/4'
+    full: 'w-full col-span-full',
+    half: 'w-full',
+    third: 'w-full',
+    quarter: 'w-full'
   };
 
   const renderField = () => {
@@ -68,17 +68,17 @@ export function PrintableField({
 
       case 'select':
         return (
-          <div className="w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center" />
+          <div className="w-[92%] max-w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center" />
         );
 
       case 'date':
         return (
-          <div className="w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center" />
+          <div className="w-[92%] max-w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center" />
         );
 
       default:
         return (
-          <div className="w-full border-b-2 border-gray-400 print:border-black h-10 flex items-end pb-2" />
+          <div className="w-[92%] max-w-full border-b-2 border-gray-400 print:border-black h-10 flex items-end pb-2" />
         );
     }
   };
