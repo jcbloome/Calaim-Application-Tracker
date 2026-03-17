@@ -144,8 +144,6 @@ const fmtTimeline = (ms: number) => {
   }
 };
 
-const valueChanged = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
-
 const toEditHistoryMs = (entry: any): number => {
   const viaTs = toMs(entry?.editedAt);
   if (viaTs > 0) return viaTs;
@@ -611,7 +609,11 @@ export default function AdminAlftTrackerPage() {
   };
 
   const saveEdit = async () => {
-    if (!firestore || !editRow || editSaving) return;
+    if (!editRow || editSaving) return;
+    if (!auth?.currentUser) {
+      toast({ title: 'Not signed in', description: 'Please sign in again to save ALFT edits.', variant: 'destructive' });
+      return;
+    }
     const summary = String(editTransitionSummary || '').trim();
     const actions = String(editRequestedActions || '').trim();
     if (!summary || !actions) {
@@ -624,48 +626,24 @@ export default function AdminAlftTrackerPage() {
     }
     try {
       setEditSaving(true);
-      const uid = String(user?.uid || '').trim();
-      const actorName = String((user as any)?.displayName || (user as any)?.email || 'Staff').trim();
-      const actorEmail = String((user as any)?.email || '').trim();
-      const previousForm = editRow.alftForm || {};
-      const previousExact = ((previousForm as any)?.exactPacketAnswers || {}) as Record<string, unknown>;
-      const changedFields: string[] = [];
-      if (valueChanged(previousForm?.transitionSummary, summary)) changedFields.push('transitionSummary');
-      if (valueChanged(previousForm?.requestedActions, actions)) changedFields.push('requestedActions');
-      if (valueChanged(previousForm?.barriersAndRisks || null, String(editBarriersAndRisks || '').trim() || null)) changedFields.push('barriersAndRisks');
-      if (valueChanged(previousForm?.additionalNotes || null, String(editAdditionalNotes || '').trim() || null)) changedFields.push('additionalNotes');
-
-      const exactKeys = Array.from(new Set([...Object.keys(previousExact || {}), ...Object.keys(editExactAnswers || {})]));
-      const changedExactQuestionIds = exactKeys
-        .filter((k) => valueChanged((previousExact as any)?.[k], (editExactAnswers as any)?.[k]))
-        .slice(0, 40);
-      if (changedExactQuestionIds.length > 0) changedFields.push('exactPacketAnswers');
-
-      const historyEntry = {
-        editedAt: serverTimestamp(),
-        editedAtIso: new Date().toISOString(),
-        editedByUid: uid || null,
-        editedByName: actorName || null,
-        editedByEmail: actorEmail || null,
-        changedFields,
-        changedExactQuestionIds,
-        changedExactQuestionCount: changedExactQuestionIds.length,
-        note: changedFields.length ? null : 'No value changes detected',
-      };
-
-      await updateDoc(doc(firestore, 'standalone_upload_submissions', editRow.id), {
-        'alftForm.exactPacketAnswers': editExactAnswers,
-        'alftForm.transitionSummary': summary,
-        'alftForm.requestedActions': actions,
-        'alftForm.barriersAndRisks': String(editBarriersAndRisks || '').trim() || null,
-        'alftForm.additionalNotes': String(editAdditionalNotes || '').trim() || null,
-        alftEditHistory: arrayUnion(historyEntry),
-        'alftCollaboration.allowAllPartiesEdit': true,
-        'alftCollaboration.editableRoleKeys': ['social_worker', 'staff', 'rn', 'admin', 'super_admin'],
-        ...(uid ? { 'alftCollaboration.editableUids': arrayUnion(uid), 'alftCollaboration.lastEditedByUid': uid } : {}),
-        'alftCollaboration.lastEditedAt': serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      } as any);
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/alft/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          intakeId: editRow.id,
+          exactPacketAnswers: editExactAnswers,
+          transitionSummary: summary,
+          requestedActions: actions,
+          barriersAndRisks: String(editBarriersAndRisks || '').trim() || null,
+          additionalNotes: String(editAdditionalNotes || '').trim() || null,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || `Save failed (HTTP ${res.status})`));
+      }
       toast({
         title: 'ALFT form updated',
         description: 'Changes saved. This intake stays editable for SW, staff, RN, and admin users.',
