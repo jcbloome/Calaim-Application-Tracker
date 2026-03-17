@@ -49,6 +49,73 @@ interface CaspioILSNote {
   Senior_First_Last: string;
 }
 
+async function fetchAllRowsForMemberFromCaspio<T extends Record<string, any>>(params: {
+  baseUrl: string;
+  token: string;
+  table: string;
+  whereClause: string;
+  orderBy: string;
+  idField: string;
+  pageSize?: number;
+  maxPages?: number;
+}): Promise<T[]> {
+  const {
+    baseUrl,
+    token,
+    table,
+    whereClause,
+    orderBy,
+    idField,
+    pageSize = 1000,
+    maxPages = 20,
+  } = params;
+
+  const allRows: T[] = [];
+  let pageNumber = 1;
+  let previousPageSignature = '';
+
+  while (pageNumber <= maxPages) {
+    const url =
+      `${baseUrl}/rest/v2/tables/${table}/records` +
+      `?q.where=${encodeURIComponent(whereClause)}` +
+      `&q.orderBy=${encodeURIComponent(orderBy)}` +
+      `&q.pageSize=${pageSize}` +
+      `&q.pageNumber=${pageNumber}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Caspio API error (${table} page ${pageNumber}): ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const pageRows = Array.isArray(data?.Result) ? (data.Result as T[]) : [];
+    if (pageRows.length === 0) break;
+
+    const firstId = String(pageRows[0]?.[idField] ?? '');
+    const lastId = String(pageRows[pageRows.length - 1]?.[idField] ?? '');
+    const pageSignature = `${firstId}|${lastId}|${pageRows.length}`;
+    if (pageNumber > 1 && pageSignature === previousPageSignature) {
+      // Defensive guard for environments where pageNumber can return duplicate pages.
+      break;
+    }
+    previousPageSignature = pageSignature;
+
+    allRows.push(...pageRows);
+
+    if (pageRows.length < pageSize) break;
+    pageNumber += 1;
+  }
+
+  return allRows;
+}
+
 interface MemberNote {
   id: string;
   clientId2: string;
@@ -797,41 +864,24 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
     const { credentials, baseUrl } = getCaspioConfig();
     const token = await getCaspioToken(credentials);
     
-    // Fetch from regular notes table
-    const regularNotesUrl = `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Time_Stamp DESC&q.limit=1000`;
-    
-    // Fetch from ILS notes table
-    const ilsNotesUrl = `${baseUrl}/rest/v2/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}'&q.orderBy=Timestamp DESC&q.limit=1000`;
-    
-    const [regularResponse, ilsResponse] = await Promise.all([
-      fetch(regularNotesUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+    const [caspioNotes, ilsNotes] = await Promise.all([
+      fetchAllRowsForMemberFromCaspio<CaspioNote>({
+        baseUrl,
+        token,
+        table: 'connect_tbl_clientnotes',
+        whereClause: `Client_ID2='${clientId2}'`,
+        orderBy: 'Time_Stamp DESC',
+        idField: 'PK_ID',
       }),
-      fetch(ilsNotesUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      })
+      fetchAllRowsForMemberFromCaspio<CaspioILSNote>({
+        baseUrl,
+        token,
+        table: 'CalAIM_Member_Notes_ILS',
+        whereClause: `Client_ID2='${clientId2}'`,
+        orderBy: 'Timestamp DESC',
+        idField: 'table_ID',
+      }),
     ]);
-
-    if (!regularResponse.ok) {
-      throw new Error(`Caspio API error (regular notes): ${regularResponse.status} ${regularResponse.statusText}`);
-    }
-    if (!ilsResponse.ok) {
-      throw new Error(`Caspio API error (ILS notes): ${ilsResponse.status} ${ilsResponse.statusText}`);
-    }
-
-    const regularData = await regularResponse.json();
-    const ilsData = await ilsResponse.json();
-    
-    const caspioNotes: CaspioNote[] = regularData.Result || [];
-    const ilsNotes: CaspioILSNote[] = ilsData.Result || [];
     
     console.log(`📥 Retrieved ${caspioNotes.length} regular notes + ${ilsNotes.length} ILS notes for Client_ID2: ${clientId2}`);
 
@@ -869,17 +919,22 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
       })
     );
 
-    // Combine all notes and sort by timestamp
+    // Combine all notes, dedupe by ID, and sort by timestamp
     const allTransformedNotes = [...transformedRegularNotes, ...transformedILSNotes]
       .filter((note) => !deletedIds.has(note.id));
-    allTransformedNotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const dedupedNotesById = new Map<string, MemberNote>();
+    allTransformedNotes.forEach((note) => {
+      dedupedNotesById.set(note.id, note);
+    });
+    const dedupedNotes = Array.from(dedupedNotesById.values());
+    dedupedNotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     // Store in cache and Firestore
-    memberNotesCache[clientId2] = allTransformedNotes;
-    importedCount = allTransformedNotes.length;
+    memberNotesCache[clientId2] = dedupedNotes;
+    importedCount = dedupedNotes.length;
 
     // Save notes to Firestore
-    await saveNotesToFirestore(allTransformedNotes);
+    await saveNotesToFirestore(dedupedNotes);
 
     // Update sync status
     const syncStatus = {

@@ -446,7 +446,9 @@ function KaiserTrackerPageContent() {
       isLoadingNotes: true,
     }));
     try {
-      const response = await fetch(`/api/member-notes?clientId2=${member.client_ID2}`);
+      // Manual "Sync latest notes" should force a full resync so large legacy note histories
+      // (including members with 1000+ notes) are backfilled reliably.
+      const response = await fetch(`/api/member-notes?clientId2=${member.client_ID2}&forceSync=true`);
       const data = await response.json();
       if (!data.success) {
         throw new Error(data.error || 'Failed to sync notes');
