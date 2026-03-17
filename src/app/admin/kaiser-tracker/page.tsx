@@ -346,11 +346,11 @@ function KaiserTrackerPageContent() {
       
       assignments[staffName].count++;
       assignments[staffName].members.push(member);
-        
-        // Count status breakdown
-        const status = getEffectiveKaiserStatus(member);
-        assignments[staffName].statusBreakdown[status] = (assignments[staffName].statusBreakdown[status] || 0) + 1;
-        
+
+      // Count status breakdown
+      const status = getEffectiveKaiserStatus(member);
+      assignments[staffName].statusBreakdown[status] = (assignments[staffName].statusBreakdown[status] || 0) + 1;
+
     });
     
     return assignments;
