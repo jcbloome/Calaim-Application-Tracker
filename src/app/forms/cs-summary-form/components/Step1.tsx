@@ -134,7 +134,7 @@ export default function Step1({
       </Card>
 
       <FormSection 
-        title="Member Information" 
+        title="Section 1: Member Information" 
         required={true}
         description="Basic information about the CalAIM member"
       >
@@ -343,7 +343,7 @@ export default function Step1({
       </FormSection>
       
       <FormSection 
-        title="Your Information (Person Filling Form)" 
+        title="Section 2: Referrer Information" 
         required={true}
         description="This is the person that will receive email updates as to the application status, including any missing documents, etc."
       >
@@ -434,7 +434,7 @@ export default function Step1({
       </FormSection>
       
       <FormSection 
-        title="Primary Contact Person" 
+        title="Section 3: Primary Contact Person" 
         required={true}
         description="Provide contact details for the member's main point of contact. If member is primary contact reinput member name and put N/A in relationship field."
       >
@@ -500,7 +500,7 @@ export default function Step1({
       </FormSection>
 
       <FormSection 
-        title="Secondary Contact Person" 
+        title="Section 4: Secondary Contact Person (Optional)" 
         badge="Optional"
         badgeVariant="secondary"
         description="Provide details for a secondary point of contact if available."
@@ -543,7 +543,7 @@ export default function Step1({
       </FormSection>
       
       <FormSection 
-        title="Legal Representative" 
+        title="Section 5: Legal Representative" 
         description="A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role."
       >
             <FormField

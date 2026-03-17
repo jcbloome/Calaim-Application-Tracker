@@ -73,7 +73,7 @@ export default function Step2() {
       </div>
       <Card className="border-l-4 border-accent">
         <CardHeader>
-          <CardTitle>Location Information</CardTitle>
+          <CardTitle>Section 6: Current Location Information</CardTitle>
           <CardDescription>Details about the member's current and customary residence.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -170,7 +170,7 @@ export default function Step2() {
           </div>
 
           <div>
-            <h3 className="font-medium mb-2">Customary Residence (where is the member's normal long term address)</h3>
+            <h3 className="font-medium mb-2">Section 6A: Customary Residence (Normal Long-Term Address)</h3>
             <div className="p-4 border rounded-md space-y-4">
                  <FormField
                     control={control}

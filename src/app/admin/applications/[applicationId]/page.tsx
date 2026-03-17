@@ -1728,7 +1728,9 @@ function ApplicationDetailPageContent() {
       (application as any)?.healthNetStatus ||
       ''
     ).trim();
-    return resolveHealthNetStatus(raw) || healthNetSteps[0] || '';
+    // Do not default to "On Hold (Not Interested)" when status is empty.
+    // Empty means not yet set/synced from process status source.
+    return resolveHealthNetStatus(raw) || '';
   }, [application]);
   const healthNetNextStatus = useMemo(() => {
     if (!isHealthNetPlan) return '';
@@ -3966,7 +3968,7 @@ function ApplicationDetailPageContent() {
                     {application.healthPlan?.toLowerCase().includes('kaiser')
                       ? `Progression: ${(application as any)?.kaiserStatus || kaiserSteps[0]}`
                       : application.healthPlan?.toLowerCase().includes('health net')
-                        ? `Progression: ${healthNetCurrentStatus || healthNetSteps[0]}`
+                        ? `Progression: ${healthNetCurrentStatus || 'Unassigned'}`
                         : null}
                   </div>
                 </div>

@@ -26,7 +26,7 @@ export default function Step3() {
       </div>
        <Card className="border-l-4 border-accent">
         <CardHeader>
-          <CardTitle>Health Plan</CardTitle>
+          <CardTitle>Section 7: Health Plan & Pathway Information</CardTitle>
           <CardDescription>Select the member's Managed Care Plan (MCP).</CardDescription>
         </CardHeader>
         <CardContent>
@@ -94,7 +94,7 @@ export default function Step3() {
 
       <Card className="border-l-4 border-accent">
         <CardHeader>
-          <CardTitle>Pathway & Eligibility</CardTitle>
+          <CardTitle>Section 7 (continued): Pathway & Eligibility</CardTitle>
           <CardDescription>Choose the pathway that best describes the member's situation.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
