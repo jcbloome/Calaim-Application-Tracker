@@ -280,14 +280,14 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           required
           width="full"
         />
+        <div className="col-span-full text-xs text-gray-500 print:text-black">
+          Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.
+        </div>
         <PrintableField
           label="Current Location Name (if applicable)"
           value={data.currentLocationName}
           width="full"
         />
-        <div className="col-span-full text-xs text-gray-500 print:text-black">
-          Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.
-        </div>
         
         <PrintableField
           label="Current Address"
@@ -345,14 +345,14 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           required
           width="full"
         />
+        <div className="col-span-full text-xs text-gray-500 print:text-black">
+          Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.
+        </div>
         <PrintableField
           label="Customary Location Name (if applicable)"
           value={data.customaryLocationName}
           width="full"
         />
-        <div className="col-span-full text-xs text-gray-500 print:text-black">
-          Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.
-        </div>
         <div className="col-span-full text-sm">
           <span className="inline-flex items-center gap-2">
             <span className="w-4 h-4 border border-gray-400 print:border-black rounded-sm" />
@@ -549,6 +549,9 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           required
           width="half"
         />
+        <div className="col-span-full text-xs text-gray-500 print:text-black">
+          Examples: RCFE, SNF, Home, Hospital, Assisted Living, Other.
+        </div>
         <PrintableField
           label="ISP Assessment Facility Name"
           value={data.ispFacilityName}

@@ -110,6 +110,7 @@ export default function Step4() {
                                   ))}
                               </SelectContent>
                           </Select>
+                          <FormDescription>e.g., RCFE, SNF, Home, Hospital, Assisted Living, Other.</FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}

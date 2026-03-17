@@ -340,7 +340,10 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       { id: 'p6_iadl_shopping', label: 'Q27 IADL Shopping', type: 'select', options: adlScale },
       { id: 'p6_iadl_medications', label: 'Q27 IADL Managing medication', type: 'select', options: adlScale },
       { id: 'p6_iadl_transportation', label: 'Q27 IADL Transportation', type: 'select', options: adlScale },
-      { id: 'p6_notes_summary', label: 'Sections D/E notes and summary', type: 'textarea', rows: 4 },
+      { id: 'p6_section_d_text', label: 'Section D: Notes/details', type: 'textarea', rows: 3 },
+      { id: 'p6_section_e_text', label: 'Section E: Notes/details', type: 'textarea', rows: 3 },
+      { id: 'p6_section_f_text', label: 'Section F: Notes/details', type: 'textarea', rows: 3 },
+      { id: 'p6_notes_summary', label: 'Sections D/E/F summary', type: 'textarea', rows: 4 },
     ],
   },
   {
@@ -446,7 +449,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
     title: 'Pages 9-10: Mental Health and Nutrition',
     questions: [
       { id: 'p9_mental_diagnosis', label: 'Q31 Diagnosed mental condition/psychiatric disorder?', type: 'radio', options: yesNoOptions },
-      { id: 'p9_mental_conditions_list', label: 'List conditions', type: 'textarea', rows: 3 },
+      { id: 'p9_mental_conditions_list', label: 'Q31: List conditions', type: 'textarea', rows: 3 },
       { id: 'p9_self_harm_thoughts', label: 'Q32 Thoughts of being better off dead/self-harm?', type: 'select', options: [
         { value: 'yes', label: 'Yes (PHQ9 required)' },
         { value: 'no', label: 'No' },
@@ -491,7 +494,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
       },
       { id: 'p10_special_diet_duration', label: 'How long on this diet?', type: 'text' },
       { id: 'p10_special_diet_reason', label: 'Why on this diet?', type: 'textarea', rows: 3 },
-      { id: 'p10_notes_summary', label: 'Section I notes and summary', type: 'textarea', rows: 4 },
+      { id: 'p10_notes_summary', label: 'Section I: Notes and summary', type: 'textarea', rows: 4 },
     ],
   },
   {

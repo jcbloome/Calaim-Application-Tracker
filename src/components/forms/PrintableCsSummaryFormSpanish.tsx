@@ -110,15 +110,15 @@ export function PrintableCsSummaryFormSpanish({
         required: true,
         width: 'full'
       }),
+      React.createElement('div', {
+        key: 'current-location-type-examples',
+        className: 'col-span-full text-xs text-gray-500 print:text-black'
+      }, 'Ejemplos: RCFE, SNF, Hogar, Sin vivienda, Hospital, Vida Asistida, Otro.'),
       buildField({
         label: 'Nombre de la ubicación actual (si aplica)',
         value: data.currentLocationName,
         width: 'full'
       }),
-      React.createElement('div', {
-        key: 'current-location-examples',
-        className: 'col-span-full text-xs text-gray-500 print:text-black'
-      }, 'Ejemplos: RCFE, SNF, Hogar, Sin vivienda, Hospital, Vida Asistida, Otro.'),
       buildField({ label: 'Dirección Actual', value: data.currentAddress, required: true, width: 'full' }),
       React.createElement('div', {
         key: 'current-address-examples',
@@ -142,15 +142,15 @@ export function PrintableCsSummaryFormSpanish({
         required: true,
         width: 'full'
       }),
+      React.createElement('div', {
+        key: 'customary-location-type-examples',
+        className: 'col-span-full text-xs text-gray-500 print:text-black'
+      }, 'Ejemplos: RCFE, SNF, Hogar, Sin vivienda, Hospital, Vida Asistida, Otro.'),
       buildField({
         label: 'Nombre de la ubicación habitual (si aplica)',
         value: data.customaryLocationName,
         width: 'full'
       }),
-      React.createElement('div', {
-        key: 'customary-location-examples',
-        className: 'col-span-full text-xs text-gray-500 print:text-black'
-      }, 'Ejemplos: RCFE, SNF, Hogar, Sin vivienda, Hospital, Vida Asistida, Otro.'),
       React.createElement('div', {
         key: 'customary-same-as-current',
         className: 'col-span-full text-sm'
@@ -280,6 +280,10 @@ export function PrintableCsSummaryFormSpanish({
         required: true,
         width: 'half'
       }),
+      React.createElement('div', {
+        key: 'isp-location-type-examples',
+        className: 'col-span-full text-xs text-gray-500 print:text-black'
+      }, 'Ejemplos: RCFE, SNF, Hogar, Hospital, Vida Asistida, Otro.'),
       buildField({ label: 'Nombre de la Instalación de la Evaluación del ISP', value: data.ispFacilityName, width: 'half' }),
       buildField({ label: 'Dirección de la Evaluación del ISP', value: data.ispAddress, required: true, width: 'half' }),
       buildField({ label: 'Ciudad (ISP)', value: data.ispCity, required: true, width: 'half' }),
