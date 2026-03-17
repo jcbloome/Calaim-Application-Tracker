@@ -20,6 +20,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -187,15 +188,34 @@ const timelineFor = (r: StandaloneUpload): TimelineItem[] => {
   const completedMs = toMs((r as any)?.alftSignature?.completedAt);
   if (packetReady && completedMs) items.push({ key: 'packetReady', label: 'Packet ready', ms: completedMs });
 
+  const managerReviewedMs = toMs((r as any)?.alftManagerReview?.reviewedAt);
+  if (managerReviewedMs) {
+    const by = toLabel((r as any)?.alftManagerReview?.reviewedByName || (r as any)?.alftManagerReview?.reviewedByEmail);
+    items.push({ key: 'managerReviewed', label: 'Kaiser manager reviewed', ms: managerReviewedMs, by });
+  }
+
   return items
     .filter((x) => x.ms > 0)
     .sort((a, b) => a.ms - b.ms);
 };
 
-type StageKey = 'received' | 'rn_assigned' | 'rn_downloaded' | 'rn_reuploaded' | 'staff_assigned' | 'sent_for_signature' | 'completed';
+type StageKey =
+  | 'received'
+  | 'rn_assigned'
+  | 'rn_downloaded'
+  | 'rn_reuploaded'
+  | 'staff_assigned'
+  | 'sent_for_signature'
+  | 'manager_review'
+  | 'ready_to_send'
+  | 'completed';
 
 const computeStage = (r: StandaloneUpload): StageKey => {
-  if (toLabel(r.status).toLowerCase() !== 'pending') return 'completed';
+  const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
+  const managerStatus = toLabel((r as any)?.alftManagerReview?.status).toLowerCase();
+  if (workflowStatus.includes('completed_sent_to_jocelyn') || toLabel(r.status).toLowerCase() !== 'pending') return 'completed';
+  if (managerStatus === 'approved') return 'ready_to_send';
+  if (workflowStatus.includes('awaiting_kaiser_manager_final_review') || managerStatus === 'pending') return 'manager_review';
   if (toMs((r as any)?.alftSignature?.requestedAt) > 0) return 'sent_for_signature';
   if (toMs(r.alftStaffAssignedAt) > 0) return 'staff_assigned';
   if (toMs(r.alftRnRevisionUploadedAt) > 0) return 'rn_reuploaded';
@@ -218,13 +238,17 @@ const stageBadge = (stage: StageKey) => {
       return <Badge className="bg-amber-600 text-white hover:bg-amber-600">3) Staff review</Badge>;
     case 'sent_for_signature':
       return <Badge className="bg-emerald-700 text-white hover:bg-emerald-700">3) Signatures requested</Badge>;
+    case 'manager_review':
+      return <Badge className="bg-blue-700 text-white hover:bg-blue-700">4) Kaiser manager review</Badge>;
+    case 'ready_to_send':
+      return <Badge className="bg-violet-700 text-white hover:bg-violet-700">5) Ready to email Jocelyn</Badge>;
     case 'completed':
       return <Badge variant="outline">Complete</Badge>;
   }
 };
 
 export default function AdminAlftTrackerPage() {
-  const { isAdmin, isLoading, user } = useAdmin();
+  const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
   const firestore = useFirestore();
   const storage = useStorage();
   const auth = useAuth();
@@ -252,6 +276,7 @@ export default function AdminAlftTrackerPage() {
 
   const [sigRequestingId, setSigRequestingId] = useState('');
   const [sendingCompletedId, setSendingCompletedId] = useState('');
+  const [managerReviewingId, setManagerReviewingId] = useState('');
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
   const [sigDialog, setSigDialog] = useState<{
     intakeId: string;
@@ -272,11 +297,29 @@ export default function AdminAlftTrackerPage() {
   const [editRequestedActions, setEditRequestedActions] = useState('');
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
+  const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
 
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
     if (focus) setFocusId(focus);
   }, [searchParams]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!firestore || !user?.uid) {
+        setIsKaiserAssignmentManager(false);
+        return;
+      }
+      try {
+        const meSnap = await getDoc(doc(firestore, 'users', user.uid));
+        const me = meSnap.exists() ? (meSnap.data() as any) : null;
+        setIsKaiserAssignmentManager(Boolean(me?.isKaiserAssignmentManager));
+      } catch {
+        setIsKaiserAssignmentManager(false);
+      }
+    };
+    void run();
+  }, [firestore, user?.uid]);
 
   useEffect(() => {
     if (!firestore || !isAdmin) return;
@@ -670,11 +713,32 @@ export default function AdminAlftTrackerPage() {
       });
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) throw new Error(String(data?.error || `Send failed (HTTP ${res.status})`));
-      toast({ title: 'Completed ALFT emailed', description: `Sent to ${String(data?.to || 'JHernandez@ilshealth.com')}.` });
+      toast({ title: 'Completed ALFT emailed', description: `Sent to ${String(data?.to || 'jocelyn@ilshealth.com')}.` });
     } catch (e: any) {
       toast({ title: 'Could not send completed email', description: e?.message || 'Send failed.', variant: 'destructive' });
     } finally {
       setSendingCompletedId('');
+    }
+  };
+
+  const markManagerFinalReview = async (row: StandaloneUpload) => {
+    if (!auth?.currentUser) return;
+    if (!row?.id || managerReviewingId) return;
+    setManagerReviewingId(row.id);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/alft/workflow/final-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, intakeId: row.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) throw new Error(String(data?.error || `Final review failed (HTTP ${res.status})`));
+      toast({ title: 'Final review complete', description: 'Kaiser manager final review approved. Ready to send to Jocelyn.' });
+    } catch (e: any) {
+      toast({ title: 'Could not complete manager review', description: e?.message || 'Review failed.', variant: 'destructive' });
+    } finally {
+      setManagerReviewingId('');
     }
   };
 
@@ -684,10 +748,6 @@ export default function AdminAlftTrackerPage() {
       return;
     }
     if (!row?.id) return;
-    if (!row.alftRnUid || !row.alftRnEmail) {
-      toast({ title: 'Assign RN first', description: 'Please assign an RN before requesting signatures.', variant: 'destructive' });
-      return;
-    }
     if (!row.uploaderEmail) {
       toast({ title: 'Missing MSW email', description: 'This intake is missing the uploader email for MSW signature.', variant: 'destructive' });
       return;
@@ -795,7 +855,7 @@ export default function AdminAlftTrackerPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold">ALFT Tracker</h1>
           <p className="text-muted-foreground">
-            Internal workflow: SW form submitted to staff review, then RN review/revisions, then SW signature, then final RN sign-off, then send completed packet.
+            Internal workflow: SW submits + signs, RN (Leslie) reviews/edits + signs, Kaiser manager performs final review, then completed packet is sent to Jocelyn.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1009,18 +1069,15 @@ export default function AdminAlftTrackerPage() {
                               onClick={() => markSentForSignature(r)}
                               disabled={
                                 !r.alftStaffUid ||
-                                !r.alftRnUid ||
                                 Boolean((r as any)?.alftSignature?.requestedAt) ||
                                 Boolean(sigRequestingId && sigRequestingId === r.id)
                               }
                               title={
                                 (r as any)?.alftSignature?.requestedAt
                                   ? 'Signatures already requested'
-                                  : !r.alftRnUid
-                                    ? 'Assign RN first'
-                                    : !r.alftStaffUid
+                                  : !r.alftStaffUid
                                       ? 'Assign staff first'
-                                      : 'Request signatures'
+                                      : 'Request signatures (RN defaults to Leslie if unassigned)'
                               }
                             >
                               <Send className="h-4 w-4 mr-2" />
@@ -1029,12 +1086,45 @@ export default function AdminAlftTrackerPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              onClick={() => void markManagerFinalReview(r)}
+                              disabled={
+                                managerReviewingId === r.id ||
+                                !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath) ||
+                                (!isSuperAdmin && !isKaiserAssignmentManager) ||
+                                String((r as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
+                              }
+                              title={
+                                !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath)
+                                  ? 'Complete signatures first'
+                                  : (!isSuperAdmin && !isKaiserAssignmentManager)
+                                    ? 'Kaiser manager access required'
+                                    : String((r as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
+                                      ? 'Final review already completed'
+                                      : 'Complete final Kaiser manager review'
+                              }
+                            >
+                              <CheckCircle2 className="h-4 w-4 mr-2" />
+                              {managerReviewingId === r.id ? 'Reviewing…' : 'Kaiser manager final review'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => void sendCompletedToJh(r)}
-                              disabled={sendingCompletedId === r.id || !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath)}
-                              title={!Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath) ? 'Complete signatures first' : 'Send completed form + attachments via email'}
+                              disabled={
+                                sendingCompletedId === r.id ||
+                                !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath) ||
+                                String((r as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
+                              }
+                              title={
+                                !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath)
+                                  ? 'Complete signatures first'
+                                  : String((r as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
+                                    ? 'Kaiser manager final review is required first'
+                                    : 'Send completed form + attachments via email'
+                              }
                             >
                               <Send className="h-4 w-4 mr-2" />
-                              {sendingCompletedId === r.id ? 'Sending…' : 'Email completed to JHernandez'}
+                              {sendingCompletedId === r.id ? 'Sending…' : 'Email completed to Jocelyn'}
                             </Button>
                             <Button size="sm" onClick={() => void markCompleted(r)}>
                               <CheckCircle2 className="h-4 w-4 mr-2" />

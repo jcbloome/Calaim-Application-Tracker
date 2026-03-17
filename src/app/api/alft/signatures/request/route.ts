@@ -11,6 +11,8 @@ type Body = {
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
+const DEFAULT_RN_EMAIL = 'leslie@carehomefinders.com';
+const DEFAULT_RN_NAME = 'Leslie';
 
 const base64UrlToken = (bytes = 32) =>
   crypto
@@ -61,14 +63,16 @@ export async function POST(req: NextRequest) {
     const memberName = clean((intake as any)?.memberName, 140) || 'Member';
     const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn || (intake as any)?.mediCalNumber, 80);
 
-    const rnUid = clean((intake as any)?.alftRnUid, 128);
-    const rnEmail = clean((intake as any)?.alftRnEmail, 200).toLowerCase();
-    const rnName = clean((intake as any)?.alftRnName, 160) || rnEmail || 'RN';
-    if (!rnUid || !rnEmail) {
-      return NextResponse.json(
-        { success: false, error: 'Assign an RN on the ALFT Tracker before requesting signatures.' },
-        { status: 409 }
-      );
+    let rnUid = clean((intake as any)?.alftRnUid, 128);
+    let rnEmail = clean((intake as any)?.alftRnEmail, 200).toLowerCase() || DEFAULT_RN_EMAIL;
+    let rnName = clean((intake as any)?.alftRnName, 160) || DEFAULT_RN_NAME;
+    if (!rnUid) {
+      try {
+        const byEmailSnap = await adminDb.collection('users').where('email', '==', rnEmail).limit(1).get();
+        if (!byEmailSnap.empty) rnUid = clean(byEmailSnap.docs[0]?.id, 128);
+      } catch {
+        // keep going; email flow still works without UID
+      }
     }
 
     const mswEmail = clean((intake as any)?.uploaderEmail, 200).toLowerCase();
@@ -157,6 +161,9 @@ export async function POST(req: NextRequest) {
           },
           workflowStatus: 'awaiting_sw_then_rn_signature',
           workflowStage: 'requested_sw_then_rn_signature',
+          alftRnUid: rnUid || null,
+          alftRnEmail: rnEmail || null,
+          alftRnName: rnName || null,
           workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },
@@ -168,26 +175,28 @@ export async function POST(req: NextRequest) {
 
     // Notify RN now; signing order is enforced on the signature page (MSW first, RN final).
     try {
-      await adminDb.collection('staff_notifications').add({
-        userId: rnUid,
-        recipientName: rnName,
-        title: 'ALFT final RN sign-off requested',
-        message: `${memberName} • MRN ${mrn || '—'}\nPlease complete final RN sign-off after SW signature is done.`,
-        memberName,
-        type: 'alft_signature_request',
-        priority: 'Priority',
-        status: 'Open',
-        isRead: false,
-        source: 'system',
-        createdBy: requesterUid,
-        createdByName: clean((decoded as any)?.name, 160) || requesterEmail || 'Staff',
-        senderName: clean((decoded as any)?.name, 160) || requesterEmail || 'Staff',
-        senderId: requesterUid,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        actionUrl: adminSignUrl,
-        standaloneUploadId: intakeId,
-        alftSignatureRequestId: requestId,
-      });
+      if (rnUid) {
+        await adminDb.collection('staff_notifications').add({
+          userId: rnUid,
+          recipientName: rnName,
+          title: 'ALFT final RN sign-off requested',
+          message: `${memberName} • MRN ${mrn || '—'}\nPlease complete final RN sign-off after SW signature is done.`,
+          memberName,
+          type: 'alft_signature_request',
+          priority: 'Priority',
+          status: 'Open',
+          isRead: false,
+          source: 'system',
+          createdBy: requesterUid,
+          createdByName: clean((decoded as any)?.name, 160) || requesterEmail || 'Staff',
+          senderName: clean((decoded as any)?.name, 160) || requesterEmail || 'Staff',
+          senderId: requesterUid,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          actionUrl: adminSignUrl,
+          standaloneUploadId: intakeId,
+          alftSignatureRequestId: requestId,
+        });
+      }
     } catch {
       // ignore notification issues
     }

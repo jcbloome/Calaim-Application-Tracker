@@ -6,6 +6,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
+const JOCELYN_EMAIL = 'jocelyn@ilshealth.com';
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,7 +48,15 @@ export async function POST(req: NextRequest) {
       clean((intake as any)?.mediCalNumber, 80) ||
       '';
 
-    const to = 'JHernandez@ilshealth.com';
+    const managerReviewStatus = clean((intake as any)?.alftManagerReview?.status, 80).toLowerCase();
+    if (managerReviewStatus !== 'approved') {
+      return NextResponse.json(
+        { success: false, error: 'Final Kaiser manager review must be approved before sending completed ALFT.' },
+        { status: 409 }
+      );
+    }
+
+    const to = JOCELYN_EMAIL;
     const requestId = clean((intake as any)?.alftSignature?.requestId, 200);
     let signaturePageUrl = '';
     let packetUrl = '';
@@ -94,7 +103,8 @@ export async function POST(req: NextRequest) {
 
     await intakeRef.set(
       {
-        workflowStatus: 'completed_sent_to_jhernandez',
+        status: 'completed',
+        workflowStatus: 'completed_sent_to_jocelyn',
         workflowStage: 'completed_email_sent',
         workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         alftCompletionEmail: {

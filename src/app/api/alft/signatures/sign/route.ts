@@ -356,8 +356,12 @@ export async function POST(req: NextRequest) {
               signaturePagePdfStoragePath: signaturePdfPath,
               packetPdfStoragePath: packetPdfPath,
             },
-            workflowStatus: 'completed_ready_for_send',
-            workflowStage: 'completed',
+            alftManagerReview: {
+              status: 'pending',
+              required: true,
+            },
+            workflowStatus: 'awaiting_kaiser_manager_final_review',
+            workflowStage: 'awaiting_manager_final_review',
             workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
@@ -396,6 +400,40 @@ export async function POST(req: NextRequest) {
               standaloneUploadId: intakeId,
               alftSignatureRequestId: requestId,
             });
+          }
+          // Notify Kaiser managers that final review is now required.
+          const managerUsersSnap = await adminDb
+            .collection('users')
+            .where('isKaiserAssignmentManager', '==', true)
+            .limit(30)
+            .get()
+            .catch(() => null);
+          const managerUids = (managerUsersSnap?.docs || []).map((d) => clean(d.id, 128)).filter(Boolean);
+          if (managerUids.length > 0) {
+            await Promise.all(
+              managerUids.map((managerUid) =>
+                adminDb.collection('staff_notifications').add({
+                  userId: managerUid,
+                  recipientName: 'Kaiser Manager',
+                  title: 'ALFT final manager review required',
+                  message: `${memberName} • MRN ${mrn || '—'}\nRN signed. Please complete final Kaiser manager review.`,
+                  memberName,
+                  type: 'alft_manager_final_review',
+                  priority: 'Priority',
+                  status: 'Open',
+                  isRead: false,
+                  source: 'system',
+                  createdBy: uid,
+                  createdByName: clean((decoded as any)?.name, 160) || email || 'Signer',
+                  senderName: clean((decoded as any)?.name, 160) || email || 'Signer',
+                  senderId: uid,
+                  timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                  actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+                  standaloneUploadId: intakeId,
+                  alftSignatureRequestId: requestId,
+                })
+              )
+            );
           }
         }
       } catch {
