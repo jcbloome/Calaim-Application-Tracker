@@ -165,6 +165,48 @@ export function PrintableProgramInfo() {
             <p>Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.</p>
             <p>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">California Advocates for Nursing Home Reform (CANHR)</a>.</p>
 
+            <SubTitle>Additional SOC Reduction Strategies (County Eligibility Process)</SubTitle>
+            <div className="space-y-4">
+              <div>
+                <p><strong>1. The "Excess Income" Room and Board Adjustment</strong></p>
+                <p>Under California law (and often reflected in RCFE Admission Agreements), there is a distinction between what an SSI recipient pays and what a private-pay or high-income resident pays.</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li><strong>The SSI Rate Cap:</strong> For residents on SSI, the room and board rate is strictly capped (currently around $1,444.07 for 2026).</li>
+                  <li><strong>The Non-SSI Exception:</strong> If a member has income other than SSI, the facility may charge the basic room and board rate plus an additional amount, depending on the admission agreement.</li>
+                  <li><strong>The Strategy:</strong> Increasing room and board on the admission agreement to match available income (minus the $182 personal needs allowance) can reduce countable income.</li>
+                </ul>
+              </div>
+
+              <div>
+                <p><strong>2. The "Medical Expense" Spend-Down (Paperwork Fix)</strong></p>
+                <p>When board-and-care deduction is not available because CalAIM is paying for care, a spend-down strategy can still reduce SOC by documenting incurred medical or remedial expenses.</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li><strong>Remedial care expenses:</strong> The RCFE amount above standard room and board may be treated as remedial care expense.</li>
+                  <li><strong>How to report:</strong> Submit RCFE invoices to County Social Services (DPSS) as incurred medical expenses. Member out-of-pocket payments count toward SOC.</li>
+                </ul>
+              </div>
+
+              <div>
+                <p><strong>3. Purchase Supplemental Insurance (Often the Cleanest Fix)</strong></p>
+                <p>Lower gross countable income before county SOC calculation by documenting deductible premiums and insurance deductions.</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li><strong>Dental/Vision/Health premiums:</strong> Monthly premium amounts are deductible by the county.</li>
+                  <li><strong>Medicare Part B/D:</strong> Ensure all premiums are being captured by the county eligibility worker.</li>
+                </ul>
+              </div>
+            </div>
+
+            <SubTitle>Summary of Where to Go</SubTitle>
+            <p>You must take the following to the <strong>County Social Services Eligibility Worker</strong> (not the health plan):</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li><strong>Revised admission agreement:</strong> showing higher room and board obligation up to available income.</li>
+              <li><strong>Medical receipts:</strong> out-of-pocket costs (incontinence supplies, OTC meds, transportation, etc.).</li>
+              <li><strong>Insurance proof:</strong> monthly supplemental premium documentation.</li>
+            </ul>
+            <div style={{ backgroundColor: '#ecfeff', padding: '12px', border: '1px solid #0891b2', borderRadius: '6px', margin: '12px 0' }}>
+              <p><strong>Crucial note:</strong> Once county deductions are entered and the case reflects zero SOC, the CalAIM managed care plan typically sees eligibility updates in about 24-48 hours.</p>
+            </div>
+
             <SectionTitle>Individual Service Plan (ISP)</SectionTitle>
             <p>An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the 'assisted living' portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.</p>
 

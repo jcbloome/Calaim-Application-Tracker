@@ -188,6 +188,100 @@ export function PrintableProgramInfoForm({
             </li>
           </ul>
 
+          <h4 className="mt-5 font-semibold text-gray-900 print:text-black">
+            Additional SOC Reduction Strategies (County Eligibility Process)
+          </h4>
+          <div className="mt-2 space-y-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+            <div>
+              <p className="font-semibold text-gray-900 print:text-black">
+                1. The "Excess Income" Room and Board Adjustment
+              </p>
+              <p>
+                Under California law (and often reflected in RCFE Admission Agreements), there is a distinction
+                between what an SSI recipient pays and what a private-pay or high-income resident pays.
+              </p>
+              <ul className="mt-2 list-disc pl-5 space-y-1">
+                <li>
+                  <strong>The SSI Rate Cap:</strong> For residents on SSI, the room and board rate is strictly
+                  capped (currently around $1,444.07 for 2026).
+                </li>
+                <li>
+                  <strong>The Non-SSI Exception:</strong> If a member has income other than SSI (for example, a
+                  higher Social Security check), the facility may charge the basic room and board rate plus an
+                  additional amount depending on the admission agreement.
+                </li>
+                <li>
+                  <strong>The Strategy:</strong> By increasing the room and board charge on the admission
+                  agreement to align with the member’s total income (minus the Personal Needs Allowance of $182),
+                  the member’s countable income can be reduced.
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-semibold text-gray-900 print:text-black">
+                2. The "Medical Expense" Spend-Down (Paperwork Fix)
+              </p>
+              <p>
+                If the board-and-care deduction is not available when CalAIM is paying for care, a spend-down
+                strategy can still reduce SOC to $0 by documenting incurred medical or remedial expenses.
+              </p>
+              <ul className="mt-2 list-disc pl-5 space-y-1">
+                <li>
+                  <strong>Remedial Care Expenses:</strong> The portion of an RCFE bill above the standard room and
+                  board amount may be argued as remedial care expense.
+                </li>
+                <li>
+                  <strong>How to report:</strong> Submit RCFE invoices to County Social Services (DPSS) as
+                  incurred medical expenses. Out-of-pocket amounts paid by the member can count toward meeting SOC.
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-semibold text-gray-900 print:text-black">
+                3. Purchase Supplemental Insurance (Often the Cleanest Fix)
+              </p>
+              <p>
+                To reduce SOC before final county calculation, lower gross countable income by documenting
+                deductible premiums and health insurance costs.
+              </p>
+              <ul className="mt-2 list-disc pl-5 space-y-1">
+                <li>
+                  <strong>Dental/Vision/Health premiums:</strong> Monthly premiums (for example, $150) are
+                  deductible by the county.
+                </li>
+                <li>
+                  <strong>Medicare Part B/D:</strong> Ensure all premium deductions are captured by the county
+                  eligibility worker.
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <h4 className="mt-5 font-semibold text-gray-900 print:text-black">Summary of Where to Go</h4>
+          <p className="mt-2 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+            These updates must be submitted to the <strong>County Social Services Eligibility Worker</strong>{' '}
+            (not the health plan):
+          </p>
+          <ul className="mt-2 list-disc pl-5 space-y-1 text-sm print:text-xs text-gray-700 print:text-black">
+            <li>
+              <strong>Revised Admission Agreement:</strong> showing higher room and board obligation up to the
+              member’s available income.
+            </li>
+            <li>
+              <strong>Medical receipts:</strong> out-of-pocket costs such as incontinence supplies, OTC
+              medications, transportation, and related expenses.
+            </li>
+            <li>
+              <strong>Insurance proof:</strong> monthly premium documentation for supplemental plans.
+            </li>
+          </ul>
+          <div className="mt-3 rounded border border-zinc-300 bg-white p-3 text-sm print:text-xs text-gray-700 print:text-black">
+            <strong>Crucial note:</strong> once county deductions are entered and the case reflects zero SOC, the
+            CalAIM managed care plan typically sees eligibility updates in approximately 24-48 hours.
+          </div>
+
           <h4 className="mt-4 font-semibold text-gray-900 print:text-black">Who to Contact for Help</h4>
           <p className="mt-2 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
             Navigating Medi-Cal rules is complex. We recommend contacting these free, state-funded organizations to help
