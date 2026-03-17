@@ -34,6 +34,7 @@ export interface MemberNotesModalProps {
   isSavingIlsDates: boolean;
   onIlsDateDraftChange: (draft: { tierLevelReceivedDate: string; ilsContractSentDate: string }) => void;
   onSaveIlsDates: () => void;
+  onSyncNotes: () => void;
 }
 
 export function MemberNotesModal({
@@ -49,6 +50,7 @@ export function MemberNotesModal({
   isSavingIlsDates,
   onIlsDateDraftChange,
   onSaveIlsDates,
+  onSyncNotes,
 }: MemberNotesModalProps) {
   if (!isOpen || !member) return null;
 
@@ -99,7 +101,13 @@ export function MemberNotesModal({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium">Notes History</h3>
-              <Badge variant="outline">{notes.length} notes</Badge>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={onSyncNotes} disabled={isLoadingNotes}>
+                  <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isLoadingNotes ? 'animate-spin' : ''}`} />
+                  Sync latest notes
+                </Button>
+                <Badge variant="outline">{notes.length} notes</Badge>
+              </div>
             </div>
 
             {isLoadingNotes ? (

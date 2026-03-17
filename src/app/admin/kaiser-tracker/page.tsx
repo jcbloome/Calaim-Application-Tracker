@@ -438,6 +438,42 @@ function KaiserTrackerPageContent() {
     }
   };
 
+  const syncMemberNotes = async () => {
+    const member = memberNotesModal.member;
+    if (!member) return;
+    setMemberNotesModal((prev) => ({
+      ...prev,
+      isLoadingNotes: true,
+    }));
+    try {
+      const response = await fetch(`/api/member-notes?clientId2=${member.client_ID2}`);
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to sync notes');
+      }
+      setMemberNotesModal((prev) => ({
+        ...prev,
+        notes: data.notes || [],
+        isLoadingNotes: false,
+      }));
+      toast({
+        title: data.fromCache ? 'Notes refreshed from cache' : 'Notes refreshed from Caspio',
+        description: `${data.notes?.length || 0} notes loaded for ${member.memberFirstName} ${member.memberLastName}`,
+      });
+    } catch (error: any) {
+      console.error('Error syncing member notes:', error);
+      setMemberNotesModal((prev) => ({
+        ...prev,
+        isLoadingNotes: false,
+      }));
+      toast({
+        title: 'Sync failed',
+        description: error?.message || 'Could not refresh member notes.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const toInputDate = (value: any): string => {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -821,22 +857,14 @@ function KaiserTrackerPageContent() {
         };
       });
 
-      const normalizeAllowedCalaim = (value: string) =>
-        normalizeCalaimStatus(String(value || '')).replace(/[_-]+/g, ' ');
-      const allowedCalaim = new Set(['authorized', 'pending']);
-      const eligibleMembers = cleanMembers.filter((member: KaiserMember) => {
-        const calaim = normalizeAllowedCalaim(String(member.CalAIM_Status || ''));
-        if (!allowedCalaim.has(calaim)) return false;
-        const effectiveKaiserStatus = getEffectiveKaiserStatus(member);
-        return Boolean(effectiveKaiserStatus && effectiveKaiserStatus !== 'Unknown');
-      });
-
-      setMembers(eligibleMembers);
+      // Keep all Kaiser members so CalAIM Status Summary reflects full status distribution
+      // (Authorized, Pending, Non_Active, Member Died, Denied, etc.).
+      setMembers(cleanMembers);
       
       if (!opts?.quiet) {
         toast({
           title: "Data synced",
-          description: `Loaded ${eligibleMembers.length} Kaiser members (Authorized/Pending with valid Kaiser status)`,
+          description: `Loaded ${cleanMembers.length} Kaiser members`,
         });
       }
     } catch (error) {
@@ -1130,6 +1158,7 @@ function KaiserTrackerPageContent() {
         isSavingIlsDates={isSavingIlsDates}
         onIlsDateDraftChange={setIlsDateDraft}
         onSaveIlsDates={handleSaveIlsDates}
+        onSyncNotes={syncMemberNotes}
       />
             </div>
   );

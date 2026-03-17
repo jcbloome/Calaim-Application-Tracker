@@ -576,7 +576,8 @@ export default function SwAlftUploadPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    // Open the dedicated ALFT printable preview first (then print from there).
+    window.location.href = '/admin/alft-tracker/dummy-preview?view=pdf';
   };
 
   if (isLoading) {
@@ -1398,13 +1399,8 @@ export default function SwAlftUploadPage() {
             ) : null}
 
             <div className="flex flex-col sm:flex-row gap-2 print:hidden">
-              <Button type="button" variant="outline" asChild className="sm:flex-1">
-                <a href="/admin/alft-tracker/dummy-preview">
-                  View dummy PDF preview
-                </a>
-              </Button>
               <Button type="button" variant="outline" onClick={handlePrint} className="sm:flex-1">
-                Print / Save PDF
+                View printable ALFT (Print/Download)
               </Button>
               <Button type="submit" disabled={isUploading} className="sm:flex-1">
                 {isUploading ? 'Submitting…' : 'Submit ALFT form'}

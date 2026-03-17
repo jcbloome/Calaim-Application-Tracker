@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
@@ -117,6 +116,7 @@ function Dot({ selected }: { selected: boolean }) {
 export default function AdminAlftDummyPreviewPage() {
   const searchParams = useSearchParams();
   const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
+  const logoSrc = '/ils-logo.png';
 
   const initialAnswers = useMemo<Record<string, AnswerValue>>(() => {
     const next: Record<string, AnswerValue> = {};
@@ -254,15 +254,16 @@ export default function AdminAlftDummyPreviewPage() {
           const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
           return (
             <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5">
-              <header className="mb-2 border-b border-zinc-400 pb-1.5">
+              <div className="mb-2 border-b border-zinc-400 pb-1.5">
                 <div className="flex flex-col items-center gap-1">
-                  <Image
-                    src="/ils-logo.png"
+                  <img
+                    src={logoSrc}
                     alt="Independent Living Systems"
-                    width={300}
-                    height={84}
-                    className="h-[36px] w-auto object-contain"
-                    priority={layout.number === 1}
+                    width={260}
+                    height={72}
+                    loading="eager"
+                    decoding="sync"
+                    className="alft-logo h-[36px] w-auto object-contain"
                   />
                   <div className="text-center text-[12px] font-semibold tracking-wide">ALF TRANSITION ASSESSMENT</div>
                 </div>
@@ -273,7 +274,7 @@ export default function AdminAlftDummyPreviewPage() {
                 <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
                   {layout.number}. {layout.title}
                 </div>
-              </header>
+              </div>
 
               <div className="grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
                 {questions.map((q) => (
@@ -312,9 +313,9 @@ export default function AdminAlftDummyPreviewPage() {
                 ))}
               </div>
 
-              <footer className="mt-4 border-t border-zinc-300 pt-2 text-right text-[10px] text-zinc-600">
+              <div className="mt-4 border-t border-zinc-300 pt-2 text-right text-[10px] text-zinc-600">
                 ALF Transition Assessment - Page {layout.number} of 14
-              </footer>
+              </div>
             </section>
           );
         })}
@@ -332,6 +333,10 @@ export default function AdminAlftDummyPreviewPage() {
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
           font-family: Arial, Helvetica, sans-serif;
           letter-spacing: 0.01em;
+        }
+        .alft-logo {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
         .alft-section-title {
           background: #f4f4f5;
@@ -354,6 +359,20 @@ export default function AdminAlftDummyPreviewPage() {
           @page {
             size: letter;
             margin: 0.5in;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          .alft-dummy-preview,
+          .alft-dummy-preview * {
+            visibility: visible !important;
+          }
+          .alft-dummy-preview {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
           }
           body {
             background: #fff !important;
