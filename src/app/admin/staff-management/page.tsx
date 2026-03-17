@@ -26,6 +26,7 @@ interface StaffMember {
     isKaiserStaff?: boolean;
     isHealthNetStaff?: boolean;
     isClaimsStaff?: boolean;
+    isKaiserAssignmentManager?: boolean;
     hasRegistered?: boolean;
 }
 
@@ -181,6 +182,7 @@ export default function StaffManagementPage() {
                     isKaiserStaff: Boolean(userData.isKaiserStaff),
                     isHealthNetStaff: Boolean(userData.isHealthNetStaff),
                     isClaimsStaff: Boolean(userData.isClaimsStaff),
+                    isKaiserAssignmentManager: Boolean(userData.isKaiserAssignmentManager),
                     hasRegistered,
                 };
             });
@@ -227,7 +229,7 @@ export default function StaffManagementPage() {
 
     const handlePlanFlagUpdate = async (
       uid: string,
-      patch: Partial<Pick<StaffMember, 'isKaiserStaff' | 'isHealthNetStaff' | 'isClaimsStaff'>>
+      patch: Partial<Pick<StaffMember, 'isKaiserStaff' | 'isHealthNetStaff' | 'isClaimsStaff' | 'isKaiserAssignmentManager'>>
     ) => {
       if (!firestore) return;
       const cleanUid = String(uid || '').trim();
@@ -1149,6 +1151,20 @@ export default function StaffManagementPage() {
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
+                                                <ShieldCheck className={`h-4 w-4 ${staff.isKaiserAssignmentManager ? 'text-orange-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`kaiser-assignment-manager-${staff.uid}`} className="text-sm font-medium">Kaiser assignment manager</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`kaiser-assignment-manager-${staff.uid}`}
+                                                checked={Boolean(staff.isKaiserAssignmentManager)}
+                                                onCheckedChange={(checked) => {
+                                                    handlePlanFlagUpdate(staff.uid, { isKaiserAssignmentManager: Boolean(checked) }).catch(() => undefined);
+                                                }}
+                                                aria-label={`Toggle Kaiser assignment manager for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
                                                 <Users className={`h-4 w-4 ${staff.isHealthNetStaff ? 'text-blue-600' : 'text-muted-foreground'}`} />
                                                 <Label htmlFor={`hn-staff-${staff.uid}`} className="text-sm font-medium">Health Net staff</Label>
                                             </div>
@@ -1189,6 +1205,56 @@ export default function StaffManagementPage() {
                                                     handleInterofficeElectronCardToggle(staff.uid, nextValue, staff, reviewRecipient);
                                                 }} 
                                                 aria-label={`Toggle interoffice and electron alerts for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Bell className={`h-4 w-4 ${Boolean(reviewRecipient.kaiserUploads ?? true) ? 'text-orange-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`manager-kaiser-review-${staff.uid}`} className="text-sm font-medium">Manager notify: Kaiser CS/docs</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`manager-kaiser-review-${staff.uid}`}
+                                                checked={Boolean(reviewRecipient.kaiserUploads ?? true)}
+                                                disabled={!reviewPopupsEnabled}
+                                                onCheckedChange={(checked) => {
+                                                    const nextValue = Boolean(checked);
+                                                    setReviewRecipient(
+                                                      staff.uid,
+                                                      {
+                                                        kaiserUploads: nextValue,
+                                                        enabled: nextValue || Boolean((reviewRecipient.healthNetUploads ?? true) || reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alft),
+                                                        documents: nextValue ? true : reviewRecipient.documents,
+                                                        csSummary: nextValue ? true : reviewRecipient.csSummary,
+                                                      },
+                                                      staff
+                                                    );
+                                                }}
+                                                aria-label={`Toggle Kaiser manager CS/docs Electron notifications for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Bell className={`h-4 w-4 ${Boolean(reviewRecipient.healthNetUploads ?? true) ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`manager-hn-review-${staff.uid}`} className="text-sm font-medium">Manager notify: Health Net CS/docs</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`manager-hn-review-${staff.uid}`}
+                                                checked={Boolean(reviewRecipient.healthNetUploads ?? true)}
+                                                disabled={!reviewPopupsEnabled}
+                                                onCheckedChange={(checked) => {
+                                                    const nextValue = Boolean(checked);
+                                                    setReviewRecipient(
+                                                      staff.uid,
+                                                      {
+                                                        healthNetUploads: nextValue,
+                                                        enabled: nextValue || Boolean((reviewRecipient.kaiserUploads ?? true) || reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alft),
+                                                        documents: nextValue ? true : reviewRecipient.documents,
+                                                        csSummary: nextValue ? true : reviewRecipient.csSummary,
+                                                      },
+                                                      staff
+                                                    );
+                                                }}
+                                                aria-label={`Toggle Health Net manager CS/docs Electron notifications for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">

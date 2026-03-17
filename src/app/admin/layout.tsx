@@ -218,6 +218,8 @@ function AdminHeader() {
     allowEligibility: boolean;
     allowStandalone: boolean;
     allowAlft: boolean;
+    allowKaiserUploads: boolean;
+    allowHealthNetUploads: boolean;
   }>({
     enabled: true,
     alftElectronEnabled: true,
@@ -227,6 +229,8 @@ function AdminHeader() {
     allowEligibility: false,
     allowStandalone: false,
     allowAlft: false,
+    allowKaiserUploads: true,
+    allowHealthNetUploads: true,
   });
   // In admin, show the review popup whenever there are pending review items.
   // Use an in-memory baseline so we don't spam repeatedly while the page is open,
@@ -312,6 +316,8 @@ function AdminHeader() {
           allowEligibility: Boolean(recipient?.eligibility),
           allowStandalone: Boolean(recipient?.standalone),
           allowAlft: Boolean(recipient?.alft),
+          allowKaiserUploads: Boolean(recipient?.kaiserUploads ?? true),
+          allowHealthNetUploads: Boolean(recipient?.healthNetUploads ?? true),
         });
       },
       () => {
@@ -325,6 +331,8 @@ function AdminHeader() {
           allowEligibility: false,
           allowStandalone: false,
           allowAlft: false,
+          allowKaiserUploads: true,
+          allowHealthNetUploads: true,
         });
       }
     );
@@ -580,6 +588,11 @@ function AdminHeader() {
         const plan = String(app.healthPlan || '').toLowerCase();
         const isKaiser = plan.includes('kaiser');
         const isHn = plan.includes('health net');
+        const includeByPlan =
+          (isKaiser && reviewPopupPrefs.allowKaiserUploads) ||
+          (isHn && reviewPopupPrefs.allowHealthNetUploads) ||
+          (!isKaiser && !isHn);
+        if (!includeByPlan) return;
         const ownerUid = app.__ownerUid || app.userId || null;
         const appUrl = ownerUid
           ? `/admin/applications/${app.id}?userId=${encodeURIComponent(ownerUid)}`
@@ -658,6 +671,11 @@ function AdminHeader() {
         const plan = String(u?.healthPlan || '').toLowerCase();
         const isKaiser = plan.includes('kaiser');
         const isHn = plan.includes('health net');
+        const includeByPlan =
+          (isKaiser && reviewPopupPrefs.allowKaiserUploads) ||
+          (isHn && reviewPopupPrefs.allowHealthNetUploads) ||
+          (!isKaiser && !isHn);
+        if (!includeByPlan) return;
         const url = `/admin/standalone-uploads?focus=${encodeURIComponent(String(u?.id || ''))}`;
         const docType = String(u?.documentType || '').trim();
         const toolCode = String(u?.toolCode || '').trim().toUpperCase();
@@ -1014,7 +1032,17 @@ function AdminHeader() {
       unsubAdminApps?.();
       unsubStandaloneUploads?.();
     };
-  }, [firestore, user?.uid, reviewPopupPrefs.enabled, reviewPopupPrefs.recipientEnabled, reviewPopupPrefs.allowDocs, reviewPopupPrefs.allowCs, showNotification]);
+  }, [
+    firestore,
+    user?.uid,
+    reviewPopupPrefs.enabled,
+    reviewPopupPrefs.recipientEnabled,
+    reviewPopupPrefs.allowDocs,
+    reviewPopupPrefs.allowCs,
+    reviewPopupPrefs.allowKaiserUploads,
+    reviewPopupPrefs.allowHealthNetUploads,
+    showNotification,
+  ]);
 
   useEffect(() => {
     if (!firestore || !user?.uid) return;

@@ -93,6 +93,7 @@ function StaffAssignmentDropdown({
 }) {
     const firestore = useFirestore();
     const { toast } = useToast();
+    const { user: adminUser, isSuperAdmin } = useAdmin();
     type StaffCandidate = {
       uid: string;
       role: 'Admin' | 'Super Admin' | 'Staff';
@@ -107,8 +108,35 @@ function StaffAssignmentDropdown({
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
     const [staffFilterLabel, setStaffFilterLabel] = useState<string>('Showing all staff');
+    const [canAssignForKaiser, setCanAssignForKaiser] = useState(true);
     const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
     const { isActiveByUid } = useDesktopPresenceMap(staffUids);
+    const isKaiserPlan = String(application.healthPlan || '').toLowerCase().includes('kaiser');
+
+    useEffect(() => {
+      const run = async () => {
+        if (!isKaiserPlan) {
+          setCanAssignForKaiser(true);
+          return;
+        }
+        if (isSuperAdmin) {
+          setCanAssignForKaiser(true);
+          return;
+        }
+        if (!firestore || !adminUser?.uid) {
+          setCanAssignForKaiser(false);
+          return;
+        }
+        try {
+          const meSnap = await getDoc(doc(firestore, 'users', adminUser.uid));
+          const meData = meSnap.exists() ? (meSnap.data() as any) : null;
+          setCanAssignForKaiser(Boolean(meData?.isKaiserAssignmentManager));
+        } catch {
+          setCanAssignForKaiser(false);
+        }
+      };
+      run().catch(() => setCanAssignForKaiser(false));
+    }, [isKaiserPlan, isSuperAdmin, firestore, adminUser?.uid]);
 
     useEffect(() => {
         // Filter staff list based on the application's health plan.
@@ -229,11 +257,54 @@ function StaffAssignmentDropdown({
             };
             
             await setDoc(docRef, updateData, { merge: true });
+
+            // For Kaiser assignments, immediately notify assigned staff in Electron and
+            // add a follow-up task item so it appears on their daily task calendar.
+            if (isKaiserPlan) {
+              const memberName = `${application.memberFirstName || ''} ${application.memberLastName || ''}`.trim() || 'Member';
+              const dueDate = new Date();
+              dueDate.setHours(17, 0, 0, 0);
+
+              const assignedByName = String(
+                adminUser?.displayName ||
+                adminUser?.email ||
+                'Manager'
+              ).trim();
+              const actionUrl = application.userId
+                ? `/admin/applications/${application.id}?userId=${encodeURIComponent(String(application.userId))}`
+                : `/admin/applications/${application.id}`;
+
+              await addDoc(collection(firestore, 'staff_notifications'), {
+                userId: selectedStaff.uid,
+                title: `Kaiser assignment: ${memberName}`,
+                message: `You were assigned ${memberName} in Application Pathway. Please review and complete the next step.`,
+                memberName,
+                clientId2: String((application as any)?.client_ID2 || '').trim() || null,
+                healthPlan: 'Kaiser',
+                type: 'assignment',
+                priority: 'Priority',
+                status: 'Open',
+                isRead: false,
+                requiresStaffAction: true,
+                followUpRequired: true,
+                followUpDate: dueDate.toISOString(),
+                senderName: assignedByName,
+                assignedByUid: String(adminUser?.uid || '').trim() || null,
+                assignedByName,
+                actionUrl,
+                applicationId: application.id,
+                source: 'application-pathway',
+                timestamp: serverTimestamp(),
+              });
+            }
+
             onStaffChange(staffId, selectedStaff.displayName);
             
             toast({
                 title: "Staff Assigned",
-                description: `Application assigned to ${selectedStaff.displayName}`,
+                description: isKaiserPlan
+                  ? `Application assigned to ${selectedStaff.displayName}. Electron + daily task calendar notified.`
+                  : `Application assigned to ${selectedStaff.displayName}`,
             });
         } catch (error) {
             console.error('Error assigning staff:', error);
@@ -261,7 +332,7 @@ function StaffAssignmentDropdown({
         <Select
           value={(application as any)?.assignedStaffId || ''}
           onValueChange={handleStaffAssignment}
-          disabled={isLoading || isLoadingStaff}
+          disabled={isLoading || isLoadingStaff || (isKaiserPlan && !canAssignForKaiser)}
         >
           <SelectTrigger>
             <SelectValue placeholder={isLoadingStaff ? 'Loading staff…' : 'Assign a staff member...'} />
@@ -283,6 +354,11 @@ function StaffAssignmentDropdown({
             ))}
           </SelectContent>
         </Select>
+        {isKaiserPlan && !canAssignForKaiser ? (
+          <div className="text-[11px] text-amber-700">
+            Kaiser assignment manager access is required to assign Kaiser staff from this portal.
+          </div>
+        ) : null}
       </div>
     );
 }
