@@ -207,6 +207,43 @@ export default function Step4() {
               required by some managed care plans.
             </p>
           </div>
+
+          <Alert className="border-amber-300 bg-amber-50 text-amber-900">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Section 11: Share of Cost (SOC)</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>
+                Share of Cost (SOC) is like a monthly Medi-Cal deductible: the amount a member may need to pay each
+                month before Medi-Cal-covered services begin paying.
+              </p>
+              <p className="pt-1">
+                Members generally cannot apply for CalAIM with a SOC. SOC usually needs to be reduced to $0 first.
+              </p>
+              <p>
+                For more details, see Program Information:{' '}
+                <a
+                  href="/info/eligibility"
+                  className="underline underline-offset-2 text-blue-700 hover:text-blue-800"
+                >
+                  /info/eligibility
+                </a>
+                .
+              </p>
+              <div className="rounded-md border border-amber-300 bg-white/70 p-3 text-sm">
+                <div className="font-semibold">Brief examples to help lower SOC:</div>
+                <ul className="mt-1 list-disc pl-5 space-y-1">
+                  <li>Submit supplemental insurance premiums (dental/vision/Part B/Part D) to county worker.</li>
+                  <li>Provide RCFE invoices and other allowable out-of-pocket medical/remedial expenses.</li>
+                  <li>Example: ask county to screen the member for the 250% Working Disabled Program if applicable.</li>
+                  <li>Ask county eligibility worker to review all deductions for a potential $0 SOC determination.</li>
+                </ul>
+              </div>
+              <p className="pt-1">
+                Later in this application, applicants will be required to provide proof of Social Security income
+                (for example, annual award letter or 3 months of bank statements).
+              </p>
+            </AlertDescription>
+          </Alert>
             <FormField
               control={control}
               name="ackRoomAndBoard"

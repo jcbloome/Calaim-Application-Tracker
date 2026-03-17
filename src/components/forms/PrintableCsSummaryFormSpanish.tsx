@@ -337,10 +337,6 @@ export function PrintableCsSummaryFormSpanish({
         React.createElement('p', { key: 'rb-4' }, 'Los miembros que no pueden pagar ninguna porción de alojamiento y comida generalmente no son elegibles para el CS, ya que los requisitos del programa exigen un pago de "alojamiento y comida" del miembro (o su familia).'),
         React.createElement('p', { key: 'rb-5' }, 'Trabajar con CalAIM es a discreción de los RCFEs. Los RCFEs, especialmente en áreas más costosas, podrían no participar en CalAIM. Las familias que buscan colocar a miembros en áreas de bienes raíces costosos deben tener la expectativa realista de que los RCFEs de CalAIM podrían estar ubicados en áreas más asequibles. Antes de aceptar miembros de CalAIM, los RCFEs necesitarán conocer el pago de "alojamiento y comida".')
       ]),
-      React.createElement('div', {
-        key: 'income-proof-note',
-        className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black'
-      }, 'Se deberá presentar comprobante de ingresos (carta anual de adjudicación o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social) como parte de esta solicitud. Si los ingresos son superiores a aproximadamente $1,800, esto podría activar el Share of Cost de Medi-Cal que debe resolverse antes de solicitar CalAIM. Consulte las páginas de información del programa para más detalles.'),
       buildField({
         label: 'Reconoce Responsabilidad de Alojamiento y Comida',
         value: data.ackRoomAndBoard ? 'Sí' : 'No',
@@ -350,7 +346,25 @@ export function PrintableCsSummaryFormSpanish({
         width: 'full'
       }),
     ]),
-    buildSection('Sección 11: Centro de Cuidado Residencial Preferido (RCFE)', [
+    buildSection('Sección 11: Share of Cost (SOC)', [
+      React.createElement('div', {
+        key: 'soc-note-section',
+        className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
+      }, [
+        React.createElement('p', { key: 'soc-what-is' }, 'Share of Cost (SOC) es como un deducible mensual de Medi-Cal: el monto que el miembro puede necesitar pagar cada mes antes de que Medi-Cal comience a cubrir servicios.'),
+        React.createElement('p', { key: 'soc-note', className: 'mt-2' }, 'Generalmente, los miembros no pueden solicitar CalAIM con Share of Cost (SOC). El SOC normalmente debe reducirse a $0 para ser elegible.'),
+        React.createElement('p', { key: 'soc-link' }, 'Enlace de información del programa: https://connectcalaim.com/info/eligibility'),
+        React.createElement('p', { key: 'soc-examples-title', className: 'font-semibold' }, 'Ejemplos breves para ayudar a reducir SOC:'),
+        React.createElement('ul', { key: 'soc-examples-list', className: 'list-disc pl-5 space-y-1' }, [
+          React.createElement('li', { key: 'soc-example-1' }, 'Presentar primas de seguro suplementario (dental/visión/Parte B/Parte D) al trabajador del condado.'),
+          React.createElement('li', { key: 'soc-example-2' }, 'Presentar facturas del RCFE y otros gastos médicos/remediales permitidos pagados por el miembro.'),
+          React.createElement('li', { key: 'soc-example-250' }, 'Ejemplo: pedir al condado evaluar si aplica el programa 250% Working Disabled Program.'),
+          React.createElement('li', { key: 'soc-example-3' }, 'Solicitar al trabajador de elegibilidad del condado revisar todas las deducciones para posible SOC de $0.'),
+        ]),
+        React.createElement('p', { key: 'income-note', className: 'mt-2' }, 'Más adelante en esta solicitud, los solicitantes deberán proporcionar comprobante de ingresos del Seguro Social (carta anual de adjudicación o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social).'),
+      ]),
+    ]),
+    buildSection('Sección 12: Centro de Cuidado Residencial Preferido (RCFE)', [
       buildField({
         label: 'Tiene RCFE Preferido',
         value: data.hasPrefRCFE ? 'Sí' : 'No',

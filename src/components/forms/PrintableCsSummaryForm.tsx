@@ -656,12 +656,6 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
             CalAIM members, RCFEs will need to know the "room and board" payment.
           </p>
         </div>
-        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
-          Proof of income (annual award letter or 3 months of bank statements showing Social Security income) is
-          required by some managed care plans. If income is above approximately $1,800, this might trigger
-          Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for
-          more information about this.
-        </div>
         <PrintableField
           label="Acknowledges Room & Board Responsibility"
           value={data.ackRoomAndBoard ? 'Yes' : 'No'}
@@ -672,8 +666,36 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         />
       </PrintableFormSection>
 
+      {/* SOC */}
+      <PrintableFormSection title="Section 11: Share of Cost (SOC)">
+        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
+          <p>
+            Share of Cost (SOC) is like a monthly Medi-Cal deductible: the amount a member may need to pay each month
+            before Medi-Cal-covered services begin paying.
+          </p>
+          <p className="mt-2">
+            Members generally cannot apply for CalAIM with a Share of Cost (SOC). SOC usually needs to be reduced to $0
+            before CalAIM eligibility.
+          </p>
+          <p className="mt-2">
+            Program Information link: https://connectcalaim.com/info/eligibility
+          </p>
+          <p className="mt-2 font-semibold">Brief examples to help lower SOC:</p>
+          <ul className="mt-1 list-disc pl-5 space-y-1">
+            <li>Submit supplemental insurance premiums (dental/vision/Part B/Part D) to county worker.</li>
+            <li>Provide RCFE invoices and other allowable out-of-pocket medical/remedial expenses.</li>
+            <li>Example: ask county to screen the member for the 250% Working Disabled Program if applicable.</li>
+            <li>Ask county eligibility worker to review all deductions for a potential $0 SOC determination.</li>
+          </ul>
+          <p className="mt-2">
+            Later in this application, applicants will be required to provide proof of Social Security income
+            (annual award letter or 3 months of bank statements showing Social Security income).
+          </p>
+        </div>
+      </PrintableFormSection>
+
       {/* Preferred RCFE */}
-      <PrintableFormSection title="Section 11: Preferred Residential Care Facility (RCFE)">
+      <PrintableFormSection title="Section 12: Preferred Residential Care Facility (RCFE)">
         <PrintableField
           label="Has Preferred RCFE"
           value={data.hasPrefRCFE ? 'Yes' : 'No'}
