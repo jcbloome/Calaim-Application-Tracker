@@ -1125,6 +1125,55 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
   });
 }
 
+const toCaspioDate = (value?: string): string | null => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = String(d.getFullYear());
+  return `${mm}/${dd}/${yyyy}`;
+};
+
+async function resolveCaspioUserIdForMember(params: {
+  baseUrl: string;
+  token: string;
+  clientId2: string;
+  preferredUserId: number;
+}): Promise<number> {
+  const { baseUrl, token, clientId2, preferredUserId } = params;
+  if (Number.isFinite(preferredUserId) && preferredUserId > 0) return preferredUserId;
+  const envFallback = Number.parseInt(String(process.env.CASPIO_NOTES_DEFAULT_USER_ID || '').trim(), 10);
+  if (Number.isFinite(envFallback) && envFallback > 0) return envFallback;
+  try {
+    const whereClause = `Client_ID2='${clientId2}'`;
+    const url =
+      `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records` +
+      `?q.where=${encodeURIComponent(whereClause)}` +
+      `&q.orderBy=${encodeURIComponent('Time_Stamp DESC')}` +
+      `&q.pageSize=1` +
+      `&q.select=${encodeURIComponent('User_ID')}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const latest = Array.isArray(data?.Result) ? data.Result[0] : null;
+      const latestUserId = Number.parseInt(String(latest?.User_ID || '').trim(), 10);
+      if (Number.isFinite(latestUserId) && latestUserId > 0) return latestUserId;
+    }
+  } catch {
+    // ignore and use hard fallback
+  }
+  // Last-resort value to avoid null writes; may still fail if Caspio rejects it.
+  return 1;
+}
+
 async function syncNoteToCaspio(note: MemberNote): Promise<{ success: boolean; error?: string }> {
   try {
     console.log(`📤 Syncing new note to connect_tbl_clientnotes: ${note.id}`);
@@ -1133,7 +1182,12 @@ async function syncNoteToCaspio(note: MemberNote): Promise<{ success: boolean; e
     const token = await getCaspioToken(credentials);
     
     const parsedUserId = Number.parseInt(String(note.createdBy || '').trim(), 10);
-    const safeUserId = Number.isFinite(parsedUserId) ? parsedUserId : 0;
+    const safeUserId = await resolveCaspioUserIdForMember({
+      baseUrl,
+      token,
+      clientId2: String(note.clientId2 || '').trim(),
+      preferredUserId: Number.isFinite(parsedUserId) ? parsedUserId : 0,
+    });
 
     // Create new record in connect_tbl_clientnotes
     const caspioData = {
@@ -1141,7 +1195,7 @@ async function syncNoteToCaspio(note: MemberNote): Promise<{ success: boolean; e
       Comments: note.noteText,
       User_ID: safeUserId,
       Time_Stamp: note.createdAt,
-      Follow_Up_Date: note.followUpDate || null,
+      Follow_Up_Date: toCaspioDate(note.followUpDate),
       Note_Status: note.status || 'Open',
       Follow_Up_Status: note.priority === 'Urgent' ? '🔴 Urgent' : note.priority === 'Priority' ? '🟡 Priority' : '🟢 Open',
       User_Full_Name: note.createdByName,
