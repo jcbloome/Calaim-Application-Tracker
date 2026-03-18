@@ -303,7 +303,7 @@ export function PrintableCsSummaryFormSpanish({
         width: 'full'
       }),
     ]),
-    buildSection('Sección 10A: Pago de Cuidado Fuera del Hogar No Médico (NMOHC)', [
+    buildSection('Sección 10: Pago de Cuidado Fuera del Hogar No Médico (NMOHC) y Pagos de Alojamiento y Comida', [
       React.createElement('div', {
         key: 'nmohc-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
@@ -329,8 +329,6 @@ export function PrintableCsSummaryFormSpanish({
           ])
         ])
       ]),
-    ]),
-    buildSection('Sección 10B: Pagos de Alojamiento y Comida', [
       React.createElement('div', {
         key: 'room-board-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'

@@ -598,8 +598,8 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         />
       </PrintableFormSection>
 
-      {/* NMOHC Payment */}
-      <PrintableFormSection title="Section 10A: Non-Medical Out-of-Home Care (NMOHC) Payment">
+      {/* NMOHC + Room & Board */}
+      <PrintableFormSection title="Section 10: Non-Medical Out-of-Home Care (NMOHC) and Room & Board Payments">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
           <p>
             Non-Medical Out-of-Home Care (NMOHC) is a payment supplement that boosts a person’s monthly SSI check
@@ -628,10 +628,6 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
             </ul>
           </div>
         </div>
-      </PrintableFormSection>
-
-      {/* Room & Board Payments */}
-      <PrintableFormSection title="Section 10B: Room & Board Payments">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
           <p>
             The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible
