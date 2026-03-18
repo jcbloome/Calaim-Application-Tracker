@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { CaspioService } from '@/modules/caspio-integration/services/CaspioService';
 
 // Try to import Firebase Admin, but handle gracefully if not available
 let adminDb: any = null;
@@ -798,22 +799,49 @@ export async function POST(request: NextRequest) {
       category
     } = body;
 
-    // Use new Caspio module for creating notes
-    const caspioService = CaspioService.getInstance();
-    
-    const noteData = {
-      memberId: clientId2,
-      memberName: memberName || 'Unknown Member',
-      noteText,
-      staffMember: createdByName || authorName || 'Unknown Staff',
-      priority: priority || 'General',
-      category: category || 'General',
-      isILSOnly: noteType === 'ILS',
-      isRead: false,
-      assignedStaff: assignedToName ? [assignedToName] : []
+    const memberKey = String(clientId2 || '').trim();
+    const safeText = sanitizeText(noteText);
+    if (!memberKey) {
+      return NextResponse.json({ success: false, error: 'Client ID is required' }, { status: 400 });
+    }
+    if (!safeText) {
+      return NextResponse.json({ success: false, error: 'Note content is required' }, { status: 400 });
+    }
+
+    const mapPriority = (raw: unknown): MemberNote['priority'] => {
+      const p = String(raw || '').toLowerCase();
+      if (p === 'urgent') return 'Urgent';
+      if (p === 'high' || p === 'priority') return 'Priority';
+      return 'General';
     };
 
-    const createdNote = await caspioService.createNote(noteData);
+    const createdNote: MemberNote = validateAndCleanNote({
+      id: `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      clientId2: memberKey,
+      memberName: sanitizeText(memberName) || 'Unknown Member',
+      noteText: safeText,
+      noteType: sanitizeText(category || noteType) || 'General',
+      createdBy: String(createdBy || authorId || '0').trim() || '0',
+      createdByName: sanitizeText(createdByName || authorName) || 'Current User',
+      assignedTo: assignedTo ? String(assignedTo).trim() : undefined,
+      assignedToName: sanitizeText(assignedToName) || undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      source: 'Admin',
+      isRead: false,
+      priority: mapPriority(priority),
+      followUpDate: followUpDate ? String(followUpDate) : undefined,
+      status: 'Open',
+      tags: [],
+    });
+
+    const existing = memberNotesCache[memberKey] || [];
+    memberNotesCache[memberKey] = [createdNote, ...existing].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    await saveNotesToFirestore([createdNote]);
+
+    const caspioSyncResult = await syncNoteToCaspio(createdNote);
     
     const shouldNotify = Boolean(
       assignedTo && ['Priority', 'Urgent'].includes(priority || '')
@@ -824,9 +852,9 @@ export async function POST(request: NextRequest) {
     if (adminDb && shouldNotify && assignedTo) {
       await sendNoteNotification({
         id: createdNote.id,
-        clientId2: String(clientId2 || '').trim(),
+        clientId2: memberKey,
         memberName: memberName || 'Unknown Member',
-        noteText,
+        noteText: safeText,
         noteType: category || 'General',
         createdBy: createdBy || authorId || 'system',
         createdByName: createdByName || authorName || 'System',
@@ -844,7 +872,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       note: { ...createdNote, status: 'Open' },
-      message: 'Note created successfully using Caspio module'
+      caspioSynced: caspioSyncResult.success,
+      caspioSyncError: caspioSyncResult.success ? null : caspioSyncResult.error,
+      message: caspioSyncResult.success
+        ? 'Note created successfully and synced to Caspio'
+        : 'Note created; Caspio sync failed'
     });
 
   } catch (error: any) {
@@ -1093,18 +1125,21 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
   });
 }
 
-async function syncNoteToCaspio(note: MemberNote): Promise<void> {
+async function syncNoteToCaspio(note: MemberNote): Promise<{ success: boolean; error?: string }> {
   try {
     console.log(`📤 Syncing new note to connect_tbl_clientnotes: ${note.id}`);
     
     const { credentials, baseUrl } = getCaspioConfig();
     const token = await getCaspioToken(credentials);
     
+    const parsedUserId = Number.parseInt(String(note.createdBy || '').trim(), 10);
+    const safeUserId = Number.isFinite(parsedUserId) ? parsedUserId : 0;
+
     // Create new record in connect_tbl_clientnotes
     const caspioData = {
       Client_ID2: parseInt(note.clientId2),
       Comments: note.noteText,
-      User_ID: parseInt(note.createdBy),
+      User_ID: safeUserId,
       Time_Stamp: note.createdAt,
       Follow_Up_Date: note.followUpDate || null,
       Note_Status: note.status || 'Open',
@@ -1138,10 +1173,11 @@ async function syncNoteToCaspio(note: MemberNote): Promise<void> {
     }
     
     console.log(`✅ Note synced to Caspio connect_tbl_clientnotes: ${note.id}`);
+    return { success: true };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Error syncing note to Caspio:', error);
-    // Don't throw error - note is still saved locally
+    return { success: false, error: error?.message || 'Unknown Caspio sync error' };
   }
 }
 

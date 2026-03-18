@@ -25,7 +25,7 @@ export interface MemberNotesModalProps {
     assignedToName: string;
     followUpDate: string;
   };
-  onNewNoteChange: (note: any) => void;
+  onNewNoteChange: (patch: Partial<MemberNotesModalProps['newNote']>) => void;
   onCreateNote: () => void;
   ilsDateDraft: {
     tierLevelReceivedDate: string;
@@ -84,7 +84,7 @@ export function MemberNotesModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+      <DialogContent className="w-[95vw] max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
@@ -96,7 +96,7 @@ export function MemberNotesModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[70vh]">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Notes List */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -116,7 +116,7 @@ export function MemberNotesModal({
                 <p className="text-muted-foreground">Loading notes...</p>
               </div>
             ) : (
-              <ScrollArea className="h-[50vh]">
+              <ScrollArea className="h-[45vh]">
                 <div className="space-y-3">
                   {notes.length === 0 ? (
                     <div className="text-center py-8">
@@ -222,7 +222,7 @@ export function MemberNotesModal({
                 <Select
                   value={newNote.priority}
                   onValueChange={(value: 'Low' | 'Medium' | 'High' | 'Urgent') =>
-                    onNewNoteChange({ ...newNote, priority: value })
+                    onNewNoteChange({ priority: value })
                   }
                 >
                   <SelectTrigger>
@@ -241,7 +241,7 @@ export function MemberNotesModal({
                 <label className="text-sm font-medium text-gray-700">Note Content</label>
                 <Textarea
                   value={newNote.noteText}
-                  onChange={(e) => onNewNoteChange({ ...newNote, noteText: e.target.value })}
+                  onChange={(e) => onNewNoteChange({ noteText: e.target.value })}
                   placeholder="Enter note content..."
                   rows={4}
                   className="resize-none"
@@ -262,7 +262,6 @@ export function MemberNotesModal({
                         Jesse: 'jesse-user-id',
                       };
                       onNewNoteChange({
-                        ...newNote,
                         assignedToName: normalized,
                         assignedTo: normalized ? staffMap[normalized] || '' : '',
                       });
@@ -284,13 +283,17 @@ export function MemberNotesModal({
                   <Input
                     type="date"
                     value={newNote.followUpDate}
-                    onChange={(e) => onNewNoteChange({ ...newNote, followUpDate: e.target.value })}
+                    onChange={(e) => onNewNoteChange({ followUpDate: e.target.value })}
                     min={new Date().toISOString().split('T')[0]}
                   />
                 </div>
               </div>
 
-              <Button onClick={onCreateNote} disabled={!newNote.noteText.trim()} className="w-full">
+              <Button
+                onClick={onCreateNote}
+                disabled={!newNote.noteText.trim()}
+                className="w-full bg-blue-600 text-white hover:bg-blue-700"
+              >
                 <MessageSquare className="mr-2 h-4 w-4" />
                 Add Note
               </Button>

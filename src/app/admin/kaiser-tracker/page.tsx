@@ -627,6 +627,14 @@ function KaiserTrackerPageContent() {
           description: `Note added for ${memberNotesModal.member.memberFirstName} ${memberNotesModal.member.memberLastName}${newNote.assignedToName ? ` and assigned to ${newNote.assignedToName}` : ''}`,
         });
 
+        if (data?.caspioSynced === false) {
+          toast({
+            title: 'Caspio sync failed',
+            description: data?.caspioSyncError || 'The note was saved locally but did not sync to Caspio.',
+            variant: 'destructive',
+          });
+        }
+
         // Show notification if assigned to staff
         if (newNote.assignedTo && newNote.assignedToName) {
           // Trigger staff notification
@@ -1154,7 +1162,7 @@ function KaiserTrackerPageContent() {
         notes={memberNotesModal.notes}
         isLoadingNotes={memberNotesModal.isLoadingNotes}
         newNote={newNote}
-        onNewNoteChange={setNewNote}
+        onNewNoteChange={(patch) => setNewNote((prev) => ({ ...prev, ...patch }))}
         onCreateNote={handleCreateNote}
         ilsDateDraft={ilsDateDraft}
         isSavingIlsDates={isSavingIlsDates}
