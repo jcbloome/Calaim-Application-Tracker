@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
         memberCounty: rawMember.Member_County || 'Los Angeles',
         memberHealthPlan: rawMember.CalAIM_MCO || 'Unknown',
         memberStatus: rawMember.CalAIM_Status || '',
+        rcfeName: rawMember.RCFE_Name || '',
         
         // Authorization fields (from raw Caspio data)
         authStartDateT2038: rawMember.Authorization_Start_Date_T2038 || '',

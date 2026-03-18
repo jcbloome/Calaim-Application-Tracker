@@ -40,6 +40,8 @@ interface AuthorizationMember {
   memberName: string;
   mrn: string;
   healthPlan: string;
+  calaimStatus?: string;
+  rcfeName?: string;
   primaryContact: string;
   contactPhone: string;
   contactEmail: string;
@@ -59,8 +61,8 @@ interface AuthorizationMember {
   h2022DaysRemaining?: number;
   t2038Status: 'active' | 'expiring' | 'expired' | 'pending' | 'none';
   h2022Status: 'active' | 'expiring' | 'expired' | 'pending' | 'none';
-  // Kaiser-only critical warning: H2022 ends within 30 days
-  h2022KaiserCritical?: boolean;
+  // Critical renewal bucket for authorization tracker.
+  criticalRenewal?: boolean;
   needsAttention: boolean;
 }
 
@@ -118,6 +120,16 @@ const normalizePlanForDisplay = (plan?: string) => {
 };
 
 const isKaiserPlan = (plan?: string) => String(plan || '').toLowerCase().includes('kaiser');
+const isHealthNetPlan = (plan?: string) => String(plan || '').toLowerCase().includes('health net');
+
+const normalizeCalaimStatus = (value?: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+const isAuthorizedCalaim = (value?: string) => normalizeCalaimStatus(value) === 'authorized';
 
 const isEndDateWithinDays = (endDate?: string, withinDays: number = 30) => {
   if (!endDate || endDate.trim() === '') return false;
@@ -263,6 +275,8 @@ export default function AuthorizationTracker() {
           : 'Unknown Member',
         mrn: member.memberMediCalNum || member.memberMrn || '',
         healthPlan: member.memberHealthPlan || 'Unknown',
+        calaimStatus: member.memberStatus || '',
+        rcfeName: member.rcfeName || '',
         primaryContact: member.primaryContact || '',
         contactPhone: member.contactPhone || '',
         contactEmail: member.contactEmail || '',
@@ -281,15 +295,22 @@ export default function AuthorizationTracker() {
         const t2038DaysRemaining = getDaysRemaining(member.authEndDateT2038);
         const h2022DaysRemaining = getDaysRemaining(member.authEndDateH2022);
 
-        const h2022KaiserCritical =
-          isKaiserPlan(member.healthPlan) && isEndDateWithinDays(member.authEndDateH2022, 30);
+        const authorized = isAuthorizedCalaim(member.calaimStatus);
+        const hasRcfePlacement = Boolean(String(member.rcfeName || '').trim());
+        const kaiserCritical =
+          isKaiserPlan(member.healthPlan) &&
+          (isEndDateWithinDays(member.authEndDateH2022, 30) || isEndDateWithinDays(member.authEndDateT2038, 30));
+        const healthNetCritical =
+          isHealthNetPlan(member.healthPlan) &&
+          (isEndDateWithinDays(member.authEndDateH2022, 14) || isEndDateWithinDays(member.authEndDateT2038, 14));
+        const criticalRenewal = authorized && !hasRcfePlacement && (kaiserCritical || healthNetCritical);
         
         const needsAttention =
           t2038Status === 'expiring' ||
           t2038Status === 'expired' ||
           h2022Status === 'expiring' ||
           h2022Status === 'expired' ||
-          h2022KaiserCritical;
+          criticalRenewal;
         
         return {
           ...member,
@@ -297,7 +318,7 @@ export default function AuthorizationTracker() {
           h2022Status,
           t2038DaysRemaining,
           h2022DaysRemaining,
-          h2022KaiserCritical,
+          criticalRenewal,
           needsAttention
         };
       });
@@ -426,7 +447,7 @@ export default function AuthorizationTracker() {
         (selectedFilter === 'needsAttention' && member.needsAttention) ||
         (selectedFilter === 't2038Expiring' && member.t2038Status === 'expiring') ||
         (selectedFilter === 'h2022Expiring' && member.h2022Status === 'expiring') ||
-        (selectedFilter === 'kaiserH2022Critical' && member.h2022KaiserCritical) ||
+        (selectedFilter === 'criticalRenewal' && member.criticalRenewal) ||
         (selectedFilter === 'expired' && (member.t2038Status === 'expired' || member.h2022Status === 'expired'));
       
       // Month-based filtering
@@ -520,7 +541,7 @@ export default function AuthorizationTracker() {
     const t2038Expiring = members.filter(m => m.t2038Status === 'expiring').length;
     const h2022Expiring = members.filter(m => m.h2022Status === 'expiring').length;
     const expired = members.filter(m => m.t2038Status === 'expired' || m.h2022Status === 'expired').length;
-    const kaiserH2022Critical = members.filter(m => m.h2022KaiserCritical).length;
+    const criticalRenewals = members.filter(m => m.criticalRenewal).length;
     
     // Calculate monthly expiration data for next 6 months
     const today = new Date();
@@ -573,7 +594,7 @@ export default function AuthorizationTracker() {
       needingAttention, 
       t2038Expiring, 
       h2022Expiring, 
-      kaiserH2022Critical,
+      criticalRenewals,
       expired, 
       monthlyExpirations,
       mcoBreakdown
@@ -623,17 +644,18 @@ export default function AuthorizationTracker() {
 
       {/* Always show the interface structure */}
       <>
-      {stats.kaiserH2022Critical > 0 && (
+      {stats.criticalRenewals > 0 && (
         <Card className="mb-6 border-red-200 bg-red-50">
           <CardContent className="p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 text-red-700 mt-0.5" />
               <div>
                 <div className="font-semibold text-red-800">
-                  Critical: {stats.kaiserH2022Critical} Kaiser member{stats.kaiserH2022Critical === 1 ? '' : 's'} have H2022 expiring within 30 days
+                  Critical: {stats.criticalRenewals} member{stats.criticalRenewals === 1 ? '' : 's'} need authorization renewal review
                 </div>
                 <div className="text-sm text-red-700">
-                  These members are highlighted and can be filtered for quick review.
+                  Includes authorized members only, without RCFE placement: Health Net expiring within 14 days, Kaiser
+                  H2022/T2038 expiring within 30 days.
                 </div>
               </div>
             </div>
@@ -641,8 +663,8 @@ export default function AuthorizationTracker() {
               <Button
                 variant="destructive"
                 onClick={() => {
-                  setSelectedMCO('kaiser');
-                  handleCardClick('kaiserH2022Critical');
+                  setSelectedMCO('all');
+                  handleCardClick('criticalRenewal');
                 }}
               >
                 View Members
@@ -650,7 +672,7 @@ export default function AuthorizationTracker() {
               <Button
                 variant="outline"
                 className="border-red-200 text-red-800 hover:bg-red-100"
-                onClick={() => handleCardClick('kaiserH2022Critical')}
+                onClick={() => handleCardClick('criticalRenewal')}
               >
                 Filter Only
               </Button>
@@ -701,13 +723,13 @@ export default function AuthorizationTracker() {
         </Card>
 
         <Card
-          className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'kaiserH2022Critical' ? 'ring-2 ring-red-500' : ''}`}
-          onClick={() => handleCardClick('kaiserH2022Critical')}
+          className={`cursor-pointer transition-all hover:shadow-md ${selectedFilter === 'criticalRenewal' ? 'ring-2 ring-red-500' : ''}`}
+          onClick={() => handleCardClick('criticalRenewal')}
         >
           <CardContent className="p-4">
             <div>
-              <p className="text-sm text-muted-foreground">Kaiser H2022 ≤30d</p>
-              <p className="text-2xl font-bold text-red-600">{stats.kaiserH2022Critical}</p>
+              <p className="text-sm text-muted-foreground">Critical Renewals</p>
+              <p className="text-2xl font-bold text-red-600">{stats.criticalRenewals}</p>
             </div>
           </CardContent>
         </Card>
@@ -914,7 +936,7 @@ export default function AuthorizationTracker() {
                     {selectedFilter === 'needsAttention' && 'Need Attention'}
                     {selectedFilter === 't2038Expiring' && 'T2038 Expiring'}
                     {selectedFilter === 'h2022Expiring' && 'H2022 Expiring'}
-                    {selectedFilter === 'kaiserH2022Critical' && 'Kaiser H2022 ≤30 days'}
+                    {selectedFilter === 'criticalRenewal' && 'Critical Renewals'}
                     {selectedFilter === 'expired' && 'Expired'}
                     {selectedMonth !== 'all' && `Expiring in ${selectedMonth}`}
                     {selectedPlanMetric === 'urgent' && (selectedFilter !== 'all' || selectedMonth !== 'all') ? ' • ' : ''}
@@ -1083,7 +1105,7 @@ export default function AuthorizationTracker() {
                       <TableRow
                         key={member.id}
                         className={
-                          member.h2022KaiserCritical ? 'bg-red-100' : member.needsAttention ? 'bg-red-50' : ''
+                          member.criticalRenewal ? 'bg-red-100' : member.needsAttention ? 'bg-red-50' : ''
                         }
                       >
                         <TableCell>
@@ -1163,9 +1185,9 @@ export default function AuthorizationTracker() {
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
-                            {member.h2022KaiserCritical && (
+                            {member.criticalRenewal && (
                               <Badge variant="destructive" className="w-fit bg-red-600">
-                                Critical ≤30d
+                                Critical
                               </Badge>
                             )}
                           </div>
@@ -1274,7 +1296,7 @@ export default function AuthorizationTracker() {
                     <Card
                       key={member.id}
                       className={
-                        member.h2022KaiserCritical
+                        member.criticalRenewal
                           ? 'border-l-4 border-l-red-700 bg-red-50/50'
                           : member.needsAttention
                             ? 'border-l-4 border-l-red-500'
@@ -1297,9 +1319,9 @@ export default function AuthorizationTracker() {
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-muted-foreground">H2022:</span>
                             {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
-                            {member.h2022KaiserCritical && (
+                            {member.criticalRenewal && (
                               <Badge variant="destructive" className="bg-red-600">
-                                Critical ≤30d
+                                Critical
                               </Badge>
                             )}
                           </div>
