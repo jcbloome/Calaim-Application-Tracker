@@ -61,6 +61,7 @@ interface NotificationData {
   applicationId?: string;
   actionUrl?: string;
   isGeneral?: boolean;
+  suppressWebToast?: boolean;
 }
 
 export function RealTimeNotifications() {
@@ -576,16 +577,26 @@ export function RealTimeNotifications() {
           const data = docSnap.data() as StaffNotification;
           const noteType = String((data as any)?.type || '').toLowerCase();
           const isInterofficeType = noteType.includes('interoffice');
+          const isChatOnly = Boolean((data as any)?.isChatOnly) || noteType.includes('chat');
+          const hiddenFromInbox = Boolean((data as any)?.hiddenFromInbox);
+          if (isChatOnly || hiddenFromInbox) return;
+
           const statusRaw = String((data as any)?.status || '').trim().toLowerCase();
           const followUpStatusRaw = String((data as any)?.followUpStatus || '').trim().toLowerCase();
+          const deletedAtRaw = (data as any)?.deletedAt;
+          const isSoftDeleted =
+            Boolean((data as any)?.isDeleted) ||
+            Boolean((data as any)?.deleted) ||
+            Boolean(deletedAtRaw);
           const isClosedLike =
             statusRaw === 'closed' ||
             statusRaw === 'resolved' ||
             statusRaw === 'done' ||
+            statusRaw === 'archived' ||
+            statusRaw === 'deleted' ||
             followUpStatusRaw === 'closed' ||
             Boolean((data as any)?.resolvedAt);
-          if (isInterofficeType && !webToastPolicy.interofficeNotificationsEnabled) return;
-          if (isClosedLike) return;
+          if (isClosedLike || isSoftDeleted) return;
           if (data.isRead === true) return;
           if (shouldTrackDesktopDelivery && !Boolean((data as any)?.desktopDeliveredAt)) {
             deliveryCandidates.push(docSnap.id);
@@ -620,7 +631,8 @@ export function RealTimeNotifications() {
             followUpDate: formatFollowUpDate(data.followUpDate),
             applicationId: data.applicationId,
             actionUrl: resolveActionUrl(data),
-            isGeneral: Boolean((data as any).isGeneral)
+            isGeneral: Boolean((data as any).isGeneral),
+            suppressWebToast: isInterofficeType && !webToastPolicy.interofficeNotificationsEnabled
           };
 
           const isNew = !seenNotificationsRef.current.has(notification.id);
@@ -767,6 +779,7 @@ export function RealTimeNotifications() {
           const shouldShowWebToast = (() => {
             if (!webToastPolicy.webAppNotificationsEnabled) return false;
             if (desktopPresent && webToastPolicy.suppressWebWhenDesktopActive) return false;
+            if (Boolean((highlightNote as any)?.suppressWebToast)) return false;
             return shouldShowWebToastBase;
           })();
           const shouldPopup = shouldShowWebToastBase && forceExpanded;

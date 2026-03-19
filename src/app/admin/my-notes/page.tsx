@@ -18,7 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
-import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, writeBatch, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
+import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
 import { logSystemNoteAction } from '@/lib/system-note-log';
 import { isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
@@ -107,6 +107,8 @@ function MyNotesContent() {
   const [quickStatusFilter, setQuickStatusFilter] = useState<'all' | 'unread' | 'open' | 'closed'>('all');
   const [followUpFilter, setFollowUpFilter] = useState<'all' | 'required'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'sender' | 'priority'>('newest');
+  const [originFilter, setOriginFilter] = useState<'all' | 'caspio' | 'interoffice'>('all');
+  const [senderFilter, setSenderFilter] = useState<string>('all');
   const [desktopActive, setDesktopActive] = useState(false);
   const [desktopState, setDesktopState] = useState<DesktopNotificationState | null>(null);
   const [suppressWebWhenDesktopActive, setSuppressWebWhenDesktopActive] = useState(false);
@@ -540,42 +542,6 @@ function MyNotesContent() {
     });
   };
 
-  // Mark all notifications as read
-  const markAllAsRead = async () => {
-    if (!firestore) return;
-    
-    try {
-      const unreadNotifications = notifications.filter(n => !n.isRead);
-      
-      if (unreadNotifications.length === 0) {
-        toast({
-          title: "Info",
-          description: "No unread notifications to mark",
-        });
-        return;
-      }
-
-      const batch = writeBatch(firestore);
-      unreadNotifications.forEach(notification => {
-        batch.update(doc(firestore, 'staff_notifications', notification.id), { isRead: true });
-      });
-      
-      await batch.commit();
-      
-      toast({
-        title: "Success",
-        description: `Marked ${unreadNotifications.length} notifications as read`,
-      });
-    } catch (error) {
-      console.error('❌ Failed to mark all notifications as read:', error);
-      toast({
-        title: "Error",
-        description: "Failed to mark notifications as read",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleReplySend = async (notification: StaffNotification) => {
     if (!firestore || !user?.uid) return;
     const threadId = notification.threadId || notification.id;
@@ -799,8 +765,31 @@ function MyNotesContent() {
     return Boolean(notification.isGeneral) || originType.includes('interoffice');
   };
 
+  const isCaspioClientRecordNote = (notification: StaffNotification) => {
+    return String(notification.source || '').trim().toLowerCase() === 'caspio';
+  };
+
+  const getOriginLabel = (notification: StaffNotification) => {
+    return isCaspioClientRecordNote(notification) ? 'Caspio Client Record' : 'Interoffice';
+  };
+
+  const availableSenders = useMemo(() => {
+    const names = Array.from(
+      new Set(
+        viewNotifications
+          .map((n) => String(n.authorName || '').trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return names;
+  }, [viewNotifications]);
+
   // Filter notifications based on search term
   const filteredNotifications = viewNotifications.filter(notification => {
+    if (originFilter === 'caspio' && !isCaspioClientRecordNote(notification)) return false;
+    if (originFilter === 'interoffice' && isCaspioClientRecordNote(notification)) return false;
+    if (senderFilter !== 'all' && String(notification.authorName || '').trim() !== senderFilter) return false;
+
     if (!searchTerm) return true;
 
     const searchLower = searchTerm.toLowerCase();
@@ -1010,12 +999,15 @@ function MyNotesContent() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
-          {filteredNotifications.some(n => !n.isRead) && (
-            <Button onClick={markAllAsRead} variant="outline" size="sm">
-              Mark All Read
-            </Button>
-          )}
         </div>
+      </div>
+
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        Caspio priority notes assigned to you will appear on this page. Notes created from this page using
+        <span className="font-medium"> Send Staff Note </span>
+        or
+        <span className="font-medium"> Reply </span>
+        stay in Interoffice Notes inside this app and are not written into the Caspio member record.
       </div>
 
       {WEB_NOTIFICATIONS_MOTHBALLED ? null : (
@@ -1117,6 +1109,35 @@ function MyNotesContent() {
                   Follow-up Required
                 </Button>
                 <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Origin</Label>
+                  <Select value={originFilter} onValueChange={(value) => setOriginFilter(value as 'all' | 'caspio' | 'interoffice')}>
+                    <SelectTrigger className="h-8 w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All origins</SelectItem>
+                      <SelectItem value="caspio">Caspio Client Record</SelectItem>
+                      <SelectItem value="interoffice">Interoffice Notes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Generated by</Label>
+                  <Select value={senderFilter} onValueChange={setSenderFilter}>
+                    <SelectTrigger className="h-8 w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All staff</SelectItem>
+                      {availableSenders.map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
                   <Label className="text-xs text-muted-foreground">Sort</Label>
                   <Select value={sortBy} onValueChange={(value) => setSortBy(value as 'newest' | 'sender' | 'priority')}>
                     <SelectTrigger className="h-8 w-44">
@@ -1161,6 +1182,16 @@ function MyNotesContent() {
                             <h3 className={`font-medium ${!notification.isRead ? 'text-blue-900' : ''}`}>
                               {displayTitle}
                             </h3>
+                            <Badge
+                              variant="outline"
+                              className={
+                                isCaspioClientRecordNote(notification)
+                                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200'
+                              }
+                            >
+                              {getOriginLabel(notification)}
+                            </Badge>
                             {isPriorityNote && (
                               <Badge variant="outline" className={getPriorityColor(notification.priority)}>
                                 {priorityLabel}

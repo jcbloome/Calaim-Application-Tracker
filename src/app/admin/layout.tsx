@@ -89,7 +89,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 import { collection, collectionGroup, doc, documentId, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
-import { isPriorityOrUrgent } from '@/lib/notification-utils';
+import { isPriorityOrUrgent, normalizePriorityLabel } from '@/lib/notification-utils';
 import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 
 const adminNavLinks = [
@@ -389,6 +389,13 @@ function AdminHeader() {
   // Keep Action items counts aligned with the Electron pill summary (Chat + Priority Notes).
   useEffect(() => {
     if (!firestore || !user?.uid) return;
+    const isDesktopNotifiable = (data: any) => {
+      const type = String(data?.type || '').toLowerCase();
+      const interoffice = Boolean(data?.isGeneral) || type.includes('interoffice');
+      const priority = normalizePriorityLabel(String(data?.priority || ''));
+      const isPriority = priority === 'Priority' || priority === 'Urgent' || isPriorityOrUrgent(priority);
+      return interoffice || isPriority;
+    };
     const qy = query(
       collection(firestore, 'staff_notifications'),
       where('userId', '==', user.uid),
@@ -402,13 +409,27 @@ function AdminHeader() {
         snap.forEach((docSnap) => {
           const data = docSnap.data() as any;
           const isRead = Boolean(data?.isRead);
+          const noteType = String(data?.type || '').toLowerCase();
+          const isChatOnly = Boolean(data?.isChatOnly) || noteType.includes('chat');
+          const hiddenFromInbox = Boolean(data?.hiddenFromInbox);
           const status = String(data?.status || 'Open').toLowerCase();
-          if (status === 'closed') return;
-          if (Boolean(data?.isChatOnly)) {
+          const followUpStatus = String(data?.followUpStatus || '').toLowerCase();
+          const isSoftDeleted = Boolean(data?.isDeleted) || Boolean(data?.deleted) || Boolean(data?.deletedAt);
+          const isClosedLike =
+            status === 'closed' ||
+            status === 'resolved' ||
+            status === 'done' ||
+            status === 'archived' ||
+            status === 'deleted' ||
+            followUpStatus === 'closed' ||
+            Boolean(data?.resolvedAt);
+          if (isClosedLike || isSoftDeleted) return;
+          if (isChatOnly) {
             if (!isRead) nextChat += 1;
             return;
           }
-          if (!isRead && isPriorityOrUrgent(data?.priority)) {
+          // Keep Action Item count aligned with what Electron can actually alert on.
+          if (!isRead && !hiddenFromInbox && isDesktopNotifiable(data)) {
             nextPriority += 1;
           }
         });
@@ -1113,6 +1134,7 @@ function AdminHeader() {
         count: hnDocCount,
         dot: 'bg-green-600',
         href: '/admin/applications?plan=health-net&review=docs',
+        title: 'Health Net documents awaiting review/acknowledgement',
       },
       {
         key: 'hn-cs',
@@ -1120,6 +1142,7 @@ function AdminHeader() {
         count: hnCsCount,
         dot: 'bg-green-600',
         href: '/admin/applications?plan=health-net&review=cs',
+        title: 'Health Net CS Summary forms awaiting review',
       },
       {
         key: 'k-doc',
@@ -1127,6 +1150,7 @@ function AdminHeader() {
         count: kaiserDocCount,
         dot: 'bg-blue-600',
         href: '/admin/applications?plan=kaiser&review=docs',
+        title: 'Kaiser documents awaiting review/acknowledgement',
       },
       {
         key: 'k-cs',
@@ -1134,6 +1158,7 @@ function AdminHeader() {
         count: kaiserCsCount,
         dot: 'bg-blue-600',
         href: '/admin/applications?plan=kaiser&review=cs',
+        title: 'Kaiser CS Summary forms awaiting review',
       },
       {
         key: 'eligibility',
@@ -1141,6 +1166,7 @@ function AdminHeader() {
         count: eligibilityPendingCount,
         dot: 'bg-amber-600',
         href: '/admin/eligibility-checks',
+        title: 'Pending eligibility checks',
       },
       {
         key: 'standalone',
@@ -1148,6 +1174,7 @@ function AdminHeader() {
         count: standalonePendingCount,
         dot: 'bg-sky-600',
         href: '/admin/standalone-uploads',
+        title: 'Standalone uploads pending intake review',
       },
       {
         key: 'alft',
@@ -1155,6 +1182,7 @@ function AdminHeader() {
         count: alftPendingCount,
         dot: 'bg-purple-600',
         href: '/admin/alft-tracker',
+        title: 'ALFT submissions pending workflow actions',
       },
       {
         key: 'k-tier',
@@ -1162,6 +1190,7 @@ function AdminHeader() {
         count: kTierCount,
         dot: 'bg-indigo-600',
         href: '/admin/kaiser-tracker#ils-member-updates',
+        title: 'Kaiser ILS member updates (H2022 within 30 days)',
       },
     ];
 
@@ -1175,7 +1204,7 @@ function AdminHeader() {
               "inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent",
               item.count > 0 ? "" : "opacity-60"
             )}
-            title={item.count > 0 ? "View matching applications" : "No matching applications right now"}
+            title={`${item.title}${item.count > 0 ? ' — click to open' : ' — currently zero'}`}
           >
             <span className={`h-2 w-2 rounded-full ${item.dot}`} />
             {item.key === 'k-tier' ? (
@@ -1206,11 +1235,44 @@ function AdminHeader() {
     const dLabel = showDocs ? `D(${newUploadCount})` : null;
     const sLabel = showStandalone ? `S(${standalonePendingCount})` : null;
     const notesLabel = priorityNotesCount > 0 ? `Notes(${priorityNotesCount})` : null;
-    const items: Array<{ key: string; label: string; href: string; dot: string; dim?: boolean; title?: string }> = [];
-    if (csLabel) items.push({ key: 'cs', label: csLabel, href: '/admin/applications?review=cs', dot: 'bg-orange-500' });
-    if (dLabel) items.push({ key: 'docs', label: dLabel, href: '/admin/applications?review=docs', dot: 'bg-green-600' });
-    if (sLabel) items.push({ key: 'standalone', label: sLabel, href: '/admin/standalone-uploads', dot: 'bg-sky-600' });
-    if (notesLabel) items.push({ key: 'notes', label: notesLabel, href: '/admin/my-notes', dot: 'bg-blue-600' });
+    const items: Array<{ key: string; label: string; href: string; dot: string; dim?: boolean; title?: string; isNew?: boolean }> = [];
+    if (csLabel) {
+      items.push({
+        key: 'cs',
+        label: csLabel,
+        href: '/admin/applications?review=cs',
+        dot: 'bg-orange-500',
+        title: 'CS Summary items requiring review',
+      });
+    }
+    if (dLabel) {
+      items.push({
+        key: 'docs',
+        label: dLabel,
+        href: '/admin/applications?review=docs',
+        dot: 'bg-green-600',
+        title: 'Uploaded documents requiring acknowledgement',
+      });
+    }
+    if (sLabel) {
+      items.push({
+        key: 'standalone',
+        label: sLabel,
+        href: '/admin/standalone-uploads',
+        dot: 'bg-sky-600',
+        title: 'Standalone upload intakes requiring triage',
+      });
+    }
+    if (notesLabel) {
+      items.push({
+        key: 'notes',
+        label: notesLabel,
+        href: '/admin/my-notes',
+        dot: 'bg-blue-600',
+        isNew: true,
+        title: 'New interoffice notes received',
+      });
+    }
 
     if (items.length === 0) return null;
     return (
@@ -1226,6 +1288,7 @@ function AdminHeader() {
             title={item.title || "Open related action items"}
           >
             <span className={`h-2 w-2 rounded-full ${item.dot}`} />
+            {item.key === 'notes' && item.isNew ? <BellRing className="h-3 w-3 text-blue-600" /> : null}
             <span className="font-semibold text-foreground">{item.label}</span>
           </Link>
         ))}
