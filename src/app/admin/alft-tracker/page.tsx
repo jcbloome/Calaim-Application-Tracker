@@ -69,10 +69,6 @@ type StandaloneUpload = {
   alftStaffEmail?: string | null;
   alftStaffAssignedAt?: any;
   alftStaffReviewedAt?: any;
-  alftKaiserReviewerUid?: string | null;
-  alftKaiserReviewerName?: string | null;
-  alftKaiserReviewerEmail?: string | null;
-  alftKaiserReviewedAt?: any;
 
   alftSignature?: {
     requestId?: string;
@@ -117,13 +113,7 @@ type StandaloneUpload = {
   }>;
 };
 
-type StaffOption = {
-  uid: string;
-  label: string;
-  email: string;
-  role: 'Admin' | 'Super Admin' | 'Staff';
-  isKaiserAssignmentManager?: boolean;
-};
+type StaffOption = { uid: string; label: string; email: string; role: 'Admin' | 'Super Admin' | 'Staff' };
 
 const toLabel = (value: any) => String(value ?? '').trim();
 
@@ -211,6 +201,7 @@ const timelineFor = (r: StandaloneUpload): TimelineItem[] => {
 
 type StageKey =
   | 'received'
+  | 'returned_to_sw'
   | 'rn_assigned'
   | 'rn_downloaded'
   | 'rn_reuploaded'
@@ -223,6 +214,8 @@ type StageKey =
 const computeStage = (r: StandaloneUpload): StageKey => {
   const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
   const managerStatus = toLabel((r as any)?.alftManagerReview?.status).toLowerCase();
+  if (workflowStatus.includes('returned_to_sw_for_revision')) return 'returned_to_sw';
+  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) return 'manager_review';
   if (workflowStatus.includes('completed_sent_to_jocelyn') || toLabel(r.status).toLowerCase() !== 'pending') return 'completed';
   if (managerStatus === 'approved') return 'ready_to_send';
   if (workflowStatus.includes('awaiting_kaiser_manager_final_review') || managerStatus === 'pending') return 'manager_review';
@@ -238,6 +231,8 @@ const stageBadge = (stage: StageKey) => {
   switch (stage) {
     case 'received':
       return <Badge variant="secondary">1) Received</Badge>;
+    case 'returned_to_sw':
+      return <Badge className="bg-red-700 text-white hover:bg-red-700">Returned to SW revision</Badge>;
     case 'rn_assigned':
       return <Badge className="bg-indigo-600 text-white hover:bg-indigo-600">1) Assigned</Badge>;
     case 'rn_downloaded':
@@ -295,7 +290,10 @@ export default function AdminAlftTrackerPage() {
   const [sigRequestingId, setSigRequestingId] = useState('');
   const [sendingCompletedId, setSendingCompletedId] = useState('');
   const [managerReviewingId, setManagerReviewingId] = useState('');
-  const [reviewerUpdatingId, setReviewerUpdatingId] = useState('');
+  const [rejectingId, setRejectingId] = useState('');
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectRow, setRejectRow] = useState<StandaloneUpload | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
   const [sigDialog, setSigDialog] = useState<{
     intakeId: string;
@@ -378,11 +376,6 @@ export default function AdminAlftTrackerPage() {
             alftStaffEmail: toLabel(r.alftStaffEmail) || null,
             alftStaffAssignedAt: r.alftStaffAssignedAt,
             alftStaffReviewedAt: r.alftStaffReviewedAt,
-            alftKaiserReviewerUid: toLabel((r as any).alftKaiserReviewerUid) || null,
-            alftKaiserReviewerName: toLabel((r as any).alftKaiserReviewerName) || null,
-            alftKaiserReviewerEmail: toLabel((r as any).alftKaiserReviewerEmail) || null,
-            alftKaiserReviewedAt: (r as any).alftKaiserReviewedAt,
-
             alftSignature: (r as any)?.alftSignature || null,
 
             alftRevisions: Array.isArray(r.alftRevisions) ? r.alftRevisions : [],
@@ -419,7 +412,7 @@ export default function AdminAlftTrackerPage() {
             const display = toLabel(u.displayName);
             const label = (first || last) ? `${first} ${last}`.trim() : (display || email || uid);
             const role: StaffOption['role'] = superAdminIds.has(uid) ? 'Super Admin' : adminIds.has(uid) ? 'Admin' : 'Staff';
-            return { uid, email, label, role, isKaiserAssignmentManager: Boolean(u?.isKaiserAssignmentManager) };
+            return { uid, email, label, role };
           })
           .filter((o) => Boolean(o.uid && o.email))
           .sort((a, b) => a.label.localeCompare(b.label));
@@ -454,11 +447,6 @@ export default function AdminAlftTrackerPage() {
         return bMs - aMs;
       });
   }, [rows, search]);
-
-  const kaiserReviewerOptions = useMemo(
-    () => staffOptions.filter((s) => Boolean(s.isKaiserAssignmentManager) || s.role === 'Super Admin' || s.role === 'Admin'),
-    [staffOptions]
-  );
 
   const openAssign = useCallback((row: StandaloneUpload, kind: 'rn' | 'staff') => {
     setAssignRow(row);
@@ -607,82 +595,6 @@ export default function AdminAlftTrackerPage() {
       toast({ title: 'Marked downloaded', description: 'Saved RN download timestamp.' });
     } catch (e: any) {
       toast({ title: 'Update failed', description: e?.message || 'Could not update.', variant: 'destructive' });
-    }
-  };
-
-  const saveKaiserReviewer = async (row: StandaloneUpload, uid: string) => {
-    if (!firestore || !row?.id) return;
-    const selected = kaiserReviewerOptions.find((s) => s.uid === uid);
-    if (!selected) return;
-    if (reviewerUpdatingId) return;
-    setReviewerUpdatingId(row.id);
-    try {
-      await updateDoc(doc(firestore, 'standalone_upload_submissions', row.id), {
-        alftKaiserReviewerUid: selected.uid,
-        alftKaiserReviewerName: selected.label,
-        alftKaiserReviewerEmail: selected.email,
-        alftKaiserReviewedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      } as any);
-      await sendAssignmentNotification(selected.uid, {
-        title: 'ALFT assigned (Kaiser reviewer)',
-        message: `${row.memberName || 'Member'} • MRN ${row.medicalRecordNumber || '—'}\nPlease review ALFT upload.`,
-        type: 'alft_kaiser_reviewer_assigned',
-        actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`,
-        standaloneUploadId: row.id,
-        memberName: row.memberName,
-        healthPlan: row.healthPlan || '',
-        memberClientId: row.medicalRecordNumber || '',
-      });
-      toast({ title: 'Kaiser reviewer saved', description: `${selected.label} set as reviewer.` });
-    } catch (e: any) {
-      toast({ title: 'Could not save reviewer', description: e?.message || 'Save failed.', variant: 'destructive' });
-    } finally {
-      setReviewerUpdatingId('');
-    }
-  };
-
-  const saveStaffReviewerFromDropdown = async (row: StandaloneUpload, uid: string) => {
-    if (!firestore || !row?.id) return;
-    const selected = staffOptions.find((s) => s.uid === uid);
-    if (!selected) return;
-    if (reviewerUpdatingId) return;
-    setReviewerUpdatingId(row.id);
-    try {
-      await updateDoc(doc(firestore, 'standalone_upload_submissions', row.id), {
-        alftStaffUid: selected.uid,
-        alftStaffName: selected.label,
-        alftStaffEmail: selected.email,
-        alftStaffAssignedAt: serverTimestamp(),
-        workflowStatus: 'staff_review_assigned',
-        workflowStage: 'assigned_to_kaiser_staff_reviewer',
-        workflowUpdatedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        'alftCollaboration.allowAllPartiesEdit': true,
-        'alftCollaboration.editableRoleKeys': ['social_worker', 'staff', 'rn', 'admin', 'super_admin'],
-        'alftCollaboration.editableUids': arrayUnion(selected.uid),
-        'alftCollaboration.updatedAt': serverTimestamp(),
-      } as any);
-      await sendAssignmentNotification(selected.uid, {
-        title: 'ALFT assigned for staff review',
-        message: `${row.memberName || 'Member'} • MRN ${row.medicalRecordNumber || '—'}\nPlease review this ALFT and prepare to send to Leslie for final changes/sign-off.`,
-        type: 'alft_staff_reviewer_assigned',
-        actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`,
-        standaloneUploadId: row.id,
-        memberName: row.memberName,
-        healthPlan: row.healthPlan || '',
-        memberClientId: row.medicalRecordNumber || '',
-        followUpRequired: true,
-        followUpDate: toIsoToday(),
-      });
-      toast({
-        title: 'Kaiser staff reviewer assigned',
-        description: `${selected.label} notified via Electron/My Notifications and added to daily task calendar.`,
-      });
-    } catch (e: any) {
-      toast({ title: 'Could not assign staff reviewer', description: e?.message || 'Save failed.', variant: 'destructive' });
-    } finally {
-      setReviewerUpdatingId('');
     }
   };
 
@@ -894,6 +806,43 @@ export default function AdminAlftTrackerPage() {
     }
   };
 
+  const openRejectToSw = (row: StandaloneUpload) => {
+    setRejectRow(row);
+    setRejectReason('');
+    setRejectDialogOpen(true);
+  };
+
+  const rejectToSw = async () => {
+    if (!auth?.currentUser || !rejectRow?.id) return;
+    const reason = String(rejectReason || '').trim();
+    if (!reason) {
+      toast({ title: 'Reason required', description: 'Please enter why this ALFT is being sent back to SW.', variant: 'destructive' });
+      return;
+    }
+    setRejectingId(rejectRow.id);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/alft/workflow/reject-to-sw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, intakeId: rejectRow.id, reason }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) throw new Error(String(data?.error || `Reject failed (HTTP ${res.status})`));
+      toast({
+        title: 'Returned to SW',
+        description: 'ALFT sent back to social worker for revision. A new SW signature is now required.',
+      });
+      setRejectDialogOpen(false);
+      setRejectRow(null);
+      setRejectReason('');
+    } catch (e: any) {
+      toast({ title: 'Could not return to SW', description: e?.message || 'Reject failed.', variant: 'destructive' });
+    } finally {
+      setRejectingId('');
+    }
+  };
+
   const downloadSignaturePdf = async (requestId: string, kind: 'signature' | 'packet') => {
     if (!auth?.currentUser) return;
     try {
@@ -961,7 +910,7 @@ export default function AdminAlftTrackerPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold">ALFT Tracker</h1>
           <p className="text-muted-foreground">
-            Plan A workflow: SW fills/signs, ALFT manager assigns Kaiser staff reviewer (dropdown), staff reviews and sends to Leslie for final RN changes/signature, Kaiser manager does final review, then completed packet is sent to Jocelyn.
+            Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, Kaiser manager does final review, then completed packet is sent to Jocelyn.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1009,8 +958,6 @@ export default function AdminAlftTrackerPage() {
                   <TableHead>Stage</TableHead>
                   <TableHead>SW uploader</TableHead>
                   <TableHead>RN</TableHead>
-                  <TableHead>Kaiser staff reviewer</TableHead>
-                  <TableHead>Kaiser reviewer</TableHead>
                   <TableHead>Files</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -1062,54 +1009,6 @@ export default function AdminAlftTrackerPage() {
                       <TableCell className="min-w-[180px]">
                         <div className="truncate">{r.alftRnName || '—'}</div>
                         {r.alftRnEmail ? <div className="text-xs text-muted-foreground truncate">{r.alftRnEmail}</div> : null}
-                      </TableCell>
-                      <TableCell className="min-w-[240px]">
-                        <div className="space-y-1">
-                          <Select
-                            value={r.alftStaffUid || undefined}
-                            onValueChange={(value) => void saveStaffReviewerFromDropdown(r, value)}
-                            disabled={staffLoading || reviewerUpdatingId === r.id || staffOptions.length === 0}
-                          >
-                            <SelectTrigger className="h-8">
-                              <SelectValue placeholder={staffOptions.length === 0 ? 'No staff options' : 'Pick staff reviewer'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {staffOptions.map((s) => (
-                                <SelectItem key={s.uid} value={s.uid}>
-                                  {s.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <div className="text-[11px] text-muted-foreground">
-                            {r.alftStaffName || 'Not set'}
-                            {toMs(r.alftStaffAssignedAt) ? ` • ${fmtTimeline(toMs(r.alftStaffAssignedAt))}` : ''}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="min-w-[220px]">
-                        <div className="space-y-1">
-                          <Select
-                            value={r.alftKaiserReviewerUid || undefined}
-                            onValueChange={(value) => void saveKaiserReviewer(r, value)}
-                            disabled={staffLoading || reviewerUpdatingId === r.id || kaiserReviewerOptions.length === 0}
-                          >
-                            <SelectTrigger className="h-8">
-                              <SelectValue placeholder={kaiserReviewerOptions.length === 0 ? 'No reviewer options' : 'Pick reviewer'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {kaiserReviewerOptions.map((s) => (
-                                <SelectItem key={s.uid} value={s.uid}>
-                                  {s.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <div className="text-[11px] text-muted-foreground">
-                            {r.alftKaiserReviewerName || 'Not set'}
-                            {toMs(r.alftKaiserReviewedAt) ? ` • ${fmtTimeline(toMs(r.alftKaiserReviewedAt))}` : ''}
-                          </div>
-                        </div>
                       </TableCell>
                       <TableCell className="min-w-[260px]">
                         <div className="space-y-1">
@@ -1220,20 +1119,30 @@ export default function AdminAlftTrackerPage() {
                               variant="outline"
                               onClick={() => markSentForSignature(r)}
                               disabled={
-                                !r.alftStaffUid ||
                                 Boolean((r as any)?.alftSignature?.requestedAt) ||
                                 Boolean(sigRequestingId && sigRequestingId === r.id)
                               }
                               title={
                                 (r as any)?.alftSignature?.requestedAt
                                   ? 'Signatures already requested'
-                                  : !r.alftStaffUid
-                                      ? 'Assign staff first'
-                                      : 'Request signatures (RN defaults to Leslie if unassigned)'
+                                  : 'Request signatures (RN defaults to Leslie)'
                               }
                             >
                               <Send className="h-4 w-4 mr-2" />
                               {sigRequestingId === r.id ? 'Requesting…' : 'Send to Leslie for final changes + signatures'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openRejectToSw(r)}
+                              disabled={rejectingId === r.id || (!isSuperAdmin && !isKaiserAssignmentManager)}
+                              title={
+                                !isSuperAdmin && !isKaiserAssignmentManager
+                                  ? 'Kaiser manager access required'
+                                  : 'Return to social worker for revision and require new SW signature'
+                              }
+                            >
+                              {rejectingId === r.id ? 'Returning…' : 'Return to SW for revision'}
                             </Button>
                             <Button
                               size="sm"
@@ -1523,6 +1432,42 @@ export default function AdminAlftTrackerPage() {
           </div>
           <DialogFooter>
             <Button onClick={() => setSigDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Return ALFT to SW for revision</DialogTitle>
+            <DialogDescription>
+              This sends the ALFT back to the social worker, invalidates the current signature request, and requires a new SW signature.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md border p-3">
+              <div className="text-sm font-medium">{rejectRow?.memberName || '—'}</div>
+              <div className="text-xs text-muted-foreground font-mono">{rejectRow?.medicalRecordNumber || '—'}</div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="alft-reject-reason">Revision reason</Label>
+              <textarea
+                id="alft-reject-reason"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                placeholder="Describe what needs to be corrected before requesting signatures again."
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setRejectDialogOpen(false)} disabled={Boolean(rejectingId)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void rejectToSw()} disabled={Boolean(rejectingId) || !String(rejectReason).trim()}>
+              {rejectingId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Return to SW
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
