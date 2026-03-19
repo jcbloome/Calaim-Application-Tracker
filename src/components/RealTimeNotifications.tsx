@@ -576,8 +576,16 @@ export function RealTimeNotifications() {
           const data = docSnap.data() as StaffNotification;
           const noteType = String((data as any)?.type || '').toLowerCase();
           const isInterofficeType = noteType.includes('interoffice');
+          const statusRaw = String((data as any)?.status || '').trim().toLowerCase();
+          const followUpStatusRaw = String((data as any)?.followUpStatus || '').trim().toLowerCase();
+          const isClosedLike =
+            statusRaw === 'closed' ||
+            statusRaw === 'resolved' ||
+            statusRaw === 'done' ||
+            followUpStatusRaw === 'closed' ||
+            Boolean((data as any)?.resolvedAt);
           if (isInterofficeType && !webToastPolicy.interofficeNotificationsEnabled) return;
-          if (data.status === 'Closed') return;
+          if (isClosedLike) return;
           if (data.isRead === true) return;
           if (shouldTrackDesktopDelivery && !Boolean((data as any)?.desktopDeliveredAt)) {
             deliveryCandidates.push(docSnap.id);
