@@ -14,7 +14,7 @@ import { Loader2, UploadCloud, Info } from 'lucide-react';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { ExactAlftQuestionnaire, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 
-type UploadedFile = { fileName: string; downloadURL: string; storagePath: string };
+type UploadedFile = { fileName: string; downloadURL: string; storagePath: string; uploadedAtIso: string };
 type AssessmentPurpose = 'Initial' | 'Change of Condition' | 'Review';
 type LocationType = 'Private Residence' | 'Assisted Living Facility (ALF)' | 'Nursing Facility' | 'Hospital' | 'Adult Day Care' | 'Other';
 type AssessmentSite = 'Home' | 'Nursing Facility' | 'Hospital' | 'ALF' | 'Adult Day Care' | 'Other';
@@ -37,6 +37,9 @@ const sanitizePathSegment = (value: string) =>
     .replace(/[^\w.\- ]+/g, '_')
     .replace(/\s+/g, '_')
     .slice(0, 140);
+
+const OFFICIAL_ALFT_TEMPLATE_URL =
+  'https://static1.squarespace.com/static/5513063be4b069b54e721157/t/69bc42610a780d5ba0d3d0ad/1773945441240/ALFT_Agreement.pdf';
 
 export default function SwAlftUploadPage() {
   const searchParams = useSearchParams();
@@ -254,6 +257,14 @@ export default function SwAlftUploadPage() {
       });
       return;
     }
+    if (!files || files.length === 0) {
+      toast({
+        title: 'Missing file upload',
+        description: 'Please upload the completed ALFT PDF before submitting.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (isUploading) return;
 
     setIsUploading(true);
@@ -281,7 +292,12 @@ export default function SwAlftUploadPage() {
               (err) => reject(err),
               async () => {
                 const downloadURL = await getDownloadURL(task.snapshot.ref);
-                resolve({ fileName: file.name, downloadURL, storagePath: task.snapshot.ref.fullPath });
+                resolve({
+                  fileName: file.name,
+                  downloadURL,
+                  storagePath: task.snapshot.ref.fullPath,
+                  uploadedAtIso: new Date().toISOString(),
+                });
               }
             );
           });
@@ -441,7 +457,14 @@ export default function SwAlftUploadPage() {
             requestedActions: requestedActions.trim(),
             additionalNotes: additionalNotes.trim(),
           },
-          files: results.map((r) => ({ fileName: r.fileName, downloadURL: r.downloadURL, storagePath: r.storagePath })),
+          submissionMode: 'official_pdf_plan_b',
+          officialPdfTemplateUrl: OFFICIAL_ALFT_TEMPLATE_URL,
+          files: results.map((r) => ({
+            fileName: r.fileName,
+            downloadURL: r.downloadURL,
+            storagePath: r.storagePath,
+            uploadedAtIso: r.uploadedAtIso,
+          })),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -612,6 +635,21 @@ export default function SwAlftUploadPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Plan B (temporary): download the official ALFT PDF, complete it, then upload the completed PDF here.
+              <a
+                className="ml-1 underline text-blue-700"
+                href={OFFICIAL_ALFT_TEMPLATE_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Download official ALFT PDF
+              </a>
+            </AlertDescription>
+          </Alert>
+
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
@@ -1387,7 +1425,7 @@ export default function SwAlftUploadPage() {
                 disabled={isUploading}
               />
               <div className="text-xs text-muted-foreground">
-                Attach source PDF or supporting files if available. Up to 5 files.
+                Upload the completed ALFT PDF (and optional supporting files). Up to 5 files.
               </div>
             </div>
 

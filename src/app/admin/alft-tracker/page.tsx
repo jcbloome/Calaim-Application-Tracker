@@ -38,7 +38,7 @@ type StandaloneUpload = {
   updatedAt?: any;
   toolCode?: string;
   documentType: string;
-  files: Array<{ fileName: string; downloadURL: string; storagePath?: string }>;
+  files: Array<{ fileName: string; downloadURL: string; storagePath?: string; uploadedAtIso?: string | null }>;
   uploaderName?: string;
   uploaderEmail?: string;
   memberName: string;
@@ -69,6 +69,10 @@ type StandaloneUpload = {
   alftStaffEmail?: string | null;
   alftStaffAssignedAt?: any;
   alftStaffReviewedAt?: any;
+  alftKaiserReviewerUid?: string | null;
+  alftKaiserReviewerName?: string | null;
+  alftKaiserReviewerEmail?: string | null;
+  alftKaiserReviewedAt?: any;
 
   alftSignature?: {
     requestId?: string;
@@ -113,7 +117,13 @@ type StandaloneUpload = {
   }>;
 };
 
-type StaffOption = { uid: string; label: string; email: string; role: 'Admin' | 'Super Admin' | 'Staff' };
+type StaffOption = {
+  uid: string;
+  label: string;
+  email: string;
+  role: 'Admin' | 'Super Admin' | 'Staff';
+  isKaiserAssignmentManager?: boolean;
+};
 
 const toLabel = (value: any) => String(value ?? '').trim();
 
@@ -247,6 +257,14 @@ const stageBadge = (stage: StageKey) => {
   }
 };
 
+const toIsoToday = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 export default function AdminAlftTrackerPage() {
   const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
   const firestore = useFirestore();
@@ -277,6 +295,7 @@ export default function AdminAlftTrackerPage() {
   const [sigRequestingId, setSigRequestingId] = useState('');
   const [sendingCompletedId, setSendingCompletedId] = useState('');
   const [managerReviewingId, setManagerReviewingId] = useState('');
+  const [reviewerUpdatingId, setReviewerUpdatingId] = useState('');
   const [sigDialogOpen, setSigDialogOpen] = useState(false);
   const [sigDialog, setSigDialog] = useState<{
     intakeId: string;
@@ -359,6 +378,10 @@ export default function AdminAlftTrackerPage() {
             alftStaffEmail: toLabel(r.alftStaffEmail) || null,
             alftStaffAssignedAt: r.alftStaffAssignedAt,
             alftStaffReviewedAt: r.alftStaffReviewedAt,
+            alftKaiserReviewerUid: toLabel((r as any).alftKaiserReviewerUid) || null,
+            alftKaiserReviewerName: toLabel((r as any).alftKaiserReviewerName) || null,
+            alftKaiserReviewerEmail: toLabel((r as any).alftKaiserReviewerEmail) || null,
+            alftKaiserReviewedAt: (r as any).alftKaiserReviewedAt,
 
             alftSignature: (r as any)?.alftSignature || null,
 
@@ -396,7 +419,7 @@ export default function AdminAlftTrackerPage() {
             const display = toLabel(u.displayName);
             const label = (first || last) ? `${first} ${last}`.trim() : (display || email || uid);
             const role: StaffOption['role'] = superAdminIds.has(uid) ? 'Super Admin' : adminIds.has(uid) ? 'Admin' : 'Staff';
-            return { uid, email, label, role };
+            return { uid, email, label, role, isKaiserAssignmentManager: Boolean(u?.isKaiserAssignmentManager) };
           })
           .filter((o) => Boolean(o.uid && o.email))
           .sort((a, b) => a.label.localeCompare(b.label));
@@ -431,6 +454,11 @@ export default function AdminAlftTrackerPage() {
         return bMs - aMs;
       });
   }, [rows, search]);
+
+  const kaiserReviewerOptions = useMemo(
+    () => staffOptions.filter((s) => Boolean(s.isKaiserAssignmentManager) || s.role === 'Super Admin' || s.role === 'Admin'),
+    [staffOptions]
+  );
 
   const openAssign = useCallback((row: StandaloneUpload, kind: 'rn' | 'staff') => {
     setAssignRow(row);
@@ -500,6 +528,8 @@ export default function AdminAlftTrackerPage() {
         createdByName: (user as any)?.displayName || (user as any)?.email || 'Staff',
         senderName: (user as any)?.displayName || (user as any)?.email || 'Staff',
         senderId: user?.uid || null,
+        followUpRequired: Boolean(payload.followUpRequired),
+        followUpDate: payload.followUpDate || null,
       });
     } catch (e) {
       console.warn('Failed to send assignment notification:', e);
@@ -577,6 +607,82 @@ export default function AdminAlftTrackerPage() {
       toast({ title: 'Marked downloaded', description: 'Saved RN download timestamp.' });
     } catch (e: any) {
       toast({ title: 'Update failed', description: e?.message || 'Could not update.', variant: 'destructive' });
+    }
+  };
+
+  const saveKaiserReviewer = async (row: StandaloneUpload, uid: string) => {
+    if (!firestore || !row?.id) return;
+    const selected = kaiserReviewerOptions.find((s) => s.uid === uid);
+    if (!selected) return;
+    if (reviewerUpdatingId) return;
+    setReviewerUpdatingId(row.id);
+    try {
+      await updateDoc(doc(firestore, 'standalone_upload_submissions', row.id), {
+        alftKaiserReviewerUid: selected.uid,
+        alftKaiserReviewerName: selected.label,
+        alftKaiserReviewerEmail: selected.email,
+        alftKaiserReviewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      } as any);
+      await sendAssignmentNotification(selected.uid, {
+        title: 'ALFT assigned (Kaiser reviewer)',
+        message: `${row.memberName || 'Member'} • MRN ${row.medicalRecordNumber || '—'}\nPlease review ALFT upload.`,
+        type: 'alft_kaiser_reviewer_assigned',
+        actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`,
+        standaloneUploadId: row.id,
+        memberName: row.memberName,
+        healthPlan: row.healthPlan || '',
+        memberClientId: row.medicalRecordNumber || '',
+      });
+      toast({ title: 'Kaiser reviewer saved', description: `${selected.label} set as reviewer.` });
+    } catch (e: any) {
+      toast({ title: 'Could not save reviewer', description: e?.message || 'Save failed.', variant: 'destructive' });
+    } finally {
+      setReviewerUpdatingId('');
+    }
+  };
+
+  const saveStaffReviewerFromDropdown = async (row: StandaloneUpload, uid: string) => {
+    if (!firestore || !row?.id) return;
+    const selected = staffOptions.find((s) => s.uid === uid);
+    if (!selected) return;
+    if (reviewerUpdatingId) return;
+    setReviewerUpdatingId(row.id);
+    try {
+      await updateDoc(doc(firestore, 'standalone_upload_submissions', row.id), {
+        alftStaffUid: selected.uid,
+        alftStaffName: selected.label,
+        alftStaffEmail: selected.email,
+        alftStaffAssignedAt: serverTimestamp(),
+        workflowStatus: 'staff_review_assigned',
+        workflowStage: 'assigned_to_kaiser_staff_reviewer',
+        workflowUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        'alftCollaboration.allowAllPartiesEdit': true,
+        'alftCollaboration.editableRoleKeys': ['social_worker', 'staff', 'rn', 'admin', 'super_admin'],
+        'alftCollaboration.editableUids': arrayUnion(selected.uid),
+        'alftCollaboration.updatedAt': serverTimestamp(),
+      } as any);
+      await sendAssignmentNotification(selected.uid, {
+        title: 'ALFT assigned for staff review',
+        message: `${row.memberName || 'Member'} • MRN ${row.medicalRecordNumber || '—'}\nPlease review this ALFT and prepare to send to Leslie for final changes/sign-off.`,
+        type: 'alft_staff_reviewer_assigned',
+        actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(row.id)}`,
+        standaloneUploadId: row.id,
+        memberName: row.memberName,
+        healthPlan: row.healthPlan || '',
+        memberClientId: row.medicalRecordNumber || '',
+        followUpRequired: true,
+        followUpDate: toIsoToday(),
+      });
+      toast({
+        title: 'Kaiser staff reviewer assigned',
+        description: `${selected.label} notified via Electron/My Notifications and added to daily task calendar.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Could not assign staff reviewer', description: e?.message || 'Save failed.', variant: 'destructive' });
+    } finally {
+      setReviewerUpdatingId('');
     }
   };
 
@@ -759,7 +865,7 @@ export default function AdminAlftTrackerPage() {
       const res = await fetch('/api/alft/signatures/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, intakeId: row.id }),
+        body: JSON.stringify({ idToken, intakeId: row.id, forceDefaultRn: true }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) {
@@ -855,7 +961,7 @@ export default function AdminAlftTrackerPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold">ALFT Tracker</h1>
           <p className="text-muted-foreground">
-            Internal workflow: SW submits + signs, RN (Leslie) reviews/edits + signs, Kaiser manager performs final review, then completed packet is sent to Jocelyn.
+            Plan A workflow: SW fills/signs, ALFT manager assigns Kaiser staff reviewer (dropdown), staff reviews and sends to Leslie for final RN changes/signature, Kaiser manager does final review, then completed packet is sent to Jocelyn.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -903,7 +1009,8 @@ export default function AdminAlftTrackerPage() {
                   <TableHead>Stage</TableHead>
                   <TableHead>SW uploader</TableHead>
                   <TableHead>RN</TableHead>
-                  <TableHead>Staff</TableHead>
+                  <TableHead>Kaiser staff reviewer</TableHead>
+                  <TableHead>Kaiser reviewer</TableHead>
                   <TableHead>Files</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -956,9 +1063,53 @@ export default function AdminAlftTrackerPage() {
                         <div className="truncate">{r.alftRnName || '—'}</div>
                         {r.alftRnEmail ? <div className="text-xs text-muted-foreground truncate">{r.alftRnEmail}</div> : null}
                       </TableCell>
-                      <TableCell className="min-w-[180px]">
-                        <div className="truncate">{r.alftStaffName || '—'}</div>
-                        {r.alftStaffEmail ? <div className="text-xs text-muted-foreground truncate">{r.alftStaffEmail}</div> : null}
+                      <TableCell className="min-w-[240px]">
+                        <div className="space-y-1">
+                          <Select
+                            value={r.alftStaffUid || undefined}
+                            onValueChange={(value) => void saveStaffReviewerFromDropdown(r, value)}
+                            disabled={staffLoading || reviewerUpdatingId === r.id || staffOptions.length === 0}
+                          >
+                            <SelectTrigger className="h-8">
+                              <SelectValue placeholder={staffOptions.length === 0 ? 'No staff options' : 'Pick staff reviewer'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {staffOptions.map((s) => (
+                                <SelectItem key={s.uid} value={s.uid}>
+                                  {s.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="text-[11px] text-muted-foreground">
+                            {r.alftStaffName || 'Not set'}
+                            {toMs(r.alftStaffAssignedAt) ? ` • ${fmtTimeline(toMs(r.alftStaffAssignedAt))}` : ''}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="min-w-[220px]">
+                        <div className="space-y-1">
+                          <Select
+                            value={r.alftKaiserReviewerUid || undefined}
+                            onValueChange={(value) => void saveKaiserReviewer(r, value)}
+                            disabled={staffLoading || reviewerUpdatingId === r.id || kaiserReviewerOptions.length === 0}
+                          >
+                            <SelectTrigger className="h-8">
+                              <SelectValue placeholder={kaiserReviewerOptions.length === 0 ? 'No reviewer options' : 'Pick reviewer'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {kaiserReviewerOptions.map((s) => (
+                                <SelectItem key={s.uid} value={s.uid}>
+                                  {s.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="text-[11px] text-muted-foreground">
+                            {r.alftKaiserReviewerName || 'Not set'}
+                            {toMs(r.alftKaiserReviewedAt) ? ` • ${fmtTimeline(toMs(r.alftKaiserReviewedAt))}` : ''}
+                          </div>
+                        </div>
                       </TableCell>
                       <TableCell className="min-w-[260px]">
                         <div className="space-y-1">
@@ -982,6 +1133,11 @@ export default function AdminAlftTrackerPage() {
                             >
                               {f.fileName || 'Download'}
                             </a>
+                          ))}
+                          {(r.files || []).slice(0, 2).map((f) => (
+                            <div key={`${f.downloadURL}-ts`} className="text-[11px] text-muted-foreground truncate">
+                              Uploaded: {toLabel(f.uploadedAtIso) ? fmtTimeline(toMs(f.uploadedAtIso)) || toLabel(f.uploadedAtIso) : '—'}
+                            </div>
                           ))}
                           {(r.files || []).length > 2 ? (
                             <div className="text-xs text-muted-foreground">+{(r.files || []).length - 2} more</div>
@@ -1059,10 +1215,6 @@ export default function AdminAlftTrackerPage() {
                               <UploadCloud className="h-4 w-4 mr-2" />
                               RN re-upload
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => openAssign(r, 'staff')} disabled={staffLoading}>
-                              <UserCheck className="h-4 w-4 mr-2" />
-                              Assign staff
-                            </Button>
                             <Button
                               size="sm"
                               variant="outline"
@@ -1081,7 +1233,7 @@ export default function AdminAlftTrackerPage() {
                               }
                             >
                               <Send className="h-4 w-4 mr-2" />
-                              {sigRequestingId === r.id ? 'Requesting…' : 'Request SW signature (RN final)'}
+                              {sigRequestingId === r.id ? 'Requesting…' : 'Send to Leslie for final changes + signatures'}
                             </Button>
                             <Button
                               size="sm"

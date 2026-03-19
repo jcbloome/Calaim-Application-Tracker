@@ -6,6 +6,8 @@ export const dynamic = 'force-dynamic';
 
 type SubmitBody = {
   idToken?: string;
+  submissionMode?: string;
+  officialPdfTemplateUrl?: string;
   uploader?: { firstName?: string; lastName?: string; email?: string; displayName?: string };
   uploadDate?: string; // YYYY-MM-DD (entered by SW)
   member?: {
@@ -36,7 +38,7 @@ type SubmitBody = {
     requestedActions?: string;
     additionalNotes?: string;
   };
-  files?: Array<{ fileName?: string; downloadURL?: string; storagePath?: string }>;
+  files?: Array<{ fileName?: string; downloadURL?: string; storagePath?: string; uploadedAtIso?: string }>;
 };
 
 const clean = (v: unknown, max = 300) => String(v ?? '').trim().slice(0, max);
@@ -109,9 +111,15 @@ export async function POST(request: NextRequest) {
         fileName: clean(f?.fileName, 180),
         downloadURL: clean(f?.downloadURL, 1000),
         storagePath: clean(f?.storagePath, 800),
+        uploadedAtIso: clean(f?.uploadedAtIso, 80) || new Date().toISOString(),
       }))
       .filter((f) => Boolean(f.fileName && f.downloadURL && f.storagePath))
       .slice(0, 10);
+    if (normalizedFiles.length === 0) {
+      return NextResponse.json({ success: false, error: 'At least one uploaded ALFT file is required' }, { status: 400 });
+    }
+    const submissionMode = clean(body?.submissionMode, 80) || 'custom';
+    const officialPdfTemplateUrl = clean(body?.officialPdfTemplateUrl, 1200) || null;
     const alftForm = {
       formVersion: clean(body?.alftForm?.formVersion, 40) || 'placeholder-v1',
       stage: clean(body?.alftForm?.stage, 40) || null,
@@ -131,8 +139,13 @@ export async function POST(request: NextRequest) {
       requestedActions: clean(body?.alftForm?.requestedActions, 4000),
       additionalNotes: clean(body?.alftForm?.additionalNotes, 4000) || null,
     };
-    if (!alftForm.transitionSummary || !alftForm.requestedActions) {
+    const isPlanB = submissionMode === 'official_pdf_plan_b';
+    if (!isPlanB && (!alftForm.transitionSummary || !alftForm.requestedActions)) {
       return NextResponse.json({ success: false, error: 'Missing ALFT summary or requested actions' }, { status: 400 });
+    }
+    if (isPlanB) {
+      if (!alftForm.transitionSummary) alftForm.transitionSummary = 'Plan B upload: completed official ALFT PDF submitted by social worker.';
+      if (!alftForm.requestedActions) alftForm.requestedActions = 'Review uploaded official ALFT PDF and continue ALFT workflow.';
     }
 
     const adminModule = await import('@/firebase-admin');
@@ -173,6 +186,8 @@ export async function POST(request: NextRequest) {
       documentType: 'ALFT Tool',
       files: normalizedFiles,
       alftForm,
+      submissionMode,
+      officialPdfTemplateUrl,
       uploaderUid,
       uploaderEmail: uploaderEmail || null,
       uploaderName,
@@ -254,7 +269,7 @@ export async function POST(request: NextRequest) {
               userId: uid,
               recipientName,
               title: 'ALFT Tool uploaded',
-              message: `${memberName} • ${uploaderName} • ${uploadDate}`,
+              message: `${memberName} • ${uploaderName} • ${uploadDate}${isPlanB ? ' • Official PDF (Plan B)' : ''}`,
               memberName,
               type: 'alft_upload',
               priority: 'Priority',

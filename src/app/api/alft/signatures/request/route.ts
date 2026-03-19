@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 type Body = {
   idToken?: string;
   intakeId?: string;
+  forceDefaultRn?: boolean;
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
@@ -35,6 +36,7 @@ const formatDate = (ms: number) => {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as Body;
+    const forceDefaultRn = Boolean(body?.forceDefaultRn);
     const idToken = clean(body?.idToken, 8000);
     const intakeId = clean(body?.intakeId, 200);
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
@@ -63,9 +65,11 @@ export async function POST(req: NextRequest) {
     const memberName = clean((intake as any)?.memberName, 140) || 'Member';
     const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn || (intake as any)?.mediCalNumber, 80);
 
-    let rnUid = clean((intake as any)?.alftRnUid, 128);
-    let rnEmail = clean((intake as any)?.alftRnEmail, 200).toLowerCase() || DEFAULT_RN_EMAIL;
-    let rnName = clean((intake as any)?.alftRnName, 160) || DEFAULT_RN_NAME;
+    let rnUid = forceDefaultRn ? '' : clean((intake as any)?.alftRnUid, 128);
+    let rnEmail = forceDefaultRn
+      ? DEFAULT_RN_EMAIL
+      : clean((intake as any)?.alftRnEmail, 200).toLowerCase() || DEFAULT_RN_EMAIL;
+    let rnName = forceDefaultRn ? DEFAULT_RN_NAME : clean((intake as any)?.alftRnName, 160) || DEFAULT_RN_NAME;
     if (!rnUid) {
       try {
         const byEmailSnap = await adminDb.collection('users').where('email', '==', rnEmail).limit(1).get();
