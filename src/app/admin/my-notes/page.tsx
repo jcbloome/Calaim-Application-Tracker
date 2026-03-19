@@ -83,7 +83,6 @@ function MyNotesContent() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyOpen, setReplyOpen] = useState<Record<string, boolean>>({});
   const [isSendingReply, setIsSendingReply] = useState<Record<string, boolean>>({});
-  const [replyPriority, setReplyPriority] = useState<Record<string, 'General' | 'Priority'>>({});
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
@@ -92,14 +91,12 @@ function MyNotesContent() {
     recipientIds: string[];
     title: string;
     message: string;
-    priority: 'General' | 'Priority' | 'Urgent';
     followUpRequired: boolean;
     followUpDate: string;
   }>({
     recipientIds: [],
     title: '',
     message: '',
-    priority: 'General',
     followUpRequired: false,
     followUpDate: ''
   });
@@ -266,15 +263,6 @@ function MyNotesContent() {
       if (unsubscribe) unsubscribe();
     };
   }, []);
-
-  // In Electron, treat this as a Priority-only compose tool.
-  useEffect(() => {
-    if (!desktopActive) return;
-    setGeneralNote((prev) => ({
-      ...prev,
-      priority: 'Priority',
-    }));
-  }, [desktopActive]);
 
   const updateSuppressSetting = (nextValue: boolean) => {
     setSuppressWebWhenDesktopActive(nextValue);
@@ -618,7 +606,6 @@ function MyNotesContent() {
       return;
     }
     const message = replyDrafts[notification.id]?.trim();
-    const priority = replyPriority[notification.id] || 'General';
     if (!message) {
       toast({
         title: "Missing Reply",
@@ -635,7 +622,7 @@ function MyNotesContent() {
         title: `Reply: ${notification.title}`,
         message,
         type: 'interoffice_reply',
-        priority: priority === 'Priority' ? 'Priority' : 'General',
+        priority: 'General',
         status: 'Open',
         isRead: false,
         createdBy: user.uid,
@@ -667,7 +654,7 @@ function MyNotesContent() {
             body: JSON.stringify({
               clientId2: notification.memberId,
               comments: message,
-              followUpStatus: priority === 'Priority' ? '🟡 Priority' : 'Open',
+              followUpStatus: 'Open',
               userId: user.uid,
               actorName: user.displayName || user.email || 'Staff',
               actorEmail: user.email || '',
@@ -695,7 +682,6 @@ function MyNotesContent() {
         description: "Your reply was sent and saved in your notifications.",
       });
       setReplyDrafts((prev) => ({ ...prev, [notification.id]: '' }));
-      setReplyPriority((prev) => ({ ...prev, [notification.id]: 'General' }));
       setReplyOpen((prev) => ({ ...prev, [notification.id]: false }));
     } catch (error) {
       console.error('❌ Failed to send reply:', error);
@@ -739,7 +725,7 @@ function MyNotesContent() {
             title: generalNote.title?.trim() || 'General Note',
             message: generalNote.message.trim(),
             type: 'interoffice_note',
-            priority: generalNote.priority,
+            priority: 'General',
             status: 'Open',
             isRead: false,
             createdBy: user.uid,
@@ -764,7 +750,6 @@ function MyNotesContent() {
         recipientIds: [],
         title: '',
         message: '',
-        priority: 'General',
         followUpRequired: false,
         followUpDate: ''
       });
@@ -985,7 +970,7 @@ function MyNotesContent() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">My Notifications</h1>
+          <h1 className="text-3xl font-bold">Interoffice Notes</h1>
           <p className="text-muted-foreground">
             View and manage your personal notifications and member-related alerts
           </p>
@@ -1353,26 +1338,6 @@ function MyNotesContent() {
                             }
                             placeholder="Write a reply to the sender..."
                           />
-                          <div className="flex items-center gap-2">
-                            <Label className="text-xs">Priority</Label>
-                            <Select
-                              value={replyPriority[notification.id] || 'General'}
-                              onValueChange={(value) =>
-                                setReplyPriority((prev) => ({
-                                  ...prev,
-                                  [notification.id]: value as 'General' | 'Priority'
-                                }))
-                              }
-                            >
-                              <SelectTrigger className="h-8 w-40">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="General">General (no popup)</SelectItem>
-                                <SelectItem value="Priority">Priority (popup)</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
                           <Button
                             onClick={() => handleReplySend(notification)}
                             size="sm"
@@ -1536,31 +1501,6 @@ function MyNotesContent() {
                   onChange={(e) => setGeneralNote((prev) => ({ ...prev, message: e.target.value }))}
                   placeholder="Write a note for staff..."
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="general-priority">Priority</Label>
-                <Select
-                  value={generalNote.priority}
-                  onValueChange={(value: 'General' | 'Priority' | 'Urgent') =>
-                    setGeneralNote((prev) => ({ ...prev, priority: value }))
-                  }
-                >
-                  <SelectTrigger id="general-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {desktopActive ? (
-                      <SelectItem value="Priority">Priority (desktop alert)</SelectItem>
-                    ) : (
-                      <>
-                        <SelectItem value="General">General (no popup)</SelectItem>
-                        <SelectItem value="Priority">Priority (popup)</SelectItem>
-                        <SelectItem value="Urgent">Urgent (popup + top)</SelectItem>
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="space-y-2">

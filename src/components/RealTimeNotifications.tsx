@@ -515,6 +515,11 @@ export function RealTimeNotifications() {
     const normalized = normalizePriorityLabel(String(priority || ''));
     return normalized === 'Priority' || normalized === 'Urgent';
   };
+  const isDesktopNotifiable = (input: { priority?: unknown; type?: unknown; isGeneral?: unknown }) => {
+    const type = String(input?.type || '').toLowerCase();
+    const interoffice = Boolean(input?.isGeneral) || type.includes('interoffice');
+    return interoffice || isDesktopPriority(input?.priority);
+  };
 
   const sanitizeFieldLabel = (value?: string) => {
     const raw = String(value || '').trim();
@@ -554,6 +559,7 @@ export function RealTimeNotifications() {
         const pending: NotificationData[] = [];
         const deliveryCandidates: string[] = [];
         let hasNew = false;
+        let hasNewDesktopAlert = false;
         let hasNewPriority = false;
         let hasNewUrgent = false;
         let total = 0;
@@ -562,6 +568,8 @@ export function RealTimeNotifications() {
           Boolean(window.desktopNotifications) &&
           !Boolean(window.desktopNotifications?.__shim) &&
           !desktopEffectivePaused;
+
+        const shouldMarkSeenNow = !desktopEffectivePaused;
 
         snapshot.forEach((docSnap) => {
           total += 1;
@@ -608,9 +616,21 @@ export function RealTimeNotifications() {
           };
 
           const isNew = !seenNotificationsRef.current.has(notification.id);
+          const isDesktopAlert = isDesktopNotifiable({
+            priority: notification.priority,
+            type: notification.type,
+            isGeneral: notification.isGeneral,
+          });
           if (isNew) {
-            seenNotificationsRef.current.add(notification.id);
+            // Do not consume "new" while desktop notifications are effectively paused
+            // (dormant/off-hours/snooze). This allows alerts to fire when staff re-activates.
+            if (shouldMarkSeenNow) {
+              seenNotificationsRef.current.add(notification.id);
+            }
             hasNew = true;
+            if (isDesktopAlert) {
+              hasNewDesktopAlert = true;
+            }
             if (isPriority) {
               hasNewPriority = true;
             }
@@ -648,7 +668,9 @@ export function RealTimeNotifications() {
           });
 
           if (window.desktopNotifications?.setPendingCount) {
-            const desktopPending = sortedPending.filter((n) => isDesktopPriority(n.priority));
+            const desktopPending = sortedPending.filter((n) =>
+              isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral })
+            );
             window.desktopNotifications.setPendingCount(desktopEffectivePaused ? 0 : desktopPending.length);
           }
 
@@ -730,7 +752,7 @@ export function RealTimeNotifications() {
           const isRecent =
             Boolean(latestPending?.timestamp) &&
             Date.now() - latestPending.timestamp.getTime() <= recentThresholdMs;
-          const forceExpanded = hasNewUrgent || hasNewPriority || isRecent;
+          const forceExpanded = hasNewUrgent || hasNewPriority || hasNewDesktopAlert || isRecent;
           const desktopPresent = typeof window !== 'undefined'
             && Boolean(window.desktopNotifications)
             && !Boolean(window.desktopNotifications?.__shim);
@@ -751,7 +773,9 @@ export function RealTimeNotifications() {
             if (desktopEffectivePaused) {
               clearDesktopIndicators();
             } else if (window.desktopNotifications?.setPillSummary) {
-              const desktopPending = sortedPending.filter((n) => isDesktopPriority(n.priority));
+              const desktopPending = sortedPending.filter((n) =>
+                isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral })
+              );
               const desktopCount = desktopPending.length;
               const desktopTitle = desktopCount === 1 ? 'Priority note' : 'Priority notes';
               desktopPriorityPillRef.current = desktopPending.map((note) => ({
@@ -809,7 +833,9 @@ export function RealTimeNotifications() {
           if (desktopEffectivePaused) {
             clearDesktopIndicators();
           } else if (window.desktopNotifications?.setPillSummary) {
-            const desktopPending = sortedPending.filter((n) => isDesktopPriority(n.priority));
+            const desktopPending = sortedPending.filter((n) =>
+              isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral })
+            );
             const desktopCount = desktopPending.length;
             const desktopHighlight = desktopPending[0] || null;
             const desktopTitle = desktopCount === 1 ? 'Priority note' : 'Priority notes';
@@ -822,7 +848,7 @@ export function RealTimeNotifications() {
             const desktopIsRecent =
               Boolean(desktopLatest?.timestamp) &&
               Date.now() - desktopLatest.timestamp.getTime() <= recentThresholdMs;
-            const openPanel = Boolean(hasNewPriority || hasNewUrgent || desktopIsRecent);
+            const openPanel = Boolean(hasNewDesktopAlert || hasNewPriority || hasNewUrgent || desktopIsRecent);
 
             desktopPriorityPillRef.current = desktopPending.map((note) => ({
               kind: 'note',

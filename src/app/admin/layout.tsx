@@ -125,7 +125,7 @@ const adminNavLinks = [
     icon: ClipboardList,
     isSubmenu: true,
     submenuItems: [
-      { href: '/admin/my-notes', label: 'My Notifications', icon: Bell },
+      { href: '/admin/my-notes', label: 'Interoffice Notes', icon: Bell },
       { href: '/admin/tasks', label: 'Daily Task Tracker', icon: ClipboardList },
       { href: '/admin/followup-notes', label: 'Follow-up Notes (Caspio)', icon: MessageSquareText },
     ],
@@ -1161,7 +1161,7 @@ function AdminHeader() {
         label: 'K-Tier',
         count: kTierCount,
         dot: 'bg-indigo-600',
-        href: '/admin/kaiser-tracker',
+        href: '/admin/kaiser-tracker#ils-member-updates',
       },
     ];
 

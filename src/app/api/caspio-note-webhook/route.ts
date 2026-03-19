@@ -16,14 +16,99 @@ interface CaspioNoteWebhookData {
 }
 
 // Staff mapping for notifications
-const STAFF_MAPPING: { [key: string]: { id: string; name: string; email: string } } = {
-  'nick': { id: 'nick-staff', name: 'Nick', email: 'nick@carehomefinders.com' },
-  'john': { id: 'john-staff', name: 'John', email: 'john@carehomefinders.com' },
-  'jessie': { id: 'jessie-staff', name: 'Jessie', email: 'jessie@carehomefinders.com' },
-  'jason': { id: 'jason-admin', name: 'Jason', email: 'jason@carehomefinders.com' },
-  'monica': { id: 'monica-staff', name: 'Monica', email: 'monica@carehomefinders.com' },
-  'leidy': { id: 'leidy-staff', name: 'Leidy', email: 'leidy@carehomefinders.com' }
+const STAFF_MAPPING: { [key: string]: { name: string; email: string } } = {
+  nick: { name: 'Nick', email: 'nick@carehomefinders.com' },
+  john: { name: 'John', email: 'john@carehomefinders.com' },
+  jessie: { name: 'Jessie', email: 'jessie@carehomefinders.com' },
+  jason: { name: 'Jason', email: 'jason@carehomefinders.com' },
+  monica: { name: 'Monica', email: 'monica@carehomefinders.com' },
+  leidy: { name: 'Leidy', email: 'leidy@carehomefinders.com' },
 };
+
+const normalize = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase();
+
+const looksLikeEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
+
+type ResolvedStaff = {
+  uid: string;
+  name: string;
+  email: string;
+};
+
+async function resolveAssignedStaff(assignedToRaw: string): Promise<ResolvedStaff | null> {
+  const assignedTo = normalize(assignedToRaw);
+  if (!assignedTo) return null;
+
+  // 1) Exact UID match.
+  try {
+    const directUser = await adminDb.collection('users').doc(assignedToRaw.trim()).get();
+    if (directUser.exists) {
+      const data = directUser.data() as any;
+      const email = normalize(data?.email);
+      return {
+        uid: directUser.id,
+        name: String(data?.displayName || data?.firstName || data?.email || directUser.id),
+        email: email || '',
+      };
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) Direct email from webhook OR mapped nickname to email.
+  const mapped = STAFF_MAPPING[assignedTo];
+  const candidateEmail = looksLikeEmail(assignedTo) ? assignedTo : normalize(mapped?.email || '');
+  if (candidateEmail) {
+    const exactEmail = await adminDb
+      .collection('users')
+      .where('email', '==', candidateEmail)
+      .limit(1)
+      .get()
+      .catch(() => null);
+    const hit = exactEmail?.docs?.[0];
+    if (hit) {
+      const data = hit.data() as any;
+      return {
+        uid: hit.id,
+        name: String(data?.displayName || data?.firstName || data?.email || mapped?.name || hit.id),
+        email: normalize(data?.email) || candidateEmail,
+      };
+    }
+  }
+
+  // 3) Case-insensitive fallback by scanning user profiles.
+  const usersSnap = await adminDb.collection('users').limit(1000).get().catch(() => null);
+  for (const docSnap of usersSnap?.docs || []) {
+    const u = docSnap.data() as any;
+    const email = normalize(u?.email);
+    const displayName = normalize(u?.displayName || '');
+    const firstName = normalize(u?.firstName || '');
+    const lastName = normalize(u?.lastName || '');
+    const fullName = normalize(`${firstName} ${lastName}`);
+    const emailLocal = email.includes('@') ? email.split('@')[0] : '';
+
+    const emailMatch = Boolean(candidateEmail) && email === candidateEmail;
+    const nameMatch =
+      assignedTo === displayName ||
+      assignedTo === fullName ||
+      assignedTo === firstName ||
+      assignedTo === lastName ||
+      assignedTo === emailLocal;
+
+    if (emailMatch || nameMatch) {
+      return {
+        uid: docSnap.id,
+        name: String(u?.displayName || `${u?.firstName || ''} ${u?.lastName || ''}`.trim() || u?.email || docSnap.id),
+        email,
+      };
+    }
+  }
+
+  return null;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -77,22 +162,8 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
 
     console.log(`📝 Processing note for member: ${Member_Name} (${Client_ID2})`);
 
-    // Determine if this note is assigned to a staff member
-    let assignedStaff = null;
-    if (Assigned_To) {
-      const staffKey = Assigned_To.toLowerCase();
-      assignedStaff = STAFF_MAPPING[staffKey];
-      
-      if (!assignedStaff) {
-        // Try to find by email
-        const staffByEmail = Object.values(STAFF_MAPPING).find(
-          staff => staff.email.toLowerCase() === Assigned_To.toLowerCase()
-        );
-        if (staffByEmail) {
-          assignedStaff = staffByEmail;
-        }
-      }
-    }
+    // Determine if this note is assigned to a staff member (resolve to real Firebase UID).
+    const assignedStaff = Assigned_To ? await resolveAssignedStaff(Assigned_To) : null;
 
     const normalizePriority = (value?: string) => {
       const normalized = String(value || '').toLowerCase();
@@ -107,7 +178,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
       console.log(`🔔 Creating notification for ${assignedStaff.name} (${assignedStaff.email})`);
 
       const notification = {
-        userId: assignedStaff.id,
+        userId: assignedStaff.uid,
         noteId: Record_ID || `caspio_${Date.now()}`,
         title: 'New Note from Caspio',
         message: `A new ${normalizedPriority} note has been assigned to you for ${Member_Name || 'Unknown Member'}`,
@@ -151,7 +222,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
       
       console.log(`✅ Notification created for ${assignedStaff.name} - Note from Caspio`);
     } else {
-      console.log(`ℹ️ Note not assigned to any tracked staff member (Assigned_To: ${Assigned_To})`);
+      console.log(`ℹ️ Note not assigned to any resolved Firebase user (Assigned_To: ${Assigned_To})`);
     }
 
     // Also log the note processing for audit purposes

@@ -94,6 +94,8 @@ export function KaiserSummaryCards({
     ...m,
     count: ilsMemberUpdatesMembers.filter((x) => getIlsBucketKey(getEffectiveKaiserStatus(x)) === m.key).length,
   }));
+  const getIlsBucketMembers = (bucketKey: string) =>
+    ilsMemberUpdatesMembers.filter((x) => getIlsBucketKey(getEffectiveKaiserStatus(x)) === bucketKey);
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -109,7 +111,7 @@ export function KaiserSummaryCards({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
       {/* ILS Member Updates Consolidated Card */}
-      <Card className="bg-white border-l-4 border-l-cyan-500 shadow">
+      <Card id="ils-member-updates" className="bg-white border-l-4 border-l-cyan-500 shadow">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <CalendarClock className="h-4 w-4 text-gray-400" />
@@ -135,10 +137,23 @@ export function KaiserSummaryCards({
           </button>
           <div className="space-y-1">
             {ilsBreakdown.map((row) => (
-              <div key={row.key} className="flex items-center justify-between text-[11px] text-muted-foreground">
-                <span className="truncate pr-2">{row.label}</span>
-                <span className="font-semibold text-slate-700">{row.count}</span>
-              </div>
+              <button
+                key={row.key}
+                type="button"
+                className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-muted-foreground hover:bg-cyan-50"
+                onClick={() =>
+                  openMemberModal(
+                    getIlsBucketMembers(row.key),
+                    `ILS Member Updates — ${row.label}`,
+                    `${row.count} Kaiser members in ${row.label}`,
+                    'kaiser_status',
+                    `ils_member_updates_${row.key}`
+                  )
+                }
+              >
+                <span className="truncate pr-2 text-left">{row.label}</span>
+                <span className="font-semibold text-cyan-800 hover:underline">{row.count}</span>
+              </button>
             ))}
           </div>
           <div className="border-t pt-2 space-y-1">
