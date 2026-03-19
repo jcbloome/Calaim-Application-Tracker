@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { useUser, useFirestore } from '@/firebase';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
@@ -19,11 +19,24 @@ interface AdminStatus {
 export function useAdmin(): AdminStatus {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
+  const lastKnownRoleRef = useRef<{ isAdmin: boolean; isSuperAdmin: boolean; isClaimsStaff: boolean }>({
+    isAdmin: false,
+    isSuperAdmin: false,
+    isClaimsStaff: false,
+  });
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isClaimsStaff, setIsClaimsStaff] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  const safeLocalStorageGet = (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
 
   useEffect(() => {
     console.log('🔍 useAdmin Debug:', {
@@ -62,6 +75,11 @@ export function useAdmin(): AdminStatus {
           const nextSuper = Boolean(isEmailAdmin || hasSuperAdminClaim);
           setIsSuperAdmin(nextSuper);
           setIsClaimsStaff(nextSuper);
+          lastKnownRoleRef.current = {
+            isAdmin: true,
+            isSuperAdmin: nextSuper,
+            isClaimsStaff: nextSuper,
+          };
           setIsLoading(false);
           return;
         }
@@ -74,6 +92,11 @@ export function useAdmin(): AdminStatus {
         setIsAdmin(true);
         setIsSuperAdmin(true);
         setIsClaimsStaff(true);
+        lastKnownRoleRef.current = {
+          isAdmin: true,
+          isSuperAdmin: true,
+          isClaimsStaff: true,
+        };
         setIsLoading(false);
         return;
       }
@@ -120,12 +143,29 @@ export function useAdmin(): AdminStatus {
         setIsSuperAdmin(isSuperAdminUser);
         // Claims access: super admins always allowed; other staff use `users/{uid}.isClaimsStaff`.
         const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
-        setIsClaimsStaff(Boolean(isSuperAdminUser || userData?.isClaimsStaff));
+        const nextClaimsStaff = Boolean(isSuperAdminUser || userData?.isClaimsStaff);
+        setIsClaimsStaff(nextClaimsStaff);
+        lastKnownRoleRef.current = {
+          isAdmin: isAdminUser,
+          isSuperAdmin: isSuperAdminUser,
+          isClaimsStaff: nextClaimsStaff,
+        };
       } catch (error) {
         console.error('❌ useAdmin: Error checking admin roles', error);
-        setIsAdmin(false);
-        setIsSuperAdmin(false);
-        setIsClaimsStaff(false);
+        // Resilience: avoid kicking staff out on transient lookup/network failures.
+        // If this browser session is in admin mode and we previously confirmed admin,
+        // keep the last known role state until the next successful check.
+        const stickyAdminSession = safeLocalStorageGet('calaim_session_type') === 'admin';
+        const fallbackAllowed = Boolean(user?.uid) && stickyAdminSession && lastKnownRoleRef.current.isAdmin;
+        if (fallbackAllowed) {
+          setIsAdmin(lastKnownRoleRef.current.isAdmin);
+          setIsSuperAdmin(lastKnownRoleRef.current.isSuperAdmin);
+          setIsClaimsStaff(lastKnownRoleRef.current.isClaimsStaff);
+        } else {
+          setIsAdmin(false);
+          setIsSuperAdmin(false);
+          setIsClaimsStaff(false);
+        }
       } finally {
         setIsLoading(false);
       }
