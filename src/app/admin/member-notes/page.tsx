@@ -789,92 +789,9 @@ function MemberNotesPageContent() {
                 </CardDescription>
               </div>
               {selectedMember && (
-                <Dialog open={isNewNoteDialogOpen} onOpenChange={setIsNewNoteDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Note
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                      <DialogTitle>Add New Note</DialogTitle>
-                      <DialogDescription>
-                        Create a new note for {selectedMember.firstName} {selectedMember.lastName}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="priority">Priority</Label>
-                        <Select value={newNote.priority} onValueChange={(value: MemberNote['priority']) => setNewNote(prev => ({ ...prev, priority: value }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="General">General</SelectItem>
-                          <SelectItem value="Priority">Priority</SelectItem>
-                          <SelectItem value="Urgent">Urgent</SelectItem>
-                        </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="noteText">Note Content</Label>
-                        <Textarea
-                          id="noteText"
-                          value={newNote.noteText}
-                          onChange={(e) => setNewNote(prev => ({ ...prev, noteText: e.target.value }))}
-                          placeholder="Enter note content..."
-                          rows={4}
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="assignedTo">Assign to Staff (Optional)</Label>
-                          <Select 
-                            value={newNote.assignedTo} 
-                            onValueChange={(value) => {
-                              const selectedStaff = staffList.find(s => s.uid === value);
-                              setNewNote(prev => ({ 
-                                ...prev, 
-                                assignedTo: value,
-                                assignedToName: selectedStaff?.name || ''
-                              }));
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select staff member" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="">No assignment</SelectItem>
-                              {staffList.map((staff) => (
-                                <SelectItem key={staff.uid} value={staff.uid}>
-                                  {staff.name} ({staff.email})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="followUpDate">Follow-up Date (Optional)</Label>
-                          <Input
-                            id="followUpDate"
-                            type="date"
-                            value={newNote.followUpDate}
-                            onChange={(e) => setNewNote(prev => ({ ...prev, followUpDate: e.target.value }))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setIsNewNoteDialogOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button onClick={handleCreateNote}>
-                        Create Note
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                  Notes are read-only here. Use the sync button to pull latest from Caspio.
+                </div>
               )}
             </div>
           </CardHeader>

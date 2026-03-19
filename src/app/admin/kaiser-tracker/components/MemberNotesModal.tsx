@@ -4,10 +4,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Calendar, MessageSquare, RefreshCw } from 'lucide-react';
 import type { KaiserMember } from './shared';
 import { formatBirthDate, getEffectiveKaiserStatus } from './shared';
@@ -18,22 +15,6 @@ export interface MemberNotesModalProps {
   member: KaiserMember | null;
   notes: any[];
   isLoadingNotes: boolean;
-  newNote: {
-    noteText: string;
-    priority: 'Low' | 'Medium' | 'High' | 'Urgent';
-    assignedTo: string;
-    assignedToName: string;
-    followUpDate: string;
-  };
-  onNewNoteChange: (patch: Partial<MemberNotesModalProps['newNote']>) => void;
-  onCreateNote: () => void;
-  ilsDateDraft: {
-    tierLevelReceivedDate: string;
-    ilsContractSentDate: string;
-  };
-  isSavingIlsDates: boolean;
-  onIlsDateDraftChange: (draft: { tierLevelReceivedDate: string; ilsContractSentDate: string }) => void;
-  onSaveIlsDates: () => void;
   onSyncNotes: () => void;
 }
 
@@ -43,13 +24,6 @@ export function MemberNotesModal({
   member,
   notes,
   isLoadingNotes,
-  newNote,
-  onNewNoteChange,
-  onCreateNote,
-  ilsDateDraft,
-  isSavingIlsDates,
-  onIlsDateDraftChange,
-  onSaveIlsDates,
   onSyncNotes,
 }: MemberNotesModalProps) {
   if (!isOpen || !member) return null;
@@ -172,131 +146,10 @@ export function MemberNotesModal({
             )}
           </div>
 
-          {/* Add New Note */}
+          {/* Read-only operations panel */}
           <div className="space-y-4">
-            <div className="rounded-lg border p-3 space-y-3 bg-slate-50">
-              <h3 className="text-sm font-semibold">ILS Date Updates</h3>
-              <p className="text-xs text-muted-foreground">
-                Save these when ILS completes updates. This triggers staff desktop notifications and Tier/ILS Contract action
-                items while the member stays in current status.
-              </p>
-              <div className="grid grid-cols-1 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-700">Tier Level Received Date</label>
-                  <Input
-                    type="date"
-                    value={ilsDateDraft.tierLevelReceivedDate}
-                    onChange={(e) =>
-                      onIlsDateDraftChange({
-                        ...ilsDateDraft,
-                        tierLevelReceivedDate: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-700">ILS Contract Sent Date</label>
-                  <Input
-                    type="date"
-                    value={ilsDateDraft.ilsContractSentDate}
-                    onChange={(e) =>
-                      onIlsDateDraftChange({
-                        ...ilsDateDraft,
-                        ilsContractSentDate: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-              <Button onClick={onSaveIlsDates} disabled={isSavingIlsDates} className="w-full" variant="secondary">
-                {isSavingIlsDates ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Save ILS Dates
-              </Button>
-            </div>
-
-            <h3 className="text-lg font-medium">Add New Note</h3>
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Priority</label>
-                <Select
-                  value={newNote.priority}
-                  onValueChange={(value: 'Low' | 'Medium' | 'High' | 'Urgent') =>
-                    onNewNoteChange({ priority: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Low">Low</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                    <SelectItem value="Urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Note Content</label>
-                <Textarea
-                  value={newNote.noteText}
-                  onChange={(e) => onNewNoteChange({ noteText: e.target.value })}
-                  placeholder="Enter note content..."
-                  rows={4}
-                  className="resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Assign to Staff (Optional)</label>
-                  <Select
-                    value={newNote.assignedToName || 'none'}
-                    onValueChange={(value) => {
-                      const normalized = value === 'none' ? '' : value;
-                      // Map staff names to IDs (in production, this would come from a staff API)
-                      const staffMap: Record<string, string> = {
-                        John: 'john-user-id',
-                        Nick: 'nick-user-id',
-                        Jesse: 'jesse-user-id',
-                      };
-                      onNewNoteChange({
-                        assignedToName: normalized,
-                        assignedTo: normalized ? staffMap[normalized] || '' : '',
-                      });
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select staff member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      <SelectItem value="John">John</SelectItem>
-                      <SelectItem value="Nick">Nick</SelectItem>
-                      <SelectItem value="Jesse">Jesse</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Follow-up Date (Optional)</label>
-                  <Input
-                    type="date"
-                    value={newNote.followUpDate}
-                    onChange={(e) => onNewNoteChange({ followUpDate: e.target.value })}
-                    min={new Date().toISOString().split('T')[0]}
-                  />
-                </div>
-              </div>
-
-              <Button
-                onClick={onCreateNote}
-                disabled={!newNote.noteText.trim()}
-                className="w-full bg-blue-600 text-white hover:bg-blue-700"
-              >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                Add Note
-              </Button>
+            <div className="rounded-lg border p-3 bg-blue-50 text-sm text-blue-900">
+              Note history is read-only in the app. Use sync to pull the latest Caspio notes.
             </div>
           </div>
         </div>

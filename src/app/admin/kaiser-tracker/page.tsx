@@ -262,19 +262,6 @@ function KaiserTrackerPageContent() {
     notes: any[];
     isLoadingNotes: boolean;
   }>({ isOpen: false, member: null, notes: [], isLoadingNotes: false });
-  const [ilsDateDraft, setIlsDateDraft] = useState({
-    tierLevelReceivedDate: '',
-    ilsContractSentDate: '',
-  });
-  const [isSavingIlsDates, setIsSavingIlsDates] = useState(false);
-
-  const [newNote, setNewNote] = useState({
-    noteText: '',
-    priority: 'Medium' as 'Low' | 'Medium' | 'High' | 'Urgent',
-    assignedTo: '',
-    assignedToName: '',
-    followUpDate: ''
-  });
   const [filters, setFilters] = useState({
     kaiserStatus: 'all',
     calaimStatus: 'all',
@@ -476,91 +463,6 @@ function KaiserTrackerPageContent() {
     }
   };
 
-  const toInputDate = (value: any): string => {
-    const raw = String(value || '').trim();
-    if (!raw) return '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-    try {
-      const d = new Date(raw);
-      if (Number.isNaN(d.getTime())) return '';
-      return d.toISOString().slice(0, 10);
-    } catch {
-      return '';
-    }
-  };
-
-  useEffect(() => {
-    const m = memberNotesModal.member;
-    if (!memberNotesModal.isOpen || !m) return;
-    setIlsDateDraft({
-      tierLevelReceivedDate: toInputDate((m as any)?.Kaiser_Tier_Level_Received_Date),
-      ilsContractSentDate: toInputDate((m as any)?.ILS_RCFE_Sent_For_Contract_Date),
-    });
-  }, [memberNotesModal.isOpen, memberNotesModal.member]);
-
-  const handleSaveIlsDates = async () => {
-    const member = memberNotesModal.member;
-    if (!member) return;
-    setIsSavingIlsDates(true);
-    try {
-      if (!auth?.currentUser) throw new Error('You must be signed in');
-      const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/admin/kaiser-ils-dates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          idToken,
-          clientId2: member.client_ID2,
-          memberName: `${member.memberFirstName} ${member.memberLastName}`.trim(),
-          tierLevelReceivedDate: ilsDateDraft.tierLevelReceivedDate,
-          ilsContractSentDate: ilsDateDraft.ilsContractSentDate,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Failed to save ILS dates (HTTP ${res.status})`);
-      }
-
-      setMembers((prev) =>
-        prev.map((m) =>
-          m.client_ID2 === member.client_ID2
-            ? {
-                ...m,
-                Kaiser_Tier_Level_Received_Date: ilsDateDraft.tierLevelReceivedDate || '',
-                ILS_RCFE_Sent_For_Contract_Date: ilsDateDraft.ilsContractSentDate || '',
-              }
-            : m
-        )
-      );
-      setMemberNotesModal((prev) => ({
-        ...prev,
-        member: prev.member
-          ? ({
-              ...prev.member,
-              Kaiser_Tier_Level_Received_Date: ilsDateDraft.tierLevelReceivedDate || '',
-              ILS_RCFE_Sent_For_Contract_Date: ilsDateDraft.ilsContractSentDate || '',
-            } as any)
-          : prev.member,
-      }));
-
-      toast({
-        title: 'ILS dates saved',
-        description:
-          data?.notificationsSent > 0
-            ? `Saved and notified ${data.notificationsSent} authorized staff.`
-            : 'Saved successfully.',
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Save failed',
-        description: error?.message || 'Could not save ILS dates.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSavingIlsDates(false);
-    }
-  };
-
   useEffect(() => {
     if (deepLinkHandledRef.current) return;
     if (!members.length) return;
@@ -571,108 +473,6 @@ function KaiserTrackerPageContent() {
     deepLinkHandledRef.current = true;
     handleMemberClick(target);
   }, [members, searchParams]);
-
-  // Helper function to create a new note
-  const handleCreateNote = async () => {
-    if (!memberNotesModal.member || !newNote.noteText.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter note content",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      const noteData = {
-        clientId2: memberNotesModal.member.client_ID2,
-        memberName: `${memberNotesModal.member.memberFirstName} ${memberNotesModal.member.memberLastName}`,
-        noteText: newNote.noteText,
-        priority: newNote.priority,
-        assignedTo: newNote.assignedTo || undefined,
-        assignedToName: newNote.assignedToName || undefined,
-        followUpDate: newNote.followUpDate || undefined,
-        authorId: user?.uid || 'current-user',
-        authorName: user?.displayName || user?.email || 'Current User'
-      };
-
-      const response = await fetch('/api/member-notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(noteData),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        // Update the member's notes
-        setMemberNotesModal(prev => ({
-          ...prev,
-          notes: [data.note, ...prev.notes]
-        }));
-
-        // Reset form
-        setNewNote({
-          noteText: '',
-          priority: 'Medium',
-          assignedTo: '',
-          assignedToName: '',
-          followUpDate: ''
-        });
-
-        toast({
-          title: "Note Created",
-          description: `Note added for ${memberNotesModal.member.memberFirstName} ${memberNotesModal.member.memberLastName}${newNote.assignedToName ? ` and assigned to ${newNote.assignedToName}` : ''}`,
-        });
-
-        if (data?.caspioSynced === false) {
-          toast({
-            title: 'Caspio sync failed',
-            description: data?.caspioSyncError || 'The note was saved locally but did not sync to Caspio.',
-            variant: 'destructive',
-          });
-        }
-
-        // Show notification if assigned to staff
-        if (newNote.assignedTo && newNote.assignedToName) {
-          // Trigger staff notification
-          await fetch('/api/staff/notifications', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'note_assignment',
-              title: 'New Note Assigned',
-              message: `You have been assigned a ${newNote.priority.toLowerCase()} priority note for ${memberNotesModal.member.memberFirstName} ${memberNotesModal.member.memberLastName}`,
-              noteId: data.note.id,
-              clientId2: memberNotesModal.member.client_ID2,
-              memberName: `${memberNotesModal.member.memberFirstName} ${memberNotesModal.member.memberLastName}`,
-              priority: newNote.priority,
-              assignedTo: newNote.assignedTo,
-              createdBy: user?.uid || 'current-user',
-              createdByName: user?.displayName || user?.email || 'Current User'
-            })
-          });
-
-          toast({
-            title: "Notification Sent",
-            description: `${newNote.assignedToName} has been notified`,
-          });
-        }
-      } else {
-        throw new Error(data.error || 'Failed to create note');
-      }
-
-    } catch (error: any) {
-      console.error('Error creating note:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create note",
-        variant: "destructive"
-      });
-    }
-  };
 
   // Helper functions
   const loadKaiserStatusOptions = async () => {
@@ -1161,13 +961,6 @@ function KaiserTrackerPageContent() {
         member={memberNotesModal.member}
         notes={memberNotesModal.notes}
         isLoadingNotes={memberNotesModal.isLoadingNotes}
-        newNote={newNote}
-        onNewNoteChange={(patch) => setNewNote((prev) => ({ ...prev, ...patch }))}
-        onCreateNote={handleCreateNote}
-        ilsDateDraft={ilsDateDraft}
-        isSavingIlsDates={isSavingIlsDates}
-        onIlsDateDraftChange={setIlsDateDraft}
-        onSaveIlsDates={handleSaveIlsDates}
         onSyncNotes={syncMemberNotes}
       />
             </div>

@@ -4,17 +4,14 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Search, Plus, MessageSquare, Calendar, User, Clock, Send, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
+import { Search, MessageSquare, Calendar, User, Clock, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { memberNotesSync, useMemberNotesSync } from '@/lib/member-notes-sync';
-import { useActivityTracking } from '@/hooks/use-activity-tracking';
 
 // Types
 interface ClientNote {
@@ -59,28 +56,17 @@ export default function MemberNotesModal({
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showNewNoteForm, setShowNewNoteForm] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{
     needsInitialSync: boolean;
     isFirstTime: boolean;
     lastSync?: string;
   }>({ needsInitialSync: false, isFirstTime: false });
-  const [newNote, setNewNote] = useState({
-    clientId2: clientId2 || '',
-    comments: '',
-    followUpDate: '',
-    followUpAssignment: '',
-    followUpStatus: 'Open'
-  });
   const { toast } = useToast();
   const { 
     needsInitialSync, 
     performInitialSync, 
-    addToPendingSync, 
     checkForNewNotes 
   } = useMemberNotesSync();
-  
-  const { trackNoteCreation } = useActivityTracking();
 
   // Smart fetch with sync management
   const fetchMemberNotes = async (memberClientId2: string) => {
@@ -168,97 +154,12 @@ export default function MemberNotesModal({
     }
 
     await fetchMemberNotes(searchTerm.trim());
-    setNewNote({ ...newNote, clientId2: searchTerm.trim() });
-  };
-
-  // Create new note with smart sync
-  const createNote = async () => {
-    if (!newNote.clientId2 || !newNote.comments) {
-      toast({
-        title: "Error",
-        description: "Client ID and comments are required",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/client-notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newNote),
-      });
-
-      if (!response.ok) throw new Error('Failed to create note');
-
-      const data = await response.json();
-      if (data.success) {
-        const noteId = data.data.noteId;
-        
-        // Add to sync queue for bidirectional sync
-        addToPendingSync({
-          noteId: noteId || `temp-${Date.now()}`,
-          clientId2: newNote.clientId2,
-          action: 'create'
-        });
-
-        // Track note creation activity
-        trackNoteCreation(
-          newNote.clientId2,
-          newNote.comments,
-          newNote.followUpAssignment
-        );
-
-        toast({
-          title: "Success",
-          description: "Note created, synced to Caspio, and activity logged",
-        });
-        
-        // Reset form
-        setNewNote({
-          clientId2: newNote.clientId2,
-          comments: '',
-          followUpDate: '',
-          followUpAssignment: '',
-          followUpStatus: 'Open'
-        });
-        setShowNewNoteForm(false);
-        
-        // Refresh notes to show the new note
-        await fetchMemberNotes(newNote.clientId2);
-        
-        // Send notification if assigned to staff
-        if (newNote.followUpAssignment) {
-          console.log('📱 Notification sent to:', newNote.followUpAssignment);
-        }
-      } else {
-        throw new Error(data.error || 'Failed to create note');
-      }
-    } catch (error: any) {
-      console.error('Error creating note:', error);
-      
-      // Even if server fails, add to pending sync for retry
-      addToPendingSync({
-        noteId: `pending-${Date.now()}`,
-        clientId2: newNote.clientId2,
-        action: 'create'
-      });
-      
-      toast({
-        title: "Note Saved Locally",
-        description: "Note will be synced to Caspio when connection is restored",
-        variant: "destructive",
-      });
-    }
   };
 
   // Initialize with provided clientId2
   useEffect(() => {
     if (isOpen && clientId2) {
       setSearchTerm(clientId2);
-      setNewNote({ ...newNote, clientId2 });
       fetchMemberNotes(clientId2);
     }
   }, [isOpen, clientId2]);
@@ -304,14 +205,9 @@ export default function MemberNotesModal({
             
             {notes.length > 0 && (
               <div className="flex items-end">
-                <Button
-                  onClick={() => setShowNewNoteForm(!showNewNoteForm)}
-                  className="bg-blue-600 hover:bg-blue-700"
-                  disabled={syncing}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Note
-                </Button>
+                <Badge variant="outline" className="bg-blue-50 text-blue-900 border-blue-200">
+                  Notes are read-only from Caspio
+                </Badge>
               </div>
             )}
           </div>
@@ -349,87 +245,6 @@ export default function MemberNotesModal({
                 </p>
               </div>
             </div>
-          )}
-
-          {/* New Note Form */}
-          {showNewNoteForm && (
-            <Card className="border-blue-200 bg-blue-50">
-              <CardContent className="p-4 space-y-4">
-                <h3 className="font-semibold text-blue-800">Create New Note</h3>
-                
-                <div>
-                  <Label htmlFor="noteComments">Comments *</Label>
-                  <Textarea
-                    id="noteComments"
-                    value={newNote.comments}
-                    onChange={(e) => setNewNote({ ...newNote, comments: e.target.value })}
-                    placeholder="Enter note comments..."
-                    rows={3}
-                  />
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="noteFollowUpDate">Follow-up Date</Label>
-                    <Input
-                      id="noteFollowUpDate"
-                      type="date"
-                      value={newNote.followUpDate}
-                      onChange={(e) => setNewNote({ ...newNote, followUpDate: e.target.value })}
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="noteAssignment">Assign to Staff</Label>
-                    <Select
-                      value={newNote.followUpAssignment}
-                      onValueChange={(value) => setNewNote({ ...newNote, followUpAssignment: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select staff member" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {users.map((user) => (
-                          <SelectItem key={user.userId} value={user.userId}>
-                            {user.userFullName} ({user.role})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="noteStatus">Status</Label>
-                    <Select
-                      value={newNote.followUpStatus}
-                      onValueChange={(value) => setNewNote({ ...newNote, followUpStatus: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Open">Open</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="Closed">Closed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                
-                <div className="flex justify-end space-x-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setShowNewNoteForm(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button onClick={createNote}>
-                    <Send className="w-4 h-4 mr-2" />
-                    Create Note
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           )}
 
           {/* Notes Display */}

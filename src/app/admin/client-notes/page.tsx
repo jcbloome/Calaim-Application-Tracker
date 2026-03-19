@@ -667,76 +667,11 @@ function ClientNotesContent() {
             </div>
           )}
 
-          {/* Add Note */}
+          {/* Notes are read-only */}
           {selectedClientId && (
             <div ref={addNoteRef} id="add-client-note" className="mt-4 border rounded-lg p-4 bg-muted/30">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-base font-semibold">Add Client Note</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Notes can only be created for clients that already exist in Caspio.
-                  </p>
-                </div>
-                {createStatus && (
-                  <div className="flex items-center gap-3 text-sm">
-                    {createStatus.caspio && (
-                      <span className="flex items-center gap-1 text-green-600">
-                        <CheckCircle2 className="h-4 w-4" />
-                        Caspio synced
-                      </span>
-                    )}
-                    {createStatus.firestore && (
-                      <span className="flex items-center gap-1 text-green-600">
-                        <CheckCircle2 className="h-4 w-4" />
-                        Firestore synced
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="client-note-comments">Note</Label>
-                  <Textarea
-                    id="client-note-comments"
-                    rows={4}
-                    value={newNote.comments}
-                    onChange={(e) => setNewNote(prev => ({ ...prev, comments: e.target.value }))}
-                    placeholder="Write the note details..."
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="space-y-2">
-                    <Label>Status</Label>
-                    <Select
-                      value={newNote.followUpStatus}
-                      onValueChange={(value) => setNewNote(prev => ({ ...prev, followUpStatus: value }))}
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Open">Open</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="Closed">Closed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Follow-up Date (Optional)</Label>
-                    <Input
-                      type="date"
-                      value={newNote.followUpDate}
-                      onChange={(e) => setNewNote(prev => ({ ...prev, followUpDate: e.target.value }))}
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    <Button onClick={handleAddNote} disabled={isSavingNote}>
-                      {isSavingNote ? 'Saving...' : 'Save Note'}
-                    </Button>
-                  </div>
-                </div>
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                Member notes are read-only in the app. Use refresh/sync to pull latest notes from Caspio.
               </div>
             </div>
           )}

@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -23,14 +22,11 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
-  Plus,
-  Send,
   FileText,
   Bell
 } from 'lucide-react';
 import { format, isToday, isThisWeek, isThisMonth } from 'date-fns';
 import Link from 'next/link';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 interface Note {
   id: string;
@@ -73,17 +69,6 @@ export default function StaffNotesInterface() {
   const [sortBy, setSortBy] = useState<'timestamp' | 'priority'>('timestamp');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
-  // Add note form state
-  const [showAddNote, setShowAddNote] = useState(false);
-  const [addingNote, setAddingNote] = useState(false);
-  const [newNote, setNewNote] = useState({
-    memberId: '',
-    memberName: '',
-    noteContent: '',
-    noteType: 'general',
-    priority: 'General'
-  });
-
   
   const { user } = useAuth();
   const { toast } = useToast();
@@ -122,66 +107,6 @@ export default function StaffNotesInterface() {
     } finally {
       setLoading(false);
       setRefreshing(false);
-    }
-  };
-
-  const addNote = async () => {
-    if (!user || !newNote.noteContent.trim()) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Note content is required',
-      });
-      return;
-    }
-
-    setAddingNote(true);
-    try {
-      const response = await fetch('/api/staff/add-note', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...newNote,
-          staffId: user.uid,
-          staffName: user.displayName || user.email,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        toast({
-          title: 'Success',
-          description: 'Note added successfully',
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-        
-        // Reset form
-        setNewNote({
-          memberId: '',
-          memberName: '',
-          noteContent: '',
-          noteType: 'general',
-          priority: 'General'
-        });
-        setShowAddNote(false);
-        
-        // Reload notes
-        loadNotes(true);
-      } else {
-        throw new Error(data.message || 'Failed to add note');
-      }
-    } catch (error: any) {
-      console.error('Error adding note:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error Adding Note',
-        description: error.message || 'Failed to add note',
-      });
-    } finally {
-      setAddingNote(false);
     }
   };
 
@@ -378,109 +303,13 @@ export default function StaffNotesInterface() {
                 My Notes & Notifications
               </CardTitle>
               <CardDescription>
-                View your notes and notifications, add new notes
+                View your notes and notifications (read-only from Caspio)
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Dialog open={showAddNote} onOpenChange={setShowAddNote}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Note
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px]">
-                  <DialogHeader>
-                    <DialogTitle>Add New Note</DialogTitle>
-                    <DialogDescription>
-                      Create a new note for a member or general note
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="memberId">Member ID (Optional)</Label>
-                        <Input
-                          id="memberId"
-                          placeholder="e.g., 12345"
-                          value={newNote.memberId}
-                          onChange={(e) => setNewNote(prev => ({ ...prev, memberId: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="memberName">Member Name (Optional)</Label>
-                        <Input
-                          id="memberName"
-                          placeholder="e.g., John Doe"
-                          value={newNote.memberName}
-                          onChange={(e) => setNewNote(prev => ({ ...prev, memberName: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="noteType">Note Type</Label>
-                        <Select value={newNote.noteType} onValueChange={(value) => setNewNote(prev => ({ ...prev, noteType: value }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="general">General</SelectItem>
-                            <SelectItem value="follow_up">Follow Up</SelectItem>
-                            <SelectItem value="important">Important</SelectItem>
-                            <SelectItem value="reminder">Reminder</SelectItem>
-                            <SelectItem value="contact">Contact Log</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label htmlFor="priority">Priority</Label>
-                        <Select value={newNote.priority} onValueChange={(value) => setNewNote(prev => ({ ...prev, priority: value }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="General">General</SelectItem>
-                            <SelectItem value="Priority">Priority</SelectItem>
-                            <SelectItem value="Urgent">Urgent</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="noteContent">Note Content</Label>
-                      <Textarea
-                        id="noteContent"
-                        placeholder="Enter your note content..."
-                        rows={4}
-                        value={newNote.noteContent}
-                        onChange={(e) => setNewNote(prev => ({ ...prev, noteContent: e.target.value }))}
-                      />
-                    </div>
-                    
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={() => setShowAddNote(false)}>
-                        Cancel
-                      </Button>
-                      <Button onClick={addNote} disabled={addingNote || !newNote.noteContent.trim()}>
-                        {addingNote ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Adding...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="h-4 w-4 mr-2" />
-                            Add Note
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <Badge variant="outline" className="bg-blue-50 text-blue-900 border-blue-200">
+                Notes are read-only from Caspio
+              </Badge>
               
               <Button onClick={() => loadNotes(true)} variant="outline" size="sm" disabled={refreshing}>
                 {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -563,7 +392,7 @@ export default function StaffNotesInterface() {
                 {filteredAndSortedNotes.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No notes found. Click "Add Note" to create your first note.
+                      No notes found.
                     </TableCell>
                   </TableRow>
                 ) : (

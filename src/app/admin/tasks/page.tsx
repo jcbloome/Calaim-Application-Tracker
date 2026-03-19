@@ -699,69 +699,13 @@ function MyTasksPageContent() {
   };
 
   const handleCreateNote = async () => {
-    if (!selectedMember || !newNote.noteText.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter note content",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      const actorName = user?.displayName || user?.email || 'Staff';
-      const actorEmail = user?.email || '';
-      const followUpStatus = newNote.urgency === 'Immediate' ? 'Immediate' : 'Open';
-
-      const noteData = {
-        clientId2: selectedMember.clientId2,
-        comments: newNote.noteText,
-        followUpDate: newNote.followUpDate || null,
-        followUpAssignment: newNote.assignedToName || null,
-        followUpStatus,
-        userId: user?.uid || null,
-        actorName,
-        actorEmail,
-      };
-
-      const response = await fetch('/api/client-notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(noteData),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        await fetchMemberNotes(selectedMember.clientId2, selectedMember.memberName, selectedMember.healthPlan, true);
-
-        // Reset form
-        setNewNote({
-          noteText: '',
-          urgency: 'General',
-          assignedTo: '',
-          assignedToName: '',
-          followUpDate: ''
-        });
-
-        toast({
-          title: "Note Created",
-          description: `Note added for ${selectedMember.memberName}${newNote.assignedToName ? ` and assigned to ${newNote.assignedToName}` : ''}`,
-        });
-      } else {
-        throw new Error(data.error || 'Failed to create note');
-      }
-
-    } catch (error: any) {
-      console.error('Error creating note:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create note",
-        variant: "destructive"
-      });
-    }
+    void selectedMember;
+    void newNote;
+    void user;
+    toast({
+      title: 'Read-only notes',
+      description: 'Notes are managed in Caspio only. Use sync to pull latest history.',
+    });
   };
 
   const getPriorityColor = (priority: string) => {
@@ -2021,87 +1965,17 @@ function MyTasksPageContent() {
               )}
             </div>
 
-            {/* Add New Note */}
+            {/* Notes are read-only in app */}
             <div className="space-y-4">
-              <h3 className="text-lg font-medium">Add New Note</h3>
-              
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="urgency">Type</Label>
-                    <Select 
-                      value={newNote.urgency}
-                      onValueChange={(value: 'General' | 'Immediate') =>
-                        setNewNote((prev) => ({ ...prev, urgency: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="General">General</SelectItem>
-                        <SelectItem value="Immediate">Immediate (triggers notification)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Immediate is used for notifications only.
-                    </p>
-                  </div>
-                  <div className="space-y-2" />
+              <h3 className="text-lg font-medium">Notes Source</h3>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 text-blue-800 mb-1">
+                  <CheckCircle className="h-4 w-4" />
+                  <span className="font-medium">Caspio is the single source of truth</span>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="noteText">Note Content</Label>
-                  <Textarea
-                    id="noteText"
-                    value={newNote.noteText}
-                    onChange={(e) => setNewNote(prev => ({ ...prev, noteText: e.target.value }))}
-                    placeholder="Enter note content..."
-                    rows={4}
-                    className="resize-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="assignedToName">Assign to Staff (Optional)</Label>
-                    <Input
-                      id="assignedToName"
-                      value={newNote.assignedToName}
-                      onChange={(e) => setNewNote(prev => ({ ...prev, assignedToName: e.target.value }))}
-                      placeholder="Staff member name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="followUpDate">Follow-up Date (Optional)</Label>
-                    <Input
-                      id="followUpDate"
-                      type="date"
-                      value={newNote.followUpDate}
-                      onChange={(e) => setNewNote(prev => ({ ...prev, followUpDate: e.target.value }))}
-                      min={format(new Date(), 'yyyy-MM-dd')}
-                    />
-                  </div>
-                </div>
-
-                <Button 
-                  onClick={handleCreateNote} 
-                  disabled={!newNote.noteText.trim()}
-                  className="w-full"
-                >
-                  <MessageSquare className="mr-2 h-4 w-4" />
-                  Add Note
-                </Button>
-
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center gap-2 text-blue-800 mb-1">
-                    <CheckCircle className="h-4 w-4" />
-                    <span className="font-medium">On-demand sync</span>
-                  </div>
-                  <p className="text-xs text-blue-700">
-                    Click “Sync all notes” to pull the full history from Caspio (including closed notes).
-                  </p>
-                </div>
+                <p className="text-xs text-blue-700">
+                  This screen is read-only for notes. Click "Sync all notes" to pull full history from Caspio.
+                </p>
               </div>
             </div>
           </div>

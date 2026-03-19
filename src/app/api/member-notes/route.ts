@@ -779,113 +779,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { 
-      clientId2, 
-      noteText, 
-      noteType, 
-      priority, 
-      assignedTo, 
-      assignedToName, 
-      followUpDate, 
-      createdBy, 
-      createdByName,
-      recipientIds,
-      sendNotification,
-      authorId,
-      authorName,
-      memberName,
-      category
-    } = body;
-
-    const memberKey = String(clientId2 || '').trim();
-    const safeText = sanitizeText(noteText);
-    if (!memberKey) {
-      return NextResponse.json({ success: false, error: 'Client ID is required' }, { status: 400 });
-    }
-    if (!safeText) {
-      return NextResponse.json({ success: false, error: 'Note content is required' }, { status: 400 });
-    }
-
-    const mapPriority = (raw: unknown): MemberNote['priority'] => {
-      const p = String(raw || '').toLowerCase();
-      if (p === 'urgent') return 'Urgent';
-      if (p === 'high' || p === 'priority') return 'Priority';
-      return 'General';
-    };
-
-    const createdNote: MemberNote = validateAndCleanNote({
-      id: `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      clientId2: memberKey,
-      memberName: sanitizeText(memberName) || 'Unknown Member',
-      noteText: safeText,
-      noteType: sanitizeText(category || noteType) || 'General',
-      createdBy: String(createdBy || authorId || '0').trim() || '0',
-      createdByName: sanitizeText(createdByName || authorName) || 'Current User',
-      assignedTo: assignedTo ? String(assignedTo).trim() : undefined,
-      assignedToName: sanitizeText(assignedToName) || undefined,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      source: 'Admin',
-      isRead: false,
-      priority: mapPriority(priority),
-      followUpDate: followUpDate ? String(followUpDate) : undefined,
-      status: 'Open',
-      tags: [],
-    });
-
-    const existing = memberNotesCache[memberKey] || [];
-    memberNotesCache[memberKey] = [createdNote, ...existing].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    await saveNotesToFirestore([createdNote]);
-
-    const caspioSyncResult = await syncNoteToCaspio(createdNote);
-    
-    const shouldNotify = Boolean(
-      assignedTo && ['Priority', 'Urgent'].includes(priority || '')
-        ? true
-        : sendNotification && assignedTo
-    );
-
-    if (adminDb && shouldNotify && assignedTo) {
-      await sendNoteNotification({
-        id: createdNote.id,
-        clientId2: memberKey,
-        memberName: memberName || 'Unknown Member',
-        noteText: safeText,
-        noteType: category || 'General',
-        createdBy: createdBy || authorId || 'system',
-        createdByName: createdByName || authorName || 'System',
-        assignedTo,
-        assignedToName,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        source: 'Admin',
-        isRead: false,
-        priority: (priority || 'General') as MemberNote['priority'],
-        status: 'Open'
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      note: { ...createdNote, status: 'Open' },
-      caspioSynced: caspioSyncResult.success,
-      caspioSyncError: caspioSyncResult.success ? null : caspioSyncResult.error,
-      message: caspioSyncResult.success
-        ? 'Note created successfully and synced to Caspio'
-        : 'Note created; Caspio sync failed'
-    });
-
-  } catch (error: any) {
-    console.error('Error creating member note:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to create note' },
-      { status: 500 }
-    );
-  }
+  void request;
+  return NextResponse.json(
+    {
+      success: false,
+      error:
+        'Member notes are read-only in the app. Pull notes from Caspio and manage edits there to keep a single source of truth.',
+    },
+    { status: 405 }
+  );
 }
 
 // Sync ALL notes from both Caspio tables for a member (first time sync)
@@ -1363,163 +1265,25 @@ async function logSystemNoteAction(payload: {
 }
 
 export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { id, clientId2, actorName, actorEmail, ...updates } = body;
-
-    if (!id || !clientId2) {
-      return NextResponse.json(
-        { success: false, error: 'Note ID and Client ID are required' },
-        { status: 400 }
-      );
-    }
-
-    console.log(`📝 Updating note: ${id} for member: ${clientId2}`);
-
-    const memberNotes = memberNotesCache[clientId2] || [];
-    const noteIndex = memberNotes.findIndex(note => note.id === id);
-
-    if (noteIndex === -1) {
-      return NextResponse.json(
-        { success: false, error: 'Note not found' },
-        { status: 404 }
-      );
-    }
-
-    // Update the note
-    memberNotes[noteIndex] = {
-      ...memberNotes[noteIndex],
-      ...updates,
-      updatedAt: new Date().toISOString()
-    };
-
-    if (adminDb && updates.status === 'Closed') {
-      try {
-        const notificationsSnapshot = await adminDb
-          .collection('staff_notifications')
-          .where('noteId', '==', id)
-          .get();
-
-        const batch = adminDb.batch();
-        notificationsSnapshot.docs.forEach((docSnap) => {
-          batch.update(docSnap.ref, {
-            status: 'Closed',
-            resolvedAt: Timestamp.now(),
-            isRead: true
-          });
-        });
-        await batch.commit();
-      } catch (error) {
-        console.error('❌ Failed to update staff notifications for resolved note:', error);
-      }
-    }
-
-    // In production, also sync update to Caspio if it's a Caspio note
-    if (memberNotes[noteIndex].source === 'Caspio') {
-      await syncNoteToCaspio(memberNotes[noteIndex]);
-    }
-
-    if (updates.status) {
-      await logSystemNoteAction({
-        action: `Member note status updated`,
-        noteId: id,
-        memberName: memberNotes[noteIndex].memberName,
-        clientId2,
-        status: updates.status,
-        source: memberNotes[noteIndex].source,
-        actorName,
-        actorEmail
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      note: memberNotes[noteIndex],
-      message: 'Note updated successfully'
-    });
-
-  } catch (error: any) {
-    console.error('Error updating member note:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to update note' },
-      { status: 500 }
-    );
-  }
+  void request;
+  return NextResponse.json(
+    {
+      success: false,
+      error:
+        'Member notes are read-only in the app. Pull notes from Caspio and manage edits there to keep a single source of truth.',
+    },
+    { status: 405 }
+  );
 }
 
 export async function DELETE(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { id, clientId2, actorName, actorEmail } = body || {};
-
-    if (!id || !clientId2) {
-      return NextResponse.json(
-        { success: false, error: 'Note ID and Client ID are required' },
-        { status: 400 }
-      );
-    }
-
-    const memberNotes = memberNotesCache[clientId2] || [];
-    const noteIndex = memberNotes.findIndex(note => note.id === id);
-    if (noteIndex === -1) {
-      return NextResponse.json(
-        { success: false, error: 'Note not found' },
-        { status: 404 }
-      );
-    }
-
-    const deletedNote = memberNotes[noteIndex];
-    memberNotes.splice(noteIndex, 1);
-    memberNotesCache[clientId2] = memberNotes;
-
-    if (adminDb) {
-      await adminDb.collection(MEMBER_NOTES_COLLECTION).doc(id).set({
-        deleted: true,
-        deletedAt: FieldValue ? FieldValue.serverTimestamp() : new Date(),
-        deletedBy: actorEmail || actorName || 'System'
-      }, { merge: true });
-    }
-
-    if (adminDb) {
-      try {
-        const notificationsSnapshot = await adminDb
-          .collection('staff_notifications')
-          .where('noteId', '==', id)
-          .get();
-        const batch = adminDb.batch();
-        notificationsSnapshot.docs.forEach((docSnap: any) => {
-          batch.update(docSnap.ref, {
-            status: 'Closed',
-            isRead: true,
-            resolvedAt: FieldValue ? FieldValue.serverTimestamp() : new Date()
-          });
-        });
-        await batch.commit();
-      } catch (error) {
-        console.warn('Failed to update staff notifications for deleted note:', error);
-      }
-    }
-
-    await logSystemNoteAction({
-      action: 'Member note deleted',
-      noteId: id,
-      memberName: deletedNote.memberName,
-      clientId2,
-      status: deletedNote.status || 'Open',
-      source: deletedNote.source,
-      actorName,
-      actorEmail
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: 'Note deleted successfully'
-    });
-  } catch (error: any) {
-    console.error('Error deleting member note:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to delete note' },
-      { status: 500 }
-    );
-  }
+  void request;
+  return NextResponse.json(
+    {
+      success: false,
+      error:
+        'Member notes are read-only in the app. Pull notes from Caspio and manage edits there to keep a single source of truth.',
+    },
+    { status: 405 }
+  );
 }

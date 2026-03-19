@@ -456,13 +456,9 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
             </p>
           </div>
         </div>
-        <Button
-          onClick={() => setShowNewNoteForm(!showNewNoteForm)}
-          className="bg-blue-600 hover:bg-blue-700"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          New Note
-        </Button>
+        <Badge variant="outline" className="bg-blue-50 text-blue-900 border-blue-200">
+          Notes are read-only from Caspio
+        </Badge>
       </div>
 
       {/* Filters */}
@@ -507,118 +503,6 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
         </CardContent>
       </Card>
 
-      {/* New Note Form */}
-      {showNewNoteForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5" />
-              Create New Note
-            </CardTitle>
-            <CardDescription>
-              Add a note and notify relevant staff members
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Note Content */}
-            <div className="space-y-2">
-              <Label htmlFor="note-content">Note Content *</Label>
-              <Textarea
-                id="note-content"
-                placeholder="Enter your note here..."
-                value={newNote.content}
-                onChange={(e) => setNewNote(prev => ({ ...prev, content: e.target.value }))}
-                rows={4}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Category */}
-              {/* Category selection removed */}
-
-              {/* Priority */}
-              <div className="space-y-2">
-                <Label>Priority</Label>
-                <Select value={newNote.priority} onValueChange={(value: Note['priority']) => setNewNote(prev => ({ ...prev, priority: value }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="General">General</SelectItem>
-                    <SelectItem value="Priority">Priority</SelectItem>
-                    <SelectItem value="Urgent">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Privacy */}
-              <div className="space-y-2">
-                <Label>Visibility</Label>
-                <div className="flex items-center space-x-2 pt-2">
-                  <Checkbox
-                    id="is-private"
-                    checked={newNote.isPrivate}
-                    onCheckedChange={(checked) => setNewNote(prev => ({ ...prev, isPrivate: !!checked }))}
-                  />
-                  <Label htmlFor="is-private" className="text-sm">Private note</Label>
-                </div>
-              </div>
-            </div>
-
-            {/* Recipients */}
-            <div className="space-y-2">
-              <Label>Notify Staff Members</Label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto border rounded p-2">
-                {staffMembers.map((staff) => (
-                  <div key={staff.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`staff-${staff.id}`}
-                      checked={newNote.recipientIds.includes(staff.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setNewNote(prev => ({ ...prev, recipientIds: [...prev.recipientIds, staff.id] }));
-                        } else {
-                          setNewNote(prev => ({ ...prev, recipientIds: prev.recipientIds.filter(id => id !== staff.id) }));
-                        }
-                      }}
-                    />
-                    <Label htmlFor={`staff-${staff.id}`} className="text-xs">
-                      {staff.name}
-                      {staff.role === 'Super Admin' && <Badge variant="outline" className="ml-1 text-xs">SA</Badge>}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Send Notification */}
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="send-notification"
-                checked={newNote.sendNotification}
-                onCheckedChange={(checked) => setNewNote(prev => ({ ...prev, sendNotification: !!checked }))}
-              />
-              <Label htmlFor="send-notification" className="text-sm">Send email notifications</Label>
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-2">
-              <Button onClick={saveNote} disabled={isSaving}>
-                {isSaving ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="mr-2 h-4 w-4" />
-                )}
-                Post Note
-              </Button>
-              <Button variant="outline" onClick={() => setShowNewNoteForm(false)}>
-                Cancel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Notes List */}
       <div className="space-y-4">
         {isLoading ? (
@@ -632,14 +516,6 @@ export default function NoteTracker({ memberId, memberName }: NoteTrackerProps) 
               <div className="text-center py-8 text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No notes found for this member</p>
-                <Button 
-                  onClick={() => setShowNewNoteForm(true)} 
-                  variant="outline" 
-                  className="mt-4"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create First Note
-                </Button>
               </div>
             </CardContent>
           </Card>
