@@ -519,10 +519,12 @@ export function RealTimeNotifications() {
     const normalized = normalizePriorityLabel(String(priority || ''));
     return normalized === 'Priority' || normalized === 'Urgent';
   };
-  const isDesktopNotifiable = (input: { priority?: unknown; type?: unknown; isGeneral?: unknown }) => {
+  const isDesktopNotifiable = (input: { priority?: unknown; type?: unknown; isGeneral?: unknown; source?: unknown }) => {
     const type = String(input?.type || '').toLowerCase();
+    const source = String((input as any)?.source || '').toLowerCase();
     const interoffice = Boolean(input?.isGeneral) || type.includes('interoffice');
-    return interoffice || isDesktopPriority(input?.priority);
+    const caspioAssigned = source === 'caspio' || type.includes('note_assignment');
+    return interoffice || caspioAssigned || isDesktopPriority(input?.priority);
   };
 
   const sanitizeFieldLabel = (value?: string) => {
@@ -630,6 +632,7 @@ export function RealTimeNotifications() {
             priority: notification.priority,
             type: notification.type,
             isGeneral: notification.isGeneral,
+            source: notification.source,
           });
           if (isNew) {
             // Do not consume "new" while desktop notifications are effectively paused
@@ -679,7 +682,7 @@ export function RealTimeNotifications() {
 
           if (window.desktopNotifications?.setPendingCount) {
             const desktopPending = sortedPending.filter((n) =>
-              isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral })
+              isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral, source: n.source })
             );
             window.desktopNotifications.setPendingCount(desktopEffectivePaused ? 0 : desktopPending.length);
           }
@@ -785,7 +788,7 @@ export function RealTimeNotifications() {
               clearDesktopIndicators();
             } else if (window.desktopNotifications?.setPillSummary) {
               const desktopPending = sortedPending.filter((n) =>
-                isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral })
+                isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral, source: n.source })
               );
               const desktopCount = desktopPending.length;
               const desktopTitle = desktopCount === 1 ? 'Priority note' : 'Priority notes';
@@ -846,7 +849,7 @@ export function RealTimeNotifications() {
             clearDesktopIndicators();
           } else if (window.desktopNotifications?.setPillSummary) {
             const desktopPending = sortedPending.filter((n) =>
-              isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral })
+              isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral, source: n.source })
             );
             const desktopCount = desktopPending.length;
             const desktopHighlight = desktopPending[0] || null;

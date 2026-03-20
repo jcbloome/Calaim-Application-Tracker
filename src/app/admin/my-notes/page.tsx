@@ -831,9 +831,11 @@ function MyNotesContent() {
 
   const isDesktopNotifiable = useCallback((notification: StaffNotification) => {
     const type = String(notification.type || '').toLowerCase();
+    const source = String(notification.source || '').toLowerCase();
     const interoffice = Boolean(notification.isGeneral) || type.includes('interoffice');
     const priority = normalizePriorityLabel(String(notification.priority || ''));
-    return interoffice || priority === 'Priority' || priority === 'Urgent';
+    const caspioAssigned = source === 'caspio' || type.includes('note_assignment');
+    return interoffice || caspioAssigned || priority === 'Priority' || priority === 'Urgent';
   }, []);
 
   const isClosedLike = useCallback((notification: StaffNotification) => {

@@ -396,10 +396,12 @@ function AdminHeader() {
     if (!firestore || !user?.uid) return;
     const isDesktopNotifiable = (data: any) => {
       const type = String(data?.type || '').toLowerCase();
+      const source = String(data?.source || '').toLowerCase();
       const interoffice = Boolean(data?.isGeneral) || type.includes('interoffice');
       const priority = normalizePriorityLabel(String(data?.priority || ''));
       const isPriority = priority === 'Priority' || priority === 'Urgent' || isPriorityOrUrgent(priority);
-      return interoffice || isPriority;
+      const caspioAssigned = source === 'caspio' || type.includes('note_assignment');
+      return interoffice || caspioAssigned || isPriority;
     };
     const qy = query(
       collection(firestore, 'staff_notifications'),
