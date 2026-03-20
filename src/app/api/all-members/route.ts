@@ -4,6 +4,13 @@ import { fetchAllCalAIMMembers, getCaspioCredentialsFromEnv } from '@/lib/caspio
 export async function GET(request: NextRequest) {
   try {
     const forceRefresh = request.nextUrl.searchParams.get('refresh') === '1';
+    const pickFirstNonEmpty = (...values: unknown[]) => {
+      for (const value of values) {
+        const normalized = String(value ?? '').trim();
+        if (normalized) return normalized;
+      }
+      return '';
+    };
 
     // Default: read from Firestore cache so we don't hit Caspio automatically.
     if (!forceRefresh) {
@@ -12,14 +19,14 @@ export async function GET(request: NextRequest) {
       const snapshot = await adminDb.collection('caspio_members_cache').limit(5000).get();
       const members = snapshot.docs.map((doc) => {
         const data = doc.data() as any;
-        const hold =
-          data?.Hold_For_Social_Worker ??
-          data?.Hold_for_Social_Worker ??
-          data?.hold_for_social_worker ??
-          data?.Hold_For_Social_Worker_Visit ??
-          data?.Hold_for_Social_Worker_Visit ??
-          data?.hold_for_social_worker_visit ??
-          '';
+        const hold = pickFirstNonEmpty(
+          data?.Hold_For_Social_Worker_Visit,
+          data?.Hold_for_Social_Worker_Visit,
+          data?.hold_for_social_worker_visit,
+          data?.Hold_For_Social_Worker,
+          data?.Hold_for_Social_Worker,
+          data?.hold_for_social_worker
+        );
         return {
           ...data,
           Hold_For_Social_Worker: String(hold || '').trim(),

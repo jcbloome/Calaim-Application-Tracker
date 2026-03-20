@@ -537,6 +537,7 @@ export async function POST(req: NextRequest) {
     let upserted = 0;
     let skippedMissingId = 0;
     let maxModified: Date | null = since ? new Date(since) : null;
+    const seenClientIds = new Set<string>();
 
     const chunkSize = 400; // keep under Firestore batch limits safely
     for (let i = 0; i < rawMembers.length; i += chunkSize) {
@@ -555,6 +556,7 @@ export async function POST(req: NextRequest) {
           skippedMissingId += 1;
           return;
         }
+        seenClientIds.add(clientId2);
 
         const transformed = transformCaspioMember(normalized as any);
         const calaimStatusRaw = String((normalized as any)?.CalAIM_Status ?? (normalized as any)?.calaim_status ?? '').trim();
@@ -826,6 +828,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Full sync should be authoritative: remove cache docs that no longer exist in Caspio.
+    // This prevents stale assignments/counts from lingering in admin dashboards.
+    let pruned = 0;
+    if (effectiveMode === 'full') {
+      const cacheSnap = await adminDb.collection(CACHE_COLLECTION).select().limit(10000).get();
+      const staleIds = cacheSnap.docs
+        .map((doc: any) => String(doc.id || '').trim())
+        .filter((id: string) => !!id && !seenClientIds.has(id));
+      pruned = staleIds.length;
+
+      for (let i = 0; i < staleIds.length; i += 450) {
+        const chunk = staleIds.slice(i, i + 450);
+        const dbBatch = adminDb.batch();
+        chunk.forEach((id: string) => {
+          dbBatch.delete(adminDb.collection(CACHE_COLLECTION).doc(id));
+        });
+        await dbBatch.commit();
+      }
+    }
+
     const nextSyncAt = maxModified ? maxModified.toISOString() : now.toISOString();
     await settingsRef.set(
       {
@@ -838,6 +860,7 @@ export async function POST(req: NextRequest) {
           fetched: rawMembers.length,
           upserted,
           skippedMissingId,
+          pruned,
         },
       },
       { merge: true }
@@ -861,6 +884,7 @@ export async function POST(req: NextRequest) {
           mode: effectiveMode,
           since: since ? since.toISOString() : null,
           lastSyncAt: nextSyncAt,
+          pruned,
         },
         timestamp: new Date().toISOString(),
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -877,6 +901,7 @@ export async function POST(req: NextRequest) {
       fetched: rawMembers.length,
       upserted,
       skippedMissingId,
+      pruned,
     });
   } catch (error: any) {
     console.error('❌ Error syncing Caspio members cache:', error);

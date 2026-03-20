@@ -313,17 +313,19 @@ export function normalizeSocialWorkerName(name: string): string {
  */
 export function transformCaspioMember(member: CaspioMember): any {
   const clientId2 = (member as any)?.client_ID2 ?? (member as any)?.Client_ID2 ?? (member as any)?.clientId2 ?? '';
-  const holdRaw =
-    (member as any)?.Hold_For_Social_Worker ??
-    (member as any)?.Hold_for_Social_Worker ??
-    (member as any)?.hold_for_social_worker ??
-    (member as any)?.Hold_For_Social_Worker_Visit ??
-    (member as any)?.Hold_for_Social_Worker_Visit ??
-    (member as any)?.hold_for_social_worker_visit ??
-    (member as any)?.Hold ??
-    '';
-
-  const hold = String(holdRaw || '').trim();
+  const holdCandidates = [
+    (member as any)?.Hold_For_Social_Worker_Visit,
+    (member as any)?.Hold_for_Social_Worker_Visit,
+    (member as any)?.hold_for_social_worker_visit,
+    (member as any)?.Hold_For_Social_Worker,
+    (member as any)?.Hold_for_Social_Worker,
+    (member as any)?.hold_for_social_worker,
+    (member as any)?.Hold,
+  ];
+  const hold =
+    holdCandidates
+      .map((value) => String(value ?? '').trim())
+      .find((value) => value.length > 0) || '';
 
   return {
     id: clientId2 || Math.random().toString(),

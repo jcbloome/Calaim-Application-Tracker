@@ -399,13 +399,6 @@ export default function SocialWorkerAssignmentsPage() {
     return v.includes('hold') || v === '1' || v === 'true' || v === 'yes' || v === 'y' || v === 'x';
   };
 
-  const isAuthorized = (value: unknown) => {
-    const v = String(value ?? '').trim().toLowerCase();
-    if (!v) return false;
-    // Avoid matching "Not Authorized"
-    return v === 'authorized' || v.startsWith('authorized ');
-  };
-
   const parseCaspioDateToLocalDate = (raw: any): Date | null => {
     if (!raw) return null;
     if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw;
@@ -505,12 +498,11 @@ export default function SocialWorkerAssignmentsPage() {
       }
       
       const allMembers = (responseData.members || []) as Member[];
-      const authorizedMembers = allMembers.filter((m) => isAuthorized((m as any)?.CalAIM_Status));
-      setMembers(authorizedMembers);
+      setMembers(allMembers);
       
       toast({
         title: "Data Loaded Successfully",
-        description: `Loaded ${authorizedMembers.length} authorized members (of ${allMembers.length} total)`,
+        description: `Loaded ${allMembers.length} members from Caspio cache`,
       });
     } catch (error) {
       console.error('Error fetching all members:', error);
