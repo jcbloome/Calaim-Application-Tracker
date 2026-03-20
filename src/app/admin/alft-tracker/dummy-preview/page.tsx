@@ -23,18 +23,100 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
   { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
   { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
   { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
-  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'General Health + ADL' },
-  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'ADL Continued + DME + IADL' },
-  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'IADL Continued + Notes' },
+  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'General Health, Sensory, and Communication' },
+  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'Activities of Daily Living' },
+  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'Instrumental Activities of Daily Living' },
   { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'Health Conditions' },
   { number: 8, sourceId: 'page7_8', prefix: 'p8_', title: 'Therapies + Specialty Care' },
   { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'Mental Health' },
   { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'Nutrition + Behavior Follow-Up' },
   { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'Medication + Advance Directive + Environment' },
   { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'Medication Table' },
-  { number: 14, sourceId: 'page13_14', prefix: 'p14_', title: 'RN/MSW Commentary + Signature Block' },
+  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'Medication and Substance Use' },
+  { number: 14, sourceId: 'page13_14', prefix: 'p14_', title: 'Signature Section' },
 ];
+
+const MOVED_TEXT_FIELDS: Array<{
+  questionId: string;
+  targetPage: number;
+  afterQuestionId: string;
+  label: string;
+}> = [
+  { questionId: 'p6_notes_summary', targetPage: 3, afterQuestionId: 'p3_cognitive_problems_present', label: 'SECTION B. Notes and Summary:' },
+  { questionId: 'p6_section_d_text', targetPage: 5, afterQuestionId: 'p5_adl_walking_mobility', label: 'SECTION D. Notes and Summary:' },
+  { questionId: 'p6_section_e_text', targetPage: 6, afterQuestionId: 'p6_iadl_transportation', label: 'SECTION E. Notes and Summary:' },
+  { questionId: 'p6_section_f_text', targetPage: 8, afterQuestionId: 'p8_visit_duties', label: 'SECTION F. Notes and Summary:' },
+  { questionId: 'p10_notes_summary', targetPage: 10, afterQuestionId: 'p10_special_diet_reason', label: 'SECTION I. Notes and Summary:' },
+];
+
+const MOVED_TEXT_FIELD_IDS = new Set(MOVED_TEXT_FIELDS.map((item) => item.questionId));
+const HIDE_FROM_PDF_QUESTION_IDS = new Set([
+  'p14_additional_details',
+  'p14_print_name',
+  'p14_date',
+  'p14_license_number',
+  'p14_role',
+  'p14_signature_note',
+]);
+
+const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: string }>> = {
+  1: [
+    { beforeQuestionId: 'p1_member_name', label: 'Header Information' },
+    { beforeQuestionId: 'p1_first_name', label: 'Demographic' },
+  ],
+  4: [
+    { beforeQuestionId: 'p4_adl_bathing', label: 'Activities of Daily Living' },
+  ],
+  5: [],
+  6: [],
+  13: [{ beforeQuestionId: 'p13_commentary_section', label: 'Commentary Section' }],
+};
+
+const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
+  page.questions.forEach((q) => {
+    acc[q.id] = q;
+  });
+  return acc;
+}, {});
+
+function getRenderedQuestionsForPage(layoutNumber: number, baseQuestions: Question[]): Question[] {
+  const pageMoves = MOVED_TEXT_FIELDS.filter((item) => item.targetPage === layoutNumber);
+  const nextQuestions = baseQuestions.filter((q) => !MOVED_TEXT_FIELD_IDS.has(q.id));
+  if (!pageMoves.length) return nextQuestions;
+
+  const rendered: Question[] = [];
+  const movedInserted = new Set<string>();
+
+  nextQuestions.forEach((q) => {
+    rendered.push(q);
+    pageMoves
+      .filter((move) => move.afterQuestionId === q.id)
+      .forEach((move) => {
+        const sourceQuestion = QUESTION_BY_ID[move.questionId];
+        if (!sourceQuestion) return;
+        rendered.push({ ...sourceQuestion, label: move.label });
+        movedInserted.add(move.questionId);
+      });
+  });
+
+  pageMoves.forEach((move) => {
+    if (movedInserted.has(move.questionId)) return;
+    const sourceQuestion = QUESTION_BY_ID[move.questionId];
+    if (!sourceQuestion) return;
+    rendered.push({ ...sourceQuestion, label: move.label });
+  });
+
+  return rendered;
+}
+
+function isMovedTextQuestion(questionId: string): boolean {
+  return MOVED_TEXT_FIELD_IDS.has(questionId);
+}
+
+function asText(value: AnswerValue | undefined): string {
+  if (Array.isArray(value)) return value.join(', ');
+  return String(value || '').trim();
+}
 
 const DUMMY_OVERRIDES: Record<string, AnswerValue> = {
   p1_agency: 'ILS Health',
@@ -252,6 +334,14 @@ export default function AdminAlftDummyPreviewPage() {
         {PAGE_LAYOUT.map((layout) => {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
           const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
+          const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter(
+            (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id)
+          );
+          const rnName = asText(answers.p14_print_name);
+          const rnDate = asText(answers.p14_date);
+          const rnLicense = asText(answers.p14_license_number);
+          const mswName = asText(answers.p1_assessor_name);
+          const mswDate = asText(answers.p14_date);
           return (
             <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5">
               <div className="mb-2 border-b border-zinc-400 pb-1.5">
@@ -272,13 +362,67 @@ export default function AdminAlftDummyPreviewPage() {
                   <span>Page {layout.number} of 14</span>
                 </div>
                 <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
-                  {layout.number}. {layout.title}
+                  {layout.title}
                 </div>
               </div>
 
+              {layout.number === 14 ? (
+                <div className="space-y-3 text-[10px]">
+                  <div className="signature-block">
+                    <div className="signature-title">MSW Signature</div>
+                    <div className="signature-grid">
+                      <div>
+                        <div className="signature-label">Name</div>
+                        <div className="signature-line">{mswName || ' '}</div>
+                      </div>
+                      <div>
+                        <div className="signature-label">Date</div>
+                        <div className="signature-line">{mswDate || ' '}</div>
+                      </div>
+                      <div className="md:col-span-2">
+                        <div className="signature-label">Signature</div>
+                        <div className="signature-line">{' '}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="signature-block">
+                    <div className="signature-title">RN Signature</div>
+                    <div className="signature-grid">
+                      <div>
+                        <div className="signature-label">Name</div>
+                        <div className="signature-line">{rnName || ' '}</div>
+                      </div>
+                      <div>
+                        <div className="signature-label">Date</div>
+                        <div className="signature-line">{rnDate || ' '}</div>
+                      </div>
+                      <div>
+                        <div className="signature-label">License Number</div>
+                        <div className="signature-line">{rnLicense || ' '}</div>
+                      </div>
+                      <div>
+                        <div className="signature-label">Signature</div>
+                        <div className="signature-line">{' '}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
               <div className="grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
-                {questions.map((q) => (
-                  <div key={q.id} className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongTextQuestion(q) ? 'md:col-span-2' : ''}`}>
+                {renderedQuestions.map((q) => (
+                  <div key={q.id} className="contents">
+                    {(SECTION_DIVIDERS[layout.number] || [])
+                      .filter((divider) => divider.beforeQuestionId === q.id)
+                      .map((divider) => (
+                        <div
+                          key={`${layout.number}-${divider.beforeQuestionId}-divider`}
+                          className="alft-subsection-title md:col-span-2"
+                        >
+                          {divider.label}
+                        </div>
+                      ))}
+                  <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongTextQuestion(q) ? 'md:col-span-2' : ''}`}>
                     <div className="font-semibold leading-tight">
                       {formatPromptLabel(q.label)}
                     </div>
@@ -299,7 +443,9 @@ export default function AdminAlftDummyPreviewPage() {
                       </div>
                     ) : (
                       <div
-                        className={`answer-line mt-1 border-b border-zinc-500 pb-0.5 text-zinc-900 whitespace-pre-wrap ${
+                        className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${
+                          isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'
+                        } ${
                           isLargeCommentaryQuestion(q) ? 'large-commentary-box' : ''
                         }`}
                       >
@@ -310,8 +456,10 @@ export default function AdminAlftDummyPreviewPage() {
                       <div className="mt-0.5 text-[9px] text-zinc-600">Selected: {optionLabel(q, String(answers[q.id] || ''))}</div>
                     ) : null}
                   </div>
+                  </div>
                 ))}
               </div>
+              )}
 
               <div className="mt-4 border-t border-zinc-300 pt-2 text-right text-[10px] text-zinc-600">
                 ALF Transition Assessment - Page {layout.number} of 14
@@ -339,15 +487,64 @@ export default function AdminAlftDummyPreviewPage() {
           print-color-adjust: exact;
         }
         .alft-section-title {
-          background: #f4f4f5;
-          border: 1px solid #d4d4d8;
+          background: #0f8bb5;
+          border: 1px solid #0f8bb5;
+          color: #ffffff;
           padding: 2px 6px;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        .alft-subsection-title {
+          background: #0f8bb5;
+          border: 1px solid #0f8bb5;
+          color: #ffffff;
+          padding: 2px 6px;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
         .question-block {
           background: #fff;
         }
         .answer-line {
           min-height: 0.7rem;
+        }
+        .section-notes-answer {
+          min-height: 54px;
+          border: none;
+          font-size: 11px;
+          line-height: 1.35;
+          padding-top: 4px;
+        }
+        .signature-block {
+          border: 1px solid #d4d4d8;
+          padding: 8px;
+          background: #fff;
+        }
+        .signature-title {
+          font-size: 11px;
+          font-weight: 700;
+          margin-bottom: 6px;
+          text-transform: uppercase;
+        }
+        .signature-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .signature-label {
+          font-size: 9px;
+          color: #52525b;
+          margin-bottom: 2px;
+          text-transform: uppercase;
+        }
+        .signature-line {
+          border-bottom: 1px solid #3f3f46;
+          min-height: 16px;
+          font-size: 11px;
         }
         .large-commentary-box {
           min-height: 120px;

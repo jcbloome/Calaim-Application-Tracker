@@ -655,9 +655,11 @@ export function ExactAlftQuestionnaire({
       </div>
 
       {EXACT_ALFT_PAGES.map((page) => (
-        <details key={page.id} className="rounded border p-2">
-          <summary className="cursor-pointer text-sm font-medium">{page.title}</summary>
-          <div className="mt-3 space-y-3">
+        <details key={page.id} className="rounded border border-sky-700 overflow-hidden">
+          <summary className="cursor-pointer text-sm font-semibold bg-sky-700 text-white px-3 py-2 uppercase tracking-wide print:bg-sky-700 print:text-white [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
+            {page.title}
+          </summary>
+          <div className="mt-3 px-3 pb-3 space-y-3">
             {page.questions.map((q) => {
               const value = answers[q.id] ?? (q.type === 'checkboxGroup' ? [] : '');
               return (
