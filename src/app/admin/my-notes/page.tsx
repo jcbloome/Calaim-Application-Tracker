@@ -1545,6 +1545,11 @@ function MyNotesContent() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className={`inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs ${electronActiveForMyAccount ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'}`}>
+                {electronActiveForMyAccount ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                <span>Your Electron status: {electronActiveForMyAccount ? 'Active' : 'Not active'}</span>
+              </div>
+
               {desktopActive ? (
                 <div className="space-y-2 rounded border px-3 py-2">
                   <div className="flex items-center justify-between gap-3">
