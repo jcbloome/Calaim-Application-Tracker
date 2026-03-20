@@ -33,8 +33,8 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
   { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'Medication + Advance Directive + Environment' },
   { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
   { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'Medication and Substance Use' },
-  { number: 14, sourceId: 'page13_14', prefix: 'p14_', title: 'Signature Section' },
 ];
+const TOTAL_PAGES = PAGE_LAYOUT.length;
 
 const MOVED_TEXT_FIELDS: Array<{
   questionId: string;
@@ -43,7 +43,7 @@ const MOVED_TEXT_FIELDS: Array<{
   label: string;
 }> = [
   { questionId: 'p6_notes_summary', targetPage: 3, afterQuestionId: 'p3_cognitive_problems_present', label: 'SECTION B. Notes and Summary:' },
-  { questionId: 'p6_section_d_text', targetPage: 5, afterQuestionId: 'p5_adl_walking_mobility', label: 'SECTION D. Notes and Summary:' },
+  { questionId: 'p6_section_d_text', targetPage: 5, afterQuestionId: 'p5_dme', label: 'SECTION D. Notes and Summary:' },
   { questionId: 'p6_section_e_text', targetPage: 6, afterQuestionId: 'p6_iadl_transportation', label: 'SECTION E. Notes and Summary:' },
   { questionId: 'p6_section_f_text', targetPage: 8, afterQuestionId: 'p8_visit_duties', label: 'SECTION F. Notes and Summary:' },
   { questionId: 'p10_notes_summary', targetPage: 10, afterQuestionId: 'p10_special_diet_reason', label: 'SECTION I. Notes and Summary:' },
@@ -67,7 +67,7 @@ const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: 
   4: [
     { beforeQuestionId: 'p4_adl_bathing', label: 'Activities of Daily Living' },
   ],
-  5: [],
+  5: [{ beforeQuestionId: 'p5_iadl_heavy_chores', label: 'Instrumental Activities of Daily Living' }],
   6: [],
   13: [{ beforeQuestionId: 'p13_commentary_section', label: 'Commentary Section' }],
 };
@@ -301,8 +301,8 @@ export default function AdminAlftDummyPreviewPage() {
                         <textarea
                           value={String(answers[q.id] || '')}
                           onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                          rows={Math.min(Math.max(q.rows || 3, 3), 6)}
-                          className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs"
+                          rows={isLargeCommentaryQuestion(q) ? 12 : Math.min(Math.max(q.rows || 3, 3), 6)}
+                          className={`w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs ${isLargeCommentaryQuestion(q) ? 'min-h-[220px]' : ''}`}
                         />
                       ) : null}
 
@@ -374,56 +374,12 @@ export default function AdminAlftDummyPreviewPage() {
                 </div>
                 <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-700">
                   <span>Dummy Packet (ILS - Leo Lara)</span>
-                  <span>Page {layout.number} of 14</span>
+                  <span>Page {layout.number} of {TOTAL_PAGES}</span>
                 </div>
                 <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
                   {layout.title}
                 </div>
               </div>
-
-              {layout.number === 14 ? (
-                <div className="space-y-3 text-[10px]">
-                  <div className="signature-block">
-                    <div className="signature-title">MSW Signature</div>
-                    <div className="signature-grid">
-                      <div>
-                        <div className="signature-label">Name</div>
-                        <div className="signature-line">{mswName || ' '}</div>
-                      </div>
-                      <div>
-                        <div className="signature-label">Date</div>
-                        <div className="signature-line">{mswDate || ' '}</div>
-                      </div>
-                      <div className="md:col-span-2">
-                        <div className="signature-label">Signature</div>
-                        <div className="signature-line">{' '}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="signature-block">
-                    <div className="signature-title">RN Signature</div>
-                    <div className="signature-grid">
-                      <div>
-                        <div className="signature-label">Name</div>
-                        <div className="signature-line">{rnName || ' '}</div>
-                      </div>
-                      <div>
-                        <div className="signature-label">Date</div>
-                        <div className="signature-line">{rnDate || ' '}</div>
-                      </div>
-                      <div>
-                        <div className="signature-label">License Number</div>
-                        <div className="signature-line">{rnLicense || ' '}</div>
-                      </div>
-                      <div>
-                        <div className="signature-label">Signature</div>
-                        <div className="signature-line">{' '}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
               <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
                 {renderedQuestions.map((q) => (
                   <div key={q.id} className="contents">
@@ -474,10 +430,53 @@ export default function AdminAlftDummyPreviewPage() {
                   </div>
                 ))}
               </div>
-              )}
+              {layout.number === 13 ? (
+                <div className="signature-section mt-3 space-y-2 text-[10px]">
+                  <div className="alft-subsection-title">Signature Section</div>
+                  <div className="signature-block">
+                    <div className="signature-title">MSW Signature</div>
+                    <div className="signature-grid">
+                      <div>
+                        <div className="signature-label">Name</div>
+                        <div className="signature-line">{mswName || ' '}</div>
+                      </div>
+                      <div>
+                        <div className="signature-label">Date</div>
+                        <div className="signature-line">{mswDate || ' '}</div>
+                      </div>
+                      <div className="md:col-span-2">
+                        <div className="signature-label">Signature</div>
+                        <div className="signature-line">{' '}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="signature-block">
+                    <div className="signature-title">RN Signature</div>
+                    <div className="signature-grid">
+                      <div>
+                        <div className="signature-label">Name</div>
+                        <div className="signature-line">{rnName || ' '}</div>
+                      </div>
+                      <div>
+                        <div className="signature-label">Date</div>
+                        <div className="signature-line">{rnDate || ' '}</div>
+                      </div>
+                      <div>
+                        <div className="signature-label">License Number</div>
+                        <div className="signature-line">{rnLicense || ' '}</div>
+                      </div>
+                      <div>
+                        <div className="signature-label">Signature</div>
+                        <div className="signature-line">{' '}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-4 border-t border-zinc-300 pt-2 text-right text-[10px] text-zinc-600">
-                ALF Transition Assessment - Page {layout.number} of 14
+                ALF Transition Assessment - Page {layout.number} of {TOTAL_PAGES}
               </div>
             </section>
           );
@@ -539,6 +538,11 @@ export default function AdminAlftDummyPreviewPage() {
           padding: 8px;
           background: #fff;
         }
+        .signature-section,
+        .signature-block {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
         .signature-title {
           font-size: 11px;
           font-weight: 700;
@@ -562,7 +566,7 @@ export default function AdminAlftDummyPreviewPage() {
           font-size: 11px;
         }
         .large-commentary-box {
-          min-height: 120px;
+          min-height: 240px;
           border: 1px solid #71717a;
           padding: 6px;
           background: #fafafa;
