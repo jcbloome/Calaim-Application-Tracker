@@ -1084,15 +1084,21 @@ function MyNotesContent() {
               </a>
             </Button>
             {hasMacInstaller ? (
-              <Button asChild variant="outline" size="sm">
-                <a
-                  href={installerMeta.macReleaseUrl || macInstallerDownloadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Download Mac Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
-                </a>
-              </Button>
+              <>
+                <Button asChild variant="outline" size="sm">
+                  <a
+                    href={installerMeta.macReleaseUrl || macInstallerDownloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Download Mac Installer{installerMeta.version ? ` (${installerMeta.version})` : ''}
+                  </a>
+                </Button>
+                <span className="max-w-[320px] text-[10px] leading-snug text-muted-foreground">
+                  If macOS says the app is damaged, run:
+                  <code className="ml-1 rounded bg-muted px-1 py-0.5">xattr -dr com.apple.quarantine "/Applications/Connect CalAIM Desktop.app"</code>
+                </span>
+              </>
             ) : (
               <span className="text-[11px] text-muted-foreground">
                 Mac installer not published yet for this release.
