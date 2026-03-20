@@ -61,6 +61,11 @@ interface StaffNotification {
   isGeneral?: boolean;
   followUpRequired?: boolean;
   followUpDate?: string;
+  followUpStatus?: string;
+  resolvedAt?: any;
+  isDeleted?: boolean;
+  deleted?: boolean;
+  deletedAt?: any;
 }
 
 function MyNotesContent() {
@@ -85,7 +90,13 @@ function MyNotesContent() {
   const [isSendingReply, setIsSendingReply] = useState<Record<string, boolean>>({});
   const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
-  const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
+  const staffUids = useMemo(() => {
+    const all = [
+      ...staffList.map((s) => s.uid).filter(Boolean),
+      String(user?.uid || '').trim(),
+    ].filter(Boolean);
+    return Array.from(new Set(all));
+  }, [staffList, user?.uid]);
   const { isActiveByUid: isElectronActiveByUid } = useDesktopPresenceMap(staffUids);
   const [generalNote, setGeneralNote] = useState<{
     recipientIds: string[];
@@ -179,6 +190,11 @@ function MyNotesContent() {
             isGeneral: Boolean(data.isGeneral),
             followUpRequired: Boolean(data.followUpRequired),
             followUpDate: data.followUpDate?.toDate?.()?.toISOString?.() || data.followUpDate || '',
+            followUpStatus: data.followUpStatus || undefined,
+            resolvedAt: data.resolvedAt || undefined,
+            isDeleted: Boolean(data.isDeleted),
+            deleted: Boolean(data.deleted),
+            deletedAt: data.deletedAt || undefined,
             hiddenFromInbox: Boolean(data.hiddenFromInbox),
             isChatOnly: Boolean(data.isChatOnly),
           });
@@ -760,6 +776,89 @@ function MyNotesContent() {
     return base.filter((n) => !isChatNotification(n) && !Boolean(n.hiddenFromInbox));
   }, [chatMode, isChatNotification, notifications]);
 
+  const isDesktopNotifiable = useCallback((notification: StaffNotification) => {
+    const type = String(notification.type || '').toLowerCase();
+    const interoffice = Boolean(notification.isGeneral) || type.includes('interoffice');
+    const priority = normalizePriorityLabel(String(notification.priority || ''));
+    return interoffice || priority === 'Priority' || priority === 'Urgent';
+  }, []);
+
+  const isClosedLike = useCallback((notification: StaffNotification) => {
+    const status = String(notification.status || '').trim().toLowerCase();
+    const followUpStatus = String(notification.followUpStatus || '').trim().toLowerCase();
+    return (
+      status === 'closed' ||
+      status === 'resolved' ||
+      status === 'done' ||
+      status === 'archived' ||
+      status === 'deleted' ||
+      followUpStatus === 'closed' ||
+      Boolean(notification.resolvedAt)
+    );
+  }, []);
+
+  const syncElectronCount = useCallback(() => {
+    if (typeof window === 'undefined' || !window.desktopNotifications) {
+      toast({
+        title: 'Electron not detected',
+        description: 'Open the Electron desktop app to sync its pending note count.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const pending = (notifications || [])
+      .filter((n) => !Boolean(n.isChatOnly))
+      .filter((n) => !String(n.type || '').toLowerCase().includes('chat'))
+      .filter((n) => !Boolean(n.hiddenFromInbox))
+      .filter((n) => !Boolean(n.isDeleted || n.deleted || n.deletedAt))
+      .filter((n) => !isClosedLike(n))
+      .filter((n) => !n.isRead)
+      .filter((n) => isDesktopNotifiable(n));
+
+    const sortedPending = [...pending].sort((a, b) => {
+      const aMs = a.createdAt?.toDate?.()?.getTime?.() || new Date(a.createdAt || 0).getTime() || 0;
+      const bMs = b.createdAt?.toDate?.()?.getTime?.() || new Date(b.createdAt || 0).getTime() || 0;
+      return bMs - aMs;
+    });
+
+    const effectivePaused = Boolean(desktopState?.effectivePaused);
+    const count = effectivePaused ? 0 : sortedPending.length;
+    const notes = effectivePaused
+      ? []
+      : sortedPending.slice(0, 25).map((note) => ({
+          kind: 'note' as const,
+          source: note.source,
+          clientId2: note.memberId,
+          title: note.title || 'Interoffice note',
+          message: note.content || '',
+          author: note.authorName || undefined,
+          recipientName: note.recipientName || undefined,
+          memberName: note.memberName || undefined,
+          timestamp: formatTimestamp(note.createdAt),
+          noteId: note.id,
+          senderId: note.senderId,
+          replyUrl: note.id ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}` : undefined,
+          actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes',
+          type: note.type,
+        }));
+
+    window.desktopNotifications.setPendingCount?.(count);
+    window.desktopNotifications.setPillSummary?.({
+      count,
+      openPanel: false,
+      notes,
+      title: count === 1 ? 'Priority note' : 'Priority notes',
+      message: count === 1 ? '1 priority note pending' : `${count} priority notes pending`,
+      actionUrl: '/admin/my-notes',
+    });
+
+    toast({
+      title: 'Electron count synced',
+      description: count === 0 ? 'Desktop pending notes reset to 0.' : `Desktop pending notes set to ${count}.`,
+    });
+  }, [desktopState?.effectivePaused, isClosedLike, isDesktopNotifiable, notifications, toast]);
+
   const isInterofficeNotification = (notification: StaffNotification) => {
     const originType = String(notification.type || '').toLowerCase();
     return Boolean(notification.isGeneral) || originType.includes('interoffice');
@@ -869,6 +968,7 @@ function MyNotesContent() {
   const recentNotifications = showAllNotes ? threadHeadNotifications : threadHeadNotifications.slice(0, 5);
   const activeElectronCount = staffList.filter((staff) => Boolean(isElectronActiveByUid[staff.uid])).length;
   const inactiveElectronCount = Math.max(0, staffList.length - activeElectronCount);
+  const electronActiveForMyAccount = Boolean(user?.uid && isElectronActiveByUid[user.uid]);
 
   const threadMap = useMemo(() => {
     const map = new Map<string, StaffNotification[]>();
@@ -998,6 +1098,10 @@ function MyNotesContent() {
           <Button onClick={refresh} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
+          </Button>
+          <Button onClick={syncElectronCount} variant="outline" size="sm">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Sync Electron Count
           </Button>
         </div>
       </div>
@@ -1403,25 +1507,42 @@ function MyNotesContent() {
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Action Items</CardTitle>
+              <CardTitle>Electron Status</CardTitle>
               <CardDescription>
                 Quick controls and status checks for Electron notifications.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {desktopActive ? (
-                <div className="flex items-center justify-between gap-3 rounded border px-3 py-2">
-                  <div className="text-sm text-muted-foreground">
-                    {desktopState?.allowAfterHours
-                      ? 'After-hours activation is ON'
-                      : 'After-hours activation is OFF'}
+                <div className="space-y-2 rounded border px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm text-muted-foreground">
+                      {desktopState?.allowAfterHours
+                        ? 'After-hours activation is ON'
+                        : 'After-hours activation is OFF'}
+                    </div>
+                    <Switch
+                      checked={Boolean(desktopState?.allowAfterHours)}
+                      onCheckedChange={(next) => {
+                        void updateAfterHoursSetting(Boolean(next));
+                      }}
+                    />
                   </div>
-                  <Switch
-                    checked={Boolean(desktopState?.allowAfterHours)}
-                    onCheckedChange={(next) => {
-                      void updateAfterHoursSetting(Boolean(next));
-                    }}
-                  />
+                  <div className="flex justify-end">
+                    <Button variant="outline" size="sm" onClick={syncElectronCount}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Sync Electron Count
+                    </Button>
+                  </div>
+                </div>
+              ) : electronActiveForMyAccount ? (
+                <div className="space-y-2 rounded border border-amber-200 bg-amber-50 px-3 py-2">
+                  <div className="text-xs text-amber-900">
+                    Electron is active for your account, but this page is not currently running inside the Electron window.
+                  </div>
+                  <div className="text-[11px] text-amber-800">
+                    Open Interoffice Notes from the Electron app to use local desktop controls on this device.
+                  </div>
                 </div>
               ) : (
                 <div className="text-xs text-muted-foreground rounded border px-3 py-2">
