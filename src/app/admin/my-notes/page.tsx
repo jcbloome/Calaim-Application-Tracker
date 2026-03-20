@@ -405,6 +405,14 @@ function MyNotesContent() {
   useEffect(() => {
     const loadAdminStaff = async () => {
       if (!firestore) return;
+      const pickStaffName = (data: any, uid: string) => {
+        const first = String(data?.firstName || '').trim();
+        const last = String(data?.lastName || '').trim();
+        const fullName = `${first} ${last}`.trim();
+        const displayName = String(data?.displayName || '').trim();
+        const safeDisplayName = displayName && !displayName.includes('@') ? displayName : '';
+        return fullName || safeDisplayName || `Staff ${uid.slice(0, 6)}`;
+      };
       try {
         setIsLoadingStaff(true);
         const [adminSnap, superAdminSnap] = await Promise.all([
@@ -433,9 +441,7 @@ function MyNotesContent() {
             const data = docItem.data() as any;
             users.push({
               uid: docItem.id,
-              name: data.firstName && data.lastName
-                ? `${data.firstName} ${data.lastName}`
-                : data.email || 'Unknown Staff'
+              name: pickStaffName(data, docItem.id),
             });
           });
         }

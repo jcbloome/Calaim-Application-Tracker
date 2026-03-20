@@ -447,6 +447,14 @@ function AdminHeader() {
   useEffect(() => {
     const loadAdminStaff = async () => {
       if (!firestore) return;
+      const pickStaffName = (data: any, uid: string) => {
+        const first = String(data?.firstName || '').trim();
+        const last = String(data?.lastName || '').trim();
+        const fullName = `${first} ${last}`.trim();
+        const displayName = String(data?.displayName || '').trim();
+        const safeDisplayName = displayName && !displayName.includes('@') ? displayName : '';
+        return fullName || safeDisplayName || `Staff ${uid.slice(0, 6)}`;
+      };
       try {
         const [adminSnap, superAdminSnap, staffSnap] = await Promise.all([
           getDocs(collection(firestore, 'roles_admin')),
@@ -476,7 +484,7 @@ function AdminHeader() {
             const data = docItem.data() as any;
             users.push({
               uid: docItem.id,
-              name: String(data?.displayName || data?.email || docItem.id),
+              name: pickStaffName(data, docItem.id),
             });
           });
         }
