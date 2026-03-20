@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -198,6 +198,7 @@ function Dot({ selected }: { selected: boolean }) {
 export default function AdminAlftDummyPreviewPage() {
   const searchParams = useSearchParams();
   const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
+  const autoPrint = String(searchParams.get('autoprint') || '') === '1';
   const logoSrc = '/ils-logo.png';
 
   const initialAnswers = useMemo<Record<string, AnswerValue>>(() => {
@@ -211,6 +212,14 @@ export default function AdminAlftDummyPreviewPage() {
   }, []);
 
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(initialAnswers);
+
+  useEffect(() => {
+    if (!isPdfView || !autoPrint) return;
+    const timer = setTimeout(() => {
+      window.print();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [isPdfView, autoPrint]);
 
   const setSingleAnswer = (id: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -238,9 +247,15 @@ export default function AdminAlftDummyPreviewPage() {
             <Link href="/admin/alft-tracker/dummy-preview">Back to editor</Link>
           </Button>
         )}
-        <Button onClick={() => window.print()} variant="outline">
-          Print / Save PDF
-        </Button>
+        {!isPdfView ? (
+          <Button variant="outline" asChild>
+            <Link href="/admin/alft-tracker/dummy-preview?view=pdf&autoprint=1">Print / Save PDF</Link>
+          </Button>
+        ) : (
+          <Button onClick={() => window.print()} variant="outline">
+            Print / Save PDF
+          </Button>
+        )}
       </div>
 
       {!isPdfView ? (
@@ -563,6 +578,8 @@ export default function AdminAlftDummyPreviewPage() {
           .alft-dummy-preview,
           .alft-dummy-preview * {
             visibility: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           .alft-dummy-preview {
             position: absolute !important;
