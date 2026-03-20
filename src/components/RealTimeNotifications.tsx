@@ -143,6 +143,7 @@ export function RealTimeNotifications() {
       replyUrl?: string;
       actionUrl?: string;
       type?: string;
+      priority?: 'General' | 'Priority' | 'Urgent' | string;
     }>
   >([]);
 
@@ -813,6 +814,7 @@ export function RealTimeNotifications() {
                 senderId: note.senderId,
                 replyUrl: note.id ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}` : undefined,
                 actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes',
+                priority: note.priority,
               }));
               emitDesktopPill({ openPanel: false });
             }
@@ -883,6 +885,7 @@ export function RealTimeNotifications() {
               timestamp: note.timestamp?.toLocaleString?.() || undefined,
               noteId: note.id,
               senderId: note.senderId,
+              priority: note.priority,
               replyUrl: note.id
                 ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}`
                 : undefined,

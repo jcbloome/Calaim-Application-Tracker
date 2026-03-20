@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('desktopNotifications', {
       senderId?: string;
       replyUrl?: string;
       actionUrl?: string;
+      priority?: 'General' | 'Priority' | 'Urgent' | string;
     }>;
     title?: string;
     message?: string;

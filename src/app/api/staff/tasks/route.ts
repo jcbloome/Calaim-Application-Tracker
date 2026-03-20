@@ -41,6 +41,11 @@ export async function GET(request: NextRequest) {
         return null;
       }
     };
+    const isClosedLike = (value: any) => {
+      const raw = String(value || '').trim().toLowerCase();
+      if (!raw) return false;
+      return raw === 'closed' || raw.includes('closed') || raw === 'resolved' || raw === 'done';
+    };
     const startMs = parseMs(start);
     const endMs = parseMs(end);
     const isWithinRange = (iso: string) => {
@@ -267,7 +272,10 @@ export async function GET(request: NextRequest) {
           const data = docSnap.data();
           const followUpRequired = Boolean(data.followUpRequired) || Boolean(data.followUpDate);
           if (!followUpRequired) return;
-          const closed = String(data.status || '').toLowerCase() === 'closed';
+          const closed =
+            isClosedLike(data.status) ||
+            isClosedLike((data as any)?.followUpStatus) ||
+            Boolean((data as any)?.resolvedAt);
           if (onlyFollowUp && closed) return;
           const followUpDate = data.followUpDate?.toDate?.()?.toISOString?.()
             || data.followUpDate
@@ -323,7 +331,7 @@ export async function GET(request: NextRequest) {
             seen.add(docSnap.id);
             const data = docSnap.data();
             if (Boolean((data as any)?.deleted)) return;
-            const noteClosed = String(data.followUpStatus || '').toLowerCase() === 'closed';
+            const noteClosed = isClosedLike(data.followUpStatus);
             if (onlyFollowUp && noteClosed) return;
             // Only treat notes as follow-up tasks if they have an explicit follow-up date.
             const followUpDate = data.followUpDate;

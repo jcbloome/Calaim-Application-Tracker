@@ -12,7 +12,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, MessageSquare, Search, Calendar, User, RefreshCw, CheckCircle2, Trash2, Wifi, WifiOff } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
@@ -102,12 +101,14 @@ function MyNotesContent() {
     recipientIds: string[];
     title: string;
     message: string;
+    priority: 'General' | 'Priority';
     followUpRequired: boolean;
     followUpDate: string;
   }>({
     recipientIds: [],
     title: '',
     message: '',
+    priority: 'General',
     followUpRequired: false,
     followUpDate: ''
   });
@@ -116,6 +117,7 @@ function MyNotesContent() {
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [highlightNoteId, setHighlightNoteId] = useState<string | null>(null);
   const [quickStatusFilter, setQuickStatusFilter] = useState<'all' | 'unread' | 'open' | 'closed'>('all');
+  const [noteTypeFilter, setNoteTypeFilter] = useState<'all' | 'general' | 'priority'>('all');
   const [followUpFilter, setFollowUpFilter] = useState<'all' | 'required'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'sender' | 'priority'>('newest');
   const [originFilter, setOriginFilter] = useState<'all' | 'caspio' | 'interoffice'>('all');
@@ -704,10 +706,10 @@ function MyNotesContent() {
         recipients.map((recipient) =>
           addDoc(collection(firestore, 'staff_notifications'), {
             userId: recipient.uid,
-            title: generalNote.title?.trim() || 'General Note',
+            title: generalNote.title?.trim() || (generalNote.priority === 'Priority' ? 'Priority Note' : 'General Note'),
             message: generalNote.message.trim(),
             type: 'interoffice_note',
-            priority: 'General',
+            priority: generalNote.priority,
             status: 'Open',
             isRead: false,
             createdBy: user.uid,
@@ -732,6 +734,7 @@ function MyNotesContent() {
         recipientIds: [],
         title: '',
         message: '',
+        priority: 'General',
         followUpRequired: false,
         followUpDate: ''
       });
@@ -841,6 +844,7 @@ function MyNotesContent() {
           replyUrl: note.id ? `/admin/my-notes?replyTo=${encodeURIComponent(note.id)}` : undefined,
           actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes',
           type: note.type,
+          priority: note.priority,
         }));
 
     window.desktopNotifications.setPendingCount?.(count);
@@ -885,9 +889,14 @@ function MyNotesContent() {
 
   // Filter notifications based on search term
   const filteredNotifications = viewNotifications.filter(notification => {
+    const normalizedPriority = normalizePriorityLabel(notification.priority);
+    const isPriority = normalizedPriority === 'Priority' || normalizedPriority === 'Urgent';
+
     if (originFilter === 'caspio' && !isCaspioClientRecordNote(notification)) return false;
     if (originFilter === 'interoffice' && isCaspioClientRecordNote(notification)) return false;
     if (senderFilter !== 'all' && String(notification.authorName || '').trim() !== senderFilter) return false;
+    if (noteTypeFilter === 'priority' && !isPriority) return false;
+    if (noteTypeFilter === 'general' && isPriority) return false;
 
     if (!searchTerm) return true;
 
@@ -936,6 +945,14 @@ function MyNotesContent() {
   const sortedNotifications = [...tagFilteredNotifications].sort((a, b) => {
     const aTime = a.createdAt?.toDate?.() || new Date(0);
     const bTime = b.createdAt?.toDate?.() || new Date(0);
+    const aPriorityLabel = normalizePriorityLabel(a.priority);
+    const bPriorityLabel = normalizePriorityLabel(b.priority);
+    const aPriorityRank = aPriorityLabel === 'Priority' || aPriorityLabel === 'Urgent' ? 1 : 0;
+    const bPriorityRank = bPriorityLabel === 'Priority' || bPriorityLabel === 'Urgent' ? 1 : 0;
+
+    // Business rule: priority notes are always above general notes.
+    if (aPriorityRank !== bPriorityRank) return bPriorityRank - aPriorityRank;
+
     if (sortBy === 'sender') {
       const aSender = (a.authorName || '').toLowerCase();
       const bSender = (b.authorName || '').toLowerCase();
@@ -943,11 +960,6 @@ function MyNotesContent() {
       return bTime.getTime() - aTime.getTime();
     }
     if (sortBy === 'priority') {
-      const aPriority = normalizePriorityLabel(a.priority);
-      const bPriority = normalizePriorityLabel(b.priority);
-      const aRank = aPriority === 'Priority' || aPriority === 'Urgent' ? 1 : 0;
-      const bRank = bPriority === 'Priority' || bPriority === 'Urgent' ? 1 : 0;
-      if (aRank !== bRank) return bRank - aRank;
       return bTime.getTime() - aTime.getTime();
     }
     return bTime.getTime() - aTime.getTime();
@@ -1065,9 +1077,6 @@ function MyNotesContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button asChild variant="default" size="sm">
-            <Link href="/admin/my-notes">Notifications</Link>
-          </Button>
           <div className="flex flex-col items-end gap-1 text-right">
             <Button asChild variant="outline" size="sm">
               <a href={installerDownloadUrl} target="_blank" rel="noreferrer">
@@ -1204,6 +1213,20 @@ function MyNotesContent() {
                   onClick={() => setQuickStatusFilter('closed')}
                 >
                   Closed
+                </Button>
+                <Button
+                  size="sm"
+                  variant={noteTypeFilter === 'general' ? 'default' : 'outline'}
+                  onClick={() => setNoteTypeFilter((prev) => (prev === 'general' ? 'all' : 'general'))}
+                >
+                  General
+                </Button>
+                <Button
+                  size="sm"
+                  variant={noteTypeFilter === 'priority' ? 'default' : 'outline'}
+                  onClick={() => setNoteTypeFilter((prev) => (prev === 'priority' ? 'all' : 'priority'))}
+                >
+                  Priority
                 </Button>
                 <Button
                   size="sm"
@@ -1653,6 +1676,32 @@ function MyNotesContent() {
                   onChange={(e) => setGeneralNote((prev) => ({ ...prev, message: e.target.value }))}
                   placeholder="Write a note for staff..."
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label
+                  htmlFor="general-priority"
+                  title="Priority takes precedence over General notes and appears above General in lists."
+                >
+                  Note Priority
+                </Label>
+                <Select
+                  value={generalNote.priority}
+                  onValueChange={(value) =>
+                    setGeneralNote((prev) => ({
+                      ...prev,
+                      priority: value === 'Priority' ? 'Priority' : 'General'
+                    }))
+                  }
+                >
+                  <SelectTrigger id="general-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="General">General</SelectItem>
+                    <SelectItem value="Priority">Priority</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">

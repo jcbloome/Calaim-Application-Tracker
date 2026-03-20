@@ -215,6 +215,7 @@ type PillItem = {
   title: string;
   message: string;
   kind?: 'note' | 'docs' | 'cs';
+  priority?: 'General' | 'Priority' | 'Urgent' | string;
   type?: string;
   isChatOnly?: boolean;
   source?: string;

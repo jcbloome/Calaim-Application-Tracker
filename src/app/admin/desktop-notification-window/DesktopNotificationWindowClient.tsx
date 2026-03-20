@@ -48,6 +48,7 @@ type PillStatePayload = {
     title: string;
     message: string;
     kind?: 'note' | 'docs' | 'cs';
+    priority?: 'General' | 'Priority' | 'Urgent' | string;
     source?: string;
     clientId2?: string;
     author?: string;
@@ -63,6 +64,7 @@ type PillStatePayload = {
     title: string;
     message: string;
     kind?: 'note' | 'docs' | 'cs';
+    priority?: 'General' | 'Priority' | 'Urgent' | string;
     source?: string;
     clientId2?: string;
     author?: string;
@@ -91,17 +93,30 @@ const accentClassForKind = (kind?: string) => {
   return 'border-l-blue-600';
 };
 
-const dotClassForKind = (kind?: string) => {
+const isPriorityTag = (priority?: string) => {
+  const normalized = String(priority || '').trim().toLowerCase();
+  return normalized === 'priority' || normalized === 'urgent';
+};
+
+const accentClassForNote = (kind?: string, priority?: string) => {
+  const k = String(kind || '').toLowerCase().trim();
+  if (k === 'note' && isPriorityTag(priority)) return 'border-l-fuchsia-600';
+  return accentClassForKind(kind);
+};
+
+const dotClassForKind = (kind?: string, priority?: string) => {
   const k = String(kind || '').toLowerCase().trim();
   if (k === 'docs') return 'bg-green-600';
   if (k === 'cs') return 'bg-orange-500';
+  if (k === 'note' && isPriorityTag(priority)) return 'bg-fuchsia-600';
   return 'bg-blue-600';
 };
 
-const incomingLabelForKind = (kind?: string) => {
+const incomingLabelForKind = (kind?: string, priority?: string) => {
   const k = String(kind || '').toLowerCase().trim();
   if (k === 'cs') return 'Incoming CS Summary';
   if (k === 'docs') return 'Incoming document';
+  if (k === 'note' && isPriorityTag(priority)) return 'Incoming priority note';
   return 'Incoming member note';
 };
 
@@ -192,7 +207,7 @@ export default function DesktopNotificationWindowClient() {
   const count = Number(pillState?.count || 0);
   const activeIndex = Math.max(0, Number(pillState?.activeIndex || 0));
   const active = pillState?.activeNote || null;
-  const incomingLabel = incomingLabelForKind(active?.kind);
+  const incomingLabel = incomingLabelForKind(active?.kind, active?.priority);
   const breakdownLabel = useMemo(() => {
     const notes = Array.isArray(pillState?.notes) ? pillState!.notes! : [];
     if (notes.length === 0) return '';
@@ -662,7 +677,7 @@ export default function DesktopNotificationWindowClient() {
             <div
               className="rounded-full border bg-white/95 shadow-lg backdrop-blur px-3 py-1.5 inline-flex items-center gap-2"
             >
-              <div className={`h-2.5 w-2.5 rounded-full ${dotClassForKind(active?.kind)} flex-shrink-0`} />
+              <div className={`h-2.5 w-2.5 rounded-full ${dotClassForKind(active?.kind, active?.priority)} flex-shrink-0`} />
               <div className="text-sm font-medium text-slate-900 whitespace-nowrap">{incomingLabel}</div>
               <div className="text-[11px] text-slate-600 whitespace-nowrap">
                 {countLabel}
@@ -671,7 +686,7 @@ export default function DesktopNotificationWindowClient() {
           </div>
         </button>
       ) : (
-        <div className={`mx-auto mt-2 w-[440px] max-w-[96vw] rounded-xl border-l-4 ${accentClassForKind(active?.kind)} border bg-white/95 shadow-xl backdrop-blur p-4`}>
+        <div className={`mx-auto mt-2 w-[440px] max-w-[96vw] rounded-xl border-l-4 ${accentClassForNote(active?.kind, active?.priority)} border bg-white/95 shadow-xl backdrop-blur p-4`}>
           {undoClose && Date.now() < undoClose.expiresAtMs ? (
             <div className="mb-3 flex items-center justify-between gap-2 rounded-md border bg-slate-50 px-3 py-2 text-xs">
               <span>Task closed.</span>

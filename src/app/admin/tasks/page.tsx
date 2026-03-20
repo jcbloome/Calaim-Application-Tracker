@@ -1416,7 +1416,7 @@ function MyTasksPageContent() {
                   <div>
                     <CardTitle>Follow-up Calendar</CardTitle>
                     <CardDescription>
-                      Month view + daily agenda for follow-ups (click a date to see items)
+                      Month view + daily agenda for assigned follow-ups with dates from Caspio (manual sync, on demand).
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1434,7 +1434,7 @@ function MyTasksPageContent() {
                       disabled={isSyncingFollowUps || isLoadingFollowUpCalendar}
                     >
                       <RefreshCw className={`mr-2 h-4 w-4 ${isSyncingFollowUps ? 'animate-spin' : ''}`} />
-                      Sync from Caspio
+                      Sync assigned follow-ups
                     </Button>
                     <Button
                       variant="outline"
@@ -1445,6 +1445,10 @@ function MyTasksPageContent() {
                       Refresh month
                     </Button>
                   </div>
+                </div>
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  Closing a follow-up from this page updates Caspio <span className="font-semibold">Follow_Up_Status</span> to Closed.
+                  After status changes, click <span className="font-semibold">Sync assigned follow-ups</span> to refresh the calendar view.
                 </div>
               </CardHeader>
               <CardContent>
@@ -2163,6 +2167,43 @@ function MyTasksPageContent() {
                   <User className="mr-2 h-4 w-4" />
                   Save assignment
                 </Button>
+
+                {selectedFollowUpTask.id.startsWith('client-followup-') &&
+                followUpNoteState(selectedFollowUpTask) !== 'Closed' ? (
+                  <Button
+                    variant="outline"
+                    disabled={isUpdatingFollowUpTask}
+                    onClick={async () => {
+                      if (!selectedFollowUpTask) return;
+                      const ok = confirm(
+                        'Close this follow-up in Caspio? This sets Follow_Up_Status to Closed. Use Sync assigned follow-ups to refresh calendar tasks.'
+                      );
+                      if (!ok) return;
+                      setIsUpdatingFollowUpTask(true);
+                      try {
+                        await updateClientNote(selectedFollowUpTask, { followUpStatus: 'Closed' });
+                        toast({
+                          title: 'Follow-up closed in Caspio',
+                          description: 'Use Sync assigned follow-ups to refresh task rows.',
+                        });
+                        await fetchFollowUpCalendar(followUpMonth);
+                        fetchMyTasks();
+                        setIsFollowUpTaskModalOpen(false);
+                      } catch (error: any) {
+                        toast({
+                          variant: 'destructive',
+                          title: 'Error',
+                          description: error.message || 'Failed to close follow-up in Caspio.',
+                        });
+                      } finally {
+                        setIsUpdatingFollowUpTask(false);
+                      }
+                    }}
+                  >
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Close in Caspio
+                  </Button>
+                ) : null}
 
                 <Button
                   variant="destructive"

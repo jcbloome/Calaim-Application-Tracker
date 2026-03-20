@@ -10,6 +10,7 @@ interface CaspioNoteWebhookData {
   Staff_Name?: string;
   Note_Type?: string;
   Priority?: 'General' | 'Priority' | 'Urgent' | string;
+  Immediate?: string; // Caspio connect_tbl_clientnotes flag (Y/N)
   Created_By?: string;
   Assigned_To?: string; // Staff ID or email
   Record_ID?: string;
@@ -150,6 +151,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
       Staff_Name,
       Note_Type,
       Priority,
+      Immediate,
       Created_By,
       Assigned_To,
       Record_ID
@@ -172,25 +174,29 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
       return 'General';
     };
     const normalizedPriority = normalizePriority(Priority);
+    const immediateRaw = normalize(Immediate);
+    const isImmediate = immediateRaw === 'y' || immediateRaw === 'yes' || immediateRaw === 'true' || immediateRaw === '1';
 
-    // If note is assigned to a staff member, create a notification
-    if (assignedStaff) {
+    // Electron-triggering notification should only be created for Immediate=Y notes.
+    if (assignedStaff && isImmediate) {
       console.log(`🔔 Creating notification for ${assignedStaff.name} (${assignedStaff.email})`);
+      const popupPriority = normalizedPriority === 'General' ? 'Priority' : normalizedPriority;
 
       const notification = {
         userId: assignedStaff.uid,
         noteId: Record_ID || `caspio_${Date.now()}`,
-        title: 'New Note from Caspio',
-        message: `A new ${normalizedPriority} note has been assigned to you for ${Member_Name || 'Unknown Member'}`,
+        title: 'Immediate Note from Caspio',
+        message: `An Immediate note has been assigned to you for ${Member_Name || 'Unknown Member'}`,
         senderName: Created_By || Staff_Name || 'Caspio System',
         memberName: Member_Name || 'Unknown Member',
         type: 'note_assignment',
-        priority: normalizedPriority,
+        priority: popupPriority,
         timestamp: getFirestore().Timestamp.now(),
         isRead: false,
         // Preserve Client_ID2 as explicit metadata for Electron replies.
         clientId2: Client_ID2,
         source: 'caspio',
+        immediate: true,
         noteContent: Note_Content.substring(0, 200) + (Note_Content.length > 200 ? '...' : ''), // Truncate for notification
         noteType: Note_Type || 'General'
       };
@@ -207,7 +213,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
           staffName: assignedStaff.name,
           memberName: Member_Name || 'Unknown Member',
           noteContent: Note_Content,
-          priority: normalizedPriority,
+          priority: popupPriority,
           assignedBy: Created_By || Staff_Name || 'Caspio System',
           noteType: Note_Type || 'General',
           source: 'caspio',
@@ -220,7 +226,9 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
         // Don't throw error - notification was still saved to Firestore
       }
       
-      console.log(`✅ Notification created for ${assignedStaff.name} - Note from Caspio`);
+      console.log(`✅ Immediate notification created for ${assignedStaff.name} - Caspio note`);
+    } else if (assignedStaff) {
+      console.log(`ℹ️ Assigned Caspio note is not Immediate (Immediate=${Immediate || 'N'}) - no popup notification created`);
     } else {
       console.log(`ℹ️ Note not assigned to any resolved Firebase user (Assigned_To: ${Assigned_To})`);
     }
@@ -235,9 +243,10 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
       priority: Priority,
       createdBy: Created_By,
       assignedTo: Assigned_To,
+      immediate: Immediate || 'N',
       recordId: Record_ID,
       processedAt: getFirestore().Timestamp.now(),
-      notificationSent: !!assignedStaff
+      notificationSent: !!assignedStaff && isImmediate
     });
 
   } catch (error) {

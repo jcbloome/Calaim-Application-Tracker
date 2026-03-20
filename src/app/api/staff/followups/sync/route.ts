@@ -96,20 +96,27 @@ export async function POST(request: NextRequest) {
         })()
       : '';
 
-    // Pull only follow-up notes (Open) that have a follow-up date.
-    // Filter by Follow_Up_Assignment == candidate. Date range filtering is applied in-process
-    // because Caspio where clause formatting for dates varies by environment.
+    // Pull notes that have a follow-up date and are still open.
+    // Prefer Follow_Up_Assignment, but also try Assigned_To as a fallback because some
+    // Caspio workflows assign staff through Assigned_To.
+    // Date range filtering is applied in-process because Caspio where clause formatting
+    // for dates varies by environment.
     const table = 'connect_tbl_clientnotes';
     const limit = 1000;
 
     const allNotes: any[] = [];
     for (const candidate of assignmentCandidates) {
-      const baseWhere = `Follow_Up_Assignment='${escapeQuotes(candidate)}' AND Follow_Up_Status<>'Closed' AND Follow_Up_Date IS NOT NULL`;
-      const where = sinceIso
-        ? `${baseWhere} AND Time_Stamp >= '${escapeQuotes(sinceIso)}'`
-        : baseWhere;
-      const rows = await fetchCaspioRecords(credentials, accessToken, table, where, limit);
-      allNotes.push(...rows);
+      const whereClauses = [
+        `Follow_Up_Assignment='${escapeQuotes(candidate)}' AND Follow_Up_Status<>'Closed' AND Follow_Up_Date IS NOT NULL`,
+        `Assigned_To='${escapeQuotes(candidate)}' AND Follow_Up_Status<>'Closed' AND Follow_Up_Date IS NOT NULL`,
+      ];
+      for (const baseWhere of whereClauses) {
+        const where = sinceIso
+          ? `${baseWhere} AND Time_Stamp >= '${escapeQuotes(sinceIso)}'`
+          : baseWhere;
+        const rows = await fetchCaspioRecords(credentials, accessToken, table, where, limit).catch(() => []);
+        allNotes.push(...rows);
+      }
     }
 
     // Build client name lookup for any clientId2 values we saw.
@@ -166,6 +173,8 @@ export async function POST(request: NextRequest) {
         const clientId2 = normalizeString(r.Client_ID2);
         const memberName = clientLookup.get(clientId2)?.seniorFullName || `Client ${clientId2}`.trim();
         const userFullName = normalizeString(r.User_Full_Name || r.User_FullName || r.Created_By || r.Staff_Name);
+        const immediateRaw = normalizeLower(r.Immediate);
+        const immediateFlag = immediateRaw === 'y' || immediateRaw === 'yes' || immediateRaw === 'true' || immediateRaw === '1';
         return {
           id: noteId,
           noteId,
@@ -178,6 +187,8 @@ export async function POST(request: NextRequest) {
           followUpDate: normalizeString(r.Follow_Up_Date),
           followUpAssignment: normalizeString(r.Follow_Up_Assignment),
           followUpStatus: normalizeString(r.Follow_Up_Status) || 'Open',
+          priority: immediateFlag ? 'Priority' : 'General',
+          immediate: immediateFlag,
           memberName,
           syncedAt: admin.firestore.FieldValue.serverTimestamp(),
           syncedFrom: 'caspio_on_demand',
