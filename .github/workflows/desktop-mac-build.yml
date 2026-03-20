@@ -39,7 +39,14 @@ jobs:
         working-directory: desktop
 
       - name: Build macOS desktop artifacts
-        run: npm run dist:mac
+        run: |
+          [ -z "${CSC_LINK}" ] && unset CSC_LINK || true
+          [ -z "${CSC_KEY_PASSWORD}" ] && unset CSC_KEY_PASSWORD || true
+          [ -z "${CSC_NAME}" ] && unset CSC_NAME || true
+          [ -z "${APPLE_ID}" ] && unset APPLE_ID || true
+          [ -z "${APPLE_APP_SPECIFIC_PASSWORD}" ] && unset APPLE_APP_SPECIFIC_PASSWORD || true
+          [ -z "${APPLE_TEAM_ID}" ] && unset APPLE_TEAM_ID || true
+          npm run dist:mac
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
