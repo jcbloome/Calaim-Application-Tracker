@@ -72,6 +72,7 @@ interface StaffNotification {
   isDeleted?: boolean;
   deleted?: boolean;
   deletedAt?: any;
+  sentByMe?: boolean;
 }
 
 function MyNotesContent() {
@@ -123,6 +124,8 @@ function MyNotesContent() {
 
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [highlightNoteId, setHighlightNoteId] = useState<string | null>(null);
+  const [noteDirectionFilter, setNoteDirectionFilter] = useState<'all' | 'received' | 'sent'>('all');
+  const [sendStaffNoteStatus, setSendStaffNoteStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [quickStatusFilter, setQuickStatusFilter] = useState<'all' | 'unread' | 'open' | 'closed'>('all');
   const [noteTypeFilter, setNoteTypeFilter] = useState<'all' | 'general' | 'priority'>('all');
   const [followUpFilter, setFollowUpFilter] = useState<'all' | 'required'>('all');
@@ -204,6 +207,7 @@ function MyNotesContent() {
             isDeleted: Boolean(data.isDeleted),
             deleted: Boolean(data.deleted),
             deletedAt: data.deletedAt || undefined,
+            sentByMe: Boolean(data.sentByMe),
             hiddenFromInbox: Boolean(data.hiddenFromInbox),
             isChatOnly: Boolean(data.isChatOnly),
           });
@@ -678,6 +682,7 @@ function MyNotesContent() {
         title: "Reply Sent",
         description: "Your reply was sent and saved in your notifications.",
       });
+      setSendStaffNoteStatus({ type: 'success', message: 'Reply sent successfully.' });
       setReplyDrafts((prev) => ({ ...prev, [notification.id]: '' }));
       setReplyOpen((prev) => ({ ...prev, [notification.id]: false }));
     } catch (error) {
@@ -687,6 +692,7 @@ function MyNotesContent() {
         description: "Failed to send reply.",
         variant: "destructive",
       });
+      setSendStaffNoteStatus({ type: 'error', message: 'Reply failed to send. Please try again.' });
     } finally {
       setIsSendingReply((prev) => ({ ...prev, [notification.id]: false }));
     }
@@ -715,8 +721,13 @@ function MyNotesContent() {
 
     try {
       setIsSendingGeneral(true);
-      await Promise.all(
-        recipients.map((recipient) =>
+      const recipientNames = recipients.map((recipient) => recipient.name).filter(Boolean);
+      const recipientSummary =
+        recipientNames.length <= 2
+          ? recipientNames.join(', ')
+          : `${recipientNames.slice(0, 2).join(', ')} +${recipientNames.length - 2} more`;
+
+      const recipientWrites = recipients.map((recipient) =>
           addDoc(collection(firestore, 'staff_notifications'), {
             userId: recipient.uid,
             title: generalNote.title?.trim() || (generalNote.priority === 'Priority' ? 'Priority Note' : 'General Note'),
@@ -735,12 +746,37 @@ function MyNotesContent() {
             followUpDate: generalNote.followUpDate || null,
             actionUrl: '/admin/my-notes'
           })
-        )
       );
+      const senderCopyWrite = addDoc(collection(firestore, 'staff_notifications'), {
+        userId: user.uid,
+        title: `You sent: ${generalNote.title?.trim() || (generalNote.priority === 'Priority' ? 'Priority Note' : 'General Note')}`,
+        message: generalNote.message.trim(),
+        type: 'interoffice_note',
+        priority: generalNote.priority,
+        status: 'Open',
+        isRead: true,
+        createdBy: user.uid,
+        createdByName: user.displayName || user.email || 'Staff',
+        senderName: user.displayName || user.email || 'Staff',
+        senderId: user.uid,
+        recipientName: recipientSummary || 'Staff',
+        timestamp: serverTimestamp(),
+        isGeneral: true,
+        sentByMe: true,
+        followUpRequired: generalNote.followUpRequired || Boolean(generalNote.followUpDate),
+        followUpDate: generalNote.followUpDate || null,
+        actionUrl: '/admin/my-notes'
+      });
+
+      await Promise.all([...recipientWrites, senderCopyWrite]);
 
       toast({
         title: "Note Sent",
-        description: `Sent to ${recipients.length} staff member${recipients.length === 1 ? '' : 's'}.`,
+        description: `Sent to ${recipients.length} staff member${recipients.length === 1 ? '' : 's'} and saved in Sent notes.`,
+      });
+      setSendStaffNoteStatus({
+        type: 'success',
+        message: `Sent successfully to ${recipients.length} staff member${recipients.length === 1 ? '' : 's'}.`
       });
 
       setGeneralNote({
@@ -758,6 +794,7 @@ function MyNotesContent() {
         description: "Failed to send note.",
         variant: "destructive",
       });
+      setSendStaffNoteStatus({ type: 'error', message: 'Note failed to send. Please try again.' });
     } finally {
       setIsSendingGeneral(false);
     }
@@ -892,6 +929,10 @@ function MyNotesContent() {
 
   // Filter notifications based on search term
   const filteredNotifications = viewNotifications.filter(notification => {
+    const sentByCurrentUser = Boolean(notification.sentByMe) || (Boolean(user?.uid) && notification.senderId === user.uid);
+    if (noteDirectionFilter === 'sent' && !sentByCurrentUser) return false;
+    if (noteDirectionFilter === 'received' && sentByCurrentUser) return false;
+
     const normalizedPriority = normalizePriorityLabel(notification.priority);
     const isPriority = normalizedPriority === 'Priority' || normalizedPriority === 'Urgent';
 
@@ -1197,6 +1238,27 @@ function MyNotesContent() {
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
+                  variant={noteDirectionFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setNoteDirectionFilter('all')}
+                >
+                  All Notes
+                </Button>
+                <Button
+                  size="sm"
+                  variant={noteDirectionFilter === 'received' ? 'default' : 'outline'}
+                  onClick={() => setNoteDirectionFilter('received')}
+                >
+                  Received
+                </Button>
+                <Button
+                  size="sm"
+                  variant={noteDirectionFilter === 'sent' ? 'default' : 'outline'}
+                  onClick={() => setNoteDirectionFilter('sent')}
+                >
+                  Sent
+                </Button>
+                <Button
+                  size="sm"
                   variant={quickStatusFilter === 'all' ? 'default' : 'outline'}
                   onClick={() => setQuickStatusFilter('all')}
                 >
@@ -1318,6 +1380,11 @@ function MyNotesContent() {
                             <h3 className={`font-medium ${!notification.isRead ? 'text-blue-900' : ''}`}>
                               {displayTitle}
                             </h3>
+                            {(Boolean(notification.sentByMe) || (Boolean(user?.uid) && notification.senderId === user.uid)) && (
+                              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                                Sent
+                              </Badge>
+                            )}
                             <Badge
                               variant="outline"
                               className={
@@ -1678,6 +1745,18 @@ function MyNotesContent() {
                   placeholder="Write a note for staff..."
                 />
               </div>
+
+              {sendStaffNoteStatus ? (
+                <div
+                  className={`rounded border px-3 py-2 text-xs ${
+                    sendStaffNoteStatus.type === 'success'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-red-200 bg-red-50 text-red-800'
+                  }`}
+                >
+                  {sendStaffNoteStatus.message}
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 <Label
