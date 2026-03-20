@@ -34,6 +34,28 @@ export const getPriorityRank = (value?: string) => {
   return PRIORITY_ORDER[normalizePriorityLabel(value)];
 };
 
+const CLOSED_STATUS_PATTERN = /(closed|resolved?|done|archived?|deleted?|complete[sd]?)/i;
+
+const normalizeStatusText = (value: unknown) => String(value ?? '').trim().toLowerCase();
+
+export const isNotificationSoftDeleted = (input: Record<string, any> | null | undefined) => {
+  const data = input || {};
+  return Boolean(data.isDeleted || data.deleted || data.deletedAt || data.deleted_at);
+};
+
+export const isNotificationClosedLike = (input: Record<string, any> | null | undefined) => {
+  const data = input || {};
+  const statusValues = [
+    data.status,
+    data.followUpStatus,
+    data.follow_up_status,
+    data.Follow_Up_Status,
+    data.followUpState,
+  ];
+  const hasClosedStatus = statusValues.some((value) => CLOSED_STATUS_PATTERN.test(normalizeStatusText(value)));
+  return hasClosedStatus || Boolean(data.resolvedAt || data.closedAt || data.completedAt);
+};
+
 type NotificationSettings = {
   userControls?: {
     suppressWebWhenDesktopActive?: boolean;

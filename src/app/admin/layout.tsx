@@ -89,7 +89,12 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 import { collection, collectionGroup, doc, documentId, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
-import { isPriorityOrUrgent, normalizePriorityLabel } from '@/lib/notification-utils';
+import {
+  isNotificationClosedLike,
+  isNotificationSoftDeleted,
+  isPriorityOrUrgent,
+  normalizePriorityLabel
+} from '@/lib/notification-utils';
 import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 
 const adminNavLinks = [
@@ -412,17 +417,8 @@ function AdminHeader() {
           const noteType = String(data?.type || '').toLowerCase();
           const isChatOnly = Boolean(data?.isChatOnly) || noteType.includes('chat');
           const hiddenFromInbox = Boolean(data?.hiddenFromInbox);
-          const status = String(data?.status || 'Open').toLowerCase();
-          const followUpStatus = String(data?.followUpStatus || '').toLowerCase();
-          const isSoftDeleted = Boolean(data?.isDeleted) || Boolean(data?.deleted) || Boolean(data?.deletedAt);
-          const isClosedLike =
-            status === 'closed' ||
-            status === 'resolved' ||
-            status === 'done' ||
-            status === 'archived' ||
-            status === 'deleted' ||
-            followUpStatus === 'closed' ||
-            Boolean(data?.resolvedAt);
+          const isSoftDeleted = isNotificationSoftDeleted(data);
+          const isClosedLike = isNotificationClosedLike(data);
           if (isClosedLike || isSoftDeleted) return;
           if (isChatOnly) {
             if (!isRead) nextChat += 1;
@@ -1330,18 +1326,13 @@ function AdminHeader() {
             ) : (
               staffList.map((staff) => {
                 const active = Boolean(isElectronActiveByUid[staff.uid]);
-                const silent = Boolean(presenceByUid[staff.uid]?.effectivePaused);
-                const statusLabel = active ? (silent ? 'Silent' : 'Active') : 'Inactive';
+                const statusLabel = active ? 'Active' : 'Not active';
                 return (
                   <DropdownMenuItem key={`electron-${staff.uid}`} className="flex items-center justify-between gap-2">
                     <span className="truncate">{staff.name}</span>
                     <span className={cn(
                       'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]',
-                      active
-                        ? silent
-                          ? 'bg-amber-50 text-amber-700'
-                          : 'bg-emerald-50 text-emerald-700'
-                        : 'bg-slate-100 text-slate-600'
+                      active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
                     )}>
                       {active ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
                       {statusLabel}

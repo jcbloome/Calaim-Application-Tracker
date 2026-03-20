@@ -19,7 +19,14 @@ import { useFirestore } from '@/firebase';
 import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 import { addDoc, collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, documentId, deleteDoc } from 'firebase/firestore';
 import { logSystemNoteAction } from '@/lib/system-note-log';
-import { isPriorityOrUrgent, normalizePriorityLabel, notifyNotificationSettingsChanged, WEB_NOTIFICATIONS_MOTHBALLED } from '@/lib/notification-utils';
+import {
+  isNotificationClosedLike,
+  isNotificationSoftDeleted,
+  isPriorityOrUrgent,
+  normalizePriorityLabel,
+  notifyNotificationSettingsChanged,
+  WEB_NOTIFICATIONS_MOTHBALLED
+} from '@/lib/notification-utils';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import {
   AlertDialog,
@@ -192,7 +199,7 @@ function MyNotesContent() {
             isGeneral: Boolean(data.isGeneral),
             followUpRequired: Boolean(data.followUpRequired),
             followUpDate: data.followUpDate?.toDate?.()?.toISOString?.() || data.followUpDate || '',
-            followUpStatus: data.followUpStatus || undefined,
+            followUpStatus: data.followUpStatus || data.Follow_Up_Status || data.follow_up_status || undefined,
             resolvedAt: data.resolvedAt || undefined,
             isDeleted: Boolean(data.isDeleted),
             deleted: Boolean(data.deleted),
@@ -793,17 +800,7 @@ function MyNotesContent() {
   }, []);
 
   const isClosedLike = useCallback((notification: StaffNotification) => {
-    const status = String(notification.status || '').trim().toLowerCase();
-    const followUpStatus = String(notification.followUpStatus || '').trim().toLowerCase();
-    return (
-      status === 'closed' ||
-      status === 'resolved' ||
-      status === 'done' ||
-      status === 'archived' ||
-      status === 'deleted' ||
-      followUpStatus === 'closed' ||
-      Boolean(notification.resolvedAt)
-    );
+    return isNotificationClosedLike(notification as any);
   }, []);
 
   const syncElectronCount = useCallback(() => {
@@ -820,7 +817,7 @@ function MyNotesContent() {
       .filter((n) => !Boolean(n.isChatOnly))
       .filter((n) => !String(n.type || '').toLowerCase().includes('chat'))
       .filter((n) => !Boolean(n.hiddenFromInbox))
-      .filter((n) => !Boolean(n.isDeleted || n.deleted || n.deletedAt))
+      .filter((n) => !isNotificationSoftDeleted(n as any))
       .filter((n) => !isClosedLike(n))
       .filter((n) => !n.isRead)
       .filter((n) => isDesktopNotifiable(n));
@@ -1570,20 +1567,7 @@ function MyNotesContent() {
                     </Button>
                   </div>
                 </div>
-              ) : electronActiveForMyAccount ? (
-                <div className="space-y-2 rounded border border-amber-200 bg-amber-50 px-3 py-2">
-                  <div className="text-xs text-amber-900">
-                    Electron is active for your account, but this page is not currently running inside the Electron window.
-                  </div>
-                  <div className="text-[11px] text-amber-800">
-                    Open Interoffice Notes from the Electron app to use local desktop controls on this device.
-                  </div>
-                </div>
-              ) : (
-                <div className="text-xs text-muted-foreground rounded border px-3 py-2">
-                  Electron desktop app not detected on this device.
-                </div>
-              )}
+              ) : null}
 
               <details className="rounded border px-3 py-2">
                 <summary className="cursor-pointer list-none text-sm font-medium flex items-center justify-between">
@@ -1603,9 +1587,9 @@ function MyNotesContent() {
                       return (
                         <div key={`status-${staff.uid}`} className="flex items-center justify-between rounded border px-2 py-1.5 text-sm">
                           <span className="truncate pr-2">{staff.name}</span>
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
                             {active ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                            {active ? 'Active' : 'Inactive'}
+                            {active ? 'Active' : 'Not active'}
                           </span>
                         </div>
                       );

@@ -19,6 +19,8 @@ import { useGlobalNotifications } from './NotificationProvider';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   getPriorityRank,
+  isNotificationClosedLike,
+  isNotificationSoftDeleted,
   isPriorityOrUrgent,
   isUrgentPriority,
   normalizePriorityLabel,
@@ -582,21 +584,8 @@ export function RealTimeNotifications() {
           const hiddenFromInbox = Boolean((data as any)?.hiddenFromInbox);
           if (isChatOnly || hiddenFromInbox) return;
 
-          const statusRaw = String((data as any)?.status || '').trim().toLowerCase();
-          const followUpStatusRaw = String((data as any)?.followUpStatus || '').trim().toLowerCase();
-          const deletedAtRaw = (data as any)?.deletedAt;
-          const isSoftDeleted =
-            Boolean((data as any)?.isDeleted) ||
-            Boolean((data as any)?.deleted) ||
-            Boolean(deletedAtRaw);
-          const isClosedLike =
-            statusRaw === 'closed' ||
-            statusRaw === 'resolved' ||
-            statusRaw === 'done' ||
-            statusRaw === 'archived' ||
-            statusRaw === 'deleted' ||
-            followUpStatusRaw === 'closed' ||
-            Boolean((data as any)?.resolvedAt);
+          const isSoftDeleted = isNotificationSoftDeleted(data as any);
+          const isClosedLike = isNotificationClosedLike(data as any);
           if (isClosedLike || isSoftDeleted) return;
           if (data.isRead === true) return;
           if (shouldTrackDesktopDelivery && !Boolean((data as any)?.desktopDeliveredAt)) {
