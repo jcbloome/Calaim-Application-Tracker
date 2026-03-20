@@ -424,7 +424,7 @@ export default function AdminAlftDummyPreviewPage() {
                   </div>
                 </div>
               ) : (
-              <div className="grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
+              <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
                 {renderedQuestions.map((q) => (
                   <div key={q.id} className="contents">
                     {(SECTION_DIVIDERS[layout.number] || [])
@@ -432,12 +432,12 @@ export default function AdminAlftDummyPreviewPage() {
                       .map((divider) => (
                         <div
                           key={`${layout.number}-${divider.beforeQuestionId}-divider`}
-                          className="alft-subsection-title md:col-span-2"
+                          className="alft-subsection-title md:col-span-2 alft-col-span-2"
                         >
                           {divider.label}
                         </div>
                       ))}
-                  <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongTextQuestion(q) ? 'md:col-span-2' : ''}`}>
+                  <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongTextQuestion(q) ? 'md:col-span-2 alft-col-span-2' : ''}`}>
                     <div className="font-semibold leading-tight">
                       {formatPromptLabel(q.label)}
                     </div>
@@ -606,6 +606,12 @@ export default function AdminAlftDummyPreviewPage() {
           .alft-page:last-child {
             page-break-after: auto;
             break-after: auto;
+          }
+          .alft-question-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+          .alft-col-span-2 {
+            grid-column: span 2 / span 2 !important;
           }
         }
       `}</style>
