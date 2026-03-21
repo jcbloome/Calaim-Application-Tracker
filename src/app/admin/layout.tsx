@@ -885,8 +885,8 @@ function AdminHeader() {
           if (shouldSend) {
             window.desktopNotifications?.setReviewPillSummary?.({
               count: reviewCount,
-              // Auto-expand only when CS is newly received.
-              openPanel: Boolean(csIsNew),
+              // Keep review updates compact; do not auto-expand on incoming CS/docs.
+              openPanel: false,
               notes,
             });
             desktopReviewInitializedRef.current = true;

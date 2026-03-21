@@ -30,6 +30,21 @@ import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
+const getAssignedStaffLabel = (app: any): string => {
+  const candidates = [
+    app?.assignedStaffName,
+    app?.assignedStaff,
+    app?.assignedToName,
+    app?.assignedTo,
+    app?.staffName,
+  ];
+  const label =
+    candidates
+      .map((value) => String(value ?? '').trim())
+      .find((value) => value.length > 0) || '';
+  return label || 'Staff unassigned';
+};
+
 function AdminApplicationsPageContent() {
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -43,6 +58,7 @@ function AdminApplicationsPageContent() {
   const [healthPlanFilter, setHealthPlanFilter] = useState('all');
   const [pathwayFilter, setPathwayFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [staffFilter, setStaffFilter] = useState('all');
   const [memberFilter, setMemberFilter] = useState('');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'cs' | 'docs'>('all');
   const searchParams = useSearchParams();
@@ -156,11 +172,24 @@ function AdminApplicationsPageContent() {
     if (member) setMemberFilter(member);
   }, [searchParams]);
 
+  const staffFilterOptions = useMemo(() => {
+    const unique = new Set<string>();
+    allApplications.forEach((app) => {
+      unique.add(getAssignedStaffLabel(app));
+    });
+    return Array.from(unique).sort((a, b) => {
+      if (a === 'Staff unassigned') return 1;
+      if (b === 'Staff unassigned') return -1;
+      return a.localeCompare(b);
+    });
+  }, [allApplications]);
+
   const filteredApplications = useMemo(() => {
     return allApplications.filter(app => {
       const healthPlanMatch = healthPlanFilter === 'all' || app.healthPlan === healthPlanFilter;
       const pathwayMatch = pathwayFilter === 'all' || app.pathway === pathwayFilter;
       const statusMatch = statusFilter === 'all' || app.status === statusFilter;
+      const staffMatch = staffFilter === 'all' || getAssignedStaffLabel(app) === staffFilter;
       const memberMatch = !memberFilter || `${app.memberFirstName} ${app.memberLastName}`.toLowerCase().includes(memberFilter.toLowerCase());
 
       const forms = app.forms || [];
@@ -178,9 +207,9 @@ function AdminApplicationsPageContent() {
         (reviewFilter === 'cs' && hasCompletedSummary && !app.applicationChecked) ||
         (reviewFilter === 'docs' && hasUnacknowledgedDocs);
 
-      return healthPlanMatch && pathwayMatch && statusMatch && memberMatch && reviewMatch;
+      return healthPlanMatch && pathwayMatch && statusMatch && staffMatch && memberMatch && reviewMatch;
     });
-  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, memberFilter, reviewFilter]);
+  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, staffFilter, memberFilter, reviewFilter]);
   
 
   const handleSelectionChange = (id: string, checked: boolean) => {
@@ -249,6 +278,7 @@ function AdminApplicationsPageContent() {
     setHealthPlanFilter('all');
     setPathwayFilter('all');
     setStatusFilter('all');
+    setStaffFilter('all');
     setMemberFilter('');
   };
 
@@ -438,6 +468,19 @@ function AdminApplicationsPageContent() {
                             </SelectContent>
                           </Select>
                         </div>
+                        <div className="flex-1 min-w-[180px]">
+                          <Select value={staffFilter} onValueChange={setStaffFilter}>
+                            <SelectTrigger><SelectValue placeholder="Filter by Staff" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Staff Assignments</SelectItem>
+                              {staffFilterOptions.map((staffName) => (
+                                <SelectItem key={staffName} value={staffName}>
+                                  {staffName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <Button variant="ghost" onClick={clearFilters}>Clear</Button>
                       </div>
                       {error && <p className="text-destructive">Error loading applications: A permission error occurred while fetching data.</p>}
@@ -447,6 +490,7 @@ function AdminApplicationsPageContent() {
                         onSelectionChange={isSuperAdmin ? handleSelectionChange : undefined}
                         selected={isSuperAdmin ? selected : undefined}
                         showInlineTracker
+                        onRefreshRequested={fetchAllApplications}
                       />
                     </CardContent>
                 </Card>

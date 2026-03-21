@@ -538,6 +538,58 @@ export default function StaffManagementPage() {
         );
     };
 
+    const applyInterofficeMasterSwitch = (enabled: boolean) => {
+        const nextEnabled = Boolean(enabled);
+        setInterofficeElectronEnabled(nextEnabled);
+
+        // When turning master ON, mirror that state into each staff card toggle.
+        if (nextEnabled) {
+            const allUids = Array.from(
+                new Set(
+                    (staffList || [])
+                        .map((member) => String(member?.uid || '').trim())
+                        .filter(Boolean)
+                )
+            );
+
+            setNotificationRecipients(allUids);
+            setReviewRecipients((prev) => {
+                const next: Record<string, ReviewRecipientSettings> = { ...prev };
+                (staffList || []).forEach((member) => {
+                    const uid = String(member?.uid || '').trim();
+                    if (!uid) return;
+                    const current = next[uid] || {
+                        enabled: false,
+                        csSummary: false,
+                        documents: false,
+                        eligibility: false,
+                        standalone: false,
+                        alft: false,
+                        kaiserUploads: true,
+                        healthNetUploads: true,
+                        email: member?.email,
+                        label: (member?.firstName || member?.lastName)
+                            ? `${member?.firstName || ''} ${member?.lastName || ''}`.trim()
+                            : member?.email,
+                    };
+                    next[uid] = {
+                        ...current,
+                        enabled: true,
+                        documents: true,
+                        csSummary: true,
+                        email: current.email || member?.email,
+                        label: current.label || ((member?.firstName || member?.lastName)
+                            ? `${member?.firstName || ''} ${member?.lastName || ''}`.trim()
+                            : member?.email),
+                    };
+                });
+                return next;
+            });
+        }
+
+        queueAutoSave();
+    };
+
     const superAdminCount = useMemo(
         () => staffList.filter((member) => member.role === 'Super Admin').length,
         [staffList]
@@ -1015,7 +1067,7 @@ export default function StaffManagementPage() {
                             </div>
                             <Switch
                                 checked={interofficeElectronEnabled}
-                                onCheckedChange={(v) => { setInterofficeElectronEnabled(Boolean(v)); queueAutoSave(); }}
+                                onCheckedChange={(v) => applyInterofficeMasterSwitch(Boolean(v))}
                             />
                         </div>
                     </div>

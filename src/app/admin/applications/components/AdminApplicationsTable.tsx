@@ -124,6 +124,21 @@ const getProcessStatusFromApp = (
   return '';
 };
 
+const getAssignedStaffLabel = (app: WithId<Application & FormValues>) => {
+  const candidates = [
+    (app as any)?.assignedStaffName,
+    (app as any)?.assignedStaff,
+    (app as any)?.assignedToName,
+    (app as any)?.assignedTo,
+    (app as any)?.staffName,
+  ];
+  const label =
+    candidates
+      .map((value) => String(value ?? '').trim())
+      .find((value) => value.length > 0) || '';
+  return label || 'Staff unassigned';
+};
+
 const QuickViewField = ({ label, value, fullWidth = false }: { label: string, value?: string | number | boolean | null, fullWidth?: boolean }) => (
     <div className={fullWidth ? 'col-span-2' : ''}>
         <p className="text-sm text-muted-foreground">{label}</p>
@@ -331,12 +346,14 @@ export const AdminApplicationsTable = ({
   onSelectionChange,
   selected,
   showInlineTracker = false,
+  onRefreshRequested,
 }: {
   applications: WithId<Application & FormValues>[];
   isLoading: boolean;
   onSelectionChange?: (id: string, checked: boolean) => void;
   selected?: string[];
   showInlineTracker?: boolean;
+  onRefreshRequested?: () => Promise<void> | void;
 }) => {
   const { toast } = useToast();
   const { user } = useAdmin();
@@ -347,46 +364,60 @@ export const AdminApplicationsTable = ({
   const [processStatusOverrides, setProcessStatusOverrides] = useState<Record<string, string>>({});
 
   const handleSyncProcessStatus = async (app: WithId<Application & FormValues>) => {
-    if (!firebaseUser) return;
-    const clientId2 = String((app as any)?.client_ID2 || '').trim();
-    if (!clientId2) {
-      toast({
-        variant: 'destructive',
-        title: 'Missing Client ID',
-        description: `Cannot sync process status for ${app.memberFirstName} ${app.memberLastName}.`,
-      });
-      return;
-    }
     if (syncingProcessStatusIds.has(app.id)) return;
 
     setSyncingProcessStatusIds((prev) => new Set(prev).add(app.id));
     try {
-      const idToken = await firebaseUser.getIdToken();
-      const response = await fetch('/api/admin/process-status/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          idToken,
-          applicationId: app.id,
-          appUserId: app.userId || '',
-          source: (app as any)?.source || '',
-          clientId2,
-          healthPlan: String(app.healthPlan || ''),
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || `Sync failed (HTTP ${response.status})`);
+      const clientId2 = String((app as any)?.client_ID2 || '').trim();
+      let processStatus = '';
+      let processSyncError = '';
+
+      // Process-status sync is optional; document/status refresh should still run.
+      if (clientId2 && firebaseUser) {
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const response = await fetch('/api/admin/process-status/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              idToken,
+              applicationId: app.id,
+              appUserId: app.userId || '',
+              source: (app as any)?.source || '',
+              clientId2,
+              healthPlan: String(app.healthPlan || ''),
+            }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data?.success) {
+            throw new Error(data?.error || `Sync failed (HTTP ${response.status})`);
+          }
+
+          processStatus = String(data?.processStatus || '').trim();
+          if (processStatus) {
+            setProcessStatusOverrides((prev) => ({ ...prev, [app.id]: processStatus }));
+          }
+        } catch (error: any) {
+          processSyncError = error?.message || 'Could not sync process status from Caspio.';
+        }
       }
 
-      const processStatus = String(data?.processStatus || '').trim();
-      if (processStatus) {
-        setProcessStatusOverrides((prev) => ({ ...prev, [app.id]: processStatus }));
+      await onRefreshRequested?.();
+
+      if (processSyncError) {
+        toast({
+          variant: 'destructive',
+          title: 'Documents refreshed; process sync failed',
+          description: processSyncError,
+        });
+        return;
       }
 
       toast({
-        title: 'Process status synced',
-        description: `${app.memberFirstName} ${app.memberLastName}: ${processStatus || 'No status found'}`,
+        title: clientId2 ? 'Sync complete' : 'Documents refreshed',
+        description: clientId2
+          ? `${app.memberFirstName} ${app.memberLastName}: ${processStatus || 'Process status synced'}`
+          : `${app.memberFirstName} ${app.memberLastName}: latest document status loaded.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -394,7 +425,7 @@ export const AdminApplicationsTable = ({
       toast({
         variant: 'destructive',
         title: 'Sync failed',
-        description: error?.message || 'Could not sync process status from Caspio.',
+        description: error?.message || 'Could not refresh application status.',
       });
     } finally {
       setSyncingProcessStatusIds((prev) => {
@@ -554,6 +585,7 @@ export const AdminApplicationsTable = ({
               const planBadgeClass = getPlanBadgeClass(app);
               const csSummaryIsNew = isNewCsSummary(app);
               const processStatus = getProcessStatusFromApp(app, processStatusOverrides);
+              const staffLabel = getAssignedStaffLabel(app);
 
               return (
               <TableRow key={app.uniqueKey || `app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -619,7 +651,7 @@ export const AdminApplicationsTable = ({
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy')}` : 'Created: N/A'}
                       {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yyyy')}`}
                       • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
-                      {(app as any).assignedStaff && ` • Staff: ${(app as any).assignedStaff}`}
+                      {` • Staff: ${staffLabel}`}
                     </div>
                     {showInlineTracker && (
                       <div className="mt-2">
@@ -654,7 +686,7 @@ export const AdminApplicationsTable = ({
                       ) : (
                         <RefreshCw className="h-3 w-3 mr-1" />
                       )}
-                      Sync
+                      Sync Docs
                     </Button>
                 </TableCell>
                 <TableCell className="text-right">
@@ -761,6 +793,7 @@ export const AdminApplicationsTable = ({
             const planBadgeClass = getPlanBadgeClass(app);
             const csSummaryIsNew = isNewCsSummary(app);
             const processStatus = getProcessStatusFromApp(app, processStatusOverrides);
+            const staffLabel = getAssignedStaffLabel(app);
 
             return (
               <div key={app.uniqueKey || `mobile-app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -810,7 +843,7 @@ export const AdminApplicationsTable = ({
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yy')}` : 'Created: N/A'}
                       {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yy')}`}
                       • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
-                      {(app as any).assignedStaff && ` • Staff: ${(app as any).assignedStaff}`}
+                      {` • Staff: ${staffLabel}`}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
                       <span>{app.healthPlan}{processStatus ? ` • ${processStatus}` : ''}</span>
@@ -827,7 +860,7 @@ export const AdminApplicationsTable = ({
                         ) : (
                           <RefreshCw className="h-3 w-3 mr-1" />
                         )}
-                        Sync
+                        Sync Docs
                       </Button>
                     </div>
                     {showInlineTracker && (

@@ -150,7 +150,10 @@ function StaffAssignmentDropdown({
             try {
                 const planLower = String(application.healthPlan || '').toLowerCase();
                 const isKaiserPlan = planLower.includes('kaiser');
-                const isHealthNetPlan = planLower.includes('health net');
+                const isHealthNetPlan =
+                  planLower.includes('health net') ||
+                  planLower.includes('healthnet') ||
+                  planLower === 'hn';
 
                 // Pull three small staff sets and merge:
                 // - isStaff (general staff)
@@ -173,7 +176,6 @@ function StaffAssignmentDropdown({
                 kaiserSnap.docs.forEach((d) => userDataByUid.set(d.id, d.data()));
                 hnSnap.docs.forEach((d) => userDataByUid.set(d.id, d.data()));
 
-                // Ensure currently assigned staff is always visible in the dropdown.
                 const currentAssignedId = String((application as any)?.assignedStaffId || '').trim();
                 if (currentAssignedId && !userDataByUid.has(currentAssignedId)) {
                   try {
@@ -220,13 +222,22 @@ function StaffAssignmentDropdown({
                 let filtered = candidates;
                 let label = 'Showing all staff';
 
-                if ((isKaiserPlan || isHealthNetPlan) && designatedCandidates.length > 0) {
-                  filtered = designatedCandidates;
-                  label = isKaiserPlan ? 'Showing Kaiser staff' : 'Showing Health Net staff';
-                } else if (isKaiserPlan) {
-                  label = 'No Kaiser staff designated; showing all staff';
-                } else if (isHealthNetPlan) {
-                  label = 'No Health Net staff designated; showing all staff';
+                if (isKaiserPlan || isHealthNetPlan) {
+                  filtered = [...designatedCandidates];
+                  // Keep currently assigned staff visible even if designation was later changed.
+                  if (currentAssignedId) {
+                    const currentAssigned = candidates.find((c) => c.uid === currentAssignedId);
+                    if (currentAssigned && !filtered.some((c) => c.uid === currentAssigned.uid)) {
+                      filtered.push(currentAssigned);
+                    }
+                  }
+                  if (filtered.length > 0) {
+                    label = isKaiserPlan ? 'Showing Kaiser staff cards' : 'Showing Health Net staff cards';
+                  } else if (isKaiserPlan) {
+                    label = 'No Kaiser staff designated in Staff Management.';
+                  } else {
+                    label = 'No Health Net staff designated in Staff Management.';
+                  }
                 }
 
                 staff = [...filtered].sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -4808,8 +4819,6 @@ function ApplicationDetailPageContent() {
                 </div>
               </DialogContent>
             </Dialog>
-
-            <PushToCaspioDialog application={application} />
 
             <Dialog>
               <DialogTrigger asChild>
