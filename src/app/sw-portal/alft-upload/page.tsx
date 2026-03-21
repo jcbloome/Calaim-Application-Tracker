@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, UploadCloud, Info } from 'lucide-react';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { ExactAlftQuestionnaire, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
+import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
 
 type UploadedFile = { fileName: string; downloadURL: string; storagePath: string; uploadedAtIso: string };
 type AssessmentPurpose = 'Initial' | 'Change of Condition' | 'Review';
@@ -201,7 +202,7 @@ export default function SwAlftUploadPage() {
     if (prefillFromQuery.phone) setMemberPhone(prefillFromQuery.phone);
     if (prefillFromQuery.address) setCurrentStreet(prefillFromQuery.address);
     if (prefillFromQuery.city) setCurrentCity(prefillFromQuery.city);
-    if (prefillFromQuery.state) setCurrentState(prefillFromQuery.state);
+    if (prefillFromQuery.state) setCurrentState(normalizeUsStateCode(prefillFromQuery.state));
     if (prefillFromQuery.zip) setCurrentZip(prefillFromQuery.zip);
 
     setExactPacketAnswers((prev) => ({
@@ -213,7 +214,7 @@ export default function SwAlftUploadPage() {
       p1_phone: prefillFromQuery.phone || String(prev.p1_phone || ''),
       p2_current_street: prefillFromQuery.address || String(prev.p2_current_street || ''),
       p2_current_city: prefillFromQuery.city || String(prev.p2_current_city || ''),
-      p2_current_state: prefillFromQuery.state || String(prev.p2_current_state || ''),
+      p2_current_state: normalizeUsStateCode(prefillFromQuery.state || String(prev.p2_current_state || '')),
       p2_current_zip: prefillFromQuery.zip || String(prev.p2_current_zip || ''),
     }));
   }, [prefillFromQuery.firstName, prefillFromQuery.lastName, prefillFromQuery.dob, prefillFromQuery.mrn, prefillFromQuery.address, prefillFromQuery.city, prefillFromQuery.state, prefillFromQuery.zip, prefillFromQuery.phone]);
@@ -346,7 +347,7 @@ export default function SwAlftUploadPage() {
             physicalLocation: {
               street: currentStreet.trim() || null,
               city: currentCity.trim() || null,
-              state: currentState.trim() || null,
+              state: normalizeUsStateCode(currentState) || null,
               zip: currentZip.trim() || null,
               locationType: currentLocationType,
               locationTypeOther: currentLocationType === 'Other' ? currentLocationOther.trim() || null : null,
@@ -355,13 +356,13 @@ export default function SwAlftUploadPage() {
             homeAddress: {
               street: homeStreet.trim() || null,
               city: homeCity.trim() || null,
-              state: homeState.trim() || null,
+              state: normalizeUsStateCode(homeState) || null,
               zip: homeZip.trim() || null,
             },
             mailingAddress: {
               street: mailStreet.trim() || null,
               city: mailCity.trim() || null,
-              state: mailState.trim() || null,
+              state: normalizeUsStateCode(mailState) || null,
               zip: mailZip.trim() || null,
             },
             screening: {
@@ -813,7 +814,18 @@ export default function SwAlftUploadPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Input placeholder="Street" value={currentStreet} onChange={(e) => setCurrentStreet(e.target.value)} />
                 <Input placeholder="City" value={currentCity} onChange={(e) => setCurrentCity(e.target.value)} />
-                <Input placeholder="State" value={currentState} onChange={(e) => setCurrentState(e.target.value)} />
+                <select
+                  value={normalizeUsStateCode(currentState)}
+                  onChange={(e) => setCurrentState(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">State</option>
+                  {US_STATE_OPTIONS.map((state) => (
+                    <option key={state.code} value={state.code}>
+                      {state.code} - {state.name}
+                    </option>
+                  ))}
+                </select>
                 <Input placeholder="ZIP" value={currentZip} onChange={(e) => setCurrentZip(e.target.value)} />
               </div>
               <select
@@ -838,14 +850,36 @@ export default function SwAlftUploadPage() {
                 <Label>Home address (if different)</Label>
                 <Input placeholder="Street" value={homeStreet} onChange={(e) => setHomeStreet(e.target.value)} />
                 <Input placeholder="City" value={homeCity} onChange={(e) => setHomeCity(e.target.value)} />
-                <Input placeholder="State" value={homeState} onChange={(e) => setHomeState(e.target.value)} />
+                <select
+                  value={normalizeUsStateCode(homeState)}
+                  onChange={(e) => setHomeState(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">State</option>
+                  {US_STATE_OPTIONS.map((state) => (
+                    <option key={state.code} value={state.code}>
+                      {state.code} - {state.name}
+                    </option>
+                  ))}
+                </select>
                 <Input placeholder="ZIP" value={homeZip} onChange={(e) => setHomeZip(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Mailing address (if different)</Label>
                 <Input placeholder="Street" value={mailStreet} onChange={(e) => setMailStreet(e.target.value)} />
                 <Input placeholder="City" value={mailCity} onChange={(e) => setMailCity(e.target.value)} />
-                <Input placeholder="State" value={mailState} onChange={(e) => setMailState(e.target.value)} />
+                <select
+                  value={normalizeUsStateCode(mailState)}
+                  onChange={(e) => setMailState(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">State</option>
+                  {US_STATE_OPTIONS.map((state) => (
+                    <option key={state.code} value={state.code}>
+                      {state.code} - {state.name}
+                    </option>
+                  ))}
+                </select>
                 <Input placeholder="ZIP" value={mailZip} onChange={(e) => setMailZip(e.target.value)} />
               </div>
             </div>

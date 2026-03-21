@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -11,14 +12,22 @@ import { PhoneInput } from '@/components/ui/phone-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
+import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
 
 
 const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
 
 export default function Step4() {
-  const { control, watch } = useFormContext<FormValues>();
+  const { control, watch, getValues, setValue } = useFormContext<FormValues>();
   
   const hasPrefRCFE = watch('hasPrefRCFE');
+
+  useEffect(() => {
+    const normalizedState = normalizeUsStateCode(getValues('ispState'));
+    if (normalizedState !== (getValues('ispState') || '')) {
+      setValue('ispState', normalizedState);
+    }
+  }, [getValues, setValue]);
 
   const formatName = (value: string) => {
     if (!value) return '';
@@ -152,13 +161,20 @@ export default function Step4() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            value={field.value ?? ''}
-                            onChange={(e) => field.onChange(String(e.target.value || '').toUpperCase())}
-                          />
-                        </FormControl>
+                        <Select onValueChange={field.onChange} value={normalizeUsStateCode(field.value ?? '')}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select state" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {US_STATE_OPTIONS.map((state) => (
+                              <SelectItem key={state.code} value={state.code}>
+                                {state.code} - {state.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}

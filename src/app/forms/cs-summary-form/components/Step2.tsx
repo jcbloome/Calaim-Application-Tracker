@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useEffect } from 'react';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { californiaCounties } from '@/lib/california-counties';
+import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
 
 const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
 
@@ -48,6 +49,17 @@ export default function Step2() {
         setValue('customaryCounty', '');
     }
   }, [copyAddress, ...currentAddressFields, getValues, setValue, clearErrors]);
+
+  useEffect(() => {
+    const normalizedCurrent = normalizeUsStateCode(getValues('currentState'));
+    const normalizedCustomary = normalizeUsStateCode(getValues('customaryState'));
+    if (normalizedCurrent !== (getValues('currentState') || '')) {
+      setValue('currentState', normalizedCurrent);
+    }
+    if (normalizedCustomary !== (getValues('customaryState') || '')) {
+      setValue('customaryState', normalizedCustomary);
+    }
+  }, [getValues, setValue]);
   
   const formatName = (value: string) => {
     if (!value) return '';
@@ -129,15 +141,20 @@ export default function Step2() {
               <FormField control={control} name="currentState" render={({ field }) => (
                 <FormItem>
                   <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      value={field.value ?? ''}
-                      maxLength={2}
-                      onChange={e => field.onChange(e.target.value.toUpperCase())}
-                    />
-                  </FormControl>
-                  <FormDescription>Use 2-letter state code (e.g., CA).</FormDescription>
+                  <Select onValueChange={field.onChange} value={normalizeUsStateCode(field.value ?? '')}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select state" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {US_STATE_OPTIONS.map((state) => (
+                        <SelectItem key={state.code} value={state.code}>
+                          {state.code} - {state.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -242,16 +259,24 @@ export default function Step2() {
                         <FormField control={control} name="customaryState" render={({ field }) => (
                             <FormItem>
                               <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                              <FormControl>
-                                <Input
-                                  {...field}
-                                  value={field.value ?? ''}
-                                  disabled={copyAddress}
-                                  maxLength={2}
-                                  onChange={e => field.onChange(e.target.value.toUpperCase())}
-                                />
-                              </FormControl>
-                              <FormDescription>Use 2-letter state code (e.g., CA).</FormDescription>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={normalizeUsStateCode(field.value ?? '')}
+                                disabled={copyAddress}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select state" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {US_STATE_OPTIONS.map((state) => (
+                                    <SelectItem key={state.code} value={state.code}>
+                                      {state.code} - {state.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                               <FormMessage />
                             </FormItem>
                         )} />
