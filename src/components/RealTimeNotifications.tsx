@@ -524,7 +524,7 @@ export function RealTimeNotifications() {
     const source = String((input as any)?.source || '').toLowerCase();
     const interoffice = Boolean(input?.isGeneral) || type.includes('interoffice');
     const caspioAssigned = source === 'caspio' || type.includes('note_assignment');
-    return interoffice || caspioAssigned || isDesktopPriority(input?.priority);
+    return interoffice || caspioAssigned;
   };
 
   const sanitizeFieldLabel = (value?: string) => {
@@ -863,8 +863,6 @@ export function RealTimeNotifications() {
             const desktopIsRecent =
               Boolean(desktopLatest?.timestamp) &&
               Date.now() - desktopLatest.timestamp.getTime() <= recentThresholdMs;
-            const openPanel = Boolean(hasNewDesktopAlert || hasNewPriority || hasNewUrgent || desktopIsRecent);
-
             desktopPriorityPillRef.current = desktopPending.map((note) => ({
               kind: 'note',
               source: note.source,
@@ -884,7 +882,8 @@ export function RealTimeNotifications() {
               actionUrl: note.id ? `/admin/my-notes?noteId=${encodeURIComponent(note.id)}` : '/admin/my-notes',
             }));
 
-            emitDesktopPill({ openPanel });
+            // Keep the desktop pill compact; expand only when user clicks.
+            emitDesktopPill({ openPanel: false });
           }
 
           if (shouldShowWebToast) {

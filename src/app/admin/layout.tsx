@@ -784,9 +784,10 @@ function AdminHeader() {
         reviewPopupPrefs.allowAlft
       );
 
-      // Web popups for document uploads are intentionally disabled (too noisy).
+      // Review arrivals are count-only in Action Items / desktop review pill.
+      // Do not open popup cards for CS or docs.
       const allowDocsPopup = false;
-      const allowCsPopup = allowCsDesktop;
+      const allowCsPopup = false;
 
       // CS summary popups are low volume; fire immediately.
       const prev = reviewNotifyRef.current;

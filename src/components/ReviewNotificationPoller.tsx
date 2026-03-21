@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useUser } from '@/firebase';
-import { useGlobalNotifications } from '@/components/NotificationProvider';
 
 const DEFAULT_POLL_SECONDS = 180;
 
@@ -101,7 +100,6 @@ const toMs = (value: any): number => {
 
 export function ReviewNotificationPoller() {
   const { user } = useUser();
-  const { showNotification } = useGlobalNotifications();
   const warnedRef = useRef<{ missingRecipient: boolean; queryError: boolean }>({ missingRecipient: false, queryError: false });
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -298,6 +296,7 @@ export function ReviewNotificationPoller() {
               (allowElig ? eligCount : 0) +
               (allowStandalone ? standaloneCount : 0) +
               (allowAlft ? alftCount : 0),
+            openPanel: false,
             notes: reviewNotes.map((n) => ({
               title: n.title,
               message: n.message,
@@ -315,46 +314,8 @@ export function ReviewNotificationPoller() {
       }
 
       if (isRealDesktop && window.desktopNotifications?.notify) {
-        // Pop the pill (Electron).
-        await window.desktopNotifications.notify({
-          title,
-          body: message,
-          // Only open the app automatically; don't flip the pill UI open repeatedly.
-          openOnNotify: false,
-        });
-      } else {
-        // Web: small, color-coded card first; click expands, then click message opens Applications.
-        showNotification({
-          keyId: 'review-needed-summary',
-          type:
-            [csIsNew, docsIsNew, eligIsNew, standaloneIsNew].filter(Boolean).length > 1
-              ? 'warning'
-              : csIsNew || eligIsNew
-                ? 'task'
-                : 'success',
-          title,
-          message,
-          author: 'System',
-          recipientName: 'System',
-          memberName: '',
-          notes: reviewNotes.map((n) => ({
-            message: `${n.title}${n.message ? ` — ${n.message}` : ''}`,
-            author: 'System',
-            memberName: '',
-            timestamp: n.timestamp ? new Date(n.timestamp).toLocaleString() : undefined,
-            replyUrl: undefined,
-          })),
-          duration: 0,
-          minimizeAfter: 12000,
-          startMinimized: true,
-          pendingLabel: message,
-          sound: true,
-          animation: 'slide',
-          onClick: () => {
-            if (typeof window === 'undefined') return;
-            window.location.href = actionUrl;
-          }
-        });
+        // Review items are count-only in Action Items / desktop review pill.
+        // Do not emit popup cards for CS/docs/eligibility/standalone/ALFT.
       }
 
       // Update seen state to prevent repeat popups.
