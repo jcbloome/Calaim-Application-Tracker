@@ -204,6 +204,17 @@ function AdminHeader() {
   const [hnDocCount, setHnDocCount] = useState(0);
   const [kaiserCsCount, setKaiserCsCount] = useState(0);
   const [kaiserDocCount, setKaiserDocCount] = useState(0);
+  const [docsByAssignedStaff, setDocsByAssignedStaff] = useState<
+    Array<{
+      staffKey: string;
+      staff: string;
+      total: number;
+      kaiser: number;
+      healthNet: number;
+      members: Array<{ name: string; plan: 'Kaiser' | 'Health Net'; url: string; count: number }>;
+    }>
+  >([]);
+  const [docsOnlyMine, setDocsOnlyMine] = useState(false);
   const [eligibilityPendingCount, setEligibilityPendingCount] = useState(0);
   const [standalonePendingCount, setStandalonePendingCount] = useState(0);
   const [priorityNotesCount, setPriorityNotesCount] = useState(0);
@@ -293,6 +304,30 @@ function AdminHeader() {
     } catch {
       return 0;
     }
+  };
+
+  const getAssignedStaffLabelFromApp = (app: any): string => {
+    const candidates = [
+      app?.assignedStaffName,
+      app?.assignedStaff,
+      app?.assignedToName,
+      app?.assignedTo,
+      app?.staffName,
+    ];
+    const label =
+      candidates
+        .map((value) => String(value ?? '').trim())
+        .find((value) => value.length > 0) || '';
+    return label || 'Staff unassigned';
+  };
+
+  const getAssignedStaffKeyFromApp = (app: any, fallbackLabel: string): string => {
+    const candidates = [app?.assignedStaffId, app?.assignedToId, app?.staffUid];
+    const key =
+      candidates
+        .map((value) => String(value ?? '').trim())
+        .find((value) => value.length > 0) || '';
+    return key || fallbackLabel;
   };
 
   useEffect(() => {
@@ -609,6 +644,17 @@ function AdminHeader() {
           latestMs: number;
         }
       >();
+      const docsByStaff = new Map<
+        string,
+        {
+          staffKey: string;
+          staff: string;
+          total: number;
+          kaiser: number;
+          healthNet: number;
+          members: Map<string, { name: string; plan: 'Kaiser' | 'Health Net'; url: string; count: number }>;
+        }
+      >();
 
       dedupedApps.forEach((app: any) => {
         const memberName = `${app.memberFirstName || 'Unknown'} ${app.memberLastName || 'Member'}`.trim();
@@ -625,6 +671,8 @@ function AdminHeader() {
           ? `/admin/applications/${app.id}?userId=${encodeURIComponent(ownerUid)}`
           : `/admin/applications/${app.id}`;
         const appKey = `${app.id}-${ownerUid || 'admin'}`;
+        const assignedStaffLabel = getAssignedStaffLabelFromApp(app);
+        const assignedStaffKey = getAssignedStaffKeyFromApp(app, assignedStaffLabel);
 
         const forms = app.forms || [];
 
@@ -673,6 +721,31 @@ function AdminHeader() {
           const docLabel = String(form.name || '').trim();
           const docAuthor = String(form.uploadedByName || form.uploadedByEmail || app.referrerName || app.referrerEmail || '').trim() || 'User';
           docNotes.push({ message: docLabel ? `${memberName} — ${docLabel}` : memberName, timestampMs: ms, url: appUrl, author: docAuthor });
+
+          if (isKaiser || isHn) {
+            const staffBucket = docsByStaff.get(assignedStaffKey) || {
+              staffKey: assignedStaffKey,
+              staff: assignedStaffLabel,
+              total: 0,
+              kaiser: 0,
+              healthNet: 0,
+              members: new Map<string, { name: string; plan: 'Kaiser' | 'Health Net'; url: string; count: number }>(),
+            };
+            const planLabel: 'Kaiser' | 'Health Net' = isKaiser ? 'Kaiser' : 'Health Net';
+            const memberKey = `${planLabel}:${memberName}:${appUrl}`;
+            const memberEntry = staffBucket.members.get(memberKey) || {
+              name: memberName,
+              plan: planLabel,
+              url: appUrl,
+              count: 0,
+            };
+            memberEntry.count += 1;
+            staffBucket.members.set(memberKey, memberEntry);
+            staffBucket.total += 1;
+            if (isKaiser) staffBucket.kaiser += 1;
+            if (isHn) staffBucket.healthNet += 1;
+            docsByStaff.set(assignedStaffKey, staffBucket);
+          }
 
           const current = docsByApp.get(appKey) || {
             appId: app.id,
@@ -765,6 +838,20 @@ function AdminHeader() {
       setKaiserCsCount(nextKaiserCs);
       setKaiserDocCount(nextKaiserDocs);
       setAlftPendingCount(nextAlft);
+      setDocsByAssignedStaff(
+        Array.from(docsByStaff.values())
+          .map((row) => ({
+            staffKey: row.staffKey,
+            staff: row.staff,
+            total: row.total,
+            kaiser: row.kaiser,
+            healthNet: row.healthNet,
+            members: Array.from(row.members.values())
+              .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+              .slice(0, 4),
+          }))
+          .sort((a, b) => b.total - a.total || a.staff.localeCompare(b.staff))
+      );
 
       // Review notifications (CS + documents) are only for recipients explicitly enabled in system settings.
       // - CS: can auto-expand (low volume).
@@ -1264,6 +1351,151 @@ function AdminHeader() {
     );
   };
 
+  const renderDocsByStaffDropdown = () => {
+    const docsTotal = hnDocCount + kaiserDocCount;
+    if (docsTotal <= 0) return null;
+
+    const unassignedLabel = 'Staff unassigned';
+    const normalizeIdentity = (value: string) =>
+      String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+    const viewerUid = String(user?.uid || '').trim();
+    const viewerName = normalizeIdentity(String(user?.displayName || ''));
+    const viewerEmail = normalizeIdentity(String(user?.email || ''));
+    const viewerEmailPrefix = viewerEmail.includes('@') ? viewerEmail.split('@')[0] : viewerEmail;
+    const docsRowsBase = docsOnlyMine
+      ? docsByAssignedStaff.filter((row) => {
+          const staffNormalized = normalizeIdentity(row.staff);
+          return (
+            (viewerUid && row.staffKey === viewerUid) ||
+            (viewerName && (staffNormalized === viewerName || staffNormalized.includes(viewerName) || viewerName.includes(staffNormalized))) ||
+            (viewerEmailPrefix && staffNormalized.includes(viewerEmailPrefix))
+          );
+        })
+      : docsByAssignedStaff;
+    const sortRows = (rows: typeof docsByAssignedStaff) =>
+      [...rows].sort((a, b) => {
+        const aUnassigned = a.staff === unassignedLabel;
+        const bUnassigned = b.staff === unassignedLabel;
+        if (aUnassigned && !bUnassigned) return -1;
+        if (!aUnassigned && bUnassigned) return 1;
+        return b.total - a.total || a.staff.localeCompare(b.staff);
+      });
+
+    const kaiserRows = sortRows(docsRowsBase.filter((r) => r.kaiser > 0));
+    const healthNetRows = sortRows(docsRowsBase.filter((r) => r.healthNet > 0));
+
+    const renderPlanSection = (plan: 'Kaiser' | 'Health Net', rows: typeof docsByAssignedStaff) => {
+      const unassignedRows = rows.filter((r) => r.staff === unassignedLabel);
+      const assignedRows = rows.filter((r) => r.staff !== unassignedLabel);
+      const planTotal = rows.reduce((sum, row) => sum + (plan === 'Kaiser' ? row.kaiser : row.healthNet), 0);
+      const renderRow = (row: (typeof docsByAssignedStaff)[number], opts?: { forceWarn?: boolean }) => {
+        const isUnassigned = row.staff === unassignedLabel;
+        const shouldWarn = Boolean(opts?.forceWarn || isUnassigned);
+        const planCount = plan === 'Kaiser' ? row.kaiser : row.healthNet;
+        const memberPreview = row.members
+          .filter((m) => m.plan === plan)
+          .slice(0, 2)
+          .map((m) => `${m.name}${m.count > 1 ? ` x${m.count}` : ''}`)
+          .join(' • ');
+
+        return (
+          <DropdownMenuItem
+            key={`docs-by-staff-${plan}-${row.staff}`}
+            asChild
+            className={cn(shouldWarn && 'bg-amber-50 text-amber-900 focus:bg-amber-100')}
+          >
+            <Link
+              href={`/admin/applications?review=docs&plan=${encodeURIComponent(plan.toLowerCase())}&staff=${encodeURIComponent(row.staff)}`}
+              className="flex w-full flex-col items-start gap-1"
+            >
+              <div className="flex w-full items-center justify-between gap-2">
+                <span className="font-medium inline-flex items-center gap-1">
+                  {shouldWarn ? <AlertTriangle className="h-3 w-3 text-amber-600" /> : null}
+                  {row.staff}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {plan === 'Kaiser' ? 'K' : 'HN'} {planCount}
+                </span>
+              </div>
+              <div className="w-full truncate text-xs text-muted-foreground">
+                {memberPreview || `Open ${plan} docs for this staff`}
+              </div>
+            </Link>
+          </DropdownMenuItem>
+        );
+      };
+
+      if (rows.length === 0) {
+        return (
+          <div className="px-2 py-2 text-xs text-muted-foreground">
+            No pending {plan} docs found.
+          </div>
+        );
+      }
+
+      return (
+        <>
+          <div className="px-2 pb-1 text-[11px] text-muted-foreground">
+            {rows.length} staff • {planTotal} docs
+          </div>
+          {unassignedRows.length > 0 ? (
+            <>
+              <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                Needs Assignment
+              </div>
+              {unassignedRows.map((row) => renderRow(row, { forceWarn: true }))}
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          {assignedRows.map((row) => renderRow(row))}
+        </>
+      );
+    };
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-7 px-2 text-xs">
+            Docs by Staff
+            <span className="ml-1 text-muted-foreground">{docsTotal}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-[360px]">
+          <div className="flex items-center justify-between px-2 py-1.5">
+            <DropdownMenuLabel className="px-0">Kaiser + Health Net Documents</DropdownMenuLabel>
+            <Button
+              type="button"
+              variant={docsOnlyMine ? 'default' : 'ghost'}
+              size="sm"
+              className="h-6 px-2 text-[11px]"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDocsOnlyMine((prev) => !prev);
+              }}
+            >
+              {docsOnlyMine ? 'Showing mine' : 'Only mine'}
+            </Button>
+          </div>
+          <DropdownMenuSeparator />
+          <div className="max-h-72 overflow-y-auto">
+            {docsOnlyMine && docsRowsBase.length === 0 ? (
+              <div className="px-2 py-2 text-xs text-muted-foreground">No pending docs currently assigned to you.</div>
+            ) : null}
+            <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700">Kaiser</div>
+            {renderPlanSection('Kaiser', kaiserRows)}
+            <DropdownMenuSeparator />
+            <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-green-700">Health Net</div>
+            {renderPlanSection('Health Net', healthNetRows)}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
   const renderElectronStatusDropdown = () => {
     const activeCount = staffList.filter((staff) => Boolean(isElectronActiveByUid[staff.uid])).length;
     const inactiveCount = Math.max(0, staffList.length - activeCount);
@@ -1722,6 +1954,7 @@ function AdminHeader() {
             </span>
             <div className="flex items-center gap-2">
               {renderPillAlignedBadges()}
+              {renderDocsByStaffDropdown()}
               {renderElectronStatusDropdown()}
             </div>
           </div>
