@@ -3,9 +3,18 @@ import { publishCsSummaryToCaspio } from '@/lib/caspio-single-publisher';
 
 export async function POST(request: NextRequest) {
   try {
+    const authHeader = request.headers.get('authorization') || '';
+    const expectedSecret = (process.env.CASPIO_PUBLISH_SECRET || process.env.CRON_SECRET || '').trim();
+    if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
+      return NextResponse.json(
+        { success: false, message: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const applicationData = await request.json();
     
-    if (!applicationData) {
+    if (!applicationData || typeof applicationData !== 'object') {
       return NextResponse.json(
         { success: false, message: 'Application data is required' },
         { status: 400 }

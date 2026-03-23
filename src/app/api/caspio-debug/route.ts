@@ -1,39 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 
 export async function GET(request: NextRequest) {
   try {
     console.log('🔍 Starting Caspio table discovery...');
     
-    // Get Caspio access token - OAuth endpoint is separate from data API
-    const oauthUrl = `${process.env.CASPIO_BASE_URL}/oauth/token`;
-    const dataBaseUrl = process.env.CASPIO_BASE_URL?.includes('/rest/v2') 
-      ? process.env.CASPIO_BASE_URL 
-      : `${process.env.CASPIO_BASE_URL}/rest/v2`;
+    const caspioConfig = getCaspioServerConfig();
+    const oauthUrl = `${caspioConfig.oauthBaseUrl}/oauth/token`;
+    const dataBaseUrl = caspioConfig.restBaseUrl;
     console.log('🔐 OAuth URL:', oauthUrl);
     console.log('🔐 Data API Base URL:', dataBaseUrl);
     
-    // Use Basic Auth approach like working examples
-    const credentials = Buffer.from(`${process.env.CASPIO_CLIENT_ID}:${process.env.CASPIO_CLIENT_SECRET}`).toString('base64');
-    
-    const tokenResponse = await fetch(oauthUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-      },
-      body: 'grant_type=client_credentials',
-    });
-
-    console.log('🔐 Token response status:', tokenResponse.status);
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      console.log('❌ Token error:', errorText);
-      throw new Error(`Failed to get access token: ${tokenResponse.status}`);
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const accessToken = await getCaspioServerAccessToken(caspioConfig);
+    console.log('🔐 Token response status:', 200);
     console.log('✅ Got access token');
 
     // Try to list all tables using the Caspio REST API
@@ -126,8 +105,8 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('❌ Caspio debug error:', error);
-    const dataBaseUrl = process.env.CASPIO_BASE_URL?.includes('/rest/v2') 
-      ? process.env.CASPIO_BASE_URL 
+    const dataBaseUrl = process.env.CASPIO_BASE_URL?.includes('/rest/v2')
+      ? process.env.CASPIO_BASE_URL
       : `${process.env.CASPIO_BASE_URL}/rest/v2`;
     return NextResponse.json(
       { 

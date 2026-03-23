@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioServerConfig } from '@/lib/caspio-server-auth';
 
 export async function GET(request: NextRequest) {
   try {
     console.log('Testing Caspio connection...');
     
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    const caspioConfig = getCaspioServerConfig();
     
-    const tokenUrl = `${baseUrl}/oauth/token`;
+    const tokenUrl = `${caspioConfig.oauthBaseUrl}/oauth/token`;
     
     console.log('Making OAuth request to:', tokenUrl);
     
     // Try with URLSearchParams and proper form encoding
     const params = new URLSearchParams();
     params.append('grant_type', 'client_credentials');
-    params.append('client_id', clientId);
-    params.append('client_secret', clientSecret);
+    params.append('client_id', caspioConfig.clientId);
+    params.append('client_secret', caspioConfig.clientSecret);
     
     console.log('Request body:', params.toString());
     

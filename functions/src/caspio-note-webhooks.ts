@@ -1,6 +1,7 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
+import { buildCaspioConfig, getCaspioAccessTokenFromConfig } from "./caspio-auth";
 import { getFirestore } from 'firebase-admin/firestore';
 
 // Lazy initialization of Firestore
@@ -335,27 +336,9 @@ const getCaspioAccessToken = async () => {
     throw new Error('Caspio credentials not configured');
   }
 
-  const tokenBaseUrl = baseUrl.replace(/\/rest\/v2$/, '');
-  const tokenUrl = `${tokenBaseUrl}/oauth/token`;
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-
-  const tokenResponse = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-    body: 'grant_type=client_credentials',
-  });
-
-  if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text();
-    throw new Error(`Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
-  }
-
-  const tokenData = await tokenResponse.json();
-  return { accessToken: tokenData.access_token as string, dataBaseUrl: baseUrl };
+  const config = buildCaspioConfig(baseUrl, clientId, clientSecret);
+  const accessToken = await getCaspioAccessTokenFromConfig(config);
+  return { accessToken, dataBaseUrl: config.restBaseUrl };
 };
 
 const updateConfirmedImmediateSent = async (noteData: ClientNoteData, tableType: 'calaim_members' | 'client_notes') => {

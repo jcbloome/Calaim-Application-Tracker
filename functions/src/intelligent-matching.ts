@@ -1,9 +1,17 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { google } from 'googleapis';
 import * as admin from "firebase-admin";
+import { buildCaspioConfig, getCaspioAccessTokenFromConfig } from "./caspio-auth";
 
 // Lazy initialization of Firestore
 const getDb = () => admin.firestore();
+
+const getCaspioConfigFromDoc = (docData: any) => {
+  const rawBaseUrl = String(docData?.baseUrl || 'https://c7ebl500.caspio.com').trim();
+  const clientId = String(docData?.clientId || '').trim();
+  const clientSecret = String(docData?.clientSecret || '').trim();
+  return buildCaspioConfig(rawBaseUrl, clientId, clientSecret);
+};
 
 interface DriveFolder {
   id: string;
@@ -238,31 +246,12 @@ export const getAllCaspioMembers = onCall(async (request) => {
       throw new HttpsError('failed-precondition', 'Caspio not configured');
     }
     
-    const config = caspioDoc.data();
-    
-    // Get access token
-    const tokenResponse = await fetch(`${config.baseUrl}/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
-      }),
-    });
-    
-    if (!tokenResponse.ok) {
-      throw new Error(`Failed to get Caspio token: ${tokenResponse.status}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const config = getCaspioConfigFromDoc(caspioDoc.data());
+    const accessToken = await getCaspioAccessTokenFromConfig(config);
     
     // Fetch all members from the CalAIM_Member_Table
     const membersResponse = await fetch(
-      `${config.baseUrl}/rest/v2/tables/CalAIM_Member_Table/records?q.select=Client_ID2,First_Name,Last_Name&q.pageSize=1000`,
+      `${config.restBaseUrl}/tables/CalAIM_Member_Table/records?q.select=Client_ID2,First_Name,Last_Name&q.pageSize=1000`,
       {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -417,27 +406,8 @@ export const applyMatchingSuggestions = onCall(async (request) => {
       throw new HttpsError('failed-precondition', 'Caspio not configured');
     }
     
-    const config = caspioDoc.data();
-    
-    // Get access token
-    const tokenResponse = await fetch(`${config.baseUrl}/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
-      }),
-    });
-    
-    if (!tokenResponse.ok) {
-      throw new Error(`Failed to get Caspio token: ${tokenResponse.status}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const config = getCaspioConfigFromDoc(caspioDoc.data());
+    const accessToken = await getCaspioAccessTokenFromConfig(config);
     
     // Process each suggestion
     for (const suggestion of suggestions) {
@@ -457,7 +427,7 @@ export const applyMatchingSuggestions = onCall(async (request) => {
         
         // Update Caspio record with Google Drive folder ID
         const updateResponse = await fetch(
-          `${config.baseUrl}/rest/v2/tables/CalAIM_Member_Table/records?q.where=Client_ID2='${suggestion.caspioMember.Client_ID2}'`,
+          `${config.restBaseUrl}/tables/CalAIM_Member_Table/records?q.where=Client_ID2='${suggestion.caspioMember.Client_ID2}'`,
           {
             // EMERGENCY DISABLE: method: 'PUT', // DISABLED TO PREVENT CASPIO INTERFERENCE
             headers: {

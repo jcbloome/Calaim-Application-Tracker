@@ -2,11 +2,38 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 import { google } from 'googleapis';
+import { buildCaspioConfig, getCaspioAccessTokenFromConfig } from './caspio-auth';
 
 // Define secrets for Google Drive API
 const googleDriveClientId = defineSecret("GOOGLE_DRIVE_CLIENT_ID");
 const googleDriveClientSecret = defineSecret("GOOGLE_DRIVE_CLIENT_SECRET");
 const googleServiceAccountKey = defineSecret("GOOGLE_SERVICE_ACCOUNT_KEY");
+const caspioBaseUrl = defineSecret("CASPIO_BASE_URL");
+const caspioClientId = defineSecret("CASPIO_CLIENT_ID");
+const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
+
+function getCaspioConfig() {
+  const rawBaseUrl = (caspioBaseUrl.value() || process.env.CASPIO_BASE_URL || '').trim();
+  const clientId = (caspioClientId.value() || process.env.CASPIO_CLIENT_ID || '').trim();
+  const clientSecret = (caspioClientSecret.value() || process.env.CASPIO_CLIENT_SECRET || '').trim();
+
+  if (!rawBaseUrl || !clientId || !clientSecret) {
+    throw new HttpsError('failed-precondition', 'Caspio credentials are not configured.');
+  }
+
+  const config = buildCaspioConfig(rawBaseUrl, clientId, clientSecret);
+  return { hostBaseUrl: config.oauthBaseUrl, restBaseUrl: config.restBaseUrl, clientId: config.clientId, clientSecret: config.clientSecret };
+}
+
+async function getCaspioAccessToken() {
+  const config = getCaspioConfig();
+  try {
+    const accessToken = await getCaspioAccessTokenFromConfig(buildCaspioConfig(config.hostBaseUrl, config.clientId, config.clientSecret));
+    return { accessToken, restBaseUrl: config.restBaseUrl };
+  } catch {
+    throw new HttpsError('internal', 'Failed to get Caspio access token');
+  }
+}
 
 // Google Drive Migration Functions
 export const authenticateGoogleDrive = onCall({
@@ -37,7 +64,14 @@ export const authenticateGoogleDrive = onCall({
 });
 
 export const scanCalAIMDriveFolders = onCall({
-  secrets: [googleDriveClientId, googleDriveClientSecret, googleServiceAccountKey]
+  secrets: [
+    googleDriveClientId,
+    googleDriveClientSecret,
+    googleServiceAccountKey,
+    caspioBaseUrl,
+    caspioClientId,
+    caspioClientSecret
+  ]
 }, async (request) => {
   const { limitFolders = false, maxFolders = 10 } = request.data || {};
   try {
@@ -49,33 +83,11 @@ export const scanCalAIMDriveFolders = onCall({
     console.log('📁 Scanning CalAIM Members folder in Google Drive...');
     
     // Get all Kaiser members from Caspio for matching
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (!tokenResponse.ok) {
-      throw new HttpsError('internal', 'Failed to get Caspio access token');
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const { accessToken, restBaseUrl } = await getCaspioAccessToken();
     
     // Fetch all members from Caspio
     const membersTable = 'CalAIM_tbl_Members';
-    const fetchUrl = `${baseUrl}/tables/${membersTable}/records?q.pageSize=1000`;
+    const fetchUrl = `${restBaseUrl}/tables/${membersTable}/records?q.pageSize=1000`;
     
     const membersResponse = await fetch(fetchUrl, {
       method: 'GET',

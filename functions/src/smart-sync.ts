@@ -1,5 +1,14 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { buildCaspioConfig, getCaspioAccessTokenFromConfig } from "./caspio-auth";
+
+function getCaspioRuntimeConfig() {
+  return buildCaspioConfig(
+    process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2',
+    process.env.CASPIO_CLIENT_ID || '',
+    process.env.CASPIO_CLIENT_SECRET || ''
+  );
+}
 
 // Smart Sync Functions
 export const checkSyncStatus = onCall(async (request) => {
@@ -23,29 +32,8 @@ export const checkSyncStatus = onCall(async (request) => {
     const lastSync = syncDoc.exists ? syncDoc.data() : null;
     
     // Get Caspio data for comparison
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientIdCaspio = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientIdCaspio}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (!tokenResponse.ok) {
-      throw new HttpsError('internal', 'Failed to get Caspio access token');
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const { restBaseUrl: baseUrl } = getCaspioRuntimeConfig();
+    const accessToken = await getCaspioAccessTokenFromConfig(getCaspioRuntimeConfig());
     
     // Fetch current Caspio record
     const membersTable = 'CalAIM_tbl_Members';
@@ -116,29 +104,8 @@ export const performManualSync = onCall(async (request) => {
     console.log(`🔄 Performing manual sync for client: ${clientId}`);
     
     // Get Caspio access token
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientIdCaspio = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientIdCaspio}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (!tokenResponse.ok) {
-      throw new HttpsError('internal', 'Failed to get Caspio access token');
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const { restBaseUrl: baseUrl } = getCaspioRuntimeConfig();
+    const accessToken = await getCaspioAccessTokenFromConfig(getCaspioRuntimeConfig());
     
     // Prepare update data with only changed fields
     const updateData: any = {
@@ -277,26 +244,10 @@ export const checkForDuplicateClients = onCall(async (request) => {
     });
     
     // Check Caspio for duplicates
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientIdCaspio = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    const { restBaseUrl: baseUrl } = getCaspioRuntimeConfig();
     
-    const credentials = Buffer.from(`${clientIdCaspio}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (tokenResponse.ok) {
-      const tokenData = await tokenResponse.json();
-      const accessToken = tokenData.access_token;
+    try {
+      const accessToken = await getCaspioAccessTokenFromConfig(getCaspioRuntimeConfig());
       
       const membersTable = 'CalAIM_tbl_Members';
       const searchUrl = `${baseUrl}/tables/${membersTable}/records?q.where=Senior_First='${firstName}' AND Senior_Last='${lastName}'`;
@@ -340,6 +291,8 @@ export const checkForDuplicateClients = onCall(async (request) => {
           });
         }
       }
+    } catch {
+      // best effort duplicate lookup in Caspio
     }
     
     // Generate recommendations
@@ -580,44 +533,26 @@ async function generateUniqueClientId(): Promise<string> {
     
     if (firestoreCheck.empty) {
       // Check Caspio
-      const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-      const clientIdCaspio = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-      const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-      
-      const credentials = Buffer.from(`${clientIdCaspio}:${clientSecret}`).toString('base64');
-      const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+      const { restBaseUrl: baseUrl } = getCaspioRuntimeConfig();
       
       try {
-        const tokenResponse = await fetch(tokenUrl, {
-          method: 'POST',
+        const accessToken = await getCaspioAccessTokenFromConfig(getCaspioRuntimeConfig());
+          
+        const membersTable = 'CalAIM_tbl_Members';
+        const searchUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId}'`;
+        
+        const caspioResponse = await fetch(searchUrl, {
+          method: 'GET',
           headers: {
-            'Authorization': `Basic ${credentials}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json'
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
           },
-          body: 'grant_type=client_credentials',
         });
         
-        if (tokenResponse.ok) {
-          const tokenData = await tokenResponse.json();
-          const accessToken = tokenData.access_token;
-          
-          const membersTable = 'CalAIM_tbl_Members';
-          const searchUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId}'`;
-          
-          const caspioResponse = await fetch(searchUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          
-          if (caspioResponse.ok) {
-            const caspioResult = await caspioResponse.json();
-            if (!caspioResult.Result || caspioResult.Result.length === 0) {
-              isUnique = true;
-            }
+        if (caspioResponse.ok) {
+          const caspioResult = await caspioResponse.json();
+          if (!caspioResult.Result || caspioResult.Result.length === 0) {
+            isUnique = true;
           }
         }
       } catch (error) {

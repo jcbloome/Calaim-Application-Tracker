@@ -1,8 +1,41 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
+import { buildCaspioConfig, getCaspioAccessTokenFromConfig } from "./caspio-auth";
+
+const caspioBaseUrl = defineSecret("CASPIO_BASE_URL");
+const caspioClientId = defineSecret("CASPIO_CLIENT_ID");
+const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
+
+function getCaspioConfig() {
+  const rawBaseUrl = (caspioBaseUrl.value() || process.env.CASPIO_BASE_URL || '').trim();
+  const clientId = (caspioClientId.value() || process.env.CASPIO_CLIENT_ID || '').trim();
+  const clientSecret = (caspioClientSecret.value() || process.env.CASPIO_CLIENT_SECRET || '').trim();
+
+  if (!rawBaseUrl || !clientId || !clientSecret) {
+    throw new HttpsError('failed-precondition', 'Caspio credentials are not configured.');
+  }
+
+  const config = buildCaspioConfig(rawBaseUrl, clientId, clientSecret);
+  return { hostBaseUrl: config.oauthBaseUrl, restBaseUrl: config.restBaseUrl, clientId: config.clientId, clientSecret: config.clientSecret };
+}
+
+async function getCaspioAccessToken(): Promise<{ accessToken: string; restBaseUrl: string }> {
+  const config = getCaspioConfig();
+  try {
+    const accessToken = await getCaspioAccessTokenFromConfig(
+      buildCaspioConfig(config.hostBaseUrl, config.clientId, config.clientSecret)
+    );
+    return { accessToken, restBaseUrl: config.restBaseUrl };
+  } catch {
+    throw new HttpsError('internal', 'Failed to get Caspio access token');
+  }
+}
 
 // Auto-sync function for immediate field changes
-export const performAutoSync = onCall(async (request) => {
+export const performAutoSync = onCall({
+  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
+}, async (request) => {
   try {
     const { applicationId, clientId, memberData, changedFields, triggerType } = request.data;
     
@@ -15,31 +48,6 @@ export const performAutoSync = onCall(async (request) => {
     }
     
     console.log(`🔄 Auto-sync triggered: ${triggerType} - ${changedFields.join(', ')}`);
-    
-    // Get Caspio access token
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientIdCaspio = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientIdCaspio}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (!tokenResponse.ok) {
-      throw new HttpsError('internal', 'Failed to get Caspio access token');
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
     
     // Prepare update data with only changed fields
     const updateData: any = {
@@ -219,7 +227,9 @@ export const getPendingSyncs = onCall(async (request) => {
 });
 
 // Perform batch sync
-export const performBatchSync = onCall(async (request) => {
+export const performBatchSync = onCall({
+  secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret]
+}, async (request) => {
   try {
     const { itemIds, batchSize = 5 } = request.data;
     
@@ -315,29 +325,7 @@ export const performBatchSync = onCall(async (request) => {
 // Helper function to perform single sync
 async function performSingleSync(clientId: string, applicationId: string, memberData: any, changedFields: string[], userId: string) {
   // Get Caspio access token
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-  const clientIdCaspio = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-  const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-  
-  const credentials = Buffer.from(`${clientIdCaspio}:${clientSecret}`).toString('base64');
-  const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-  
-  const tokenResponse = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json'
-    },
-    body: 'grant_type=client_credentials',
-  });
-  
-  if (!tokenResponse.ok) {
-    throw new Error('Failed to get Caspio access token');
-  }
-  
-  const tokenData = await tokenResponse.json();
-  const accessToken = tokenData.access_token;
+  const { accessToken, restBaseUrl } = await getCaspioAccessToken();
   
   // Prepare update data
   const updateData: any = {
@@ -367,7 +355,7 @@ async function performSingleSync(clientId: string, applicationId: string, member
   
   // Update Caspio record
   const membersTable = 'CalAIM_tbl_Members';
-  const updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId}'`;
+  const updateUrl = `${restBaseUrl}/tables/${membersTable}/records?q.where=client_ID2='${clientId}'`;
   
   const updateResponse = await fetch(updateUrl, {
     method: 'PUT',

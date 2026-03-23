@@ -1,5 +1,6 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
+import { buildCaspioConfig, getCaspioAccessTokenFromConfig } from './caspio-auth';
 
 interface CaspioAuthResponse {
   access_token: string;
@@ -49,41 +50,22 @@ interface AuthorizationMember {
  * Get OAuth token from Caspio
  */
 async function getCaspioToken(): Promise<string> {
-  // Use hardcoded credentials (same as other functions)
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-  const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-  const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-  
-  const tokenUrl = `${baseUrl}/oauth/token`;
-  
-  // Use Basic Auth approach (same as Kaiser Tracker)
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  
-  const response = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json'
-    },
-    body: 'grant_type=client_credentials',
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    logger.error('Caspio OAuth failed:', { status: response.status, error: errorText });
+  const rawBaseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
+  const clientId = process.env.CASPIO_CLIENT_ID || '';
+  const clientSecret = process.env.CASPIO_CLIENT_SECRET || '';
+  try {
+    return await getCaspioAccessTokenFromConfig(buildCaspioConfig(rawBaseUrl, clientId, clientSecret));
+  } catch (error: any) {
+    logger.error('Caspio OAuth failed:', { error: error?.message || String(error) });
     throw new HttpsError('internal', 'Failed to authenticate with Caspio');
   }
-
-  const data: CaspioAuthResponse = await response.json();
-  return data.access_token;
 }
 
 /**
  * Fetch members with authorization data from Caspio
  */
 async function fetchMembersFromCaspio(token: string): Promise<CaspioMemberRecord[]> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const baseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
   const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
   
   // Fetch ALL members (don't filter by authorization fields here since they might be empty strings)

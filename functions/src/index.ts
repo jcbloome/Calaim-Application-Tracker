@@ -2,6 +2,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
+import { buildCaspioConfig, getCaspioAccessTokenFromConfig } from "./caspio-auth";
 
 // Kaiser Status Progression Helper
 const getNextStepForStatus = (currentStatus: string): string => {
@@ -221,6 +222,41 @@ const caspioBaseUrl = defineSecret("CASPIO_BASE_URL");
 const caspioClientId = defineSecret("CASPIO_CLIENT_ID");
 const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
 
+function getRuntimeCaspioConfig() {
+  const fallbackBase = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
+  const baseFromSecretOrEnv = (() => {
+    try {
+      return caspioBaseUrl.value() || fallbackBase;
+    } catch {
+      return fallbackBase;
+    }
+  })();
+  const clientId = (() => {
+    try {
+      return caspioClientId.value() || process.env.CASPIO_CLIENT_ID || '';
+    } catch {
+      return process.env.CASPIO_CLIENT_ID || '';
+    }
+  })();
+  const clientSecret = (() => {
+    try {
+      return caspioClientSecret.value() || process.env.CASPIO_CLIENT_SECRET || '';
+    } catch {
+      return process.env.CASPIO_CLIENT_SECRET || '';
+    }
+  })();
+  const oauthBaseUrl = String(baseFromSecretOrEnv).replace(/\/rest\/v2\/?$/i, '').replace(/\/+$/g, '');
+  const restBaseUrl = `${oauthBaseUrl}/rest/v2`;
+  return { restBaseUrl, oauthBaseUrl, clientId, clientSecret };
+}
+
+async function getRuntimeCaspioAccessToken(): Promise<string> {
+  const config = getRuntimeCaspioConfig();
+  return getCaspioAccessTokenFromConfig(
+    buildCaspioConfig(config.oauthBaseUrl, config.clientId, config.clientSecret)
+  );
+}
+
 // Run every day at 9:00 AM (Los Angeles time)
 export const checkMissingForms = onSchedule({
   schedule: "0 9 * * *",
@@ -298,12 +334,7 @@ export const getCaspioTableFields = onCall(async (request) => {
     console.log(`🔍 [FIELD-REFRESH] Starting field fetch for table: ${tableName}`);
     
     // Get Caspio credentials
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    const { restBaseUrl: baseUrl } = getRuntimeCaspioConfig();
     
     // Create AbortController for timeout control
     const controller = new AbortController();
@@ -313,27 +344,9 @@ export const getCaspioTableFields = onCall(async (request) => {
     }, TIMEOUT_MS);
     
     try {
-      // Get access token with timeout
+      // Get access token
       console.log('🔑 [FIELD-REFRESH] Getting access token...');
-      const tokenResponse = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${credentials}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-          'Connection': 'close' // Ensure connection closes after request
-        },
-        body: 'grant_type=client_credentials',
-        signal: controller.signal
-      });
-      
-      if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
-        throw new Error(`Token request failed: ${tokenResponse.status} ${errorText}`);
-      }
-      
-      const tokenData = await tokenResponse.json();
-      const accessToken = tokenData.access_token;
+      const accessToken = await getRuntimeCaspioAccessToken();
       console.log('✅ [FIELD-REFRESH] Got access token');
       
       // Get table schema to extract field names with timeout
@@ -439,29 +452,10 @@ export const testCaspioConnection = onCall(async (request) => {
       throw new HttpsError('failed-precondition', 'Caspio credentials not configured');
     }
     
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `${baseUrl}/oauth/token`;
-    
+    const tokenUrl = `${buildCaspioConfig(baseUrl, clientId, clientSecret).oauthBaseUrl}/oauth/token`;
     console.log('🔑 Testing Caspio OAuth at:', tokenUrl);
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    console.log('📡 OAuth Response:', tokenResponse.status, tokenResponse.statusText);
-    
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      console.log('❌ OAuth Error:', errorText);
-      throw new HttpsError('internal', `Caspio OAuth failed: ${tokenResponse.status} ${errorText}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
+    const accessToken = await getCaspioAccessTokenFromConfig(buildCaspioConfig(baseUrl, clientId, clientSecret));
+    console.log('📡 OAuth Response: 200 OK');
     console.log('✅ Successfully got Caspio access token');
     
     return {
@@ -470,7 +464,7 @@ export const testCaspioConnection = onCall(async (request) => {
       tests: {
         httpTest: httpTest.status,
         caspioTest: caspioTest.status,
-        oauthTest: tokenResponse.status
+        oauthTest: 200
       }
     };
     
@@ -507,30 +501,8 @@ export const updateKaiserStatusInCaspio = onCall({
     console.log(`📝 Updating Kaiser status in Caspio for client_ID2: ${client_ID2}`);
     
     // Get Caspio access token
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const { restBaseUrl: baseUrl } = getRuntimeCaspioConfig();
+    const accessToken = await getRuntimeCaspioAccessToken();
     
     // Update the record in Caspio
     const membersTable = 'CalAIM_tbl_Members';
@@ -605,26 +577,10 @@ export const syncKaiserStatus = onCall(async (request) => {
       console.log('📝 Updating Caspio record...');
       
       // Get Caspio access token
-      const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-      const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-      const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+      const { restBaseUrl: baseUrl } = getRuntimeCaspioConfig();
       
-      const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-      const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-      
-      const tokenResponse = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${credentials}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json'
-        },
-        body: 'grant_type=client_credentials',
-      });
-      
-      if (tokenResponse.ok) {
-        const tokenData = await tokenResponse.json();
-        const accessToken = tokenData.access_token;
+      try {
+        const accessToken = await getRuntimeCaspioAccessToken();
         
         // Update the record in Caspio
         const membersTable = 'CalAIM_tbl_Members';
@@ -642,7 +598,7 @@ export const syncKaiserStatus = onCall(async (request) => {
         // EMERGENCY DISABLE: Caspio sync operations disabled to prevent RCFE/Social Worker access interference
         console.log('🚨 EMERGENCY: Caspio sync UPDATE operations disabled to prevent RCFE/Social Worker access interference');
         console.log('✅ Caspio sync UPDATE DISABLED - preventing interference');
-      }
+      } catch {}
     }
     
     return {
@@ -675,31 +631,10 @@ export const fetchKaiserMembersFromCaspio = onCall({
     console.log('📥 Fetching Kaiser members from Caspio...');
     
     // Get Caspio access token
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    const { restBaseUrl: baseUrl } = getRuntimeCaspioConfig();
     
     console.log('🔑 Getting Caspio access token...');
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const accessToken = await getRuntimeCaspioAccessToken();
     console.log('✅ Got access token');
     
     // Fetch all members from CalAIM_tbl_Members table with pagination
@@ -904,31 +839,10 @@ export const fetchILSMembersFromCaspio = onCall(async (request) => {
     console.log('📥 Fetching ILS members from Caspio (ILS_View = Yes)...');
     
     // Get Caspio access token
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
+    const { restBaseUrl: baseUrl } = getRuntimeCaspioConfig();
     
     console.log('🔑 Getting Caspio access token...');
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const accessToken = await getRuntimeCaspioAccessToken();
     console.log('✅ Got access token');
     
     // Fetch ILS members from Caspio (only those with ILS_View = "Yes")
@@ -1070,26 +984,7 @@ export const updateKaiserMemberDates = onCall({
     const clientSecret = caspioClientSecret.value();
     
     // Get access token
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `https://c7ebl500.caspio.com/oauth/token`;
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const accessToken = await getRuntimeCaspioAccessToken();
     
     // Prepare update data for Caspio
     const updateData: any = {
@@ -1250,25 +1145,7 @@ export const publishCsSummaryToCaspio = onCall({
       throw new HttpsError('failed-precondition', 'Caspio credentials not configured');
     }
     
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = `${baseUrl}/oauth/token`;
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'grant_type=client_credentials',
-    });
-    
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new HttpsError('internal', `Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
-    }
-    
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const accessToken = await getCaspioAccessTokenFromConfig(buildCaspioConfig(baseUrl, clientId, clientSecret));
     
     // Check if member already exists
     const firstName = applicationData.memberFirstName || '';
@@ -1362,31 +1239,8 @@ export const fetchAllMembersForAuthorization = onCall(async (request) => {
     console.log('🔍 Starting fetchAllMembersForAuthorization...');
     
     // Get OAuth token using the same method as Kaiser function
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    const tokenUrl = `${baseUrl}/oauth/token`;
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: 'grant_type=client_credentials',
-    });
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      console.error('❌ Caspio OAuth failed:', { status: tokenResponse.status, error: errorText });
-      throw new HttpsError('internal', 'Failed to authenticate with Caspio');
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const { restBaseUrl: baseUrl } = getRuntimeCaspioConfig();
+    const accessToken = await getRuntimeCaspioAccessToken();
     
     console.log('✅ Got Caspio access token successfully');
     

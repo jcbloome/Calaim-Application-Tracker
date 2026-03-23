@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 
 async function verifyAdminAccess(request: NextRequest) {
   const adminSession = request.cookies.get('calaim_admin_session')?.value;
@@ -90,42 +91,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { tableName = 'CalAIM_tbl_Members' } = await request.json();
-    const rawBaseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
-    const baseUrl = rawBaseUrl.replace(/\/$/, '');
-    const restBaseUrl = baseUrl.endsWith('/rest/v2') ? baseUrl : `${baseUrl}/rest/v2`;
-    const clientId = process.env.CASPIO_CLIENT_ID || '';
-    const clientSecret = process.env.CASPIO_CLIENT_SECRET || '';
-
-    if (!clientId || !clientSecret) {
-      return NextResponse.json(
-        { error: 'Caspio credentials not configured' },
-        { status: 500 }
-      );
-    }
-
-    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    const tokenUrl = 'https://c7ebl500.caspio.com/oauth/token';
-
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
-      body: 'grant_type=client_credentials',
-    });
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      return NextResponse.json(
-        { error: `Token request failed: ${tokenResponse.status} ${errorText}` },
-        { status: 502 }
-      );
-    }
-
-    const tokenData = await tokenResponse.json();
-    const accessToken = tokenData.access_token;
+    const caspioConfig = getCaspioServerConfig();
+    const restBaseUrl = caspioConfig.restBaseUrl;
+    const accessToken = await getCaspioServerAccessToken(caspioConfig);
 
     const encodedTableName = encodeURIComponent(tableName);
     const schemaUrl = `${restBaseUrl}/tables/${encodedTableName}`;

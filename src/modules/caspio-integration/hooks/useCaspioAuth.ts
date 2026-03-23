@@ -37,7 +37,7 @@ export function useCaspioAuth(): UseCaspioAuthReturn {
       setIsLoading(true);
       setError(null);
       
-      const token = await caspioService.getAccessToken();
+      const token = await caspioService.getAuthToken();
       
       if (token) {
         setAccessToken(token);
@@ -67,7 +67,7 @@ export function useCaspioAuth(): UseCaspioAuthReturn {
       setIsLoading(true);
       setError(null);
       
-      const token = await caspioService.getAccessToken();
+      const token = await caspioService.getAuthToken();
       
       if (token) {
         setAccessToken(token);

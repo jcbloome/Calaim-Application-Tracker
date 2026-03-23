@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 
 interface TestClient {
   firstName: string;
@@ -31,13 +32,11 @@ export async function POST(request: NextRequest) {
     
     console.log('👤 Using generated test client data:', testClient);
 
-    // Caspio credentials (hardcoded for testing)
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
+    const caspioConfig = getCaspioServerConfig();
+    const baseUrl = caspioConfig.restBaseUrl;
     
     console.log('🔑 Getting Caspio access token...');
-    const accessToken = await getCaspioAccessToken(clientId, clientSecret);
+    const accessToken = await getCaspioServerAccessToken(caspioConfig);
     
     console.log(`👤 Testing client: ${testClient.firstName} ${testClient.lastName}`);
 
@@ -131,30 +130,6 @@ export async function POST(request: NextRequest) {
 }
 
 // Get Caspio OAuth access token
-async function getCaspioAccessToken(clientId: string, clientSecret: string): Promise<string> {
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const tokenUrl = 'https://c7ebl500.caspio.com/oauth/token';
-  
-  const response = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-      'User-Agent': 'CalAIM-Application/1.0'
-    },
-    body: 'grant_type=client_credentials',
-  });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to get access token: ${response.status} ${errorText}`);
-  }
-  
-  const tokenData = await response.json();
-  return tokenData.access_token;
-}
-
 // Create client record in connect_tbl_clients
 async function createClientRecord(accessToken: string, baseUrl: string, testClient: TestClient): Promise<any> {
   const clientTableUrl = `${baseUrl}/tables/connect_tbl_clients/records`;

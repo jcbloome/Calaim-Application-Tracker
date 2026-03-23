@@ -1,4 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { buildCaspioConfig, getCaspioAccessTokenFromConfig } from "./caspio-auth";
 
 interface MockMember {
   firstName: string;
@@ -20,12 +21,7 @@ export const testCaspioMemberSync = onCall({
   try {
     console.log('🧪 Starting Caspio Member Sync Test...');
     
-    // Use hardcoded credentials for testing (same as Kaiser function)
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
-    const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-    const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-    
-    console.log('🔍 Using hardcoded credentials for testing...');
+    console.log('🔍 Using configured Caspio credentials for testing...');
     
     // Get Caspio access token first
     console.log('🔑 Attempting to get Caspio access token...');
@@ -112,37 +108,21 @@ export const testCaspioMemberSync = onCall({
 
 // Get Caspio OAuth access token
 async function getCaspioAccessToken(): Promise<string> {
-  const baseUrl = 'https://c7ebl500.caspio.com';
-  const clientId = 'b721f0c7af4d4f7542e8a28665bfccb07e93f47deb4bda27bc';
-  const clientSecret = 'bad425d4a8714c8b95ec2ea9d256fc649b2164613b7e54099c';
-  
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const tokenUrl = `${baseUrl}/oauth/token`;
-  
-  console.log(`🔑 Getting access token from: ${tokenUrl}`);
-  
-  const response = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-      'User-Agent': 'CalAIM-Application/1.0'
-    },
-    body: 'grant_type=client_credentials',
-  });
-  
-  console.log(`📡 OAuth response: ${response.status} ${response.statusText}`);
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`❌ OAuth failed: ${response.status} ${errorText}`);
-    throw new Error(`Failed to get access token: ${response.status} ${errorText}`);
+  const config = buildCaspioConfig(
+    process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2',
+    process.env.CASPIO_CLIENT_ID || '',
+    process.env.CASPIO_CLIENT_SECRET || ''
+  );
+  const clientId = config.clientId;
+  const clientSecret = config.clientSecret;
+  if (!clientId || !clientSecret) {
+    throw new HttpsError('failed-precondition', 'Caspio credentials are not configured');
   }
-  
-  const tokenData = await response.json();
-  console.log(`✅ Access token obtained, length: ${tokenData.access_token?.length || 0}`);
-  return tokenData.access_token;
+
+  console.log(`🔑 Getting access token from: ${config.oauthBaseUrl}/oauth/token`);
+  const accessToken = await getCaspioAccessTokenFromConfig(config);
+  console.log(`✅ Access token obtained, length: ${accessToken.length || 0}`);
+  return accessToken;
 }
 
 // Add member to Client table and return client_ID2
