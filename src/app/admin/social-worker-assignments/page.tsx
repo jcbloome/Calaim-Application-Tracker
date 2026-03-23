@@ -462,6 +462,11 @@ export default function SocialWorkerAssignmentsPage() {
     return !v || v.toLowerCase() === 'unassigned';
   };
 
+  const getRcfeFilterBucket = (member: Member) => {
+    const normalized = normalizeRcfeNameForAssignment(member.RCFE_Name);
+    return normalized ? normalized : 'RCFE Unassigned';
+  };
+
   const isDueForSwAssignment = (member: Member) => {
     if (!isUnassignedSw(member)) return false;
     // We only assign SWs once a real RCFE has been selected (exclude placeholders like "CalAIM_Use...").
@@ -741,7 +746,7 @@ export default function SocialWorkerAssignmentsPage() {
   }, [members]);
 
   const allRCFEs = useMemo(() => {
-    return [...new Set(members.map((m) => normalizeRcfeNameForAssignment(m.RCFE_Name) || 'No RCFE'))].sort();
+    return [...new Set(members.map((m) => getRcfeFilterBucket(m)))].sort();
   }, [members]);
 
   // Handle column sorting
@@ -777,7 +782,7 @@ export default function SocialWorkerAssignmentsPage() {
         (member.memberCounty || 'Unknown') === selectedCounty;
       
       const matchesRCFE = selectedRCFE === 'all' || 
-        (normalizeRcfeNameForAssignment(member.RCFE_Name) || 'No RCFE') === selectedRCFE;
+        getRcfeFilterBucket(member) === selectedRCFE;
       
       const matchesHoldStatus =
         selectedHoldStatus === 'all' ||
@@ -1158,7 +1163,7 @@ export default function SocialWorkerAssignmentsPage() {
                       <SelectItem value="all">All RCFEs</SelectItem>
                       {allRCFEs.map(rcfe => (
                         <SelectItem key={rcfe} value={rcfe}>
-                          {rcfe === 'No RCFE' ? 'No RCFE' : rcfe.substring(0, 30) + (rcfe.length > 30 ? '...' : '')}
+                          {rcfe === 'RCFE Unassigned' ? 'RCFE Unassigned' : rcfe.substring(0, 30) + (rcfe.length > 30 ? '...' : '')}
                         </SelectItem>
                       ))}
                     </SelectContent>
