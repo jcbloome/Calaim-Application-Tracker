@@ -1353,7 +1353,6 @@ function AdminHeader() {
 
   const renderDocsByStaffDropdown = () => {
     const docsTotal = hnDocCount + kaiserDocCount;
-    if (docsTotal <= 0) return null;
 
     const unassignedLabel = 'Staff unassigned';
     const normalizeIdentity = (value: string) =>
@@ -1458,7 +1457,11 @@ function AdminHeader() {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-7 px-2 text-xs">
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn("h-7 px-2 text-xs", docsTotal <= 0 && "opacity-60")}
+          >
             Docs by Staff
             <span className="ml-1 text-muted-foreground">{docsTotal}</span>
           </Button>
