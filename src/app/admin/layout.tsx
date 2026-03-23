@@ -810,33 +810,9 @@ function AdminHeader() {
           Boolean((window as any).desktopNotifications) &&
           !Boolean((window as any).desktopNotifications?.__shim);
         if (isRealDesktop) {
-          const csItems = allowCsDesktop
-            ? csNotes
-                .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
-                .slice(0, 6)
-                .map((n) => ({
-                  title: 'CS Summary received',
-                  message: n.message,
-                  kind: 'cs',
-                  isNew: Boolean(csIsNew),
-                  memberName: '',
-                  timestamp: n.timestampMs ? new Date(n.timestampMs).toLocaleString() : undefined,
-                  actionUrl: n.url || '/admin/applications?review=cs',
-                }))
-            : [];
-          const docItems = allowDocsDesktop
-            ? docNotes
-                .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
-                .slice(0, 6)
-                .map((d) => ({
-                  title: 'Documents received',
-                  message: d.message,
-                  kind: 'docs',
-                  memberName: '',
-                  timestamp: d.timestampMs ? new Date(d.timestampMs).toLocaleString() : undefined,
-                  actionUrl: d.url || '/admin/applications?review=docs',
-                }))
-            : [];
+          // Keep CS/docs/ALFT as Action Items counters only (no Electron review notification cards).
+          const csItems: any[] = [];
+          const docItems: any[] = [];
           const standaloneItems = allowStandaloneDesktop
             ? standaloneNotes
                 .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
@@ -850,19 +826,7 @@ function AdminHeader() {
                   actionUrl: d.url || '/admin/standalone-uploads',
                 }))
             : [];
-          const alftItems = allowAlftDesktop
-            ? alftNotes
-                .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
-                .slice(0, 6)
-                .map((d) => ({
-                  title: 'ALFT upload received',
-                  message: d.message,
-                  kind: 'alft',
-                  memberName: '',
-                  timestamp: d.timestampMs ? new Date(d.timestampMs).toLocaleString() : undefined,
-                  actionUrl: d.url || '/admin/alft-tracker',
-                }))
-            : [];
+          const alftItems: any[] = [];
           const eligibilityItems = allowEligibilityDesktop && eligibilityPendingCount > 0
             ? [
                 {
@@ -876,10 +840,7 @@ function AdminHeader() {
               ]
             : [];
           const reviewCount =
-            (allowCsDesktop ? csSummaryCount : 0) +
-            (allowDocsDesktop ? uploadCount : 0) +
             (allowStandaloneDesktop ? standaloneCount : 0) +
-            (allowAlftDesktop ? alftCount : 0) +
             (allowEligibilityDesktop ? eligibilityPendingCount : 0);
           const notes = [...csItems, ...docItems, ...standaloneItems, ...alftItems, ...eligibilityItems];
           const shouldSend = reviewCount > 0 || desktopReviewInitializedRef.current;

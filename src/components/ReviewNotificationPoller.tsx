@@ -289,15 +289,16 @@ export function ReviewNotificationPoller() {
 
       if (isRealDesktop) {
         try {
+          // Keep review arrivals (CS/docs/ALFT) out of Electron review notifications.
+          // These remain visible through Action Items counters in admin UI.
+          const electronReviewCount =
+            (allowElig ? eligCount : 0) +
+            (allowStandalone ? standaloneCount : 0);
+          const electronReviewNotes = reviewNotes.filter((n) => n.kind === 'elig' || n.kind === 'standalone');
           window.desktopNotifications?.setReviewPillSummary?.({
-            count:
-              (allowCs ? csCount : 0) +
-              (allowDocs ? docsCount : 0) +
-              (allowElig ? eligCount : 0) +
-              (allowStandalone ? standaloneCount : 0) +
-              (allowAlft ? alftCount : 0),
+            count: electronReviewCount,
             openPanel: false,
-            notes: reviewNotes.map((n) => ({
+            notes: electronReviewNotes.map((n) => ({
               title: n.title,
               message: n.message,
               kind: n.kind,
