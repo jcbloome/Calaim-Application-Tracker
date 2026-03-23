@@ -74,6 +74,7 @@ export const getStatusColor = (status: string): string => {
     'Expired': 'bg-red-50 text-red-700 border-red-200',
     'T2038 Requested': 'bg-purple-50 text-purple-700 border-purple-200',
     'RN Visit Complete': 'bg-teal-50 text-teal-700 border-teal-200',
+    'RN Visit Complete, Pending Signatures': 'bg-cyan-50 text-cyan-800 border-cyan-200',
     'Tier Level Requested': 'bg-indigo-50 text-indigo-700 border-indigo-200',
     'Tier Level Received': 'bg-indigo-50 text-indigo-700 border-indigo-200',
     'RN/MSW Scheduled': 'bg-cyan-50 text-cyan-700 border-cyan-200',

@@ -38,6 +38,7 @@ const nextActions: Record<string, string> = {
   "Needs RN Visit": "Schedule RN assessment visit",
   "RN/MSW Scheduled": "Confirm RN/MSW appointment and prepare materials",
   "RN Visit Complete": "Review RN assessment and prepare for tier level request",
+  "RN Visit Complete, Pending Signatures": "Collect pending signatures and finalize RN packet",
   "Need Tier Level": "Submit tier level determination request",
   "Tier Level Requested": "Follow up on tier level determination",
   "Tier Level Received": "Review tier level and begin RCFE search",

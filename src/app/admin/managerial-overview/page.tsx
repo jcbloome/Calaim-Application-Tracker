@@ -44,6 +44,7 @@ const kaiserSteps = [
   "Needs RN Visit",
   "RN/MSW Scheduled",
   "RN Visit Complete",
+  "RN Visit Complete, Pending Signatures",
   "Need Tier Level",
   "Tier Level Requested",
   "Tier Level Received",

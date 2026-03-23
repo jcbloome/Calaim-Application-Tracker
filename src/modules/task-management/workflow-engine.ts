@@ -89,12 +89,21 @@ export const KAISER_WORKFLOW: WorkflowConfig = {
     },
     {
       status: 'RN Visit Complete',
+      nextStatus: 'RN Visit Complete, Pending Signatures',
+      recommendedDays: 2,
+      requiredActions: ['Collect pending signatures', 'Finalize RN visit packet'],
+      autoAdvanceConditions: ['rn_signatures_complete'],
+      canSkip: false,
+      description: 'RN assessment completed, signatures pending'
+    },
+    {
+      status: 'RN Visit Complete, Pending Signatures',
       nextStatus: 'Tier Level Request Needed',
       recommendedDays: 3,
-      requiredActions: ['Review RN assessment', 'Prepare tier level request'],
-      autoAdvanceConditions: ['assessment_reviewed', 'tier_request_ready'],
+      requiredActions: ['Review signed RN assessment', 'Prepare tier level request'],
+      autoAdvanceConditions: ['signed_assessment_reviewed', 'tier_request_ready'],
       canSkip: false,
-      description: 'RN assessment completed, ready for tier level request'
+      description: 'RN packet fully signed and ready for tier level request'
     },
     {
       status: 'Tier Level Request Needed',

@@ -141,6 +141,13 @@ export const STATUS_COLORS: Record<string, StatusStyle> = {
     textColor: 'text-teal-700',
     icon: 'CheckCircle'
   },
+  'RN Visit Complete, Pending Signatures': {
+    color: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+    backgroundColor: 'bg-cyan-50',
+    borderColor: 'border-cyan-200',
+    textColor: 'text-cyan-800',
+    icon: 'Clock'
+  },
   'Tier Level Requested': {
     color: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     backgroundColor: 'bg-indigo-50',

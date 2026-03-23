@@ -27,6 +27,8 @@ export const KAISER_STATUS_ALIASES: Record<string, string> = {
   [normalizeKey('Non_Active')]: 'Non-active',
   [normalizeKey('On Hold')]: 'On-Hold',
   [normalizeKey('On_Hold')]: 'On-Hold',
+  [normalizeKey('RN Visit Complete Pending Signatures')]: 'RN Visit Complete, Pending Signatures',
+  [normalizeKey('RN Visit Complete - Pending Signatures')]: 'RN Visit Complete, Pending Signatures',
 };
 
 export function normalizeKaiserStatusName(raw: string): string {
@@ -113,6 +115,14 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
     status: 'RN Visit Complete',
     sortOrder: 8,
     description: 'RN visit completed for member assessment',
+    category: 'assessment',
+    isActive: true
+  },
+  {
+    id: 71,
+    status: 'RN Visit Complete, Pending Signatures',
+    sortOrder: 8.5,
+    description: 'RN visit completed; signatures still pending before tier request',
     category: 'assessment',
     isActive: true
   },
