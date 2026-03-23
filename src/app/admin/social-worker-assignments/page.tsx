@@ -45,7 +45,9 @@ interface SocialWorkerStats {
   countyBreakdown: Record<string, number>;
   rcfeBreakdown: Record<string, number>;
   onHoldCount: number;
-  activeCount: number;
+  notOnHoldCount: number;
+  atRcfeCount: number;
+  monthlyVisitEligibleCount: number;
 }
 
 type GeoLatLng = { lat: number; lng: number; formattedAddress: string; cached: boolean };
@@ -498,6 +500,14 @@ export default function SocialWorkerAssignmentsPage() {
     members.filter((member) => !isHold(member.Hold_For_Social_Worker) && hasAssignedRcfe(member)).length
   ), [members]);
 
+  const assignedToSocialWorkerCount = useMemo(() => (
+    members.filter((member) => !isUnassignedSw(member)).length
+  ), [members]);
+
+  const atRcfeMembersCount = useMemo(() => (
+    members.filter((member) => hasAssignedRcfe(member)).length
+  ), [members]);
+
   // Fetch and scope members for the SW tracker (Health Net + Authorized)
   const fetchAllMembers = async () => {
     setIsLoadingMembers(true);
@@ -685,7 +695,9 @@ export default function SocialWorkerAssignmentsPage() {
           countyBreakdown: {},
           rcfeBreakdown: {},
           onHoldCount: 0,
-          activeCount: 0
+          notOnHoldCount: 0,
+          atRcfeCount: 0,
+          monthlyVisitEligibleCount: 0,
         };
       }
       
@@ -705,17 +717,22 @@ export default function SocialWorkerAssignmentsPage() {
       stats[swName].countyBreakdown[county] = (stats[swName].countyBreakdown[county] || 0) + 1;
       
       // RCFE breakdown
-      const rcfe = normalizeRcfeNameForAssignment(member.RCFE_Name) || 'No RCFE';
+      const rcfe = getRcfeFilterBucket(member);
       stats[swName].rcfeBreakdown[rcfe] = (stats[swName].rcfeBreakdown[rcfe] || 0) + 1;
       
       // Hold status
       if (isHold(member.Hold_For_Social_Worker)) {
         stats[swName].onHoldCount++;
+      } else {
+        stats[swName].notOnHoldCount++;
       }
-      
-      // Active status (not expired, denied, or non-active)
-      if (!['Expired', 'Denied', 'Non-active'].includes(status)) {
-        stats[swName].activeCount++;
+
+      const atRcfe = hasAssignedRcfe(member);
+      if (atRcfe) {
+        stats[swName].atRcfeCount++;
+      }
+      if (!isHold(member.Hold_For_Social_Worker) && atRcfe) {
+        stats[swName].monthlyVisitEligibleCount++;
       }
     });
     
@@ -763,6 +780,9 @@ export default function SocialWorkerAssignmentsPage() {
   const filteredMembers = useMemo(() => {
     // First filter
     const filtered = members.filter(member => {
+      // Safety guard: this tracker only shows Health Net + Authorized scope.
+      if (!isHealthNetMember(member) || !isAuthorizedMember(member)) return false;
+
       const matchesSearch = !searchTerm || 
         member.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.Client_ID2.toString().includes(searchTerm) ||
@@ -828,8 +848,8 @@ export default function SocialWorkerAssignmentsPage() {
           bValue = b.Social_Worker_Assigned || 'Unassigned';
           break;
         case 'RCFE_Name':
-          aValue = normalizeRcfeNameForAssignment(a.RCFE_Name) || 'No RCFE';
-          bValue = normalizeRcfeNameForAssignment(b.RCFE_Name) || 'No RCFE';
+          aValue = getRcfeFilterBucket(a);
+          bValue = getRcfeFilterBucket(b);
           break;
         case 'Hold_For_Social_Worker':
           aValue = a.Hold_For_Social_Worker || 'No';
@@ -901,7 +921,7 @@ export default function SocialWorkerAssignmentsPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Health Net Authorized</CardTitle>
@@ -917,28 +937,28 @@ export default function SocialWorkerAssignmentsPage() {
             
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Social Workers</CardTitle>
+                <CardTitle className="text-sm font-medium">Assigned To SW</CardTitle>
                 <UserPlus className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{socialWorkerStats.filter(sw => sw.name !== 'Unassigned').length}</div>
+                <div className="text-2xl font-bold">{assignedToSocialWorkerCount}</div>
                 <p className="text-xs text-muted-foreground">
-                  Active social workers
+                  Health Net authorized members assigned to social workers
                 </p>
               </CardContent>
             </Card>
             
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Unassigned</CardTitle>
-                <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                <CardTitle className="text-sm font-medium">At RCFE</CardTitle>
+                <Building2 className="h-4 w-4 text-yellow-600" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-yellow-600">
-                  {socialWorkerStats.find(sw => sw.name === 'Unassigned')?.memberCount || 0}
+                  {atRcfeMembersCount}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Members without social worker
+                  Members with assigned RCFE
                 </p>
               </CardContent>
             </Card>
@@ -973,6 +993,19 @@ export default function SocialWorkerAssignmentsPage() {
                 </p>
               </CardContent>
             </Card>
+
+            <Card className="border-blue-200 bg-blue-50">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-blue-800">SW Monthly Visits Total</CardTitle>
+                <Calendar className="h-4 w-4 text-blue-700" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-800">{notOnHoldWithAssignedRcfeCount}</div>
+                <p className="text-xs text-blue-800">
+                  Filtered by: Authorized + Health Net + At RCFE + Not On Hold (matches SW monthly visits roster)
+                </p>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Social Worker Summary Cards */}
@@ -996,7 +1029,7 @@ export default function SocialWorkerAssignmentsPage() {
                     </Button>
                   </CardTitle>
                   <CardDescription>
-                    {sw.activeCount} active • {sw.onHoldCount} on hold
+                    {sw.memberCount} Health Net authorized • {sw.notOnHoldCount} not on hold • {sw.onHoldCount} on hold • {sw.atRcfeCount} at RCFE
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1034,7 +1067,7 @@ export default function SocialWorkerAssignmentsPage() {
                           .slice(0, 2)
                           .map(([rcfe, count]) => (
                             <Badge key={rcfe} variant="secondary" className="text-xs">
-                              {rcfe === 'No RCFE' ? 'No RCFE' : rcfe.substring(0, 20) + (rcfe.length > 20 ? '...' : '')}: {count}
+                              {rcfe === 'RCFE Unassigned' ? 'RCFE Unassigned' : rcfe.substring(0, 20) + (rcfe.length > 20 ? '...' : '')}: {count}
                             </Badge>
                           ))}
                       </div>
@@ -1255,6 +1288,9 @@ export default function SocialWorkerAssignmentsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{filteredMembers.length} of {members.length} members</Badge>
+                  <Badge variant="secondary">
+                    SW monthly visits equivalent: {notOnHoldWithAssignedRcfeCount}
+                  </Badge>
                   {(() => {
                     const holdCount = filteredMembers.filter((m) => isHold(m.Hold_For_Social_Worker)).length;
                     return holdCount > 0 ? (
@@ -1478,10 +1514,12 @@ export default function SocialWorkerAssignmentsPage() {
                       </h3>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">{sw.memberCount} total</Badge>
-                        <Badge variant="default">{sw.activeCount} active</Badge>
+                        <Badge variant="default">{sw.notOnHoldCount} not on hold</Badge>
                         {sw.onHoldCount > 0 && (
                           <Badge variant="destructive">{sw.onHoldCount} on hold</Badge>
                         )}
+                        <Badge variant="secondary">{sw.atRcfeCount} at RCFE</Badge>
+                        <Badge variant="outline">{sw.monthlyVisitEligibleCount} monthly visits total</Badge>
                       </div>
                     </div>
                     
@@ -1895,7 +1933,7 @@ export default function SocialWorkerAssignmentsPage() {
                     .sort(([,a], [,b]) => b - a)
                     .map(([rcfe, count]) => {
                       const rcfeMembers = selectedSWForModal.members.filter(m => 
-                        (m.RCFE_Name || 'No RCFE') === rcfe
+                        getRcfeFilterBucket(m) === rcfe
                       );
                       const rcfeAddress = rcfeMembers[0]?.RCFE_Address || 'Address not available';
                       
@@ -1903,8 +1941,8 @@ export default function SocialWorkerAssignmentsPage() {
                         <div key={rcfe} className="border rounded-lg p-3">
                           <div className="flex items-center justify-between mb-2">
                             <div>
-                              <h5 className="font-medium">{rcfe === 'No RCFE' ? 'No RCFE Assigned' : rcfe}</h5>
-                              {rcfe !== 'No RCFE' && (
+                              <h5 className="font-medium">{rcfe === 'RCFE Unassigned' ? 'RCFE Unassigned' : rcfe}</h5>
+                              {rcfe !== 'RCFE Unassigned' && (
                                 <p className="text-sm text-muted-foreground">{rcfeAddress}</p>
                               )}
                             </div>
