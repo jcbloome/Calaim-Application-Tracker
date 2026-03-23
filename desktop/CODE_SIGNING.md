@@ -22,7 +22,30 @@ npm run desktop:dist:win
 - If `CSC_LINK` is not set, the installer will be unsigned.
 - Use a trusted EV certificate to minimize SmartScreen prompts.
 
-## macOS signing note
+## macOS signing + notarization
 
-- `npm run dist:mac` now generates unsigned `.dmg` and `.zip` artifacts.
-- For broad macOS trust (Gatekeeper/notarization), add an Apple Developer ID certificate and notarization config in Electron Builder before distribution.
+If mac installers are unsigned or not notarized, Gatekeeper can show "app is damaged and can't be opened."
+
+### Required Environment Variables
+
+- `CSC_LINK`: Developer ID Application certificate (`.p12`) path or base64.
+- `CSC_KEY_PASSWORD`: Password for the certificate.
+- `APPLE_ID`: Apple ID email with notarization access.
+- `APPLE_APP_SPECIFIC_PASSWORD`: App-specific password for that Apple ID.
+- `APPLE_TEAM_ID`: Apple Developer Team ID.
+
+### Build behavior
+
+- `desktop/package.json` uses hardened runtime and entitlements.
+- `afterSign` runs `scripts/notarize.js` and notarizes the mac app when the Apple vars above are present.
+- CI workflows now validate required mac secrets before publishing release artifacts.
+
+### Local workaround for already-downloaded unsigned app
+
+If you need to open an older unsigned build on macOS:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Connect CalAIM Desktop.app"
+```
+
+Use this only as a temporary workaround; proper fix is signed + notarized release artifacts.

@@ -34,8 +34,13 @@
         "dmg",
         "zip"
       ],
-      "category": "public.app-category.medical"
+      "category": "public.app-category.medical",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
     },
+    "afterSign": "scripts/notarize.js",
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -58,6 +63,7 @@
     "electron-updater": "^6.7.3"
   },
   "devDependencies": {
+    "@electron/notarize": "^2.2.1",
     "@types/node": "^20",
     "electron": "^32.0.1",
     "electron-builder": "^24.13.3",
