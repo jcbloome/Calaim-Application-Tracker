@@ -402,6 +402,8 @@ export default function SWVisitVerification() {
   const [rcfeList, setRcfeList] = useState<RCFE[]>([]);
   const [isLoadingRCFEs, setIsLoadingRCFEs] = useState(false);
   const [membersOnHold, setMembersOnHold] = useState(0);
+  const [membersNotOnHold, setMembersNotOnHold] = useState(0);
+  const [membersNotOnHoldMissingRcfe, setMembersNotOnHoldMissingRcfe] = useState(0);
   const [membersCacheStatus, setMembersCacheStatus] = useState<{
     lastRunAt?: string | null;
     lastSyncAt?: string | null;
@@ -586,6 +588,8 @@ export default function SWVisitVerification() {
         if (data.success) {
           setRcfeList(data.rcfeList || []);
           setMembersOnHold(data.membersOnHold || 0);
+          setMembersNotOnHold(Number(data.totalMembersNotOnHold || data.totalMembers || 0));
+          setMembersNotOnHoldMissingRcfe(Number(data.totalMembersNotOnHoldMissingRcfe || 0));
           setMembersCacheStatus(data.cacheStatus || null);
 
           console.log(`✅ Loaded ${data.totalRCFEs} RCFEs with ${data.totalMembers} assigned members`);
@@ -1575,11 +1579,19 @@ export default function SWVisitVerification() {
                   </div>
                 ) : null}
               </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Users className="h-4 w-4" />
+                <span>
+                  {membersNotOnHold} active Health Net member{membersNotOnHold !== 1 ? 's' : ''} are not on hold
+                  ({rcfeList.reduce((sum, rcfe) => sum + Number(rcfe.memberCount || 0), 0)} with assigned RCFE shown here
+                  {membersNotOnHoldMissingRcfe > 0 ? `, ${membersNotOnHoldMissingRcfe} missing RCFE` : ''})
+                </span>
+              </div>
               {membersOnHold > 0 && (
                 <div className="flex items-center gap-2 text-amber-600 text-sm">
                   <AlertTriangle className="h-4 w-4" />
                   <span>
-                    {membersOnHold} of your authorized member{membersOnHold !== 1 ? 's are' : ' is'} currently suspended for SW visits (hold or authorization ended) (not shown here)
+                    {membersOnHold} authorized Health Net member{membersOnHold !== 1 ? 's are' : ' is'} currently on hold for SW visits (not shown here)
                   </span>
                 </div>
               )}

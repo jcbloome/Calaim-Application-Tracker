@@ -135,6 +135,37 @@ function isKaiserMember(member: any): boolean {
   return plan.includes('kaiser');
 }
 
+function isHealthNetMember(member: any): boolean {
+  const planRaw =
+    member?.CalAIM_MCO ??
+    member?.CalAIM_MCP ??
+    member?.Health_Plan ??
+    member?.healthPlan ??
+    member?.health_plan ??
+    '';
+  const plan = String(planRaw ?? '').trim().toLowerCase();
+  return plan.includes('health') && plan.includes('net');
+}
+
+function hasAssignedRcfe(member: any): boolean {
+  const rcfeName = String(member?.RCFE_Name ?? member?.rcfeName ?? '').trim();
+  const rcfeAddress = String(member?.RCFE_Address ?? member?.rcfeAddress ?? '').trim();
+  const rcfeRegisteredId = String(
+    member?.RCFE_Registered_ID ??
+      member?.rcfeRegisteredId ??
+      member?.RCFE_RegisteredID ??
+      member?.rcfe_registered_id ??
+      ''
+  ).trim();
+  if (rcfeRegisteredId) return true;
+  if (rcfeAddress) return true;
+  if (!rcfeName) return false;
+  const normalized = rcfeName.toLowerCase();
+  if (normalized.includes('calaim_use') || normalized.includes('calaim use')) return false;
+  if (normalized === 'unassigned' || normalized === 'unknown') return false;
+  return true;
+}
+
 function isAuthExpiredForSwVisits(member: any): { expired: boolean; endDate: Date | null } {
   // Kaiser does not pay for SW visits past initial authorizations.
   if (!isKaiserMember(member)) return { expired: false, endDate: null };
@@ -590,10 +621,13 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Monthly SW visit questionnaires are for Authorized members only.
-    const assignedAuthorized = assignedAll.filter((member) =>
-      isAuthorized(member?.CalAIM_Status ?? member?.calaim_status ?? member?.CalAIMStatus ?? member?.calaimStatus)
-    );
+    // Monthly SW visit questionnaires are for Health Net + Authorized members only.
+    const assignedAuthorized = assignedAll.filter((member) => {
+      const isAuthorizedStatus = isAuthorized(
+        member?.CalAIM_Status ?? member?.calaim_status ?? member?.CalAIMStatus ?? member?.calaimStatus
+      );
+      return isAuthorizedStatus && isHealthNetMember(member);
+    });
 
     const suspendedHoldCount = assignedAuthorized.filter((member) =>
       isHoldValue(
@@ -618,7 +652,7 @@ export async function GET(req: NextRequest) {
       return hold || expired;
     }).length;
 
-    const assignedMembers = assignedAuthorized.filter((member) => {
+    const assignedNotOnHold = assignedAuthorized.filter((member) => {
       const hold = isHoldValue(
         member?.Hold_For_Social_Worker ??
           member?.Hold_for_Social_Worker ??
@@ -628,6 +662,8 @@ export async function GET(req: NextRequest) {
       const expired = isAuthExpiredForSwVisits(member).expired;
       return !hold && !expired;
     });
+    const assignedMembers = assignedNotOnHold.filter((member) => hasAssignedRcfe(member));
+    const notOnHoldWithoutRcfeCount = assignedNotOnHold.length - assignedMembers.length;
 
     const parseIsoDate = (value: unknown): Date | null => {
       const raw = String(value ?? '').trim();
@@ -739,11 +775,16 @@ export async function GET(req: NextRequest) {
       return sum + (flags.isNewAssignment ? 1 : 0);
     }, 0);
 
-    console.log(`✅ Found ${assignedMembers.length} assigned members across ${rcfeList.length} RCFEs`);
+    console.log(
+      `✅ Found ${assignedMembers.length} Health Net authorized active members with assigned RCFEs across ${rcfeList.length} RCFEs`
+    );
     if (suspendedAnyCount > 0) {
       console.log(
         `🚫 ${suspendedAnyCount} members excluded (hold=${suspendedHoldCount}, authExpired=${suspendedAuthExpiredCount})`
       );
+    }
+    if (notOnHoldWithoutRcfeCount > 0) {
+      console.log(`ℹ️ ${notOnHoldWithoutRcfeCount} active members excluded (missing assigned RCFE).`);
     }
 
     // Expose cache freshness for the SW portal UI (so they can confirm they are working off a recent sync).
@@ -770,7 +811,10 @@ export async function GET(req: NextRequest) {
       rcfeList,
       totalMembers: assignedMembers.length,
       totalRCFEs: rcfeList.length,
-      // Backwards-compatible field name used by SW portal UI; now includes authorization-expired Kaiser members too.
+      totalMembersNotOnHold: assignedNotOnHold.length,
+      totalMembersNotOnHoldWithAssignedRcfe: assignedMembers.length,
+      totalMembersNotOnHoldMissingRcfe: notOnHoldWithoutRcfeCount,
+      // Backwards-compatible field name used by SW portal UI.
       membersOnHold: suspendedAnyCount,
       membersSuspended: suspendedAnyCount,
       membersSuspendedHold: suspendedHoldCount,

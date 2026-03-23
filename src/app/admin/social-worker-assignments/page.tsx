@@ -399,6 +399,27 @@ export default function SocialWorkerAssignmentsPage() {
     return v.includes('hold') || v === '1' || v === 'true' || v === 'yes' || v === 'y' || v === 'x';
   };
 
+  const isHealthNetMember = (member: Member) => {
+    const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
+    return plan.includes('health') && plan.includes('net');
+  };
+
+  const isAuthorizedMember = (member: Member) => {
+    const status = String(member?.CalAIM_Status || '').trim().toLowerCase();
+    if (!status) return false;
+    return status === 'authorized' || status.startsWith('authorized ');
+  };
+
+  const hasAssignedRcfe = (member: Member) => {
+    const rcfeName = String(normalizeRcfeNameForAssignment(member?.RCFE_Name || '') || '').trim().toLowerCase();
+    const rcfeAddress = String(member?.RCFE_Address || '').trim();
+    if (rcfeAddress) return true;
+    if (!rcfeName) return false;
+    if (rcfeName.includes('calaim_use') || rcfeName.includes('calaim use')) return false;
+    if (rcfeName === 'unknown' || rcfeName === 'unassigned') return false;
+    return true;
+  };
+
   const parseCaspioDateToLocalDate = (raw: any): Date | null => {
     if (!raw) return null;
     if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw;
@@ -460,7 +481,19 @@ export default function SocialWorkerAssignmentsPage() {
     return members.filter(isDueForSwAssignment).length;
   }, [members]);
 
-  // Fetch all members from API (Kaiser + Health Net + other MCOs)
+  const onHoldMembersCount = useMemo(() => (
+    members.filter((member) => isHold(member.Hold_For_Social_Worker)).length
+  ), [members]);
+
+  const notOnHoldMembersCount = useMemo(() => (
+    members.filter((member) => !isHold(member.Hold_For_Social_Worker)).length
+  ), [members]);
+
+  const notOnHoldWithAssignedRcfeCount = useMemo(() => (
+    members.filter((member) => !isHold(member.Hold_For_Social_Worker) && hasAssignedRcfe(member)).length
+  ), [members]);
+
+  // Fetch and scope members for the SW tracker (Health Net + Authorized)
   const fetchAllMembers = async () => {
     setIsLoadingMembers(true);
     try {
@@ -498,11 +531,14 @@ export default function SocialWorkerAssignmentsPage() {
       }
       
       const allMembers = (responseData.members || []) as Member[];
-      setMembers(allMembers);
+      const healthNetAuthorizedMembers = allMembers.filter((member) => (
+        isHealthNetMember(member) && isAuthorizedMember(member)
+      ));
+      setMembers(healthNetAuthorizedMembers);
       
       toast({
         title: "Data Loaded Successfully",
-        description: `Loaded ${allMembers.length} members from Caspio cache`,
+        description: `Loaded ${healthNetAuthorizedMembers.length} Health Net authorized members from Caspio cache`,
       });
     } catch (error) {
       console.error('Error fetching all members:', error);
@@ -842,7 +878,7 @@ export default function SocialWorkerAssignmentsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Social Worker Assignments</h1>
           <p className="text-muted-foreground">
-            Manage member assignments to social workers | {members.length} total members (all MCOs)
+            Health Net authorized tracker sync | {members.length} total authorized Health Net members
           </p>
         </div>
         <Button onClick={fetchAllMembers} disabled={isLoadingMembers}>
@@ -860,16 +896,16 @@ export default function SocialWorkerAssignmentsPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Members</CardTitle>
+                <CardTitle className="text-sm font-medium">Health Net Authorized</CardTitle>
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{members.length}</div>
                 <p className="text-xs text-muted-foreground">
-                  Members in system (all MCOs)
+                  Members in sync scope
                 </p>
               </CardContent>
             </Card>
@@ -909,13 +945,26 @@ export default function SocialWorkerAssignmentsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-red-700 flex items-center gap-2">
-                  {socialWorkerStats.reduce((sum, sw) => sum + sw.onHoldCount, 0)}
-                  {socialWorkerStats.reduce((sum, sw) => sum + sw.onHoldCount, 0) > 0 && (
+                  {onHoldMembersCount}
+                  {onHoldMembersCount > 0 && (
                     <AlertTriangle className="h-5 w-5 text-red-600" />
                   )}
                 </div>
                 <p className="text-xs text-red-700">
                   Members on hold for SW visit
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-green-200 bg-green-50">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-green-800">Not On Hold</CardTitle>
+                <Play className="h-4 w-4 text-green-700" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-800">{notOnHoldMembersCount}</div>
+                <p className="text-xs text-green-800">
+                  Active members in SW portal scope ({notOnHoldWithAssignedRcfeCount} with assigned RCFE for monthly visits)
                 </p>
               </CardContent>
             </Card>
