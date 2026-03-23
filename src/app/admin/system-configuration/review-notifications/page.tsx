@@ -22,6 +22,7 @@ type RecipientSettings = {
   eligibility: boolean;
   standalone: boolean;
   alft: boolean;
+  alftReviewer?: boolean;
   label?: string;
   email?: string;
 };
@@ -163,6 +164,7 @@ export default function ReviewNotificationsPage() {
         eligibility: Boolean((existing as any).eligibility),
         standalone: Boolean((existing as any).standalone),
         alft: Boolean((existing as any).alft),
+        alftReviewer: Boolean((existing as any).alftReviewer ?? (existing as any).alft),
         email: existing.email || email,
         label: existing.label || label
       };
@@ -174,6 +176,7 @@ export default function ReviewNotificationsPage() {
       eligibility: false,
       standalone: false,
       alft: false,
+      alftReviewer: false,
       email,
       label
     };
@@ -387,12 +390,12 @@ export default function ReviewNotificationsPage() {
                         />
                       </div>
                       <div className="flex items-center gap-2">
-                        <Label className="text-xs text-muted-foreground">ALFT</Label>
+                        <Label className="text-xs text-muted-foreground">ALFT Reviewer</Label>
                         <Switch
-                          checked={r.alft}
+                          checked={Boolean(r.alftReviewer ?? r.alft)}
                           disabled={!r.enabled}
                           onCheckedChange={(checked) =>
-                            updateRecipient(person.uid, { alft: Boolean(checked) } as any, person.email, person.label)
+                            updateRecipient(person.uid, { alftReviewer: Boolean(checked), alft: Boolean(checked) } as any, person.email, person.label)
                           }
                         />
                       </div>

@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
         const allowDocs = Boolean(recipient?.documents);
         const allowEligibility = Boolean(recipient?.eligibility);
         const allowStandalone = Boolean(recipient?.standalone);
-        const allowAlft = Boolean(recipient?.alft);
+        const allowAlft = Boolean(recipient?.alftReviewer ?? recipient?.alft);
         return {
           enabled,
           pollIntervalSeconds,

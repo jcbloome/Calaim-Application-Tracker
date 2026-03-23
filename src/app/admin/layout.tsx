@@ -355,7 +355,7 @@ function AdminHeader() {
           allowCs: Boolean(recipient?.csSummary),
           allowEligibility: Boolean(recipient?.eligibility),
           allowStandalone: Boolean(recipient?.standalone),
-          allowAlft: Boolean(recipient?.alft),
+          allowAlft: Boolean(recipient?.alftReviewer ?? recipient?.alft),
           allowKaiserUploads: Boolean(recipient?.kaiserUploads ?? true),
           allowHealthNetUploads: Boolean(recipient?.healthNetUploads ?? true),
         });

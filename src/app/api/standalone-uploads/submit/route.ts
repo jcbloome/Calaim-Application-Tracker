@@ -110,6 +110,8 @@ export async function POST(request: NextRequest) {
         const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
         const recipientUids: string[] = [];
         const recipientMetaByUid = new Map<string, any>();
+        const enabledRecipients = Object.values(recipients || {}).filter((r: any) => Boolean(r?.enabled));
+        const hasAlftReviewerConfigured = enabledRecipients.some((r: any) => Boolean(r?.alftReviewer));
 
         const isAlft = String(documentType || '').trim().toLowerCase().includes('alft');
         const canNotifyType = !isAlft || alftElectronEnabled;
@@ -119,7 +121,10 @@ export async function POST(request: NextRequest) {
             const r = raw || {};
             if (!Boolean(r?.enabled)) return;
             if (isAlft) {
-              if (!Boolean(r?.alft)) return;
+              const canReceiveAlft = hasAlftReviewerConfigured
+                ? Boolean(r?.alftReviewer)
+                : Boolean(r?.alftReviewer ?? r?.alft);
+              if (!canReceiveAlft) return;
             } else {
               if (!Boolean(r?.standalone)) return;
             }

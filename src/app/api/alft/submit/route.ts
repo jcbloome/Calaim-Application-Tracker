@@ -242,16 +242,24 @@ export async function POST(request: NextRequest) {
 
       const recipientUids: string[] = [];
       const recipientMetaByUid = new Map<string, any>();
-      if (globalEnabled) {
+      const collectRecipients = (predicate: (r: any) => boolean) => {
         Object.entries(recipients).forEach(([key, raw]) => {
           const r = raw || {};
           if (!Boolean(r?.enabled)) return;
-          if (!Boolean(r?.alft)) return;
+          if (!predicate(r)) return;
           const uid = String(r?.uid || '').trim() || (!String(key).includes('@') ? String(key).trim() : '');
           if (!uid) return;
           if (!recipientUids.includes(uid)) recipientUids.push(uid);
           recipientMetaByUid.set(uid, r);
         });
+      };
+      if (globalEnabled) {
+        // New ALFT workflow: route to ALFT Reviewer first.
+        collectRecipients((r) => Boolean(r?.alftReviewer));
+        // Backward compatibility: if no reviewer is configured, fall back to legacy ALFT recipients.
+        if (recipientUids.length === 0) {
+          collectRecipients((r) => Boolean(r?.alft));
+        }
       }
 
       // Backward-compatible fallback (previous behavior) if no recipients configured.
