@@ -49,7 +49,6 @@ const getPathwayRequirements = (
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
-    { id: 'room-board-obligation', title: 'Room and Board Commitment', description: 'Complete and sign this required financial commitment form online.', type: 'online-form', icon: FileText, href: '/forms/room-board-obligation' },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
@@ -667,7 +666,6 @@ function PathwayPageContent() {
     application.healthPlan
   );
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
-  
   const completedCount = pathwayRequirements.reduce((acc, req) => {
     const form = formStatusMap.get(req.title);
     if (form?.status === 'Completed') return acc + 1;
@@ -684,7 +682,8 @@ function PathwayPageContent() {
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
-      { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc }
+      { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
+      { id: 'rb', label: 'Room & Board Commitment', completed: !!(waiverFormStatus as any)?.ackRoomAndBoard || !!(application as any)?.ackRoomAndBoard }
   ];
 
   const consolidatedMedicalDocuments = [

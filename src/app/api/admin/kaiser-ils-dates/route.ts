@@ -62,13 +62,31 @@ export async function POST(req: NextRequest) {
     const idToken = String(body?.idToken || '').trim();
     const clientId2 = String(body?.clientId2 || '').trim();
     const memberName = String(body?.memberName || '').trim() || `Client ${clientId2}`;
+    const tierLevelRaw = String(body?.tierLevel || '').trim();
+    const tierLevel = /^(1|2|3|4|5)$/.test(tierLevelRaw) ? tierLevelRaw : '';
     const tierLevelReceivedDate = normalizeDate(body?.tierLevelReceivedDate);
     const ilsContractSentDate = normalizeDate(body?.ilsContractSentDate);
 
     if (!idToken || !clientId2) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
-    if (!tierLevelReceivedDate && !ilsContractSentDate && body?.tierLevelReceivedDate !== '' && body?.ilsContractSentDate !== '') {
+    if (
+      body?.tierLevel === undefined &&
+      body?.tierLevelReceivedDate === undefined &&
+      body?.ilsContractSentDate === undefined
+    ) {
+      return NextResponse.json({ success: false, error: 'No supported fields to update' }, { status: 400 });
+    }
+
+    if (
+      body?.tierLevel !== undefined &&
+      !tierLevel &&
+      tierLevelRaw !== ''
+    ) {
+      return NextResponse.json({ success: false, error: 'Invalid tier level (expected 1-5 or empty)' }, { status: 400 });
+    }
+
+    if (!tierLevelReceivedDate && !ilsContractSentDate && !tierLevel && body?.tierLevelReceivedDate !== '' && body?.ilsContractSentDate !== '' && body?.tierLevel !== '') {
       return NextResponse.json({ success: false, error: 'No valid date updates provided' }, { status: 400 });
     }
 
@@ -76,6 +94,7 @@ export async function POST(req: NextRequest) {
     if (!authz.ok) return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
 
     const updates: Record<string, string> = {};
+    if (body?.tierLevel !== undefined) updates.Kaiser_Tier_Level = tierLevel;
     if (body?.tierLevelReceivedDate !== undefined) updates.Kaiser_Tier_Level_Received_Date = tierLevelReceivedDate;
     if (body?.ilsContractSentDate !== undefined) updates.ILS_RCFE_Sent_For_Contract_Date = ilsContractSentDate;
     if (Object.keys(updates).length === 0) {

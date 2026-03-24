@@ -180,7 +180,6 @@ function getDefaultRequiredFormNames(pathway?: string, healthPlan?: string): str
   const baseRequirements = [
     'CS Member Summary',
     'Waivers & Authorizations',
-    'Room and Board Commitment',
     'Proof of Income',
     "LIC 602A - Physician's Report",
     'Medicine List',

@@ -446,7 +446,7 @@ const getPathwayRequirements = (
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/admin/forms/review', editHref: '/admin/forms/edit', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
-    { id: 'room-board-obligation', title: 'Room and Board Commitment', description: 'Upload the signed room and board commitment form.', type: 'Upload', icon: UploadCloud, href: '/forms/room-board-obligation' },
+    { id: 'room-board-obligation', title: 'Room and Board/Tier Level Agreement', description: 'Admin-generated agreement addressed to the member/authorized representative and RCFE. Upload the fully signed copy here.', type: 'Upload', icon: UploadCloud, href: '/forms/room-board-obligation/printable' },
     { id: 'proof-of-income', title: "Proof of Income", description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
@@ -520,7 +520,7 @@ function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
 const quickStatusItems = [
   { key: 'CS Member Summary', label: 'CS' },
   { key: 'Waivers & Authorizations', label: 'Waivers' },
-  { key: 'Room and Board Commitment', label: 'R&B' },
+  { key: 'Room and Board/Tier Level Agreement', label: 'R&B/Tier' },
   { key: 'Proof of Income', label: 'POI' },
   { key: "LIC 602A - Physician's Report", label: '602' },
   { key: 'Medicine List', label: 'Meds' },
@@ -1617,6 +1617,26 @@ function ApplicationDetailPageContent() {
 
   const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
+  const [isUpdatingKaiserTierLevel, setIsUpdatingKaiserTierLevel] = useState(false);
+  const [isGeneratingRoomBoardPreview, setIsGeneratingRoomBoardPreview] = useState(false);
+  const [roomBoardPreview, setRoomBoardPreview] = useState<{
+    clientId2?: string;
+    memberName?: string;
+    mrn?: string | null;
+    authorizedRepName?: string;
+    authorizedRepEmail?: string;
+    rcfeName?: string;
+    rcfeSignerEmailDefault?: string;
+    mcoAndTier?: string;
+    tierLevel?: string;
+    assistedLivingDailyRate?: string;
+    assistedLivingMonthlyRate?: string;
+    agreedRoomBoardAmountDefault?: string;
+  } | null>(null);
+  const [roomBoardPreviewWarnings, setRoomBoardPreviewWarnings] = useState<string[]>([]);
+  const [isSendingRoomBoardInvites, setIsSendingRoomBoardInvites] = useState(false);
+  const [rcfeSignerEmailInput, setRcfeSignerEmailInput] = useState('');
+  const [agreedRoomBoardAmountInput, setAgreedRoomBoardAmountInput] = useState('');
   const [isSendingEligibilityNote, setIsSendingEligibilityNote] = useState(false);
   const [isUpdatingReminderControls, setIsUpdatingReminderControls] = useState(false);
   const [nextStepDateMissing, setNextStepDateMissing] = useState(false);
@@ -1728,6 +1748,15 @@ function ApplicationDetailPageContent() {
   const planLower = String((application as any)?.healthPlan || '').toLowerCase();
   const isKaiserPlan = planLower.includes('kaiser');
   const isHealthNetPlan = planLower.includes('health net');
+  const authorizedRepInviteEmail = useMemo(() => {
+    const candidates = [
+      String((application as any)?.repEmail || '').trim(),
+      String((application as any)?.bestContactEmail || '').trim(),
+      String((application as any)?.referrerEmail || '').trim(),
+    ];
+    return candidates.find((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) || '';
+  }, [application]);
+  const roomBoardAgreementMeta = (application as any)?.roomBoardTierAgreement || null;
 
   const kaiserCurrentStatus = String((application as any)?.kaiserStatus || kaiserSteps[0] || '').trim();
   const kaiserWorkflowOptions = useMemo(() => {
@@ -2617,6 +2646,7 @@ function ApplicationDetailPageContent() {
       'CS Summary': 'CS Summary Form',
       'Waivers & Authorizations': 'Waivers',
       'Room and Board Commitment': 'Room and Board Commitment',
+      'Room and Board/Tier Level Agreement': 'Room and Board Tier Level Agreement',
       'Proof of Income': 'Proof of Income',
       "LIC 602A - Physician's Report": 'LIC 602A',
       'Medicine List': 'Med List',
@@ -2782,7 +2812,18 @@ function ApplicationDetailPageContent() {
     standardFileName.replace(/[^\w.-]/g, '_');
 
   const getComponentStatus = (componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
-    const form = application?.forms?.find(f => f.name === componentKey);
+    const form = application?.forms?.find((f) => {
+      const name = String(f?.name || '').trim();
+      if (name === componentKey) return true;
+      // Backward compatibility with older naming in existing applications.
+      if (
+        componentKey === 'Room and Board/Tier Level Agreement' &&
+        (name === 'Room and Board/Tier Level Commitment' || name === 'Room and Board Commitment')
+      ) {
+        return true;
+      }
+      return false;
+    });
 
     if (componentKey === 'Eligibility Check') {
       return (application as any)?.calaimTrackingStatus ? 'Completed' : 'Pending';
@@ -3061,6 +3102,11 @@ function ApplicationDetailPageContent() {
   const eligibilityRequirementIds = new Set(['eligibility-screenshot']);
   const eligibilityRequirements = pathwayRequirements.filter(req => eligibilityRequirementIds.has(req.id));
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
+  if (!formStatusMap.get('Room and Board/Tier Level Agreement') && formStatusMap.get('Room and Board/Tier Level Commitment')) {
+    formStatusMap.set('Room and Board/Tier Level Agreement', formStatusMap.get('Room and Board/Tier Level Commitment') as any);
+  } else if (!formStatusMap.get('Room and Board/Tier Level Agreement') && formStatusMap.get('Room and Board Commitment')) {
+    formStatusMap.set('Room and Board/Tier Level Agreement', formStatusMap.get('Room and Board Commitment') as any);
+  }
   
   const completedCount = pathwayRequirements.reduce((acc, req) => {
     const form = formStatusMap.get(req.title);
@@ -3106,8 +3152,15 @@ function ApplicationDetailPageContent() {
   const needsUrgentAttention = application.hasLegalRep === 'no_has_rep';
 
   const completedForms = (application.forms || []).filter((form) => form.status === 'Completed');
+  const requiredPathwayFormTitles = new Set(pathwayRequirements.map((req) => req.title));
+  if (requiredPathwayFormTitles.has('Room and Board/Tier Level Agreement')) {
+    requiredPathwayFormTitles.add('Room and Board/Tier Level Commitment');
+    requiredPathwayFormTitles.add('Room and Board Commitment');
+  }
   const pendingFormAlerts = completedForms.filter((form) => {
     const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
+    const isRequiredForPathway = requiredPathwayFormTitles.has(form.name);
+    if (!isSummary && !isRequiredForPathway) return false;
     if (isSummary) {
       return !application.applicationChecked;
     }
@@ -3219,7 +3272,8 @@ function ApplicationDetailPageContent() {
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
-      { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc }
+      { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
+      { id: 'rb', label: 'Room & Board Commitment', completed: !!(waiverFormStatus as any)?.ackRoomAndBoard || !!(application as any)?.ackRoomAndBoard }
   ];
   
     const consolidatedMedicalDocuments = [
@@ -3391,6 +3445,192 @@ function ApplicationDetailPageContent() {
       });
     } finally {
       setIsUpdatingTracking(false);
+    }
+  };
+
+  const updateKaiserTierLevel = async (tierLevel: string) => {
+    if (!docRef || !application || !user || !isKaiserPlan) return;
+    const clientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
+    if (!clientId2) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing Client ID',
+        description: 'Cannot update Kaiser tier level because client_ID2 is missing.',
+      });
+      return;
+    }
+
+    setIsUpdatingKaiserTierLevel(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/admin/kaiser-ils-dates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          clientId2,
+          memberName: `${application.memberFirstName || ''} ${application.memberLastName || ''}`.trim(),
+          tierLevel: tierLevel || '',
+        }),
+      });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to update tier level (HTTP ${response.status})`);
+      }
+
+      const localUpdate = { Kaiser_Tier_Level: tierLevel || '' } as any;
+      await setDoc(docRef, localUpdate, { merge: true });
+      setApplication((prev) => (prev ? ({ ...prev, ...localUpdate } as any) : prev));
+
+      toast({
+        title: 'Kaiser tier level updated',
+        description: tierLevel ? `Set to Tier ${tierLevel}.` : 'Tier level cleared.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      console.error('Error updating Kaiser tier level:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Update failed',
+        description: error?.message || 'Could not update Kaiser tier level.',
+      });
+    } finally {
+      setIsUpdatingKaiserTierLevel(false);
+    }
+  };
+
+  const generateRoomBoardAgreementPreview = async () => {
+    if (!user || !applicationId || !application) return;
+    setIsGeneratingRoomBoardPreview(true);
+    try {
+      await ensureAdminClaim();
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/admin/room-board-agreement/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          applicationId,
+          userId: appUserId || null,
+        }),
+      });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to generate preview (HTTP ${response.status})`);
+      }
+      const preview = (data?.preview || {}) as any;
+      const warnings = Array.isArray(data?.warnings) ? data.warnings.map((w: any) => String(w || '').trim()).filter(Boolean) : [];
+      setRoomBoardPreview(preview);
+      setRoomBoardPreviewWarnings(warnings);
+      toast({
+        title: 'Preview generated',
+        description: warnings.length > 0 ? `Preview loaded with ${warnings.length} warning(s).` : 'Preview is ready for review.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      console.error('Error generating room board agreement preview:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Preview failed',
+        description: error?.message || 'Could not generate agreement preview.',
+      });
+    } finally {
+      setIsGeneratingRoomBoardPreview(false);
+    }
+  };
+
+  const sendRoomBoardAgreementInvites = async () => {
+    if (!user || !applicationId || !application) return;
+    if (!roomBoardPreview) {
+      toast({
+        variant: 'destructive',
+        title: 'Preview required',
+        description: 'Generate and review the agreement preview before sending invites.',
+      });
+      return;
+    }
+    const rcfeEmail = String(rcfeSignerEmailInput || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rcfeEmail)) {
+      toast({
+        variant: 'destructive',
+        title: 'RCFE email required',
+        description: 'Enter a valid RCFE signer email before sending invites.',
+      });
+      return;
+    }
+    const agreedAmount = String(agreedRoomBoardAmountInput || '').trim();
+    if (!agreedAmount) {
+      toast({
+        variant: 'destructive',
+        title: 'Agreed amount required',
+        description: 'Enter the agreed room and board amount before sending invites.',
+      });
+      return;
+    }
+    if (!authorizedRepInviteEmail) {
+      toast({
+        variant: 'destructive',
+        title: 'Authorized rep email missing',
+        description: 'No authorized representative email was found on this application.',
+      });
+      return;
+    }
+
+    setIsSendingRoomBoardInvites(true);
+    try {
+      await ensureAdminClaim();
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/admin/room-board-agreement/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          applicationId,
+          userId: appUserId || null,
+          rcfeSignerEmail: rcfeEmail,
+          agreedRoomBoardAmount: agreedAmount,
+        }),
+      });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to send invites (HTTP ${response.status})`);
+      }
+
+      setApplication((prev) =>
+        prev
+          ? ({
+              ...(prev as any),
+              roomBoardTierAgreement: {
+                requestId: data.requestId,
+                status: data.status || 'invited',
+                memberRepEmail: data.memberRepEmail || authorizedRepInviteEmail,
+                rcfeSignerEmail: data.rcfeSignerEmail || rcfeEmail,
+                rcfeName: data.rcfeName || null,
+                mcoAndTier: data.mcoAndTier || null,
+                tierLevel: data.tierLevel || null,
+                assistedLivingDailyRate: data.assistedLivingDailyRate || null,
+                assistedLivingMonthlyRate: data.assistedLivingMonthlyRate || null,
+                agreedRoomBoardAmount: data.agreedRoomBoardAmount || null,
+                invitedAt: new Date().toISOString(),
+              },
+            } as any)
+          : prev
+      );
+
+      toast({
+        title: 'Invites sent',
+        description: `Agreement invites sent to ${data.memberRepEmail || authorizedRepInviteEmail} and ${data.rcfeSignerEmail || rcfeEmail}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      console.error('Error sending room board agreement invites:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Invite failed',
+        description: error?.message || 'Could not generate and send agreement invites.',
+      });
+    } finally {
+      setIsSendingRoomBoardInvites(false);
     }
   };
 
@@ -3607,20 +3847,151 @@ function ApplicationDetailPageContent() {
                 </div>
             );
         case 'Upload':
+             const kaiserTierLevelValue = String((application as any)?.Kaiser_Tier_Level || (application as any)?.Tier_Level || '').trim();
+             const canEditKaiserTier = isKaiserPlan && req.id === 'room-board-obligation';
+             const isRoomBoardAgreementReq = req.id === 'room-board-obligation';
              if (formInfo?.status === 'Completed') {
+                 const hasViewableFile = Boolean(formInfo.downloadURL);
                  return (
-                    <div className="flex items-center justify-between gap-2 p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        {formInfo.downloadURL ? (
-                            <a href={formInfo.downloadURL} target="_blank" rel="noopener noreferrer" className="truncate flex-1 text-green-800 font-medium hover:underline">
-                                {formInfo?.fileName || 'Completed'}
-                            </a>
-                        ) : (
-                            <span className="truncate flex-1 text-green-800 font-medium">{formInfo?.fileName || 'Completed'}</span>
-                        )}
-                         <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo)}>
-                            <X className="h-4 w-4" />
-                            <span className="sr-only">Remove file</span>
+                    <div className="space-y-2">
+                      <div className={cn(
+                        'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
+                        hasViewableFile ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
+                      )}>
+                          {hasViewableFile ? (
+                              <a href={formInfo.downloadURL} target="_blank" rel="noopener noreferrer" className="truncate flex-1 text-green-800 font-medium hover:underline">
+                                  {formInfo?.fileName || 'Completed'}
+                              </a>
+                          ) : (
+                              <span className="truncate flex-1 text-amber-800 font-medium">
+                                No file available to view (this item was marked complete without an upload).
+                              </span>
+                          )}
+                           <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo)}>
+                              <X className="h-4 w-4" />
+                              <span className="sr-only">Remove file</span>
+                          </Button>
+                      </div>
+                      {req.href && req.href !== '#' && (
+                          <Button asChild variant="link" className="w-full text-xs h-auto py-0">
+                            <Link href={req.href} target="_blank">
+                                <Printer className="mr-1 h-3 w-3" /> Download/Print Blank Form
+                            </Link>
                         </Button>
+                      )}
+                      {isRoomBoardAgreementReq ? (
+                        <div className="space-y-2 rounded-md border p-3 bg-muted/20">
+                          <Label className="text-xs font-medium">Agreement Invite Workflow</Label>
+                          <div className="text-[11px] text-muted-foreground">
+                            Authorized rep email (auto): {authorizedRepInviteEmail || 'Not found'}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="w-full"
+                            onClick={() => void generateRoomBoardAgreementPreview()}
+                            disabled={isGeneratingRoomBoardPreview || isSendingRoomBoardInvites}
+                          >
+                            {isGeneratingRoomBoardPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                            Generate Preview
+                          </Button>
+                          {roomBoardPreview ? (
+                            <div className="rounded-md border bg-background p-2 text-[11px] space-y-0.5">
+                              <div><span className="font-medium">Member:</span> {String(roomBoardPreview.memberName || '—')}</div>
+                              <div><span className="font-medium">MRN:</span> {String(roomBoardPreview.mrn || '—')}</div>
+                              <div><span className="font-medium">RCFE Name:</span> {String(roomBoardPreview.rcfeName || '—')}</div>
+                              <div><span className="font-medium">MCO/Tier:</span> {String(roomBoardPreview.mcoAndTier || '—')}</div>
+                              <div><span className="font-medium">Assisted living:</span> {roomBoardPreview.assistedLivingMonthlyRate ? `$${roomBoardPreview.assistedLivingMonthlyRate} monthly` : '—'}{roomBoardPreview.assistedLivingDailyRate ? ` / $${roomBoardPreview.assistedLivingDailyRate} daily` : ''}</div>
+                            </div>
+                          ) : null}
+                          {roomBoardPreviewWarnings.length > 0 ? (
+                            <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 space-y-0.5">
+                              {roomBoardPreviewWarnings.map((warning, idx) => (
+                                <div key={`rb-preview-warn-complete-${idx}`}>- {warning}</div>
+                              ))}
+                            </div>
+                          ) : null}
+                          <div className="space-y-1">
+                            <Label htmlFor="room-board-rcfe-email" className="text-xs">RCFE signer email</Label>
+                            <Input
+                              id="room-board-rcfe-email"
+                              value={rcfeSignerEmailInput}
+                              onChange={(e) => setRcfeSignerEmailInput(e.target.value)}
+                              placeholder="rcfe-signer@example.com"
+                              className="h-8"
+                              disabled={isSendingRoomBoardInvites}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="room-board-agreed-amount" className="text-xs">Agreed room and board amount (manual)</Label>
+                            <Input
+                              id="room-board-agreed-amount"
+                              value={agreedRoomBoardAmountInput}
+                              onChange={(e) => setAgreedRoomBoardAmountInput(e.target.value)}
+                              placeholder="Enter amount manually"
+                              className="h-8"
+                              disabled={isSendingRoomBoardInvites}
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => void sendRoomBoardAgreementInvites()}
+                            disabled={isSendingRoomBoardInvites || !roomBoardPreview}
+                          >
+                            {isSendingRoomBoardInvites ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                            Generate + Send Invites
+                          </Button>
+                          {roomBoardAgreementMeta?.requestId ? (
+                            <div className="text-[11px] text-muted-foreground space-y-0.5">
+                              <div>Latest request: {String(roomBoardAgreementMeta.requestId)} ({String(roomBoardAgreementMeta.status || 'invited')})</div>
+                              <div>MCO/Tier: {String(roomBoardAgreementMeta.mcoAndTier || '—')}</div>
+                              <div>Assisted living: {roomBoardAgreementMeta.assistedLivingMonthlyRate ? `$${roomBoardAgreementMeta.assistedLivingMonthlyRate} monthly` : '—'}{roomBoardAgreementMeta.assistedLivingDailyRate ? ` / $${roomBoardAgreementMeta.assistedLivingDailyRate} daily` : ''}</div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {!hasViewableFile && (
+                        <>
+                          {isUploading && (
+                            <Progress value={currentProgress} className="h-1 w-full" />
+                          )}
+                          <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
+                              {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                              <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
+                          </Label>
+                          <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading} multiple={isMultiple} />
+                        </>
+                      )}
+                      {canEditKaiserTier ? (
+                        <div className="space-y-2 rounded-md border p-3 bg-muted/20">
+                          <div className="flex items-center justify-between gap-2">
+                            <Label className="text-xs font-medium">Kaiser Tier Level</Label>
+                            {isUpdatingKaiserTierLevel ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+                          </div>
+                          <Select
+                            value={kaiserTierLevelValue || 'none'}
+                            onValueChange={(value) => void updateKaiserTierLevel(value === 'none' ? '' : value)}
+                            disabled={isUpdatingKaiserTierLevel}
+                          >
+                            <SelectTrigger className="h-8">
+                              <SelectValue placeholder="Select tier level" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Not set</SelectItem>
+                              <SelectItem value="1">1</SelectItem>
+                              <SelectItem value="2">2</SelectItem>
+                              <SelectItem value="3">3</SelectItem>
+                              <SelectItem value="4">4</SelectItem>
+                              <SelectItem value="5">5</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <div className="text-[11px] text-muted-foreground">
+                            Use this once Kaiser determines the member tier level.
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                  )
              }
@@ -3647,6 +4018,79 @@ function ApplicationDetailPageContent() {
                             ))}
                         </div>
                     )}
+                    {isRoomBoardAgreementReq ? (
+                      <div className="space-y-2 rounded-md border p-3 bg-muted/20">
+                        <Label className="text-xs font-medium">Agreement Invite Workflow</Label>
+                        <div className="text-[11px] text-muted-foreground">
+                          Authorized rep email (auto): {authorizedRepInviteEmail || 'Not found'}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() => void generateRoomBoardAgreementPreview()}
+                          disabled={isGeneratingRoomBoardPreview || isSendingRoomBoardInvites}
+                        >
+                          {isGeneratingRoomBoardPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                          Generate Preview
+                        </Button>
+                        {roomBoardPreview ? (
+                          <div className="rounded-md border bg-background p-2 text-[11px] space-y-0.5">
+                            <div><span className="font-medium">Member:</span> {String(roomBoardPreview.memberName || '—')}</div>
+                            <div><span className="font-medium">MRN:</span> {String(roomBoardPreview.mrn || '—')}</div>
+                            <div><span className="font-medium">RCFE Name:</span> {String(roomBoardPreview.rcfeName || '—')}</div>
+                            <div><span className="font-medium">MCO/Tier:</span> {String(roomBoardPreview.mcoAndTier || '—')}</div>
+                            <div><span className="font-medium">Assisted living:</span> {roomBoardPreview.assistedLivingMonthlyRate ? `$${roomBoardPreview.assistedLivingMonthlyRate} monthly` : '—'}{roomBoardPreview.assistedLivingDailyRate ? ` / $${roomBoardPreview.assistedLivingDailyRate} daily` : ''}</div>
+                          </div>
+                        ) : null}
+                        {roomBoardPreviewWarnings.length > 0 ? (
+                          <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 space-y-0.5">
+                            {roomBoardPreviewWarnings.map((warning, idx) => (
+                              <div key={`rb-preview-warn-pending-${idx}`}>- {warning}</div>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="space-y-1">
+                          <Label htmlFor="room-board-rcfe-email" className="text-xs">RCFE signer email</Label>
+                          <Input
+                            id="room-board-rcfe-email"
+                            value={rcfeSignerEmailInput}
+                            onChange={(e) => setRcfeSignerEmailInput(e.target.value)}
+                            placeholder="rcfe-signer@example.com"
+                            className="h-8"
+                            disabled={isSendingRoomBoardInvites}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="room-board-agreed-amount" className="text-xs">Agreed room and board amount (manual)</Label>
+                          <Input
+                            id="room-board-agreed-amount"
+                            value={agreedRoomBoardAmountInput}
+                            onChange={(e) => setAgreedRoomBoardAmountInput(e.target.value)}
+                            placeholder="Enter amount manually"
+                            className="h-8"
+                            disabled={isSendingRoomBoardInvites}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => void sendRoomBoardAgreementInvites()}
+                          disabled={isSendingRoomBoardInvites || !roomBoardPreview}
+                        >
+                          {isSendingRoomBoardInvites ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                          Generate + Send Invites
+                        </Button>
+                        {roomBoardAgreementMeta?.requestId ? (
+                          <div className="text-[11px] text-muted-foreground space-y-0.5">
+                            <div>Latest request: {String(roomBoardAgreementMeta.requestId)} ({String(roomBoardAgreementMeta.status || 'invited')})</div>
+                            <div>MCO/Tier: {String(roomBoardAgreementMeta.mcoAndTier || '—')}</div>
+                            <div>Assisted living: {roomBoardAgreementMeta.assistedLivingMonthlyRate ? `$${roomBoardAgreementMeta.assistedLivingMonthlyRate} monthly` : '—'}{roomBoardAgreementMeta.assistedLivingDailyRate ? ` / $${roomBoardAgreementMeta.assistedLivingDailyRate} daily` : ''}</div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                         <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
@@ -3668,6 +4112,34 @@ function ApplicationDetailPageContent() {
                       >
                         Import from Standalone Uploads
                       </Button>
+                    ) : null}
+                    {canEditKaiserTier ? (
+                      <div className="space-y-2 rounded-md border p-3 bg-muted/20">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-xs font-medium">Kaiser Tier Level</Label>
+                          {isUpdatingKaiserTierLevel ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+                        </div>
+                        <Select
+                          value={kaiserTierLevelValue || 'none'}
+                          onValueChange={(value) => void updateKaiserTierLevel(value === 'none' ? '' : value)}
+                          disabled={isUpdatingKaiserTierLevel}
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue placeholder="Select tier level" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Not set</SelectItem>
+                            <SelectItem value="1">1</SelectItem>
+                            <SelectItem value="2">2</SelectItem>
+                            <SelectItem value="3">3</SelectItem>
+                            <SelectItem value="4">4</SelectItem>
+                            <SelectItem value="5">5</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <div className="text-[11px] text-muted-foreground">
+                          Use this once Kaiser determines the member tier level.
+                        </div>
+                      </div>
                     ) : null}
                 </div>
             );
@@ -4070,7 +4542,7 @@ function ApplicationDetailPageContent() {
                   : Boolean(formInfo?.acknowledged);
                 const needsReview = status === 'Completed' && !isReviewed;
                 const roomBoardAck =
-                  req.title === 'Room and Board Commitment'
+                  req.title === 'Room and Board/Tier Level Agreement'
                     ? (formInfo as any)?.ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard
                     : null;
                 
@@ -4085,7 +4557,7 @@ function ApplicationDetailPageContent() {
                                       New
                                     </Badge>
                                   )}
-                                  {req.title === 'Room and Board Commitment' && status === 'Completed' && roomBoardAck === false ? (
+                                  {req.title === 'Room and Board/Tier Level Agreement' && status === 'Completed' && roomBoardAck === false ? (
                                     <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200 text-xs">
                                       Does not agree
                                     </Badge>

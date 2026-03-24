@@ -30,7 +30,6 @@ const getPathwayRequirements = (
   const commonRequirements = [
     { title: 'CS Member Summary' },
     { title: 'Waivers & Authorizations' },
-    { title: 'Room and Board Commitment' },
     { title: 'Proof of Income' },
     { title: "LIC 602A - Physician's Report" },
     { title: 'Medicine List' },
@@ -54,7 +53,6 @@ const getMissingItems = (application: AppRecord) => {
   const pathway = application.pathway as 'SNF Transition' | 'SNF Diversion';
   const requirements = pathway ? getPathwayRequirements(pathway, application.healthPlan) : [];
   const formStatusMap = new Map(application.forms?.map((form) => [form.name, form]) || []);
-  
   return requirements
     .map((req) => req.title)
     .filter((title) => title !== 'CS Member Summary' && title !== 'CS Summary')

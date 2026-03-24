@@ -146,6 +146,20 @@ interface AlftCompletedWorkflowPayload {
     revisionFiles?: Array<{ fileName?: string; downloadURL?: string }>;
 }
 
+interface RoomBoardTierAgreementInvitePayload {
+    to: string;
+    recipientName: string;
+    recipientRoleLabel: 'Member/Authorized Representative' | 'RCFE';
+    memberName: string;
+    mrn?: string;
+    rcfeName?: string;
+    mcoAndTier?: string;
+    assistedLivingDailyRate?: string;
+    assistedLivingMonthlyRate?: string;
+    agreedRoomBoardAmount?: string;
+    signUrl: string;
+}
+
 async function getBccRecipients(): Promise<string[]> {
     try {
         const firestore = admin.firestore();
@@ -636,6 +650,65 @@ export const sendAlftCompletedWorkflowEmail = async (payload: AlftCompletedWorkf
 
     if (error) {
         console.error('Resend ALFT Completed Error:', error);
+        throw new Error(error.message);
+    }
+
+    return data;
+};
+
+export const sendRoomBoardTierAgreementInviteEmail = async (payload: RoomBoardTierAgreementInvitePayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const signUrlRaw = String(payload.signUrl || '').trim();
+    const signUrl = signUrlRaw.startsWith('http') ? signUrlRaw : `${baseUrl}${signUrlRaw.startsWith('/') ? '' : '/'}${signUrlRaw}`;
+
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const recipientName = String(payload.recipientName || '').trim() || 'Signer';
+    const role = payload.recipientRoleLabel;
+    const mrn = String(payload.mrn || '').trim();
+    const rcfeName = String(payload.rcfeName || '').trim();
+    const mcoAndTier = String(payload.mcoAndTier || '').trim();
+    const dailyRate = String(payload.assistedLivingDailyRate || '').trim();
+    const monthlyRate = String(payload.assistedLivingMonthlyRate || '').trim();
+    const agreedRoomBoardAmount = String(payload.agreedRoomBoardAmount || '').trim();
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5; max-width: 640px; margin: 0 auto;">
+        <h2 style="margin-bottom: 8px;">Room and Board/Tier Level Agreement Signature Requested</h2>
+        <p style="margin-top: 0;">Hello ${recipientName},</p>
+        <p>Please review and complete your portion of the Room and Board/Tier Level Agreement.</p>
+        <p><strong>Signer Role:</strong> ${role}</p>
+        <p><strong>Member:</strong> ${memberName}${mrn ? ` &nbsp; | &nbsp; <strong>MRN:</strong> ${mrn}` : ''}</p>
+        ${rcfeName ? `<p><strong>RCFE:</strong> ${rcfeName}</p>` : ''}
+        ${mcoAndTier ? `<p><strong>MCO and Tier:</strong> ${mcoAndTier}</p>` : ''}
+        ${(dailyRate || monthlyRate) ? `<p><strong>Assisted Living Rate:</strong> ${monthlyRate ? `$${monthlyRate} monthly` : ''}${monthlyRate && dailyRate ? ' / ' : ''}${dailyRate ? `$${dailyRate} daily` : ''}</p>` : ''}
+        ${agreedRoomBoardAmount ? `<p><strong>Agreed Room and Board Payment:</strong> $${agreedRoomBoardAmount}</p>` : ''}
+        <p style="margin: 20px 0;">
+          <a href="${signUrl}" style="background: #0f766e; color: #ffffff; text-decoration: none; padding: 10px 14px; border-radius: 6px; display: inline-block; font-weight: 600;">
+            Review and Sign Agreement
+          </a>
+        </p>
+        <p style="font-size: 12px; color: #475569;">
+          If the button does not work, copy and paste this link into your browser:<br/>
+          <a href="${signUrl}">${signUrl}</a>
+        </p>
+      </div>
+    `;
+
+    const { data, error } = await resend.emails.send({
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `Room and Board/Tier Level Agreement Signature Request — ${memberName}`,
+        html,
+    });
+
+    if (error) {
+        console.error('Resend RoomBoard Invite Error:', error);
         throw new Error(error.message);
     }
 

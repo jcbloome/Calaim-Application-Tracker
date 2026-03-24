@@ -11,7 +11,7 @@ export type TrackedComponent = { key: string; abbreviation: string };
 export const TRACKED_COMPONENTS: TrackedComponent[] = [
   { key: 'CS Member Summary', abbreviation: 'CS' },
   { key: 'Waivers & Authorizations', abbreviation: 'Waivers' },
-  { key: 'Room and Board Commitment', abbreviation: 'R&B' },
+  { key: 'Room and Board/Tier Level Agreement', abbreviation: 'R&B/Tier' },
   { key: 'Proof of Income', abbreviation: 'POI' },
   { key: "LIC 602A - Physician's Report", abbreviation: '602' },
   { key: 'Medicine List', abbreviation: 'Meds' },
@@ -27,7 +27,18 @@ export function getComponentStatus(
   componentKey: string
 ): ComponentStatus {
   const forms = (app as any)?.forms as any[] | undefined;
-  const form = forms?.find((f) => f?.name === componentKey);
+  const form = forms?.find((f) => {
+    const name = String(f?.name || '').trim();
+    if (name === componentKey) return true;
+    // Backward compatibility with legacy naming.
+    if (
+      componentKey === 'Room and Board/Tier Level Agreement' &&
+      (name === 'Room and Board/Tier Level Commitment' || name === 'Room and Board Commitment')
+    ) {
+      return true;
+    }
+    return false;
+  });
 
   if (componentKey === 'Eligibility Check') {
     return (app as any)?.calaimTrackingStatus ? 'Completed' : 'Pending';

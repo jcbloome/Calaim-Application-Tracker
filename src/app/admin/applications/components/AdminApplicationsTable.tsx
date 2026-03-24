@@ -193,7 +193,14 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
 
     const roomBoardAgreementLabel = (() => {
         const forms = (application as any)?.forms || [];
-        const form = forms.find((f: any) => f?.name === 'Room and Board Commitment');
+        const form = forms.find((f: any) => {
+          const name = String(f?.name || '').trim();
+          return (
+            name === 'Room and Board/Tier Level Agreement' ||
+            name === 'Room and Board/Tier Level Commitment' ||
+            name === 'Room and Board Commitment'
+          );
+        });
         const ack = form?.ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard;
         if (ack === true) return 'Agrees';
         if (ack === false) return 'Does not agree';

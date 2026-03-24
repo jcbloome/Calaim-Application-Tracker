@@ -17,6 +17,10 @@ import { useFirestore, useMemoFirebase, useUser, useDoc } from '@/firebase';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import type { Application, FormStatus } from '@/lib/definitions';
 
+const ROOM_BOARD_FORM_TITLE = 'Room and Board/Tier Level Agreement';
+const INTERIM_ROOM_BOARD_FORM_TITLE = 'Room and Board/Tier Level Commitment';
+const LEGACY_ROOM_BOARD_FORM_TITLE = 'Room and Board Commitment';
+
 function RoomBoardObligationContent() {
   const { toast } = useToast();
   const router = useRouter();
@@ -42,7 +46,14 @@ function RoomBoardObligationContent() {
 
   useEffect(() => {
     if (application) {
-      const form = application.forms?.find(f => f.name === 'Room and Board Commitment');
+      const form = application.forms?.find((f) => {
+        const name = String(f?.name || '').trim();
+        return (
+          name === ROOM_BOARD_FORM_TITLE ||
+          name === INTERIM_ROOM_BOARD_FORM_TITLE ||
+          name === LEGACY_ROOM_BOARD_FORM_TITLE
+        );
+      });
       if (form?.status === 'Completed') {
         setSignerType(form.signerType || null);
         setSignerName(form.signerName || '');
@@ -91,7 +102,14 @@ function RoomBoardObligationContent() {
     setIsSubmitting(true);
 
     const existingForms = application?.forms || [];
-    const formIndex = existingForms.findIndex(form => form.name === 'Room and Board Commitment');
+    const formIndex = existingForms.findIndex((form) => {
+      const name = String(form?.name || '').trim();
+      return (
+        name === ROOM_BOARD_FORM_TITLE ||
+        name === INTERIM_ROOM_BOARD_FORM_TITLE ||
+        name === LEGACY_ROOM_BOARD_FORM_TITLE
+      );
+    });
     const ackRoomAndBoard = roomBoardAgreement === 'agree';
 
     const newFormData: Partial<FormStatus> = {
@@ -109,13 +127,13 @@ function RoomBoardObligationContent() {
     if (formIndex > -1) {
       updatedForms = [
         ...existingForms.slice(0, formIndex),
-        { ...existingForms[formIndex], ...newFormData } as FormStatus,
+        { ...existingForms[formIndex], name: ROOM_BOARD_FORM_TITLE, ...newFormData } as FormStatus,
         ...existingForms.slice(formIndex + 1),
       ];
     } else {
       updatedForms = [
         ...existingForms,
-        { name: 'Room and Board Commitment', type: 'online-form', href: '/forms/room-board-obligation', ...newFormData } as FormStatus,
+        { name: ROOM_BOARD_FORM_TITLE, type: 'online-form', href: '/forms/room-board-obligation', ...newFormData } as FormStatus,
       ];
     }
 
@@ -130,7 +148,7 @@ function RoomBoardObligationContent() {
         { merge: true }
       );
       toast({
-        title: 'Room and Board Commitment Completed',
+        title: 'Room and Board/Tier Level Agreement Completed',
         description: 'Your acknowledgment has been recorded.',
         className: 'bg-green-100 text-green-900 border-green-200',
       });
@@ -139,7 +157,7 @@ function RoomBoardObligationContent() {
       toast({
         variant: 'destructive',
         title: 'Submission Error',
-        description: error.message || 'Could not save your Room and Board Commitment.',
+        description: error.message || 'Could not save your Room and Board/Tier Level Agreement.',
       });
     } finally {
       setIsSubmitting(false);
@@ -181,7 +199,7 @@ function RoomBoardObligationContent() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-2xl">Room and Board Commitment</CardTitle>
+              <CardTitle className="text-2xl">Room and Board/Tier Level Agreement</CardTitle>
               <CardDescription>Please review and complete this financial commitment form.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
