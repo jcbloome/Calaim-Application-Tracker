@@ -11,13 +11,13 @@ export type TrackedComponent = { key: string; abbreviation: string };
 export const TRACKED_COMPONENTS: TrackedComponent[] = [
   { key: 'CS Member Summary', abbreviation: 'CS' },
   { key: 'Waivers & Authorizations', abbreviation: 'Waivers' },
-  { key: 'Room and Board/Tier Level Agreement', abbreviation: 'R&B/Tier' },
   { key: 'Proof of Income', abbreviation: 'POI' },
   { key: "LIC 602A - Physician's Report", abbreviation: '602' },
   { key: 'Medicine List', abbreviation: 'Meds' },
   { key: 'SNF Facesheet', abbreviation: 'SNF' },
   { key: 'Eligibility Check', abbreviation: 'Elig' },
   { key: 'Sent to Caspio', abbreviation: 'Caspio' },
+  { key: 'Room and Board/Tier Level Agreement', abbreviation: 'R&B/Tier' },
 ];
 
 export type ComponentStatus = 'Completed' | 'Pending' | 'Not Applicable';

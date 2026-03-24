@@ -665,6 +665,15 @@ function PathwayPageContent() {
     application.pathway as 'SNF Transition' | 'SNF Diversion',
     application.healthPlan
   );
+  const orderedPathwayRequirements = (() => {
+    const items = [...pathwayRequirements];
+    const roomBoardIdx = items.findIndex((req) => req.id === 'room-board-obligation');
+    if (roomBoardIdx > -1) {
+      const [roomBoard] = items.splice(roomBoardIdx, 1);
+      items.push(roomBoard);
+    }
+    return items;
+  })();
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
   const completedCount = pathwayRequirements.reduce((acc, req) => {
     const form = formStatusMap.get(req.title);
@@ -820,6 +829,9 @@ function PathwayPageContent() {
   const isConsolidatedUploading = uploading['consolidated-medical-upload'];
   const consolidatedProgress = uploadProgress['consolidated-medical-upload'];
   const isAnyConsolidatedChecked = Object.values(consolidatedUploadChecks).some(v => v);
+  const userPrimaryCardsCount =
+    orderedPathwayRequirements.length + (!isReadOnly && consolidatedMedicalDocuments.length > 0 ? 1 : 0);
+  const showUserPlaceholderCard = userPrimaryCardsCount % 2 === 1;
 
   return (
     <>
@@ -867,7 +879,7 @@ function PathwayPageContent() {
                         <span>{completedCount} of {totalCount} completed</span>
                     </div>
                     <div className="space-y-2 rounded-md border p-3">
-                        {pathwayRequirements.map((req) => {
+                        {orderedPathwayRequirements.map((req) => {
                             const formInfo = formStatusMap.get(req.title);
                             const isCompleted = formInfo?.status === 'Completed';
                             return (
@@ -900,7 +912,7 @@ function PathwayPageContent() {
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {pathwayRequirements.map((req) => {
+                {orderedPathwayRequirements.map((req) => {
                     const formInfo = formStatusMap.get(req.title);
                     const status = formInfo?.status || 'Pending';
                     
@@ -921,7 +933,7 @@ function PathwayPageContent() {
                 })}
 
                 {!isReadOnly && consolidatedMedicalDocuments.length > 0 && (
-                    <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow md:col-span-2">
+                    <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
                         <CardHeader className="pb-4">
                             <div className="flex justify-between items-start gap-4">
                                 <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-muted-foreground"/>Consolidated Medical Documents (Optional)</CardTitle>
@@ -955,6 +967,14 @@ function PathwayPageContent() {
                             </Label>
                             <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly || !isAnyConsolidatedChecked} multiple />
                         </CardContent>
+                    </Card>
+                )}
+                {showUserPlaceholderCard && (
+                    <Card
+                      aria-hidden="true"
+                      className="hidden md:flex border-dashed border-muted-foreground/20 bg-transparent shadow-none pointer-events-none"
+                    >
+                      <CardContent className="h-full min-h-[120px]" />
                     </Card>
                 )}
             </div>
