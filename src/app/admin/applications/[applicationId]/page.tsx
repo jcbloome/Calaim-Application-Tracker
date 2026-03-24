@@ -473,9 +473,21 @@ const getPathwayRequirements = (
       : commonRequirements;
   
   if (pathway === 'SNF Diversion') {
+    const isHealthNet = normalizedHealthPlan === 'Health Net';
     return [
       ...filteredCommonRequirements,
-      { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: 'Download the form, have it signed by a PCP, and upload it here.', type: 'Upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
+      ...(isHealthNet
+        ? [
+            {
+              id: 'declaration-of-eligibility',
+              title: 'Declaration of Eligibility',
+              description: 'Download the form, have it signed by a PCP, and upload it here.',
+              type: 'Upload',
+              icon: Printer,
+              href: '/forms/declaration-of-eligibility/printable',
+            },
+          ]
+        : []),
     ];
   }
   
@@ -3046,7 +3058,7 @@ function ApplicationDetailPageContent() {
     application.pathway as 'SNF Transition' | 'SNF Diversion',
     application.healthPlan
   );
-  const eligibilityRequirementIds = new Set(['eligibility-screenshot', 'declaration-of-eligibility']);
+  const eligibilityRequirementIds = new Set(['eligibility-screenshot']);
   const eligibilityRequirements = pathwayRequirements.filter(req => eligibilityRequirementIds.has(req.id));
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
   
@@ -3640,21 +3652,23 @@ function ApplicationDetailPageContent() {
                         <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading} multiple={isMultiple} />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        setIntakeRequirementTitle(req.title);
-                        setIntakeImportOpen(true);
-                        setIntakeSelectedFileKey('');
-                        setIntakeSearch('');
-                        void loadMemberStandaloneIntakes();
-                      }}
-                      disabled={isUploading || !firestore}
-                    >
-                      Import from Standalone Uploads
-                    </Button>
+                    {req.id !== 'eligibility-screenshot' ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          setIntakeRequirementTitle(req.title);
+                          setIntakeImportOpen(true);
+                          setIntakeSelectedFileKey('');
+                          setIntakeSearch('');
+                          void loadMemberStandaloneIntakes();
+                        }}
+                        disabled={isUploading || !firestore}
+                      >
+                        Import from Standalone Uploads
+                      </Button>
+                    ) : null}
                 </div>
             );
         default:
