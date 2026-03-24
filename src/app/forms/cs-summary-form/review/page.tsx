@@ -219,7 +219,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
 
     const backLink = isAdminView 
       ? `/admin/applications/${applicationId}?userId=${appUserId}`
-      : `/forms/cs-summary-form?applicationId=${applicationId}&step=4`;
+      : `/forms/cs-summary-form?applicationId=${applicationId}&step=5`;
 
     const alftPrefillParams = new URLSearchParams({
       memberFirstName: String(application.memberFirstName || ''),
@@ -340,7 +340,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                         
                         <Separator />
 
-                        <Section title="ISP &amp; RCFE Information" editLink={getEditLink(4)} isReadOnly={isReadOnly}>
+                        <Section title="ISP &amp; RCFE Information" editLink={getEditLink(5)} isReadOnly={isReadOnly}>
                             <Field label="ISP Contact Name" value={`${application.ispFirstName} ${application.ispLastName}`} />
                             <Field label="ISP Contact Phone" value={application.ispPhone} />
                             <Field

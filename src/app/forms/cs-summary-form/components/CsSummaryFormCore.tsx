@@ -16,6 +16,7 @@ import Step1 from './Step1';
 import Step2 from './Step2';
 import Step3 from './Step3';
 import Step4 from './Step4';
+import Step5 from './Step5';
 import { formSchema, type FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { Application } from '@/lib/definitions';
@@ -33,13 +34,13 @@ const steps = [
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentLocationName', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'customaryLocationType', 'customaryLocationName', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
-  { id: 4, name: 'ISP & Facility Selection', fields: [
-      'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail', 
+  { id: 4, name: 'NMOHC, SOC, Room & Board', fields: ['ackRoomAndBoard'] },
+  { id: 5, name: 'ISP, ALW, RCFE Selection', fields: [
+      'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail',
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip',
-      'onALWWaitlist', 'hasPrefRCFE', 
+      'onALWWaitlist', 'hasPrefRCFE',
       'rcfeName', 'rcfeAddress', 'rcfePreferredCities',
-      'rcfeAdminFirstName', 'rcfeAdminLastName', 'rcfeAdminPhone', 'rcfeAdminEmail',
-      'ackRoomAndBoard'
+      'rcfeAdminFirstName', 'rcfeAdminLastName', 'rcfeAdminPhone', 'rcfeAdminEmail'
   ]},
 ];
 
@@ -548,6 +549,7 @@ function CsSummaryFormComponent() {
               {currentStep === 2 && <Step2 />}
               {currentStep === 3 && <Step3 />}
               {currentStep === 4 && <Step4 />}
+              {currentStep === 5 && <Step5 />}
             </div>
 
             <div className="mt-8 pt-5 border-t">

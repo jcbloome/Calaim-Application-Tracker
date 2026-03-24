@@ -493,8 +493,9 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         </div>
       </PrintableFormSection>
 
+      <div className="flex flex-col">
       {/* ISP & Facility Information */}
-      <PrintableFormSection title="Section 8: Individual Service Plan (ISP)">
+      <PrintableFormSection title="Section 11: Individual Service Plan (ISP)" className="order-4">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
           <p>
             An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's
@@ -541,13 +542,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           value={data.ispEmail}
           width="half"
         />
-        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
-          <p className="font-semibold">ISP Assessment Location</p>
-          <p>
-            The street address for the ISP assessment is only required for Kaiser members (which requires an in-person visit).
-            For Health Net members, please put N/A in the below boxes.
-          </p>
-        </div>
+        <div className="col-span-full text-sm font-semibold">ISP Assessment Location</div>
         <PrintableField
           label="ISP Assessment Location Type"
           value={data.ispLocationType}
@@ -598,7 +593,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       </PrintableFormSection>
 
       {/* CalAIM vs. ALW */}
-      <PrintableFormSection title="Section 9: CalAIM vs. Assisted Living Waiver (ALW)">
+      <PrintableFormSection title="Section 12: CalAIM vs. Assisted Living Waiver (ALW)" className="order-5">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
           CalAIM and ALW are duplicative services, a member enrolled in one will not be funded by the other.
         </div>
@@ -611,36 +606,8 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         />
       </PrintableFormSection>
 
-      {/* NMOHC + Room & Board */}
-      <PrintableFormSection title="Section 10: Non-Medical Out-of-Home Care (NMOHC) and Room & Board Payments">
-        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
-          <p>
-            Non-Medical Out-of-Home Care (NMOHC) is a payment supplement that boosts a person’s monthly SSI check
-            because they live in a licensed assisted living home rather than an apartment or house.
-          </p>
-          <p>
-            In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state
-            recognizes that costs are much higher than someone living independently. To help cover this, the
-            person moves from the "Independent Living" rate to the "NMOHC" rate.
-          </p>
-          <div>
-            <p className="font-semibold">1. Confirm Financial Eligibility (The "Paper" Test)</p>
-            <p>Since NMOHC is part of the SSI program, you can verify the financial requirements now.</p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
-              <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
-              <li>Note: One car and the primary home are usually excluded from this limit.</li>
-            </ul>
-          </div>
-          <div>
-            <p className="font-semibold">2. Verification with Social Security (The "Pre-Move" Call)</p>
-            <p>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Tell them the person plans to move into a licensed RCFE.</li>
-              <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
-            </ul>
-          </div>
-        </div>
+      {/* Room & Board */}
+      <PrintableFormSection title="Section 10: Room & Board Payments" className="order-3 print:break-before-page">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
           <p>
             The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible
@@ -678,8 +645,40 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         />
       </PrintableFormSection>
 
+      {/* NMOHC */}
+      <PrintableFormSection title="Section 8: Non-Medical Out-of-Home Care (NMOHC)" className="order-1 print:break-before-page">
+        <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
+          <p>
+            Non-Medical Out-of-Home Care (NMOHC) is a payment supplement that boosts a person’s monthly SSI check
+            because they live in a licensed assisted living home rather than an apartment or house.
+          </p>
+          <p>
+            In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state
+            recognizes that costs are much higher than someone living independently. To help cover this, the
+            person moves from the "Independent Living" rate to the "NMOHC" rate.
+          </p>
+          <div>
+            <p className="font-semibold">1. Confirm Financial Eligibility (The "Paper" Test)</p>
+            <p>Since NMOHC is part of the SSI program, you can verify the financial requirements now.</p>
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
+              <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
+              <li>Note: One car and the primary home are usually excluded from this limit.</li>
+            </ul>
+          </div>
+          <div>
+            <p className="font-semibold">2. Verification with Social Security (The "Pre-Move" Call)</p>
+            <p>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</p>
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              <li>Tell them the person plans to move into a licensed RCFE.</li>
+              <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
+            </ul>
+          </div>
+        </div>
+      </PrintableFormSection>
+
       {/* SOC */}
-      <PrintableFormSection title="Section 11: Share of Cost (SOC)">
+      <PrintableFormSection title="Section 9: Share of Cost (SOC)" className="order-2 print:break-before-page">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
           <p>
             Share of Cost (SOC) is like a monthly Medi-Cal deductible: the amount a member may need to pay each month
@@ -707,7 +706,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       </PrintableFormSection>
 
       {/* Preferred RCFE */}
-      <PrintableFormSection title="Section 12: Preferred Residential Care Facility (RCFE)">
+      <PrintableFormSection title="Section 13: Preferred Residential Care Facility (RCFE)" className="order-6">
         <PrintableField
           label="Has Preferred RCFE"
           value={data.hasPrefRCFE ? 'Yes' : 'No'}
@@ -757,6 +756,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           width="half"
         />
       </PrintableFormSection>
+      </div>
 
     </PrintableFormLayout>
   );

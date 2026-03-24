@@ -253,7 +253,6 @@ export function PrintableCsSummaryFormContent() {
                     </div>
                     
                     <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>
-                    <p className="text-xs text-gray-600 my-2">The street address for the ISP assessment is only required for Kaiser members (which requires an in-person visit). For Health Net members, please put N/A in the below boxes.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                         <Field label="Type of Location" />
                         <Field label="Facility Name" />
