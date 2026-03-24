@@ -70,6 +70,7 @@ export const getStatusColor = (status: string): string => {
     'Pending': 'bg-yellow-50 text-yellow-700 border-yellow-200',
     'On-Hold': 'bg-orange-50 text-orange-700 border-orange-200',
     'Non-active': 'bg-gray-50 text-gray-700 border-gray-200',
+    'Case Closed': 'bg-slate-100 text-slate-800 border-slate-300',
     'Denied': 'bg-red-50 text-red-700 border-red-200',
     'Expired': 'bg-red-50 text-red-700 border-red-200',
     'T2038 Requested': 'bg-purple-50 text-purple-700 border-purple-200',

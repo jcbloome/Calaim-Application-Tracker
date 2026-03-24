@@ -59,14 +59,18 @@ export function KaiserStaffAssignments({
           >
             {allStaff.map((staffName) => {
               const assignment = staffAssignments[staffName];
+              const isUnassigned = staffName === 'Unassigned';
+              const isCaseClosed = staffName === 'Case Closed';
               return (
                 <div key={`summary-${staffName}`} className="text-center">
                   <button
                     onClick={() => assignment.count > 0 && openStaffMemberModal(staffName, assignment.members)}
                     className={`block w-full p-3 rounded-lg border transition-all ${
                       assignment.count > 0
-                        ? staffName === 'Unassigned'
+                        ? isUnassigned
                           ? 'bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 cursor-pointer shadow-sm hover:shadow-md'
+                          : isCaseClosed
+                            ? 'bg-white hover:bg-slate-50 border-slate-300 hover:border-slate-400 cursor-pointer shadow-sm hover:shadow-md'
                           : 'bg-white hover:bg-blue-50 border-blue-200 hover:border-blue-300 cursor-pointer shadow-sm hover:shadow-md'
                         : 'bg-gray-50 border-gray-200 cursor-default'
                     }`}
@@ -74,7 +78,7 @@ export function KaiserStaffAssignments({
                   >
                     <div
                       className={`font-semibold text-sm mb-1 ${
-                        staffName === 'Unassigned' ? 'text-gray-700' : 'text-gray-900'
+                        isUnassigned ? 'text-gray-700' : isCaseClosed ? 'text-slate-700' : 'text-gray-900'
                       }`}
                     >
                       {staffName}
@@ -82,8 +86,10 @@ export function KaiserStaffAssignments({
                     <div
                       className={`text-2xl font-bold ${
                         assignment.count > 0
-                          ? staffName === 'Unassigned'
+                          ? isUnassigned
                             ? 'text-gray-600'
+                            : isCaseClosed
+                              ? 'text-slate-700'
                             : 'text-blue-600'
                           : 'text-gray-400'
                       }`}
@@ -115,14 +121,18 @@ export function KaiserStaffAssignments({
       >
         {allStaff.map((staffName) => {
           const assignment = staffAssignments[staffName];
+          const isUnassigned = staffName === 'Unassigned';
+          const isCaseClosed = staffName === 'Case Closed';
           return (
             <Card
               key={`staff-status-${staffName}`}
-              className={`bg-white border-l-4 shadow ${staffName === 'Unassigned' ? 'border-l-gray-400' : 'border-l-orange-500'}`}
+              className={`bg-white border-l-4 shadow ${
+                isUnassigned ? 'border-l-gray-400' : isCaseClosed ? 'border-l-slate-500' : 'border-l-orange-500'
+              }`}
             >
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <CheckCircle className={`h-4 w-4 ${staffName === 'Unassigned' ? 'text-gray-500' : 'text-orange-600'}`} />
+                  <CheckCircle className={`h-4 w-4 ${isUnassigned ? 'text-gray-500' : isCaseClosed ? 'text-slate-600' : 'text-orange-600'}`} />
                   {staffName} - Status
                 </CardTitle>
               </CardHeader>

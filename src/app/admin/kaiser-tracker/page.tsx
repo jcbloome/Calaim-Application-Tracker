@@ -63,6 +63,7 @@ const getStatusIcon = (status: string) => {
     'Pending': <Clock className="h-3 w-3" />,
     'On-Hold': <Pause className="h-3 w-3" />,
     'Non-active': <XCircle className="h-3 w-3" />,
+    'Case Closed': <XCircle className="h-3 w-3" />,
     'Denied': <XCircle className="h-3 w-3" />,
     'Expired': <AlertTriangle className="h-3 w-3" />,
     'T2038 Requested': <FileText className="h-3 w-3" />,
@@ -143,6 +144,15 @@ const normalizeStatusText = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+const isCaseClosedStatus = (value: string) => {
+  const normalized = normalizeStatusText(normalizeKaiserStatusName(value));
+  return normalized === 'case closed' || normalized === 'case close';
+};
+const ensureCaseClosedStatusOption = (statuses: string[]): string[] => {
+  const hasCaseClosed = statuses.some((status) => isCaseClosedStatus(status));
+  if (hasCaseClosed) return statuses;
+  return [...statuses, 'Case Closed'];
+};
 
 const CALAIM_STATUS_OPTIONS = [
   'Authorized',
@@ -188,6 +198,10 @@ const toCanonicalCalaimStatus = (value: unknown) => {
   const raw = String(value ?? '').trim();
   if (!raw) return 'No Status';
   return CALAIM_STATUS_ALIASES[normalizeCalaimStatus(raw)] || raw;
+};
+const isAuthorizedOrPendingCalaim = (value: unknown) => {
+  const canonical = toCanonicalCalaimStatus(value);
+  return canonical === 'Authorized' || canonical === 'Pending';
 };
 
 const toDateValue = (value: any): Date | null => {
@@ -321,6 +335,9 @@ function KaiserTrackerPageContent() {
       value ? String(value) : fallback;
 
     members.forEach(member => {
+      // Staff cards only include members with CalAIM Authorized or Pending.
+      if (!isAuthorizedOrPendingCalaim(member?.CalAIM_Status)) return;
+
       // Use normalized staff so numeric IDs (107, 224, 33, 48) count as Unassigned
       const staffName = normalizeStaffForSummary(getStaffAssignmentValue(member));
       
@@ -481,7 +498,7 @@ function KaiserTrackerPageContent() {
     setStatusListLoading(true);
     try {
       if (!auth?.currentUser) {
-        setKaiserStatusOptions([...FALLBACK_KAISER_STATUS_ORDER]);
+        setKaiserStatusOptions(ensureCaseClosedStatusOption([...FALLBACK_KAISER_STATUS_ORDER]));
         setKaiserStatusListUpdatedAtLabel('Using built-in status list (not signed in)');
         return;
       }
@@ -503,7 +520,8 @@ function KaiserTrackerPageContent() {
         .filter(Boolean)
         .map((s: string) => normalizeKaiserStatusName(s));
       const unique = Array.from(new Set(options));
-      setKaiserStatusOptions(unique.length > 0 ? unique : [...FALLBACK_KAISER_STATUS_ORDER]);
+      const next = unique.length > 0 ? unique : [...FALLBACK_KAISER_STATUS_ORDER];
+      setKaiserStatusOptions(ensureCaseClosedStatusOption(next));
 
       const updatedAt = String((data as any)?.updatedAt || '').trim();
       const byEmail = String((data as any)?.updatedByEmail || '').trim();
@@ -514,7 +532,7 @@ function KaiserTrackerPageContent() {
       );
     } catch (e: any) {
       console.error('Failed to load Kaiser status list:', e);
-      setKaiserStatusOptions([...FALLBACK_KAISER_STATUS_ORDER]);
+      setKaiserStatusOptions(ensureCaseClosedStatusOption([...FALLBACK_KAISER_STATUS_ORDER]));
       setKaiserStatusListUpdatedAtLabel('Using built-in status list (load failed)');
     } finally {
       setStatusListLoading(false);
@@ -544,7 +562,8 @@ function KaiserTrackerPageContent() {
         .filter(Boolean)
         .map((s: string) => normalizeKaiserStatusName(s));
       const unique = Array.from(new Set(options));
-      setKaiserStatusOptions(unique.length > 0 ? unique : [...FALLBACK_KAISER_STATUS_ORDER]);
+      const next = unique.length > 0 ? unique : [...FALLBACK_KAISER_STATUS_ORDER];
+      setKaiserStatusOptions(ensureCaseClosedStatusOption(next));
 
       if (!opts?.quiet) {
         toast({
@@ -843,7 +862,16 @@ function KaiserTrackerPageContent() {
   }, [kaiserStatusOptions, members]);
   const availableCounties = [...new Set(members.map(m => m.memberCounty).filter(Boolean))];
   const availableCalAIMStatuses = CALAIM_STATUS_OPTIONS;
-  const staffMembers = [...new Set(members.map(m => getStaffAssignmentValue(m)).filter(Boolean).map(String))];
+  const staffMembers = [
+    ...new Set(
+      members
+        .filter((m) => isAuthorizedOrPendingCalaim(m?.CalAIM_Status))
+        .map((m) => getStaffAssignmentValue(m))
+        .filter(Boolean)
+        .map(String)
+        .filter((name) => !isCaseClosedStatus(name))
+    ),
+  ];
 
   // Load data on component mount
   useEffect(() => {
