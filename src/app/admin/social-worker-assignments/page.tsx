@@ -1076,7 +1076,13 @@ export default function SocialWorkerAssignmentsPage() {
 
           {/* Social Worker Summary Cards */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {socialWorkerStats.map((sw) => (
+            {socialWorkerStats.map((sw) => {
+              const portalMonthlyVisitCount = sw.healthNetMembers.filter(
+                (member) => !isHold(member.Hold_For_Social_Worker) && hasAssignedRcfe(member)
+              ).length;
+              const portalCountMatchesTracker = portalMonthlyVisitCount === sw.monthlyVisitEligibleCount;
+
+              return (
               <Card key={sw.name} className={sw.name === 'Unassigned' ? 'border-yellow-200 bg-yellow-50' : ''}>
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center justify-between">
@@ -1132,11 +1138,27 @@ export default function SocialWorkerAssignmentsPage() {
                       <Badge variant="outline">On Hold (excluded from SW portal): {sw.onHoldCount}</Badge>
                       <Badge variant="outline">Not On Hold: {sw.notOnHoldCount}</Badge>
                       <Badge>Monthly Visits: {sw.monthlyVisitEligibleCount}</Badge>
+                      <Badge variant={portalCountMatchesTracker ? 'default' : 'destructive'}>
+                        {portalCountMatchesTracker ? (
+                          <span className="inline-flex items-center gap-1">
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            Match
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            Mismatch
+                          </span>
+                        )}
+                      </Badge>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                      SW portal check (Health Net + Authorized + At RCFE + Not On Hold): tracker {sw.monthlyVisitEligibleCount} vs portal {portalMonthlyVisitCount}
+                    </p>
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            )})}
             {!isLoadingMembers && socialWorkerStats.length === 0 && (
               <Card className="border-dashed">
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">

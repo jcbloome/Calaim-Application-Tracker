@@ -14,6 +14,7 @@ import { Loader2, CheckCircle2, XCircle, Circle, Filter, Calendar, User, Search 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAdmin } from '@/hooks/use-admin';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { format } from 'date-fns';
@@ -28,7 +29,13 @@ const trackedComponents = [
   { key: 'SNF Facesheet', abbreviation: 'SNF' },
   { key: 'Eligibility Check', abbreviation: 'Elig' },
   { key: 'Sent to Caspio', abbreviation: 'Caspio' },
+  { key: 'Room and Board/Tier Level Agreement', abbreviation: 'R&B/Tier' },
 ];
+
+const reminderIndicatorColumns = [
+  { key: 'missing-doc-reminders', abbreviation: 'DocRem', label: 'Missing Doc Reminders Active' },
+  { key: 'status-reminders', abbreviation: 'StatRem', label: 'Status Reminders Active' },
+] as const;
 
 const missingDocsComponents = trackedComponents.filter(
   (component) =>
@@ -62,7 +69,17 @@ const StatusIndicator = ({ status, formName }: { status: 'Completed' | 'Pending'
 };
 
 const getComponentStatus = (app: Application, componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
-    const form = app.forms?.find(f => f.name === componentKey);
+    const form = app.forms?.find((f: any) => {
+      const name = String(f?.name || '').trim();
+      if (name === componentKey) return true;
+      if (
+        componentKey === 'Room and Board/Tier Level Agreement' &&
+        (name === 'Room and Board/Tier Level Commitment' || name === 'Room and Board Commitment')
+      ) {
+        return true;
+      }
+      return false;
+    });
 
     if (componentKey === 'Eligibility Check') {
         return (app as any)?.calaimTrackingStatus ? 'Completed' : 'Pending';
@@ -84,6 +101,16 @@ const getComponentStatus = (app: Application, componentKey: string): 'Completed'
     return 'Pending';
 };
 
+const getReminderIndicatorStatus = (
+  app: Application,
+  key: typeof reminderIndicatorColumns[number]['key']
+): 'Completed' | 'Pending' => {
+  if (key === 'missing-doc-reminders') {
+    return (app as any)?.emailRemindersEnabled === true ? 'Completed' : 'Pending';
+  }
+  return (app as any)?.statusRemindersEnabled === true ? 'Completed' : 'Pending';
+};
+
 
 function ProgressTrackerPageClient() {
   const firestore = useFirestore();
@@ -92,6 +119,8 @@ function ProgressTrackerPageClient() {
   const [filters, setFilters] = useState<string[]>([]);
   const [showMissingOnly, setShowMissingOnly] = useState(false);
   const [lastNameSearch, setLastNameSearch] = useState('');
+  const [missingDocReminderFilter, setMissingDocReminderFilter] = useState<'all' | 'on' | 'off'>('all');
+  const [statusReminderFilter, setStatusReminderFilter] = useState<'all' | 'on' | 'off'>('all');
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [trackers, setTrackers] = useState<Map<string, StaffTracker>>(new Map());
@@ -200,14 +229,26 @@ function ProgressTrackerPageClient() {
           return filters.every(filterKey => getComponentStatus(app, filterKey) === 'Pending');
         });
 
-    const searchTerm = lastNameSearch.trim().toLowerCase();
-    if (!searchTerm) return componentFiltered;
+    const reminderFiltered = componentFiltered.filter((app) => {
+      const matchesMissingDocReminder =
+        missingDocReminderFilter === 'all' ||
+        (missingDocReminderFilter === 'on' && (app as any)?.emailRemindersEnabled === true) ||
+        (missingDocReminderFilter === 'off' && (app as any)?.emailRemindersEnabled !== true);
+      const matchesStatusReminder =
+        statusReminderFilter === 'all' ||
+        (statusReminderFilter === 'on' && (app as any)?.statusRemindersEnabled === true) ||
+        (statusReminderFilter === 'off' && (app as any)?.statusRemindersEnabled !== true);
+      return matchesMissingDocReminder && matchesStatusReminder;
+    });
 
-    return componentFiltered.filter((app) =>
+    const searchTerm = lastNameSearch.trim().toLowerCase();
+    if (!searchTerm) return reminderFiltered;
+
+    return reminderFiltered.filter((app) =>
       String(app.memberLastName || '').trim().toLowerCase().includes(searchTerm)
     );
 
-  }, [applications, filters, showMissingOnly, lastNameSearch])
+  }, [applications, filters, showMissingOnly, lastNameSearch, missingDocReminderFilter, statusReminderFilter])
 
   return (
     <div className="space-y-6">
@@ -267,6 +308,44 @@ function ProgressTrackerPageClient() {
                             </div>
                         ))}
                     </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="missing-doc-reminder-filter" className="text-sm font-medium">
+                          Missing Doc Reminders
+                        </Label>
+                        <Select
+                          value={missingDocReminderFilter}
+                          onValueChange={(value: 'all' | 'on' | 'off') => setMissingDocReminderFilter(value)}
+                        >
+                          <SelectTrigger id="missing-doc-reminder-filter">
+                            <SelectValue placeholder="All" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            <SelectItem value="on">On</SelectItem>
+                            <SelectItem value="off">Off</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="status-reminder-filter" className="text-sm font-medium">
+                          Status Reminders
+                        </Label>
+                        <Select
+                          value={statusReminderFilter}
+                          onValueChange={(value: 'all' | 'on' | 'off') => setStatusReminderFilter(value)}
+                        >
+                          <SelectTrigger id="status-reminder-filter">
+                            <SelectValue placeholder="All" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            <SelectItem value="on">On</SelectItem>
+                            <SelectItem value="off">Off</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                 </CardContent>
             </Card>
 
@@ -275,6 +354,9 @@ function ProgressTrackerPageClient() {
                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     {trackedComponents.map(c => (
                         <span key={c.key}><strong className="font-mono">{c.abbreviation}:</strong> {c.key}</span>
+                    ))}
+                    {reminderIndicatorColumns.map(c => (
+                        <span key={c.key}><strong className="font-mono">{c.abbreviation}:</strong> {c.label}</span>
                     ))}
                 </div>
             </div>
@@ -297,6 +379,16 @@ function ProgressTrackerPageClient() {
                                         <Tooltip>
                                             <TooltipTrigger className="cursor-help font-mono text-xs">{c.abbreviation}</TooltipTrigger>
                                             <TooltipContent><p>{c.key}</p></TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                </TableHead>
+                            ))}
+                            {reminderIndicatorColumns.map(c => (
+                                <TableHead key={c.key} className="text-center w-[80px] p-2">
+                                    <TooltipProvider>
+                                        <Tooltip>
+                                            <TooltipTrigger className="cursor-help font-mono text-xs">{c.abbreviation}</TooltipTrigger>
+                                            <TooltipContent><p>{c.label}</p></TooltipContent>
                                         </Tooltip>
                                     </TooltipProvider>
                                 </TableHead>
@@ -337,6 +429,14 @@ function ProgressTrackerPageClient() {
                                             />
                                         </TableCell>
                                     ))}
+                                    {reminderIndicatorColumns.map(c => (
+                                        <TableCell key={`${app.uniqueKey || app.id}-${c.key}`} className="text-center">
+                                            <StatusIndicator
+                                                status={getReminderIndicatorStatus(app, c.key)}
+                                                formName={c.label}
+                                            />
+                                        </TableCell>
+                                    ))}
                                     <TableCell className="text-right">
                                         <Button asChild variant="outline" size="sm">
                                             <Link href={
@@ -352,7 +452,7 @@ function ProgressTrackerPageClient() {
                             )
                         }) : (
                              <TableRow>
-                                <TableCell colSpan={trackedComponents.length + 2} className="h-24 text-center">
+                                <TableCell colSpan={trackedComponents.length + reminderIndicatorColumns.length + 2} className="h-24 text-center">
                                     No applications match the current filter.
                                 </TableCell>
                             </TableRow>

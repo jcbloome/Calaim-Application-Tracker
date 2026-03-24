@@ -17,12 +17,12 @@ import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2, Mail, Bell, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2, Mail, Bell } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import { ApplicationCardSkeleton, ApplicationTableSkeleton } from '@/components/ApplicationCardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
-import { useUser, type WithId } from '@/firebase';
+import { type WithId } from '@/firebase';
 import {
   Dialog,
   DialogContent,
@@ -396,84 +396,8 @@ export const AdminApplicationsTable = ({
 }) => {
   const { toast } = useToast();
   const { user } = useAdmin();
-  const { user: firebaseUser } = useUser();
   const [confirmingApps, setConfirmingApps] = useState<Set<string>>(new Set());
   const [sendingReminders, setSendingReminders] = useState<Set<string>>(new Set());
-  const [syncingProcessStatusIds, setSyncingProcessStatusIds] = useState<Set<string>>(new Set());
-  const [processStatusOverrides, setProcessStatusOverrides] = useState<Record<string, string>>({});
-
-  const handleSyncProcessStatus = async (app: WithId<Application & FormValues>) => {
-    if (syncingProcessStatusIds.has(app.id)) return;
-
-    setSyncingProcessStatusIds((prev) => new Set(prev).add(app.id));
-    try {
-      const clientId2 = String((app as any)?.client_ID2 || '').trim();
-      let processStatus = '';
-      let processSyncError = '';
-
-      // Process-status sync is optional; document/status refresh should still run.
-      if (clientId2 && firebaseUser) {
-        try {
-          const idToken = await firebaseUser.getIdToken();
-          const response = await fetch('/api/admin/process-status/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              idToken,
-              applicationId: app.id,
-              appUserId: app.userId || '',
-              source: (app as any)?.source || '',
-              clientId2,
-              healthPlan: String(app.healthPlan || ''),
-            }),
-          });
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok || !data?.success) {
-            throw new Error(data?.error || `Sync failed (HTTP ${response.status})`);
-          }
-
-          processStatus = String(data?.processStatus || '').trim();
-          if (processStatus) {
-            setProcessStatusOverrides((prev) => ({ ...prev, [app.id]: processStatus }));
-          }
-        } catch (error: any) {
-          processSyncError = error?.message || 'Could not sync process status from Caspio.';
-        }
-      }
-
-      await onRefreshRequested?.();
-
-      if (processSyncError) {
-        toast({
-          variant: 'destructive',
-          title: 'Documents refreshed; process sync failed',
-          description: processSyncError,
-        });
-        return;
-      }
-
-      toast({
-        title: clientId2 ? 'Sync complete' : 'Documents refreshed',
-        description: clientId2
-          ? `${app.memberFirstName} ${app.memberLastName}: ${processStatus || 'Process status synced'}`
-          : `${app.memberFirstName} ${app.memberLastName}: latest document status loaded.`,
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
-    } catch (error: any) {
-      console.error('Error syncing process status:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Sync failed',
-        description: error?.message || 'Could not refresh application status.',
-      });
-    } finally {
-      setSyncingProcessStatusIds((prev) => {
-        const next = new Set(prev);
-        next.delete(app.id);
-        return next;
-      });
-    }
-  };
 
   const handleConfirmCsSummary = async (app: WithId<Application & FormValues>) => {
     if (confirmingApps.has(app.id)) return;
@@ -623,7 +547,7 @@ export const AdminApplicationsTable = ({
               const planLabel = getPlanBadgeLabel(app);
               const planBadgeClass = getPlanBadgeClass(app);
               const csSummaryIsNew = isNewCsSummary(app);
-              const processStatus = getProcessStatusFromApp(app, processStatusOverrides);
+              const processStatus = getProcessStatusFromApp(app);
               const staffLabel = getAssignedStaffLabel(app);
 
               return (
@@ -712,21 +636,6 @@ export const AdminApplicationsTable = ({
                       ) : null}
                     </div>
                     <div className="text-xs text-muted-foreground">{app.pathway}</div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 mt-1 text-xs"
-                      disabled={syncingProcessStatusIds.has(app.id)}
-                      onClick={() => handleSyncProcessStatus(app)}
-                    >
-                      {syncingProcessStatusIds.has(app.id) ? (
-                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3 w-3 mr-1" />
-                      )}
-                      Sync Docs
-                    </Button>
                 </TableCell>
                 <TableCell className="text-right">
                    <div className="inline-flex items-center gap-2">
@@ -831,7 +740,7 @@ export const AdminApplicationsTable = ({
             const planLabel = getPlanBadgeLabel(app);
             const planBadgeClass = getPlanBadgeClass(app);
             const csSummaryIsNew = isNewCsSummary(app);
-            const processStatus = getProcessStatusFromApp(app, processStatusOverrides);
+            const processStatus = getProcessStatusFromApp(app);
             const staffLabel = getAssignedStaffLabel(app);
 
             return (
@@ -886,21 +795,6 @@ export const AdminApplicationsTable = ({
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
                       <span>{app.healthPlan}{processStatus ? ` • ${processStatus}` : ''}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-5 px-1.5 text-[10px]"
-                        disabled={syncingProcessStatusIds.has(app.id)}
-                        onClick={() => handleSyncProcessStatus(app)}
-                      >
-                        {syncingProcessStatusIds.has(app.id) ? (
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3 w-3 mr-1" />
-                        )}
-                        Sync Docs
-                      </Button>
                     </div>
                     {showInlineTracker && (
                       <div className="mt-2">

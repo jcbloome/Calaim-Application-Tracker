@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Suspense, useMemo, useState, useEffect, useRef } from 'react';
+import { Suspense, useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter, useParams } from 'next/navigation';
 import {
@@ -518,11 +518,12 @@ function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
 const quickStatusItems = [
   { key: 'CS Member Summary', label: 'CS' },
   { key: 'Waivers & Authorizations', label: 'Waivers' },
-  { key: 'Proof of Income', label: 'POI' },
   { key: "LIC 602A - Physician's Report", label: '602' },
   { key: 'Medicine List', label: 'Meds' },
+  { key: 'Proof of Income', label: 'POI' },
+  { key: 'Declaration of Eligibility', label: 'DE' },
   { key: 'SNF Facesheet', label: 'SNF' },
-  { key: 'Eligibility Check Pending', label: 'Elig Pending' },
+  { key: 'Eligibility Check', label: 'Elig' },
   { key: 'Sent to Caspio', label: 'Caspio' },
   { key: 'Room and Board/Tier Level Agreement', label: 'R&B/Tier' },
 ];
@@ -1183,7 +1184,6 @@ function ApplicationDetailPageContent() {
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSyncingProcessStatus, setIsSyncingProcessStatus] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [intakeImportOpen, setIntakeImportOpen] = useState(false);
   const [intakeRequirementTitle, setIntakeRequirementTitle] = useState<string>('');
@@ -1302,7 +1302,7 @@ function ApplicationDetailPageContent() {
     missingItems: string[];
   } | null>(null);
   const [nextStepDateMissing, setNextStepDateMissing] = useState(false);
-  const lastFamilyStatusEmailKeyRef = useRef<string>('');
+  const [isSendingFamilyStatusNow, setIsSendingFamilyStatusNow] = useState(false);
 
   const reminderFrequencyOptions = useMemo(() => [2, 7] as const, []);
   const staffTestReminderEmail = String(user?.email || '').trim();
@@ -1436,51 +1436,54 @@ function ApplicationDetailPageContent() {
       setIsSendingTestReminder(false);
     }
   };
-  const sendFamilyStatusUpdateEmail = async (statusValue: string, deniedReason?: string) => {
+  const sendFamilyStatusUpdateEmail = async (
+    statusValue: string,
+    deniedReason?: string,
+    trigger: 'auto' | 'manual' = 'auto'
+  ) => {
     if (!application?.id) return;
-    if (Boolean((application as any)?.statusRemindersEnabled) !== true) return;
-    const recipientEmail = String((application as any)?.referrerEmail || '').trim();
-    if (!recipientEmail) {
-      toast({
-        variant: 'destructive',
-        title: 'Status reminder not sent',
-        description: 'Referrer email is missing for this application.',
-      });
-      return;
-    }
-
-    const reason = String(deniedReason || '').trim();
-    const dedupeKey = `${application.id}::${statusValue}::${reason}`;
-    if (lastFamilyStatusEmailKeyRef.current === dedupeKey) return;
-
-    const referrerName = String((application as any)?.referrerName || '').trim() || 'there';
-    const memberName = `${String(application.memberFirstName || '').trim()} ${String(application.memberLastName || '').trim()}`.trim() || 'CalAIM Member';
-    const staffName = String(user?.displayName || user?.email || 'The Connections Team').trim();
-    const message = /authorization denied/i.test(statusValue)
-      ? `Application progress update: ${statusValue}.${reason ? ` Reason: ${reason}` : ''}`
-      : `Application progress update: ${statusValue}.`;
-
     try {
-      const response = await fetch('/api/email/send', {
+      const response = await fetch('/api/admin/send-family-status-reminder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: recipientEmail,
-          subject: `Application progress update for ${memberName}`,
-          memberName: referrerName,
-          staffName,
-          message,
-          status: 'In Progress',
+          applicationId: application.id,
+          userId: (application as any)?.userId || null,
+          statusValue,
+          deniedReason: String(deniedReason || ''),
+          trigger,
+          sentByUid: String(user?.uid || ''),
+          sentByName: String(user?.displayName || user?.email || 'The Connections Team'),
         }),
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.success) {
-        throw new Error(result?.message || 'Failed to send status reminder');
+        throw new Error(result?.error || result?.message || 'Failed to send status reminder');
       }
-      lastFamilyStatusEmailKeyRef.current = dedupeKey;
+      if (result?.skippedDisabled) {
+        return;
+      }
+      if (result?.skippedDueToDedupe) {
+        if (trigger === 'manual') {
+          toast({
+            title: 'Recently sent',
+            description: 'Same status update was sent recently. Try again in a few minutes.',
+          });
+        }
+        return;
+      }
+      setApplication((prev) =>
+        prev
+          ? ({
+              ...(prev as any),
+              familyStatusLastEmail: result?.lastEmail || (prev as any)?.familyStatusLastEmail,
+              familyStatusReminderHistory: result?.history || (prev as any)?.familyStatusReminderHistory,
+            } as any)
+          : prev
+      );
       toast({
         title: 'Status reminder sent',
-        description: `Family update sent to ${recipientEmail}.`,
+        description: `Family update sent to ${String((application as any)?.referrerEmail || '').trim() || 'recipient'}.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -1504,6 +1507,17 @@ function ApplicationDetailPageContent() {
 
     const needsDeniedReason = /authorization denied/i.test(value);
     const existingReason = needsDeniedReason ? familyStatusDeniedReason : '';
+    if (needsDeniedReason && !String(existingReason || '').trim()) {
+      setApplication((prev) =>
+        prev ? ({ ...(prev as any), familyStatusProgress: value } as any) : prev
+      );
+      toast({
+        variant: 'destructive',
+        title: 'Denied reason required',
+        description: 'Enter a denial reason before saving Authorization Denied.',
+      });
+      return;
+    }
     await updateReminderSettings({
       familyStatusProgress: value,
       familyStatusDeniedReason: needsDeniedReason ? existingReason : '',
@@ -1512,21 +1526,37 @@ function ApplicationDetailPageContent() {
     if (Boolean((application as any)?.statusRemindersEnabled) !== true) return;
     if (value === previousStatus) return;
     if (needsDeniedReason && !String(existingReason || '').trim()) {
-      toast({
-        title: 'Denied status saved',
-        description: 'Enter a denial reason to send the status reminder email.',
-      });
       return;
     }
     await sendFamilyStatusUpdateEmail(value, existingReason);
   };
 
   const handleFamilyDeniedReasonBlur = async (value: string) => {
-    await updateReminderSettings({ familyStatusDeniedReason: value });
+    await updateReminderSettings({
+      familyStatusProgress: familyStatusProgressValue,
+      familyStatusDeniedReason: value,
+    });
     if (Boolean((application as any)?.statusRemindersEnabled) !== true) return;
     if (!familyProgressNeedsDeniedReason || !familyStatusProgressValue) return;
     if (!String(value || '').trim()) return;
     await sendFamilyStatusUpdateEmail(familyStatusProgressValue, value);
+  };
+  const handleManualFamilyStatusSend = async () => {
+    if (!familyStatusProgressValue) return;
+    if (familyProgressNeedsDeniedReason && !String(familyStatusDeniedReason || '').trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Denied reason required',
+        description: 'Enter a denial reason before sending Authorization Denied.',
+      });
+      return;
+    }
+    setIsSendingFamilyStatusNow(true);
+    try {
+      await sendFamilyStatusUpdateEmail(familyStatusProgressValue, familyStatusDeniedReason, 'manual');
+    } finally {
+      setIsSendingFamilyStatusNow(false);
+    }
   };
   const ensureAdminClaim = async () => {
     if (!user) return;
@@ -1637,6 +1667,21 @@ function ApplicationDetailPageContent() {
   const familyStatusProgressValue = String((application as any)?.familyStatusProgress || '').trim();
   const familyProgressNeedsDeniedReason = /authorization denied/i.test(familyStatusProgressValue);
   const familyStatusDeniedReason = String((application as any)?.familyStatusDeniedReason || '');
+  const familyStatusLastEmail = (application as any)?.familyStatusLastEmail || null;
+  const familyStatusHistory = Array.isArray((application as any)?.familyStatusReminderHistory)
+    ? ((application as any)?.familyStatusReminderHistory as any[])
+    : [];
+  const familyStatusLastSentLabel = useMemo(() => {
+    const raw = familyStatusLastEmail?.sentAtMs ?? familyStatusLastEmail?.sentAtIso ?? null;
+    if (!raw) return '';
+    try {
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return '';
+      return format(d, 'MMM d, yyyy h:mm a');
+    } catch {
+      return '';
+    }
+  }, [familyStatusLastEmail?.sentAtMs, familyStatusLastEmail?.sentAtIso]);
   const authorizedRepInviteEmail = useMemo(() => {
     const candidates = [
       String((application as any)?.repEmail || '').trim(),
@@ -2714,7 +2759,7 @@ function ApplicationDetailPageContent() {
       return false;
     });
 
-    if (componentKey === 'Eligibility Check' || componentKey === 'Eligibility Check Pending') {
+    if (componentKey === 'Eligibility Check') {
       const hasEligibilityUpload = Boolean(
         application?.forms?.some((f) => String(f?.name || '').trim() === 'Eligibility Screenshot' && String(f?.status || '').trim() === 'Completed')
       );
@@ -2724,9 +2769,6 @@ function ApplicationDetailPageContent() {
     }
     if (componentKey === 'Sent to Caspio') {
       return (application as any)?.caspioSent ? 'Completed' : 'Pending';
-    }
-    if (componentKey === 'Proof of Income' && application?.healthPlan === 'Health Net') {
-      return 'Not Applicable';
     }
     if (componentKey === 'Declaration of Eligibility' && application?.pathway !== 'SNF Diversion') {
       return 'Not Applicable';
@@ -3019,7 +3061,15 @@ function ApplicationDetailPageContent() {
   
   const totalCount = pathwayRequirements.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-  const eligibilityCompleted = getComponentStatus('Eligibility Check Pending') === 'Completed';
+  const processTrackerStatuses = quickStatusItems.map((item) => ({
+    item,
+    status: getComponentStatus(item.key),
+  }));
+  const processTrackerApplicable = processTrackerStatuses.filter((entry) => entry.status !== 'Not Applicable');
+  const processTrackerCompletedCount = processTrackerApplicable.filter((entry) => entry.status === 'Completed').length;
+  const processTrackerTotalCount = processTrackerApplicable.length;
+  const processTrackerProgress = processTrackerTotalCount > 0 ? (processTrackerCompletedCount / processTrackerTotalCount) * 100 : 0;
+  const eligibilityCompleted = getComponentStatus('Eligibility Check') === 'Completed';
   const caspioPushed = Boolean((application as any)?.caspioSent);
   const caspioSentDateRaw = (application as any)?.caspioSentDate;
   const caspioSentDateLabel = caspioSentDateRaw
@@ -3186,65 +3236,6 @@ function ApplicationDetailPageContent() {
       { id: 'facesheet-check', name: 'SNF Facesheet' },
       { id: 'decl-elig-check', name: 'Declaration of Eligibility' },
   ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
-
-  const syncProcessStatusFromCaspio = async () => {
-    if (!application?.id || !user) return;
-    const clientId2 = String((application as any)?.client_ID2 || '').trim();
-    if (!clientId2) {
-      toast({
-        variant: 'destructive',
-        title: 'Missing Client ID',
-        description: 'Cannot sync process status because client_ID2 is missing.',
-      });
-      return;
-    }
-
-    setIsSyncingProcessStatus(true);
-    try {
-      const idToken = await user.getIdToken();
-      const response = await fetch('/api/admin/process-status/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          idToken,
-          applicationId: application.id,
-          appUserId: appUserId || '',
-          source: (application as any)?.source || '',
-          clientId2,
-          healthPlan: String((application as any)?.healthPlan || ''),
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.error || `Sync failed (HTTP ${response.status})`);
-      }
-
-      setApplication((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          kaiserStatus: data?.kaiserStatus || (prev as any)?.kaiserStatus || '',
-          healthNetStatus: data?.healthNetStatus || (prev as any)?.healthNetStatus || '',
-          Health_Net_Process_Status: data?.healthNetStatus || (prev as any)?.Health_Net_Process_Status || '',
-        } as any;
-      });
-
-      toast({
-        title: 'Process status synced',
-        description: `Pulled latest process status from Caspio for client ${clientId2}.`,
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
-    } catch (error: any) {
-      console.error('Error syncing process status from Caspio:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Sync failed',
-        description: error?.message || 'Could not sync process status from Caspio.',
-      });
-    } finally {
-      setIsSyncingProcessStatus(false);
-    }
-  };
 
   // Update application progression status
   const updateProgressionStatus = async (status: string, statusType: 'kaiser' | 'healthNet') => {
@@ -4297,21 +4288,6 @@ function ApplicationDetailPageContent() {
                   );
                 })()}
                 </CardDescription>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={syncProcessStatusFromCaspio}
-                  disabled={isSyncingProcessStatus || !String((application as any)?.client_ID2 || '').trim()}
-                  className="self-start sm:self-auto"
-                >
-                  {isSyncingProcessStatus ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                  )}
-                  Sync Process Status
-                </Button>
             </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -4396,6 +4372,12 @@ function ApplicationDetailPageContent() {
                         : 'Off'}
                     </span>
                   </div>
+                  {familyStatusLastSentLabel ? (
+                    <div className="text-xs text-muted-foreground pl-7">
+                      Last family status email: {familyStatusLastSentLabel}
+                      {String(familyStatusLastEmail?.to || '').trim() ? ` to ${String(familyStatusLastEmail?.to || '').trim()}` : ''}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex items-center justify-between gap-3">
@@ -4417,21 +4399,20 @@ function ApplicationDetailPageContent() {
                 <div className="space-y-2">
                     <div className="flex justify-between text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">User/Admin Submitted Documents</span>
+                          <span className="font-medium">Process Tracker</span>
                           {isNewCsSummary && (
                             <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200">
                               New CS
                             </Badge>
                           )}
                         </div>
-                        <span>{completedCount} of {totalCount} required items completed</span>
+                        <span>{processTrackerCompletedCount} of {processTrackerTotalCount} required items completed</span>
                     </div>
-                    <Progress value={progress} className="h-2" />
+                    <Progress value={processTrackerProgress} className="h-2" />
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  {quickStatusItems.map((item) => {
-                    const status = getComponentStatus(item.key);
+                  {processTrackerStatuses.map(({ item, status }) => {
                     if (status === 'Not Applicable') return null;
                     return (
                       <span key={item.key} className="flex items-center gap-1" title={`${item.key}: ${status}`}>
@@ -5187,6 +5168,49 @@ function ApplicationDetailPageContent() {
                             }}
                             disabled={isUpdatingReminderControls}
                           />
+                        </div>
+                      )}
+                      <Button
+                        variant="outline"
+                        className="w-full sm:w-auto"
+                        onClick={() => {
+                          void handleManualFamilyStatusSend();
+                        }}
+                        disabled={
+                          isSendingFamilyStatusNow ||
+                          !familyStatusProgressValue ||
+                          (familyProgressNeedsDeniedReason && !String(familyStatusDeniedReason || '').trim())
+                        }
+                      >
+                        {isSendingFamilyStatusNow ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Sending status...
+                          </>
+                        ) : (
+                          'Send status update now'
+                        )}
+                      </Button>
+
+                      {familyStatusHistory.length > 0 && (
+                        <div className="space-y-1 rounded border p-2 bg-white">
+                          <div className="text-xs font-medium text-muted-foreground">Recent status emails</div>
+                          {familyStatusHistory.slice(0, 5).map((entry: any, idx: number) => {
+                            const when = (() => {
+                              try {
+                                const d = new Date(entry?.sentAtMs || entry?.sentAtIso || '');
+                                return Number.isNaN(d.getTime()) ? '' : format(d, 'MMM d, h:mm a');
+                              } catch {
+                                return '';
+                              }
+                            })();
+                            return (
+                              <div key={`family-status-history-${idx}`} className="text-xs text-muted-foreground">
+                                {when ? `${when} - ` : ''}{String(entry?.status || 'Status update')}
+                                {String(entry?.reason || '').trim() ? ` (Reason: ${String(entry.reason).trim()})` : ''}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
