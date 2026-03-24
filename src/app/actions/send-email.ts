@@ -160,6 +160,17 @@ interface RoomBoardTierAgreementInvitePayload {
     signUrl: string;
 }
 
+interface RoomBoardIlsSubmissionPayload {
+    to: string;
+    memberName: string;
+    mrn?: string;
+    rcfeName?: string;
+    mcoAndTier?: string;
+    agreedRoomBoardAmount?: string;
+    agreementDownloadUrl: string;
+    proofIncomeDownloadUrl: string;
+}
+
 async function getBccRecipients(): Promise<string[]> {
     try {
         const firestore = admin.firestore();
@@ -709,6 +720,56 @@ export const sendRoomBoardTierAgreementInviteEmail = async (payload: RoomBoardTi
 
     if (error) {
         console.error('Resend RoomBoard Invite Error:', error);
+        throw new Error(error.message);
+    }
+
+    return data;
+};
+
+export const sendRoomBoardIlsSubmissionEmail = async (payload: RoomBoardIlsSubmissionPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const mrn = String(payload.mrn || '').trim();
+    const rcfeName = String(payload.rcfeName || '').trim();
+    const mcoAndTier = String(payload.mcoAndTier || '').trim();
+    const agreedAmount = String(payload.agreedRoomBoardAmount || '').trim();
+    const agreementUrl = String(payload.agreementDownloadUrl || '').trim();
+    const proofUrl = String(payload.proofIncomeDownloadUrl || '').trim();
+    if (!agreementUrl || !proofUrl) {
+      throw new Error('Both agreement and proof-of-income file links are required.');
+    }
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5; max-width: 680px; margin: 0 auto;">
+        <h2 style="margin-bottom: 8px;">Room and Board Agreement + Proof of Income</h2>
+        <p style="margin-top: 0;">Hello ILS Team,</p>
+        <p>The Room and Board/Tier Level Agreement is fully signed and Proof of Income is attached for review.</p>
+        <p><strong>Member:</strong> ${memberName}${mrn ? ` &nbsp; | &nbsp; <strong>MRN:</strong> ${mrn}` : ''}</p>
+        ${rcfeName ? `<p><strong>RCFE:</strong> ${rcfeName}</p>` : ''}
+        ${mcoAndTier ? `<p><strong>MCO and Tier:</strong> ${mcoAndTier}</p>` : ''}
+        ${agreedAmount ? `<p><strong>Agreed Room and Board Amount:</strong> $${agreedAmount}</p>` : ''}
+        <p><strong>Documents:</strong></p>
+        <ul>
+          <li><a href="${agreementUrl}">Signed Room and Board/Tier Level Agreement</a></li>
+          <li><a href="${proofUrl}">Proof of Income</a></li>
+        </ul>
+      </div>
+    `;
+
+    const { data, error } = await resend.emails.send({
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `ILS submission: ${memberName} — signed agreement + proof of income`,
+        html,
+    });
+
+    if (error) {
+        console.error('Resend RoomBoard ILS Submission Error:', error);
         throw new Error(error.message);
     }
 

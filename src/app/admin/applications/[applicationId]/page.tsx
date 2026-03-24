@@ -1635,6 +1635,7 @@ function ApplicationDetailPageContent() {
   } | null>(null);
   const [roomBoardPreviewWarnings, setRoomBoardPreviewWarnings] = useState<string[]>([]);
   const [isSendingRoomBoardInvites, setIsSendingRoomBoardInvites] = useState(false);
+  const [isSendingRoomBoardIls, setIsSendingRoomBoardIls] = useState(false);
   const [rcfeSignerEmailInput, setRcfeSignerEmailInput] = useState('');
   const [agreedRoomBoardAmountInput, setAgreedRoomBoardAmountInput] = useState('');
   const [isSendingEligibilityNote, setIsSendingEligibilityNote] = useState(false);
@@ -3634,6 +3635,77 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const sendRoomBoardAgreementToIls = async () => {
+    if (!user || !applicationId || !application) return;
+    setIsSendingRoomBoardIls(true);
+    try {
+      await ensureAdminClaim();
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/admin/room-board-agreement/notify-ils', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          applicationId,
+          userId: appUserId || null,
+        }),
+      });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to send to ILS (HTTP ${response.status})`);
+      }
+      const result = data?.result || {};
+      const status = String(result?.status || '');
+      if (status === 'sent') {
+        setApplication((prev) =>
+          prev
+            ? ({
+                ...(prev as any),
+                roomBoardTierAgreement: {
+                  ...((prev as any)?.roomBoardTierAgreement || {}),
+                  ilsDispatch: {
+                    ...(((prev as any)?.roomBoardTierAgreement || {}).ilsDispatch || {}),
+                    sentAt: new Date().toISOString(),
+                    recipient: 'jocelyn@ilshealth.com',
+                  },
+                },
+              } as any)
+            : prev
+        );
+        toast({
+          title: 'Sent to ILS',
+          description: 'Signed agreement and proof of income were emailed to jocelyn@ilshealth.com.',
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      } else if (status === 'already_sent') {
+        toast({
+          title: 'Already sent',
+          description: 'These documents were already sent to ILS for this application.',
+        });
+      } else if (status === 'not_ready') {
+        toast({
+          variant: 'destructive',
+          title: 'Not ready to send',
+          description: String(result?.reason || 'Agreement and proof of income must be ready first.'),
+        });
+      } else {
+        toast({
+          title: 'No action taken',
+          description: 'No ILS send action was performed.',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error sending room board agreement to ILS:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Send failed',
+        description: error?.message || 'Could not send documents to ILS.',
+      });
+    } finally {
+      setIsSendingRoomBoardIls(false);
+    }
+  };
+
   const updateTrackingReason = async (reason: string) => {
     if (!docRef || !application) return;
 
@@ -3943,11 +4015,22 @@ function ApplicationDetailPageContent() {
                             {isSendingRoomBoardInvites ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
                             Generate + Send Invites
                           </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="w-full"
+                            onClick={() => void sendRoomBoardAgreementToIls()}
+                            disabled={isSendingRoomBoardIls}
+                          >
+                            {isSendingRoomBoardIls ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                            Send Signed Docs to ILS
+                          </Button>
                           {roomBoardAgreementMeta?.requestId ? (
                             <div className="text-[11px] text-muted-foreground space-y-0.5">
                               <div>Latest request: {String(roomBoardAgreementMeta.requestId)} ({String(roomBoardAgreementMeta.status || 'invited')})</div>
                               <div>MCO/Tier: {String(roomBoardAgreementMeta.mcoAndTier || '—')}</div>
                               <div>Assisted living: {roomBoardAgreementMeta.assistedLivingMonthlyRate ? `$${roomBoardAgreementMeta.assistedLivingMonthlyRate} monthly` : '—'}{roomBoardAgreementMeta.assistedLivingDailyRate ? ` / $${roomBoardAgreementMeta.assistedLivingDailyRate} daily` : ''}</div>
+                              <div>ILS sent: {roomBoardAgreementMeta?.ilsDispatch?.sentAt ? 'Yes' : 'No'}</div>
                             </div>
                           ) : null}
                         </div>
@@ -4082,11 +4165,22 @@ function ApplicationDetailPageContent() {
                           {isSendingRoomBoardInvites ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
                           Generate + Send Invites
                         </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() => void sendRoomBoardAgreementToIls()}
+                          disabled={isSendingRoomBoardIls}
+                        >
+                          {isSendingRoomBoardIls ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                          Send Signed Docs to ILS
+                        </Button>
                         {roomBoardAgreementMeta?.requestId ? (
                           <div className="text-[11px] text-muted-foreground space-y-0.5">
                             <div>Latest request: {String(roomBoardAgreementMeta.requestId)} ({String(roomBoardAgreementMeta.status || 'invited')})</div>
                             <div>MCO/Tier: {String(roomBoardAgreementMeta.mcoAndTier || '—')}</div>
                             <div>Assisted living: {roomBoardAgreementMeta.assistedLivingMonthlyRate ? `$${roomBoardAgreementMeta.assistedLivingMonthlyRate} monthly` : '—'}{roomBoardAgreementMeta.assistedLivingDailyRate ? ` / $${roomBoardAgreementMeta.assistedLivingDailyRate} daily` : ''}</div>
+                            <div>ILS sent: {roomBoardAgreementMeta?.ilsDispatch?.sentAt ? 'Yes' : 'No'}</div>
                           </div>
                         ) : null}
                       </div>
