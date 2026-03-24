@@ -37,7 +37,14 @@ const getMissingItemsFromForms = (application: any): string[] => {
 
 export async function POST(request: NextRequest) {
   try {
-    const { applicationId, userId, overrideEmail, overrideReferrerName, baseUrl } = await request.json();
+    const {
+      applicationId,
+      userId,
+      overrideEmail,
+      overrideReferrerName,
+      baseUrl,
+      previewOnly,
+    } = await request.json();
     
     if (!applicationId) {
       return NextResponse.json(
@@ -97,10 +104,25 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const subject = `Missing Documents Reminder: ${memberName || 'CalAIM Application'}`;
+    if (previewOnly) {
+      return NextResponse.json({
+        success: true,
+        previewOnly: true,
+        applicationId,
+        recipientEmail,
+        referrerName,
+        memberName: memberName || 'CalAIM Member',
+        subject,
+        missingItems,
+        baseUrl: baseUrl || process.env.NEXT_PUBLIC_BASE_URL || null,
+      });
+    }
     
     await sendReminderEmail({
       to: recipientEmail,
-      subject: `Missing Documents Reminder: ${memberName || 'CalAIM Application'}`,
+      subject,
       referrerName,
       memberName: memberName || 'CalAIM Member',
       applicationId,

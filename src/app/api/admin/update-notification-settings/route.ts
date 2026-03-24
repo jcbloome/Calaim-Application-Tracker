@@ -25,7 +25,9 @@ export async function POST(request: NextRequest) {
       statusRemindersEnabled,
       reviewNotificationSent,
       documentReminderFrequencyDays,
-      statusReminderFrequencyDays
+      statusReminderFrequencyDays,
+      familyStatusProgress,
+      familyStatusDeniedReason
     } = await request.json();
 
     if (!applicationId) {
@@ -60,6 +62,12 @@ export async function POST(request: NextRequest) {
     }
     if (statusReminderFrequencyDays !== undefined) {
       updateData.statusReminderFrequencyDays = Number(statusReminderFrequencyDays);
+    }
+    if (familyStatusProgress !== undefined) {
+      updateData.familyStatusProgress = String(familyStatusProgress || '').trim();
+    }
+    if (familyStatusDeniedReason !== undefined) {
+      updateData.familyStatusDeniedReason = String(familyStatusDeniedReason || '').trim();
     }
 
     const isAdminApp = applicationId.startsWith('admin_app_') || !userId;

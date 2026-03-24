@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Suspense, useMemo, useState, useEffect } from 'react';
+import { Suspense, useMemo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter, useParams } from 'next/navigation';
 import {
@@ -39,7 +39,6 @@ import {
   Download,
   Bell,
   BellOff,
-  MessageSquare,
   BellRing,
   Eye,
   EyeOff,
@@ -80,7 +79,6 @@ import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
-import NoteTracker from '@/components/NoteTracker';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
 
 // Staff Assignment Dropdown Component
@@ -882,20 +880,29 @@ function PushToCaspioDialog({
     );
 }
 
+function getReminderMissingItems(application: Application | null): string[] {
+  const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
+  if (forms.length === 0) return [];
+  const internalExclusions = new Set(['eligibility screenshot', 'eligibility check']);
+  return forms
+    .filter((form: any) => {
+      const name = String(form?.name || '').trim();
+      if (!name) return false;
+      if (name === 'CS Member Summary' || name === 'CS Summary') return false;
+      if (internalExclusions.has(name.toLowerCase())) return false;
+      if (String(form?.type || '').trim().toLowerCase() === 'info') return false;
+      return String(form?.status || '').trim() !== 'Completed';
+    })
+    .map((form: any) => String(form?.name || '').trim())
+    .filter(Boolean);
+}
+
 function AdminActions({ application }: { application: Application }) {
     const { isAdmin, isSuperAdmin } = useAdmin();
     const [notes, setNotes] = useState('');
     const [status, setStatus] = useState<Application['status'] | ''>('');
     const [isSending, setIsSending] = useState(false);
-    const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
-    const [emailRemindersEnabled, setEmailRemindersEnabled] = useState((application as any)?.emailRemindersEnabled ?? false);
-    const [reviewNotificationSent, setReviewNotificationSent] = useState((application as any)?.reviewNotificationSent ?? false);
-    const [isUpdatingNotifications, setIsUpdatingNotifications] = useState(false);
-    const [isCaspioDialogOpen, setIsCaspioDialogOpen] = useState(false);
-    const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
     const [isOpen, setIsOpen] = useState(false);
-    const [testReminderEmail, setTestReminderEmail] = useState('jcbloome@gmail.com');
-    const [isSendingTestReminder, setIsSendingTestReminder] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
 
@@ -932,124 +939,6 @@ function AdminActions({ application }: { application: Application }) {
     const statusOptions = application.healthPlan?.toLowerCase().includes('kaiser')
         ? kaiserStatusOptions
         : standardStatusOptions;
-
-    useEffect(() => {
-        if (!isCaspioDialogOpen || typeof window === 'undefined') return;
-        try {
-            const stored = localStorage.getItem('calaim_cs_caspio_mapping');
-            if (!stored) {
-                setCaspioMappingPreview(null);
-                return;
-            }
-            const parsed = JSON.parse(stored);
-            if (parsed && typeof parsed === 'object') {
-                setCaspioMappingPreview(parsed);
-                return;
-            }
-            setCaspioMappingPreview(null);
-        } catch (error) {
-            console.warn('Failed to load Caspio mapping preview:', error);
-            setCaspioMappingPreview(null);
-        }
-    }, [isCaspioDialogOpen]);
-
-    const handleNotificationUpdate = async (type: 'emailReminders' | 'reviewNotification' | 'statusReminders', enabled: boolean) => {
-        setIsUpdatingNotifications(true);
-        try {
-            const response = await fetch('/api/admin/update-notification-settings', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    applicationId: application.id,
-                    userId: application.userId,
-                    ...(type === 'emailReminders' && { emailRemindersEnabled: enabled }),
-                    ...(type === 'statusReminders' && { statusRemindersEnabled: enabled }),
-                    ...(type === 'reviewNotification' && { reviewNotificationSent: enabled }),
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to update notification settings');
-            }
-
-            if (type === 'emailReminders') {
-                setEmailRemindersEnabled(enabled);
-            } else if (type === 'statusReminders') {
-                // Update local state for status reminders if needed
-                // setStatusRemindersEnabled(enabled);
-            } else {
-                setReviewNotificationSent(enabled);
-            }
-
-            toast({
-                title: type === 'emailReminders' ?
-                    (enabled ? 'Email Reminders Enabled' : 'Email Reminders Disabled') :
-                    type === 'statusReminders' ?
-                    (enabled ? 'Status Reminders Enabled' : 'Status Reminders Disabled') :
-                    (enabled ? 'Review Notification Sent' : 'Review Notification Cleared'),
-                description: type === 'emailReminders' ?
-                    (enabled ? 'User will receive email reminders for missing documents' : 'User will not receive email reminders for missing documents') :
-                    type === 'statusReminders' ?
-                    (enabled ? 'User will receive application status updates' : 'User will not receive status updates') :
-                    (enabled ? 'User has been notified that we are reviewing their CS Summary and application' : 'Review notification status cleared'),
-                className: enabled ? 'bg-green-100 text-green-900 border-green-200' : 'bg-orange-100 text-orange-900 border-orange-200'
-            });
-        } catch (error) {
-            console.error('Error updating notification settings:', error);
-            toast({
-                variant: 'destructive',
-                title: 'Error',
-                description: 'Failed to update notification settings'
-            });
-        } finally {
-            setIsUpdatingNotifications(false);
-        }
-    };
-
-    const sendTestMissingDocsReminder = async () => {
-        if (!testReminderEmail) {
-            toast({ variant: 'destructive', title: 'Error', description: 'Enter a test email address.' });
-            return;
-        }
-        setIsSendingTestReminder(true);
-        try {
-            const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL;
-            const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
-            const fallbackBaseUrl = origin?.includes('localhost:3001')
-              ? 'http://localhost:3000'
-              : origin;
-            const baseUrl = envBaseUrl || fallbackBaseUrl;
-            const response = await fetch('/api/admin/send-document-reminder', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    applicationId: application.id,
-                    userId: application.userId,
-                    overrideEmail: testReminderEmail,
-                    baseUrl
-                })
-            });
-            const result = await response.json();
-            if (!result.success) {
-                throw new Error(result.error || 'Failed to send test reminder');
-            }
-            toast({
-                title: 'Test Reminder Sent',
-                description: `Email sent to ${testReminderEmail}.`,
-                className: 'bg-green-100 text-green-900 border-green-200'
-            });
-        } catch (error: any) {
-            toast({
-                variant: 'destructive',
-                title: 'Send Failed',
-                description: error.message || 'Could not send test reminder.'
-            });
-        } finally {
-            setIsSendingTestReminder(false);
-        }
-    };
 
     if (!isAdmin && !isSuperAdmin) {
         return null;
@@ -1118,65 +1007,6 @@ function AdminActions({ application }: { application: Application }) {
         }
     };
 
-    const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
-        setIsSendingToCaspio(true);
-        
-        try {
-            const functions = getFunctions();
-            const publishToCaspio = httpsCallable(functions, 'publishCsSummaryToCaspioSimple');
-            
-            console.log('📤 Sending application data to Caspio:', application);
-            const result = await publishToCaspio({
-                applicationData: application,
-                mapping: mappingOverride || caspioMappingPreview || null
-            });
-            const data = result.data as any;
-            console.log('📥 Caspio response:', data);
-            
-            if (data.success) {
-                toast({
-                    title: 'Success!',
-                    description: data.message,
-                    className: 'bg-green-100 text-green-900 border-green-200',
-                });
-                
-                // Update the application to mark it as sent to Caspio
-                if (docRef) {
-                    await setDoc(docRef, { 
-                        caspioSent: true,
-                        caspioSentDate: serverTimestamp(),
-                        lastUpdated: serverTimestamp() 
-                    }, { merge: true });
-                }
-            } else {
-                toast({
-                    variant: 'destructive',
-                    title: 'Caspio Error',
-                    description: data.message,
-                });
-            }
-        } catch (error: any) {
-            // Handle Firebase Functions errors
-            let errorMessage = 'Failed to send to Caspio';
-            
-            if (error.code === 'functions/already-exists') {
-                errorMessage = 'This member already exists in Caspio database';
-            } else if (error.code === 'functions/failed-precondition') {
-                errorMessage = 'Caspio credentials not configured properly';
-            } else if (error.message) {
-                errorMessage = error.message;
-            }
-            
-            toast({
-                variant: 'destructive',
-                title: 'Error',
-                description: errorMessage,
-            });
-        } finally {
-            setIsSendingToCaspio(false);
-        }
-    };
-
     const handleDeleteApplication = async () => {
         if (!firestore) {
             toast({ variant: 'destructive', title: 'Error', description: 'Firestore not available.' });
@@ -1237,79 +1067,6 @@ function AdminActions({ application }: { application: Application }) {
                         <Button variant="outline" className="w-full">Update Status</Button>
                     </DialogTrigger>
                     
-                    <AlertDialog open={isCaspioDialogOpen} onOpenChange={setIsCaspioDialogOpen}>
-                        <AlertDialogTrigger asChild>
-                            <Button
-                                disabled={isSendingToCaspio || (application as any)?.caspioSent}
-                                className="w-full"
-                                variant={(application as any)?.caspioSent ? "secondary" : "default"}
-                            >
-                                {isSendingToCaspio ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Sending to Caspio...
-                                    </>
-                                ) : (application as any)?.caspioSent ? (
-                                    <>
-                                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                                        Verified Sent
-                                    </>
-                                ) : (
-                                    <>
-                                        <Database className="mr-2 h-4 w-4" />
-                                        Send CS Summary to Caspio
-                                    </>
-                                )}
-                            </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent className="max-w-3xl">
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Confirm Send to Caspio</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    Review the field mapping that will be used for this submission before sending.
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            {caspioMappingPreview && Object.keys(caspioMappingPreview).length > 0 ? (
-                                <div className="space-y-3">
-                                    <div className="text-sm text-muted-foreground">
-                                        Mapped fields: {Object.keys(caspioMappingPreview).length}
-                                    </div>
-                                    <div className="max-h-64 overflow-y-auto rounded border p-3 text-xs">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
-                                            {Object.entries(caspioMappingPreview).map(([csField, caspioField]) => {
-                                                const value = (application as any)?.[csField];
-                                                return (
-                                                    <div key={`${csField}-${caspioField}`} className="font-mono">
-                                                        {csField} → {caspioField}
-                                                        <span className="text-muted-foreground">: {value ?? '—'}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <Alert variant="destructive">
-                                    <AlertTitle>No locked mapping found</AlertTitle>
-                                    <AlertDescription>
-                                        Save and lock your CS Summary mapping before sending to Caspio.
-                                    </AlertDescription>
-                                </Alert>
-                            )}
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                    onClick={() => {
-                                        sendToCaspio(caspioMappingPreview);
-                                    }}
-                                    disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0}
-                                >
-                                    Confirm & Send
-                                </AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogContent>
-                    </AlertDialog>
-                    
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
                             <Button variant="destructive" className="w-full">
@@ -1332,112 +1089,6 @@ function AdminActions({ application }: { application: Application }) {
                         </AlertDialogContent>
                     </AlertDialog>
 
-                    {/* Update Status Reminders Toggle */}
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
-                        <div className="flex items-center space-x-2">
-                            <Bell className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                                <Label htmlFor="status-reminders" className="text-sm font-medium">
-                                    Update Status Reminders
-                                </Label>
-                                <p className="text-xs text-muted-foreground">
-                                    Send application status updates to user
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            {isUpdatingNotifications && <Loader2 className="h-4 w-4 animate-spin" />}
-                            <Switch
-                                id="status-reminders"
-                                checked={(application as any)?.statusRemindersEnabled ?? false}
-                                onCheckedChange={(enabled) => handleNotificationUpdate('statusReminders', enabled)}
-                                disabled={isUpdatingNotifications}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Email Reminders for Missing Documents Toggle */}
-                    <div className="flex flex-col p-3 border rounded-lg bg-muted/30 space-y-2">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                                <Mail className="h-4 w-4 text-muted-foreground" />
-                                <div>
-                                    <Label htmlFor="email-reminders" className="text-sm font-medium">
-                                        Email Reminders for Missing Documents
-                                    </Label>
-                                    <p className="text-xs text-muted-foreground">
-                                        Current cadence: every {(application as any)?.documentReminderFrequencyDays ? Number((application as any)?.documentReminderFrequencyDays) : 2} days.
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                        Recipient: {(application as any)?.referrerEmail || 'Email not available'}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                {isUpdatingNotifications && <Loader2 className="h-4 w-4 animate-spin" />}
-                                <Switch
-                                    id="email-reminders"
-                                    checked={emailRemindersEnabled}
-                                    onCheckedChange={(enabled) => handleNotificationUpdate('emailReminders', enabled)}
-                                    disabled={isUpdatingNotifications}
-                                />
-                            </div>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                            <Label htmlFor="test-reminder-email" className="text-xs text-muted-foreground">
-                                Test reminder email
-                            </Label>
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    id="test-reminder-email"
-                                    type="email"
-                                    value={testReminderEmail}
-                                    onChange={(event) => setTestReminderEmail(event.target.value)}
-                                    placeholder="name@example.com"
-                                />
-                                <Button
-                                    variant="outline"
-                                    onClick={sendTestMissingDocsReminder}
-                                    disabled={isSendingTestReminder}
-                                >
-                                    {isSendingTestReminder ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Sending...
-                                        </>
-                                    ) : (
-                                        'Send Test'
-                                    )}
-                                </Button>
-                            </div>
-                        </div>
-                        
-                        {/* Show missing documents when reminders are enabled */}
-                        {emailRemindersEnabled && (() => {
-                            const missingDocs = application.forms?.filter(form => 
-                                form.status === 'Pending' && form.type !== 'online-form'
-                            ) || [];
-                            
-                            return missingDocs.length > 0 ? (
-                                <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded">
-                                    <p className="text-xs font-medium text-orange-800 mb-1">Missing Documents:</p>
-                                    <ul className="text-xs text-orange-700 space-y-1">
-                                        {missingDocs.map(doc => (
-                                            <li key={doc.name} className="flex items-center gap-1">
-                                                <div className="w-1 h-1 bg-orange-400 rounded-full"></div>
-                                                {doc.name}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            ) : (
-                                <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                                    <p className="text-xs text-green-700">✅ All documents completed</p>
-                                </div>
-                            );
-                        })()}
-                    </div>
-                    
                     {(application as any)?.caspioSent && (
                         <div className="flex items-center justify-center gap-2 text-xs text-green-700">
                             <CheckCircle2 className="h-4 w-4" />
@@ -1641,9 +1292,21 @@ function ApplicationDetailPageContent() {
   const [agreedRoomBoardAmountInput, setAgreedRoomBoardAmountInput] = useState('');
   const [isSendingEligibilityNote, setIsSendingEligibilityNote] = useState(false);
   const [isUpdatingReminderControls, setIsUpdatingReminderControls] = useState(false);
+  const [isSendingTestReminder, setIsSendingTestReminder] = useState(false);
+  const [isLoadingReminderPreview, setIsLoadingReminderPreview] = useState(false);
+  const [reminderPreview, setReminderPreview] = useState<{
+    recipientEmail: string;
+    referrerName: string;
+    memberName: string;
+    subject: string;
+    missingItems: string[];
+  } | null>(null);
   const [nextStepDateMissing, setNextStepDateMissing] = useState(false);
+  const lastFamilyStatusEmailKeyRef = useRef<string>('');
 
   const reminderFrequencyOptions = useMemo(() => [2, 7] as const, []);
+  const staffTestReminderEmail = String(user?.email || '').trim();
+  const currentReminderMissingItems = useMemo(() => getReminderMissingItems(application), [application]);
   const documentReminderFrequencyDays = useMemo(() => {
     const raw = Number((application as any)?.documentReminderFrequencyDays);
     if (!Number.isFinite(raw) || raw <= 0) return 2;
@@ -1682,6 +1345,188 @@ function ApplicationDetailPageContent() {
     } finally {
       setIsUpdatingReminderControls(false);
     }
+  };
+
+  const loadTestMissingDocsPreview = async () => {
+    if (!staffTestReminderEmail || !application?.id) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Staff email is required.' });
+      return;
+    }
+    setIsLoadingReminderPreview(true);
+    try {
+      const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+      const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
+      const fallbackBaseUrl = origin?.includes('localhost:3001')
+        ? 'http://localhost:3000'
+        : origin;
+      const baseUrl = envBaseUrl || fallbackBaseUrl;
+      const response = await fetch('/api/admin/send-document-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: application.id,
+          userId: (application as any)?.userId || null,
+          overrideEmail: staffTestReminderEmail,
+          baseUrl,
+          previewOnly: true,
+        }),
+      });
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to load reminder preview');
+      }
+      setReminderPreview({
+        recipientEmail: String(result.recipientEmail || staffTestReminderEmail),
+        referrerName: String(result.referrerName || 'there'),
+        memberName: String(result.memberName || 'CalAIM Member'),
+        subject: String(result.subject || 'Missing Documents Reminder'),
+        missingItems: Array.isArray(result.missingItems) ? result.missingItems : [],
+      });
+    } catch (error: any) {
+      setReminderPreview(null);
+      toast({
+        variant: 'destructive',
+        title: 'Preview Failed',
+        description: error?.message || 'Could not load reminder preview.',
+      });
+    } finally {
+      setIsLoadingReminderPreview(false);
+    }
+  };
+
+  const sendTestMissingDocsReminder = async () => {
+    if (!staffTestReminderEmail || !application?.id) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Staff email is required.' });
+      return;
+    }
+    setIsSendingTestReminder(true);
+    try {
+      const envBaseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+      const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
+      const fallbackBaseUrl = origin?.includes('localhost:3001')
+        ? 'http://localhost:3000'
+        : origin;
+      const baseUrl = envBaseUrl || fallbackBaseUrl;
+      const response = await fetch('/api/admin/send-document-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: application.id,
+          userId: (application as any)?.userId || null,
+          overrideEmail: staffTestReminderEmail,
+          baseUrl,
+        }),
+      });
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to send test reminder');
+      }
+      toast({
+        title: 'Test Reminder Sent',
+        description: `Email sent to ${staffTestReminderEmail}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Send Failed',
+        description: error?.message || 'Could not send test reminder.',
+      });
+    } finally {
+      setIsSendingTestReminder(false);
+    }
+  };
+  const sendFamilyStatusUpdateEmail = async (statusValue: string, deniedReason?: string) => {
+    if (!application?.id) return;
+    if (Boolean((application as any)?.statusRemindersEnabled) !== true) return;
+    const recipientEmail = String((application as any)?.referrerEmail || '').trim();
+    if (!recipientEmail) {
+      toast({
+        variant: 'destructive',
+        title: 'Status reminder not sent',
+        description: 'Referrer email is missing for this application.',
+      });
+      return;
+    }
+
+    const reason = String(deniedReason || '').trim();
+    const dedupeKey = `${application.id}::${statusValue}::${reason}`;
+    if (lastFamilyStatusEmailKeyRef.current === dedupeKey) return;
+
+    const referrerName = String((application as any)?.referrerName || '').trim() || 'there';
+    const memberName = `${String(application.memberFirstName || '').trim()} ${String(application.memberLastName || '').trim()}`.trim() || 'CalAIM Member';
+    const staffName = String(user?.displayName || user?.email || 'The Connections Team').trim();
+    const message = /authorization denied/i.test(statusValue)
+      ? `Application progress update: ${statusValue}.${reason ? ` Reason: ${reason}` : ''}`
+      : `Application progress update: ${statusValue}.`;
+
+    try {
+      const response = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipientEmail,
+          subject: `Application progress update for ${memberName}`,
+          memberName: referrerName,
+          staffName,
+          message,
+          status: 'In Progress',
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Failed to send status reminder');
+      }
+      lastFamilyStatusEmailKeyRef.current = dedupeKey;
+      toast({
+        title: 'Status reminder sent',
+        description: `Family update sent to ${recipientEmail}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Status reminder failed',
+        description: error?.message || 'Could not send family status reminder.',
+      });
+    }
+  };
+
+  const handleFamilyStatusProgressChange = async (value: string) => {
+    const previousStatus = familyStatusProgressValue;
+    if (value === 'none') {
+      await updateReminderSettings({
+        familyStatusProgress: '',
+        familyStatusDeniedReason: '',
+      });
+      return;
+    }
+
+    const needsDeniedReason = /authorization denied/i.test(value);
+    const existingReason = needsDeniedReason ? familyStatusDeniedReason : '';
+    await updateReminderSettings({
+      familyStatusProgress: value,
+      familyStatusDeniedReason: needsDeniedReason ? existingReason : '',
+    });
+
+    if (Boolean((application as any)?.statusRemindersEnabled) !== true) return;
+    if (value === previousStatus) return;
+    if (needsDeniedReason && !String(existingReason || '').trim()) {
+      toast({
+        title: 'Denied status saved',
+        description: 'Enter a denial reason to send the status reminder email.',
+      });
+      return;
+    }
+    await sendFamilyStatusUpdateEmail(value, existingReason);
+  };
+
+  const handleFamilyDeniedReasonBlur = async (value: string) => {
+    await updateReminderSettings({ familyStatusDeniedReason: value });
+    if (Boolean((application as any)?.statusRemindersEnabled) !== true) return;
+    if (!familyProgressNeedsDeniedReason || !familyStatusProgressValue) return;
+    if (!String(value || '').trim()) return;
+    await sendFamilyStatusUpdateEmail(familyStatusProgressValue, value);
   };
   const ensureAdminClaim = async () => {
     if (!user) return;
@@ -1749,7 +1594,49 @@ function ApplicationDetailPageContent() {
 
   const planLower = String((application as any)?.healthPlan || '').toLowerCase();
   const isKaiserPlan = planLower.includes('kaiser');
-  const isHealthNetPlan = planLower.includes('health net');
+  const isHealthNetPlan =
+    planLower.includes('health net') ||
+    planLower.includes('healthnet') ||
+    planLower === 'hn';
+  const kaiserFamilyProgressOptions = useMemo(
+    () => [
+      'Application Received',
+      'Requesting Documents',
+      'Authorization Request to MCP',
+      'Authorization Received',
+      'Authorization Denied',
+      'RN/MSW Visit Scheduled',
+      'RN/MSW Visit Complete',
+      'Tier Level Requested from MCP',
+      'Tier Level Received',
+      'Locating RCFEs',
+      'RCFE Located',
+      'R&B/Tier Level Commitment Sent for Signatures',
+      'Member Ready for Move-In',
+      'Member Moved into RCFE',
+    ],
+    []
+  );
+  const healthNetFamilyProgressOptions = useMemo(
+    () => [
+      'Application Received',
+      'Requesting Documents',
+      'RN ISP Scheduled',
+      'RN ISP Complete',
+      'Authorization Request to MCP',
+      'Authorization Received',
+      'Authorization Denied',
+    ],
+    []
+  );
+  const familyProgressOptions = isKaiserPlan
+    ? kaiserFamilyProgressOptions
+    : isHealthNetPlan
+      ? healthNetFamilyProgressOptions
+      : [];
+  const familyStatusProgressValue = String((application as any)?.familyStatusProgress || '').trim();
+  const familyProgressNeedsDeniedReason = /authorization denied/i.test(familyStatusProgressValue);
+  const familyStatusDeniedReason = String((application as any)?.familyStatusDeniedReason || '');
   const authorizedRepInviteEmail = useMemo(() => {
     const candidates = [
       String((application as any)?.repEmail || '').trim(),
@@ -4433,115 +4320,6 @@ function ApplicationDetailPageContent() {
                 <div><strong>Submission Status:</strong> <span className="font-semibold">{application.status}</span></div>
             </div>
             
-            {/* Notification Status Icons */}
-            <div className="flex items-center gap-4 pt-2 border-t">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
-                    <div className="leading-tight">
-                      <div className="text-xs font-medium">
-                        {(application as any)?.emailRemindersEnabled === true ? 'Email reminders: On' : 'Email reminders: Off'}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {(application as any)?.emailRemindersEnabled === true
-                          ? documentReminderFrequencyDays === 7
-                            ? 'Weekly'
-                            : 'Every 2 days'
-                          : 'None'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {isUpdatingReminderControls && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                    <Switch
-                      checked={Boolean((application as any)?.emailRemindersEnabled)}
-                      onCheckedChange={(enabled) => updateReminderSettings({ emailRemindersEnabled: Boolean(enabled) })}
-                      disabled={isUpdatingReminderControls}
-                    />
-                  </div>
-                  <Select
-                    value={Boolean((application as any)?.emailRemindersEnabled) ? String(documentReminderFrequencyDays) : 'none'}
-                    onValueChange={(v) => {
-                      if (v === 'none') {
-                        updateReminderSettings({ emailRemindersEnabled: false });
-                        return;
-                      }
-                      updateReminderSettings({
-                        emailRemindersEnabled: true,
-                        documentReminderFrequencyDays: Number(v),
-                      });
-                    }}
-                    disabled={isUpdatingReminderControls}
-                  >
-                    <SelectTrigger className="h-8 w-[120px]">
-                      <SelectValue placeholder="Frequency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {reminderFrequencyOptions.map((d) => (
-                        <SelectItem key={`doc-freq-${d}`} value={String(d)}>
-                          {d === 7 ? 'Weekly' : 'Every 2 days'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4 text-muted-foreground" />
-                    <div className="leading-tight">
-                      <div className="text-xs font-medium">
-                        {(application as any)?.statusRemindersEnabled === true ? 'Status updates: On' : 'Status updates: Off'}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {(application as any)?.statusRemindersEnabled === true
-                          ? statusReminderFrequencyDays === 2
-                            ? 'Every 2 days'
-                            : 'Weekly'
-                          : 'None'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {isUpdatingReminderControls && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                    <Switch
-                      checked={Boolean((application as any)?.statusRemindersEnabled)}
-                      onCheckedChange={(enabled) => updateReminderSettings({ statusRemindersEnabled: Boolean(enabled) })}
-                      disabled={isUpdatingReminderControls}
-                    />
-                  </div>
-                  <Select
-                    value={Boolean((application as any)?.statusRemindersEnabled) ? String(statusReminderFrequencyDays) : 'none'}
-                    onValueChange={(v) => {
-                      if (v === 'none') {
-                        updateReminderSettings({ statusRemindersEnabled: false });
-                        return;
-                      }
-                      updateReminderSettings({
-                        statusRemindersEnabled: true,
-                        statusReminderFrequencyDays: Number(v),
-                      });
-                    }}
-                    disabled={isUpdatingReminderControls}
-                  >
-                    <SelectTrigger className="h-8 w-[120px]">
-                      <SelectValue placeholder="Frequency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {reminderFrequencyOptions.map((d) => (
-                        <SelectItem key={`status-freq-${d}`} value={String(d)}>
-                          {d === 7 ? 'Weekly' : 'Every 2 days'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-
             {/* Application Progression Field */}
             {/* Application progression moved to Quick actions */}
 
@@ -4564,34 +4342,59 @@ function ApplicationDetailPageContent() {
             {/* Staff assignment moved to Quick actions */}
             <Card className="border-dashed">
             <CardContent className="space-y-4 pt-4">
-                <div className="space-y-3 border-b pb-3">
-                  <div className="space-y-0.5">
-                    <div className={cn('inline-flex items-center gap-2 text-base font-semibold', eligibilityCompleted ? 'text-green-700' : 'text-amber-700')}>
-                      {eligibilityCompleted ? (
-                        <CheckCircle2 className="h-5 w-5" />
-                      ) : (
-                        <XCircle className="h-5 w-5" />
-                      )}
-                      <span>{eligibilityCompleted ? 'Eligibility Check: Complete' : 'Eligibility Check: Pending'}</span>
-                    </div>
-                    {!eligibilityCompleted ? (
-                      <div className="text-xs text-muted-foreground pl-7">
-                        Upload eligibility screenshot + mark CalAIM eligible
-                      </div>
-                    ) : null}
+                <div className="space-y-1 border-b pb-3">
+                  <div className={cn('flex items-center gap-2 text-base font-semibold', eligibilityCompleted ? 'text-green-700' : 'text-amber-700')}>
+                    {eligibilityCompleted ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                    <span>{eligibilityCompleted ? 'Eligibility Check: Complete' : 'Eligibility Check: Pending'}</span>
                   </div>
-                  <div className="space-y-0.5">
-                    <div className={cn('inline-flex items-center gap-2 text-base font-semibold', caspioPushed ? 'text-green-700' : 'text-amber-700')}>
-                      {caspioPushed ? (
-                        <CheckCircle2 className="h-5 w-5" />
-                      ) : (
-                        <XCircle className="h-5 w-5" />
-                      )}
-                      <span>{caspioPushed ? 'Caspio: Pushed' : 'Caspio: Pending'}</span>
-                    </div>
-                    {caspioPushed && caspioSentDateLabel ? (
-                      <div className="text-xs text-muted-foreground">{caspioSentDateLabel}</div>
-                    ) : null}
+                  <div className={cn('flex items-center gap-2 text-base font-semibold', caspioPushed ? 'text-green-700' : 'text-amber-700')}>
+                    {caspioPushed ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                    <span>{caspioPushed ? 'Caspio: Pushed' : 'Caspio: Pending'}</span>
+                  </div>
+                  {caspioPushed && caspioSentDateLabel ? (
+                    <div className="text-xs text-muted-foreground pl-7">{caspioSentDateLabel}</div>
+                  ) : null}
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 text-base font-semibold',
+                      (application as any)?.emailRemindersEnabled === true ? 'text-green-700' : 'text-amber-700'
+                    )}
+                  >
+                    {(application as any)?.emailRemindersEnabled === true ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                    <span>
+                      Email reminders: {(application as any)?.emailRemindersEnabled === true
+                        ? (documentReminderFrequencyDays === 7 ? 'On (weekly)' : 'On (every 2 days)')
+                        : 'Off'}
+                    </span>
+                  </div>
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 text-base font-semibold',
+                      (application as any)?.statusRemindersEnabled === true ? 'text-green-700' : 'text-amber-700'
+                    )}
+                  >
+                    {(application as any)?.statusRemindersEnabled === true ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                    <span>
+                      Status updates: {(application as any)?.statusRemindersEnabled === true
+                        ? (statusReminderFrequencyDays === 7 ? 'On (weekly)' : 'On (every 2 days)')
+                        : 'Off'}
+                    </span>
                   </div>
                 </div>
 
@@ -5017,6 +4820,12 @@ function ApplicationDetailPageContent() {
               </DialogContent>
             </Dialog>
 
+            <PushToCaspioDialog
+              application={application}
+              buttonVariant="outline"
+              buttonClassName="w-full justify-start gap-2"
+            />
+
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
@@ -5034,12 +4843,12 @@ function ApplicationDetailPageContent() {
                   <DialogTitle>Application progression</DialogTitle>
                   <DialogDescription>
                     View Caspio workflow status and tracking fields. Updates should be made in the tracker pages (Caspio-backed), not here.
-                    <div className="mt-2 text-xs text-muted-foreground">
+                    <span className="mt-2 block text-xs text-muted-foreground">
                       Assigned staff:{' '}
                       <span className="font-medium text-foreground">
                         {String((application as any)?.assignedStaffName || '').trim() || 'Unassigned'}
                       </span>
-                    </div>
+                    </span>
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-6">
@@ -5134,97 +4943,254 @@ function ApplicationDetailPageContent() {
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
                   <Mail className="h-4 w-4" />
-                  Interoffice notes
+                  Missing Docs and status reminders
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
                 <DialogHeader>
-                  <DialogTitle>Interoffice notes</DialogTitle>
-                  <DialogDescription>Send staff-only notes tied to this application.</DialogDescription>
+                  <DialogTitle>Missing Docs and status reminders</DialogTitle>
+                  <DialogDescription>
+                    Configure reminder cadence and preview reminder content before test-sending.
+                  </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="interoffice-recipient">Recipients</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          id="interoffice-recipient"
-                          variant="outline"
-                          className="w-full justify-between"
-                          disabled={isLoadingStaff}
-                        >
-                          {isLoadingStaff
-                            ? 'Loading staff...'
-                            : interofficeNote.recipientIds.length === 0
-                              ? 'Select staff members'
-                              : `${interofficeNote.recipientIds.length} selected`}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="p-2 w-72">
-                        <div className="max-h-56 overflow-auto space-y-2">
-                          {staffList.map((staff) => {
-                            const checked = interofficeNote.recipientIds.includes(staff.uid);
-                            return (
-                              <label key={staff.uid} className="flex items-center gap-2 text-sm">
-                                <Checkbox
-                                  checked={checked}
-                                  onCheckedChange={(value) => {
-                                    setInterofficeNote((prev) => ({
-                                      ...prev,
-                                      recipientIds: value
-                                        ? [...prev.recipientIds, staff.uid]
-                                        : prev.recipientIds.filter((id) => id !== staff.uid),
-                                    }));
-                                  }}
-                                />
-                                <span>{staff.name}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                    <div className="flex items-center space-x-2">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <Label htmlFor="email-reminders-quick" className="text-sm font-medium">
+                          Email reminders for missing documents
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Recipient: {(application as any)?.referrerEmail || 'Email not available'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {isUpdatingReminderControls && <Loader2 className="h-4 w-4 animate-spin" />}
+                      <Switch
+                        id="email-reminders-quick"
+                        checked={Boolean((application as any)?.emailRemindersEnabled)}
+                        onCheckedChange={(enabled) => updateReminderSettings({ emailRemindersEnabled: Boolean(enabled) })}
+                        disabled={isUpdatingReminderControls}
+                      />
+                    </div>
                   </div>
+
+                  <div className="p-2 bg-slate-50 border border-slate-200 rounded">
+                    <p className="text-xs font-medium text-slate-800 mb-1">Currently required missing documents (email content):</p>
+                    {currentReminderMissingItems.length > 0 ? (
+                      <ul className="text-xs text-slate-700 space-y-1">
+                        {currentReminderMissingItems.map((doc) => (
+                          <li key={doc} className="flex items-center gap-1">
+                            <div className="w-1 h-1 bg-slate-500 rounded-full"></div>
+                            {doc}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-green-700">All required documents are currently complete.</p>
+                    )}
+                  </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="interoffice-priority">Priority</Label>
+                    <Label htmlFor="email-reminder-frequency-quick">Email reminder frequency</Label>
                     <Select
-                      value={interofficeNote.priority}
-                      onValueChange={(value: 'Regular' | 'Priority' | 'Immediate') =>
-                        setInterofficeNote((prev) => ({ ...prev, priority: value }))
-                      }
+                      value={Boolean((application as any)?.emailRemindersEnabled) ? String(documentReminderFrequencyDays) : 'none'}
+                      onValueChange={(v) => {
+                        if (v === 'none') {
+                          updateReminderSettings({ emailRemindersEnabled: false });
+                          return;
+                        }
+                        updateReminderSettings({
+                          emailRemindersEnabled: true,
+                          documentReminderFrequencyDays: Number(v),
+                        });
+                      }}
+                      disabled={isUpdatingReminderControls}
                     >
-                      <SelectTrigger id="interoffice-priority">
-                        <SelectValue />
+                      <SelectTrigger id="email-reminder-frequency-quick" className="w-full">
+                        <SelectValue placeholder="Frequency" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Regular">Regular (no desktop popup)</SelectItem>
-                        <SelectItem value="Priority">Priority (desktop tray popup)</SelectItem>
-                        <SelectItem value="Immediate">Immediate (desktop popup)</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
+                        {reminderFrequencyOptions.map((d) => (
+                          <SelectItem key={`quick-doc-freq-${d}`} value={String(d)}>
+                            {d === 7 ? 'Weekly' : 'Every 2 days'}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="interoffice-message">Message</Label>
-                    <Textarea
-                      id="interoffice-message"
-                      rows={4}
-                      value={interofficeNote.message}
-                      onChange={(event) => setInterofficeNote((prev) => ({ ...prev, message: event.target.value }))}
-                      placeholder="Enter staff-only instructions or updates..."
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="interoffice-followup">Follow-up date (optional)</Label>
+
+                  <div className="space-y-2 p-3 border rounded-lg bg-muted/20">
+                    <Label htmlFor="staff-test-reminder-email" className="text-sm font-medium">
+                      Staff test reminder email
+                    </Label>
                     <Input
-                      id="interoffice-followup"
-                      type="date"
-                      value={interofficeNote.followUpDate || ''}
-                      onChange={(event) => setInterofficeNote((prev) => ({ ...prev, followUpDate: event.target.value }))}
+                      id="staff-test-reminder-email"
+                      type="email"
+                      value={staffTestReminderEmail}
+                      readOnly
+                      disabled
                     />
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={loadTestMissingDocsPreview}
+                        disabled={isLoadingReminderPreview || !staffTestReminderEmail}
+                      >
+                        {isLoadingReminderPreview ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Loading...
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="mr-2 h-4 w-4" />
+                            Preview Test
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={sendTestMissingDocsReminder}
+                        disabled={isSendingTestReminder || !staffTestReminderEmail}
+                      >
+                        {isSendingTestReminder ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Sending...
+                          </>
+                        ) : (
+                          'Send Test'
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                  <Button onClick={handleSendInterofficeNote} className="w-full">
-                    Send Interoffice Note
-                  </Button>
+
+                  {reminderPreview && (
+                    <div className="rounded border bg-white p-3 space-y-2">
+                      <div className="text-xs font-semibold">Reminder email preview (what applicant sees)</div>
+                      <div className="text-xs text-muted-foreground">To: {reminderPreview.recipientEmail}</div>
+                      <div className="text-xs text-muted-foreground">Subject: {reminderPreview.subject}</div>
+                      <div className="text-xs">
+                        Hi {reminderPreview.referrerName}, this is a reminder that the application for {reminderPreview.memberName} is still missing:
+                      </div>
+                      {reminderPreview.missingItems.length > 0 ? (
+                        <ul className="text-xs space-y-1">
+                          {reminderPreview.missingItems.map((item) => (
+                            <li key={item} className="flex items-center gap-1">
+                              <div className="w-1 h-1 bg-slate-500 rounded-full"></div>
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">No missing items.</div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                    <div className="flex items-center space-x-2">
+                      <Bell className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <Label htmlFor="status-reminders-quick" className="text-sm font-medium">
+                          Status update reminders
+                        </Label>
+                        <p className="text-xs text-muted-foreground">Send application status updates to user</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {isUpdatingReminderControls && <Loader2 className="h-4 w-4 animate-spin" />}
+                      <Switch
+                        id="status-reminders-quick"
+                        checked={Boolean((application as any)?.statusRemindersEnabled)}
+                        onCheckedChange={(enabled) => updateReminderSettings({ statusRemindersEnabled: Boolean(enabled) })}
+                        disabled={isUpdatingReminderControls}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="status-reminder-frequency-quick">Status reminder frequency</Label>
+                    <Select
+                      value={Boolean((application as any)?.statusRemindersEnabled) ? String(statusReminderFrequencyDays) : 'none'}
+                      onValueChange={(v) => {
+                        if (v === 'none') {
+                          updateReminderSettings({ statusRemindersEnabled: false });
+                          return;
+                        }
+                        updateReminderSettings({
+                          statusRemindersEnabled: true,
+                          statusReminderFrequencyDays: Number(v),
+                        });
+                      }}
+                      disabled={isUpdatingReminderControls}
+                    >
+                      <SelectTrigger id="status-reminder-frequency-quick" className="w-full">
+                        <SelectValue placeholder="Frequency" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {reminderFrequencyOptions.map((d) => (
+                          <SelectItem key={`quick-status-freq-${d}`} value={String(d)}>
+                            {d === 7 ? 'Weekly' : 'Every 2 days'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {(isKaiserPlan || isHealthNetPlan) && (
+                    <div className="space-y-2 rounded-lg border p-3 bg-muted/20">
+                      <Label htmlFor="family-status-progress" className="text-sm font-medium">
+                        Application progress (status reminders to families)
+                      </Label>
+                      <Select
+                        value={familyStatusProgressValue || 'none'}
+                        onValueChange={(value) => {
+                          void handleFamilyStatusProgressChange(value);
+                        }}
+                        disabled={isUpdatingReminderControls}
+                      >
+                        <SelectTrigger id="family-status-progress">
+                          <SelectValue placeholder="Select progress status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {familyProgressOptions.map((option) => (
+                            <SelectItem key={`family-progress-${option}`} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {familyProgressNeedsDeniedReason && (
+                        <div className="space-y-2">
+                          <Label htmlFor="family-status-denied-reason" className="text-sm font-medium">
+                            Authorization denied reason
+                          </Label>
+                          <Textarea
+                            id="family-status-denied-reason"
+                            rows={3}
+                            placeholder="Enter denial reason for family status updates..."
+                            value={familyStatusDeniedReason}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setApplication((prev) =>
+                                prev ? ({ ...(prev as any), familyStatusDeniedReason: nextValue } as any) : prev
+                              );
+                            }}
+                            onBlur={(event) => {
+                              void handleFamilyDeniedReasonBlur(event.target.value);
+                            }}
+                            disabled={isUpdatingReminderControls}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </DialogContent>
             </Dialog>
@@ -5435,60 +5401,6 @@ function ApplicationDetailPageContent() {
               </DialogContent>
             </Dialog>
 
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  Notes & communication
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[85vh] overflow-auto">
-                <DialogHeader>
-                  <DialogTitle>Notes & communication</DialogTitle>
-                  <DialogDescription>Member notes and notification-system communication.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  {(application as any)?.client_ID2 ? (
-                    <NoteTracker
-                      memberId={(application as any)?.client_ID2}
-                      memberName={`${application.memberFirstName} ${application.memberLastName}`}
-                    />
-                  ) : (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <MessageSquare className="h-5 w-5" />
-                          Notes & Communication
-                        </CardTitle>
-                        <CardDescription>
-                          Notes load once a Caspio Client_ID2 is linked to this application.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm text-muted-foreground">
-                          This member is not yet linked to a Caspio record, so notes cannot be fetched.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/admin/my-notes?member=${encodeURIComponent(`${application.memberFirstName} ${application.memberLastName}`)}`}>
-                        Open notifications (member)
-                      </Link>
-                    </Button>
-                    {(application as any)?.client_ID2 && (
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={`/admin/member-notes?clientId2=${encodeURIComponent(String((application as any)?.client_ID2 || ''))}`}>
-                          Member notes lookup
-                        </Link>
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
           </CardContent>
         </Card>
       </aside>
