@@ -3058,6 +3058,16 @@ function ApplicationDetailPageContent() {
   
   const totalCount = pathwayRequirements.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const caspioPushed = Boolean((application as any)?.caspioSent);
+  const caspioSentDateRaw = (application as any)?.caspioSentDate;
+  const caspioSentDateLabel = caspioSentDateRaw
+    ? format(
+        typeof caspioSentDateRaw?.toDate === 'function'
+          ? caspioSentDateRaw.toDate()
+          : new Date(caspioSentDateRaw),
+        'MMM d, yyyy h:mm a'
+      )
+    : '';
   
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
@@ -3970,17 +3980,33 @@ function ApplicationDetailPageContent() {
             {/* Staff assignment moved to Quick actions */}
             <Card className="border-dashed">
             <CardContent className="space-y-4 pt-4">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div className={cn('inline-flex items-center gap-2 text-base font-semibold', caspioPushed ? 'text-green-700' : 'text-amber-700')}>
+                    {caspioPushed ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                    <span>{caspioPushed ? 'Caspio: Pushed' : 'Caspio: Pending'}</span>
+                  </div>
+                  {caspioPushed && caspioSentDateLabel ? (
+                    <div className="text-xs text-muted-foreground">{caspioSentDateLabel}</div>
+                  ) : null}
+                </div>
+
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm">
                     <div className="text-xs text-muted-foreground">Assigned staff</div>
                     <div className="font-medium">{(application as any)?.assignedStaffName || 'Unassigned'}</div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {application.healthPlan?.toLowerCase().includes('kaiser')
-                      ? `Progression: ${(application as any)?.kaiserStatus || kaiserSteps[0]}`
-                      : application.healthPlan?.toLowerCase().includes('health net')
-                        ? `Progression: ${healthNetCurrentStatus || 'Unassigned'}`
-                        : null}
+                  <div className="text-right">
+                    <div className="text-xs text-muted-foreground">
+                      {application.healthPlan?.toLowerCase().includes('kaiser')
+                        ? `Progression: ${(application as any)?.kaiserStatus || kaiserSteps[0]}`
+                        : application.healthPlan?.toLowerCase().includes('health net')
+                          ? `Progression: ${healthNetCurrentStatus || 'Unassigned'}`
+                          : null}
+                    </div>
                   </div>
                 </div>
 
@@ -4355,42 +4381,6 @@ function ApplicationDetailPageContent() {
                   <DialogTitle>Assigned staff</DialogTitle>
                   <DialogDescription>Assign primary staff for this application.</DialogDescription>
                 </DialogHeader>
-                <div className="flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      try {
-                        const memberName = `${application.memberFirstName || ''} ${application.memberLastName || ''}`.trim();
-                        const assignedStaff = String((application as any)?.assignedStaffName || '').trim();
-                        const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
-
-                        const rows = [
-                          ['applicationId', application.id],
-                          ['memberName', memberName],
-                          ['assignedStaffName', assignedStaff],
-                          ['assignedStaffId', assignedStaffId],
-                          ['exportedAt', new Date().toISOString()],
-                        ];
-
-                        const csv = rows.map(([k, v]) => `"${String(k).replace(/"/g, '""')}","${String(v).replace(/"/g, '""')}"`).join('\n');
-                        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `assignment-${application.id}.csv`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                        URL.revokeObjectURL(url);
-                      } catch {
-                        // ignore
-                      }
-                    }}
-                  >
-                    Download
-                  </Button>
-                </div>
                 <div className="space-y-5">
                   <div className="space-y-2">
                     <Label htmlFor="main-staff-assignment" className="text-sm font-medium flex items-center gap-2">
