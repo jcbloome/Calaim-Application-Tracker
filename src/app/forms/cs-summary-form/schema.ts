@@ -31,6 +31,13 @@ const dateSchema = z.string().refine(val => {
     return !isNaN(date.getTime()) && date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
 }, { message: " " });
 
+const isSubacuteLocation = (value?: string | null) => {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  return normalized === 'subacute';
+};
 
 export const formSchema = z.object({
     // Step 1 - Member Info
@@ -150,6 +157,22 @@ export const formSchema = z.object({
         if (!data.repRelationship) ctx.addIssue({ code: 'custom', message: ' ', path: ['repRelationship'] });
         if (!data.repPhone) ctx.addIssue({ code: 'custom', message: ' ', path: ['repPhone'] });
         if (!data.repEmail) ctx.addIssue({ code: 'custom', message: ' ', path: ['repEmail'] });
+    }
+
+    if (isSubacuteLocation(data.currentLocation) && !String(data.currentLocationName ?? '').trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        message: ' ',
+        path: ['currentLocationName'],
+      });
+    }
+
+    if (isSubacuteLocation(data.customaryLocationType) && !String(data.customaryLocationName ?? '').trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        message: ' ',
+        path: ['customaryLocationName'],
+      });
     }
   });
 

@@ -40,6 +40,10 @@ interface SocialWorkerStats {
   name: string;
   memberCount: number;
   members: Member[];
+  healthNetMembers: Member[];
+  kaiserMembers: Member[];
+  healthNetAuthorizedCount: number;
+  kaiserAuthorizedCount: number;
   mcoBreakdown: Record<string, number>;
   statusBreakdown: Record<string, number>;
   countyBreakdown: Record<string, number>;
@@ -47,6 +51,7 @@ interface SocialWorkerStats {
   onHoldCount: number;
   notOnHoldCount: number;
   atRcfeCount: number;
+  rcfeUnassignedCount: number;
   monthlyVisitEligibleCount: number;
 }
 
@@ -290,6 +295,7 @@ export default function SocialWorkerAssignmentsPage() {
   const { toast } = useToast();
   const auth = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
+  const [kaiserAuthorizedMembers, setKaiserAuthorizedMembers] = useState<Member[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSocialWorker, setSelectedSocialWorker] = useState('all');
@@ -301,6 +307,7 @@ export default function SocialWorkerAssignmentsPage() {
   const [selectedSwAssignmentDue, setSelectedSwAssignmentDue] = useState<'all' | 'due' | 'other'>('all');
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [selectedSWForModal, setSelectedSWForModal] = useState<SocialWorkerStats | null>(null);
+  const [memberModalPlan, setMemberModalPlan] = useState<'all' | 'healthNet' | 'kaiser'>('all');
   
   // Geo assignment tool state (suggest/export only)
   const [geoCapacityPerSw, setGeoCapacityPerSw] = useState('30');
@@ -378,6 +385,17 @@ export default function SocialWorkerAssignmentsPage() {
             : m
         )
       );
+      setKaiserAuthorizedMembers((prev) =>
+        prev.map((m) =>
+          String(m?.Client_ID2 || '').trim() === memberId
+            ? {
+                ...m,
+                Social_Worker_Assigned: toSwEmail,
+                last_updated: new Date().toISOString(),
+              }
+            : m
+        )
+      );
 
       toast({
         title: 'Assignment updated',
@@ -404,6 +422,11 @@ export default function SocialWorkerAssignmentsPage() {
   const isHealthNetMember = (member: Member) => {
     const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
     return plan.includes('health') && plan.includes('net');
+  };
+
+  const isKaiserMember = (member: Member) => {
+    const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
+    return plan.includes('kaiser');
   };
 
   const isAuthorizedMember = (member: Member) => {
@@ -549,11 +572,15 @@ export default function SocialWorkerAssignmentsPage() {
       const healthNetAuthorizedMembers = allMembers.filter((member) => (
         isHealthNetMember(member) && isAuthorizedMember(member)
       ));
+      const kaiserAuthorized = allMembers.filter((member) => (
+        isKaiserMember(member) && isAuthorizedMember(member)
+      ));
       setMembers(healthNetAuthorizedMembers);
+      setKaiserAuthorizedMembers(kaiserAuthorized);
       
       toast({
         title: "Data Loaded Successfully",
-        description: `Loaded ${healthNetAuthorizedMembers.length} Health Net authorized members from Caspio cache`,
+        description: `Loaded ${healthNetAuthorizedMembers.length} Health Net authorized and ${kaiserAuthorized.length} Kaiser authorized members`,
       });
     } catch (error) {
       console.error('Error fetching all members:', error);
@@ -681,15 +708,17 @@ export default function SocialWorkerAssignmentsPage() {
   // Calculate social worker statistics
   const socialWorkerStats = useMemo((): SocialWorkerStats[] => {
     const stats: Record<string, SocialWorkerStats> = {};
-    
-    members.forEach(member => {
-      const swName = member.Social_Worker_Assigned || 'Unassigned';
-      
+
+    const ensureStat = (swName: string) => {
       if (!stats[swName]) {
         stats[swName] = {
           name: swName,
           memberCount: 0,
           members: [],
+          healthNetMembers: [],
+          kaiserMembers: [],
+          healthNetAuthorizedCount: 0,
+          kaiserAuthorizedCount: 0,
           mcoBreakdown: {},
           statusBreakdown: {},
           countyBreakdown: {},
@@ -697,52 +726,77 @@ export default function SocialWorkerAssignmentsPage() {
           onHoldCount: 0,
           notOnHoldCount: 0,
           atRcfeCount: 0,
+          rcfeUnassignedCount: 0,
           monthlyVisitEligibleCount: 0,
         };
       }
-      
-      stats[swName].memberCount++;
-      stats[swName].members.push(member);
-      
-      // MCO breakdown
+      return stats[swName];
+    };
+
+    // Health Net authorized (used by SW monthly visit portal scope)
+    members.forEach((member) => {
+      const swName = member.Social_Worker_Assigned || 'Unassigned';
+      const stat = ensureStat(swName);
+
+      stat.memberCount += 1;
+      stat.healthNetAuthorizedCount += 1;
+      stat.members.push(member);
+      stat.healthNetMembers.push(member);
+
       const mco = member.CalAIM_MCO || 'Unknown';
-      stats[swName].mcoBreakdown[mco] = (stats[swName].mcoBreakdown[mco] || 0) + 1;
-      
-      // Status breakdown
+      stat.mcoBreakdown[mco] = (stat.mcoBreakdown[mco] || 0) + 1;
+
       const status = member.CalAIM_Status || 'No Status';
-      stats[swName].statusBreakdown[status] = (stats[swName].statusBreakdown[status] || 0) + 1;
-      
-      // County breakdown
+      stat.statusBreakdown[status] = (stat.statusBreakdown[status] || 0) + 1;
+
       const county = member.memberCounty || 'Unknown';
-      stats[swName].countyBreakdown[county] = (stats[swName].countyBreakdown[county] || 0) + 1;
-      
-      // RCFE breakdown
+      stat.countyBreakdown[county] = (stat.countyBreakdown[county] || 0) + 1;
+
       const rcfe = getRcfeFilterBucket(member);
-      stats[swName].rcfeBreakdown[rcfe] = (stats[swName].rcfeBreakdown[rcfe] || 0) + 1;
-      
-      // Hold status
+      stat.rcfeBreakdown[rcfe] = (stat.rcfeBreakdown[rcfe] || 0) + 1;
+
       if (isHold(member.Hold_For_Social_Worker)) {
-        stats[swName].onHoldCount++;
+        stat.onHoldCount += 1;
       } else {
-        stats[swName].notOnHoldCount++;
+        stat.notOnHoldCount += 1;
       }
 
       const atRcfe = hasAssignedRcfe(member);
       if (atRcfe) {
-        stats[swName].atRcfeCount++;
+        stat.atRcfeCount += 1;
+      } else {
+        stat.rcfeUnassignedCount += 1;
       }
       if (!isHold(member.Hold_For_Social_Worker) && atRcfe) {
-        stats[swName].monthlyVisitEligibleCount++;
+        stat.monthlyVisitEligibleCount += 1;
       }
     });
-    
+
+    // Kaiser authorized (informational only; not included in SW portal monthly visits)
+    kaiserAuthorizedMembers.forEach((member) => {
+      const swName = member.Social_Worker_Assigned || 'Unassigned';
+      const stat = ensureStat(swName);
+      stat.kaiserAuthorizedCount += 1;
+      stat.kaiserMembers.push(member);
+      stat.members.push(member);
+
+      const mco = member.CalAIM_MCO || 'Unknown';
+      stat.mcoBreakdown[mco] = (stat.mcoBreakdown[mco] || 0) + 1;
+    });
+
     return Object.values(stats).sort((a, b) => {
       // Sort: Unassigned last, then by member count descending
       if (a.name === 'Unassigned') return 1;
       if (b.name === 'Unassigned') return -1;
-      return b.memberCount - a.memberCount;
+      return (b.healthNetAuthorizedCount + b.kaiserAuthorizedCount) - (a.healthNetAuthorizedCount + a.kaiserAuthorizedCount);
     });
-  }, [members]);
+  }, [members, kaiserAuthorizedMembers]);
+
+  const openMemberModal = useCallback((sw: SocialWorkerStats, plan: 'all' | 'healthNet' | 'kaiser' = 'all') => {
+    setSelectedSWForModal(sw);
+    setMemberModalPlan(plan);
+    setShowMemberModal(true);
+  }, []);
 
   // Get all unique social workers for filter
   const allSocialWorkers = useMemo(() => {
@@ -867,6 +921,18 @@ export default function SocialWorkerAssignmentsPage() {
       return 0;
     });
   }, [members, searchTerm, selectedSocialWorker, selectedMCO, selectedStatus, selectedCounty, selectedRCFE, selectedHoldStatus, selectedSwAssignmentDue, sortField, sortDirection]);
+
+  const modalMembers = useMemo(() => {
+    if (!selectedSWForModal) return [] as Member[];
+    if (memberModalPlan === 'healthNet') return selectedSWForModal.healthNetMembers;
+    if (memberModalPlan === 'kaiser') return selectedSWForModal.kaiserMembers;
+
+    const byClientId = new Map<string, Member>();
+    [...selectedSWForModal.healthNetMembers, ...selectedSWForModal.kaiserMembers].forEach((member) => {
+      byClientId.set(String(member.Client_ID2), member);
+    });
+    return Array.from(byClientId.values());
+  }, [memberModalPlan, selectedSWForModal]);
 
   if (isLoading) {
     return (
@@ -1021,56 +1087,51 @@ export default function SocialWorkerAssignmentsPage() {
                       variant={sw.name === 'Unassigned' ? 'destructive' : 'default'}
                       size="sm"
                       onClick={() => {
-                        setSelectedSWForModal(sw);
-                        setShowMemberModal(true);
+                        openMemberModal(sw, 'all');
                       }}
                     >
-                      {sw.memberCount} members
+                      {sw.healthNetAuthorizedCount + sw.kaiserAuthorizedCount} members
                     </Button>
                   </CardTitle>
                   <CardDescription>
-                    {sw.memberCount} Health Net authorized • {sw.notOnHoldCount} not on hold • {sw.onHoldCount} on hold • {sw.atRcfeCount} at RCFE
+                    {sw.healthNetAuthorizedCount} Health Net authorized • {sw.kaiserAuthorizedCount} Kaiser authorized • {sw.atRcfeCount} at RCFE • {sw.rcfeUnassignedCount} RCFE unassigned
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    <div className="text-sm">
-                      <strong>MCOs:</strong>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {Object.entries(sw.mcoBreakdown)
-                          .sort(([,a], [,b]) => b - a)
-                          .map(([mco, count]) => (
-                            <Badge key={mco} variant="default" className="text-xs">
-                              {mco}: {count}
-                            </Badge>
-                          ))}
-                      </div>
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      SW portal monthly visits filter: CalAIM authorized + Health Net + Not On Hold + At RCFE.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">Health Net:</span>
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="h-auto p-0 text-sm font-semibold"
+                        onClick={() => openMemberModal(sw, 'healthNet')}
+                      >
+                        {sw.healthNetAuthorizedCount}
+                      </Button>
+                      <span className="text-sm text-muted-foreground">click to view member names</span>
                     </div>
-                    <div className="text-sm">
-                      <strong>CalAIM Status:</strong>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {Object.entries(sw.statusBreakdown)
-                          .sort(([, a], [, b]) => b - a)
-                          .slice(0, 2)
-                          .map(([status, count]) => (
-                            <Badge key={status} variant="outline" className="text-xs">
-                              {status}: {count}
-                            </Badge>
-                          ))}
-                      </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">Kaiser:</span>
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="h-auto p-0 text-sm font-semibold"
+                        onClick={() => openMemberModal(sw, 'kaiser')}
+                      >
+                        {sw.kaiserAuthorizedCount}
+                      </Button>
+                      <span className="text-sm text-muted-foreground">informational only (not in SW monthly visits)</span>
                     </div>
-                    <div className="text-sm">
-                      <strong>Top RCFEs:</strong>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {Object.entries(sw.rcfeBreakdown)
-                          .sort(([,a], [,b]) => b - a)
-                          .slice(0, 2)
-                          .map(([rcfe, count]) => (
-                            <Badge key={rcfe} variant="secondary" className="text-xs">
-                              {rcfe === 'RCFE Unassigned' ? 'RCFE Unassigned' : rcfe.substring(0, 20) + (rcfe.length > 20 ? '...' : '')}: {count}
-                            </Badge>
-                          ))}
-                      </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Badge variant="outline">At RCFE: {sw.atRcfeCount}</Badge>
+                      <Badge variant="outline">RCFE Unassigned: {sw.rcfeUnassignedCount}</Badge>
+                      <Badge variant="outline">On Hold (excluded from SW portal): {sw.onHoldCount}</Badge>
+                      <Badge variant="outline">Not On Hold: {sw.notOnHoldCount}</Badge>
+                      <Badge>Monthly Visits: {sw.monthlyVisitEligibleCount}</Badge>
                     </div>
                   </div>
                 </CardContent>
@@ -1907,67 +1968,67 @@ export default function SocialWorkerAssignmentsPage() {
               {selectedSWForModal?.name === 'Unassigned' ? 'Unassigned Members' : `${selectedSWForModal?.name} - Member Details`}
             </DialogTitle>
             <DialogDescription>
-              {selectedSWForModal?.memberCount} members across {Object.keys(selectedSWForModal?.rcfeBreakdown || {}).length} RCFEs
+              {memberModalPlan === 'healthNet'
+                ? `${selectedSWForModal?.healthNetAuthorizedCount || 0} Health Net authorized members`
+                : memberModalPlan === 'kaiser'
+                  ? `${selectedSWForModal?.kaiserAuthorizedCount || 0} Kaiser authorized members (excluded from SW monthly visits)`
+                  : `${modalMembers.length} total members`}
             </DialogDescription>
           </DialogHeader>
           
           {selectedSWForModal && (
             <div className="space-y-4">
-              {/* MCO Summary */}
-              <div>
-                <h4 className="font-medium mb-2">MCO Distribution</h4>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(selectedSWForModal.mcoBreakdown).map(([mco, count]) => (
-                    <Badge key={mco} variant="default">
-                      {mco}: {count}
-                    </Badge>
-                  ))}
-                </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant={memberModalPlan === 'healthNet' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setMemberModalPlan('healthNet')}
+                >
+                  Health Net ({selectedSWForModal.healthNetAuthorizedCount})
+                </Button>
+                <Button
+                  type="button"
+                  variant={memberModalPlan === 'kaiser' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setMemberModalPlan('kaiser')}
+                >
+                  Kaiser ({selectedSWForModal.kaiserAuthorizedCount})
+                </Button>
+                <Button
+                  type="button"
+                  variant={memberModalPlan === 'all' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setMemberModalPlan('all')}
+                >
+                  All ({modalMembers.length})
+                </Button>
               </div>
 
-              {/* RCFE Breakdown */}
-              <div>
-                <h4 className="font-medium mb-2">RCFE Facilities</h4>
-                <div className="space-y-2">
-                  {Object.entries(selectedSWForModal.rcfeBreakdown)
-                    .sort(([,a], [,b]) => b - a)
-                    .map(([rcfe, count]) => {
-                      const rcfeMembers = selectedSWForModal.members.filter(m => 
-                        getRcfeFilterBucket(m) === rcfe
-                      );
-                      const rcfeAddress = rcfeMembers[0]?.RCFE_Address || 'Address not available';
-                      
-                      return (
-                        <div key={rcfe} className="border rounded-lg p-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <h5 className="font-medium">{rcfe === 'RCFE Unassigned' ? 'RCFE Unassigned' : rcfe}</h5>
-                              {rcfe !== 'RCFE Unassigned' && (
-                                <p className="text-sm text-muted-foreground">{rcfeAddress}</p>
-                              )}
-                            </div>
-                            <Badge variant="outline">{count} members</Badge>
-                          </div>
-                          
-                          {/* Members at this RCFE */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-                            {rcfeMembers.map(member => (
-                              <div key={member.id} className="text-sm p-2 bg-muted rounded">
-                                <div className="font-medium">{member.memberName}</div>
-                                <div className="text-muted-foreground">
-                                  {member.CalAIM_MCO} • {member.CalAIM_Status}
-                                </div>
-                                <div className="text-muted-foreground">
-                                  ID: {member.Client_ID2}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {modalMembers
+                  .slice()
+                  .sort((a, b) => String(a.memberName || '').localeCompare(String(b.memberName || '')))
+                  .map((member) => {
+                    const memberRcfe = getRcfeFilterBucket(member);
+                    const plan = isKaiserMember(member) ? 'Kaiser' : 'Health Net';
+                    return (
+                      <div key={`${member.Client_ID2}-${plan}`} className="text-sm p-3 border rounded-lg bg-muted/40">
+                        <div className="font-medium">{member.memberName}</div>
+                        <div className="text-muted-foreground">{plan} • ID: {member.Client_ID2}</div>
+                        <div className="text-muted-foreground">
+                          {memberRcfe} {isHold(member.Hold_For_Social_Worker) ? '• On Hold' : '• Not On Hold'}
                         </div>
-                      );
-                    })}
-                </div>
+                      </div>
+                    );
+                  })}
               </div>
+
+              {modalMembers.length === 0 && (
+                <div className="text-sm text-muted-foreground border rounded-lg p-4">
+                  No members found for this selection.
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

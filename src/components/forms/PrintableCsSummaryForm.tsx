@@ -13,6 +13,11 @@ interface PrintableCsSummaryFormProps {
 
 export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
   const { data = {}, applicationId, showPrintButton = true } = props;
+  const normalizeLocation = (value?: string | null) =>
+    String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const currentSubacuteSelected = normalizeLocation(data.currentLocation) === 'subacute';
+  const customarySubacuteSelected = normalizeLocation(data.customaryLocationType) === 'subacute';
+
   return (
     <PrintableFormLayout
       title="CalAIM Community Support Member Summary Form"
@@ -284,10 +289,14 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.
         </div>
         <PrintableField
-          label="Current Location Name (if applicable)"
+          label={currentSubacuteSelected ? 'Current Location Name (required for Sub-Acute)' : 'Current Location Name (if applicable)'}
           value={data.currentLocationName}
+          required={currentSubacuteSelected}
           width="full"
         />
+        <div className="col-span-full text-xs text-gray-500 print:text-black">
+          If location type is Sub-Acute, location name must be entered.
+        </div>
         
         <PrintableField
           label="Current Address"
@@ -349,10 +358,14 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.
         </div>
         <PrintableField
-          label="Customary Location Name (if applicable)"
+          label={customarySubacuteSelected ? 'Customary Location Name (required for Sub-Acute)' : 'Customary Location Name (if applicable)'}
           value={data.customaryLocationName}
+          required={customarySubacuteSelected}
           width="full"
         />
+        <div className="col-span-full text-xs text-gray-500 print:text-black">
+          If location type is Sub-Acute, location name must be entered.
+        </div>
         <div className="col-span-full text-sm">
           <span className="inline-flex items-center gap-2">
             <span className="w-4 h-4 border border-gray-400 print:border-black rounded-sm" />

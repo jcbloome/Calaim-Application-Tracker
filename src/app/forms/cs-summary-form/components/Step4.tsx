@@ -31,7 +31,10 @@ export default function Step4() {
 
   const formatName = (value: string) => {
     if (!value) return '';
-    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+    return value
+      .split(' ')
+      .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : ''))
+      .join(' ');
   };
   
   const formatAddress = (value: string) => {

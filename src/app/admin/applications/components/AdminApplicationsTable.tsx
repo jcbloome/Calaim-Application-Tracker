@@ -267,9 +267,41 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                     
                     <Section title="Location Information">
                         <QuickViewField label="Current Location Type" value={application.currentLocation} />
-                        <QuickViewField label="Current Address" value={`${application.currentAddress}, ${application.currentCity}, ${application.currentState} ${application.currentZip}`} fullWidth />
+                        <QuickViewField label="Current Location Name" value={application.currentLocationName} />
+                        <QuickViewField
+                          label="Current Address"
+                          value={[
+                            String(application.currentAddress || '').trim(),
+                            String(application.currentCity || '').trim(),
+                            [String(application.currentState || '').trim(), String(application.currentZip || '').trim()]
+                              .filter(Boolean)
+                              .join(' '),
+                            String(application.currentCounty || '').trim(),
+                          ]
+                            .filter(Boolean)
+                            .join(', ')
+                            .replace(/,\s*,/g, ', ')
+                            .trim()}
+                          fullWidth
+                        />
                         <QuickViewField label="Customary Residence Type" value={application.customaryLocationType} />
-                        <QuickViewField label="Customary Address" value={`${application.customaryAddress}, ${application.customaryCity}, ${application.customaryState} ${application.customaryZip}`} fullWidth />
+                        <QuickViewField label="Customary Location Name" value={application.customaryLocationName} />
+                        <QuickViewField
+                          label="Customary Address"
+                          value={[
+                            String(application.customaryAddress || '').trim(),
+                            String(application.customaryCity || '').trim(),
+                            [String(application.customaryState || '').trim(), String(application.customaryZip || '').trim()]
+                              .filter(Boolean)
+                              .join(' '),
+                            String(application.customaryCounty || '').trim(),
+                          ]
+                            .filter(Boolean)
+                            .join(', ')
+                            .replace(/,\s*,/g, ', ')
+                            .trim()}
+                          fullWidth
+                        />
                     </Section>
                     
                     <Section title="Health Plan & Pathway">
@@ -278,7 +310,7 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                         {application.pathway === 'SNF Diversion' && <QuickViewField label="Reason for Diversion" value={application.snfDiversionReason} fullWidth />}
                     </Section>
 
-                     <Section title="ISP & RCFE Information">
+                     <Section title="ISP Information">
                         <QuickViewField label="ISP Contact Name" value={`${application.ispFirstName} ${application.ispLastName}`} />
                         <QuickViewField label="ISP Contact Phone" value={application.ispPhone} />
                         <QuickViewField
@@ -296,18 +328,18 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                             .trim()}
                           fullWidth
                         />
+                    </Section>
+
+                    <Section title="RCFE Information">
                         <QuickViewField label="On ALW Waitlist?" value={application.onALWWaitlist} />
                         <QuickViewField label="Has Preferred RCFE?" value={application.hasPrefRCFE} />
                         <QuickViewField label="RCFE Name" value={application.rcfeName} fullWidth />
-                    </Section>
-
-                    <Section title="Medical & Care Information">
-                        <QuickViewField label="Diagnosis" value={application.diagnosis} fullWidth />
-                        <QuickViewField label="Current Care Level" value={application.currentCareLevel} />
-                        <QuickViewField label="Mobility" value={application.mobility} />
-                        <QuickViewField label="Cognitive Status" value={application.cognitiveStatus} />
-                        <QuickViewField label="Behavioral Concerns" value={application.behavioralConcerns} />
-                        <QuickViewField label="Special Needs" value={application.specialNeeds} fullWidth />
+                        <QuickViewField label="RCFE Address" value={application.rcfeAddress} fullWidth />
+                        <QuickViewField label="Preferred RCFE Cities" value={application.rcfePreferredCities} fullWidth />
+                        <QuickViewField label="RCFE Admin First Name" value={application.rcfeAdminFirstName} />
+                        <QuickViewField label="RCFE Admin Last Name" value={application.rcfeAdminLastName} />
+                        <QuickViewField label="RCFE Admin Phone" value={application.rcfeAdminPhone} />
+                        <QuickViewField label="RCFE Admin Email" value={application.rcfeAdminEmail} />
                     </Section>
 
                     <Section title="Financial Information">

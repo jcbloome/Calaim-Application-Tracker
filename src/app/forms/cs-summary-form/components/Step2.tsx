@@ -28,6 +28,10 @@ export default function Step2() {
     'currentZip',
     'currentCounty'
   ]);
+  const currentLocation = watch('currentLocation');
+  const customaryLocationType = watch('customaryLocationType');
+  const currentSubacuteSelected = String(currentLocation || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'subacute';
+  const customarySubacuteSelected = String(customaryLocationType || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'subacute';
 
   useEffect(() => {
     if (copyAddress) {
@@ -120,10 +124,15 @@ export default function Step2() {
                   name="currentLocationName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Current Location Name (if applicable)</FormLabel>
+                      <FormLabel>
+                        Current Location Name {currentSubacuteSelected ? <span className="text-destructive">*</span> : '(if applicable)'}
+                      </FormLabel>
                       <FormControl>
                         <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
                       </FormControl>
+                      {currentSubacuteSelected && (
+                        <FormDescription>Required when location type is Sub-Acute.</FormDescription>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -233,7 +242,9 @@ export default function Step2() {
                           name="customaryLocationName"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Customary Location Name (if applicable)</FormLabel>
+                              <FormLabel>
+                                Customary Location Name {customarySubacuteSelected ? <span className="text-destructive">*</span> : '(if applicable)'}
+                              </FormLabel>
                               <FormControl>
                                 <Input
                                   {...field}
@@ -242,6 +253,9 @@ export default function Step2() {
                                   onChange={e => field.onChange(formatName(e.target.value))}
                                 />
                               </FormControl>
+                              {customarySubacuteSelected && (
+                                <FormDescription>Required when location type is Sub-Acute.</FormDescription>
+                              )}
                               <FormMessage />
                             </FormItem>
                           )}
