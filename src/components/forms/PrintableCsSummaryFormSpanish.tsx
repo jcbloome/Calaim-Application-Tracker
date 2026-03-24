@@ -252,7 +252,7 @@ export function PrintableCsSummaryFormSpanish({
         )
       ]),
     ].filter(Boolean)),
-    buildSection('Sección 8: Plan de Servicio Individual (ISP)', [
+    buildSection('Sección 11: Plan de Servicio Individual (ISP)', [
       React.createElement('div', {
         key: 'isp-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
@@ -290,7 +290,7 @@ export function PrintableCsSummaryFormSpanish({
       buildField({ label: 'Estado (ISP)', value: data.ispState, required: true, width: 'half' }),
       buildField({ label: 'Código Postal (ISP)', value: data.ispZip, required: true, width: 'half' }),
     ]),
-    buildSection('Sección 9: CalAIM vs. Assisted Living Waiver (ALW)', [
+    buildSection('Sección 12: CalAIM vs. Assisted Living Waiver (ALW)', [
       React.createElement('div', {
         key: 'alw-dup-note',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black'
@@ -303,7 +303,7 @@ export function PrintableCsSummaryFormSpanish({
         width: 'full'
       }),
     ]),
-    buildSection('Sección 10: Pago de Cuidado Fuera del Hogar No Médico (NMOHC) y Pagos de Alojamiento y Comida', [
+    buildSection('Sección 8 y 10: NMOHC y Pagos de Alojamiento y Comida', [
       React.createElement('div', {
         key: 'nmohc-info',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
@@ -339,16 +339,8 @@ export function PrintableCsSummaryFormSpanish({
         React.createElement('p', { key: 'rb-4' }, 'Los miembros que no pueden pagar ninguna porción de alojamiento y comida generalmente no son elegibles para el CS, ya que los requisitos del programa exigen un pago de "alojamiento y comida" del miembro (o su familia).'),
         React.createElement('p', { key: 'rb-5' }, 'Trabajar con CalAIM es a discreción de los RCFEs. Los RCFEs, especialmente en áreas más costosas, podrían no participar en CalAIM. Las familias que buscan colocar a miembros en áreas de bienes raíces costosos deben tener la expectativa realista de que los RCFEs de CalAIM podrían estar ubicados en áreas más asequibles. Antes de aceptar miembros de CalAIM, los RCFEs necesitarán conocer el pago de "alojamiento y comida".')
       ]),
-      buildField({
-        label: 'Reconoce Responsabilidad de Alojamiento y Comida',
-        value: data.ackRoomAndBoard ? 'Sí' : 'No',
-        type: 'radio',
-        options: ['Sí', 'No'],
-        required: true,
-        width: 'full'
-      }),
     ]),
-    buildSection('Sección 11: Share of Cost (SOC)', [
+    buildSection('Sección 9: Share of Cost (SOC)', [
       React.createElement('div', {
         key: 'soc-note-section',
         className: 'col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2'
@@ -366,7 +358,7 @@ export function PrintableCsSummaryFormSpanish({
         React.createElement('p', { key: 'income-note', className: 'mt-2' }, 'Más adelante en esta solicitud, los solicitantes deberán proporcionar comprobante de ingresos del Seguro Social (carta anual de adjudicación o 3 meses de estados de cuenta bancarios que muestren ingresos del Seguro Social).'),
       ]),
     ]),
-    buildSection('Sección 12: Centro de Cuidado Residencial Preferido (RCFE)', [
+    buildSection('Sección 13: Centro de Cuidado Residencial Preferido (RCFE)', [
       buildField({
         label: 'Tiene RCFE Preferido',
         value: data.hasPrefRCFE ? 'Sí' : 'No',

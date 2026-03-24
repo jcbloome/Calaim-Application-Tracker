@@ -20,12 +20,14 @@ try {
 const getMissingItemsFromForms = (application: any): string[] => {
   const forms = Array.isArray(application?.forms) ? application.forms : [];
   if (forms.length === 0) return [];
+  const internalExclusions = new Set(['eligibility screenshot', 'eligibility check']);
   
   return forms
     .filter((form: any) => {
       const name = String(form?.name || '').trim();
       if (!name) return false;
       if (name === 'CS Member Summary' || name === 'CS Summary') return false;
+      if (internalExclusions.has(name.toLowerCase())) return false;
       if (form?.type === 'Info') return false;
       return form?.status !== 'Completed';
     })

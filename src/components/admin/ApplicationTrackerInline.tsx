@@ -15,7 +15,7 @@ export const TRACKED_COMPONENTS: TrackedComponent[] = [
   { key: "LIC 602A - Physician's Report", abbreviation: '602' },
   { key: 'Medicine List', abbreviation: 'Meds' },
   { key: 'SNF Facesheet', abbreviation: 'SNF' },
-  { key: 'Eligibility Check', abbreviation: 'Elig' },
+  { key: 'Eligibility Check Pending', abbreviation: 'Elig Pending' },
   { key: 'Sent to Caspio', abbreviation: 'Caspio' },
   { key: 'Room and Board/Tier Level Agreement', abbreviation: 'R&B/Tier' },
 ];
@@ -40,8 +40,13 @@ export function getComponentStatus(
     return false;
   });
 
-  if (componentKey === 'Eligibility Check') {
-    return (app as any)?.calaimTrackingStatus ? 'Completed' : 'Pending';
+  if (componentKey === 'Eligibility Check' || componentKey === 'Eligibility Check Pending') {
+    const hasEligibilityUpload = Boolean(
+      forms?.some((f) => String(f?.name || '').trim() === 'Eligibility Screenshot' && String(f?.status || '').trim() === 'Completed')
+    );
+    const status = String((app as any)?.calaimTrackingStatus || '').trim().toLowerCase();
+    const isMemberEligible = status === 'calaim eligible';
+    return hasEligibilityUpload && isMemberEligible ? 'Completed' : 'Pending';
   }
   if (componentKey === 'Sent to Caspio') {
     return (app as any)?.caspioSent ? 'Completed' : 'Pending';

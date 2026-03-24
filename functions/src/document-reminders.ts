@@ -183,7 +183,6 @@ function getDefaultRequiredFormNames(pathway?: string, healthPlan?: string): str
     'Proof of Income',
     "LIC 602A - Physician's Report",
     'Medicine List',
-    'Eligibility Screenshot'
   ];
   
   if (String(pathway || '').toLowerCase().includes('diversion')) {
@@ -198,6 +197,7 @@ function getMissingRequiredDocuments(application: any): string[] {
   const formNames = forms.map((form: any) => form?.name).filter(Boolean);
   const fallbackRequired = getDefaultRequiredFormNames(application?.pathway, application?.healthPlan);
   const requiredFormNames = formNames.length > 0 ? formNames : fallbackRequired;
+  const internalExclusions = new Set(['eligibility screenshot', 'eligibility check']);
   
   const formStatusMap = new Map<string, any>(
     forms.map((form: any) => [String(form?.name || '').trim(), form] as [string, any])
@@ -207,6 +207,7 @@ function getMissingRequiredDocuments(application: any): string[] {
     const normalizedName = String(formName || '').trim();
     if (!normalizedName) return false;
     if (normalizedName === 'CS Member Summary' || normalizedName === 'CS Summary') return false;
+    if (internalExclusions.has(normalizedName.toLowerCase())) return false;
     
     const form = formStatusMap.get(normalizedName);
     if (!form) return true;

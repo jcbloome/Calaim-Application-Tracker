@@ -1,6 +1,6 @@
 export type NotePriority = 'General' | 'Priority' | 'Urgent';
 
-export const WEB_NOTIFICATIONS_MOTHBALLED = true;
+export const WEB_NOTIFICATIONS_MOTHBALLED = false;
 
 const PRIORITY_ORDER: Record<NotePriority, number> = {
   Urgent: 3,

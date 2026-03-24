@@ -524,7 +524,7 @@ const quickStatusItems = [
   { key: "LIC 602A - Physician's Report", label: '602' },
   { key: 'Medicine List', label: 'Meds' },
   { key: 'SNF Facesheet', label: 'SNF' },
-  { key: 'Eligibility Check', label: 'Elig' },
+  { key: 'Eligibility Check Pending', label: 'Elig Pending' },
   { key: 'Sent to Caspio', label: 'Caspio' },
   { key: 'Room and Board/Tier Level Agreement', label: 'R&B/Tier' },
 ];
@@ -2827,8 +2827,13 @@ function ApplicationDetailPageContent() {
       return false;
     });
 
-    if (componentKey === 'Eligibility Check') {
-      return (application as any)?.calaimTrackingStatus ? 'Completed' : 'Pending';
+    if (componentKey === 'Eligibility Check' || componentKey === 'Eligibility Check Pending') {
+      const hasEligibilityUpload = Boolean(
+        application?.forms?.some((f) => String(f?.name || '').trim() === 'Eligibility Screenshot' && String(f?.status || '').trim() === 'Completed')
+      );
+      const eligibilityStatus = String((application as any)?.calaimTrackingStatus || '').trim().toLowerCase();
+      const isMemberEligible = eligibilityStatus === 'calaim eligible';
+      return hasEligibilityUpload && isMemberEligible ? 'Completed' : 'Pending';
     }
     if (componentKey === 'Sent to Caspio') {
       return (application as any)?.caspioSent ? 'Completed' : 'Pending';
@@ -3127,6 +3132,7 @@ function ApplicationDetailPageContent() {
   
   const totalCount = pathwayRequirements.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const eligibilityCompleted = getComponentStatus('Eligibility Check Pending') === 'Completed';
   const caspioPushed = Boolean((application as any)?.caspioSent);
   const caspioSentDateRaw = (application as any)?.caspioSentDate;
   const caspioSentDateLabel = caspioSentDateRaw
@@ -4558,18 +4564,35 @@ function ApplicationDetailPageContent() {
             {/* Staff assignment moved to Quick actions */}
             <Card className="border-dashed">
             <CardContent className="space-y-4 pt-4">
-                <div className="flex items-center justify-between border-b pb-3">
-                  <div className={cn('inline-flex items-center gap-2 text-base font-semibold', caspioPushed ? 'text-green-700' : 'text-amber-700')}>
-                    {caspioPushed ? (
-                      <CheckCircle2 className="h-5 w-5" />
-                    ) : (
-                      <XCircle className="h-5 w-5" />
-                    )}
-                    <span>{caspioPushed ? 'Caspio: Pushed' : 'Caspio: Pending'}</span>
+                <div className="space-y-3 border-b pb-3">
+                  <div className="space-y-0.5">
+                    <div className={cn('inline-flex items-center gap-2 text-base font-semibold', eligibilityCompleted ? 'text-green-700' : 'text-amber-700')}>
+                      {eligibilityCompleted ? (
+                        <CheckCircle2 className="h-5 w-5" />
+                      ) : (
+                        <XCircle className="h-5 w-5" />
+                      )}
+                      <span>{eligibilityCompleted ? 'Eligibility Check: Complete' : 'Eligibility Check: Pending'}</span>
+                    </div>
+                    {!eligibilityCompleted ? (
+                      <div className="text-xs text-muted-foreground pl-7">
+                        Upload eligibility screenshot + mark CalAIM eligible
+                      </div>
+                    ) : null}
                   </div>
-                  {caspioPushed && caspioSentDateLabel ? (
-                    <div className="text-xs text-muted-foreground">{caspioSentDateLabel}</div>
-                  ) : null}
+                  <div className="space-y-0.5">
+                    <div className={cn('inline-flex items-center gap-2 text-base font-semibold', caspioPushed ? 'text-green-700' : 'text-amber-700')}>
+                      {caspioPushed ? (
+                        <CheckCircle2 className="h-5 w-5" />
+                      ) : (
+                        <XCircle className="h-5 w-5" />
+                      )}
+                      <span>{caspioPushed ? 'Caspio: Pushed' : 'Caspio: Pending'}</span>
+                    </div>
+                    {caspioPushed && caspioSentDateLabel ? (
+                      <div className="text-xs text-muted-foreground">{caspioSentDateLabel}</div>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between gap-3">

@@ -12,6 +12,11 @@ import type { Application, FormStatus } from '@/lib/definitions';
 import * as admin from 'firebase-admin';
 import 'firebase-admin/auth'; // <--- CRITICAL FIX: Import the auth module
 
+const INTERNAL_REMINDER_EXCLUSIONS = new Set([
+  'eligibility screenshot',
+  'eligibility check',
+]);
+
 interface SendRemindersOutput {
     success: boolean;
     sentCount: number;
@@ -32,7 +37,14 @@ export async function sendReminderEmails(applications: Application[]): Promise<S
         for (const app of applications) {
             // Find pending forms or uploads
             const incompleteItems = app.forms
-                ?.filter((item: FormStatus) => item.status === 'Pending')
+                ?.filter((item: FormStatus) => {
+                    if (item.status !== 'Pending') return false;
+                    const name = String(item.name || '').trim().toLowerCase();
+                    if (!name) return false;
+                    if (name === 'cs member summary' || name === 'cs summary') return false;
+                    if (INTERNAL_REMINDER_EXCLUSIONS.has(name)) return false;
+                    return true;
+                })
                 .map((item: FormStatus) => item.name);
             
             // Fetch user data to get email and name

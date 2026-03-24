@@ -122,9 +122,6 @@ export const formSchema = z.object({
     ispZip: requiredString,
     ispFacilityName: requiredString,
     onALWWaitlist: z.enum(['Yes', 'No', 'Unknown'], { errorMap: () => ({ message: ' ' }) }),
-    ackRoomAndBoard: z.boolean().refine(val => val === true, {
-      message: " ",
-    }),
     hasPrefRCFE: z.enum(['Yes', 'No'], { errorMap: () => ({ message: ' ' }) }),
     rcfeName: optionalString,
     rcfeAddress: optionalString,

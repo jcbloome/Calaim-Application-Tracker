@@ -51,7 +51,7 @@ export default function NotificationSettingsPage() {
     soundType: 'mellow-note',
     displayStyle: 'standard',
     urgentOnly: false,
-    suppressWebWhenDesktopActive: false,
+    suppressWebWhenDesktopActive: true,
     quietHours: {
       enabled: false,
       start: '22:00',

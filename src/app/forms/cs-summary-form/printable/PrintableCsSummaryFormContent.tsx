@@ -236,7 +236,7 @@ export function PrintableCsSummaryFormContent() {
             </div>
              <div className="space-y-4">
                 <div>
-                <SectionTitle>Individual Service Plan (ISP)</SectionTitle>
+                <SectionTitle>Section 11: Individual Service Plan (ISP)</SectionTitle>
                     <h3 className="text-sm font-medium text-gray-800 mt-4">Individual Service Plan (ISP) Contact</h3>
                     <p className="text-xs text-gray-600 my-2">
                       An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the "assisted living" portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.
@@ -264,7 +264,7 @@ export function PrintableCsSummaryFormContent() {
                         <Field label="ZIP Code" />
                     </div>
                     
-                <h3 className="text-sm font-medium text-gray-800 mt-4">Section 9: CalAIM vs. Assisted Living Waiver (ALW)</h3>
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Section 12: CalAIM vs. Assisted Living Waiver (ALW)</h3>
                 <div className="mt-2 p-3 border border-gray-300 text-xs text-gray-700">
                   CalAIM and ALW are duplicative services, a member enrolled in one will not be funded by the other.
                 </div>
@@ -275,7 +275,7 @@ export function PrintableCsSummaryFormContent() {
                     <CheckboxField label="Unknown" />
                 </div>
 
-                <h3 className="text-sm font-medium text-gray-800 mt-6">Section 10A: Non-Medical Out-of-Home Care (NMOHC) Payment</h3>
+                <h3 className="text-sm font-medium text-gray-800 mt-6">Section 8: Non-Medical Out-of-Home Care (NMOHC)</h3>
                 <p className="text-xs text-gray-600 mt-1">NMOHC is a supplement to SSI for RCFE residents.</p>
                 <div className="prose prose-sm max-w-none text-gray-700 space-y-2 p-4 border rounded-lg bg-gray-50 text-xs mt-2">
                     <p>Non-Medical Out-of-Home Care (NMOHC) is a payment supplement that boosts a person’s monthly SSI check because they live in a licensed assisted living home rather than an apartment or house.</p>
@@ -294,7 +294,7 @@ export function PrintableCsSummaryFormContent() {
                     </ul>
                 </div>
 
-                <h3 className="text-sm font-medium text-gray-800 mt-4">Section 11: RCFE Selection</h3>
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Section 13: RCFE Selection</h3>
                 <div className="space-y-2 mt-3">
                     <p className="text-xs font-medium text-gray-700">Has a preferred assisted living facility (RCFE) been chosen?</p>
                     <div className="flex gap-6">
@@ -316,7 +316,7 @@ export function PrintableCsSummaryFormContent() {
                 </div>
 
                 <div>
-                    <SectionTitle>Section 10B: Room & Board Payments</SectionTitle>
+                    <SectionTitle>Section 10: Room & Board Payments</SectionTitle>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-2 p-4 border rounded-lg bg-gray-50 text-xs mb-4">
                         <p><strong>Non-Medical Out-of-Home Care (NMOHC)</strong> is a payment supplement that boosts a person’s monthly SSI because they live in a licensed assisted living home (RCFE).</p>
                         <p>In California, if a person lives in an RCFE, the state recognizes higher costs and moves the person from the "Independent Living" rate to the "NMOHC" rate.</p>
@@ -349,7 +349,6 @@ export function PrintableCsSummaryFormContent() {
                     <div className="p-3 border border-gray-300 text-xs text-gray-700 mb-2">
                         Proof of income (annual award letter or 3 months of bank statements showing Social Security income) is required by some managed care plans. If income is above approximately $1,800, this might trigger Medi-Cal Share of Cost which needs to be resolved before applying for CalAIM. See Program Information pages for more information about this.
                     </div>
-                    <CheckboxField label="I have read and understood the financial obligation for Room and Board." />
                 </div>
             </div>
              <PageFooter pageNumber={3} totalPages={3} />

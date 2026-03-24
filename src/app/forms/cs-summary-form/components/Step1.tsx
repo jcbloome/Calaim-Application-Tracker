@@ -111,11 +111,6 @@ export default function Step1({
 
   return (
     <div className="space-y-6">
-      {!isAdminView && (
-        <div className="mb-3">
-          <GlossaryDialog className="p-0 h-auto" />
-        </div>
-      )}
       {/* What is CalAIM Information Card */}
       <Card className="border-l-4 border-blue-500 bg-blue-50">
         <CardHeader>
@@ -128,10 +123,13 @@ export default function Step1({
             creating a more seamless and consistent system. It aims to achieve this through a focus on 
             "whole person care," which includes addressing social determinants of health, integrating physical, 
             mental, and social services, and launching new programs like Enhanced Care Management (ECM) and 
-            Community Supports. CS and ECM are administered through managed care plans (MCPs). Please refer to our Acronym Glossary above for a full list of acronyms.
+            Community Supports. CS and ECM are administered through managed care plans (MCPs).
           </p>
         </CardContent>
       </Card>
+      <div className="mt-2">
+        <GlossaryDialog className="p-0 h-auto" />
+      </div>
 
       <FormSection 
         title="Section 1: Member Information" 

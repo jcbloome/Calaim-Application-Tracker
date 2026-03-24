@@ -635,14 +635,6 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
             CalAIM members, RCFEs will need to know the "room and board" payment.
           </p>
         </div>
-        <PrintableField
-          label="Acknowledges Room & Board Responsibility"
-          value={data.ackRoomAndBoard ? 'Yes' : 'No'}
-          type="radio"
-          options={['Yes', 'No']}
-          required
-          width="full"
-        />
       </PrintableFormSection>
 
       {/* NMOHC */}

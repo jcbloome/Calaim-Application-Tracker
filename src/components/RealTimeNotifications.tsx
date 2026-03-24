@@ -66,6 +66,20 @@ interface NotificationData {
   suppressWebToast?: boolean;
 }
 
+const toMs = (value: any): number => {
+  if (!value) return 0;
+  try {
+    if (typeof value?.toMillis === 'function') return value.toMillis();
+    if (typeof value?.toDate === 'function') return value.toDate().getTime();
+    if (typeof value === 'number') return value;
+    const d = new Date(value);
+    const ms = d.getTime();
+    return Number.isNaN(ms) ? 0 : ms;
+  } catch {
+    return 0;
+  }
+};
+
 export function RealTimeNotifications() {
   const { user } = useUser();
   const firestore = useFirestore();
@@ -129,6 +143,7 @@ export function RealTimeNotifications() {
     suppressWebWhenDesktopActive: true,
     interofficeNotificationsEnabled: true
   });
+  const [electronPresenceActive, setElectronPresenceActive] = useState(false);
   const desktopPriorityPillRef = useRef<
     Array<{
       kind?: 'note' | 'docs' | 'cs';
@@ -274,6 +289,34 @@ export function RealTimeNotifications() {
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
+
+  useEffect(() => {
+    if (!firestore || !user?.uid) {
+      setElectronPresenceActive(false);
+      return;
+    }
+
+    const presenceRef = doc(firestore, 'desktop_presence', user.uid);
+    const unsubscribe = onSnapshot(
+      presenceRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setElectronPresenceActive(false);
+          return;
+        }
+        const data = snap.data() as any;
+        const lastSeenMs = toMs(data?.lastSeenAt);
+        const fresh = lastSeenMs > 0 ? Date.now() - lastSeenMs <= 2 * 60 * 1000 : false;
+        const active = Boolean(data?.active);
+        const effectivePaused = Boolean(data?.effectivePaused);
+        setElectronPresenceActive(Boolean(active && fresh && !effectivePaused));
+      },
+      () => {
+        setElectronPresenceActive(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [firestore, user?.uid]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -769,9 +812,11 @@ export function RealTimeNotifications() {
           const desktopPresent = typeof window !== 'undefined'
             && Boolean(window.desktopNotifications)
             && !Boolean(window.desktopNotifications?.__shim);
+          const desktopAppActivelyNotifying = desktopPresent && !desktopEffectivePaused;
+          const hasActiveDesktopChannel = desktopAppActivelyNotifying || electronPresenceActive;
           const shouldShowWebToast = (() => {
             if (!webToastPolicy.webAppNotificationsEnabled) return false;
-            if (desktopPresent && webToastPolicy.suppressWebWhenDesktopActive) return false;
+            if (hasActiveDesktopChannel && webToastPolicy.suppressWebWhenDesktopActive) return false;
             if (Boolean((highlightNote as any)?.suppressWebToast)) return false;
             return shouldShowWebToastBase;
           })();
