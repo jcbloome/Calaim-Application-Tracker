@@ -307,10 +307,10 @@ async function getNotesFromFirestore(clientId2: string): Promise<MemberNote[]> {
     
     console.log(`🔍 Fetching notes from Firestore for Client_ID2: ${clientId2}`);
     
+    // Avoid requiring a composite index (clientId2 + createdAt) for basic reads.
     const notesSnapshot = await adminDb
       .collection(MEMBER_NOTES_COLLECTION)
       .where('clientId2', '==', clientId2)
-      .orderBy('createdAt', 'desc')
       .get();
 
     const notes: MemberNote[] = notesSnapshot.docs.map(doc => {
@@ -323,7 +323,13 @@ async function getNotesFromFirestore(clientId2: string): Promise<MemberNote[]> {
         followUpDate: data.followUpDate?.toDate?.()?.toISOString() || data.followUpDate,
         syncedAt: data.syncedAt?.toDate?.()?.toISOString() || data.syncedAt
       } as MemberNote;
-    }).filter(note => !note.deleted);
+    })
+      .filter(note => !note.deleted)
+      .sort((a, b) => {
+        const aMs = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bMs = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bMs - aMs;
+      });
 
     console.log(`✅ Retrieved ${notes.length} notes from Firestore for Client_ID2: ${clientId2}`);
     
@@ -407,8 +413,13 @@ async function saveNotesToFirestore(notes: MemberNote[]): Promise<void> {
         resolvedAt: note.resolvedAt ? Timestamp.fromDate(new Date(note.resolvedAt)) : null,
         syncedAt: note.syncedAt ? Timestamp.fromDate(new Date(note.syncedAt)) : Timestamp.now()
       };
-      
-      batch.set(noteRef, noteData, { merge: true });
+
+      // Firestore rejects undefined values; strip them before write.
+      const sanitized = Object.fromEntries(
+        Object.entries(noteData).filter(([, value]) => value !== undefined)
+      );
+
+      batch.set(noteRef, sanitized, { merge: true });
     });
     
     await batch.commit();
@@ -720,6 +731,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const clientId2 = searchParams.get('clientId2');
     const forceSync = searchParams.get('forceSync') === 'true';
+    const skipSync = searchParams.get('skipSync') === 'true';
+    const repairIfEmpty = searchParams.get('repairIfEmpty') === 'true';
     const searchQuery = searchParams.get('search');
 
     // Handle full-text search across all notes using new module
@@ -734,7 +747,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`📥 Fetching notes for member: ${clientId2} (forceSync: ${forceSync})`);
+    console.log(
+      `📥 Fetching notes for member: ${clientId2} (forceSync: ${forceSync}, skipSync: ${skipSync}, repairIfEmpty: ${repairIfEmpty})`
+    );
 
     // Use legacy Caspio REST table sync for member notes.
     // The module-based notes tables are not guaranteed to exist in all Caspio environments.
@@ -745,14 +760,29 @@ export async function GET(request: NextRequest) {
 
     let isFirstSync = false;
     let newNotesCount = 0;
-    if (forceSync || !hasFirstSync || !prevLastSyncAt) {
-      isFirstSync = true;
-      newNotesCount = await syncAllNotesFromCaspio(memberKey);
-    } else {
-      newNotesCount = await syncNewNotesFromCaspio(memberKey, prevLastSyncAt);
+    if (!skipSync) {
+      if (forceSync || !hasFirstSync || !prevLastSyncAt) {
+        isFirstSync = true;
+        newNotesCount = await syncAllNotesFromCaspio(memberKey);
+      } else {
+        newNotesCount = await syncNewNotesFromCaspio(memberKey, prevLastSyncAt);
+      }
     }
 
-    const notes = await getNotesFromFirestore(memberKey);
+    let notes = await getNotesFromFirestore(memberKey);
+    let repairedFromEmptyStore = false;
+    let repairImportedCount = 0;
+
+    // Recovery path: if sync status exists but notes store is empty, run one historical backfill once.
+    if (!skipSync && repairIfEmpty && !forceSync && notes.length === 0 && hasFirstSync) {
+      console.warn(`⚠️ Empty saved notes detected for ${memberKey}; running one-time repair backfill.`);
+      repairImportedCount = await syncAllNotesFromCaspio(memberKey);
+      notes = await getNotesFromFirestore(memberKey);
+      repairedFromEmptyStore = true;
+      console.log(
+        `✅ Repair backfill completed for ${memberKey}: imported ${repairImportedCount}, total now ${notes.length}`
+      );
+    }
 
     return NextResponse.json({
       success: true,
@@ -766,7 +796,10 @@ export async function GET(request: NextRequest) {
       ilsNotes: notes.filter(n => n.source === 'ILS').length,
       appNotes: notes.filter(n => n.source === 'App' || n.source === 'Admin').length,
       isFirstSync,
-      newNotesCount
+      newNotesCount,
+      didSync: !skipSync,
+      repairedFromEmptyStore,
+      repairImportedCount
     });
 
   } catch (error: any) {

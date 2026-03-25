@@ -32,6 +32,7 @@ type SyncProgress = {
   complete: number;
   success: number;
   failed: number;
+  existingNotesLoaded: number;
   newNotesImported: number;
   recentErrors: string[];
   currentMember: string;
@@ -65,11 +66,15 @@ export default function IlsStatusCheckPage() {
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [notesByClientId, setNotesByClientId] = useState<Record<string, MemberNote[]>>({});
   const [loadingMembers, setLoadingMembers] = useState(false);
+  const [loadingSavedNotes, setLoadingSavedNotes] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
   const [syncingOne, setSyncingOne] = useState<string>('');
   const [search, setSearch] = useState('');
   const [assignmentFilter, setAssignmentFilter] = useState('all');
+  const [noteDateFrom, setNoteDateFrom] = useState('');
+  const [noteDateTo, setNoteDateTo] = useState('');
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [lastSyncNewNotes, setLastSyncNewNotes] = useState(0);
 
   const stopRef = useRef(false);
   const controllersRef = useRef<Set<AbortController>>(new Set());
@@ -113,6 +118,9 @@ export default function IlsStatusCheckPage() {
         );
 
       setMembers(onlyKaiserAuthorized);
+      setNotesByClientId({});
+      setLastSyncNewNotes(0);
+      setSyncProgress(null);
       toast({
         title: 'Members loaded',
         description: `Loaded ${onlyKaiserAuthorized.length} Kaiser Authorized members.`,
@@ -128,12 +136,13 @@ export default function IlsStatusCheckPage() {
     }
   }, [toast]);
 
-  const syncMemberNotes = useCallback(
-    async (member: KaiserMember, opts?: { signal?: AbortSignal }) => {
-      // Incremental-only sync for ongoing operations.
+  const fetchMemberNotes = useCallback(
+    async (member: KaiserMember, opts?: { signal?: AbortSignal; skipSync?: boolean; repairIfEmpty?: boolean }) => {
       const query = new URLSearchParams({
         clientId2: member.client_ID2,
         forceSync: 'false',
+        skipSync: opts?.skipSync ? 'true' : 'false',
+        repairIfEmpty: opts?.repairIfEmpty ? 'true' : 'false',
       });
       const res = await fetch(`/api/member-notes?${query.toString()}`, { signal: opts?.signal });
       const data = await res.json().catch(() => ({}));
@@ -145,6 +154,8 @@ export default function IlsStatusCheckPage() {
       return {
         totalNotes: notes.length,
         newNotesCount: Number(data?.newNotesCount || 0),
+        repairImportedCount: Number(data?.repairImportedCount || 0),
+        repairedFromEmptyStore: Boolean(data?.repairedFromEmptyStore),
       };
     },
     []
@@ -154,7 +165,7 @@ export default function IlsStatusCheckPage() {
     async (member: KaiserMember) => {
       setSyncingOne(member.client_ID2);
       try {
-        const result = await syncMemberNotes(member);
+        const result = await fetchMemberNotes(member, { skipSync: false });
         toast({
           title: 'Member synced',
           description: `${member.memberFirstName} ${member.memberLastName}: ${result.totalNotes} total notes (${result.newNotesCount} new).`,
@@ -169,8 +180,101 @@ export default function IlsStatusCheckPage() {
         setSyncingOne('');
       }
     },
-    [syncMemberNotes, toast]
+    [fetchMemberNotes, toast]
   );
+
+  const loadSavedNotesOnly = useCallback(async () => {
+    const scope = members.filter(matchesAssignmentFilter);
+    if (scope.length === 0) return;
+
+    stopRef.current = false;
+    controllersRef.current.forEach((c) => c.abort());
+    controllersRef.current.clear();
+    setLoadingSavedNotes(true);
+    setSyncProgress({
+      total: scope.length,
+      complete: 0,
+      success: 0,
+      failed: 0,
+      existingNotesLoaded: 0,
+      newNotesImported: 0,
+      recentErrors: [],
+      currentMember: '',
+      stopped: false,
+    });
+
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    let idx = 0;
+    const concurrency = 3;
+
+    const addRecentError = (msg: string) => {
+      setSyncProgress((prev) =>
+        prev ? { ...prev, recentErrors: [msg, ...prev.recentErrors].slice(0, 5) } : prev
+      );
+    };
+
+    const worker = async () => {
+      while (true) {
+        if (stopRef.current) return;
+        const i = idx;
+        idx += 1;
+        if (i >= scope.length) return;
+        const member = scope[i];
+        setSyncProgress((prev) =>
+          prev ? { ...prev, currentMember: `${member.memberLastName}, ${member.memberFirstName}` } : prev
+        );
+
+        const controller = new AbortController();
+        controllersRef.current.add(controller);
+        try {
+          const result = await fetchMemberNotes(member, {
+            signal: controller.signal,
+            skipSync: true,
+            repairIfEmpty: false,
+          });
+          setSyncProgress((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  complete: prev.complete + 1,
+                  success: prev.success + 1,
+                  existingNotesLoaded: prev.existingNotesLoaded + result.totalNotes,
+                }
+              : prev
+          );
+          await delay(80);
+        } catch (error: any) {
+          const aborted = String(error?.name || '').toLowerCase() === 'aborterror';
+          if (aborted) {
+            setSyncProgress((prev) => (prev ? { ...prev, stopped: true } : prev));
+            return;
+          }
+          const label = `${member.memberLastName}, ${member.memberFirstName} (${member.client_ID2})`;
+          addRecentError(`${label}: ${String(error?.message || 'Failed to load saved notes')}`);
+          setSyncProgress((prev) =>
+            prev ? { ...prev, complete: prev.complete + 1, failed: prev.failed + 1 } : prev
+          );
+        } finally {
+          controllersRef.current.delete(controller);
+        }
+      }
+    };
+
+    try {
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
+      setSyncProgress((prev) => (prev ? { ...prev, currentMember: '' } : prev));
+      toast({
+        title: stopRef.current ? 'Load stopped' : 'Saved notes loaded',
+        description: stopRef.current
+          ? 'Stopped by user.'
+          : `Loaded ${scope.length} members from saved notes store.`,
+      });
+    } finally {
+      controllersRef.current.forEach((c) => c.abort());
+      controllersRef.current.clear();
+      setLoadingSavedNotes(false);
+    }
+  }, [fetchMemberNotes, matchesAssignmentFilter, members, toast]);
 
   const syncAllNewNotes = useCallback(async () => {
     const scope = members.filter(matchesAssignmentFilter);
@@ -185,6 +289,7 @@ export default function IlsStatusCheckPage() {
       complete: 0,
       success: 0,
       failed: 0,
+      existingNotesLoaded: 0,
       newNotesImported: 0,
       recentErrors: [],
       currentMember: '',
@@ -230,7 +335,11 @@ export default function IlsStatusCheckPage() {
           let lastError: any = null;
           for (let attempt = 1; attempt <= 4; attempt++) {
             try {
-              result = await syncMemberNotes(member, { signal: controller.signal });
+              result = await fetchMemberNotes(member, {
+                signal: controller.signal,
+                skipSync: false,
+                repairIfEmpty: true,
+              });
               break;
             } catch (error: any) {
               lastError = error;
@@ -256,6 +365,7 @@ export default function IlsStatusCheckPage() {
                   ...prev,
                   complete: prev.complete + 1,
                   success: prev.success + 1,
+                  existingNotesLoaded: prev.existingNotesLoaded + Math.max(0, (result.totalNotes || 0) - (result.newNotesCount || 0)),
                   newNotesImported: prev.newNotesImported + (result.newNotesCount || 0),
                 }
               : prev
@@ -281,6 +391,7 @@ export default function IlsStatusCheckPage() {
     try {
       await Promise.all(Array.from({ length: concurrency }, () => worker()));
       setSyncProgress((prev) => (prev ? { ...prev, currentMember: '' } : prev));
+      setLastSyncNewNotes(totalNew);
       toast({
         title: stopRef.current ? 'Sync stopped' : 'Sync complete',
         description: stopRef.current
@@ -292,7 +403,7 @@ export default function IlsStatusCheckPage() {
       controllersRef.current.clear();
       setSyncingAll(false);
     }
-  }, [matchesAssignmentFilter, members, syncMemberNotes, toast]);
+  }, [fetchMemberNotes, matchesAssignmentFilter, members, toast]);
 
   const stopSync = useCallback(() => {
     stopRef.current = true;
@@ -353,11 +464,32 @@ export default function IlsStatusCheckPage() {
     return rows;
   }, [getMemberAssignment, matchesAssignmentFilter, members, notesByClientId]);
 
+  const filteredReportRows = useMemo(() => {
+    if (!noteDateFrom && !noteDateTo) return reportRows;
+    const fromMs = noteDateFrom ? new Date(`${noteDateFrom}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
+    const toMs = noteDateTo ? new Date(`${noteDateTo}T23:59:59.999`).getTime() : Number.POSITIVE_INFINITY;
+    return reportRows.filter((row) => {
+      const noteMs = row.noteDate ? new Date(row.noteDate).getTime() : NaN;
+      if (!Number.isFinite(noteMs)) return false;
+      return noteMs >= fromMs && noteMs <= toMs;
+    });
+  }, [noteDateFrom, noteDateTo, reportRows]);
+
+  const loadedMembersWithNotes = useMemo(
+    () => Object.values(notesByClientId).filter((notes) => Array.isArray(notes) && notes.length > 0).length,
+    [notesByClientId]
+  );
+
+  const totalLoadedNotes = useMemo(
+    () => Object.values(notesByClientId).reduce((acc, notes) => acc + (Array.isArray(notes) ? notes.length : 0), 0),
+    [notesByClientId]
+  );
+
   const exportCsv = useCallback(() => {
-    if (reportRows.length === 0) {
+    if (filteredReportRows.length === 0) {
       toast({
         title: 'Nothing to export',
-        description: 'No note rows available. Sync new notes first.',
+        description: 'No note rows available for the current filters/date range.',
         variant: 'destructive',
       });
       return;
@@ -377,7 +509,7 @@ export default function IlsStatusCheckPage() {
 
     const lines = [
       header.map(csvEscape).join(','),
-      ...reportRows.map((r) =>
+      ...filteredReportRows.map((r) =>
         [
           r.memberName,
           r.clientId2,
@@ -402,7 +534,7 @@ export default function IlsStatusCheckPage() {
     a.download = `ILS_Kaiser_Authorized_Notes_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [reportRows, toast]);
+  }, [filteredReportRows, toast]);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -414,20 +546,28 @@ export default function IlsStatusCheckPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={fetchMembers} disabled={loadingMembers || syncingAll}>
+          <Button variant="outline" onClick={fetchMembers} disabled={loadingMembers || syncingAll || loadingSavedNotes}>
             {loadingMembers ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
             Load Kaiser Authorized Members
           </Button>
-          <Button onClick={syncAllNewNotes} disabled={members.length === 0 || syncingAll || loadingMembers}>
+          <Button
+            variant="outline"
+            onClick={loadSavedNotesOnly}
+            disabled={members.length === 0 || syncingAll || loadingMembers || loadingSavedNotes}
+          >
+            {loadingSavedNotes ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            Load Saved Notes
+          </Button>
+          <Button onClick={syncAllNewNotes} disabled={members.length === 0 || syncingAll || loadingMembers || loadingSavedNotes}>
             {syncingAll ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
             Sync New Notes
           </Button>
-          {syncingAll ? (
+          {syncingAll || loadingSavedNotes ? (
             <Button variant="destructive" onClick={stopSync}>
-              Stop Sync
+              Stop
             </Button>
           ) : null}
-          <Button variant="secondary" onClick={exportCsv} disabled={reportRows.length === 0}>Export CSV</Button>
+          <Button variant="secondary" onClick={exportCsv} disabled={filteredReportRows.length === 0}>Export CSV</Button>
         </div>
       </div>
 
@@ -447,19 +587,31 @@ export default function IlsStatusCheckPage() {
             <CardDescription>In-memory report dataset</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{Object.keys(notesByClientId).length}</div>
+            <div className="text-2xl font-bold">{loadedMembersWithNotes}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total Report Rows</CardTitle>
-            <CardDescription>Flattened member-note lines</CardDescription>
+            <CardTitle className="text-sm">Existing Notes Loaded</CardTitle>
+            <CardDescription>Previously saved notes in report</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{reportRows.length}</div>
+            <div className="text-2xl font-bold">{totalLoadedNotes}</div>
           </CardContent>
         </Card>
         <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">New Notes (Last Sync)</CardTitle>
+            <CardDescription>Incremental notes added by latest sync</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{lastSyncNewNotes}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="md:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Scope</CardTitle>
             <CardDescription>Assignment + search filter</CardDescription>
@@ -478,6 +630,41 @@ export default function IlsStatusCheckPage() {
               ))}
             </select>
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, MRN, or ID2..." />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <Input
+                type="date"
+                value={noteDateFrom}
+                onChange={(e) => setNoteDateFrom(e.target.value)}
+                placeholder="From date"
+              />
+              <Input
+                type="date"
+                value={noteDateTo}
+                onChange={(e) => setNoteDateTo(e.target.value)}
+                placeholder="To date"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-fit h-8 px-2 text-xs"
+              onClick={() => {
+                setNoteDateFrom('');
+                setNoteDateTo('');
+              }}
+              disabled={!noteDateFrom && !noteDateTo}
+            >
+              Clear date range
+            </Button>
+          </CardContent>
+        </Card>
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Total Report Rows</CardTitle>
+            <CardDescription>Flattened member-note lines in current filters</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{filteredReportRows.length}</div>
           </CardContent>
         </Card>
       </div>
@@ -499,7 +686,7 @@ export default function IlsStatusCheckPage() {
             </div>
             <div className="text-xs text-muted-foreground flex items-center justify-between">
               <span>
-                Success: {syncProgress.success} • Failed: {syncProgress.failed} • New notes: {syncProgress.newNotesImported}
+                Success: {syncProgress.success} • Failed: {syncProgress.failed} • Existing loaded: {syncProgress.existingNotesLoaded} • New notes: {syncProgress.newNotesImported}
               </span>
               <span>{syncProgress.stopped ? 'Stopped' : syncProgress.currentMember || ''}</span>
             </div>
@@ -572,11 +759,11 @@ export default function IlsStatusCheckPage() {
           <CardHeader>
             <CardTitle>Report Preview</CardTitle>
             <CardDescription>
-              Previewing first {Math.min(reportRows.length, 200)} rows. CSV export includes all rows in current scope.
+              Previewing first {Math.min(filteredReportRows.length, 200)} rows. CSV export includes all rows in current scope/date range.
             </CardDescription>
           </CardHeader>
           <CardContent className="max-h-[620px] overflow-y-auto">
-            {reportRows.length === 0 ? (
+            {filteredReportRows.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 No report rows yet. Load members, then sync new notes when needed.
               </div>
@@ -595,7 +782,7 @@ export default function IlsStatusCheckPage() {
                     </tr>
                   </thead>
                   <tbody className="[&_tr:last-child]:border-0">
-                  {reportRows.slice(0, 200).map((row, idx) => (
+                  {filteredReportRows.slice(0, 200).map((row, idx) => (
                     <tr
                       key={`${row.clientId2}-${row.noteDate}-${idx}`}
                       className="border-b transition-colors hover:bg-muted/50"
