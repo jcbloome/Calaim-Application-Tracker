@@ -43,6 +43,7 @@ interface ApplicationStatusPayload {
   status: 'Deleted' | 'Approved' | 'Submitted' | 'Requires Revision' | 'In Progress' | 'Completed & Submitted';
   includeBcc?: boolean;
   portalUrl?: string;
+  surveyUrl?: string;
 }
 
 interface ReminderPayload {
@@ -310,7 +311,7 @@ async function getBccRecipients(): Promise<string[]> {
 
 
 export const sendApplicationStatusEmail = async (payload: ApplicationStatusPayload) => {
-    const { to, subject, memberName, staffName, message, status, includeBcc = true, portalUrl } = payload;
+    const { to, subject, memberName, staffName, message, status, includeBcc = true, portalUrl, surveyUrl } = payload;
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
@@ -323,6 +324,7 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
             staffName,
             message,
             status,
+            surveyUrl,
             portalUrl: String(
               portalUrl ||
               process.env.NEXT_PUBLIC_APP_URL ||

@@ -113,6 +113,10 @@ export type Application = {
   expectedRoomBoardPayment?: string;
   ackRoomAndBoard?: boolean;
   ackSocDetermination?: boolean;
+  customerFeedbackRating?: number;
+  customerFeedbackRecommend?: 'yes' | 'no';
+  customerFeedbackComments?: string;
+  customerFeedbackSubmittedAt?: string;
   roomBoardFamilyPayAttestation?: boolean;
   roomBoardNoIncomeFacilityDiscretionAck?: boolean;
   hasPrefRCFE?: 'Yes' | 'No';
@@ -166,6 +170,9 @@ export type FormStatus = {
   ackFoc?: boolean;
   ackSocDetermination?: boolean;
   monthlyIncome?: string | null;
+  feedbackRating?: number | null;
+  feedbackRecommend?: 'yes' | 'no' | null;
+  feedbackComments?: string | null;
 };
 
 export type Acronym = {

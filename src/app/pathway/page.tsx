@@ -26,6 +26,7 @@ import {
   Package,
   ArrowLeft,
   AlertTriangle,
+  MessageSquareHeart,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -742,6 +743,9 @@ function PathwayPageContent() {
       { id: 'rb', label: 'Room & Board Commitment', completed: !!(waiverFormStatus as any)?.ackRoomAndBoard || !!(application as any)?.ackRoomAndBoard },
       { id: 'soc', label: 'Medi-Cal SOC Determination', completed: !!(waiverFormStatus as any)?.ackSocDetermination || !!(application as any)?.ackSocDetermination }
   ];
+  const feedbackFormStatus = formStatusMap.get('Customer Feedback Survey') as FormStatusType | undefined;
+  const feedbackCompleted = feedbackFormStatus?.status === 'Completed';
+  const showFeedbackCard = application.status === 'Completed & Submitted' || application.status === 'Approved';
 
   const consolidatedMedicalDocuments = [
       { id: 'lic-602a-check', name: "LIC 602A - Physician's Report" },
@@ -1183,6 +1187,29 @@ function PathwayPageContent() {
                                 <span>{isConsolidatedUploading ? `Uploading... ${consolidatedProgress?.toFixed(0)}%` : 'Upload Consolidated Documents'}</span>
                             </Label>
                             <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly || !isAnyConsolidatedChecked} multiple />
+                        </CardContent>
+                    </Card>
+                )}
+                {showFeedbackCard && (
+                    <Card key="customer-feedback-survey" className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
+                        <CardHeader className="pb-4">
+                            <div className="flex justify-between items-start gap-4">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                  <MessageSquareHeart className="h-5 w-5 text-muted-foreground" />
+                                  Customer Feedback Survey (Optional)
+                                </CardTitle>
+                            </div>
+                            <CardDescription>
+                              Tell us how your application experience went. Your feedback helps improve the process and does not affect eligibility.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-col flex-grow justify-end gap-4">
+                            <StatusIndicator status={feedbackCompleted ? 'Completed' : 'Pending'} />
+                            <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
+                                <Link href={`/forms/customer-feedback?applicationId=${encodeURIComponent(String(applicationId || ''))}`}>
+                                    {feedbackCompleted ? 'View/Edit Feedback' : 'Give Feedback'} &rarr;
+                                </Link>
+                            </Button>
                         </CardContent>
                     </Card>
                 )}

@@ -964,6 +964,10 @@ function AdminActions({ application }: { application: Application }) {
         setIsSending(true);
 
         try {
+            const surveyUrl =
+              status === 'Approved'
+                ? `${window.location.origin.replace(/\/$/, '')}/forms/customer-feedback?applicationId=${encodeURIComponent(String(application.id || ''))}`
+                : undefined;
             const response = await fetch('/api/email/send', {
                 method: 'POST',
                 headers: {
@@ -977,6 +981,7 @@ function AdminActions({ application }: { application: Application }) {
                     staffName: "The Connections Team",
                     message: notes || 'Your application status has been updated. Please log in to your dashboard for more details.',
                     status: status as any, // Cast because we know it's valid
+                    surveyUrl,
                 }),
             });
             

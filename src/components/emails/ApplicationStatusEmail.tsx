@@ -7,6 +7,7 @@ interface ApplicationStatusEmailProps {
   message: string;
   status: 'Deleted' | 'Approved' | 'Submitted' | 'Requires Revision' | 'In Progress' | 'Completed & Submitted';
   portalUrl?: string;
+  surveyUrl?: string;
 }
 
 const container = {
@@ -93,6 +94,7 @@ const ApplicationStatusEmail: React.FC<Readonly<ApplicationStatusEmailProps>> = 
   message,
   status,
   portalUrl,
+  surveyUrl,
 }) => (
   <div style={container}>
     <div style={card}>
@@ -114,9 +116,19 @@ const ApplicationStatusEmail: React.FC<Readonly<ApplicationStatusEmailProps>> = 
       <p style={paragraph}>
         If you have any questions, please reply to this email or contact our office directly. You can view the full application status by logging into your dashboard.
       </p>
-       <a href={portalUrl || 'https://connectcalaim.com/login'} style={button}>
+      <a href={portalUrl || 'https://connectcalaim.com/login'} style={button}>
         Go to My Dashboard
       </a>
+      {status === 'Approved' && surveyUrl ? (
+        <div style={{ marginTop: '18px' }}>
+          <p style={{ ...paragraph, marginBottom: '8px' }}>
+            We would also love your feedback about the application process.
+          </p>
+          <a href={surveyUrl} style={{ ...button, backgroundColor: '#0f766e', marginTop: 0 }}>
+            Complete Feedback Survey
+          </a>
+        </div>
+      ) : null}
       <p style={footer}>
         This is an automated message from Connect CalAIM.
       </p>
