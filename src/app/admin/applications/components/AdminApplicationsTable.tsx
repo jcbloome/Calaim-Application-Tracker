@@ -379,6 +379,103 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
     )
 }
 
+const FilesQuickViewDialog = ({ application }: { application: WithId<Application & FormValues> }) => {
+  const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
+
+  const uploadedDocuments = forms
+    .filter((form) => form?.status === 'Completed' && (form?.type === 'Upload' || form?.fileName || form?.downloadURL))
+    .map((form) => ({
+      formName: String(form?.name || 'Uploaded Document'),
+      fileName: String(form?.fileName || 'File uploaded'),
+      downloadURL: String(form?.downloadURL || '').trim(),
+      dateCompleted: form?.dateCompleted || null,
+    }));
+
+  const completedForms = forms
+    .filter((form) => form?.status === 'Completed' && form?.type !== 'Upload')
+    .map((form) => ({
+      formName: String(form?.name || 'Form'),
+      dateCompleted: form?.dateCompleted || null,
+      type: String(form?.type || 'online-form'),
+    }));
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">
+          <FileText className="h-3 w-3 mr-1" />
+          View Files
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            Documents & Completed Forms: {application.memberFirstName} {application.memberLastName}
+          </DialogTitle>
+          <DialogDescription>
+            Quick view of uploaded files and completed forms for this member.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-6 py-2">
+          <div>
+            <h3 className="text-lg font-semibold mb-2 text-primary">Uploaded Documents</h3>
+            {uploadedDocuments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No uploaded documents found.</p>
+            ) : (
+              <div className="space-y-2 rounded-md border p-3">
+                {uploadedDocuments.map((doc, idx) => (
+                  <div key={`${doc.formName}-${idx}`} className="flex flex-col gap-1 border-b last:border-b-0 pb-2 last:pb-0">
+                    <p className="text-sm font-semibold">{doc.formName}</p>
+                    <p className="text-xs text-muted-foreground">{doc.fileName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Completed: {doc.dateCompleted ? formatDate(doc.dateCompleted) : 'N/A'}
+                    </p>
+                    {doc.downloadURL ? (
+                      <a
+                        href={doc.downloadURL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Open file
+                      </a>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">No direct file link available.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h3 className="text-lg font-semibold mb-2 text-primary">Completed Forms</h3>
+            {completedForms.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No completed forms found.</p>
+            ) : (
+              <div className="space-y-2 rounded-md border p-3">
+                {completedForms.map((form, idx) => (
+                  <div key={`${form.formName}-${idx}`} className="flex items-start justify-between gap-3 border-b last:border-b-0 pb-2 last:pb-0">
+                    <div>
+                      <p className="text-sm font-semibold">{form.formName}</p>
+                      <p className="text-xs text-muted-foreground">Type: {form.type}</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground whitespace-nowrap">
+                      {form.dateCompleted ? formatDate(form.dateCompleted) : 'N/A'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 export const AdminApplicationsTable = ({
   applications,
   isLoading,
@@ -699,6 +796,7 @@ export const AdminApplicationsTable = ({
                         </TooltipProvider>
                     )}
                     <QuickViewDialog application={app} />
+                    <FilesQuickViewDialog application={app} />
                     <Button asChild variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">
                         <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View Details</Link>
                     </Button>
@@ -807,6 +905,7 @@ export const AdminApplicationsTable = ({
                       {app.status}
                     </Badge>
                     <QuickViewDialog application={app} />
+                    <FilesQuickViewDialog application={app} />
                     <Button asChild size="sm" variant="outline">
                       <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
                         View Details
