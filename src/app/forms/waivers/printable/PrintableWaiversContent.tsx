@@ -115,11 +115,11 @@ export function PrintableWaiversContent() {
                     <SectionTitle>Medi-Cal Share of Cost Determination</SectionTitle>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
                         <p>Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed.</p>
-                        <p><strong>Program Information (SOC reduction details):</strong> https://connectcalaim.com/info/eligibility</p>
+                        <p>Proof of income might need to be furnished as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).</p>
+                        <p>Program Information (SOC reduction details): https://connectcalaim.com/info/eligibility</p>
                         <p>Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.</p>
                     </div>
-                    <Field label="Member Monthly Income" description="Examples: SSI/SSP amount, pension, or other monthly income sources." />
-                    <p className="text-xs text-gray-700"><strong>Proof of income might need to be furnished</strong> as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).</p>
+                    <Field label="Member Monthly Income * (Required)" description="Examples: SSI/SSP amount, pension, or other monthly income sources." />
                     <CheckboxField label="I have read and understood the Medi-Cal Share of Cost Determination section." />
                 </div>
               

@@ -126,67 +126,6 @@ export function PrintableWaiversForm({
         </div>
       </PrintableFormSection>
 
-      {/* Room and Board Commitment */}
-      <PrintableFormSection title="Room and Board Commitment Waiver">
-        <div className="col-span-full space-y-4 text-sm print:text-xs">
-          <p>
-            I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the
-            Managed Care Plan pays the assisted living service portion.
-          </p>
-          <p>
-            I understand room and board amounts may vary by facility, geography, and private-room requests, and
-            additional agreements may be required by the selected facility.
-          </p>
-          <p>
-            I acknowledge that inability to pay any room and board portion may impact eligibility for this community
-            support program.
-          </p>
-          <p>
-            <strong>Room and Board commitment acknowledgment only</strong> is captured in this section.
-          </p>
-
-          <PrintableField
-            label="I have read and understood the Room and Board Commitment waiver section"
-            type="checkbox"
-            options={['Yes, I understand and agree']}
-            width="full"
-          />
-        </div>
-      </PrintableFormSection>
-
-      {/* Medi-Cal Share of Cost Determination */}
-      <PrintableFormSection title="Medi-Cal Share of Cost Determination">
-        <div className="col-span-full space-y-4 text-sm print:text-xs">
-          <p>
-            Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). CalAIM applicants must have
-            a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed.
-          </p>
-          <p>
-            <strong>Program Information (SOC reduction details):</strong> https://connectcalaim.com/info/eligibility
-          </p>
-          <p>
-            Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC)
-            payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
-          </p>
-          <PrintableField
-            label="Member Monthly Income"
-            required
-            width="full"
-          />
-          <p className="text-xs text-gray-700 print:text-black">
-            <strong>Proof of income might need to be furnished</strong> as part of this application process (for
-            example, an annual award letter or 3 months of bank statements showing Social Security income).
-          </p>
-
-          <PrintableField
-            label="I have read and understood the Medi-Cal Share of Cost Determination section"
-            type="checkbox"
-            options={['Yes, I understand and agree']}
-            width="full"
-          />
-        </div>
-      </PrintableFormSection>
-
       {/* Liability Waiver */}
       <PrintableFormSection title="Member/POA Waiver and Release of Liability">
         <div className="col-span-full space-y-4 text-sm print:text-xs">
@@ -292,6 +231,64 @@ export function PrintableWaiversForm({
               width="full"
             />
           </div>
+        </div>
+      </PrintableFormSection>
+
+      {/* Room and Board Commitment */}
+      <PrintableFormSection title="Room and Board Commitment Waiver">
+        <div className="col-span-full space-y-4 text-sm print:text-xs">
+          <p>
+            I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the
+            Managed Care Plan pays the assisted living service portion.
+          </p>
+          <p>
+            I understand room and board amounts may vary by facility, geography, and private-room requests, and
+            additional agreements may be required by the selected facility.
+          </p>
+          <p>
+            I acknowledge that inability to pay any room and board portion may impact eligibility for this community
+            support program.
+          </p>
+
+          <PrintableField
+            label="I have read and understood the Room and Board Commitment waiver section"
+            type="checkbox"
+            options={['Yes, I understand and agree']}
+            width="full"
+          />
+        </div>
+      </PrintableFormSection>
+
+      {/* Medi-Cal Share of Cost Determination */}
+      <PrintableFormSection title="Medi-Cal Share of Cost Determination">
+        <div className="col-span-full space-y-4 text-sm print:text-xs">
+          <p>
+            Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). CalAIM applicants must have
+            a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed.
+          </p>
+          <p className="text-xs text-gray-700 print:text-black">
+            Proof of income might need to be furnished as part of this application process (for
+            example, an annual award letter or 3 months of bank statements showing Social Security income).
+          </p>
+          <p>
+            Program Information (SOC reduction details): https://connectcalaim.com/info/eligibility
+          </p>
+          <p>
+            Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC)
+            payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
+          </p>
+          <PrintableField
+            label="Member Monthly Income * (Required)"
+            required
+            width="full"
+          />
+
+          <PrintableField
+            label="I have read and understood the Medi-Cal Share of Cost Determination section"
+            type="checkbox"
+            options={['Yes, I understand and agree']}
+            width="full"
+          />
         </div>
       </PrintableFormSection>
 
