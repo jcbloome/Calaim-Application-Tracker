@@ -24,7 +24,6 @@ function CustomerFeedbackPageContent() {
   const applicationId = String(searchParams.get('applicationId') || '').trim();
 
   const [rating, setRating] = useState<string>('');
-  const [recommend, setRecommend] = useState<'yes' | 'no' | ''>('');
   const [comments, setComments] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -39,18 +38,16 @@ function CustomerFeedbackPageContent() {
     if (!application) return;
     const feedbackForm = (application.forms || []).find((f) => String(f.name || '').trim() === 'Customer Feedback Survey');
     const existingRating = Number((feedbackForm as any)?.feedbackRating ?? (application as any)?.customerFeedbackRating ?? 0);
-    const existingRecommend = String((feedbackForm as any)?.feedbackRecommend ?? (application as any)?.customerFeedbackRecommend ?? '').trim();
     const existingComments = String((feedbackForm as any)?.feedbackComments ?? (application as any)?.customerFeedbackComments ?? '').trim();
 
     setRating(existingRating > 0 ? String(existingRating) : '');
-    setRecommend(existingRecommend === 'yes' || existingRecommend === 'no' ? (existingRecommend as 'yes' | 'no') : '');
     setComments(existingComments);
   }, [application]);
 
   const isComplete = useMemo(() => {
     const parsedRating = Number.parseInt(rating, 10);
-    return parsedRating >= 1 && parsedRating <= 5 && (recommend === 'yes' || recommend === 'no');
-  }, [rating, recommend]);
+    return parsedRating >= 1 && parsedRating <= 5 && comments.trim().length > 0;
+  }, [rating, comments]);
 
   const handleSave = async () => {
     if (!applicationDocRef || !application) return;
@@ -58,7 +55,7 @@ function CustomerFeedbackPageContent() {
       toast({
         variant: 'destructive',
         title: 'Missing required fields',
-        description: 'Please provide a rating and recommendation before submitting feedback.',
+        description: 'Please provide a rating and tell us how we can improve the site.',
       });
       return;
     }
@@ -72,8 +69,7 @@ function CustomerFeedbackPageContent() {
       href: '/forms/customer-feedback',
       status: 'Completed',
       feedbackRating: parsedRating,
-      feedbackRecommend: recommend as 'yes' | 'no',
-      feedbackComments: comments.trim() || null,
+      feedbackComments: comments.trim(),
       dateCompleted: Timestamp.now(),
     };
     const updatedForms =
@@ -92,8 +88,7 @@ function CustomerFeedbackPageContent() {
         {
           forms: updatedForms,
           customerFeedbackRating: parsedRating,
-          customerFeedbackRecommend: recommend,
-          customerFeedbackComments: comments.trim() || '',
+          customerFeedbackComments: comments.trim(),
           customerFeedbackSubmittedAt: new Date().toISOString(),
           lastUpdated: serverTimestamp(),
         },
@@ -168,26 +163,12 @@ function CustomerFeedbackPageContent() {
               </div>
 
               <div className="space-y-2">
-                <Label>Would you recommend this process to others? (required)</Label>
-                <RadioGroup value={recommend} onValueChange={(val) => setRecommend(val as 'yes' | 'no')} className="flex gap-4">
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem id="recommend-yes" value="yes" />
-                    <Label htmlFor="recommend-yes">Yes</Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem id="recommend-no" value="no" />
-                    <Label htmlFor="recommend-no">No</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="feedback-comments">Additional comments (optional)</Label>
+                <Label htmlFor="feedback-comments">How can we improve this site? (required)</Label>
                 <Textarea
                   id="feedback-comments"
                   value={comments}
                   onChange={(e) => setComments(e.target.value)}
-                  placeholder="Tell us what worked well or what we can improve."
+                  placeholder="Tell us what would make the site easier or better for you."
                   className="min-h-[130px]"
                 />
               </div>

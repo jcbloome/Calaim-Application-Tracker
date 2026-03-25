@@ -114,7 +114,6 @@ export type Application = {
   ackRoomAndBoard?: boolean;
   ackSocDetermination?: boolean;
   customerFeedbackRating?: number;
-  customerFeedbackRecommend?: 'yes' | 'no';
   customerFeedbackComments?: string;
   customerFeedbackSubmittedAt?: string;
   roomBoardFamilyPayAttestation?: boolean;
@@ -171,7 +170,6 @@ export type FormStatus = {
   ackSocDetermination?: boolean;
   monthlyIncome?: string | null;
   feedbackRating?: number | null;
-  feedbackRecommend?: 'yes' | 'no' | null;
   feedbackComments?: string | null;
 };
 
