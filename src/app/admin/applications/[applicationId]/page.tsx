@@ -4856,7 +4856,7 @@ function ApplicationDetailPageContent() {
                             <StatusIndicator status={status} />
                             {getFormAction(req)}
                             {(
-                                <div className="space-y-2 rounded-md border border-red-200 bg-red-50/60 p-3">
+                                <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
                                     <Dialog
                                       open={rejectDialogForm === req.title}
                                       onOpenChange={(open) => setRejectDialogForm(open ? req.title : null)}
@@ -4865,7 +4865,7 @@ function ApplicationDetailPageContent() {
                                         <Button
                                           variant="outline"
                                           size="sm"
-                                          className="w-full border-red-300 text-red-700 hover:bg-red-100"
+                                          className="w-full border-amber-300 text-amber-800 hover:bg-amber-100"
                                         >
                                           Reject card / request redo
                                         </Button>
@@ -4935,7 +4935,7 @@ function ApplicationDetailPageContent() {
                                             </Button>
                                             <Button
                                               size="sm"
-                                              className="bg-red-600 hover:bg-red-700"
+                                              className="bg-amber-600 text-white hover:bg-amber-700"
                                               disabled={Boolean(rejectingByForm[req.title])}
                                               onClick={() => handleRejectFormRedo(req.title, true)}
                                             >
@@ -4963,7 +4963,7 @@ function ApplicationDetailPageContent() {
                                         <DialogTrigger asChild>
                                           <button
                                             type="button"
-                                            className="text-xs text-red-700 underline underline-offset-2 hover:text-red-800 w-fit"
+                                            className="text-xs text-amber-800 underline underline-offset-2 hover:text-amber-900 w-fit"
                                           >
                                             View reject history ({(formInfo as any).revisionHistory.length})
                                           </button>
