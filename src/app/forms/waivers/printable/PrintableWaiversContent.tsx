@@ -28,7 +28,7 @@ export function PrintableWaiversContent() {
           <form>
             <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Waivers & Authorizations</h1>
-                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This document contains the HIPAA Authorization, Liability Waiver, and Freedom of Choice acknowledgments.</p>
+                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This document contains the HIPAA Authorization, Liability Waiver, Freedom of Choice, and Room and Board Commitment acknowledgments.</p>
             </div>
             <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
@@ -97,6 +97,21 @@ export function PrintableWaiversContent() {
                     <h3 className="text-sm font-medium text-gray-800 mt-4">My Choice</h3>
                     <CheckboxField label="I choose to accept Community Supports services for community transition." />
                     <CheckboxField label="I choose to decline Community Supports services for community transition." />
+                </div>
+
+                {/* Room and Board Commitment Section */}
+                <div>
+                    <SectionTitle>Room and Board Commitment Waiver</SectionTitle>
+                    <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
+                        <p>I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the Managed Care Plan pays the assisted living service portion.</p>
+                        <p>I understand room and board amounts may vary by facility, geography, and private-room requests, and additional agreements may be required by the selected facility.</p>
+                        <p>I acknowledge that inability to pay any room and board portion may impact eligibility for this community support program.</p>
+                        <p><strong>Monthly income is required</strong> to help determine whether there may be a Medi-Cal Share of Cost (SOC), which generally must be reduced to $0 before CalAIM enrollment can proceed.</p>
+                        <p><strong>Proof of income is required</strong> as part of this application process (for example, an annual award letter or recent income statements).</p>
+                        <p><strong>Non-Medical Out-of-Home Care (NMOHC) bump-up note:</strong> members who receive less than $1,620 in 2026 may be eligible for this bump-up. In those cases, the member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.</p>
+                    </div>
+                    <Field label="Member Monthly Income" description="Examples: SSI/SSP amount, pension, or other monthly income sources." />
+                    <CheckboxField label="I have read and understood the Room and Board Commitment waiver section." />
                 </div>
               
               <div>

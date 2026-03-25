@@ -45,10 +45,12 @@ function WaiversFormComponent() {
     const [signerName, setSignerName] = useState('');
     const [signerRelationship, setSignerRelationship] = useState('');
     const [signatureDate, setSignatureDate] = useState('');
+    const [monthlyIncome, setMonthlyIncome] = useState('');
 
     const [ackHipaa, setAckHipaa] = useState(false);
     const [ackLiability, setAckLiability] = useState(false);
     const [ackFoc, setAckFoc] = useState(false);
+    const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
     const [focChoice, setFocChoice] = useState<'accept' | 'decline' | undefined>(undefined);
 
 
@@ -73,17 +75,22 @@ function WaiversFormComponent() {
                 setAckHipaa(form.ackHipaa || false);
                 setAckLiability(form.ackLiability || false);
                 setAckFoc(form.ackFoc || false);
+                setAckRoomAndBoard(Boolean((form as any).ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard));
+                setMonthlyIncome(String((form as any)?.monthlyIncome ?? (application as any)?.monthlyIncome ?? ''));
                 setSignatureDate(form.dateCompleted ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString());
             } else {
                  setSignatureDate(new Date().toLocaleDateString());
+                 setMonthlyIncome(String((application as any)?.monthlyIncome ?? ''));
             }
         } else {
             setSignatureDate(new Date().toLocaleDateString());
+            setMonthlyIncome('');
         }
     }, [application]);
 
     const isFormComplete = () => {
-        if (!signerType || !signerName.trim() || !signerRelationship.trim() || !focChoice || !ackHipaa || !ackLiability || !ackFoc) return false;
+        if (!signerType || !signerName.trim() || !signerRelationship.trim() || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard) return false;
+        if (!monthlyIncome.trim()) return false;
         return true;
     };
 
@@ -116,6 +123,8 @@ function WaiversFormComponent() {
             ackHipaa: ackHipaa,
             ackLiability: ackLiability,
             ackFoc: ackFoc,
+            ackRoomAndBoard: ackRoomAndBoard,
+            monthlyIncome: monthlyIncome.trim(),
             dateCompleted: Timestamp.now(),
         };
 
@@ -135,7 +144,16 @@ function WaiversFormComponent() {
         }
 
         try {
-            await setDoc(applicationDocRef, { forms: updatedForms, lastUpdated: Timestamp.now() }, { merge: true });
+            await setDoc(
+              applicationDocRef,
+              {
+                forms: updatedForms,
+                ackRoomAndBoard: ackRoomAndBoard,
+                monthlyIncome: monthlyIncome.trim(),
+                lastUpdated: Timestamp.now(),
+              },
+              { merge: true }
+            );
             toast({ title: 'Waivers Completed', description: 'Your authorizations have been recorded.', className: 'bg-green-100 text-green-900 border-green-200' });
             router.push(`/pathway?applicationId=${applicationId}`);
         } catch (error: any) {
@@ -298,6 +316,51 @@ function WaiversFormComponent() {
                                             <Checkbox id="ack-foc" checked={ackFoc} onCheckedChange={(c) => setAckFoc(!!c)} disabled={isReadOnly} />
                                             <label htmlFor="ack-foc" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                                                I have read and understood the Freedom of Choice Waiver section.
+                                            </label>
+                                        </div>
+                                    </AlertDescription>
+                                </Alert>
+                            </Section>
+
+                            <Section title="Room and Board Commitment Waiver" icon={FileText}>
+                                <p>I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the Managed Care Plan pays the assisted living service portion.</p>
+                                <p>I understand room and board amounts may vary by facility, geography, and private-room requests, and additional agreements may be required by the selected facility.</p>
+                                <p>I acknowledge that inability to pay any room and board portion may impact eligibility for this community support program.</p>
+                                <p className="text-amber-800 font-medium">
+                                  Monthly income helps us identify if there may be a Medi-Cal Share of Cost (SOC), which generally must be reduced to $0 before CalAIM enrollment can proceed.
+                                </p>
+                                <p>
+                                  Proof of income is required as part of this application process (for example, an annual award letter or recent income statements).
+                                </p>
+                                <p>
+                                  <strong>Non-Medical Out-of-Home Care (NMOHC) bump-up note:</strong> members who receive less than $1,620 in 2026 may be eligible for this bump-up. In those cases, the member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
+                                </p>
+                                <div className="space-y-2 mt-4">
+                                    <Label htmlFor="monthly-income">
+                                      What is the member&apos;s total monthly income? <span className="text-destructive">*</span>
+                                    </Label>
+                                    <Input
+                                      id="monthly-income"
+                                      value={monthlyIncome}
+                                      onChange={(e) => setMonthlyIncome(e.target.value)}
+                                      placeholder='Example: "$1,626.07" or "SSI only"'
+                                      disabled={isReadOnly}
+                                      required
+                                    />
+                                </div>
+                                <Alert variant="warning" className="mt-4">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertTitle>Acknowledgment</AlertTitle>
+                                    <AlertDescription>
+                                        <div className="flex items-start space-x-2 mt-2">
+                                            <Checkbox
+                                              id="ack-room-board"
+                                              checked={ackRoomAndBoard}
+                                              onCheckedChange={(c) => setAckRoomAndBoard(!!c)}
+                                              disabled={isReadOnly}
+                                            />
+                                            <label htmlFor="ack-room-board" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                               I have read and understood the Room and Board Commitment waiver section.
                                             </label>
                                         </div>
                                     </AlertDescription>

@@ -163,6 +163,7 @@ export type FormStatus = {
   ackHipaa?: boolean;
   ackLiability?: boolean;
   ackFoc?: boolean;
+  monthlyIncome?: string | null;
 };
 
 export type Acronym = {

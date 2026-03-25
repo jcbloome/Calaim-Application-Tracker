@@ -1,13 +1,13 @@
 
 'use client';
 
-import React, { useState, useMemo, Suspense, useEffect } from 'react';
+import React, { useState, Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileText, HeartHandshake } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useUser, useFirestore, useDoc } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import type { Application, FormStatus } from '@/lib/definitions';
 import { useToast } from '@/hooks/use-toast';
@@ -44,13 +44,15 @@ function WaiversFormComponent() {
     const [signerName, setSignerName] = useState('');
     const [signerRelationship, setSignerRelationship] = useState('');
     const [signatureDate, setSignatureDate] = useState('');
+    const [monthlyIncome, setMonthlyIncome] = useState('');
 
     const [ackHipaa, setAckHipaa] = useState(false);
     const [ackLiability, setAckLiability] = useState(false);
     const [ackFoc, setAckFoc] = useState(false);
+    const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
     const [focChoice, setFocChoice] = useState<'accept' | 'decline' | ''>('');
 
-    const applicationDocRef = useMemo(() => {
+    const applicationDocRef = useMemoFirebase(() => {
         if (appUserId && firestore && applicationId) {
             return doc(firestore, `users/${appUserId}/applications`, applicationId);
         }
@@ -69,20 +71,25 @@ function WaiversFormComponent() {
                 setSignerName(form.signerName || '');
                 setSignerRelationship(form.signerRelationship || '');
                 setFocChoice(form.choice || '');
-                setAckHipaa(true);
-                setAckLiability(true);
-                setAckFoc(true);
+                setAckHipaa(Boolean(form.ackHipaa));
+                setAckLiability(Boolean(form.ackLiability));
+                setAckFoc(Boolean(form.ackFoc));
+                setAckRoomAndBoard(Boolean((form as any).ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard));
+                setMonthlyIncome(String((form as any)?.monthlyIncome ?? (application as any)?.monthlyIncome ?? ''));
                 setSignatureDate(form.dateCompleted ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString());
             } else {
                  setSignatureDate(new Date().toLocaleDateString());
+                 setMonthlyIncome(String((application as any)?.monthlyIncome ?? ''));
             }
         } else {
             setSignatureDate(new Date().toLocaleDateString());
+            setMonthlyIncome('');
         }
     }, [application]);
 
     const isFormComplete = () => {
-        if (!signerType || !signerName || !focChoice || !ackHipaa || !ackLiability || !ackFoc) return false;
+        if (!signerType || !signerName || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard) return false;
+        if (!monthlyIncome.trim()) return false;
         if (signerType === 'representative' && !signerRelationship) return false;
         return true;
     };
@@ -215,6 +222,37 @@ function WaiversFormComponent() {
                                     <Checkbox id="ack-foc" checked={ackFoc} disabled />
                                     <label htmlFor="ack-foc" className="text-sm font-medium leading-none">
                                        I have read and understood the Freedom of Choice Waiver section.
+                                    </label>
+                                </div>
+                            </AlertDescription>
+                        </Alert>
+                    </Section>
+
+                    <Section title="Room and Board Commitment Waiver" icon={FileText}>
+                        <p>I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the Managed Care Plan pays the assisted living service portion.</p>
+                        <p>I understand room and board amounts may vary by facility, geography, and private-room requests, and additional agreements may be required by the selected facility.</p>
+                        <p>I acknowledge that inability to pay any room and board portion may impact eligibility for this community support program.</p>
+                        <p className="text-amber-800 font-medium">
+                          Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC), which generally must be reduced to $0 before CalAIM enrollment can proceed.
+                        </p>
+                        <p>
+                          Proof of income is required as part of this application process (for example, an annual award letter or recent income statements).
+                        </p>
+                        <p>
+                          <strong>Non-Medical Out-of-Home Care (NMOHC) bump-up note:</strong> members who receive less than $1,620 in 2026 may be eligible for this bump-up. In those cases, the member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
+                        </p>
+                        <div className="space-y-2 mt-4">
+                            <Label htmlFor="monthly-income">Member monthly income</Label>
+                            <Input id="monthly-income" value={monthlyIncome} disabled />
+                        </div>
+                        <Alert variant="warning" className="mt-4">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle>Acknowledgment</AlertTitle>
+                            <AlertDescription>
+                                <div className="flex items-start space-x-2 mt-2">
+                                    <Checkbox id="ack-room-board" checked={ackRoomAndBoard} disabled />
+                                    <label htmlFor="ack-room-board" className="text-sm font-medium leading-none">
+                                       I have read and understood the Room and Board Commitment waiver section.
                                     </label>
                                 </div>
                             </AlertDescription>
