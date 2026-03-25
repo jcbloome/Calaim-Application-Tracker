@@ -971,6 +971,7 @@ function AdminActions({ application }: { application: Application }) {
                 },
                 body: JSON.stringify({
                     to: application.referrerEmail,
+                    includeBcc: false,
                     subject: `Update on CalAIM Application for ${application.memberFirstName} ${application.memberLastName}`,
                     memberName: application.referrerName || 'there',
                     staffName: "The Connections Team",
@@ -988,7 +989,7 @@ function AdminActions({ application }: { application: Application }) {
 
                 toast({
                     title: 'Success!',
-                    description: `Application status set to "${status}" and an email has been sent.`,
+                    description: `Application status set to "${status}" and email sent to ${application.referrerEmail}.`,
                     className: 'bg-green-100 text-green-900',
                 });
                 setNotes('');
@@ -3101,6 +3102,16 @@ function ApplicationDetailPageContent() {
     const d = new Date(raw);
     return Number.isNaN(d.getTime()) ? null : d;
   })();
+  const formatDateTimeValue = (value: any): string => {
+    if (!value) return '';
+    const parsed =
+      typeof value?.toDate === 'function'
+        ? value.toDate()
+        : value instanceof Date
+          ? value
+          : new Date(value);
+    return Number.isNaN(parsed.getTime()) ? '' : format(parsed, 'PPP p');
+  };
   const isNewCsSummary =
     Boolean(csSummaryCompletedAt) &&
     !application.applicationChecked &&
@@ -3254,7 +3265,28 @@ function ApplicationDetailPageContent() {
       const reviewerUid = user?.uid || null;
       const isSummary = formName === 'CS Member Summary' || formName === 'CS Summary';
       const rejectedAtIso = new Date().toISOString();
-      const sentAtIso = sendEmail ? new Date().toISOString() : null;
+      let sentAtIso: string | null = null;
+
+      if (sendEmail) {
+        const response = await fetch('/api/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: recipientEmail,
+            includeBcc: false,
+            subject: `Action needed: Please redo ${formName}`,
+            memberName: application.referrerName || 'there',
+            staffName: reviewerName,
+            message: `Please redo the "${formName}" form.\n\nReason: ${reason}\n\nLog in to the application portal and update this form so we can continue processing.`,
+            status: 'Requires Revision',
+          }),
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Could not send redo email from local environment.');
+        }
+        sentAtIso = new Date().toISOString();
+      }
 
       let found = false;
       const updatedForms = (application.forms || []).map((form: any) => {
@@ -3268,8 +3300,8 @@ function ApplicationDetailPageContent() {
           rejectedAt: rejectedAtIso,
           rejectedBy: reviewerName,
           rejectedByUid: reviewerUid,
-          emailed: sendEmail,
-          emailTo: sendEmail ? recipientEmail : null,
+          emailed: Boolean(sentAtIso),
+          emailTo: sentAtIso ? recipientEmail : null,
           emailSentAt: sentAtIso,
         };
         return {
@@ -3283,7 +3315,7 @@ function ApplicationDetailPageContent() {
           revisionRequestedAt: rejectedAtIso,
           revisionRequestedBy: reviewerName,
           revisionRequestedByUid: reviewerUid,
-          revisionEmailTo: sendEmail ? recipientEmail : null,
+          revisionEmailTo: sentAtIso ? recipientEmail : null,
           revisionEmailSentAt: sentAtIso,
           revisionHistory: [historyEntry, ...existingHistory].slice(0, 10),
         };
@@ -3327,31 +3359,12 @@ function ApplicationDetailPageContent() {
         };
       });
 
-      if (sendEmail) {
-        const response = await fetch('/api/email/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: recipientEmail,
-            subject: `Action needed: Please redo ${formName}`,
-            memberName: application.referrerName || 'there',
-            staffName: reviewerName,
-            message: `Please redo the "${formName}" form.\n\nReason: ${reason}\n\nLog in to the application portal and update this form so we can continue processing.`,
-            status: 'Requires Revision',
-          }),
-        });
-        const result = await response.json().catch(() => null);
-        if (!response.ok || !result?.success) {
-          throw new Error(result?.message || 'Could not send redo email.');
-        }
-      }
-
       setRejectReasonByForm((prev) => ({ ...prev, [formName]: '' }));
       setRejectDialogForm(null);
       toast({
         title: sendEmail ? 'Form rejected and email sent' : 'Form rejected',
         description: sendEmail
-          ? `${formName} set to pending and applicant email sent.`
+          ? `${formName} set to pending and email sent to ${recipientEmail}.`
           : `${formName} set to pending. Applicant can now redo the form.`,
       });
     } catch (error: any) {
@@ -3806,6 +3819,7 @@ function ApplicationDetailPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: application.referrerEmail,
+          includeBcc: false,
           subject: `CalAIM Eligibility Update for ${application.memberFirstName} ${application.memberLastName}`,
           memberName: application.referrerName || 'there',
           staffName: 'The Connections Team',
@@ -4114,8 +4128,8 @@ function ApplicationDetailPageContent() {
                               <h3 className="text-lg font-semibold mb-2 text-primary">Application Status & Tracking</h3>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                                 <div><p className="text-sm text-muted-foreground">Submission Status</p><p className="font-semibold">{application.status || <span className="font-normal text-gray-400">N/A</span>}</p></div>
-                                <div><p className="text-sm text-muted-foreground">Submitted Date</p><p className="font-semibold">{application.submissionDate ? format((application.submissionDate as Timestamp).toDate(), 'PPP p') : <span className="font-normal text-gray-400">N/A</span>}</p></div>
-                                <div><p className="text-sm text-muted-foreground">Last Updated</p><p className="font-semibold">{application.lastUpdated ? format((application.lastUpdated as Timestamp).toDate(), 'PPP p') : <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Submitted Date</p><p className="font-semibold">{formatDateTimeValue(application.submissionDate) || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Last Updated</p><p className="font-semibold">{formatDateTimeValue(application.lastUpdated) || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div><p className="text-sm text-muted-foreground">Submitted By</p><p className="font-semibold">{application.referrerName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Application ID</p><p className="font-semibold">{application.id || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                               </div>
@@ -4866,8 +4880,9 @@ function ApplicationDetailPageContent() {
                                         <div className="space-y-3">
                                           <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
                                             <div>
-                                              <span className="font-medium">Will email to:</span>{' '}
-                                              {String((application as any)?.referrerEmail || '').trim() || 'No email on file'}
+                                              <span className="font-medium">Sending to:</span>{' '}
+                                              {String((application as any)?.referrerEmail || '').trim() || 'No email on file'}{' '}
+                                              <span className="text-muted-foreground">(BCC disabled)</span>
                                             </div>
                                             {formInfo && (
                                               <>
@@ -4931,42 +4946,69 @@ function ApplicationDetailPageContent() {
                                         </div>
                                       </DialogContent>
                                     </Dialog>
-                                    {String((formInfo as any)?.revisionRequestedReason || '').trim() && (
-                                      <div className="text-xs text-red-700/90">
-                                        Last rejection: {String((formInfo as any).revisionRequestedReason).trim()}
-                                      </div>
-                                    )}
-                                    {Array.isArray((formInfo as any)?.revisionHistory) && (formInfo as any).revisionHistory.length > 0 && (
-                                      <div className="rounded-md border bg-white/70 p-2">
-                                        <div className="text-[11px] font-medium text-red-800 mb-1">Reject history (latest 3)</div>
-                                        <div className="space-y-1">
-                                          {(formInfo as any).revisionHistory.slice(0, 3).map((entry: any, idx: number) => {
-                                            const when = String(entry?.rejectedAt || '').trim();
-                                            const dateLabel = when && !Number.isNaN(new Date(when).getTime())
-                                              ? format(new Date(when), 'MMM d, yyyy h:mm a')
-                                              : 'Unknown date';
-                                            const who = String(entry?.rejectedBy || '').trim() || 'Unknown sender';
-                                            const why = String(entry?.reason || '').trim() || 'No reason';
-                                            const emailed = Boolean(entry?.emailed);
-                                            const to = String(entry?.emailTo || '').trim();
-                                            const sentAt = String(entry?.emailSentAt || '').trim();
-                                            const sentLabel = sentAt && !Number.isNaN(new Date(sentAt).getTime())
-                                              ? format(new Date(sentAt), 'MMM d, yyyy h:mm a')
-                                              : '';
-                                            return (
-                                              <div key={`reject-history-${req.id}-${idx}`} className="text-[11px] text-muted-foreground leading-snug">
-                                                <span className="font-medium text-foreground">{dateLabel}</span> - {who}
-                                                {' '} - {why}
-                                                {emailed ? (
-                                                  <span className="text-red-700"> - emailed {to || 'applicant'}{sentLabel ? ` at ${sentLabel}` : ''}</span>
-                                                ) : (
-                                                  <span> - email not sent</span>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
+                                    {(() => {
+                                      const latest = Array.isArray((formInfo as any)?.revisionHistory)
+                                        ? (formInfo as any).revisionHistory[0]
+                                        : null;
+                                      if (!latest || !latest?.emailed) return null;
+                                      const sentLabel = formatDateTimeValue(latest?.emailSentAt);
+                                      return (
+                                        <div className="text-xs text-green-700">
+                                          Email sent successfully{sentLabel ? ` at ${sentLabel}` : ''}.
                                         </div>
-                                      </div>
+                                      );
+                                    })()}
+                                    {Array.isArray((formInfo as any)?.revisionHistory) && (formInfo as any).revisionHistory.length > 0 && (
+                                      <Dialog>
+                                        <DialogTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className="text-xs text-red-700 underline underline-offset-2 hover:text-red-800 w-fit"
+                                          >
+                                            View reject history ({(formInfo as any).revisionHistory.length})
+                                          </button>
+                                        </DialogTrigger>
+                                        <DialogContent className="sm:max-w-2xl">
+                                          <DialogHeader>
+                                            <DialogTitle>Reject history: {req.title}</DialogTitle>
+                                            <DialogDescription>
+                                              Recent rejection requests and email delivery details for this card.
+                                            </DialogDescription>
+                                          </DialogHeader>
+                                          <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
+                                            {(formInfo as any).revisionHistory.map((entry: any, idx: number) => {
+                                              const when = String(entry?.rejectedAt || '').trim();
+                                              const dateLabel = when && !Number.isNaN(new Date(when).getTime())
+                                                ? format(new Date(when), 'MMM d, yyyy h:mm a')
+                                                : 'Unknown date';
+                                              const who = String(entry?.rejectedBy || '').trim() || 'Unknown sender';
+                                              const why = String(entry?.reason || '').trim() || 'No reason';
+                                              const emailed = Boolean(entry?.emailed);
+                                              const to = String(entry?.emailTo || '').trim();
+                                              const sentAt = String(entry?.emailSentAt || '').trim();
+                                              const sentLabel = sentAt && !Number.isNaN(new Date(sentAt).getTime())
+                                                ? format(new Date(sentAt), 'MMM d, yyyy h:mm a')
+                                                : '';
+                                              return (
+                                                <div
+                                                  key={`reject-history-dialog-${req.id}-${idx}`}
+                                                  className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground leading-snug"
+                                                >
+                                                  <div>
+                                                    <span className="font-medium text-foreground">{dateLabel}</span> - {who}
+                                                  </div>
+                                                  <div>{why}</div>
+                                                  <div className={emailed ? 'text-red-700' : ''}>
+                                                    {emailed
+                                                      ? `Emailed ${to || 'applicant'}${sentLabel ? ` at ${sentLabel}` : ''}`
+                                                      : 'Email not sent'}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </DialogContent>
+                                      </Dialog>
                                     )}
                                 </div>
                             )}

@@ -114,6 +114,7 @@ const adminNavLinks = [
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
+      { href: '/admin/email-logs', label: 'Email Logs', icon: Mail },
     ],
   },
   {

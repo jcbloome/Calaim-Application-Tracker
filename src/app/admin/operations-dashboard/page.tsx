@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Kanban, DollarSign, Calendar, Activity, ArrowRight } from 'lucide-react';
+import { Kanban, DollarSign, Calendar, Activity, ArrowRight, Mail } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -37,6 +37,13 @@ const operationsTools = [
     icon: Activity,
     href: '/admin/login-activity',
     color: 'text-orange-600'
+  },
+  {
+    title: 'Email Logs',
+    description: 'Track all outbound emails and verify success or failure delivery status',
+    icon: Mail,
+    href: '/admin/email-logs',
+    color: 'text-indigo-600'
   }
 ];
 

@@ -41,6 +41,8 @@ interface ApplicationStatusPayload {
   staffName: string;
   message: string;
   status: 'Deleted' | 'Approved' | 'Submitted' | 'Requires Revision' | 'In Progress' | 'Completed & Submitted';
+  includeBcc?: boolean;
+  portalUrl?: string;
 }
 
 interface ReminderPayload {
@@ -171,6 +173,120 @@ interface RoomBoardIlsSubmissionPayload {
     proofIncomeDownloadUrl: string;
 }
 
+type EmailLogStatus = 'success' | 'failure';
+
+async function logEmailDelivery(params: {
+    status: EmailLogStatus;
+    template: string;
+    source: string;
+    to: string[];
+    bcc?: string[];
+    subject: string;
+    providerMessageId?: string;
+    errorMessage?: string;
+    metadata?: Record<string, unknown>;
+}) {
+    try {
+        await admin.firestore().collection('emailLogs').add({
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: params.status,
+            template: params.template,
+            source: params.source,
+            to: params.to,
+            bcc: params.bcc || [],
+            subject: params.subject,
+            provider: 'resend',
+            providerMessageId: params.providerMessageId || null,
+            errorMessage: params.errorMessage || null,
+            metadata: params.metadata || {},
+        });
+    } catch (error) {
+        console.error('Failed to write email log:', error);
+    }
+}
+
+async function sendViaResendWithLog(params: {
+    resend: Resend | null;
+    from: string;
+    to: string[];
+    subject: string;
+    html: string;
+    text?: string;
+    bcc?: string[];
+    template: string;
+    source: string;
+    metadata?: Record<string, unknown>;
+}) {
+    const { resend, from, to, bcc = [], subject, html, text, template, source, metadata } = params;
+    if (!resend) {
+        await logEmailDelivery({
+            status: 'failure',
+            template,
+            source,
+            to,
+            bcc,
+            subject,
+            errorMessage: 'Resend API key is not configured.',
+            metadata,
+        });
+        throw new Error('Resend API key is not configured.');
+    }
+
+    let alreadyLoggedFailure = false;
+    try {
+        const { data, error } = await resend.emails.send({
+            from,
+            to,
+            bcc,
+            subject,
+            html,
+            ...(text ? { text } : {}),
+        });
+
+        if (error) {
+            const message = String(error.message || 'Unknown Resend error');
+            await logEmailDelivery({
+                status: 'failure',
+                template,
+                source,
+                to,
+                bcc,
+                subject,
+                errorMessage: message,
+                metadata,
+            });
+            alreadyLoggedFailure = true;
+            throw new Error(message);
+        }
+
+        await logEmailDelivery({
+            status: 'success',
+            template,
+            source,
+            to,
+            bcc,
+            subject,
+            providerMessageId: (data as any)?.id ? String((data as any).id) : undefined,
+            metadata,
+        });
+        return data;
+    } catch (error: any) {
+        if (!alreadyLoggedFailure) {
+            await logEmailDelivery({
+                status: 'failure',
+                template,
+                source,
+                to,
+                bcc,
+                subject,
+                errorMessage: String(error?.message || 'Unknown send error'),
+                metadata,
+            });
+        }
+        throw error;
+    }
+}
+
 async function getBccRecipients(): Promise<string[]> {
     try {
         const firestore = admin.firestore();
@@ -194,12 +310,12 @@ async function getBccRecipients(): Promise<string[]> {
 
 
 export const sendApplicationStatusEmail = async (payload: ApplicationStatusPayload) => {
-    const { to, subject, memberName, staffName, message, status } = payload;
+    const { to, subject, memberName, staffName, message, status, includeBcc = true, portalUrl } = payload;
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
 
-    const bccList = await getBccRecipients();
+    const bccList = includeBcc ? await getBccRecipients() : [];
 
     try {
         const emailHtml = await renderAsync(ApplicationStatusEmail({
@@ -207,22 +323,37 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
             staffName,
             message,
             status,
+            portalUrl: String(
+              portalUrl ||
+              process.env.NEXT_PUBLIC_APP_URL ||
+              process.env.NEXT_PUBLIC_BASE_URL ||
+              'https://connectcalaim.com/login'
+            ).replace(/\/$/, '').includes('/login')
+              ? String(
+                  portalUrl ||
+                  process.env.NEXT_PUBLIC_APP_URL ||
+                  process.env.NEXT_PUBLIC_BASE_URL ||
+                  'https://connectcalaim.com/login'
+                )
+              : `${String(
+                  portalUrl ||
+                  process.env.NEXT_PUBLIC_APP_URL ||
+                  process.env.NEXT_PUBLIC_BASE_URL ||
+                  'https://connectcalaim.com'
+                ).replace(/\/$/, '')}/login`,
         }));
 
-        const { data, error } = await resend.emails.send({
+        return await sendViaResendWithLog({
+            resend,
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
             bcc: bccList,
-            subject: subject,
+            subject,
             html: emailHtml,
+            template: 'application_status',
+            source: 'sendApplicationStatusEmail',
+            metadata: { status, includeBcc },
         });
-
-        if (error) {
-            console.error('Resend Error:', error);
-            throw new Error(error.message);
-        }
-
-        return data;
     } catch (error) {
         console.error('Failed to send email:', error);
         throw error;
@@ -244,19 +375,16 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
             baseUrl,
         }));
 
-        const { data, error } = await resend.emails.send({
+        return await sendViaResendWithLog({
+            resend,
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
-            subject: subject,
+            subject,
             html: emailHtml,
+            template: 'missing_docs_reminder',
+            source: 'sendReminderEmail',
+            metadata: { applicationId },
         });
-
-        if (error) {
-            console.error('Resend Reminder Error:', error);
-            throw new Error(error.message);
-        }
-
-        return data;
     } catch (error) {
         console.error('Failed to send reminder email:', error);
         throw error;
@@ -283,20 +411,17 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
             nextStepsDate,
         }));
 
-        const { data, error } = await resend.emails.send({
+        return await sendViaResendWithLog({
+            resend,
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
             bcc: bccList,
             subject: `New CalAIM Member Assignment: ${memberName}`,
             html: emailHtml,
+            template: 'staff_assignment',
+            source: 'sendStaffAssignmentEmail',
+            metadata: { memberMrn, memberCounty },
         });
-
-        if (error) {
-            console.error('Resend Staff Assignment Error:', error);
-            throw new Error(error.message);
-        }
-
-        return data;
     } catch (error) {
         console.error('Failed to send staff assignment email:', error);
         throw error;
@@ -343,18 +468,17 @@ export const sendNoteAssignmentEmail = async (payload: NoteAssignmentPayload) =>
             'jason@carehomefinders.com'
         ].filter(email => email !== to); // Don't BCC if it's the same as TO
 
-        const { data, error } = await resend.emails.send({
+        const data = await sendViaResendWithLog({
+            resend,
             from: 'CalAIM Notes <noreply@carehomefinders.com>',
             to: [to],
             bcc: bccList,
             subject: `📝 New ${priority.toUpperCase()} Priority Note Assignment: ${memberName}`,
             html: emailHtml,
+            template: 'note_assignment',
+            source: 'sendNoteAssignmentEmail',
+            metadata: { priority, noteType, source, clientId2 },
         });
-
-        if (error) {
-            console.error('Resend Note Assignment Error:', error);
-            throw new Error(error.message);
-        }
 
         console.log(`✅ Note assignment email sent successfully to ${to}`);
         return data;
@@ -383,25 +507,23 @@ export const sendSwClaimReminderEmail = async (payload: SwClaimReminderPayload) 
         })
     );
 
-    const { data, error } = await resend.emails.send({
+    return await sendViaResendWithLog({
+        resend,
         from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
         to: [to],
         subject: 'Reminder: submit your CalAIM SW claim(s)',
         html: emailHtml,
+        template: 'sw_claim_reminder',
+        source: 'sendSwClaimReminderEmail',
+        metadata: { itemCount: items.length },
     });
-
-    if (error) {
-        console.error('Resend SW Claim Reminder Error:', error);
-        throw new Error(error.message);
-    }
-
-    return data;
 };
 
 export const sendCsSummaryReminderEmail = async (payload: CsSummaryReminderPayload) => {
     const { to, userName, memberName, applicationId, confirmationUrl, supportEmail } = payload;
+    const resend = getResendClient();
 
-    if (!process.env.RESEND_API_KEY) {
+    if (!resend) {
         throw new Error('Resend API key is not configured.');
     }
 
@@ -422,18 +544,17 @@ export const sendCsSummaryReminderEmail = async (payload: CsSummaryReminderPaylo
             supportEmail,
         });
 
-        const { data, error } = await resend.emails.send({
+        const data = await sendViaResendWithLog({
+            resend,
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
             subject: `Action Required: Complete Your CalAIM Application for ${memberName}`,
             html: emailHtml,
             text: emailText,
+            template: 'cs_summary_reminder',
+            source: 'sendCsSummaryReminderEmail',
+            metadata: { applicationId },
         });
-
-        if (error) {
-            console.error('Resend CS Summary Reminder Error:', error);
-            throw new Error(error.message);
-        }
 
         console.log(`✅ CS Summary reminder email sent successfully to ${to}`);
         return data;
@@ -464,19 +585,16 @@ export const sendEligibilityCheckConfirmationEmail = async (payload: Eligibility
             })
         );
 
-        const { data, error } = await resend.emails.send({
+        return await sendViaResendWithLog({
+            resend,
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
             subject: `CalAIM Eligibility Check Confirmation (ID: ${checkId})`,
             html: emailHtml,
+            template: 'eligibility_check_confirmation',
+            source: 'sendEligibilityCheckConfirmationEmail',
+            metadata: { checkId, healthPlan, county },
         });
-
-        if (error) {
-            console.error('Resend Eligibility Confirmation Error:', error);
-            throw new Error(error.message);
-        }
-
-        return data;
     } catch (error) {
         console.error('Failed to send eligibility confirmation email:', error);
         throw error;
@@ -505,19 +623,16 @@ export const sendEligibilityCheckResultEmail = async (payload: EligibilityCheckR
             })
         );
 
-        const { data, error } = await resend.emails.send({
+        return await sendViaResendWithLog({
+            resend,
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
             subject: `CalAIM Eligibility Check Results (ID: ${checkId})`,
             html: emailHtml,
+            template: 'eligibility_check_result',
+            source: 'sendEligibilityCheckResultEmail',
+            metadata: { checkId, result, healthPlan, county },
         });
-
-        if (error) {
-            console.error('Resend Eligibility Result Error:', error);
-            throw new Error(error.message);
-        }
-
-        return data;
     } catch (error) {
         console.error('Failed to send eligibility result email:', error);
         throw error;
@@ -549,19 +664,16 @@ export const sendAlftUploadEmail = async (payload: AlftUploadPayload) => {
         })
     );
 
-    const { data, error } = await resend.emails.send({
+    return await sendViaResendWithLog({
+        resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
         subject: `ALFT Tool uploaded: ${memberName}`,
         html: emailHtml,
+        template: 'alft_upload',
+        source: 'sendAlftUploadEmail',
+        metadata: { memberName },
     });
-
-    if (error) {
-        console.error('Resend ALFT Upload Error:', error);
-        throw new Error(error.message);
-    }
-
-    return data;
 };
 
 export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureRequestPayload) => {
@@ -587,19 +699,16 @@ export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureReques
     );
 
     const memberName = String(payload.memberName || '').trim() || 'Member';
-    const { data, error } = await resend.emails.send({
+    return await sendViaResendWithLog({
+        resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
         subject: `Signature requested (${payload.recipientRoleLabel}) — ${memberName}`,
         html: emailHtml,
+        template: 'alft_signature_request',
+        source: 'sendAlftSignatureRequestEmail',
+        metadata: { recipientRole: payload.recipientRoleLabel, memberName },
     });
-
-    if (error) {
-        console.error('Resend ALFT Signature Request Error:', error);
-        throw new Error(error.message);
-    }
-
-    return data;
 };
 
 export const sendAlftCompletedWorkflowEmail = async (payload: AlftCompletedWorkflowPayload) => {
@@ -652,19 +761,16 @@ export const sendAlftCompletedWorkflowEmail = async (payload: AlftCompletedWorkf
       </div>
     `;
 
-    const { data, error } = await resend.emails.send({
+    return await sendViaResendWithLog({
+        resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
         subject: `ALFT completed: ${memberName}`,
         html,
+        template: 'alft_completed_workflow',
+        source: 'sendAlftCompletedWorkflowEmail',
+        metadata: { intakeId, memberName },
     });
-
-    if (error) {
-        console.error('Resend ALFT Completed Error:', error);
-        throw new Error(error.message);
-    }
-
-    return data;
 };
 
 export const sendRoomBoardTierAgreementInviteEmail = async (payload: RoomBoardTierAgreementInvitePayload) => {
@@ -711,19 +817,16 @@ export const sendRoomBoardTierAgreementInviteEmail = async (payload: RoomBoardTi
       </div>
     `;
 
-    const { data, error } = await resend.emails.send({
+    return await sendViaResendWithLog({
+        resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
         subject: `Room and Board/Tier Level Agreement Signature Request — ${memberName}`,
         html,
+        template: 'room_board_tier_invite',
+        source: 'sendRoomBoardTierAgreementInviteEmail',
+        metadata: { memberName, role },
     });
-
-    if (error) {
-        console.error('Resend RoomBoard Invite Error:', error);
-        throw new Error(error.message);
-    }
-
-    return data;
 };
 
 export const sendRoomBoardIlsSubmissionEmail = async (payload: RoomBoardIlsSubmissionPayload) => {
@@ -761,17 +864,14 @@ export const sendRoomBoardIlsSubmissionEmail = async (payload: RoomBoardIlsSubmi
       </div>
     `;
 
-    const { data, error } = await resend.emails.send({
+    return await sendViaResendWithLog({
+        resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
         subject: `ILS submission: ${memberName} — signed agreement + proof of income`,
         html,
+        template: 'room_board_ils_submission',
+        source: 'sendRoomBoardIlsSubmissionEmail',
+        metadata: { memberName, rcfeName },
     });
-
-    if (error) {
-        console.error('Resend RoomBoard ILS Submission Error:', error);
-        throw new Error(error.message);
-    }
-
-    return data;
 };

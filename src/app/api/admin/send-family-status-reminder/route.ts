@@ -111,6 +111,7 @@ export async function POST(request: NextRequest) {
 
     await sendApplicationStatusEmail({
       to: recipientEmail,
+      includeBcc: false,
       subject: `Application progress update for ${memberName}`,
       memberName: referrerName,
       staffName: senderName,

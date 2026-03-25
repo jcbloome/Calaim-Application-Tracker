@@ -4,6 +4,7 @@ import { useAdmin } from '@/hooks/use-admin';
 import { DailyNotificationDashboard } from '@/components/DailyNotificationDashboard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Shield, Calendar, Bell } from 'lucide-react';
+import Link from 'next/link';
 
 export default function DashboardPage() {
   const { isAdmin, isUserLoading } = useAdmin();
@@ -58,6 +59,18 @@ export default function DashboardPage() {
             <span className="text-sm font-medium">Admin Session Active</span>
             <span className="text-xs text-blue-600">• Testing mode - 2FA temporarily disabled</span>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Email Delivery Logs</CardTitle>
+          <CardDescription>Review sent email history and failures in one place.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link href="/admin/email-logs" className="text-sm text-primary underline underline-offset-2">
+            Open Email Logs
+          </Link>
         </CardContent>
       </Card>
 

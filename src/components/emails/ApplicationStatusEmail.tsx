@@ -6,6 +6,7 @@ interface ApplicationStatusEmailProps {
   staffName: string;
   message: string;
   status: 'Deleted' | 'Approved' | 'Submitted' | 'Requires Revision' | 'In Progress' | 'Completed & Submitted';
+  portalUrl?: string;
 }
 
 const container = {
@@ -91,6 +92,7 @@ const ApplicationStatusEmail: React.FC<Readonly<ApplicationStatusEmailProps>> = 
   staffName,
   message,
   status,
+  portalUrl,
 }) => (
   <div style={container}>
     <div style={card}>
@@ -112,7 +114,7 @@ const ApplicationStatusEmail: React.FC<Readonly<ApplicationStatusEmailProps>> = 
       <p style={paragraph}>
         If you have any questions, please reply to this email or contact our office directly. You can view the full application status by logging into your dashboard.
       </p>
-       <a href="https://calaim-pathfinder.web.app/login" style={button}>
+       <a href={portalUrl || 'https://connectcalaim.com/login'} style={button}>
         Go to My Dashboard
       </a>
       <p style={footer}>
