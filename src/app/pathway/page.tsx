@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Suspense, useMemo, useState, useEffect } from 'react';
+import { Suspense, useMemo, useState, useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
@@ -41,6 +41,14 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
@@ -48,7 +56,7 @@ const getPathwayRequirements = (
 ) => {
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
-    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
+    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, Freedom of Choice, and Room & Board Commitment waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
@@ -91,6 +99,41 @@ function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
         <span>{isCompleted ? 'Completed' : 'Pending'}</span>
       </div>
     );
+}
+
+function QuickViewField({
+  label,
+  value,
+  fullWidth = false,
+}: {
+  label: string;
+  value: unknown;
+  fullWidth?: boolean;
+}) {
+  const text = String(value ?? '').trim();
+  return (
+    <div className={cn('space-y-1', fullWidth ? 'sm:col-span-2' : '')}>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-sm font-medium break-words">{text || 'N/A'}</p>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{children}</div>
+    </section>
+  );
+}
+
+function parseCurrencyAmount(value: unknown): number | null {
+  if (value == null) return null;
+  const normalized = String(value).replace(/[^0-9.]/g, '').trim();
+  if (!normalized) return null;
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function PathwayPageContent() {
@@ -687,12 +730,17 @@ function PathwayPageContent() {
 
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
+  const waiverMonthlyIncomeAmount =
+    parseCurrencyAmount((waiverFormStatus as any)?.monthlyIncome) ??
+    parseCurrencyAmount((application as any)?.monthlyIncome);
+  const waiverPossibleSocWarning = (waiverMonthlyIncomeAmount ?? 0) > 2000;
 
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
       { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
-      { id: 'rb', label: 'Room & Board Commitment', completed: !!(waiverFormStatus as any)?.ackRoomAndBoard || !!(application as any)?.ackRoomAndBoard }
+      { id: 'rb', label: 'Room & Board Commitment', completed: !!(waiverFormStatus as any)?.ackRoomAndBoard || !!(application as any)?.ackRoomAndBoard },
+      { id: 'soc', label: 'Medi-Cal SOC Determination', completed: !!(waiverFormStatus as any)?.ackSocDetermination || !!(application as any)?.ackSocDetermination }
   ];
 
   const consolidatedMedicalDocuments = [
@@ -707,6 +755,87 @@ function PathwayPageContent() {
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
     
     if (isReadOnly) {
+       if (req.id === 'cs-summary') {
+         return (
+           <div className="flex gap-2">
+             <Button asChild variant="outline" className="flex-1 bg-slate-50">
+                 <Link href={href}>View</Link>
+             </Button>
+             <Dialog>
+               <DialogTrigger asChild>
+                 <Button variant="secondary" className="flex-1">
+                   Quick View
+                 </Button>
+               </DialogTrigger>
+               <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+                 <DialogHeader>
+                   <DialogTitle>CS Summary: {application.memberFirstName} {application.memberLastName}</DialogTitle>
+                   <DialogDescription>
+                     Quick view of CS Summary details.
+                   </DialogDescription>
+                 </DialogHeader>
+                 <div className="space-y-6 py-2">
+                   <Section title="Member Information">
+                     <QuickViewField label="First Name" value={application.memberFirstName} />
+                     <QuickViewField label="Last Name" value={application.memberLastName} />
+                     <QuickViewField label="Date of Birth" value={formatBirthDate(application.memberDob)} />
+                     <QuickViewField label="MRN" value={application.memberMrn} />
+                     <QuickViewField label="Medi-Cal Number" value={application.memberMediCalNum} />
+                     <QuickViewField label="Preferred Language" value={application.memberLanguage} />
+                   </Section>
+
+                   <Section title="Referrer Information">
+                     <QuickViewField label="Name" value={`${application.referrerFirstName || ''} ${application.referrerLastName || ''}`} />
+                     <QuickViewField label="Agency" value={application.agency} />
+                     <QuickViewField label="Email" value={application.referrerEmail} />
+                     <QuickViewField label="Phone" value={application.referrerPhone} />
+                   </Section>
+
+                   <Section title="Health Plan & Pathway">
+                     <QuickViewField label="Health Plan" value={application.healthPlan} />
+                     <QuickViewField label="Pathway" value={application.pathway} />
+                     <QuickViewField label="Current Location Type" value={application.currentLocation} />
+                     <QuickViewField label="Customary Location Type" value={application.customaryLocationType} />
+                   </Section>
+
+                   <Section title="Location Information">
+                     <QuickViewField label="Current Location Name" value={application.currentLocationName} />
+                     <QuickViewField
+                       label="Current Address"
+                       value={[
+                         String(application.currentAddress || '').trim(),
+                         String(application.currentCity || '').trim(),
+                         [String(application.currentState || '').trim(), String(application.currentZip || '').trim()]
+                           .filter(Boolean)
+                           .join(' '),
+                         String(application.currentCounty || '').trim(),
+                       ]
+                         .filter(Boolean)
+                         .join(', ')}
+                       fullWidth
+                     />
+                     <QuickViewField label="Customary Location Name" value={application.customaryLocationName} />
+                     <QuickViewField
+                       label="Customary Address"
+                       value={[
+                         String(application.customaryAddress || '').trim(),
+                         String(application.customaryCity || '').trim(),
+                         [String(application.customaryState || '').trim(), String(application.customaryZip || '').trim()]
+                           .filter(Boolean)
+                           .join(' '),
+                         String(application.customaryCounty || '').trim(),
+                       ]
+                         .filter(Boolean)
+                         .join(', ')}
+                       fullWidth
+                     />
+                   </Section>
+                 </div>
+               </DialogContent>
+             </Dialog>
+           </div>
+         );
+       }
        if (req.type === 'Upload') {
            return (
                 <div className="flex min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
@@ -761,6 +890,85 @@ function PathwayPageContent() {
                                 {isCompleted ? 'View/Edit Waivers' : 'Complete Waivers'} &rarr;
                             </Link>
                         </Button>
+                    </div>
+                );
+            }
+            if (req.id === 'cs-summary') {
+                return (
+                    <div className="flex gap-2">
+                        <Button asChild variant="outline" className="flex-1 bg-slate-50 hover:bg-slate-100">
+                            <Link href={href}>{isCompleted ? 'View/Edit' : 'Start'} &rarr;</Link>
+                        </Button>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="secondary" className="flex-1">Quick View</Button>
+                          </DialogTrigger>
+                          <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+                            <DialogHeader>
+                              <DialogTitle>CS Summary: {application.memberFirstName} {application.memberLastName}</DialogTitle>
+                              <DialogDescription>
+                                Quick view of CS Summary details.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-6 py-2">
+                              <Section title="Member Information">
+                                <QuickViewField label="First Name" value={application.memberFirstName} />
+                                <QuickViewField label="Last Name" value={application.memberLastName} />
+                                <QuickViewField label="Date of Birth" value={formatBirthDate(application.memberDob)} />
+                                <QuickViewField label="MRN" value={application.memberMrn} />
+                                <QuickViewField label="Medi-Cal Number" value={application.memberMediCalNum} />
+                                <QuickViewField label="Preferred Language" value={application.memberLanguage} />
+                              </Section>
+
+                              <Section title="Referrer Information">
+                                <QuickViewField label="Name" value={`${application.referrerFirstName || ''} ${application.referrerLastName || ''}`} />
+                                <QuickViewField label="Agency" value={application.agency} />
+                                <QuickViewField label="Email" value={application.referrerEmail} />
+                                <QuickViewField label="Phone" value={application.referrerPhone} />
+                              </Section>
+
+                              <Section title="Health Plan & Pathway">
+                                <QuickViewField label="Health Plan" value={application.healthPlan} />
+                                <QuickViewField label="Pathway" value={application.pathway} />
+                                <QuickViewField label="Current Location Type" value={application.currentLocation} />
+                                <QuickViewField label="Customary Location Type" value={application.customaryLocationType} />
+                              </Section>
+
+                              <Section title="Location Information">
+                                <QuickViewField label="Current Location Name" value={application.currentLocationName} />
+                                <QuickViewField
+                                  label="Current Address"
+                                  value={[
+                                    String(application.currentAddress || '').trim(),
+                                    String(application.currentCity || '').trim(),
+                                    [String(application.currentState || '').trim(), String(application.currentZip || '').trim()]
+                                      .filter(Boolean)
+                                      .join(' '),
+                                    String(application.currentCounty || '').trim(),
+                                  ]
+                                    .filter(Boolean)
+                                    .join(', ')}
+                                  fullWidth
+                                />
+                                <QuickViewField label="Customary Location Name" value={application.customaryLocationName} />
+                                <QuickViewField
+                                  label="Customary Address"
+                                  value={[
+                                    String(application.customaryAddress || '').trim(),
+                                    String(application.customaryCity || '').trim(),
+                                    [String(application.customaryState || '').trim(), String(application.customaryZip || '').trim()]
+                                      .filter(Boolean)
+                                      .join(' '),
+                                    String(application.customaryCounty || '').trim(),
+                                  ]
+                                    .filter(Boolean)
+                                    .join(', ')}
+                                  fullWidth
+                                />
+                              </Section>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                     </div>
                 );
             }
@@ -923,6 +1131,15 @@ function PathwayPageContent() {
                                     <CardTitle className="text-lg">{req.title}</CardTitle>
                                 </div>
                                 <CardDescription>{req.description}</CardDescription>
+                                {req.id === 'waivers' && waiverPossibleSocWarning && (
+                                  <Alert variant="warning" className="mt-3">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <AlertTitle>Possible SOC Warning</AlertTitle>
+                                    <AlertDescription>
+                                      Member monthly income is above $2,000. This may indicate a Medi-Cal Share of Cost (SOC) that must be resolved to $0 before CalAIM enrollment.
+                                    </AlertDescription>
+                                  </Alert>
+                                )}
                             </CardHeader>
                             <CardContent className="flex flex-col flex-grow justify-end gap-4">
                                 <StatusIndicator status={status} />

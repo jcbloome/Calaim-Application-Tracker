@@ -443,7 +443,7 @@ const getPathwayRequirements = (
 ) => {
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/admin/forms/review', editHref: '/admin/forms/edit', icon: FileText },
-    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
+    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, Freedom of Choice, and Room & Board Commitment waiver form.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
     { id: 'room-board-obligation', title: 'Room and Board/Tier Level Agreement', description: 'Admin-generated agreement addressed to the member/authorized representative and RCFE. Upload the fully signed copy here.', type: 'Upload', icon: UploadCloud, href: '/forms/room-board-obligation/printable' },
     { id: 'proof-of-income', title: "Proof of Income", description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
@@ -1303,6 +1303,9 @@ function ApplicationDetailPageContent() {
   } | null>(null);
   const [nextStepDateMissing, setNextStepDateMissing] = useState(false);
   const [isSendingFamilyStatusNow, setIsSendingFamilyStatusNow] = useState(false);
+  const [rejectReasonByForm, setRejectReasonByForm] = useState<Record<string, string>>({});
+  const [rejectingByForm, setRejectingByForm] = useState<Record<string, boolean>>({});
+  const [rejectDialogForm, setRejectDialogForm] = useState<string | null>(null);
 
   const reminderFrequencyOptions = useMemo(() => [2, 7] as const, []);
   const staffTestReminderEmail = String(user?.email || '').trim();
@@ -3223,6 +3226,146 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const handleRejectFormRedo = async (formName: string, sendEmail: boolean) => {
+    if (!docRef || !application) return;
+    const reason = String(rejectReasonByForm[formName] || '').trim();
+    if (!reason) {
+      toast({
+        variant: 'destructive',
+        title: 'Description required',
+        description: 'Enter a description so the member/applicant knows what to redo.',
+      });
+      return;
+    }
+
+    const recipientEmail = String((application as any)?.referrerEmail || '').trim();
+    if (sendEmail && !recipientEmail) {
+      toast({
+        variant: 'destructive',
+        title: 'Email not available',
+        description: 'Referrer/member email is not available for this application.',
+      });
+      return;
+    }
+
+    setRejectingByForm((prev) => ({ ...prev, [formName]: true }));
+    try {
+      const reviewerName = user?.displayName || user?.email || 'Admin';
+      const reviewerUid = user?.uid || null;
+      const isSummary = formName === 'CS Member Summary' || formName === 'CS Summary';
+      const rejectedAtIso = new Date().toISOString();
+      const sentAtIso = sendEmail ? new Date().toISOString() : null;
+
+      let found = false;
+      const updatedForms = (application.forms || []).map((form: any) => {
+        if (String(form?.name || '').trim() !== formName) return form;
+        found = true;
+        const existingHistory = Array.isArray((form as any)?.revisionHistory)
+          ? ((form as any).revisionHistory as any[])
+          : [];
+        const historyEntry = {
+          reason,
+          rejectedAt: rejectedAtIso,
+          rejectedBy: reviewerName,
+          rejectedByUid: reviewerUid,
+          emailed: sendEmail,
+          emailTo: sendEmail ? recipientEmail : null,
+          emailSentAt: sentAtIso,
+        };
+        return {
+          ...form,
+          status: 'Pending',
+          acknowledged: false,
+          acknowledgedBy: null,
+          acknowledgedByUid: null,
+          acknowledgedDate: null,
+          revisionRequestedReason: reason,
+          revisionRequestedAt: rejectedAtIso,
+          revisionRequestedBy: reviewerName,
+          revisionRequestedByUid: reviewerUid,
+          revisionEmailTo: sendEmail ? recipientEmail : null,
+          revisionEmailSentAt: sentAtIso,
+          revisionHistory: [historyEntry, ...existingHistory].slice(0, 10),
+        };
+      });
+
+      if (!found) {
+        throw new Error('Could not find this form on the application.');
+      }
+
+      const pendingDocReviewCount = updatedForms.filter((form: any) => {
+        const isCompleted = form?.status === 'Completed';
+        const name = String(form?.name || '').trim();
+        const summary = name === 'CS Member Summary' || name === 'CS Summary';
+        const acknowledged = Boolean(form?.acknowledged);
+        return isCompleted && !summary && !acknowledged;
+      }).length;
+
+      const patch: Record<string, any> = {
+        forms: updatedForms,
+        status: 'Requires Revision',
+        lastUpdated: serverTimestamp(),
+        pendingDocReviewCount,
+        pendingDocReviewUpdatedAt: serverTimestamp(),
+      };
+
+      if (isSummary) {
+        patch.applicationChecked = false;
+        patch.applicationCheckedDate = null;
+        patch.applicationCheckedBy = null;
+        patch.applicationCheckedByUid = null;
+        patch.pendingCsReview = false;
+      }
+
+      await setDoc(docRef, patch, { merge: true });
+      setApplication((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          ...patch,
+          forms: updatedForms,
+        };
+      });
+
+      if (sendEmail) {
+        const response = await fetch('/api/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: recipientEmail,
+            subject: `Action needed: Please redo ${formName}`,
+            memberName: application.referrerName || 'there',
+            staffName: reviewerName,
+            message: `Please redo the "${formName}" form.\n\nReason: ${reason}\n\nLog in to the application portal and update this form so we can continue processing.`,
+            status: 'Requires Revision',
+          }),
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Could not send redo email.');
+        }
+      }
+
+      setRejectReasonByForm((prev) => ({ ...prev, [formName]: '' }));
+      setRejectDialogForm(null);
+      toast({
+        title: sendEmail ? 'Form rejected and email sent' : 'Form rejected',
+        description: sendEmail
+          ? `${formName} set to pending and applicant email sent.`
+          : `${formName} set to pending. Applicant can now redo the form.`,
+      });
+    } catch (error: any) {
+      console.error('Reject form redo error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Could not reject form',
+        description: error?.message || 'Failed to process rejection.',
+      });
+    } finally {
+      setRejectingByForm((prev) => ({ ...prev, [formName]: false }));
+    }
+  };
+
   const waiverSubTasks = [
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
@@ -3764,6 +3907,7 @@ function ApplicationDetailPageContent() {
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
     const isCompleted = formInfo?.status === 'Completed';
+    const isCsSummaryReq = req.id === 'cs-summary';
 
     let baseQueryParams = `?applicationId=${applicationId}&userId=${appUserId}`;
     let viewHref = req.href ? `${req.href}${baseQueryParams}` : '#';
@@ -3809,6 +3953,191 @@ function ApplicationDetailPageContent() {
                       <Button asChild variant="secondary" className="flex-1">
                           <Link href={editHref}>Edit</Link>
                       </Button>
+                    )}
+                    {isCsSummaryReq && (
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button variant="secondary" className="flex-1">
+                            Quick View
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="w-[95vw] sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle className="text-xl">
+                              CS Summary: {application.memberFirstName} {application.memberLastName}
+                            </DialogTitle>
+                            <DialogDescription>
+                              Complete CS Member Summary form data • {application.healthPlan} • {application.pathway}
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-6 py-4 px-2">
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">Member Information</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">First Name</p><p className="font-semibold">{application.memberFirstName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Last Name</p><p className="font-semibold">{application.memberLastName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Date of Birth</p><p className="font-semibold">{application.memberDob ? format(new Date(String(application.memberDob)), 'PPP') : <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Age</p><p className="font-semibold">{(application as any).memberAge || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Medi-Cal Number</p><p className="font-semibold">{application.memberMediCalNum || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Medical Record Number (MRN)</p><p className="font-semibold">{application.memberMrn || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Preferred Language</p><p className="font-semibold">{application.memberLanguage || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">County</p><p className="font-semibold">{application.currentCounty || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">Referrer Information</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">Name</p><p className="font-semibold">{`${application.referrerFirstName || ''} ${application.referrerLastName || ''}`.trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Email</p><p className="font-semibold">{application.referrerEmail || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Phone</p><p className="font-semibold">{application.referrerPhone || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Relationship</p><p className="font-semibold">{application.referrerRelationship || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Agency</p><p className="font-semibold">{application.agency || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">Primary Contact</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">Name</p><p className="font-semibold">{`${application.bestContactFirstName || ''} ${application.bestContactLastName || ''}`.trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Relationship</p><p className="font-semibold">{application.bestContactRelationship || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Phone</p><p className="font-semibold">{application.bestContactPhone || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Email</p><p className="font-semibold">{application.bestContactEmail || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Language</p><p className="font-semibold">{application.bestContactLanguage || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">Legal Representative</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">Member Has Capacity</p><p className="font-semibold">{(['notApplicable', 'same_as_primary', 'different'].includes(String(application.hasLegalRep || '')) ? 'Yes, member has capacity' : String(application.hasLegalRep || '') === 'no_has_rep' ? 'No, member lacks capacity' : 'Yes, member has capacity')}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Has Legal Representative</p><p className="font-semibold">{String(application.hasLegalRep || '') || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Rep Name</p><p className="font-semibold">{`${application.repFirstName || ''} ${application.repLastName || ''}`.trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Rep Relationship</p><p className="font-semibold">{application.repRelationship || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Rep Phone</p><p className="font-semibold">{application.repPhone || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Rep Email</p><p className="font-semibold">{application.repEmail || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">Location Information</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">Current Location Type</p><p className="font-semibold">{application.currentLocation || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Current Location Name</p><p className="font-semibold">{application.currentLocationName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Current Address</p><p className="font-semibold">{[
+                                  String(application.currentAddress || '').trim(),
+                                  String(application.currentCity || '').trim(),
+                                  [String(application.currentState || '').trim(), String(application.currentZip || '').trim()].filter(Boolean).join(' '),
+                                  String(application.currentCounty || '').trim(),
+                                ].filter(Boolean).join(', ').replace(/,\s*,/g, ', ').trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Customary Residence Type</p><p className="font-semibold">{application.customaryLocationType || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Customary Location Name</p><p className="font-semibold">{application.customaryLocationName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Customary Address</p><p className="font-semibold">{[
+                                  String(application.customaryAddress || '').trim(),
+                                  String(application.customaryCity || '').trim(),
+                                  [String(application.customaryState || '').trim(), String(application.customaryZip || '').trim()].filter(Boolean).join(' '),
+                                  String(application.customaryCounty || '').trim(),
+                                ].filter(Boolean).join(', ').replace(/,\s*,/g, ', ').trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">Health Plan & Pathway</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">Health Plan</p><p className="font-semibold">{application.healthPlan || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Pathway</p><p className="font-semibold">{application.pathway || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                {application.pathway === 'SNF Diversion' ? (
+                                  <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Reason for Diversion</p><p className="font-semibold">{application.snfDiversionReason || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                ) : null}
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">ISP Information</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">ISP Contact Name</p><p className="font-semibold">{`${application.ispFirstName || ''} ${application.ispLastName || ''}`.trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">ISP Contact Phone</p><p className="font-semibold">{application.ispPhone || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div className="md:col-span-2"><p className="text-sm text-muted-foreground">ISP Assessment Location</p><p className="font-semibold">{[
+                                  String(application.ispAddress || '').trim(),
+                                  String(application.ispCity || '').trim(),
+                                  [String(application.ispState || '').trim(), String(application.ispZip || '').trim()].filter(Boolean).join(' '),
+                                ].filter(Boolean).join(', ').replace(/,\s*,/g, ', ').trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">RCFE Information</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">On ALW Waitlist?</p><p className="font-semibold">{application.onALWWaitlist || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Has Preferred RCFE?</p><p className="font-semibold">{application.hasPrefRCFE || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div className="md:col-span-2"><p className="text-sm text-muted-foreground">RCFE Name</p><p className="font-semibold">{application.rcfeName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div className="md:col-span-2"><p className="text-sm text-muted-foreground">RCFE Address</p><p className="font-semibold">{application.rcfeAddress || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Preferred RCFE Cities</p><p className="font-semibold">{application.rcfePreferredCities || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">RCFE Admin First Name</p><p className="font-semibold">{application.rcfeAdminFirstName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">RCFE Admin Last Name</p><p className="font-semibold">{application.rcfeAdminLastName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">RCFE Admin Phone</p><p className="font-semibold">{application.rcfeAdminPhone || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">RCFE Admin Email</p><p className="font-semibold">{application.rcfeAdminEmail || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">Financial Information</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">Income Source</p><p className="font-semibold">{application.incomeSource || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Has Medi-Cal</p><p className="font-semibold">{application.hasMediCal ? 'Yes' : 'No'}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Medi-Cal Number</p><p className="font-semibold">{application.memberMediCalNum || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Share of Cost</p><p className="font-semibold">{application.shareOfCost || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Room & Board Agreement</p><p className="font-semibold">{(() => {
+                                  const forms = (application as any)?.forms || [];
+                                  const form = forms.find((f: any) => {
+                                    const name = String(f?.name || '').trim();
+                                    return name === 'Room and Board/Tier Level Agreement' || name === 'Room and Board/Tier Level Commitment' || name === 'Room and Board Commitment';
+                                  });
+                                  const ack = form?.ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard;
+                                  if (ack === true) return 'Agrees';
+                                  if (ack === false) return 'Does not agree';
+                                  return 'Not provided';
+                                })()}</p></div>
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            <div>
+                              <h3 className="text-lg font-semibold mb-2 text-primary">Application Status & Tracking</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div><p className="text-sm text-muted-foreground">Submission Status</p><p className="font-semibold">{application.status || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Submitted Date</p><p className="font-semibold">{application.submissionDate ? format((application.submissionDate as Timestamp).toDate(), 'PPP p') : <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Last Updated</p><p className="font-semibold">{application.lastUpdated ? format((application.lastUpdated as Timestamp).toDate(), 'PPP p') : <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Submitted By</p><p className="font-semibold">{application.referrerName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Application ID</p><p className="font-semibold">{application.id || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                              </div>
+                              <Separator className="my-6" />
+                            </div>
+
+                            {(application.additionalNotes || application.specialInstructions) ? (
+                              <div>
+                                <h3 className="text-lg font-semibold mb-2 text-primary">Additional Information</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                  {application.additionalNotes ? (
+                                    <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Additional Notes</p><p className="font-semibold whitespace-pre-wrap">{application.additionalNotes}</p></div>
+                                  ) : null}
+                                  {application.specialInstructions ? (
+                                    <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Special Instructions</p><p className="font-semibold whitespace-pre-wrap">{application.specialInstructions}</p></div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     )}
                 </div>
             );
@@ -4512,6 +4841,135 @@ function ApplicationDetailPageContent() {
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                             <StatusIndicator status={status} />
                             {getFormAction(req)}
+                            {(
+                                <div className="space-y-2 rounded-md border border-red-200 bg-red-50/60 p-3">
+                                    <Dialog
+                                      open={rejectDialogForm === req.title}
+                                      onOpenChange={(open) => setRejectDialogForm(open ? req.title : null)}
+                                    >
+                                      <DialogTrigger asChild>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="w-full border-red-300 text-red-700 hover:bg-red-100"
+                                        >
+                                          Reject card / request redo
+                                        </Button>
+                                      </DialogTrigger>
+                                      <DialogContent className="sm:max-w-xl">
+                                        <DialogHeader>
+                                          <DialogTitle>Reject {req.title}</DialogTitle>
+                                          <DialogDescription>
+                                            Add a reason for rejection. You can reject the card only, or reject and email the member/applicant to redo this form.
+                                          </DialogDescription>
+                                        </DialogHeader>
+                                        <div className="space-y-3">
+                                          <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
+                                            <div>
+                                              <span className="font-medium">Will email to:</span>{' '}
+                                              {String((application as any)?.referrerEmail || '').trim() || 'No email on file'}
+                                            </div>
+                                            {formInfo && (
+                                              <>
+                                                {String((formInfo as any)?.revisionEmailSentAt || '').trim() ? (
+                                                  <div>
+                                                    <span className="font-medium">Last rejection email sent:</span>{' '}
+                                                    {format(new Date(String((formInfo as any).revisionEmailSentAt)), 'MMM d, yyyy h:mm a')}
+                                                    {String((formInfo as any)?.revisionEmailTo || '').trim()
+                                                      ? ` to ${String((formInfo as any).revisionEmailTo).trim()}`
+                                                      : ''}
+                                                  </div>
+                                                ) : (
+                                                  <div>
+                                                    <span className="font-medium">Last rejection email sent:</span> Not sent yet
+                                                  </div>
+                                                )}
+                                              </>
+                                            )}
+                                          </div>
+                                          <div className="space-y-1">
+                                            <Label htmlFor={`reject-reason-${req.id}`} className="text-xs font-medium">
+                                              Description (required)
+                                            </Label>
+                                            <Textarea
+                                              id={`reject-reason-${req.id}`}
+                                              value={rejectReasonByForm[req.title] || ''}
+                                              onChange={(e) =>
+                                                setRejectReasonByForm((prev) => ({ ...prev, [req.title]: e.target.value }))
+                                              }
+                                              placeholder="Explain what needs to be corrected before this form can be approved."
+                                              className="min-h-[110px]"
+                                            />
+                                          </div>
+                                          <div className="flex flex-wrap justify-end gap-2 pt-2">
+                                            <Button
+                                              variant="ghost"
+                                              onClick={() => setRejectDialogForm(null)}
+                                              disabled={Boolean(rejectingByForm[req.title])}
+                                            >
+                                              Cancel
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              disabled={Boolean(rejectingByForm[req.title])}
+                                              onClick={() => handleRejectFormRedo(req.title, false)}
+                                            >
+                                              {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                                              Reject only
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              className="bg-red-600 hover:bg-red-700"
+                                              disabled={Boolean(rejectingByForm[req.title])}
+                                              onClick={() => handleRejectFormRedo(req.title, true)}
+                                            >
+                                              {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                                              Reject + Email applicant
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </DialogContent>
+                                    </Dialog>
+                                    {String((formInfo as any)?.revisionRequestedReason || '').trim() && (
+                                      <div className="text-xs text-red-700/90">
+                                        Last rejection: {String((formInfo as any).revisionRequestedReason).trim()}
+                                      </div>
+                                    )}
+                                    {Array.isArray((formInfo as any)?.revisionHistory) && (formInfo as any).revisionHistory.length > 0 && (
+                                      <div className="rounded-md border bg-white/70 p-2">
+                                        <div className="text-[11px] font-medium text-red-800 mb-1">Reject history (latest 3)</div>
+                                        <div className="space-y-1">
+                                          {(formInfo as any).revisionHistory.slice(0, 3).map((entry: any, idx: number) => {
+                                            const when = String(entry?.rejectedAt || '').trim();
+                                            const dateLabel = when && !Number.isNaN(new Date(when).getTime())
+                                              ? format(new Date(when), 'MMM d, yyyy h:mm a')
+                                              : 'Unknown date';
+                                            const who = String(entry?.rejectedBy || '').trim() || 'Unknown sender';
+                                            const why = String(entry?.reason || '').trim() || 'No reason';
+                                            const emailed = Boolean(entry?.emailed);
+                                            const to = String(entry?.emailTo || '').trim();
+                                            const sentAt = String(entry?.emailSentAt || '').trim();
+                                            const sentLabel = sentAt && !Number.isNaN(new Date(sentAt).getTime())
+                                              ? format(new Date(sentAt), 'MMM d, yyyy h:mm a')
+                                              : '';
+                                            return (
+                                              <div key={`reject-history-${req.id}-${idx}`} className="text-[11px] text-muted-foreground leading-snug">
+                                                <span className="font-medium text-foreground">{dateLabel}</span> - {who}
+                                                {' '} - {why}
+                                                {emailed ? (
+                                                  <span className="text-red-700"> - emailed {to || 'applicant'}{sentLabel ? ` at ${sentLabel}` : ''}</span>
+                                                ) : (
+                                                  <span> - email not sent</span>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+                                </div>
+                            )}
                             {status === 'Pending' && (
                                 <Button
                                     variant="outline"
