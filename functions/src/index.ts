@@ -1197,7 +1197,15 @@ export const publishCsSummaryToCaspio = onCall({
     
     if (!insertResponse.ok) {
       const errorText = await insertResponse.text();
-      throw new HttpsError('internal', `Failed to insert member record: ${insertResponse.status} ${errorText}`);
+      throw new HttpsError(
+        'internal',
+        'Failed to insert member record in Caspio.',
+        {
+          caspioStatus: insertResponse.status,
+          caspioError: errorText,
+          memberName: `${firstName} ${lastName}`.trim(),
+        }
+      );
     }
     
     const result = await insertResponse.json();
@@ -1214,7 +1222,11 @@ export const publishCsSummaryToCaspio = onCall({
     if (error instanceof HttpsError) {
       throw error;
     }
-    throw new HttpsError('internal', `Unexpected error: ${error.message}`);
+    throw new HttpsError(
+      'internal',
+      'Unexpected error while publishing CS Summary to Caspio.',
+      { rawError: String(error?.message || 'Unknown error') }
+    );
   }
 });
 

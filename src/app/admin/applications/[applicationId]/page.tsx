@@ -793,14 +793,43 @@ function PushToCaspioDialog({
             }
         } catch (error: any) {
             let errorMessage = 'Failed to send to Caspio';
-            if (error?.code === 'functions/already-exists') {
-                errorMessage = 'This member already exists in Caspio database';
-            } else if (error?.code === 'functions/failed-precondition') {
-                errorMessage = 'Caspio credentials not configured properly';
-            } else if (error?.message) {
-                errorMessage = error.message;
+            let safeCode = '';
+            let safeMessage = '';
+            let details: any = null;
+            try {
+              safeCode = String(error?.code || '').trim();
+            } catch {
+              safeCode = '';
             }
+            try {
+              safeMessage = String(error?.message || '').trim();
+            } catch {
+              safeMessage = '';
+            }
+            try {
+              details = error?.details ?? null;
+            } catch {
+              details = null;
+            }
+
+            if (safeCode === 'functions/already-exists') {
+                errorMessage = 'This member already exists in Caspio database';
+            } else if (safeCode === 'functions/failed-precondition') {
+                errorMessage = 'Caspio credentials not configured properly';
+            } else if (details && typeof details === 'object') {
+                const caspioStatus = String((details as any)?.caspioStatus || '').trim();
+                const caspioError = String((details as any)?.caspioError || '').trim();
+                const rawError = String((details as any)?.rawError || '').trim();
+                errorMessage =
+                  caspioError ||
+                  rawError ||
+                  (caspioStatus ? `Caspio rejected this push (HTTP ${caspioStatus}).` : 'Caspio push failed.');
+            } else if (safeMessage) {
+                errorMessage = safeMessage;
+            }
+            console.error('Caspio push error details:', error);
             toast({ variant: 'destructive', title: 'Error', description: errorMessage });
+            return;
         } finally {
             setIsSendingToCaspio(false);
         }
@@ -868,8 +897,20 @@ function PushToCaspioDialog({
                 <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                        onClick={() => {
-                            void sendToCaspio(caspioMappingPreview);
+                        onClick={(e) => {
+                            e.preventDefault();
+                            void (async () => {
+                              try {
+                                await sendToCaspio(caspioMappingPreview);
+                              } catch (error) {
+                                console.error('Unhandled Caspio push error:', error);
+                                toast({
+                                  variant: 'destructive',
+                                  title: 'Error',
+                                  description: 'Unexpected error while pushing to Caspio.',
+                                });
+                              }
+                            })();
                         }}
                         disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0 || isSendingToCaspio}
                     >
