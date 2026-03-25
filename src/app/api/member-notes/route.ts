@@ -152,7 +152,7 @@ async function handleGlobalNoteSearchWithModule(searchQuery: string) {
   try {
     const caspioService = CaspioService.getInstance();
     const notes = await caspioService.searchNotes(searchQuery);
-    
+
     return NextResponse.json({
       success: true,
       notes: notes,
@@ -627,6 +627,19 @@ const SYNC_STATUS_COLLECTION = 'member-notes-sync-status';
 const SEARCH_RESULTS_LIMIT = 50;
 const SEARCH_MIN_LENGTH = 2;
 
+const ET_DATE_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function toEtDayKey(value: string | Date): string {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return ET_DATE_FMT.format(d);
+}
+
 // Health monitoring configuration
 const SYNC_HEALTH_COLLECTION = 'sync-health-status';
 const MAX_FAILED_SYNCS = 3;
@@ -733,6 +746,7 @@ export async function GET(request: NextRequest) {
     const forceSync = searchParams.get('forceSync') === 'true';
     const skipSync = searchParams.get('skipSync') === 'true';
     const repairIfEmpty = searchParams.get('repairIfEmpty') === 'true';
+    const metaOnly = searchParams.get('metaOnly') === 'true';
     const searchQuery = searchParams.get('search');
 
     // Handle full-text search across all notes using new module
@@ -757,6 +771,30 @@ export async function GET(request: NextRequest) {
     const prevStatus = await getSyncStatusFromFirestore(memberKey).catch(() => null);
     const prevLastSyncAt = String(prevStatus?.lastSyncAt || '').trim();
     const hasFirstSync = Boolean(prevStatus?.firstSyncCompleted);
+
+    // Lightweight mode for status-only lookups (no notes payload, no Caspio sync).
+    if (metaOnly) {
+      const notes = await getNotesFromFirestore(memberKey);
+      const todayEt = toEtDayKey(new Date());
+      const notesTodayCount = notes.reduce((acc, note) => {
+        if (!note?.createdAt) return acc;
+        const dayKey = toEtDayKey(String(note.createdAt));
+        return dayKey && dayKey === todayEt ? acc + 1 : acc;
+      }, 0);
+
+      return NextResponse.json({
+        success: true,
+        clientId2: memberKey,
+        syncLastAt: prevLastSyncAt,
+        firstSyncCompleted: hasFirstSync,
+        didSync: false,
+        notes: [],
+        count: notes.length,
+        newNotesCount: 0,
+        existingNotesCount: notes.length,
+        notesTodayCount,
+      });
+    }
 
     let isFirstSync = false;
     let newNotesCount = 0;
@@ -784,6 +822,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const postSyncStatus = await getSyncStatusFromFirestore(memberKey).catch(() => null);
+    const syncLastAt = String(postSyncStatus?.lastSyncAt || prevStatus?.lastSyncAt || '').trim();
+    const firstSyncCompleted = Boolean(postSyncStatus?.firstSyncCompleted ?? prevStatus?.firstSyncCompleted);
+    const existingNotesCount = Math.max(0, Number(notes.length || 0) - Number(newNotesCount || 0));
+
     return NextResponse.json({
       success: true,
       notes: notes,
@@ -797,9 +840,12 @@ export async function GET(request: NextRequest) {
       appNotes: notes.filter(n => n.source === 'App' || n.source === 'Admin').length,
       isFirstSync,
       newNotesCount,
+      existingNotesCount,
       didSync: !skipSync,
       repairedFromEmptyStore,
-      repairImportedCount
+      repairImportedCount,
+      syncLastAt,
+      firstSyncCompleted
     });
 
   } catch (error: any) {

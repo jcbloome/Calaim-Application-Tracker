@@ -15,6 +15,10 @@ export interface MemberNotesModalProps {
   member: KaiserMember | null;
   notes: any[];
   isLoadingNotes: boolean;
+  lastSyncAt: string;
+  existingNotesCount: number;
+  newNotesCount: number;
+  didSync: boolean;
   onSyncNotes: () => void;
 }
 
@@ -24,9 +28,30 @@ export function MemberNotesModal({
   member,
   notes,
   isLoadingNotes,
+  lastSyncAt,
+  existingNotesCount,
+  newNotesCount,
+  didSync,
   onSyncNotes,
 }: MemberNotesModalProps) {
   if (!isOpen || !member) return null;
+
+  const formatEtDateTime = (value: string) => {
+    if (!value) return 'Never';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Never';
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    }).format(parsed);
+  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -90,6 +115,20 @@ export function MemberNotesModal({
                 <p className="text-muted-foreground">Loading notes...</p>
               </div>
             ) : (
+              <div className="space-y-3">
+                <div className="rounded-lg border bg-slate-50 p-3 text-xs text-slate-700">
+                  <div>
+                    Last notes sync (ET): {formatEtDateTime(lastSyncAt)}
+                  </div>
+                  <div className="mt-1">
+                    Existing notes: {existingNotesCount} • New notes from latest sync: {newNotesCount}
+                  </div>
+                  {!didSync ? (
+                    <div className="mt-1 text-slate-600">
+                      Showing saved notes from Firestore. Use Sync latest notes to pull new Caspio notes.
+                    </div>
+                  ) : null}
+                </div>
               <ScrollArea className="h-[45vh]">
                 <div className="space-y-3">
                   {notes.length === 0 ? (
@@ -143,6 +182,7 @@ export function MemberNotesModal({
                   )}
                 </div>
               </ScrollArea>
+              </div>
             )}
           </div>
 

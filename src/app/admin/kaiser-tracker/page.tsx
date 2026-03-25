@@ -255,6 +255,20 @@ function KaiserTrackerPageContent() {
   const [kaiserStatusOptions, setKaiserStatusOptions] = useState<string[]>([...FALLBACK_KAISER_STATUS_ORDER]);
   const [kaiserStatusListUpdatedAtLabel, setKaiserStatusListUpdatedAtLabel] = useState<string>('');
   const [members, setMembers] = useState<KaiserMember[]>([]);
+  const [membersCacheLastSyncAt, setMembersCacheLastSyncAt] = useState('');
+  const [notesGlobalSyncing, setNotesGlobalSyncing] = useState(false);
+  const [notesGlobalProgress, setNotesGlobalProgress] = useState<{
+    total: number;
+    complete: number;
+    success: number;
+    failed: number;
+    existingNotes: number;
+    newNotes: number;
+    lastSyncAt: string;
+    currentMember: string;
+    stopped: boolean;
+    recentErrors: string[];
+  } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -270,6 +284,8 @@ function KaiserTrackerPageContent() {
     members: KaiserMember[];
   }>({ isOpen: false, staffName: '', members: [] });
   const deepLinkHandledRef = useRef(false);
+  const stopAllSyncRef = useRef(false);
+  const notesFetchControllerRef = useRef<AbortController | null>(null);
 
   // Member notes modal state
   const [memberNotesModal, setMemberNotesModal] = useState<{
@@ -277,13 +293,43 @@ function KaiserTrackerPageContent() {
     member: KaiserMember | null;
     notes: any[];
     isLoadingNotes: boolean;
-  }>({ isOpen: false, member: null, notes: [], isLoadingNotes: false });
+    lastSyncAt: string;
+    existingNotesCount: number;
+    newNotesCount: number;
+    didSync: boolean;
+  }>({
+    isOpen: false,
+    member: null,
+    notes: [],
+    isLoadingNotes: false,
+    lastSyncAt: '',
+    existingNotesCount: 0,
+    newNotesCount: 0,
+    didSync: false,
+  });
   const [filters, setFilters] = useState({
     kaiserStatus: 'all',
     calaimStatus: 'all',
     county: 'all',
     staffAssigned: 'all'
   });
+
+  const formatEtDateTime = (value: string) => {
+    if (!value) return 'Never';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Never';
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    }).format(parsed);
+  };
 
   // Calculate status summary using the defined Kaiser status order
   const statusSummary = useMemo(() => {
@@ -405,23 +451,31 @@ function KaiserTrackerPageContent() {
       isOpen: true,
       member,
       notes: [],
-      isLoadingNotes: true
+      isLoadingNotes: true,
+      lastSyncAt: '',
+      existingNotesCount: 0,
+      newNotesCount: 0,
+      didSync: false,
     });
 
     try {
-      // Fetch member notes
-      const response = await fetch(`/api/member-notes?clientId2=${member.client_ID2}`);
+      // Open behavior: load existing saved notes only (no Caspio sync on modal open).
+      const response = await fetch(`/api/member-notes?clientId2=${member.client_ID2}&skipSync=true`);
       const data = await response.json();
       
       if (data.success) {
         setMemberNotesModal(prev => ({
           ...prev,
           notes: data.notes || [],
-          isLoadingNotes: false
+          isLoadingNotes: false,
+          lastSyncAt: String(data?.syncLastAt || ''),
+          existingNotesCount: Number(data?.existingNotesCount || data?.notes?.length || 0),
+          newNotesCount: Number(data?.newNotesCount || 0),
+          didSync: false,
         }));
         
         toast({
-          title: data.fromCache ? "Notes Loaded from Cache" : "Notes Synced from Caspio",
+          title: 'Saved notes loaded',
           description: `${data.notes?.length || 0} notes loaded for ${member.memberFirstName} ${member.memberLastName}`,
         });
       } else {
@@ -439,7 +493,11 @@ function KaiserTrackerPageContent() {
       setMemberNotesModal(prev => ({
         ...prev,
         notes: [],
-        isLoadingNotes: false
+        isLoadingNotes: false,
+        lastSyncAt: '',
+        existingNotesCount: 0,
+        newNotesCount: 0,
+        didSync: false,
       }));
     }
   };
@@ -452,9 +510,10 @@ function KaiserTrackerPageContent() {
       isLoadingNotes: true,
     }));
     try {
-      // Manual "Sync latest notes" should force a full resync so large legacy note histories
-      // (including members with 1000+ notes) are backfilled reliably.
-      const response = await fetch(`/api/member-notes?clientId2=${member.client_ID2}&forceSync=true`);
+      // Sync behavior: incremental by default, with one-time empty-store repair.
+      const response = await fetch(
+        `/api/member-notes?clientId2=${member.client_ID2}&forceSync=false&skipSync=false&repairIfEmpty=true`
+      );
       const data = await response.json();
       if (!data.success) {
         throw new Error(data.error || 'Failed to sync notes');
@@ -463,10 +522,14 @@ function KaiserTrackerPageContent() {
         ...prev,
         notes: data.notes || [],
         isLoadingNotes: false,
+        lastSyncAt: String(data?.syncLastAt || ''),
+        existingNotesCount: Number(data?.existingNotesCount || 0),
+        newNotesCount: Number(data?.newNotesCount || 0),
+        didSync: true,
       }));
       toast({
-        title: data.fromCache ? 'Notes refreshed from cache' : 'Notes refreshed from Caspio',
-        description: `${data.notes?.length || 0} notes loaded for ${member.memberFirstName} ${member.memberLastName}`,
+        title: 'Notes sync complete',
+        description: `${data?.existingNotesCount || 0} existing + ${data?.newNotesCount || 0} new notes for ${member.memberFirstName} ${member.memberLastName}`,
       });
     } catch (error: any) {
       console.error('Error syncing member notes:', error);
@@ -607,6 +670,7 @@ function KaiserTrackerPageContent() {
       if (!syncRes.ok || !(syncData as any)?.success) {
         throw new Error((syncData as any)?.error || 'Failed to sync members cache');
       }
+      setMembersCacheLastSyncAt(String((syncData as any)?.lastSyncAt || ''));
 
       const response = await fetch('/api/kaiser-members');
       if (!response.ok) {
@@ -698,6 +762,7 @@ function KaiserTrackerPageContent() {
           description: `Loaded ${cleanMembers.length} Kaiser members`,
         });
       }
+      return cleanMembers as KaiserMember[];
     } catch (error) {
       console.error('Error fetching Kaiser members:', error);
       if (!opts?.quiet) {
@@ -707,26 +772,201 @@ function KaiserTrackerPageContent() {
           variant: "destructive",
         });
       }
+      return [] as KaiserMember[];
     } finally {
       setIsLoading(false);
     }
   };
 
   const syncAll = async () => {
-    if (isLoading || statusListSyncing) return;
+    if (isLoading || statusListSyncing || notesGlobalSyncing) return;
+    stopAllSyncRef.current = false;
     try {
-      await Promise.all([syncKaiserStatusOptions({ quiet: true }), fetchCaspioData({ quiet: true })]);
+      const [, latestMembers] = await Promise.all([
+        syncKaiserStatusOptions({ quiet: true }),
+        fetchCaspioData({ quiet: true }),
+      ]);
+      if (stopAllSyncRef.current) {
+        toast({
+          title: 'Sync stopped',
+          description: 'Stopped before global notes update.',
+        });
+        return;
+      }
+      await syncGlobalLatestNotes(latestMembers, { quiet: true });
+      if (stopAllSyncRef.current) {
+        toast({
+          title: 'Sync stopped',
+          description: 'Global notes update was stopped by user.',
+        });
+        return;
+      }
       toast({
         title: 'Synced',
-        description: 'Updated members cache + Kaiser status list (includes Kaiser & CalAIM status).',
+        description: 'Updated members cache + Kaiser status list + global latest notes.',
       });
     } catch (e: any) {
       toast({
         title: 'Sync failed',
-        description: e?.message || 'Could not sync members and statuses.',
+        description: e?.message || 'Could not sync members, statuses, and notes.',
         variant: 'destructive',
       });
     }
+  };
+
+  const syncGlobalLatestNotes = async (scopeOverride?: KaiserMember[], opts?: { quiet?: boolean }) => {
+    if (notesGlobalSyncing) return;
+
+    const base = Array.isArray(scopeOverride) && scopeOverride.length > 0 ? scopeOverride : members;
+    const scope = base.filter((member) => isAuthorizedOrPendingCalaim(member?.CalAIM_Status));
+    if (scope.length === 0) {
+      if (!opts?.quiet) {
+        toast({
+          title: 'No members in scope',
+          description: 'No Authorized/Pending Kaiser members available for global notes sync.',
+        });
+      }
+      return;
+    }
+
+    setNotesGlobalSyncing(true);
+    setNotesGlobalProgress({
+      total: scope.length,
+      complete: 0,
+      success: 0,
+      failed: 0,
+      existingNotes: 0,
+      newNotes: 0,
+      lastSyncAt: '',
+      currentMember: '',
+      stopped: false,
+      recentErrors: [],
+    });
+
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    let aggExisting = 0;
+    let aggNew = 0;
+    let aggSuccess = 0;
+    let aggFailed = 0;
+    const addRecentError = (msg: string) =>
+      setNotesGlobalProgress((prev) =>
+        prev ? { ...prev, recentErrors: [msg, ...prev.recentErrors].slice(0, 5) } : prev
+      );
+
+    try {
+      for (const member of scope) {
+        if (stopAllSyncRef.current) {
+          setNotesGlobalProgress((prev) => (prev ? { ...prev, currentMember: '', stopped: true } : prev));
+          break;
+        }
+        setNotesGlobalProgress((prev) =>
+          prev ? { ...prev, currentMember: `${member.memberLastName}, ${member.memberFirstName}` } : prev
+        );
+
+        let completed = false;
+        let lastError: any = null;
+        for (let attempt = 1; attempt <= 4 && !completed; attempt++) {
+          if (stopAllSyncRef.current) {
+            setNotesGlobalProgress((prev) => (prev ? { ...prev, currentMember: '', stopped: true } : prev));
+            break;
+          }
+          try {
+            const controller = new AbortController();
+            notesFetchControllerRef.current = controller;
+            const res = await fetch(
+              `/api/member-notes?clientId2=${encodeURIComponent(
+                member.client_ID2
+              )}&forceSync=false&skipSync=false&repairIfEmpty=true`,
+              { signal: controller.signal }
+            );
+            notesFetchControllerRef.current = null;
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data?.success) {
+              throw new Error(data?.error || 'Failed to sync notes');
+            }
+            const existingCount = Number(data?.existingNotesCount || 0);
+            const newCount = Number(data?.newNotesCount || 0);
+            aggExisting += existingCount;
+            aggNew += newCount;
+            aggSuccess += 1;
+            setNotesGlobalProgress((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    complete: prev.complete + 1,
+                    success: prev.success + 1,
+                    existingNotes: prev.existingNotes + existingCount,
+                    newNotes: prev.newNotes + newCount,
+                  }
+                : prev
+            );
+            completed = true;
+            await delay(250);
+          } catch (error: any) {
+            notesFetchControllerRef.current = null;
+            if (String(error?.name || '').toLowerCase() === 'aborterror') {
+              setNotesGlobalProgress((prev) => (prev ? { ...prev, currentMember: '', stopped: true } : prev));
+              break;
+            }
+            lastError = error;
+            if (attempt < 4 && String(error?.message || '').toLowerCase().includes('429')) {
+              const backoffMs = Math.min(30000, 5000 * Math.pow(2, attempt - 1));
+              await delay(backoffMs);
+            } else if (attempt < 4) {
+              await delay(600);
+            }
+          }
+        }
+
+        if (!completed && !stopAllSyncRef.current) {
+          const label = `${member.memberLastName}, ${member.memberFirstName} (${member.client_ID2})`;
+          addRecentError(`${label}: ${String(lastError?.message || 'Unknown sync error')}`);
+          aggFailed += 1;
+          setNotesGlobalProgress((prev) =>
+            prev ? { ...prev, complete: prev.complete + 1, failed: prev.failed + 1 } : prev
+          );
+        }
+      }
+
+      const completedAt = new Date().toISOString();
+      setNotesGlobalProgress((prev) =>
+        prev
+          ? {
+              ...prev,
+              currentMember: '',
+              lastSyncAt: completedAt,
+              stopped: stopAllSyncRef.current ? true : prev.stopped,
+            }
+          : prev
+      );
+      if (!opts?.quiet) {
+        toast({
+          title: stopAllSyncRef.current ? 'Global notes sync stopped' : 'Global notes sync complete',
+          description: `Processed ${aggSuccess + aggFailed} of ${scope.length} members (${aggSuccess} success, ${aggFailed} failed). Historical loaded: ${aggExisting} • New added: ${aggNew}.`,
+        });
+      }
+    } catch (error: any) {
+      if (!opts?.quiet) {
+        toast({
+          title: 'Global notes sync failed',
+          description: error?.message || 'Could not complete global notes sync.',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      notesFetchControllerRef.current = null;
+      setNotesGlobalSyncing(false);
+    }
+  };
+
+  const stopSyncAll = () => {
+    stopAllSyncRef.current = true;
+    if (notesFetchControllerRef.current) {
+      try {
+        notesFetchControllerRef.current.abort();
+      } catch {}
+    }
+    setNotesGlobalProgress((prev) => (prev ? { ...prev, stopped: true, currentMember: '' } : prev));
   };
 
   // Filter and sort functions
@@ -907,7 +1147,10 @@ function KaiserTrackerPageContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Kaiser Tracker Dashboard</h1>
           <p className="text-muted-foreground text-sm">
-            Overview of {members.length} Kaiser members | Last sync: {members.length > 0 ? new Date().toLocaleString() : 'Never'}
+            Overview of {members.length} Kaiser members | Members cache sync (ET): {formatEtDateTime(membersCacheLastSyncAt)}
+          </p>
+          <p className="text-muted-foreground text-xs mt-1">
+            Sync (All) updates member data from Caspio and runs global incremental notes update into the shared Firestore notes store.
           </p>
           <p className="text-muted-foreground text-xs mt-1">
             {statusListLoading ? 'Loading Kaiser status list…' : (kaiserStatusListUpdatedAtLabel || ' ')}
@@ -921,14 +1164,65 @@ function KaiserTrackerPageContent() {
           </Button>
           <Button
             onClick={() => void syncAll()}
-            disabled={isLoading || statusListSyncing || statusListLoading}
+            disabled={isLoading || statusListSyncing || statusListLoading || notesGlobalSyncing}
             className="w-full sm:w-auto flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${isLoading || statusListSyncing ? 'animate-spin' : ''}`} />
-            {isLoading || statusListSyncing ? 'Syncing…' : 'Sync'}
+            <RefreshCw className={`h-4 w-4 ${isLoading || statusListSyncing || notesGlobalSyncing ? 'animate-spin' : ''}`} />
+            {isLoading || statusListSyncing || notesGlobalSyncing ? 'Syncing…' : 'Sync (All)'}
           </Button>
+          {(isLoading || statusListSyncing || notesGlobalSyncing) ? (
+            <Button
+              onClick={stopSyncAll}
+              variant="destructive"
+              className="w-full sm:w-auto"
+            >
+              Stop Sync
+            </Button>
+          ) : null}
         </div>
       </div>
+
+      {notesGlobalProgress ? (
+        <Card>
+          <CardContent className="py-4 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium">Global notes sync progress</span>
+              <span>
+                {notesGlobalProgress.complete}/{notesGlobalProgress.total}
+              </span>
+            </div>
+            <div className="h-2 rounded bg-slate-200 overflow-hidden">
+              <div
+                className="h-2 bg-blue-600"
+                style={{
+                  width: `${notesGlobalProgress.total > 0 ? (notesGlobalProgress.complete / notesGlobalProgress.total) * 100 : 0}%`,
+                }}
+              />
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center justify-between">
+              <span>
+                Success: {notesGlobalProgress.success} • Failed: {notesGlobalProgress.failed} • Historical loaded: {notesGlobalProgress.existingNotes} • New added: {notesGlobalProgress.newNotes}
+              </span>
+              <span>{notesGlobalProgress.stopped ? 'Stopped' : (notesGlobalProgress.currentMember || '')}</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Last notes sync run (ET): {formatEtDateTime(notesGlobalProgress.lastSyncAt)}
+            </div>
+            {notesGlobalProgress.recentErrors.length > 0 ? (
+              <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                <div className="font-medium mb-1">Recent sync errors</div>
+                <div className="space-y-1">
+                  {notesGlobalProgress.recentErrors.map((err, idx) => (
+                    <div key={`${err}-${idx}`} className="truncate" title={err}>
+                      {err}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Interactive Filtering Message */}
       {members.length > 0 && (
@@ -987,10 +1281,25 @@ function KaiserTrackerPageContent() {
 
       <MemberNotesModal
         isOpen={memberNotesModal.isOpen}
-        onClose={() => setMemberNotesModal({ isOpen: false, member: null, notes: [], isLoadingNotes: false })}
+        onClose={() =>
+          setMemberNotesModal({
+            isOpen: false,
+            member: null,
+            notes: [],
+            isLoadingNotes: false,
+            lastSyncAt: '',
+            existingNotesCount: 0,
+            newNotesCount: 0,
+            didSync: false,
+          })
+        }
         member={memberNotesModal.member}
         notes={memberNotesModal.notes}
         isLoadingNotes={memberNotesModal.isLoadingNotes}
+        lastSyncAt={memberNotesModal.lastSyncAt}
+        existingNotesCount={memberNotesModal.existingNotesCount}
+        newNotesCount={memberNotesModal.newNotesCount}
+        didSync={memberNotesModal.didSync}
         onSyncNotes={syncMemberNotes}
       />
             </div>

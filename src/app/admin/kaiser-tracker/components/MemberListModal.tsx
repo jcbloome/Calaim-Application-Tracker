@@ -40,6 +40,83 @@ export function MemberListModal({
   availableCalAIMStatuses,
   staffMembers,
 }: MemberListModalProps) {
+  const [notesMetaByClientId, setNotesMetaByClientId] = React.useState<
+    Record<string, { lastSyncAt: string; notesTodayCount: number }>
+  >({});
+
+  const formatEtDateTime = (value: string) => {
+    if (!value) return 'Never';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Never';
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    }).format(parsed);
+  };
+
+  React.useEffect(() => {
+    if (!isOpen || members.length === 0) return;
+    const clientIds = Array.from(
+      new Set(
+        members
+          .map((m) => String(m?.client_ID2 || '').trim())
+          .filter(Boolean)
+      )
+    );
+    if (clientIds.length === 0) return;
+
+    let cancelled = false;
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    let index = 0;
+    const concurrency = 6;
+
+    const worker = async () => {
+      while (!cancelled) {
+        const i = index;
+        index += 1;
+        if (i >= clientIds.length) return;
+        const clientId2 = clientIds[i];
+        try {
+          const res = await fetch(
+            `/api/member-notes?clientId2=${encodeURIComponent(clientId2)}&skipSync=true&metaOnly=true`
+          );
+          const data = await res.json().catch(() => ({}));
+          if (cancelled) return;
+          setNotesMetaByClientId((prev) => ({
+            ...prev,
+            [clientId2]: {
+              lastSyncAt: String(data?.syncLastAt || ''),
+              notesTodayCount: Number(data?.notesTodayCount || 0),
+            },
+          }));
+          await delay(40);
+        } catch {
+          if (cancelled) return;
+          setNotesMetaByClientId((prev) => ({
+            ...prev,
+            [clientId2]: {
+              lastSyncAt: '',
+              notesTodayCount: 0,
+            },
+          }));
+        }
+      }
+    };
+
+    void Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, members]);
+
   if (!isOpen) return null;
 
   return (
@@ -151,6 +228,13 @@ export function MemberListModal({
                               {member.memberFirstName} {member.memberLastName}
                             </h3>
                           </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Latest notes sync (ET):{' '}
+                            {formatEtDateTime(
+                              notesMetaByClientId[String(member.client_ID2 || '').trim()]?.lastSyncAt || ''
+                            )}{' '}
+                            | Notes today: {notesMetaByClientId[String(member.client_ID2 || '').trim()]?.notesTodayCount ?? 0}
+                          </p>
                           <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700">
                             <MessageSquare className="h-3 w-3" />
                             Click card to open member notes
