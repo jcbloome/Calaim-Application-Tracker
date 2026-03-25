@@ -112,6 +112,7 @@ export type Application = {
   monthlyIncome?: string;
   expectedRoomBoardPayment?: string;
   ackRoomAndBoard?: boolean;
+  ackSocDetermination?: boolean;
   roomBoardFamilyPayAttestation?: boolean;
   roomBoardNoIncomeFacilityDiscretionAck?: boolean;
   hasPrefRCFE?: 'Yes' | 'No';
@@ -163,6 +164,7 @@ export type FormStatus = {
   ackHipaa?: boolean;
   ackLiability?: boolean;
   ackFoc?: boolean;
+  ackSocDetermination?: boolean;
   monthlyIncome?: string | null;
 };
 

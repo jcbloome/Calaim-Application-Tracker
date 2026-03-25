@@ -20,7 +20,7 @@ export function PrintableWaiversForm({
   return (
     <PrintableFormLayout
       title="Waivers & Authorizations"
-      subtitle="HIPAA Authorization, Liability Waiver, and Freedom of Choice"
+      subtitle="HIPAA Authorization, Liability Waiver, Freedom of Choice, Room and Board Commitment, and Medi-Cal Share of Cost Determination"
       formType="waivers"
       applicationData={{ id: applicationId }}
       showPrintButton={showPrintButton}
@@ -99,19 +99,87 @@ export function PrintableWaiversForm({
             </ul>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <p className="font-semibold">Expiration:</p>
-              <p>One year from the date of signature</p>
-            </div>
+          <div className="space-y-2">
             <div>
               <p className="font-semibold">My Rights:</p>
-              <p>Member (or POA) must sign document to move forward with the CS but can revoke this authorization at any time</p>
+              <p>
+                The member (or POA) may revoke this authorization at any time by written notice. Revocation applies
+                prospectively and does not affect disclosures already made in reliance on this authorization before
+                written revocation is received.
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold">Use Limitation:</p>
+              <p>
+                Information disclosed under this authorization is limited to what is reasonably necessary for program
+                eligibility, placement coordination, transition support, and related care/billing coordination.
+              </p>
             </div>
           </div>
 
           <PrintableField
             label="I have read and understood the HIPAA Authorization section"
+            type="checkbox"
+            options={['Yes, I understand and agree']}
+            width="full"
+          />
+        </div>
+      </PrintableFormSection>
+
+      {/* Room and Board Commitment */}
+      <PrintableFormSection title="Room and Board Commitment Waiver">
+        <div className="col-span-full space-y-4 text-sm print:text-xs">
+          <p>
+            I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the
+            Managed Care Plan pays the assisted living service portion.
+          </p>
+          <p>
+            I understand room and board amounts may vary by facility, geography, and private-room requests, and
+            additional agreements may be required by the selected facility.
+          </p>
+          <p>
+            I acknowledge that inability to pay any room and board portion may impact eligibility for this community
+            support program.
+          </p>
+          <p>
+            <strong>Room and Board commitment acknowledgment only</strong> is captured in this section.
+          </p>
+
+          <PrintableField
+            label="I have read and understood the Room and Board Commitment waiver section"
+            type="checkbox"
+            options={['Yes, I understand and agree']}
+            width="full"
+          />
+        </div>
+      </PrintableFormSection>
+
+      {/* Medi-Cal Share of Cost Determination */}
+      <PrintableFormSection title="Medi-Cal Share of Cost Determination">
+        <div className="col-span-full space-y-4 text-sm print:text-xs">
+          <p>
+            Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). CalAIM applicants must have
+            a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed.
+          </p>
+          <p>
+            <strong>Program Information (SOC reduction details):</strong> https://connectcalaim.com/info/eligibility
+          </p>
+          <p>
+            Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC)
+            payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
+          </p>
+          <PrintableField
+            label="Member Monthly Income"
+            required
+            width="full"
+          />
+          <p className="text-xs text-gray-700 print:text-black">
+            <strong>Proof of income might need to be furnished</strong> as part of this application process (for
+            example, an annual award letter or 3 months of bank statements showing Social Security income).
+          </p>
+
+          <PrintableField
+            label="I have read and understood the Medi-Cal Share of Cost Determination section"
             type="checkbox"
             options={['Yes, I understand and agree']}
             width="full"

@@ -28,7 +28,7 @@ export function PrintableWaiversContent() {
           <form>
             <div className="text-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Waivers & Authorizations</h1>
-                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This document contains the HIPAA Authorization, Liability Waiver, Freedom of Choice, and Room and Board Commitment acknowledgments.</p>
+                <p className="mt-1 text-sm text-gray-500 max-w-2xl mx-auto">This document contains the HIPAA Authorization, Liability Waiver, Freedom of Choice, Room and Board Commitment, and Medi-Cal Share of Cost Determination acknowledgments.</p>
             </div>
             <div className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
@@ -66,8 +66,8 @@ export function PrintableWaiversContent() {
                             <li>Coordinating billing and claims processing between the Facility, Connections, and the MCP.</li>
                         </ul>
                         
-                        <p><strong>Expiration:</strong> One year from the date of signature.</p>
-                        <p><strong>My Rights:</strong> Under my rights member (or POA) must sign document to move forward with the CS but can revoke this authorization at any time.</p>
+                        <p><strong>My Rights:</strong> The member (or POA) may revoke this authorization at any time by written notice. Revocation applies prospectively and does not affect disclosures already made in reliance on this authorization before written revocation is received.</p>
+                        <p><strong>Use Limitation:</strong> Information disclosed under this authorization is limited to what is reasonably necessary for program eligibility, placement coordination, transition support, and related care/billing coordination.</p>
                     </div>
                     <CheckboxField label="I have read and understood the HIPAA Authorization section." />
                 </div>
@@ -106,12 +106,21 @@ export function PrintableWaiversContent() {
                         <p>I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the Managed Care Plan pays the assisted living service portion.</p>
                         <p>I understand room and board amounts may vary by facility, geography, and private-room requests, and additional agreements may be required by the selected facility.</p>
                         <p>I acknowledge that inability to pay any room and board portion may impact eligibility for this community support program.</p>
-                        <p><strong>Monthly income is required</strong> to help determine whether there may be a Medi-Cal Share of Cost (SOC), which generally must be reduced to $0 before CalAIM enrollment can proceed.</p>
-                        <p><strong>Proof of income is required</strong> as part of this application process (for example, an annual award letter or recent income statements).</p>
-                        <p><strong>Non-Medical Out-of-Home Care (NMOHC) bump-up note:</strong> members who receive less than $1,620 in 2026 may be eligible for this bump-up. In those cases, the member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.</p>
+                    </div>
+                    <CheckboxField label="I have read and understood the Room and Board Commitment waiver section." />
+                </div>
+
+                {/* Medi-Cal Share of Cost Determination Section */}
+                <div>
+                    <SectionTitle>Medi-Cal Share of Cost Determination</SectionTitle>
+                    <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
+                        <p>Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed.</p>
+                        <p><strong>Program Information (SOC reduction details):</strong> https://connectcalaim.com/info/eligibility</p>
+                        <p>Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.</p>
                     </div>
                     <Field label="Member Monthly Income" description="Examples: SSI/SSP amount, pension, or other monthly income sources." />
-                    <CheckboxField label="I have read and understood the Room and Board Commitment waiver section." />
+                    <p className="text-xs text-gray-700"><strong>Proof of income might need to be furnished</strong> as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).</p>
+                    <CheckboxField label="I have read and understood the Medi-Cal Share of Cost Determination section." />
                 </div>
               
               <div>

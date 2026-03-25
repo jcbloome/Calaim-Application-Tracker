@@ -18,6 +18,19 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 
+function toDollarAmount(value: string): string {
+  const sanitized = String(value || '').replace(/[^0-9.]/g, '');
+  if (!sanitized) return '';
+  const parsed = Number.parseFloat(sanitized);
+  if (!Number.isFinite(parsed)) return '';
+  return parsed.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 function Section({ title, icon: Icon, children }: { title: string, icon: React.ElementType, children: React.ReactNode }) {
   return (
     <div className="space-y-4 pt-6 border-t first:pt-0 first:border-t-0">
@@ -51,6 +64,7 @@ function WaiversFormComponent() {
     const [ackLiability, setAckLiability] = useState(false);
     const [ackFoc, setAckFoc] = useState(false);
     const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
+    const [ackSocDetermination, setAckSocDetermination] = useState(false);
     const [focChoice, setFocChoice] = useState<'accept' | 'decline' | undefined>(undefined);
 
 
@@ -76,11 +90,12 @@ function WaiversFormComponent() {
                 setAckLiability(form.ackLiability || false);
                 setAckFoc(form.ackFoc || false);
                 setAckRoomAndBoard(Boolean((form as any).ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard));
-                setMonthlyIncome(String((form as any)?.monthlyIncome ?? (application as any)?.monthlyIncome ?? ''));
+                setAckSocDetermination(Boolean((form as any).ackSocDetermination ?? (application as any)?.ackSocDetermination));
+                setMonthlyIncome(toDollarAmount(String((form as any)?.monthlyIncome ?? (application as any)?.monthlyIncome ?? '')));
                 setSignatureDate(form.dateCompleted ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString());
             } else {
                  setSignatureDate(new Date().toLocaleDateString());
-                 setMonthlyIncome(String((application as any)?.monthlyIncome ?? ''));
+                 setMonthlyIncome(toDollarAmount(String((application as any)?.monthlyIncome ?? '')));
             }
         } else {
             setSignatureDate(new Date().toLocaleDateString());
@@ -89,8 +104,9 @@ function WaiversFormComponent() {
     }, [application]);
 
     const isFormComplete = () => {
-        if (!signerType || !signerName.trim() || !signerRelationship.trim() || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard) return false;
+        if (!signerType || !signerName.trim() || !signerRelationship.trim() || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard || !ackSocDetermination) return false;
         if (!monthlyIncome.trim()) return false;
+        if (!toDollarAmount(monthlyIncome)) return false;
         return true;
     };
 
@@ -109,6 +125,17 @@ function WaiversFormComponent() {
             return;
         }
 
+        const formattedMonthlyIncome = toDollarAmount(monthlyIncome);
+        if (!formattedMonthlyIncome) {
+            toast({
+                variant: 'destructive',
+                title: 'Invalid Monthly Income',
+                description: 'Please enter monthly income in a valid dollar amount format.',
+            });
+            return;
+        }
+
+        setMonthlyIncome(formattedMonthlyIncome);
         setIsLoading(true);
 
         const existingForms = application?.forms || [];
@@ -124,7 +151,8 @@ function WaiversFormComponent() {
             ackLiability: ackLiability,
             ackFoc: ackFoc,
             ackRoomAndBoard: ackRoomAndBoard,
-            monthlyIncome: monthlyIncome.trim(),
+            ackSocDetermination: ackSocDetermination,
+            monthlyIncome: formattedMonthlyIncome,
             dateCompleted: Timestamp.now(),
         };
 
@@ -149,7 +177,8 @@ function WaiversFormComponent() {
               {
                 forms: updatedForms,
                 ackRoomAndBoard: ackRoomAndBoard,
-                monthlyIncome: monthlyIncome.trim(),
+                ackSocDetermination: ackSocDetermination,
+                monthlyIncome: formattedMonthlyIncome,
                 lastUpdated: Timestamp.now(),
               },
               { merge: true }
@@ -239,8 +268,8 @@ function WaiversFormComponent() {
                                     <li>Coordinating billing and claims processing between the Facility, Connections, and the MCP.</li>
                                 </ul>
 
-                                <p><strong>Expiration:</strong> This authorization expires one year from the date of signature.</p>
-                                <p><strong>My Rights:</strong> Under my rights member (or POA) must sign document to move forward with the CS but can revoke this authorization at any time.</p>
+                                <p><strong>My Rights:</strong> The member (or POA) may revoke this authorization at any time by written notice. Revocation applies prospectively and does not affect disclosures already made in reliance on this authorization before written revocation is received.</p>
+                                <p><strong>Use Limitation:</strong> Information disclosed under this authorization is limited to what is reasonably necessary for program eligibility, placement coordination, transition support, and related care/billing coordination.</p>
                                 <Alert variant="warning" className="mt-4">
                                     <AlertCircle className="h-4 w-4" />
                                     <AlertTitle>Acknowledgment</AlertTitle>
@@ -326,28 +355,6 @@ function WaiversFormComponent() {
                                 <p>I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the Managed Care Plan pays the assisted living service portion.</p>
                                 <p>I understand room and board amounts may vary by facility, geography, and private-room requests, and additional agreements may be required by the selected facility.</p>
                                 <p>I acknowledge that inability to pay any room and board portion may impact eligibility for this community support program.</p>
-                                <p className="text-amber-800 font-medium">
-                                  Monthly income helps us identify if there may be a Medi-Cal Share of Cost (SOC), which generally must be reduced to $0 before CalAIM enrollment can proceed.
-                                </p>
-                                <p>
-                                  Proof of income is required as part of this application process (for example, an annual award letter or recent income statements).
-                                </p>
-                                <p>
-                                  <strong>Non-Medical Out-of-Home Care (NMOHC) bump-up note:</strong> members who receive less than $1,620 in 2026 may be eligible for this bump-up. In those cases, the member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
-                                </p>
-                                <div className="space-y-2 mt-4">
-                                    <Label htmlFor="monthly-income">
-                                      What is the member&apos;s total monthly income? <span className="text-destructive">*</span>
-                                    </Label>
-                                    <Input
-                                      id="monthly-income"
-                                      value={monthlyIncome}
-                                      onChange={(e) => setMonthlyIncome(e.target.value)}
-                                      placeholder='Example: "$1,626.07" or "SSI only"'
-                                      disabled={isReadOnly}
-                                      required
-                                    />
-                                </div>
                                 <Alert variant="warning" className="mt-4">
                                     <AlertCircle className="h-4 w-4" />
                                     <AlertTitle>Acknowledgment</AlertTitle>
@@ -361,6 +368,52 @@ function WaiversFormComponent() {
                                             />
                                             <label htmlFor="ack-room-board" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                                                I have read and understood the Room and Board Commitment waiver section.
+                                            </label>
+                                        </div>
+                                    </AlertDescription>
+                                </Alert>
+                            </Section>
+
+                            <Section title="Medi-Cal Share of Cost Determination" icon={FileText}>
+                                <p>
+                                  Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed.
+                                </p>
+                                <p>
+                                  Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
+                                </p>
+                                <div className="space-y-2 mt-4">
+                                    <p className="text-sm text-muted-foreground">
+                                      Program Information (SOC reduction details): https://connectcalaim.com/info/eligibility
+                                    </p>
+                                    <Label htmlFor="monthly-income">
+                                      What is the member&apos;s total monthly income? <span className="text-destructive">*</span>
+                                    </Label>
+                                    <Input
+                                      id="monthly-income"
+                                      value={monthlyIncome}
+                                      onChange={(e) => setMonthlyIncome(e.target.value)}
+                                      onBlur={() => setMonthlyIncome((prev) => toDollarAmount(prev))}
+                                      placeholder='Example: "$1,626.07"'
+                                      disabled={isReadOnly}
+                                      required
+                                    />
+                                    <p>
+                                      Proof of income might need to be furnished as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).
+                                    </p>
+                                </div>
+                                <Alert variant="warning" className="mt-4">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertTitle>Acknowledgment</AlertTitle>
+                                    <AlertDescription>
+                                        <div className="flex items-start space-x-2 mt-2">
+                                            <Checkbox
+                                              id="ack-soc-determination"
+                                              checked={ackSocDetermination}
+                                              onCheckedChange={(c) => setAckSocDetermination(!!c)}
+                                              disabled={isReadOnly}
+                                            />
+                                            <label htmlFor="ack-soc-determination" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                               I have read and understood the Medi-Cal Share of Cost Determination section.
                                             </label>
                                         </div>
                                     </AlertDescription>
