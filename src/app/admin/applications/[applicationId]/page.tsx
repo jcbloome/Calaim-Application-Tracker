@@ -3627,16 +3627,18 @@ function ApplicationDetailPageContent() {
       let sentAtIso: string | null = null;
 
       if (sendEmail) {
+        const subject = `Action needed: Please redo ${formName}`;
+        const emailMessage = `Please redo the "${formName}" form.\n\nReason: ${reason}\n\nLog in to the application portal and update this form so we can continue processing.`;
         const response = await fetch('/api/email/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: recipientEmail,
             includeBcc: false,
-            subject: `Action needed: Please redo ${formName}`,
+            subject,
             memberName: application.referrerName || 'there',
             staffName: reviewerName,
-            message: `Please redo the "${formName}" form.\n\nReason: ${reason}\n\nLog in to the application portal and update this form so we can continue processing.`,
+            message: emailMessage,
             status: 'Requires Revision',
           }),
         });
@@ -5271,6 +5273,25 @@ function ApplicationDetailPageContent() {
                                           </DialogDescription>
                                         </DialogHeader>
                                         <div className="space-y-3">
+                                          {(() => {
+                                            const previewReason = String(rejectReasonByForm[req.title] || '').trim() || '[Enter description above]';
+                                            const previewSubject = `Action needed: Please redo ${req.title}`;
+                                            const previewBody = `Please redo the "${req.title}" form.\n\nReason: ${previewReason}\n\nLog in to the application portal and update this form so we can continue processing.`;
+                                            return (
+                                              <div className="rounded-md border bg-white p-3 text-xs space-y-2">
+                                                <div className="font-medium text-foreground">Email preview (Reject + Email applicant)</div>
+                                                <div>
+                                                  <span className="font-medium">Subject:</span> {previewSubject}
+                                                </div>
+                                                <div className="space-y-1">
+                                                  <span className="font-medium">Body:</span>
+                                                  <pre className="whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-relaxed">
+{previewBody}
+                                                  </pre>
+                                                </div>
+                                              </div>
+                                            );
+                                          })()}
                                           <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
                                             <div>
                                               <span className="font-medium">Sending to:</span>{' '}
