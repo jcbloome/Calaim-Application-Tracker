@@ -3627,8 +3627,9 @@ function ApplicationDetailPageContent() {
       let sentAtIso: string | null = null;
 
       if (sendEmail) {
+        const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
         const subject = `Action needed: Please redo ${formName}`;
-        const emailMessage = `Please redo the "${formName}" form.\n\nReason: ${reason}\n\nLog in to the application portal and update this form so we can continue processing.`;
+        const emailMessage = `Please redo the "${formName}" form.\n\nReason: ${reason}\n\nLog in to the application portal and update this form so we can continue processing.\n\nLogin: ${applicantPortalLoginUrl}`;
         const response = await fetch('/api/email/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3640,6 +3641,7 @@ function ApplicationDetailPageContent() {
             staffName: reviewerName,
             message: emailMessage,
             status: 'Requires Revision',
+            portalUrl: applicantPortalLoginUrl,
           }),
         });
         const result = await response.json().catch(() => null);
@@ -5274,9 +5276,10 @@ function ApplicationDetailPageContent() {
                                         </DialogHeader>
                                         <div className="space-y-3">
                                           {(() => {
+                                            const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
                                             const previewReason = String(rejectReasonByForm[req.title] || '').trim() || '[Enter description above]';
                                             const previewSubject = `Action needed: Please redo ${req.title}`;
-                                            const previewBody = `Please redo the "${req.title}" form.\n\nReason: ${previewReason}\n\nLog in to the application portal and update this form so we can continue processing.`;
+                                            const previewBody = `Please redo the "${req.title}" form.\n\nReason: ${previewReason}\n\nLog in to the application portal and update this form so we can continue processing.\n\nLogin: ${applicantPortalLoginUrl}`;
                                             return (
                                               <div className="rounded-md border bg-white p-3 text-xs space-y-2">
                                                 <div className="font-medium text-foreground">Email preview (Reject + Email applicant)</div>
@@ -5288,6 +5291,13 @@ function ApplicationDetailPageContent() {
                                                   <pre className="whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-relaxed">
 {previewBody}
                                                   </pre>
+                                                </div>
+                                                <div className="pt-1">
+                                                  <Button asChild size="sm" variant="outline">
+                                                    <a href={applicantPortalLoginUrl} target="_blank" rel="noreferrer">
+                                                      ConnectCalAIM Login
+                                                    </a>
+                                                  </Button>
                                                 </div>
                                               </div>
                                             );
