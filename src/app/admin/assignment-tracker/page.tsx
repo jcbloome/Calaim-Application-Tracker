@@ -24,6 +24,7 @@ type AssignmentRow = {
   assignedDateMs: number;
   assignedDateLabel: string;
   applicationStatus: string;
+  authReceivedViaIls: boolean;
 };
 
 const toMs = (value: any): number => {
@@ -58,6 +59,7 @@ export default function AssignmentTrackerPage() {
   const [loadingRows, setLoadingRows] = useState(false);
   const [memberQuery, setMemberQuery] = useState('');
   const [staffFilter, setStaffFilter] = useState('all');
+  const [authFilter, setAuthFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
   useEffect(() => {
@@ -88,6 +90,11 @@ export default function AssignmentTrackerPage() {
             String(data?.client_ID2 || data?.memberMrn || data?.memberMediCalNum || '').trim() || 'N/A';
           const healthPlan = String(data?.healthPlan || '').trim() || 'Unknown';
           const applicationStatus = String(data?.status || '').trim() || 'Unknown';
+          const authReceivedViaIls = Boolean(
+            data?.kaiserAuthReceivedViaIls ||
+            String(data?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
+            applicationStatus === 'Authorization Received (Doc Collection)'
+          );
           const ownerUid = docSnap.ref?.parent?.parent?.id || null;
 
           return {
@@ -101,6 +108,7 @@ export default function AssignmentTrackerPage() {
             assignedDateMs,
             assignedDateLabel: toLabel(assignedDateMs),
             applicationStatus,
+            authReceivedViaIls,
           } as AssignmentRow;
         })
         .filter(Boolean) as AssignmentRow[];
@@ -126,6 +134,8 @@ export default function AssignmentTrackerPage() {
     const q = memberQuery.trim().toLowerCase();
     const out = rows.filter((r) => {
       if (staffFilter !== 'all' && r.assignedStaffName !== staffFilter) return false;
+      if (authFilter === 'yes' && !r.authReceivedViaIls) return false;
+      if (authFilter === 'no' && r.authReceivedViaIls) return false;
       if (!q) return true;
       return (
         r.memberName.toLowerCase().includes(q) ||
@@ -137,7 +147,7 @@ export default function AssignmentTrackerPage() {
       sortOrder === 'newest' ? b.assignedDateMs - a.assignedDateMs : a.assignedDateMs - b.assignedDateMs
     );
     return out;
-  }, [rows, memberQuery, staffFilter, sortOrder]);
+  }, [rows, memberQuery, staffFilter, authFilter, sortOrder]);
 
   const openApplication = (row: AssignmentRow) => {
     const href = row.ownerUid
@@ -200,7 +210,7 @@ export default function AssignmentTrackerPage() {
           <CardTitle>Filters</CardTitle>
           <CardDescription>Filter by assigned staff or search by member/application.</CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <Input
             placeholder="Search member name, member ID, or application ID..."
             value={memberQuery}
@@ -217,6 +227,16 @@ export default function AssignmentTrackerPage() {
                   {staff}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select value={authFilter} onValueChange={(v: 'all' | 'yes' | 'no') => setAuthFilter(v)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Authorization status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All authorization states</SelectItem>
+              <SelectItem value="yes">Auth already received</SelectItem>
+              <SelectItem value="no">Auth not yet received</SelectItem>
             </SelectContent>
           </Select>
           <Select value={sortOrder} onValueChange={(v: 'newest' | 'oldest') => setSortOrder(v)}>
@@ -265,7 +285,14 @@ export default function AssignmentTrackerPage() {
                       <TableCell>{row.memberIdentifier}</TableCell>
                       <TableCell>{row.healthPlan}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{row.applicationStatus}</Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">{row.applicationStatus}</Badge>
+                          {row.authReceivedViaIls && (
+                            <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200">
+                              Auth Received
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button size="sm" variant="outline" onClick={() => openApplication(row)}>

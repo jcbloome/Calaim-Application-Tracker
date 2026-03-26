@@ -64,6 +64,10 @@ const csSummaryFields = {
   memberMediCalNum: "",
   memberMrn: "",
   memberLanguage: "",
+  Authorization_Number_T038: "",
+  Authorization_Start_T2038: "",
+  Authorization_End_T2038: "",
+  Diagnostic_Code: "",
   
   // Step 1 - Referrer Info
   referrerFirstName: "",
@@ -1447,7 +1451,7 @@ export default function CaspioTestPage() {
                               const parsed = JSON.parse(stored);
                               if (parsed && typeof parsed === 'object') {
                                 setLockedMappings(parsed);
-                                setFieldMappings(parsed);
+                                setFieldMappings((prev) => ({ ...parsed, ...prev }));
                                 const count = Object.keys(parsed).length;
                                 setLockedMappingCount(count);
                                 setHasLockedMappings(count > 0);
@@ -1522,11 +1526,11 @@ export default function CaspioTestPage() {
                         }
                         try {
                           const selectedDraft = namedDrafts[selectedDraftName];
-                          setFieldMappings(selectedDraft);
+                          setFieldMappings((prev) => ({ ...selectedDraft, ...prev }));
                           setHasDraftMappings(Object.keys(selectedDraft).length > 0);
                           toast({
                             title: "Draft Loaded",
-                            description: `Draft "${selectedDraftName}" restored.`,
+                            description: `Draft "${selectedDraftName}" merged. Existing matches were kept.`,
                           });
                         } catch (error: any) {
                           console.error('Failed to load mapping draft:', error);
@@ -1537,7 +1541,7 @@ export default function CaspioTestPage() {
                           });
                         }
                       }}
-                      disabled={!hasDraftMappings || !!lockedMappings}
+                      disabled={!selectedDraftName || !!lockedMappings}
                     >
                       Load Draft
                     </Button>

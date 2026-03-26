@@ -338,6 +338,64 @@ export default function Step1({
                 )}
             />
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+              control={control}
+              name="Authorization_Number_T038"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Authorization Number_T038</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} />
+                  </FormControl>
+                  <FormDescription>Kaiser intake authorization number (if available).</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={control}
+              name="Diagnostic_Code"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Diagnostic Code</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} />
+                  </FormControl>
+                  <FormDescription>Initial diagnosis code, if known.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+              control={control}
+              name="Authorization_Start_T2038"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Authorization_Start_T2038</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} placeholder="MM/DD/YYYY" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={control}
+              name="Authorization_End_T2038"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Authorization_End_T2038</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} placeholder="MM/DD/YYYY" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
       </FormSection>
       
       <FormSection 

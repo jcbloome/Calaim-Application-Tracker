@@ -56,6 +56,10 @@ export type Application = {
   confirmMemberMediCalNum?: string;
   confirmMemberMrn?: string;
   memberLanguage?: string;
+  Authorization_Number_T038?: string | null;
+  Authorization_Start_T2038?: string | null;
+  Authorization_End_T2038?: string | null;
+  Diagnostic_Code?: string | null;
   referrerFirstName?: string;
   referrerLastName?: string;
   referrerPhone?: string;
@@ -140,6 +144,10 @@ export type Application = {
   calaimNotEligibleOther?: boolean;
   calaimNotEligibleReason?: string;
   calaimNotEligibleOtherReason?: string;
+  intakeType?: 'standard' | 'kaiser_auth_received_via_ils';
+  kaiserAuthReceivedViaIls?: boolean;
+  memberPhone?: string | null;
+  kaiserAuthReceivedDate?: Timestamp | FieldValue;
 };
 
 export type FormStatus = {

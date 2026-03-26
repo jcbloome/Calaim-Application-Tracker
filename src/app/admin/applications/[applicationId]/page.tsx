@@ -254,10 +254,16 @@ function StaffAssignmentDropdown({
     const handleStaffAssignment = async (staffId: string) => {
         const selectedStaff = staffList.find(staff => staff.uid === staffId);
         if (!selectedStaff || !firestore) return;
+        if (!application?.id) return;
 
         setIsLoading(true);
         try {
-            const docRef = doc(firestore, `users/${application.userId}/applications/${application.id}`);
+            const isAdminStored =
+              String(application.id || '').startsWith('admin_app_') ||
+              !String(application.userId || '').trim();
+            const docRef = isAdminStored
+              ? doc(firestore, 'applications', application.id)
+              : doc(firestore, `users/${application.userId}/applications/${application.id}`);
             const updateData = {
                 assignedStaffId: staffId,
                 assignedStaffName: selectedStaff.displayName,
@@ -730,7 +736,13 @@ function PushToCaspioDialog({
     const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
 
     const docRef = useMemoFirebase(() => {
-        if (!firestore || !application.userId || !application.id) return null;
+        if (!firestore || !application.id) return null;
+        const isAdminStored =
+          String(application.id || '').startsWith('admin_app_') ||
+          !String(application.userId || '').trim();
+        if (isAdminStored) {
+          return doc(firestore, 'applications', application.id);
+        }
         return doc(firestore, `users/${application.userId}/applications`, application.id);
     }, [firestore, application.id, application.userId]);
 
@@ -757,7 +769,6 @@ function PushToCaspioDialog({
     const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
     const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
     const hasAssignedStaff = Boolean(assignedStaffId || assignedStaffName);
-
     const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
         if (!hasAssignedStaff) {
             toast({
@@ -979,7 +990,6 @@ function PushToCaspioDialog({
                         </AlertDescription>
                     </Alert>
                 )}
-
                 {caspioMappingPreview && Object.keys(caspioMappingPreview).length > 0 ? (
                     <div className="space-y-3">
                         <div className="text-sm text-muted-foreground">

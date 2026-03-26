@@ -13,7 +13,8 @@ import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { californiaCounties } from '@/lib/california-counties';
 import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
 
-const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
+const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other", "Unknown"];
+const UNKNOWN_VALUE = 'Unknown';
 
 export default function Step2() {
   const { control, watch, setValue, getValues, clearErrors } = useFormContext<FormValues>();
@@ -57,13 +58,39 @@ export default function Step2() {
   useEffect(() => {
     const normalizedCurrent = normalizeUsStateCode(getValues('currentState'));
     const normalizedCustomary = normalizeUsStateCode(getValues('customaryState'));
-    if (normalizedCurrent !== (getValues('currentState') || '')) {
+    if (
+      String(getValues('currentState') || '').trim().toLowerCase() !== UNKNOWN_VALUE.toLowerCase() &&
+      normalizedCurrent !== (getValues('currentState') || '')
+    ) {
       setValue('currentState', normalizedCurrent);
     }
-    if (normalizedCustomary !== (getValues('customaryState') || '')) {
+    if (
+      String(getValues('customaryState') || '').trim().toLowerCase() !== UNKNOWN_VALUE.toLowerCase() &&
+      normalizedCustomary !== (getValues('customaryState') || '')
+    ) {
       setValue('customaryState', normalizedCustomary);
     }
   }, [getValues, setValue]);
+
+  useEffect(() => {
+    if (String(currentLocation || '').trim().toLowerCase() !== UNKNOWN_VALUE.toLowerCase()) return;
+    setValue('currentAddress', UNKNOWN_VALUE);
+    setValue('currentCity', UNKNOWN_VALUE);
+    setValue('currentState', UNKNOWN_VALUE);
+    setValue('currentZip', UNKNOWN_VALUE);
+    setValue('currentCounty', UNKNOWN_VALUE);
+    clearErrors(['currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty']);
+  }, [currentLocation, setValue, clearErrors]);
+
+  useEffect(() => {
+    if (String(customaryLocationType || '').trim().toLowerCase() !== UNKNOWN_VALUE.toLowerCase()) return;
+    setValue('customaryAddress', UNKNOWN_VALUE);
+    setValue('customaryCity', UNKNOWN_VALUE);
+    setValue('customaryState', UNKNOWN_VALUE);
+    setValue('customaryZip', UNKNOWN_VALUE);
+    setValue('customaryCounty', UNKNOWN_VALUE);
+    clearErrors(['customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty']);
+  }, [customaryLocationType, setValue, clearErrors]);
   
   const formatName = (value: string) => {
     if (!value) return '';
@@ -150,13 +177,14 @@ export default function Step2() {
               <FormField control={control} name="currentState" render={({ field }) => (
                 <FormItem>
                   <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                  <Select onValueChange={field.onChange} value={normalizeUsStateCode(field.value ?? '')}>
+                  <Select onValueChange={field.onChange} value={String(field.value || '').trim().toLowerCase() === UNKNOWN_VALUE.toLowerCase() ? UNKNOWN_VALUE : normalizeUsStateCode(field.value ?? '')}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select state" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
+                      <SelectItem value={UNKNOWN_VALUE}>{UNKNOWN_VALUE}</SelectItem>
                       {US_STATE_OPTIONS.map((state) => (
                         <SelectItem key={state.code} value={state.code}>
                           {state.code} - {state.name}
@@ -182,6 +210,7 @@ export default function Step2() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
+                      <SelectItem value={UNKNOWN_VALUE}>{UNKNOWN_VALUE}</SelectItem>
                       {californiaCounties.map((county) => (
                         <SelectItem key={county} value={county}>
                           {county}
@@ -275,7 +304,7 @@ export default function Step2() {
                               <FormLabel>State <span className="text-destructive">*</span></FormLabel>
                               <Select
                                 onValueChange={field.onChange}
-                                value={normalizeUsStateCode(field.value ?? '')}
+                                value={String(field.value || '').trim().toLowerCase() === UNKNOWN_VALUE.toLowerCase() ? UNKNOWN_VALUE : normalizeUsStateCode(field.value ?? '')}
                                 disabled={copyAddress}
                               >
                                 <FormControl>
@@ -284,6 +313,7 @@ export default function Step2() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
+                                  <SelectItem value={UNKNOWN_VALUE}>{UNKNOWN_VALUE}</SelectItem>
                                   {US_STATE_OPTIONS.map((state) => (
                                     <SelectItem key={state.code} value={state.code}>
                                       {state.code} - {state.name}
@@ -309,6 +339,7 @@ export default function Step2() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
+                                  <SelectItem value={UNKNOWN_VALUE}>{UNKNOWN_VALUE}</SelectItem>
                                   {californiaCounties.map((county) => (
                                     <SelectItem key={county} value={county}>
                                       {county}

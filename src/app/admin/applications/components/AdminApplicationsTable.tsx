@@ -646,6 +646,11 @@ export const AdminApplicationsTable = ({
               const csSummaryIsNew = isNewCsSummary(app);
               const processStatus = getProcessStatusFromApp(app);
               const staffLabel = getAssignedStaffLabel(app);
+              const isAuthReceivedIntake = Boolean(
+                (app as any)?.kaiserAuthReceivedViaIls ||
+                String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
+                String((app as any)?.status || '').trim() === 'Authorization Received (Doc Collection)'
+              );
 
               return (
               <TableRow key={app.uniqueKey || `app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -705,6 +710,11 @@ export const AdminApplicationsTable = ({
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
+                      )}
+                      {isAuthReceivedIntake && (
+                        <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200">
+                          Auth Received
+                        </Badge>
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
@@ -840,6 +850,11 @@ export const AdminApplicationsTable = ({
             const csSummaryIsNew = isNewCsSummary(app);
             const processStatus = getProcessStatusFromApp(app);
             const staffLabel = getAssignedStaffLabel(app);
+            const isAuthReceivedIntake = Boolean(
+              (app as any)?.kaiserAuthReceivedViaIls ||
+              String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
+              String((app as any)?.status || '').trim() === 'Authorization Received (Doc Collection)'
+            );
 
             return (
               <div key={app.uniqueKey || `mobile-app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
@@ -882,6 +897,11 @@ export const AdminApplicationsTable = ({
                           className={`text-[10px] px-1.5 py-0.5 ${planBadgeClass}`}
                         >
                           {planLabel}(D){unacknowledgedDocsCount > 1 ? ` ${unacknowledgedDocsCount}` : ''}
+                        </Badge>
+                      )}
+                      {isAuthReceivedIntake && (
+                        <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200 text-xs">
+                          Auth Received
                         </Badge>
                       )}
                     </div>

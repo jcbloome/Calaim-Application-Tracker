@@ -51,6 +51,10 @@ export const formSchema = z.object({
     memberMrn: requiredString,
     confirmMemberMrn: requiredString,
     memberLanguage: requiredString,
+    Authorization_Number_T038: optionalString,
+    Authorization_Start_T2038: optionalString,
+    Authorization_End_T2038: optionalString,
+    Diagnostic_Code: optionalString,
     
     // Step 1 - Referrer Info
     referrerFirstName: optionalString,

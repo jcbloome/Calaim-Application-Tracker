@@ -9,6 +9,7 @@ import type { WithId } from '@/firebase';
 export type TrackedComponent = { key: string; abbreviation: string };
 
 export const TRACKED_COMPONENTS: TrackedComponent[] = [
+  { key: 'Authorization Already Received', abbreviation: 'Auth Recvd' },
   { key: 'CS Member Summary', abbreviation: 'CS' },
   { key: 'Waivers & Authorizations', abbreviation: 'Waivers' },
   { key: 'Proof of Income', abbreviation: 'POI' },
@@ -47,6 +48,15 @@ export function getComponentStatus(
     const status = String((app as any)?.calaimTrackingStatus || '').trim().toLowerCase();
     const isMemberEligible = status === 'calaim eligible';
     return hasEligibilityUpload && isMemberEligible ? 'Completed' : 'Pending';
+  }
+  if (componentKey === 'Authorization Already Received') {
+    const isAuthReceived = Boolean(
+      (app as any)?.kaiserAuthReceivedViaIls ||
+      String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
+      String((app as any)?.status || '').trim() === 'Authorization Received (Doc Collection)' ||
+      String((app as any)?.kaiserStatus || '').trim() === 'Authorization Received (Doc Collection)'
+    );
+    return isAuthReceived ? 'Completed' : 'Pending';
   }
   if (componentKey === 'Sent to Caspio') {
     return (app as any)?.caspioSent ? 'Completed' : 'Pending';

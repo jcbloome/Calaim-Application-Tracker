@@ -59,6 +59,7 @@ function AdminApplicationsPageContent() {
   const [pathwayFilter, setPathwayFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
+  const [intakeFilter, setIntakeFilter] = useState('all');
   const [memberFilter, setMemberFilter] = useState('');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'cs' | 'docs'>('all');
   const searchParams = useSearchParams();
@@ -192,7 +193,23 @@ function AdminApplicationsPageContent() {
       const pathwayMatch = pathwayFilter === 'all' || app.pathway === pathwayFilter;
       const statusMatch = statusFilter === 'all' || app.status === statusFilter;
       const staffMatch = staffFilter === 'all' || getAssignedStaffLabel(app) === staffFilter;
-      const memberMatch = !memberFilter || `${app.memberFirstName} ${app.memberLastName}`.toLowerCase().includes(memberFilter.toLowerCase());
+      const query = memberFilter.toLowerCase();
+      const memberMatch =
+        !memberFilter ||
+        `${app.memberFirstName} ${app.memberLastName}`.toLowerCase().includes(query) ||
+        String((app as any)?.memberMrn || '').toLowerCase().includes(query) ||
+        String((app as any)?.Authorization_Number_T038 || '').toLowerCase().includes(query) ||
+        String((app as any)?.Diagnostic_Code || '').toLowerCase().includes(query) ||
+        String((app as any)?.id || '').toLowerCase().includes(query);
+      const isAuthReceivedIntake = Boolean(
+        (app as any)?.kaiserAuthReceivedViaIls ||
+        String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
+        String((app as any)?.status || '').trim() === 'Authorization Received (Doc Collection)'
+      );
+      const intakeMatch =
+        intakeFilter === 'all' ||
+        (intakeFilter === 'kaiser_auth_received_via_ils' && isAuthReceivedIntake) ||
+        (intakeFilter === 'standard' && !isAuthReceivedIntake);
 
       const forms = app.forms || [];
       const hasCompletedSummary = forms.some((form: any) =>
@@ -209,9 +226,9 @@ function AdminApplicationsPageContent() {
         (reviewFilter === 'cs' && hasCompletedSummary && !app.applicationChecked) ||
         (reviewFilter === 'docs' && hasUnacknowledgedDocs);
 
-      return healthPlanMatch && pathwayMatch && statusMatch && staffMatch && memberMatch && reviewMatch;
+      return healthPlanMatch && pathwayMatch && statusMatch && staffMatch && memberMatch && intakeMatch && reviewMatch;
     });
-  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, staffFilter, memberFilter, reviewFilter]);
+  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, staffFilter, intakeFilter, memberFilter, reviewFilter]);
   
 
   const handleSelectionChange = (id: string, checked: boolean) => {
@@ -281,6 +298,7 @@ function AdminApplicationsPageContent() {
     setPathwayFilter('all');
     setStatusFilter('all');
     setStaffFilter('all');
+    setIntakeFilter('all');
     setMemberFilter('');
   };
 
@@ -432,7 +450,7 @@ function AdminApplicationsPageContent() {
                       <div className="flex flex-col sm:flex-row gap-4 mb-4 p-4 border rounded-lg bg-muted/50">
                         <div className="flex-1 min-w-[150px]">
                           <Input
-                            placeholder="Filter by member name..."
+                            placeholder="Search name, MRN, auth #, diagnostic code, app ID..."
                             value={memberFilter}
                             onChange={(e) => setMemberFilter(e.target.value)}
                           />
@@ -464,6 +482,7 @@ function AdminApplicationsPageContent() {
                             <SelectContent>
                               <SelectItem value="all">All Statuses</SelectItem>
                               <SelectItem value="In Progress">In Progress</SelectItem>
+                              <SelectItem value="Authorization Received (Doc Collection)">Authorization Received (Doc Collection)</SelectItem>
                               <SelectItem value="Requires Revision">Requires Revision</SelectItem>
                               <SelectItem value="Approved">Approved</SelectItem>
                               <SelectItem value="Completed & Submitted">Completed & Submitted</SelectItem>
@@ -480,6 +499,16 @@ function AdminApplicationsPageContent() {
                                   {staffName}
                                 </SelectItem>
                               ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex-1 min-w-[180px]">
+                          <Select value={intakeFilter} onValueChange={setIntakeFilter}>
+                            <SelectTrigger><SelectValue placeholder="Filter by Intake Type" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Intake Types</SelectItem>
+                              <SelectItem value="kaiser_auth_received_via_ils">Kaiser Auth Received (via ILS)</SelectItem>
+                              <SelectItem value="standard">Standard Intake</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
