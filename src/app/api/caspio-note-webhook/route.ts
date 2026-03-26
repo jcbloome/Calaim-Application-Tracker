@@ -197,6 +197,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
       console.log(`🔔 Creating notification for ${assignedStaff.name} (${assignedStaff.email})`);
       const popupPriority = normalizedPriority;
 
+      const noteContentText = String(Note_Content ?? '').trim();
       const notification = {
         userId: assignedStaff.uid,
         noteId: Record_ID || `caspio_${Date.now()}`,
@@ -215,7 +216,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
         followUpRequired: Boolean(validFollowUpDate),
         followUpDate: validFollowUpDate,
         followUpStatus: followUpStatusRaw || 'Open',
-        noteContent: Note_Content.substring(0, 200) + (Note_Content.length > 200 ? '...' : ''), // Truncate for notification
+        noteContent: noteContentText.substring(0, 200) + (noteContentText.length > 200 ? '...' : ''), // Truncate for notification
         noteType: Note_Type || 'General'
       };
 
@@ -230,7 +231,7 @@ async function processNoteWebhook(data: CaspioNoteWebhookData) {
           to: assignedStaff.email,
           staffName: assignedStaff.name,
           memberName: Member_Name || 'Unknown Member',
-          noteContent: Note_Content,
+          noteContent: noteContentText,
           priority: popupPriority,
           assignedBy: Created_By || Staff_Name || 'Caspio System',
           noteType: Note_Type || 'General',

@@ -5,7 +5,6 @@ import { useAuth, useFirestore } from '@/firebase';
 import {
   signInWithEmailAndPassword,
   setPersistence,
-  browserSessionPersistence,
   browserLocalPersistence,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -123,19 +122,9 @@ export default function AdminLoginClient() {
         Boolean((window as any).desktopNotifications) &&
         !Boolean((window as any).desktopNotifications?.__shim);
 
-      // Persistence notes:
-      // - Some browsers/environments block session storage in a way that causes auth to drop on navigation.
-      // - To avoid redirect loops back to the login page, fall back to local persistence if session persistence fails.
-      if (isRealDesktop) {
-        await setPersistence(auth, browserLocalPersistence);
-      } else {
-        try {
-          await setPersistence(auth, browserSessionPersistence);
-        } catch (persistenceError) {
-          console.warn('⚠️ Admin login: session persistence failed, falling back to local persistence', persistenceError);
-          await setPersistence(auth, browserLocalPersistence);
-        }
-      }
+      // Keep admin sessions stable across refreshes/restarts to prevent unexpected sign-outs.
+      // Using local persistence here fixes staff being bounced back to login on some environments.
+      await setPersistence(auth, browserLocalPersistence);
 
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
 

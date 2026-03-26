@@ -1220,6 +1220,7 @@ async function syncNoteToCaspio(note: MemberNote): Promise<{ success: boolean; e
 async function sendNoteNotification(note: MemberNote): Promise<void> {
   try {
     if (!note.assignedTo || !note.assignedToName) return;
+    const noteText = String(note.noteText ?? '').trim();
 
     console.log(`🔔 Sending notification to ${note.assignedToName} for note: ${note.id}`);
     
@@ -1232,7 +1233,7 @@ async function sendNoteNotification(note: MemberNote): Promise<void> {
     const notification = {
       userId: note.assignedTo,
       title: `Priority Note: ${note.memberName}`,
-      message: note.noteText.substring(0, 200) + (note.noteText.length > 200 ? '...' : ''),
+      message: noteText.substring(0, 200) + (noteText.length > 200 ? '...' : ''),
       memberName: note.memberName,
       priority: note.priority,
       type: 'note_assignment',

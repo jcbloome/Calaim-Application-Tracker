@@ -161,7 +161,7 @@ export default function CreateApplicationPage() {
   const createApplicationForMember = async () => {
     const isKaiserAuthReceived = intakeType === 'kaiser_auth_received_via_ils';
     const hasStandardRequired = memberData.contactPhone && memberData.contactFirstName && memberData.contactLastName;
-    const hasKaiserRequired = selectedAssignedStaffId;
+    const hasKaiserRequired = true;
 
     if (
       !firestore ||
@@ -355,7 +355,7 @@ export default function CreateApplicationPage() {
   const isFormValid = memberData.memberFirstName && 
                      memberData.memberLastName && (
                        intakeType === 'kaiser_auth_received_via_ils'
-                         ? Boolean(selectedAssignedStaffId)
+                         ? true
                          : Boolean(
                              memberData.contactFirstName &&
                              memberData.contactLastName &&
@@ -461,7 +461,7 @@ export default function CreateApplicationPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div className="md:col-span-2 p-3 border rounded-md bg-muted/30 space-y-3">
                   <div>
-                    <Label>Assign Kaiser Staff *</Label>
+                    <Label>Assign Kaiser Staff (optional)</Label>
                     <Select
                       value={selectedAssignedStaffId}
                       onValueChange={(value) => {
@@ -493,7 +493,7 @@ export default function CreateApplicationPage() {
                     </div>
                   )}
                   <div className="text-xs text-muted-foreground">
-                    On create, this assignment is added to the staff member&apos;s Action Items (bell) and daily task calendar.
+                    If selected on create, this assignment is added to the staff member&apos;s Action Items (bell) and daily task calendar. You can also assign staff later.
                   </div>
                 </div>
                 <div>
@@ -692,9 +692,6 @@ export default function CreateApplicationPage() {
               )}
               {intakeType === 'kaiser_auth_received_via_ils' && memberData.memberPhone && memberData.memberPhone.replace(/\D/g, '').length > 0 && memberData.memberPhone.replace(/\D/g, '').length < 10 && (
                 <p className="text-red-500">Member phone number must be 10 digits (xxx.xxx.xxxx)</p>
-              )}
-              {intakeType === 'kaiser_auth_received_via_ils' && !selectedAssignedStaffId && (
-                <p className="text-red-500">Please assign Kaiser staff.</p>
               )}
             </div>
           )}
