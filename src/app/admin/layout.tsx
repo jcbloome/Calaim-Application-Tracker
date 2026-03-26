@@ -168,6 +168,7 @@ const superAdminNavLinks = [
       // Consolidated Management Pages
       { href: '/admin/user-staff-management', label: 'User & Staff Management', icon: Users },
       { href: '/admin/operations-dashboard', label: 'Operations Dashboard', icon: Kanban },
+      { href: '/admin/assignment-tracker', label: 'Assignment Tracker', icon: UserCheck },
       { href: '/admin/application-progression', label: 'Application Progression', icon: ListChecks },
       { href: '/admin/global-task-tracker', label: 'Global Task Tracker', icon: ClipboardList },
       { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },

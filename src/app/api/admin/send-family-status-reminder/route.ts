@@ -41,6 +41,9 @@ export async function POST(request: NextRequest) {
       trigger,
       sentByUid,
       sentByName,
+      overrideEmail,
+      previewOnly,
+      testOnly,
     } = await request.json();
 
     if (!applicationId || !String(statusValue || '').trim()) {
@@ -79,7 +82,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skippedDisabled: true });
     }
 
-    const recipientEmail = String(appData?.referrerEmail || '').trim();
+    const recipientEmail = String(overrideEmail || appData?.referrerEmail || '').trim();
     if (!recipientEmail) {
       return NextResponse.json(
         { success: false, error: 'Referrer email is missing for this application' },
@@ -105,19 +108,43 @@ export async function POST(request: NextRequest) {
     const memberName = `${String(appData?.memberFirstName || '').trim()} ${String(appData?.memberLastName || '').trim()}`.trim() || 'CalAIM Member';
     const referrerName = String(appData?.referrerName || '').trim() || 'there';
     const senderName = String(sentByName || '').trim() || 'The Connections Team';
+    const subject = `Application progress update for ${memberName}`;
     const message = deniedSelected
       ? `Application progress update: ${statusText}. Reason: ${reason}`
       : `Application progress update: ${statusText}.`;
 
+    if (Boolean(previewOnly)) {
+      return NextResponse.json({
+        success: true,
+        preview: true,
+        recipientEmail,
+        referrerName,
+        memberName,
+        subject,
+        statusText,
+        deniedReason: reason,
+        message,
+      });
+    }
+
     await sendApplicationStatusEmail({
       to: recipientEmail,
       includeBcc: false,
-      subject: `Application progress update for ${memberName}`,
+      subject,
       memberName: referrerName,
       staffName: senderName,
       message,
       status: 'In Progress',
     });
+
+    if (Boolean(testOnly)) {
+      return NextResponse.json({
+        success: true,
+        sent: true,
+        testOnly: true,
+        to: recipientEmail,
+      });
+    }
 
     const historyEntry = {
       status: statusText,

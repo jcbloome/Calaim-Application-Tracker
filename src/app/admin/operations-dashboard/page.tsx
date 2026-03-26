@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Kanban, DollarSign, Calendar, Activity, ArrowRight, Mail } from 'lucide-react';
+import { Kanban, DollarSign, Calendar, Activity, ArrowRight, Mail, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -30,6 +30,13 @@ const operationsTools = [
     icon: Calendar,
     href: '/admin/daily-tasks',
     color: 'text-blue-600'
+  },
+  {
+    title: 'Assignment Tracker',
+    description: 'View all app-generated staff assignments with filters for staff/member and date sorting',
+    icon: UserCheck,
+    href: '/admin/assignment-tracker',
+    color: 'text-cyan-600'
   },
   {
     title: 'Login Activity',

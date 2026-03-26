@@ -52,7 +52,6 @@ import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMemb
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -267,29 +266,30 @@ function StaffAssignmentDropdown({
             
             await setDoc(docRef, updateData, { merge: true });
 
-            // For Kaiser assignments, immediately notify assigned staff in Electron and
-            // add a follow-up task item so it appears on their daily task calendar.
-            if (isKaiserPlan) {
-              const memberName = `${application.memberFirstName || ''} ${application.memberLastName || ''}`.trim() || 'Member';
-              const dueDate = new Date();
-              dueDate.setHours(17, 0, 0, 0);
+            const memberName = `${application.memberFirstName || ''} ${application.memberLastName || ''}`.trim() || 'Member';
+            const dueDate = new Date();
+            dueDate.setHours(17, 0, 0, 0);
+            const assignedByName = String(
+              adminUser?.displayName ||
+              adminUser?.email ||
+              'Manager'
+            ).trim();
+            const planLabel = String(application.healthPlan || '').trim() || 'Member';
+            const actionUrl = application.userId
+              ? `/admin/applications/${application.id}?userId=${encodeURIComponent(String(application.userId))}`
+              : `/admin/applications/${application.id}`;
 
-              const assignedByName = String(
-                adminUser?.displayName ||
-                adminUser?.email ||
-                'Manager'
-              ).trim();
-              const actionUrl = application.userId
-                ? `/admin/applications/${application.id}?userId=${encodeURIComponent(String(application.userId))}`
-                : `/admin/applications/${application.id}`;
-
+            // Create a high-priority assignment item so it appears in:
+            // - Action Items (notes bell badge)
+            // - Daily Task Tracker calendar (follow-up tasks)
+            try {
               await addDoc(collection(firestore, 'staff_notifications'), {
                 userId: selectedStaff.uid,
-                title: `Kaiser assignment: ${memberName}`,
+                title: `${planLabel} assignment: ${memberName}`,
                 message: `You were assigned ${memberName} in Application Pathway. Please review and complete the next step.`,
                 memberName,
                 clientId2: String((application as any)?.client_ID2 || '').trim() || null,
-                healthPlan: 'Kaiser',
+                healthPlan: String(application.healthPlan || '').trim() || null,
                 type: 'assignment',
                 priority: 'Priority',
                 status: 'Open',
@@ -305,15 +305,15 @@ function StaffAssignmentDropdown({
                 source: 'application-pathway',
                 timestamp: serverTimestamp(),
               });
+            } catch (notificationError) {
+              console.warn('Failed to create assignment action item notification:', notificationError);
             }
 
             onStaffChange(staffId, selectedStaff.displayName);
             
             toast({
                 title: "Staff Assigned",
-                description: isKaiserPlan
-                  ? `Application assigned to ${selectedStaff.displayName}. Electron + daily task calendar notified.`
-                  : `Application assigned to ${selectedStaff.displayName}`,
+                description: `Application assigned to ${selectedStaff.displayName}. Action items + daily task calendar updated.`,
             });
         } catch (error) {
             console.error('Error assigning staff:', error);
@@ -726,6 +726,7 @@ function PushToCaspioDialog({
     const { toast } = useToast();
     const [isOpen, setIsOpen] = useState(false);
     const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
+    const [isResettingCaspio, setIsResettingCaspio] = useState(false);
     const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
 
     const docRef = useMemoFirebase(() => {
@@ -753,18 +754,54 @@ function PushToCaspioDialog({
         }
     }, [isOpen]);
 
+    const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
+    const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
+    const hasAssignedStaff = Boolean(assignedStaffId || assignedStaffName);
+
     const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
-        setIsSendingToCaspio(true);
-        try {
-            const functions = getFunctions();
-            const publishToCaspio = httpsCallable(functions, 'publishCsSummaryToCaspioSimple');
-
-            const result = await publishToCaspio({
-                applicationData: application,
-                mapping: mappingOverride || caspioMappingPreview || null,
+        if (!hasAssignedStaff) {
+            toast({
+                variant: 'destructive',
+                title: 'Staff assignment required',
+                description: 'Assign staff before pushing this application to Caspio.',
             });
-            const data = result.data as any;
+            return;
+        }
+        setIsSendingToCaspio(true);
+        if (docRef) {
+            await setDoc(
+                docRef,
+                {
+                    caspioPushLastAttemptAt: serverTimestamp(),
+                    caspioPushLastStatus: 'pending',
+                    caspioPushLastError: null,
+                    caspioPushLastErrorCode: null,
+                    caspioPushLastErrorDetails: null,
+                    lastUpdated: serverTimestamp(),
+                },
+                { merge: true }
+            ).catch(() => undefined);
+        }
+        try {
+            const response = await fetch('/api/admin/caspio/push-cs-summary', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    applicationData: application,
+                    mapping: mappingOverride || caspioMappingPreview || null,
+                }),
+            });
+            const result = await response.json().catch(() => ({} as any));
+            if (!response.ok || !result?.success) {
+                const details = result?.details || null;
+                throw {
+                    code: result?.code || 'internal',
+                    message: result?.message || 'Failed to publish to Caspio.',
+                    details,
+                };
+            }
 
+            const data = result as any;
             if (data?.success) {
                 toast({
                     title: 'Pushed to Caspio',
@@ -778,6 +815,10 @@ function PushToCaspioDialog({
                         {
                             caspioSent: true,
                             caspioSentDate: serverTimestamp(),
+                            caspioPushLastStatus: 'success',
+                            caspioPushLastError: null,
+                            caspioPushLastErrorCode: null,
+                            caspioPushLastErrorDetails: null,
                             lastUpdated: serverTimestamp(),
                         },
                         { merge: true }
@@ -828,6 +869,28 @@ function PushToCaspioDialog({
                 errorMessage = safeMessage;
             }
             console.error('Caspio push error details:', error);
+            if (docRef) {
+                const safeDetailsText = (() => {
+                    try {
+                        if (!details) return '';
+                        return JSON.stringify(details).slice(0, 4000);
+                    } catch {
+                        return '';
+                    }
+                })();
+                await setDoc(
+                    docRef,
+                    {
+                        caspioPushLastStatus: 'error',
+                        caspioPushLastError: errorMessage,
+                        caspioPushLastErrorCode: safeCode || null,
+                        caspioPushLastErrorDetails: safeDetailsText || null,
+                        caspioPushLastErrorAt: serverTimestamp(),
+                        lastUpdated: serverTimestamp(),
+                    },
+                    { merge: true }
+                ).catch(() => undefined);
+            }
             toast({ variant: 'destructive', title: 'Error', description: errorMessage });
             return;
         } finally {
@@ -836,19 +899,53 @@ function PushToCaspioDialog({
     };
 
     const isAlreadySent = Boolean((application as any)?.caspioSent);
+    const resetCaspioPush = async () => {
+        if (!docRef) return;
+        setIsResettingCaspio(true);
+        try {
+            await setDoc(
+                docRef,
+                {
+                    caspioSent: false,
+                    caspioSentDate: null,
+                    caspioPushLastStatus: 'reset',
+                    caspioPushLastError: null,
+                    caspioPushLastErrorCode: null,
+                    caspioPushLastErrorDetails: null,
+                    lastUpdated: serverTimestamp(),
+                },
+                { merge: true }
+            );
+            toast({
+                title: 'Caspio push reset',
+                description: 'Push status was reset. You can push this application to Caspio again.',
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+            setIsOpen(false);
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Reset failed',
+                description: error?.message || 'Could not reset Caspio push status.',
+            });
+        } finally {
+            setIsResettingCaspio(false);
+        }
+    };
+
     return (
         <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
             <AlertDialogTrigger asChild>
-                <Button variant={buttonVariant} className={buttonClassName} disabled={isSendingToCaspio || isAlreadySent}>
-                    {isSendingToCaspio ? (
+                <Button variant={buttonVariant} className={buttonClassName} disabled={isSendingToCaspio || isResettingCaspio}>
+                    {isSendingToCaspio || isResettingCaspio ? (
                         <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Pushing to Caspio...
+                            {isResettingCaspio ? 'Resetting Caspio status...' : 'Pushing to Caspio...'}
                         </>
                     ) : isAlreadySent ? (
                         <>
                             <CheckCircle2 className="mr-2 h-4 w-4" />
-                            Already pushed to Caspio
+                            Already pushed to Caspio (manage)
                         </>
                     ) : (
                         <>
@@ -866,11 +963,44 @@ function PushToCaspioDialog({
                     </AlertDialogDescription>
                 </AlertDialogHeader>
 
+                {isAlreadySent && (
+                    <Alert>
+                        <AlertTitle>This application is currently marked as already pushed.</AlertTitle>
+                        <AlertDescription>
+                            If the Caspio record was deleted or needs to be recreated, use <strong>Reset push status</strong> first, then push again.
+                        </AlertDescription>
+                    </Alert>
+                )}
+                {!hasAssignedStaff && (
+                    <Alert variant="destructive">
+                        <AlertTitle>Staff assignment required</AlertTitle>
+                        <AlertDescription>
+                            Assign staff in this application before pushing to Caspio.
+                        </AlertDescription>
+                    </Alert>
+                )}
+
                 {caspioMappingPreview && Object.keys(caspioMappingPreview).length > 0 ? (
                     <div className="space-y-3">
                         <div className="text-sm text-muted-foreground">
                             Mapped fields: {Object.keys(caspioMappingPreview).length}
                         </div>
+                        {String((application as any)?.caspioPushLastStatus || '').trim() === 'error' && (
+                            <Alert variant="destructive">
+                                <AlertTitle>Last push failed</AlertTitle>
+                                <AlertDescription className="space-y-1">
+                                    <div>{String((application as any)?.caspioPushLastError || 'Unknown Caspio error')}</div>
+                                    {String((application as any)?.caspioPushLastErrorCode || '').trim() && (
+                                      <div className="text-xs opacity-90">Code: {String((application as any).caspioPushLastErrorCode)}</div>
+                                    )}
+                                    {String((application as any)?.caspioPushLastErrorDetails || '').trim() && (
+                                      <div className="text-xs opacity-90 break-all">
+                                        Details: {String((application as any).caspioPushLastErrorDetails)}
+                                      </div>
+                                    )}
+                                </AlertDescription>
+                            </Alert>
+                        )}
                         <div className="max-h-64 overflow-y-auto rounded border p-3 text-xs">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
                                 {Object.entries(caspioMappingPreview).map(([csField, caspioField]) => {
@@ -895,6 +1025,19 @@ function PushToCaspioDialog({
                 )}
 
                 <AlertDialogFooter>
+                    {isAlreadySent && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                void resetCaspioPush();
+                            }}
+                            disabled={isResettingCaspio || isSendingToCaspio}
+                        >
+                            {isResettingCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Reset push status
+                        </Button>
+                    )}
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
                         onClick={(e) => {
@@ -912,7 +1055,7 @@ function PushToCaspioDialog({
                               }
                             })();
                         }}
-                        disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0 || isSendingToCaspio}
+                        disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0 || isSendingToCaspio || isAlreadySent || !hasAssignedStaff}
                     >
                         Confirm & Push
                     </AlertDialogAction>
@@ -1348,6 +1491,17 @@ function ApplicationDetailPageContent() {
     subject: string;
     missingItems: string[];
   } | null>(null);
+  const [isSendingStatusTestReminder, setIsSendingStatusTestReminder] = useState(false);
+  const [isLoadingStatusReminderPreview, setIsLoadingStatusReminderPreview] = useState(false);
+  const [statusReminderPreview, setStatusReminderPreview] = useState<{
+    recipientEmail: string;
+    referrerName: string;
+    memberName: string;
+    subject: string;
+    statusText: string;
+    deniedReason: string;
+    message: string;
+  } | null>(null);
   const [nextStepDateMissing, setNextStepDateMissing] = useState(false);
   const [isSendingFamilyStatusNow, setIsSendingFamilyStatusNow] = useState(false);
   const [rejectReasonByForm, setRejectReasonByForm] = useState<Record<string, string>>({});
@@ -1484,6 +1638,128 @@ function ApplicationDetailPageContent() {
       });
     } finally {
       setIsSendingTestReminder(false);
+    }
+  };
+
+  const loadTestStatusReminderPreview = async () => {
+    if (!staffTestReminderEmail || !application?.id) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Staff email is required.' });
+      return;
+    }
+    if (!familyStatusProgressValue) {
+      toast({
+        variant: 'destructive',
+        title: 'Status required',
+        description: 'Select Application progress before previewing status reminder.',
+      });
+      return;
+    }
+    if (familyProgressNeedsDeniedReason && !String(familyStatusDeniedReason || '').trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Denied reason required',
+        description: 'Enter a denied reason before previewing this status update.',
+      });
+      return;
+    }
+    setIsLoadingStatusReminderPreview(true);
+    try {
+      const response = await fetch('/api/admin/send-family-status-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: application.id,
+          userId: (application as any)?.userId || null,
+          statusValue: familyStatusProgressValue,
+          deniedReason: familyStatusDeniedReason,
+          trigger: 'manual',
+          sentByUid: String(user?.uid || ''),
+          sentByName: String(user?.displayName || user?.email || 'The Connections Team'),
+          overrideEmail: staffTestReminderEmail,
+          previewOnly: true,
+          testOnly: true,
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || result?.message || 'Failed to load status reminder preview');
+      }
+      setStatusReminderPreview({
+        recipientEmail: String(result?.recipientEmail || staffTestReminderEmail),
+        referrerName: String(result?.referrerName || 'there'),
+        memberName: String(result?.memberName || 'CalAIM Member'),
+        subject: String(result?.subject || 'Application progress update'),
+        statusText: String(result?.statusText || familyStatusProgressValue),
+        deniedReason: String(result?.deniedReason || ''),
+        message: String(result?.message || ''),
+      });
+    } catch (error: any) {
+      setStatusReminderPreview(null);
+      toast({
+        variant: 'destructive',
+        title: 'Preview Failed',
+        description: error?.message || 'Could not load status reminder preview.',
+      });
+    } finally {
+      setIsLoadingStatusReminderPreview(false);
+    }
+  };
+
+  const sendTestStatusReminder = async () => {
+    if (!staffTestReminderEmail || !application?.id) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Staff email is required.' });
+      return;
+    }
+    if (!familyStatusProgressValue) {
+      toast({
+        variant: 'destructive',
+        title: 'Status required',
+        description: 'Select Application progress before sending status reminder test.',
+      });
+      return;
+    }
+    if (familyProgressNeedsDeniedReason && !String(familyStatusDeniedReason || '').trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Denied reason required',
+        description: 'Enter a denied reason before sending this status update test.',
+      });
+      return;
+    }
+    setIsSendingStatusTestReminder(true);
+    try {
+      const response = await fetch('/api/admin/send-family-status-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: application.id,
+          userId: (application as any)?.userId || null,
+          statusValue: familyStatusProgressValue,
+          deniedReason: familyStatusDeniedReason,
+          trigger: 'manual',
+          sentByUid: String(user?.uid || ''),
+          sentByName: String(user?.displayName || user?.email || 'The Connections Team'),
+          overrideEmail: staffTestReminderEmail,
+          testOnly: true,
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || result?.message || 'Failed to send status reminder test');
+      }
+      toast({
+        title: 'Status reminder test sent',
+        description: `Email sent to ${staffTestReminderEmail}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Send Failed',
+        description: error?.message || 'Could not send status reminder test.',
+      });
+    } finally {
+      setIsSendingStatusTestReminder(false);
     }
   };
   const sendFamilyStatusUpdateEmail = async (
@@ -3121,6 +3397,11 @@ function ApplicationDetailPageContent() {
   const processTrackerProgress = processTrackerTotalCount > 0 ? (processTrackerCompletedCount / processTrackerTotalCount) * 100 : 0;
   const eligibilityCompleted = getComponentStatus('Eligibility Check') === 'Completed';
   const caspioPushed = Boolean((application as any)?.caspioSent);
+  const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
+  const staffAssigned = Boolean(
+    String((application as any)?.assignedStaffId || '').trim() ||
+    assignedStaffName
+  );
   const caspioSentDateRaw = (application as any)?.caspioSentDate;
   const caspioSentDateLabel = caspioSentDateRaw
     ? format(
@@ -4724,6 +5005,14 @@ function ApplicationDetailPageContent() {
                     )}
                     <span>{caspioPushed ? 'Caspio: Pushed' : 'Caspio: Pending'}</span>
                   </div>
+                  <div className={cn('flex items-center gap-2 text-base font-semibold', staffAssigned ? 'text-green-700' : 'text-amber-700')}>
+                    {staffAssigned ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                    <span>{staffAssigned ? `Staff Assigned: ${assignedStaffName || 'Assigned'}` : 'Staff Assigned: Pending assignment'}</span>
+                  </div>
                   {caspioPushed && caspioSentDateLabel ? (
                     <div className="text-xs text-muted-foreground pl-7">{caspioSentDateLabel}</div>
                   ) : null}
@@ -4769,17 +5058,13 @@ function ApplicationDetailPageContent() {
                   ) : null}
                 </div>
 
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm">
-                    <div className="text-xs text-muted-foreground">Assigned staff</div>
-                    <div className="font-medium">{(application as any)?.assignedStaffName || 'Unassigned'}</div>
-                  </div>
+                <div className="flex items-center justify-end gap-3">
                   <div className="text-right">
                     <div className="text-xs text-muted-foreground">
                       {application.healthPlan?.toLowerCase().includes('kaiser')
-                        ? `Progression: ${(application as any)?.kaiserStatus || 'Unassigned'}`
+                        ? `Progression: ${(application as any)?.kaiserStatus || 'Not set'}`
                         : application.healthPlan?.toLowerCase().includes('health net')
-                          ? `Progression: ${healthNetCurrentStatus || 'Unassigned'}`
+                          ? `Progression: ${healthNetCurrentStatus || 'Not set'}`
                           : null}
                     </div>
                   </div>
@@ -5668,6 +5953,69 @@ function ApplicationDetailPageContent() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2 p-3 border rounded-lg bg-muted/20">
+                    <Label htmlFor="staff-test-status-reminder-email" className="text-sm font-medium">
+                      Staff test status email
+                    </Label>
+                    <Input
+                      id="staff-test-status-reminder-email"
+                      type="email"
+                      value={staffTestReminderEmail}
+                      readOnly
+                      disabled
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      Uses current <span className="font-medium">Application progress</span> value below.
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={loadTestStatusReminderPreview}
+                        disabled={isLoadingStatusReminderPreview || !staffTestReminderEmail}
+                      >
+                        {isLoadingStatusReminderPreview ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Loading...
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="mr-2 h-4 w-4" />
+                            Preview Test
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={sendTestStatusReminder}
+                        disabled={isSendingStatusTestReminder || !staffTestReminderEmail}
+                      >
+                        {isSendingStatusTestReminder ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Sending...
+                          </>
+                        ) : (
+                          'Send Test'
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  {statusReminderPreview && (
+                    <div className="rounded border bg-white p-3 space-y-2">
+                      <div className="text-xs font-semibold">Status reminder preview (what applicant sees)</div>
+                      <div className="text-xs text-muted-foreground">To: {statusReminderPreview.recipientEmail}</div>
+                      <div className="text-xs text-muted-foreground">Subject: {statusReminderPreview.subject}</div>
+                      <div className="text-xs">
+                        Hi {statusReminderPreview.referrerName}, {statusReminderPreview.message}
+                      </div>
+                      {statusReminderPreview.deniedReason ? (
+                        <div className="text-xs text-muted-foreground">
+                          Denied reason: {statusReminderPreview.deniedReason}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
 
                   {(isKaiserPlan || isHealthNetPlan) && (
                     <div className="space-y-2 rounded-lg border p-3 bg-muted/20">
