@@ -58,6 +58,7 @@ function WaiversFormComponent() {
     const [signerRelationship, setSignerRelationship] = useState('');
     const [signatureDate, setSignatureDate] = useState('');
     const [monthlyIncome, setMonthlyIncome] = useState('');
+    const [incomeSource, setIncomeSource] = useState<Array<'SSI' | 'SSA' | 'SSD' | 'OTHER'>>([]);
 
     const [ackHipaa, setAckHipaa] = useState(false);
     const [ackLiability, setAckLiability] = useState(false);
@@ -96,14 +97,45 @@ function WaiversFormComponent() {
                   )
                 );
                 setMonthlyIncome(toDollarAmount(String((form as any)?.monthlyIncome ?? (application as any)?.monthlyIncome ?? '')));
+                const rawIncomeSource = (form as any)?.incomeSource ?? (application as any)?.incomeSource;
+                const normalizedIncomeSources = Array.isArray(rawIncomeSource)
+                  ? rawIncomeSource
+                      .map((v: unknown) => String(v ?? '').trim().toUpperCase())
+                      .map((v: string) => (v === 'N/A' ? 'OTHER' : v))
+                      .filter((v: string): v is 'SSI' | 'SSA' | 'SSD' | 'OTHER' => v === 'SSI' || v === 'SSA' || v === 'SSD' || v === 'OTHER')
+                  : (() => {
+                      const single = String(rawIncomeSource ?? '').trim().toUpperCase() === 'N/A'
+                        ? 'OTHER'
+                        : String(rawIncomeSource ?? '').trim().toUpperCase();
+                      return single === 'SSI' || single === 'SSA' || single === 'SSD' || single === 'OTHER'
+                        ? [single as 'SSI' | 'SSA' | 'SSD' | 'OTHER']
+                        : [];
+                    })();
+                setIncomeSource(normalizedIncomeSources);
                 setSignatureDate(form.dateCompleted ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString());
             } else {
                  setSignatureDate(new Date().toLocaleDateString());
                  setMonthlyIncome(toDollarAmount(String((application as any)?.monthlyIncome ?? '')));
+                 const rawIncomeSource = (application as any)?.incomeSource;
+                 const normalizedIncomeSources = Array.isArray(rawIncomeSource)
+                   ? rawIncomeSource
+                       .map((v: unknown) => String(v ?? '').trim().toUpperCase())
+                       .map((v: string) => (v === 'N/A' ? 'OTHER' : v))
+                       .filter((v: string): v is 'SSI' | 'SSA' | 'SSD' | 'OTHER' => v === 'SSI' || v === 'SSA' || v === 'SSD' || v === 'OTHER')
+                   : (() => {
+                       const single = String(rawIncomeSource ?? '').trim().toUpperCase() === 'N/A'
+                         ? 'OTHER'
+                         : String(rawIncomeSource ?? '').trim().toUpperCase();
+                       return single === 'SSI' || single === 'SSA' || single === 'SSD' || single === 'OTHER'
+                         ? [single as 'SSI' | 'SSA' | 'SSD' | 'OTHER']
+                         : [];
+                     })();
+                 setIncomeSource(normalizedIncomeSources);
             }
         } else {
             setSignatureDate(new Date().toLocaleDateString());
             setMonthlyIncome('');
+            setIncomeSource([]);
         }
     }, [application]);
 
@@ -256,14 +288,29 @@ function WaiversFormComponent() {
                           CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed. Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). Generally, a monthly income of more than $1,801 (single)/$2,433 (couple) will have a Medi-Cal SOC.
                         </p>
                         <p>
-                          Proof of income might need to be furnished as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).
+                          Members who receive less than $1,626.08 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
                         </p>
                         <p>
-                          Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
+                          Proof of income might need to be furnished as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).
                         </p>
                         <div className="space-y-2 mt-4">
                             <Label htmlFor="monthly-income">What is the member&apos;s monthly income? <span className="text-destructive">*</span></Label>
                             <Input id="monthly-income" value={monthlyIncome} disabled />
+                        </div>
+                        <div className="space-y-2 mt-4">
+                            <Label>Where is source of member&apos;s monthly income? <span className="text-destructive">*</span></Label>
+                            <div className="space-y-2">
+                                {(['SSI', 'SSA', 'SSD', 'OTHER'] as const).map((option) => (
+                                    <div key={option} className="flex items-center space-x-2">
+                                        <Checkbox
+                                          id={`income-source-${option.toLowerCase().replace('/', '-')}`}
+                                          checked={incomeSource.includes(option)}
+                                          disabled
+                                        />
+                                        <Label htmlFor={`income-source-${option.toLowerCase().replace('/', '-')}`}>{option === 'OTHER' ? 'Other' : option}</Label>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                         <Alert variant="warning" className="mt-4">
                             <AlertCircle className="h-4 w-4" />

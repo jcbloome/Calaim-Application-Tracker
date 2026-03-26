@@ -253,15 +253,22 @@ export function PrintableWaiversForm({
             than $1,801 (single)/$2,433 (couple) will have a Medi-Cal SOC.
           </p>
           <p className="text-xs text-gray-700 print:text-black">
+            Members who receive less than $1,626.08 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC)
+            payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
+          </p>
+          <p className="text-xs text-gray-700 print:text-black">
             Proof of income might need to be furnished as part of this application process (for
             example, an annual award letter or 3 months of bank statements showing Social Security income).
           </p>
-          <p>
-            Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC)
-            payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
-          </p>
           <PrintableField
             label="What is the member's monthly income?"
+            required
+            width="full"
+          />
+          <PrintableField
+            label="Where is source of member's monthly income?"
+            type="checkbox"
+            options={['SSI', 'SSA', 'SSD', 'Other']}
             required
             width="full"
           />

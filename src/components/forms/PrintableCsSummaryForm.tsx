@@ -686,6 +686,32 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
               <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
             </ul>
           </div>
+          <div>
+            <p className="font-semibold">3. Program Information Pathways</p>
+            <p className="font-semibold">1. Supplemental Security Income (SSI)</p>
+            <p>
+              This is the most direct pathway. If the member already receives SSI, the monthly payment is automatically
+              bumped up to the NMOHC rate (approximately $1,626.07 in 2026) once they move into a licensed Residential
+              Care Facility for the Elderly (RCFE). Of this amount, the member typically keeps a small Personal Needs
+              Allowance (around $182), and the remainder is paid to the facility for room and board.
+            </p>
+            <p className="font-semibold">2. Social Security Administration (SSA) and SSDI</p>
+            <p>
+              If the member's primary income is SSA (Retirement) or SSDI (Disability), they can still access the
+              NMOHC pathway, provided monthly income is lower than the current NMOHC rate.
+            </p>
+            <p className="font-semibold">The "Gap" strategy</p>
+            <p>
+              If the SSDI/SSA check is, for example, $1,200, it is higher than the standard SSI limit, but lower than
+              the NMOHC rate ($1,626.07).
+            </p>
+            <p className="font-semibold">How it works</p>
+            <p>
+              Once the member moves into assisted living, SSA considers the NMOHC rate as the new income ceiling.
+              Because a $1,200 income is below that ceiling, the member may become eligible for a small SSI supplement.
+              This technical SSI eligibility then triggers the full NMOHC rate for the facility.
+            </p>
+          </div>
         </div>
       </PrintableFormSection>
 

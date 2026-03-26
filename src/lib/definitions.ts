@@ -114,6 +114,7 @@ export type Application = {
   ispFacilityName?: string;
   onALWWaitlist?: 'Yes' | 'No' | 'Unknown';
   monthlyIncome?: string;
+  incomeSource?: Array<'SSI' | 'SSA' | 'SSD' | 'OTHER' | 'N/A'> | 'SSI' | 'SSA' | 'SSD' | 'OTHER' | 'N/A' | string;
   expectedRoomBoardPayment?: string;
   ackRoomAndBoard?: boolean;
   ackSocDetermination?: boolean;
@@ -177,6 +178,7 @@ export type FormStatus = {
   ackFoc?: boolean;
   ackSocDetermination?: boolean;
   monthlyIncome?: string | null;
+  incomeSource?: Array<'SSI' | 'SSA' | 'SSD' | 'OTHER' | 'N/A'> | 'SSI' | 'SSA' | 'SSD' | 'OTHER' | 'N/A' | string | null;
   feedbackRating?: number | null;
   feedbackComments?: string | null;
 };

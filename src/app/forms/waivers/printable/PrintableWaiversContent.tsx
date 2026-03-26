@@ -109,10 +109,14 @@ export function PrintableWaiversContent() {
                     </div>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
                         <p>CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed. Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). Generally, a monthly income of more than $1,801 (single)/$2,433 (couple) will have a Medi-Cal SOC.</p>
+                        <p>Members who receive less than $1,626.08 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.</p>
                         <p>Proof of income might need to be furnished as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).</p>
-                        <p>Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.</p>
                     </div>
                     <Field label="What is the member's monthly income?" description="Examples: SSI/SSP amount, pension, or other monthly income sources." />
+                    <CheckboxField label="Income source: SSI" />
+                    <CheckboxField label="Income source: SSA" />
+                    <CheckboxField label="Income source: SSD" />
+                    <CheckboxField label="Income source: Other" />
                     <CheckboxField label="I have read and understood the Room and Board Commitment and Medi-Cal SOC Determination sections." />
                     <p className="text-sm text-gray-700">
                         For more information about the room and board payment, SOC, or NMOHC, see our program information page: https://connectcalaim.com/info/eligibility
