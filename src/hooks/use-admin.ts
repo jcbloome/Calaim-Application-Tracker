@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { useUser, useFirestore } from '@/firebase';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
 import type { User } from 'firebase/auth';
 
 interface AdminStatus {
@@ -61,6 +62,19 @@ export function useAdmin(): AdminStatus {
     }
 
     const checkAdminRoles = async () => {
+      if (isBlockedPortalEmail(user.email)) {
+        setIsAdmin(false);
+        setIsSuperAdmin(false);
+        setIsClaimsStaff(false);
+        lastKnownRoleRef.current = {
+          isAdmin: false,
+          isSuperAdmin: false,
+          isClaimsStaff: false,
+        };
+        setIsLoading(false);
+        return;
+      }
+
       const isEmailAdmin = isHardcodedAdminEmail(user.email);
 
       // Fast-path: if custom claims are present, trust them (avoids Firestore-permission issues).

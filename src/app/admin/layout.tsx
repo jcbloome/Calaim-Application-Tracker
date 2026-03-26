@@ -610,13 +610,26 @@ function AdminHeader() {
 
     const computeCount = () => {
       const combined = [...userApps, ...adminApps];
-      const deduped = new Map<string, any>();
+      // Keep header counters aligned with /admin/applications list behavior:
+      // dedupe by member name (prefer latest), then include no-name records by unique id.
+      const byMemberName = new Map<string, any>();
+      const noNameById = new Map<string, any>();
       combined.forEach((app) => {
-        const key = `${app.id}-${app.userId || 'admin'}`;
-        deduped.set(key, app);
+        const memberNameKey = `${String(app?.memberFirstName || '').trim()} ${String(app?.memberLastName || '').trim()}`
+          .trim()
+          .toLowerCase();
+        if (memberNameKey) {
+          const existing = byMemberName.get(memberNameKey);
+          if (!existing || toMs(app?.lastUpdated) >= toMs(existing?.lastUpdated)) {
+            byMemberName.set(memberNameKey, app);
+          }
+          return;
+        }
+        const key = `${app.id}-${app.userId || app.__ownerUid || 'admin'}`;
+        noNameById.set(key, app);
       });
 
-      const dedupedApps = Array.from(deduped.values());
+      const dedupedApps = [...Array.from(byMemberName.values()), ...Array.from(noNameById.values())];
       let nextHnCs = 0;
       let nextHnDocs = 0;
       let nextKaiserCs = 0;
@@ -795,11 +808,25 @@ function AdminHeader() {
         }
 
         if (isCs) {
-          csSummaryCount += 1;
-          if (isKaiser) nextKaiserCs += 1;
-          else if (isHn) nextHnCs += 1;
-          csLatestMs = Math.max(csLatestMs, ms);
-          csNotes.push({ message: memberName, timestampMs: ms, url, author });
+          // Standalone CS uploads are not application records yet.
+          // Keep them under Standalone so CS(x) always maps to /admin/applications?review=cs results.
+          standaloneCount += 1;
+          standaloneLatestMs = Math.max(standaloneLatestMs, ms);
+          standaloneNotes.push({ message: `${memberName} — ${docType || 'CS Summary'}`, timestampMs: ms, url, author });
+          const key = `standalone-${String(u?.id || '')}`;
+          const current = docsByApp.get(key) || {
+            appId: key,
+            url,
+            memberName,
+            uploader: author,
+            labels: new Set<string>(),
+            count: 0,
+            latestMs: 0,
+          };
+          current.count += 1;
+          current.latestMs = Math.max(current.latestMs, ms);
+          current.labels.add(docType || 'CS Summary');
+          docsByApp.set(key, current);
           return;
         }
 

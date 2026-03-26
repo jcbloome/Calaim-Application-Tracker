@@ -49,6 +49,7 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'SNF_Diversion_or_Transition',
   'CalAIM_Status',
   'Kaiser_Status',
+  'ILS_Connected',
   'Kaiser_ID_Status',
   'Kaiser_User_Assignment',
   'Kaiser_Next_Step_Date',

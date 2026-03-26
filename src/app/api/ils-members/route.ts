@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { adminAuth, adminDb } from '@/firebase-admin';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
 
 const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
 
@@ -15,6 +16,7 @@ async function canAccessIlsMembers(request: NextRequest): Promise<boolean> {
     const uid = String(decoded.uid || '').trim();
     const email = normalizeEmail((decoded as any).email);
     if (!uid || !email) return false;
+    if (isBlockedPortalEmail(email)) return false;
 
     if (Boolean((decoded as any).superAdmin) || isHardcodedAdminEmail(email)) return true;
 

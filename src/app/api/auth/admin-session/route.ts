@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,6 +20,9 @@ export async function POST(request: NextRequest) {
 
     if (!email || !uid) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+    if (isBlockedPortalEmail(email)) {
+      return NextResponse.json({ error: 'Admin access removed for this account' }, { status: 403 });
     }
 
     let isAdmin = isHardcodedAdminEmail(email);

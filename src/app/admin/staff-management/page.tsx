@@ -31,7 +31,7 @@ interface StaffMember {
 }
 
 const ILS_MEMBER_TARGET_EMAIL = 'jhernandez@ilshealth.com';
-const JOCELYN_FALLBACK_EMAIL = 'jocelyn@ilshealth.com';
+const STAFF_CARD_EXCLUDED_EMAILS = new Set(['jocelyn@ilshealth.com']);
 
 type ReviewRecipientSettings = {
     enabled: boolean;
@@ -602,14 +602,6 @@ export default function StaffManagementPage() {
         () => staffList.filter((member) => member.role !== 'Super Admin').length,
         [staffList]
     );
-    const jocelynEmail = useMemo(() => {
-        const match = staffList.find((member) => {
-            const haystack = `${member.firstName} ${member.lastName} ${member.email}`.toLowerCase();
-            return haystack.includes('jocelyn');
-        });
-        return String(match?.email || JOCELYN_FALLBACK_EMAIL).trim().toLowerCase();
-    }, [staffList]);
-
     const scrollToSection = (sectionId: string) => {
         if (typeof window === 'undefined') return;
         const element = document.getElementById(sectionId);
@@ -1119,6 +1111,10 @@ export default function StaffManagementPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {(() => {
                                 const filtered = staffList.filter((staff) => {
+                                    const normalizedEmail = String(staff.email || '').trim().toLowerCase();
+                                    if (STAFF_CARD_EXCLUDED_EMAILS.has(normalizedEmail)) {
+                                        return false;
+                                    }
                                     const query = staffNameFilter.trim().toLowerCase();
                                     if (query) {
                                         const fullName = `${staff.firstName} ${staff.lastName}`.toLowerCase();
@@ -1381,40 +1377,6 @@ export default function StaffManagementPage() {
                                             {superAdmins.length > 0 ? superAdmins.map(renderCard) : (
                                                 <div className="text-sm text-muted-foreground">No Super Admins match your filters.</div>
                                             )}
-                                            <div className="p-3 border rounded-lg bg-emerald-50/40 border-emerald-200">
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <CalendarCheck className="h-4 w-4 text-emerald-700" />
-                                                    <div className="text-sm font-semibold text-emerald-900">Special ILS - Jocelyn</div>
-                                                </div>
-                                                <div className="text-xs text-emerald-900/80 mb-3">
-                                                    Dedicated ILS controls for <span className="font-semibold">{jocelynEmail}</span>.
-                                                </div>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                    <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-white px-3 py-2">
-                                                        <Label htmlFor="superadmin-ils-page-access-jocelyn" className="text-sm font-medium">
-                                                            ILS page access
-                                                        </Label>
-                                                        <Switch
-                                                            id="superadmin-ils-page-access-jocelyn"
-                                                            checked={ilsMemberAllowedEmails.map((x) => String(x).toLowerCase()).includes(jocelynEmail)}
-                                                            onCheckedChange={(v) => toggleIlsMemberTargetAccess(jocelynEmail, Boolean(v))}
-                                                        />
-                                                    </div>
-                                                    <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-white px-3 py-2">
-                                                        <Label htmlFor="superadmin-ils-weekly-email-jocelyn" className="text-sm font-medium">
-                                                            Weekly ILS email (Wednesday)
-                                                        </Label>
-                                                        <Switch
-                                                            id="superadmin-ils-weekly-email-jocelyn"
-                                                            checked={
-                                                                ilsWeeklyEmailEnabled &&
-                                                                ilsWeeklyEmailRecipients.map((x) => String(x).toLowerCase()).includes(jocelynEmail)
-                                                            }
-                                                            onCheckedChange={(v) => toggleIlsWeeklyTargetEmail(jocelynEmail, Boolean(v))}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
                                         </div>
                                         <div id="staff-section" className="space-y-4">
                                             <div className="text-xs font-semibold text-muted-foreground">Staff</div>

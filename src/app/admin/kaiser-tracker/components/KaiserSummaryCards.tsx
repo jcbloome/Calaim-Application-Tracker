@@ -45,7 +45,7 @@ export function KaiserSummaryCards({
   // - R&B Sent (mapped to R&B Signed)
   // - Pending ILS Contract (mapped to contract-email-needed statuses)
   const ilsUpdateMatchers = [
-    { key: 't2038', label: 'T2038 Auth Only', accepts: ['t2038 auth only email', 't2308 auth only'] },
+    { key: 't2038', label: 'T2038 Auth Only Email', accepts: ['t2038 auth only email', 't2308 auth only'] },
     { key: 'h2022', label: 'H2022 Requested', accepts: ['h2022 requested'] },
     { key: 'tier', label: 'Tier Level Requested', accepts: ['tier level requested'] },
     {

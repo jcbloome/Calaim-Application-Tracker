@@ -23,7 +23,10 @@ import {
   Pencil,
   Printer,
   MessageSquare,
-  Database
+  Database,
+  CheckCircle2,
+  Circle,
+  Search
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -49,7 +52,17 @@ interface ILSReportMember {
   RCFE_Name?: string;
   RCFE_Admin_Name?: string;
   RCFE_Admin_Email?: string;
+  ILS_Connected?: string;
 }
+
+type MemberNote = {
+  id: string;
+  clientId2: string;
+  noteText: string;
+  createdAt: string;
+  createdByName?: string;
+  source?: string;
+};
 
 interface IlsQueueChangeLogRow {
   id: string;
@@ -109,6 +122,16 @@ const formatYmd = (value: any): string => {
   }
 };
 
+const formatDateTimeSafe = (value: any): string => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'Unknown time';
+  try {
+    return format(new Date(raw), 'MM/dd/yyyy h:mm a');
+  } catch {
+    return raw;
+  }
+};
+
 const ymdSortKey = (value: any): string => {
   const ymd = toYmd(value);
   return ymd || '9999-12-31';
@@ -119,6 +142,11 @@ const normalizeStatus = (value: any) =>
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ');
+
+const isIlsConnected = (value: any): boolean => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === 'yes' || normalized === 'y' || normalized === 'true' || normalized === '1';
+};
 
 const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
   const status = normalizeStatus(member.Kaiser_Status);
@@ -165,10 +193,15 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
   }
   // R&B Sent Pending ILS Contract:
   // show only pending members (requested exists or status matches), but hide once H2022 received is set.
-  const rbPendingByStatus = status === 'r&b sent pending ils contract' || status === 'r & b sent pending ils contract';
+  const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
+  const rbPendingByStatus =
+    status === 'r&b sent pending ils contract' ||
+    status === 'r & b sent pending ils contract' ||
+    compactStatus === 'final member at rcfe';
   const rbRequested = Boolean(toYmd(member.Kaiser_H2022_Requested));
   const rbReceived = hasMeaningfulValue(member.Kaiser_H2022_Received) || Boolean(toYmd(member.Kaiser_H2022_Received));
-  return (rbPendingByStatus || rbRequested) && !rbReceived;
+  const connectedToIls = isIlsConnected((member as any).ILS_Connected);
+  return (rbPendingByStatus || rbRequested) && !rbReceived && !connectedToIls;
 };
 
 const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
@@ -209,6 +242,10 @@ export default function ILSReportEditorPage() {
   const [isLoadingIlsLog, setIsLoadingIlsLog] = useState(false);
   const [ilsLogRows, setIlsLogRows] = useState<IlsQueueChangeLogRow[]>([]);
   const [ilsLogSearch, setIlsLogSearch] = useState('');
+  const [selectedMemberForNotes, setSelectedMemberForNotes] = useState('');
+  const [selectedMemberNotes, setSelectedMemberNotes] = useState<MemberNote[]>([]);
+  const [isLoadingMemberNotes, setIsLoadingMemberNotes] = useState(false);
+  const [memberNotesMeta, setMemberNotesMeta] = useState<{ didSync: boolean; count: number }>({ didSync: false, count: 0 });
   const { toast } = useToast();
 
   // Load Kaiser members for ILS report
@@ -284,6 +321,7 @@ export default function ILSReportEditorPage() {
             RCFE_Name: String(member.RCFE_Name || '').trim(),
             RCFE_Admin_Name: String(member.RCFE_Admin_Name || member.RCFE_Administrator || '').trim(),
             RCFE_Admin_Email: String(member.RCFE_Admin_Email || member.RCFE_Administrator_Email || '').trim(),
+            ILS_Connected: String(member.ILS_Connected || '').trim(),
           };
         });
 
@@ -316,6 +354,9 @@ export default function ILSReportEditorPage() {
           });
 
         setMembers(filtered);
+        setSelectedMemberForNotes('');
+        setSelectedMemberNotes([]);
+        setMemberNotesMeta({ didSync: false, count: 0 });
         
         toast({
           title: 'Members Loaded',
@@ -332,6 +373,53 @@ export default function ILSReportEditorPage() {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMemberNotes = async (opts?: { forceSync?: boolean }) => {
+    const selectedMember = members.find((m) => String(m.id || '') === String(selectedMemberForNotes || ''));
+    const clientId2 = String(selectedMember?.client_ID2 || '').trim();
+    if (!clientId2) {
+      toast({
+        variant: 'destructive',
+        title: 'Select a member',
+        description: 'Choose a member first to view notes.',
+      });
+      return;
+    }
+
+    setIsLoadingMemberNotes(true);
+    try {
+      const query = new URLSearchParams({
+        clientId2,
+        forceSync: opts?.forceSync ? 'true' : 'false',
+        skipSync: opts?.forceSync ? 'false' : 'true',
+        repairIfEmpty: 'true',
+      });
+      const res = await fetch(`/api/member-notes?${query.toString()}`);
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to load notes (HTTP ${res.status})`);
+      }
+
+      const notes = Array.isArray(data?.notes) ? (data.notes as MemberNote[]) : [];
+      notes.sort((a, b) => String(b?.createdAt || '').localeCompare(String(a?.createdAt || '')));
+      setSelectedMemberNotes(notes);
+      setMemberNotesMeta({ didSync: Boolean(data?.didSync), count: notes.length });
+
+      toast({
+        title: opts?.forceSync ? 'Historical notes synced' : 'Notes loaded',
+        description: `${notes.length} note(s) loaded for ${selectedMember?.memberName || 'member'}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Notes load failed',
+        description: error?.message || 'Could not load member notes.',
+      });
+    } finally {
+      setIsLoadingMemberNotes(false);
     }
   };
 
@@ -462,7 +550,7 @@ export default function ILSReportEditorPage() {
     setCardEditMemberId('');
   };
 
-  // Generate printable PDF report
+  // Generate printable report (HTML/print-to-PDF)
   const generatePrintableReport = (opts?: { includeT2038?: boolean; title?: string; downloadName?: string }) => {
     const includeT2038 = Boolean(opts?.includeT2038);
     const reportTitle = opts?.title || 'ILS Member Update';
@@ -485,6 +573,7 @@ export default function ILSReportEditorPage() {
           memberName: String(m.memberName || '').trim(),
           memberMrn: String(m.memberMrn || '').trim(),
           birthDate: toYmd(m.birthDate),
+          ilsConnected: isIlsConnected((m as any).ILS_Connected),
           rcfeName: String(m.RCFE_Name || '').trim(),
           rcfeAdminName: String(m.RCFE_Admin_Name || '').trim(),
           rcfeAdminEmail: String(m.RCFE_Admin_Email || '').trim(),
@@ -679,6 +768,7 @@ export default function ILSReportEditorPage() {
           memberName: string;
           memberMrn: string;
           birthDate?: string;
+          ilsConnected?: boolean;
           rcfeName?: string;
           rcfeAdminName?: string;
           rcfeAdminEmail?: string;
@@ -692,17 +782,19 @@ export default function ILSReportEditorPage() {
                 <tr>
                   <th>Member</th>
                   <th>MRN / Birth Date</th>
+                  <th>ILS Connected</th>
                   <th>Request Date</th>
                 </tr>
               </thead>
               <tbody>
-                ${rows.length === 0 ? `<tr><td colspan="3" style="color:#777;">None</td></tr>` : rows.map((r) => `
+                ${rows.length === 0 ? `<tr><td colspan="4" style="color:#777;">None</td></tr>` : rows.map((r) => `
                   <tr>
                     <td>
                       <strong>${escapeHtml(r.memberName || '—')}</strong>
                       ${q.key === 'rbPendingIlsContract' ? `<br><span style="color:#666;">RCFE: ${escapeHtml(r.rcfeName || '—')}</span><br><span style="color:#666;">RCFE Admin Name: ${escapeHtml(r.rcfeAdminName || '—')}</span><br><span style="color:#666;">RCFE Admin Email: ${escapeHtml(r.rcfeAdminEmail || '—')}</span>` : ''}
                     </td>
                     <td>${escapeHtml(r.memberMrn || '—')}<br><span style="color:#666;">Birth Date: ${escapeHtml(r.birthDate ? format(new Date(`${r.birthDate}T00:00:00`), 'MM/dd/yyyy') : '—')}</span></td>
+                    <td>${r.ilsConnected ? '<span style="color:#15803d;font-weight:700;">✓</span>' : '<span style="color:#dc2626;font-weight:700;">●</span>'}</td>
                     <td>${escapeHtml(r.requestedDate ? format(new Date(`${r.requestedDate}T00:00:00`), 'MM/dd/yyyy') : '—')}</td>
                   </tr>
                 `).join('')}
@@ -763,6 +855,7 @@ export default function ILSReportEditorPage() {
           memberName: String(m.memberName || '').trim(),
           memberMrn: String(m.memberMrn || '').trim(),
           birthDate: toYmd(m.birthDate),
+          ilsConnected: isIlsConnected((m as any).ILS_Connected),
           rcfeName: String(m.RCFE_Name || '').trim(),
           rcfeAdminName: String(m.RCFE_Admin_Name || '').trim(),
           rcfeAdminEmail: String(m.RCFE_Admin_Email || '').trim(),
@@ -847,6 +940,11 @@ export default function ILSReportEditorPage() {
     loadIlsChangeLog().catch(() => {});
   }, [auth?.currentUser?.uid]);
 
+  useEffect(() => {
+    setSelectedMemberNotes([]);
+    setMemberNotesMeta({ didSync: false, count: 0 });
+  }, [selectedMemberForNotes]);
+
   // Removed auto-loading useEffect - now only loads when "Load Members" button is pressed
 
   if (isAdminLoading) {
@@ -899,7 +997,7 @@ export default function ILSReportEditorPage() {
             Report Configuration
           </CardTitle>
           <CardDescription>
-            Set report date and generate printable version
+            Set report date and generate report output
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -935,23 +1033,23 @@ export default function ILSReportEditorPage() {
                   onClick={() =>
                     generatePrintableReport({
                       includeT2038: false,
-                      title: 'ILS Member Update - Tier + R&B Queues',
-                      downloadName: `ILS_Tier_RB_Queues_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
+                      title: 'ILS Member Update Report - Requested Queues',
+                      downloadName: `ILS_Requested_Queues_Report_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
                     })
                   }
                   disabled={members.length === 0}
                   className="w-full sm:w-auto justify-start bg-blue-600 hover:bg-blue-700"
                 >
                   <Printer className="mr-2 h-4 w-4" />
-                  Generate Tier + R&B PDF
+                  Generate Report
                 </Button>
 
                 <Button
                   onClick={() =>
                     generatePrintableReport({
                       includeT2038: true,
-                      title: 'T2038 Auth Only Email Queue',
-                      downloadName: `T2038_Auth_Only_Queue_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
+                      title: 'T2038 Auth Only Email Report',
+                      downloadName: `T2038_Auth_Only_Email_Report_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
                     })
                   }
                   disabled={members.length === 0}
@@ -959,7 +1057,7 @@ export default function ILSReportEditorPage() {
                   className="w-full sm:w-auto justify-start"
                 >
                   <Printer className="mr-2 h-4 w-4" />
-                  T2038 PDF
+                  T2038 Auth Only Email Report
                 </Button>
 
                 <Button
@@ -969,7 +1067,7 @@ export default function ILSReportEditorPage() {
                   onClick={() => setT2038ModalOpen(true)}
                   disabled={queues.t2038AuthOnly.length === 0}
                 >
-                  T2038 Auth Only ({queues.t2038AuthOnly.length})
+                  T2038 Auth Only Email ({queues.t2038AuthOnly.length})
                 </Button>
               </div>
             </div>
@@ -986,7 +1084,7 @@ export default function ILSReportEditorPage() {
               />
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-muted-foreground">
-                  These comments will be included in the printable report for ILS
+                  These comments will be included in the generated report for ILS
                 </p>
                 <Button
                   onClick={saveComments}
@@ -1059,7 +1157,7 @@ export default function ILSReportEditorPage() {
       <Card>
         <CardHeader>
           <CardTitle>Requested queues</CardTitle>
-          <CardDescription>Member name • MRN • Birth Date • Request Date</CardDescription>
+          <CardDescription>Member name • MRN • Birth Date • ILS Connected • Request Date</CardDescription>
         </CardHeader>
         <CardContent>
           {members.length === 0 ? (
@@ -1107,7 +1205,14 @@ export default function ILSReportEditorPage() {
                       q.rows.slice(0, 60).map((r) => (
                         <div key={`${q.key}-${r.id}`} className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
-                            <div className="truncate font-medium">{r.memberName || '—'}</div>
+                            <div className="truncate font-medium flex items-center gap-2">
+                              <span className="truncate">{r.memberName || '—'}</span>
+                              {r.ilsConnected ? (
+                                <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-label="ILS connected: yes" />
+                              ) : (
+                                <Circle className="h-4 w-4 shrink-0 text-red-500 fill-red-500" aria-label="ILS connected: no" />
+                              )}
+                            </div>
                             <div className="text-xs text-muted-foreground">
                               MRN: <span className="font-mono">{r.memberMrn || '—'}</span>
                             </div>
@@ -1152,13 +1257,83 @@ export default function ILSReportEditorPage() {
                       ))
                     )}
                     {q.rows.length > 60 ? (
-                      <div className="text-xs text-muted-foreground pt-1">+ {q.rows.length - 60} more… (see PDF)</div>
+                      <div className="text-xs text-muted-foreground pt-1">+ {q.rows.length - 60} more... (see generated report)</div>
                     ) : null}
                   </div>
                 </div>
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>ILS Member Notes Lookup</CardTitle>
+          <CardDescription>
+            Select a member name to review notes (including historical Kaiser tracker notes).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto] gap-2">
+            <Select value={selectedMemberForNotes} onValueChange={setSelectedMemberForNotes}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select member name" />
+              </SelectTrigger>
+              <SelectContent>
+                {members
+                  .slice()
+                  .sort((a, b) => String(a.memberName || '').localeCompare(String(b.memberName || '')))
+                  .map((member) => (
+                    <SelectItem key={`notes-member-${member.id}`} value={String(member.id || '')}>
+                      {member.memberName || 'Unnamed member'} {member.memberMrn ? `- ${member.memberMrn}` : ''}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => loadMemberNotes({ forceSync: false })}
+              disabled={!selectedMemberForNotes || isLoadingMemberNotes}
+            >
+              {isLoadingMemberNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+              View Notes
+            </Button>
+            <Button
+              type="button"
+              onClick={() => loadMemberNotes({ forceSync: true })}
+              disabled={!selectedMemberForNotes || isLoadingMemberNotes}
+            >
+              {isLoadingMemberNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Pull Historical Notes
+            </Button>
+          </div>
+
+          <div className="text-xs text-muted-foreground">
+            {selectedMemberForNotes
+              ? `${memberNotesMeta.count} note(s) loaded${memberNotesMeta.didSync ? ' (latest sync included)' : ' (saved notes view)'}.`
+              : 'Select a member to view notes.'}
+          </div>
+
+          <div className="max-h-[340px] overflow-y-auto space-y-2 pr-1">
+            {!selectedMemberForNotes ? (
+              <div className="text-sm text-muted-foreground">No member selected yet.</div>
+            ) : selectedMemberNotes.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No notes found for this member.</div>
+            ) : (
+              selectedMemberNotes.slice(0, 250).map((note) => (
+                <div key={`ils-note-${note.id}`} className="rounded-md border p-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline">{note.source || 'Note'}</Badge>
+                    <span>{formatDateTimeSafe(note.createdAt)}</span>
+                    {note.createdByName ? <span>By: {note.createdByName}</span> : null}
+                  </div>
+                  <div className="mt-2 text-sm whitespace-pre-wrap">{note.noteText || ''}</div>
+                </div>
+              ))
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -1234,7 +1409,7 @@ export default function ILSReportEditorPage() {
               Report Comments Preview
             </CardTitle>
             <CardDescription>
-              This section will appear in the printable report
+              This section will appear in the generated report
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1250,7 +1425,7 @@ export default function ILSReportEditorPage() {
           <DialogHeader>
             <DialogTitle>T2038 Auth Only Email</DialogTitle>
             <DialogDescription>
-              {queues.t2038AuthOnly.length} member(s). This section is separate and not included in Tier/R&B queue totals.
+              {queues.t2038AuthOnly.length} member(s). This is a separate report and is not included in Tier/R&B queue totals.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -1261,19 +1436,19 @@ export default function ILSReportEditorPage() {
                 onClick={() =>
                   generatePrintableReport({
                     includeT2038: true,
-                    title: 'T2038 Auth Only Email Queue',
-                    downloadName: `T2038_Auth_Only_Queue_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
+                    title: 'T2038 Auth Only Email Report',
+                    downloadName: `T2038_Auth_Only_Email_Report_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
                   })
                 }
                 disabled={queues.t2038AuthOnly.length === 0}
               >
                 <Printer className="mr-2 h-4 w-4" />
-                Print T2038
+                Generate T2038 Auth Only Email Report
               </Button>
             </div>
             <div className="max-h-[50vh] overflow-y-auto space-y-2">
               {queues.t2038AuthOnly.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No T2038 Auth Only members right now.</div>
+                <div className="text-sm text-muted-foreground">No T2038 Auth Only Email members right now.</div>
               ) : (
                 queues.t2038AuthOnly.slice(0, 300).map((r) => (
                   <div key={`t2038-modal-${r.id}`} className="rounded-md border p-2">

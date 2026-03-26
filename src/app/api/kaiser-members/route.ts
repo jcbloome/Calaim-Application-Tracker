@@ -94,6 +94,7 @@ export async function GET(request: NextRequest) {
             member.CalAIMStatus ??
             ''
         ),
+        ILS_Connected: member.ILS_Connected || '',
         Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
         Kaiser_ID_Status: member.Kaiser_ID_Status,
         SW_ID: member.SW_ID,
@@ -486,6 +487,7 @@ export async function GET(request: NextRequest) {
           member.CalAIMStatus ??
           ''
       ),
+      ILS_Connected: member.ILS_Connected || '',
       Kaiser_Status: member.Kaiser_Status || member.Kaiser_ID_Status || '',
       Kaiser_ID_Status: member.Kaiser_ID_Status,
       SW_ID: member.SW_ID,

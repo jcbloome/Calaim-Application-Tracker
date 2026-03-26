@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/firebase-admin';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
 
 const SETTINGS_DOC = adminDb.collection('system_settings').doc('ils_member_access');
 
@@ -22,6 +23,7 @@ async function getRequester(request: NextRequest): Promise<Requester | null> {
     const uid = String(decoded.uid || '').trim();
     const email = normalizeEmail((decoded as any).email);
     if (!uid || !email) return null;
+    if (isBlockedPortalEmail(email)) return null;
 
     let isSuperAdmin = Boolean((decoded as any).superAdmin) || isHardcodedAdminEmail(email);
     if (!isSuperAdmin) {
@@ -81,10 +83,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json().catch(() => ({}))) as any;
-    const allowedEmails = Array.isArray(body?.allowedEmails) ? body.allowedEmails.map(normalizeEmail).filter(Boolean) : [];
+    const allowedEmails = Array.isArray(body?.allowedEmails)
+      ? body.allowedEmails.map(normalizeEmail).filter((email: string) => Boolean(email) && !isBlockedPortalEmail(email))
+      : [];
     const weeklyEmailEnabled = Boolean(body?.weeklyEmailEnabled);
     const weeklyEmailRecipients = Array.isArray(body?.weeklyEmailRecipients)
-      ? body.weeklyEmailRecipients.map(normalizeEmail).filter(Boolean)
+      ? body.weeklyEmailRecipients
+          .map(normalizeEmail)
+          .filter((email: string) => Boolean(email) && !isBlockedPortalEmail(email))
       : [];
 
     await SETTINGS_DOC.set(
