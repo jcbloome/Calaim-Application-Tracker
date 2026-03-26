@@ -30,6 +30,24 @@ function toDollarAmount(value: string): string {
   });
 }
 
+function toDisplayDate(value: unknown): string {
+  try {
+    if (!value) return new Date().toLocaleDateString();
+    if (value instanceof Date) return value.toLocaleDateString();
+    if (typeof (value as any)?.toDate === 'function') {
+      return (value as any).toDate().toLocaleDateString();
+    }
+    if (typeof (value as any)?.seconds === 'number') {
+      return new Date((value as any).seconds * 1000).toLocaleDateString();
+    }
+    const parsed = new Date(String(value));
+    if (!Number.isNaN(parsed.getTime())) return parsed.toLocaleDateString();
+  } catch {
+    // Fall through to default.
+  }
+  return new Date().toLocaleDateString();
+}
+
 function Section({ title, icon: Icon, children }: { title: string, icon: React.ElementType, children: React.ReactNode }) {
   return (
     <div className="space-y-4 pt-6 border-t first:pt-0 first:border-t-0">
@@ -80,7 +98,13 @@ function WaiversFormComponent() {
     useEffect(() => {
         if (application) {
             const form = application.forms?.find(f => f.name === 'Waivers & Authorizations');
-            if (form?.status === 'Completed') {
+            const isRejectedForRedo = Boolean(
+              form &&
+              (String((form as any)?.revisionRequestedAt || '').trim() ||
+                (Array.isArray((form as any)?.revisionHistory) && (form as any).revisionHistory.length > 0))
+            );
+
+            if (form?.status === 'Completed' && !isRejectedForRedo) {
                 setSignerType(form.signerType || null);
                 setSignerName(form.signerName || '');
                 setSignerRelationship(form.signerRelationship || '');
@@ -112,25 +136,19 @@ function WaiversFormComponent() {
                         : [];
                     })();
                 setIncomeSource(normalizedIncomeSources);
-                setSignatureDate(form.dateCompleted ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString());
+                setSignatureDate(toDisplayDate((form as any).dateCompleted));
             } else {
+                 setSignerType(null);
+                 setSignerName('');
+                 setSignerRelationship('');
+                 setFocChoice('');
+                 setAckHipaa(false);
+                 setAckLiability(false);
+                 setAckFoc(false);
+                 setAckRoomAndBoard(false);
                  setSignatureDate(new Date().toLocaleDateString());
-                 setMonthlyIncome(toDollarAmount(String((application as any)?.monthlyIncome ?? '')));
-                 const rawIncomeSource = (application as any)?.incomeSource;
-                 const normalizedIncomeSources = Array.isArray(rawIncomeSource)
-                   ? rawIncomeSource
-                       .map((v: unknown) => String(v ?? '').trim().toUpperCase())
-                       .map((v: string) => (v === 'N/A' ? 'OTHER' : v))
-                       .filter((v: string): v is 'SSI' | 'SSA' | 'SSD' | 'OTHER' => v === 'SSI' || v === 'SSA' || v === 'SSD' || v === 'OTHER')
-                   : (() => {
-                       const single = String(rawIncomeSource ?? '').trim().toUpperCase() === 'N/A'
-                         ? 'OTHER'
-                         : String(rawIncomeSource ?? '').trim().toUpperCase();
-                       return single === 'SSI' || single === 'SSA' || single === 'SSD' || single === 'OTHER'
-                         ? [single as 'SSI' | 'SSA' | 'SSD' | 'OTHER']
-                         : [];
-                     })();
-                 setIncomeSource(normalizedIncomeSources);
+                 setMonthlyIncome('');
+                 setIncomeSource([]);
             }
         } else {
             setSignatureDate(new Date().toLocaleDateString());

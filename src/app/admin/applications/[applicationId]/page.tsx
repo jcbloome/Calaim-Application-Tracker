@@ -3651,6 +3651,7 @@ function ApplicationDetailPageContent() {
       const updatedForms = (application.forms || []).map((form: any) => {
         if (String(form?.name || '').trim() !== formName) return form;
         found = true;
+        const isWaiversForm = String(formName || '').trim() === 'Waivers & Authorizations';
         const existingHistory = Array.isArray((form as any)?.revisionHistory)
           ? ((form as any).revisionHistory as any[])
           : [];
@@ -3666,10 +3667,32 @@ function ApplicationDetailPageContent() {
         return {
           ...form,
           status: 'Pending',
+          dateCompleted: null,
+          // Reset generic completion/upload artifacts so users can resubmit cleanly.
+          fileName: null,
+          filePath: null,
+          downloadURL: null,
+          source: null,
+          standaloneUploadId: null,
           acknowledged: false,
           acknowledgedBy: null,
           acknowledgedByUid: null,
           acknowledgedDate: null,
+          ...(isWaiversForm
+            ? {
+                signerType: null,
+                signerName: '',
+                signerRelationship: '',
+                choice: null,
+                ackHipaa: false,
+                ackLiability: false,
+                ackFoc: false,
+                ackRoomAndBoard: false,
+                ackSocDetermination: false,
+                monthlyIncome: '',
+                incomeSource: [],
+              }
+            : {}),
           revisionRequestedReason: reason,
           revisionRequestedAt: rejectedAtIso,
           revisionRequestedBy: reviewerName,
@@ -3699,6 +3722,13 @@ function ApplicationDetailPageContent() {
         pendingDocReviewCount,
         pendingDocReviewUpdatedAt: serverTimestamp(),
       };
+
+      if (formName === 'Waivers & Authorizations') {
+        patch.ackRoomAndBoard = false;
+        patch.ackSocDetermination = false;
+        patch.monthlyIncome = '';
+        patch.incomeSource = [];
+      }
 
       if (isSummary) {
         patch.applicationChecked = false;

@@ -550,20 +550,11 @@ export default function ILSReportEditorPage() {
     setCardEditMemberId('');
   };
 
-  // Generate printable report (HTML/print-to-PDF)
-  const generatePrintableReport = (opts?: { includeT2038?: boolean; title?: string; downloadName?: string }) => {
+  // Open printable report via dedicated route.
+  const openPrintableReport = (opts?: { includeT2038?: boolean; title?: string; autoPrint?: boolean }) => {
     const includeT2038 = Boolean(opts?.includeT2038);
     const reportTitle = opts?.title || 'ILS Member Update';
-    const downloadName = opts?.downloadName || `ILS_Member_Update_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`;
-    const escapeHtml = (value: any) => {
-      const s = value != null ? String(value) : '';
-      return s
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    };
+    const autoPrint = opts?.autoPrint !== false;
 
     const makeRows = (key: QueueKey) => {
       const rows = members
@@ -607,242 +598,16 @@ export default function ILSReportEditorPage() {
       comments: reportComments,
       totalMembers: uniqueMemberIds.size,
       queues,
+      includeT2038,
+      reportTitle,
+      generatedAtIso: new Date().toISOString(),
     };
-
-    // Create a blob with HTML content
-    const htmlContent = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${escapeHtml(reportTitle)} - ${format(new Date(reportDate), 'MMM dd, yyyy')}</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            margin: 20px; 
-            line-height: 1.4;
-        }
-        .header { 
-            text-align: center; 
-            margin-bottom: 30px; 
-            border-bottom: 2px solid #007bff;
-            padding-bottom: 15px;
-        }
-        .report-date { 
-            color: #666; 
-            font-size: 14px; 
-            margin: 5px 0;
-        }
-        .summary {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin: 10px 0 0 0;
-        }
-        .pill {
-            border: 1px solid #ddd;
-            border-radius: 999px;
-            padding: 6px 10px;
-            font-size: 12px;
-            background: #fafafa;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            margin-top: 16px;
-        }
-        .card {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 10px;
-        }
-        .card h2 {
-            margin: 0 0 6px 0;
-            font-size: 14px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 11px;
-        }
-        th, td { 
-            border: 1px solid #ddd; 
-            padding: 6px; 
-            text-align: left; 
-            vertical-align: top;
-        }
-        th { 
-            background-color: #f5f5f5; 
-            font-weight: bold; 
-            font-size: 11px;
-        }
-        .footer { 
-            margin-top: 30px; 
-            font-size: 12px; 
-            color: #666; 
-            border-top: 1px solid #ddd;
-            padding-top: 15px;
-        }
-        .comments-section { 
-            margin: 20px 0; 
-            padding: 15px; 
-            background-color: #f9f9f9; 
-            border-left: 4px solid #007bff; 
-            border-radius: 4px;
-        }
-        .comments-section h2 { 
-            margin: 0 0 10px 0; 
-            font-size: 16px; 
-            color: #333; 
-        }
-        .comments-content { 
-            font-size: 14px; 
-            line-height: 1.5; 
-            color: #555; 
-            white-space: pre-wrap; 
-        }
-        .print-button {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            margin: 20px 0;
-        }
-        .print-button:hover {
-            background-color: #0056b3;
-        }
-        @media print { 
-            body { margin: 0.35in; }
-            .no-print { display: none !important; }
-            .comments-section { background-color: #f5f5f5; }
-            .print-button { display: none !important; }
-            .grid { gap: 10px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>${escapeHtml(reportTitle)}</h1>
-        <div class="report-date">Report Date: ${format(new Date(reportDate), 'MMMM dd, yyyy')}</div>
-        <div class="report-date">Kaiser bottleneck members</div>
-    </div>
-    
-    <div class="no-print">
-        <button class="print-button" onclick="window.print()">🖨️ Print Report</button>
-    </div>
-    
-    ${reportData.comments ? `
-    <div class="comments-section">
-        <h2>Report Comments & Notes</h2>
-        <div class="comments-content">${reportData.comments.replace(/\n/g, '<br>')}</div>
-    </div>
-    ` : ''}
-
-    <div class="summary">
-      <div class="pill"><strong>Total members in queues:</strong> ${reportData.totalMembers}</div>
-      ${includeT2038
-        ? `<div class="pill"><strong>T2038 Auth Only Email:</strong> ${reportData.queues.t2038AuthOnly.length}</div>`
-        : `
-      <div class="pill"><strong>T2038 Requested:</strong> ${reportData.queues.t2038Requested.length}</div>
-      <div class="pill"><strong>Tier Level Requested:</strong> ${reportData.queues.tierRequested.length}</div>
-      <div class="pill"><strong>R &amp; B Pending ILS Contract:</strong> ${reportData.queues.rbPendingIlsContract.length}</div>
-      `}
-    </div>
-
-    <div class="grid">
-      ${(includeT2038
-        ? [{ key: 't2038AuthOnly', label: 'T2038 Auth Only Email' }]
-        : [
-            { key: 't2038Requested', label: 'T2038 Requested' },
-            { key: 'tierRequested', label: 'Tier Level Requested' },
-            { key: 'rbPendingIlsContract', label: 'R & B Sent Pending ILS Contract' },
-          ]
-      ).map((q) => {
-        const rows = (reportData.queues as any)[q.key] as Array<{
-          memberName: string;
-          memberMrn: string;
-          birthDate?: string;
-          ilsConnected?: boolean;
-          rcfeName?: string;
-          rcfeAdminName?: string;
-          rcfeAdminEmail?: string;
-          requestedDate: string;
-        }>;
-        return `
-          <div class="card">
-            <h2>${q.label} (${rows.length})</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Member</th>
-                  <th>MRN / Birth Date</th>
-                  <th>ILS Connected</th>
-                  <th>Request Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows.length === 0 ? `<tr><td colspan="4" style="color:#777;">None</td></tr>` : rows.map((r) => `
-                  <tr>
-                    <td>
-                      <strong>${escapeHtml(r.memberName || '—')}</strong>
-                      ${q.key === 'rbPendingIlsContract' ? `<br><span style="color:#666;">RCFE: ${escapeHtml(r.rcfeName || '—')}</span><br><span style="color:#666;">RCFE Admin Name: ${escapeHtml(r.rcfeAdminName || '—')}</span><br><span style="color:#666;">RCFE Admin Email: ${escapeHtml(r.rcfeAdminEmail || '—')}</span>` : ''}
-                    </td>
-                    <td>${escapeHtml(r.memberMrn || '—')}<br><span style="color:#666;">Birth Date: ${escapeHtml(r.birthDate ? format(new Date(`${r.birthDate}T00:00:00`), 'MM/dd/yyyy') : '—')}</span></td>
-                    <td>${r.ilsConnected ? '<span style="color:#15803d;font-weight:700;">✓</span>' : '<span style="color:#dc2626;font-weight:700;">●</span>'}</td>
-                    <td>${escapeHtml(r.requestedDate ? format(new Date(`${r.requestedDate}T00:00:00`), 'MM/dd/yyyy') : '—')}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
-      }).join('')}
-    </div>
-    
-    <div class="footer">
-        <p><strong>Generated on:</strong> ${format(new Date(), 'MMMM dd, yyyy HH:mm')} | CalAIM Tracker System</p>
-        <p><strong>Total members in queues:</strong> ${reportData.totalMembers}</p>
-        <p><strong>Report Period:</strong> ${format(new Date(reportDate), 'MMMM dd, yyyy')}</p>
-    </div>
-</body>
-</html>`;
-
-    // Create blob and URL
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    
-    // Open in new window with specific window features
-    const printWindow = window.open(url, 'ILS_Report', 'width=1200,height=800,scrollbars=yes,resizable=yes');
-    
-    if (printWindow) {
-      // Clean up the blob URL after a delay
-      setTimeout(() => {
-        URL.revokeObjectURL(url);
-      }, 1000);
-      
-      // Focus the new window
-      printWindow.focus();
-    } else {
-      // Fallback: download as HTML file
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = downloadName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      toast({
-        title: 'Report Downloaded',
-        description: 'Report saved as HTML file. Open it in your browser and use Ctrl+P to print as PDF.',
-        className: 'bg-blue-100 text-blue-900 border-blue-200',
-      });
+    const reportKey = `ils-report-payload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    localStorage.setItem(reportKey, JSON.stringify(reportData));
+    const printableUrl = `/admin/ils-report-editor/printable?reportKey=${encodeURIComponent(reportKey)}${autoPrint ? '&autoprint=1' : ''}`;
+    const printableWindow = window.open(printableUrl, '_blank', 'noopener,noreferrer');
+    if (!printableWindow) {
+      window.location.href = printableUrl;
     }
   };
 
@@ -1031,25 +796,40 @@ export default function ILSReportEditorPage() {
                 
                 <Button
                   onClick={() =>
-                    generatePrintableReport({
+                    openPrintableReport({
                       includeT2038: false,
                       title: 'ILS Member Update Report - Requested Queues',
-                      downloadName: `ILS_Requested_Queues_Report_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
+                      autoPrint: false,
+                    })
+                  }
+                  disabled={members.length === 0}
+                  variant="outline"
+                  className="w-full sm:w-auto justify-start"
+                >
+                  View PDF layout
+                </Button>
+
+                <Button
+                  onClick={() =>
+                    openPrintableReport({
+                      includeT2038: false,
+                      title: 'ILS Member Update Report - Requested Queues',
+                      autoPrint: true,
                     })
                   }
                   disabled={members.length === 0}
                   className="w-full sm:w-auto justify-start bg-blue-600 hover:bg-blue-700"
                 >
                   <Printer className="mr-2 h-4 w-4" />
-                  Generate Report
+                  Print / Save PDF
                 </Button>
 
                 <Button
                   onClick={() =>
-                    generatePrintableReport({
+                    openPrintableReport({
                       includeT2038: true,
                       title: 'T2038 Auth Only Email Report',
-                      downloadName: `T2038_Auth_Only_Email_Report_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
+                      autoPrint: true,
                     })
                   }
                   disabled={members.length === 0}
@@ -1434,10 +1214,10 @@ export default function ILSReportEditorPage() {
                 type="button"
                 variant="outline"
                 onClick={() =>
-                  generatePrintableReport({
+                  openPrintableReport({
                     includeT2038: true,
                     title: 'T2038 Auth Only Email Report',
-                    downloadName: `T2038_Auth_Only_Email_Report_${format(new Date(reportDate), 'yyyy-MM-dd')}.html`,
+                    autoPrint: true,
                   })
                 }
                 disabled={queues.t2038AuthOnly.length === 0}
