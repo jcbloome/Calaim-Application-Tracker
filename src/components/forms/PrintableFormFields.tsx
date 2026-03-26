@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 
 interface PrintableFieldProps {
   label: string;
+  value?: string | number | boolean | null;
   placeholder?: string;
   required?: boolean;
   type?: 'text' | 'textarea' | 'checkbox' | 'radio' | 'date' | 'select';
@@ -16,6 +17,7 @@ interface PrintableFieldProps {
 
 export function PrintableField({
   label,
+  value,
   placeholder = '',
   required = false,
   type = 'text',
@@ -31,6 +33,15 @@ export function PrintableField({
     quarter: 'w-full'
   };
 
+  const displayValue = value === null || value === undefined ? '' : String(value).trim();
+  const normalizedValue = displayValue.toLowerCase();
+  const optionIsSelected = (option: string, index: number) => {
+    const normalizedOption = option.toLowerCase();
+    if (normalizedValue === normalizedOption) return true;
+    if (normalizedValue === 'true' && index === 0) return true;
+    return false;
+  };
+
   const renderField = () => {
     switch (type) {
       case 'textarea':
@@ -39,7 +50,9 @@ export function PrintableField({
           <div
             className="w-full border border-gray-400 print:border-black bg-white p-2"
             style={{ minHeight: textareaHeight }}
-          />
+          >
+            <span className="text-sm print:text-black whitespace-pre-wrap">{displayValue || placeholder}</span>
+          </div>
         );
 
       case 'checkbox':
@@ -47,7 +60,9 @@ export function PrintableField({
           <div className="space-y-2">
             {options.map((option, index) => (
               <div key={index} className="flex items-center gap-2 text-sm">
-                <div className="w-4 h-4 border border-gray-400 print:border-black rounded-sm"></div>
+                <div className="w-4 h-4 border border-gray-400 print:border-black rounded-sm flex items-center justify-center">
+                  {optionIsSelected(option, index) ? <span className="text-xs leading-none">X</span> : null}
+                </div>
                 <span className="print:text-black">{option}</span>
               </div>
             ))}
@@ -59,7 +74,9 @@ export function PrintableField({
           <div className="space-y-2">
             {options.map((option, index) => (
               <div key={index} className="flex items-center gap-2 text-sm">
-                <div className="w-4 h-4 border border-gray-400 print:border-black rounded-full"></div>
+                <div className="w-4 h-4 border border-gray-400 print:border-black rounded-full flex items-center justify-center">
+                  {optionIsSelected(option, index) ? <span className="w-2 h-2 rounded-full bg-black block" /> : null}
+                </div>
                 <span className="print:text-black">{option}</span>
               </div>
             ))}
@@ -68,17 +85,23 @@ export function PrintableField({
 
       case 'select':
         return (
-          <div className="w-[92%] max-w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center" />
+          <div className="w-[92%] max-w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center text-sm print:text-black">
+            {displayValue || placeholder}
+          </div>
         );
 
       case 'date':
         return (
-          <div className="w-[92%] max-w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center" />
+          <div className="w-[92%] max-w-full border border-gray-400 print:border-black bg-white p-2 h-10 flex items-center text-sm print:text-black">
+            {displayValue || placeholder}
+          </div>
         );
 
       default:
         return (
-          <div className="w-[92%] max-w-full border-b-2 border-gray-400 print:border-black h-10 flex items-end pb-2" />
+          <div className="w-[92%] max-w-full border-b-2 border-gray-400 print:border-black h-10 flex items-end pb-2 text-sm print:text-black">
+            {displayValue || placeholder}
+          </div>
         );
     }
   };

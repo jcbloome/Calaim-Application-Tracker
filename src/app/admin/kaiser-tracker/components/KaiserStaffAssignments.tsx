@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { CheckCircle, Users } from 'lucide-react';
 import type { KaiserMember } from './shared';
 import { getEffectiveKaiserStatus } from './shared';
@@ -24,6 +25,9 @@ export interface KaiserStaffAssignmentsProps {
   allStaff: string[];
   staffAssignments: Record<string, StaffAssignmentData>;
   openStaffMemberModal: (staffName: string, members: KaiserMember[]) => void;
+  onSyncStaffNotes: (staffName: string, members: KaiserMember[]) => void;
+  activeSyncStaffName?: string | null;
+  notesSyncing?: boolean;
   openMemberModal: (
     memberList: KaiserMember[],
     title: string,
@@ -37,6 +41,9 @@ export function KaiserStaffAssignments({
   allStaff,
   staffAssignments,
   openStaffMemberModal,
+  onSyncStaffNotes,
+  activeSyncStaffName,
+  notesSyncing,
   openMemberModal,
 }: KaiserStaffAssignmentsProps) {
   return (
@@ -131,10 +138,21 @@ export function KaiserStaffAssignments({
               }`}
             >
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <CheckCircle className={`h-4 w-4 ${isUnassigned ? 'text-gray-500' : isCaseClosed ? 'text-slate-600' : 'text-orange-600'}`} />
-                  {staffName} - Status
-                </CardTitle>
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <CheckCircle className={`h-4 w-4 ${isUnassigned ? 'text-gray-500' : isCaseClosed ? 'text-slate-600' : 'text-orange-600'}`} />
+                    {staffName} - Status
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={assignment.count === 0 || Boolean(notesSyncing)}
+                    onClick={() => onSyncStaffNotes(staffName, assignment.members)}
+                    className="h-7 px-2 text-xs"
+                  >
+                    {notesSyncing && activeSyncStaffName === staffName ? 'Syncing…' : 'Sync Notes'}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="pt-0">
                 {assignment.count === 0 ? (

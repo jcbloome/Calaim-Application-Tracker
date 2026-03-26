@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
 
-const locationOptions = ['Home', 'Hospital', 'Skilled Nursing', 'Unhoused', 'Sub-Acute', 'Assisted Living', 'Other'];
+const locationOptions = ['Home', 'Hospital', 'Skilled Nursing', 'Unhoused', 'Sub-Acute', 'Assisted Living', 'Other', 'Unknown'];
 
 export default function Step5() {
   const { control, watch, getValues, setValue } = useFormContext<FormValues>();

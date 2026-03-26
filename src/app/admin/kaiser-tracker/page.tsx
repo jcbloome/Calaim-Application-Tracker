@@ -266,6 +266,7 @@ function KaiserTrackerPageContent() {
     newNotes: number;
     lastSyncAt: string;
     currentMember: string;
+    scopeLabel: string;
     stopped: boolean;
     recentErrors: string[];
   } | null>(null);
@@ -782,39 +783,27 @@ function KaiserTrackerPageContent() {
     if (isLoading || statusListSyncing || notesGlobalSyncing) return;
     stopAllSyncRef.current = false;
     try {
-      const [, latestMembers] = await Promise.all([
+      await Promise.all([
         syncKaiserStatusOptions({ quiet: true }),
         fetchCaspioData({ quiet: true }),
       ]);
-      if (stopAllSyncRef.current) {
-        toast({
-          title: 'Sync stopped',
-          description: 'Stopped before global notes update.',
-        });
-        return;
-      }
-      await syncGlobalLatestNotes(latestMembers, { quiet: true });
-      if (stopAllSyncRef.current) {
-        toast({
-          title: 'Sync stopped',
-          description: 'Global notes update was stopped by user.',
-        });
-        return;
-      }
       toast({
         title: 'Synced',
-        description: 'Updated members cache + Kaiser status list + global latest notes.',
+        description: 'Updated members cache + Kaiser status list.',
       });
     } catch (e: any) {
       toast({
         title: 'Sync failed',
-        description: e?.message || 'Could not sync members, statuses, and notes.',
+        description: e?.message || 'Could not sync members and statuses.',
         variant: 'destructive',
       });
     }
   };
 
-  const syncGlobalLatestNotes = async (scopeOverride?: KaiserMember[], opts?: { quiet?: boolean }) => {
+  const syncGlobalLatestNotes = async (
+    scopeOverride?: KaiserMember[],
+    opts?: { quiet?: boolean; scopeLabel?: string }
+  ) => {
     if (notesGlobalSyncing) return;
 
     const base = Array.isArray(scopeOverride) && scopeOverride.length > 0 ? scopeOverride : members;
@@ -839,6 +828,7 @@ function KaiserTrackerPageContent() {
       newNotes: 0,
       lastSyncAt: '',
       currentMember: '',
+      scopeLabel: String(opts?.scopeLabel || '').trim() || 'All scoped members',
       stopped: false,
       recentErrors: [],
     });
@@ -941,7 +931,7 @@ function KaiserTrackerPageContent() {
       );
       if (!opts?.quiet) {
         toast({
-          title: stopAllSyncRef.current ? 'Global notes sync stopped' : 'Global notes sync complete',
+          title: stopAllSyncRef.current ? 'Notes sync stopped' : 'Notes sync complete',
           description: `Processed ${aggSuccess + aggFailed} of ${scope.length} members (${aggSuccess} success, ${aggFailed} failed). Historical loaded: ${aggExisting} • New added: ${aggNew}.`,
         });
       }
@@ -956,6 +946,41 @@ function KaiserTrackerPageContent() {
     } finally {
       notesFetchControllerRef.current = null;
       setNotesGlobalSyncing(false);
+    }
+  };
+
+  const syncStaffAssignedNotes = async (staffName: string, staffMembers: KaiserMember[]) => {
+    if (notesGlobalSyncing) return;
+    stopAllSyncRef.current = false;
+    const scope = Array.isArray(staffMembers)
+      ? staffMembers.filter((member) => isAuthorizedOrPendingCalaim(member?.CalAIM_Status))
+      : [];
+    if (scope.length === 0) {
+      toast({
+        title: 'No members in scope',
+        description: `No Authorized/Pending Kaiser members currently assigned to ${staffName}.`,
+      });
+      return;
+    }
+    try {
+      await syncGlobalLatestNotes(scope, { quiet: true, scopeLabel: `Staff: ${staffName}` });
+      if (stopAllSyncRef.current) {
+        toast({
+          title: 'Notes sync stopped',
+          description: `Stopped sync for ${staffName}.`,
+        });
+        return;
+      }
+      toast({
+        title: 'Staff notes synced',
+        description: `${staffName}: processed ${scope.length} assigned member${scope.length === 1 ? '' : 's'} (historical + incremental notes).`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Staff notes sync failed',
+        description: error?.message || `Could not sync notes for ${staffName}.`,
+        variant: 'destructive',
+      });
     }
   };
 
@@ -1150,7 +1175,7 @@ function KaiserTrackerPageContent() {
             Overview of {members.length} Kaiser members | Members cache sync (ET): {formatEtDateTime(membersCacheLastSyncAt)}
           </p>
           <p className="text-muted-foreground text-xs mt-1">
-            Sync (All) updates member data from Caspio and runs global incremental notes update into the shared Firestore notes store.
+            Sync (All) updates member data from Caspio. Use each staff card&apos;s "Sync Notes" button to pull historical + incremental notes only for members assigned to that staff.
           </p>
           <p className="text-muted-foreground text-xs mt-1">
             {statusListLoading ? 'Loading Kaiser status list…' : (kaiserStatusListUpdatedAtLabel || ' ')}
@@ -1170,7 +1195,7 @@ function KaiserTrackerPageContent() {
             <RefreshCw className={`h-4 w-4 ${isLoading || statusListSyncing || notesGlobalSyncing ? 'animate-spin' : ''}`} />
             {isLoading || statusListSyncing || notesGlobalSyncing ? 'Syncing…' : 'Sync (All)'}
           </Button>
-          {(isLoading || statusListSyncing || notesGlobalSyncing) ? (
+          {notesGlobalSyncing ? (
             <Button
               onClick={stopSyncAll}
               variant="destructive"
@@ -1186,7 +1211,7 @@ function KaiserTrackerPageContent() {
         <Card>
           <CardContent className="py-4 space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">Global notes sync progress</span>
+              <span className="font-medium">Staff notes sync progress ({notesGlobalProgress.scopeLabel})</span>
               <span>
                 {notesGlobalProgress.complete}/{notesGlobalProgress.total}
               </span>
@@ -1249,6 +1274,9 @@ function KaiserTrackerPageContent() {
         allStaff={allStaff}
         staffAssignments={staffAssignments as any}
         openStaffMemberModal={openStaffMemberModal}
+        onSyncStaffNotes={(staffName, staffMembers) => void syncStaffAssignedNotes(staffName, staffMembers)}
+        activeSyncStaffName={notesGlobalProgress?.scopeLabel?.replace(/^Staff:\s*/, '') || null}
+        notesSyncing={notesGlobalSyncing}
         openMemberModal={openMemberModal}
       />
 

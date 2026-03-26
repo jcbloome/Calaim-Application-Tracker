@@ -7,14 +7,10 @@ import { useSearchParams } from 'next/navigation';
 
 function PrintableCsSummaryContent() {
   const searchParams = useSearchParams();
-  const memberName = searchParams.get('memberName') || '';
-  const memberMrn = searchParams.get('memberMrn') || '';
   const applicationId = searchParams.get('applicationId') || '';
 
   return (
     <PrintableCsSummaryForm
-      memberName={memberName}
-      memberMrn={memberMrn}
       applicationId={applicationId}
       showPrintButton={true}
     />

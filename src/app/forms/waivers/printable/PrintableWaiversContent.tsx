@@ -99,28 +99,24 @@ export function PrintableWaiversContent() {
                     <CheckboxField label="I choose to decline Community Supports services for community transition." />
                 </div>
 
-                {/* Room and Board Commitment Section */}
+                {/* Room and Board + SOC Section */}
                 <div>
-                    <SectionTitle>Room and Board Commitment Waiver</SectionTitle>
+                    <SectionTitle>Room and Board Commitment & Medi-Cal SOC Determination</SectionTitle>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
                         <p>I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the Managed Care Plan pays the assisted living service portion.</p>
-                        <p>I understand room and board amounts may vary by facility, geography, and private-room requests, and additional agreements may be required by the selected facility.</p>
+                        <p>I understand Room and Board payment depends on the member&apos;s monthly income.</p>
                         <p>I acknowledge that inability to pay any room and board portion may impact eligibility for this community support program.</p>
                     </div>
-                    <CheckboxField label="I have read and understood the Room and Board Commitment waiver section." />
-                </div>
-
-                {/* Medi-Cal Share of Cost Determination Section */}
-                <div>
-                    <SectionTitle>Medi-Cal Share of Cost Determination</SectionTitle>
                     <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
-                        <p>Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed.</p>
+                        <p>CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed. Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). Generally, a monthly income of more than $1,801 (single)/$2,433 (couple) will have a Medi-Cal SOC.</p>
                         <p>Proof of income might need to be furnished as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).</p>
-                        <p>Program Information (SOC reduction details): https://connectcalaim.com/info/eligibility</p>
                         <p>Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.</p>
                     </div>
-                    <Field label="Member Monthly Income * (Required)" description="Examples: SSI/SSP amount, pension, or other monthly income sources." />
-                    <CheckboxField label="I have read and understood the Medi-Cal Share of Cost Determination section." />
+                    <Field label="What is the member's monthly income?" description="Examples: SSI/SSP amount, pension, or other monthly income sources." />
+                    <CheckboxField label="I have read and understood the Room and Board Commitment and Medi-Cal SOC Determination sections." />
+                    <p className="text-sm text-gray-700">
+                        For more information about the room and board payment, SOC, or NMOHC, see our program information page: https://connectcalaim.com/info/eligibility
+                    </p>
                 </div>
               
               <div>

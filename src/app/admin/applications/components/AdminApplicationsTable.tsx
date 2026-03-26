@@ -749,34 +749,54 @@ export const AdminApplicationsTable = ({
                     {/* Notification Status Icons */}
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger>
-                          <Bell 
-                            className={`h-4 w-4 ${
-                              (app as any)?.statusRemindersEnabled === true 
-                                ? 'text-green-600' 
-                                : 'text-gray-300'
-                            }`}
-                          />
+                        <TooltipTrigger asChild>
+                          <Link
+                            href={`/admin/applications/${app.id}?userId=${app.userId}&quickAction=reminders&reminderTab=status`}
+                            aria-label="Open status reminders"
+                            className="inline-flex items-center"
+                          >
+                            <Bell
+                              className={`h-4 w-4 cursor-pointer hover:opacity-80 ${
+                                (app as any)?.statusRemindersEnabled === true
+                                  ? 'text-green-600'
+                                  : 'text-gray-400'
+                              }`}
+                            />
+                          </Link>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>{(app as any)?.statusRemindersEnabled === true ? 'Status reminders enabled' : 'Status reminders disabled'}</p>
+                          <p>
+                            {(app as any)?.statusRemindersEnabled === true
+                              ? 'Status reminders enabled - click to manage'
+                              : 'Status reminders disabled - click to manage'}
+                          </p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                     
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger>
-                          <Mail 
-                            className={`h-4 w-4 ${
-                              (app as any)?.emailRemindersEnabled === true
-                                ? 'text-green-600' 
-                                : 'text-gray-300'
-                            }`}
-                          />
+                        <TooltipTrigger asChild>
+                          <Link
+                            href={`/admin/applications/${app.id}?userId=${app.userId}&quickAction=reminders&reminderTab=email`}
+                            aria-label="Open missing documents reminders"
+                            className="inline-flex items-center"
+                          >
+                            <Mail
+                              className={`h-4 w-4 cursor-pointer hover:opacity-80 ${
+                                (app as any)?.emailRemindersEnabled === true
+                                  ? 'text-green-600'
+                                  : 'text-gray-400'
+                              }`}
+                            />
+                          </Link>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>{(app as any)?.emailRemindersEnabled === true ? 'Email reminders enabled' : 'Email reminders disabled'}</p>
+                          <p>
+                            {(app as any)?.emailRemindersEnabled === true
+                              ? 'Email reminders enabled - click to manage'
+                              : 'Email reminders disabled - click to manage'}
+                          </p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>

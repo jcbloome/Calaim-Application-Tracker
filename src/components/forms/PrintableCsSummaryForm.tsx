@@ -144,10 +144,22 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           value={data.agency}
           width="full"
         />
+        <PrintableField
+          label="Referrer Email"
+          value={data.referrerEmail}
+          width="full"
+        />
       </PrintableFormSection>
 
       {/* Primary Contact Information */}
       <PrintableFormSection title="Section 3: Primary Contact Person">
+        <PrintableField
+          label="Primary Contact Same as Referrer"
+          value={data.isPrimaryContactSameAsReferrer ? 'Yes' : 'No'}
+          type="radio"
+          options={['Yes', 'No']}
+          width="full"
+        />
         <PrintableField
           label="Contact First Name"
           value={data.bestContactFirstName}
@@ -276,11 +288,14 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           value={data.currentLocation}
           type="select"
           options={[
+            'Home',
             'Hospital',
-            'Skilled Nursing Facility (SNF)',
-            'Home/Community',
+            'Skilled Nursing',
+            'Unhoused',
+            'Sub-Acute',
             'Assisted Living',
-            'Other'
+            'Other',
+            'Unknown'
           ]}
           required
           width="full"
@@ -347,9 +362,12 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           options={[
             'Home',
             'Hospital',
-            'Skilled Nursing Facility (SNF)',
+            'Skilled Nursing',
+            'Unhoused',
+            'Sub-Acute',
             'Assisted Living',
-            'Other'
+            'Other',
+            'Unknown'
           ]}
           required
           width="full"
@@ -493,9 +511,8 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         </div>
       </PrintableFormSection>
 
-      <div className="flex flex-col">
       {/* ISP & Facility Information */}
-      <PrintableFormSection title="Section 11: Individual Service Plan (ISP)" className="order-4">
+      <PrintableFormSection title="Section 11: Individual Service Plan (ISP)">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
           <p>
             An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's
@@ -550,9 +567,12 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           options={[
             'Home',
             'Hospital',
-            'Skilled Nursing Facility (SNF)',
+            'Skilled Nursing',
+            'Unhoused',
+            'Sub-Acute',
             'Assisted Living',
-            'Other'
+            'Other',
+            'Unknown'
           ]}
           required
           width="half"
@@ -593,7 +613,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       </PrintableFormSection>
 
       {/* CalAIM vs. ALW */}
-      <PrintableFormSection title="Section 12: CalAIM vs. Assisted Living Waiver (ALW)" className="order-5">
+      <PrintableFormSection title="Section 12: CalAIM vs. Assisted Living Waiver (ALW)">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
           CalAIM and ALW are duplicative services, a member enrolled in one will not be funded by the other.
         </div>
@@ -607,7 +627,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       </PrintableFormSection>
 
       {/* Room & Board */}
-      <PrintableFormSection title="Section 10: Room & Board Payments" className="order-3 print:break-before-page">
+      <PrintableFormSection title="Section 10: Room & Board Payments" className="print:break-before-page">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
           <p>
             The MCP member is responsible for paying the RCFE the "room and board" portion and the MCP is responsible
@@ -638,7 +658,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       </PrintableFormSection>
 
       {/* NMOHC */}
-      <PrintableFormSection title="Section 8: Non-Medical Out-of-Home Care (NMOHC)" className="order-1 print:break-before-page">
+      <PrintableFormSection title="Section 8: Non-Medical Out-of-Home Care (NMOHC)" className="print:break-before-page">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black space-y-2">
           <p>
             Non-Medical Out-of-Home Care (NMOHC) is a payment supplement that boosts a person’s monthly SSI check
@@ -670,7 +690,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       </PrintableFormSection>
 
       {/* SOC */}
-      <PrintableFormSection title="Section 9: Share of Cost (SOC)" className="order-2 print:break-before-page">
+      <PrintableFormSection title="Section 9: Share of Cost (SOC)" className="print:break-before-page">
         <div className="col-span-full p-3 border border-gray-300 text-sm text-gray-700 print:text-black print:border-black">
           <p>
             Share of Cost (SOC) is like a monthly Medi-Cal deductible: the amount a member may need to pay each month
@@ -698,10 +718,10 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       </PrintableFormSection>
 
       {/* Preferred RCFE */}
-      <PrintableFormSection title="Section 13: Preferred Residential Care Facility (RCFE)" className="order-6">
+      <PrintableFormSection title="Section 13: Preferred Residential Care Facility (RCFE)">
         <PrintableField
           label="Has Preferred RCFE"
-          value={data.hasPrefRCFE ? 'Yes' : 'No'}
+          value={data.hasPrefRCFE === 'Yes' ? 'Yes' : data.hasPrefRCFE === 'No' ? 'No' : ''}
           type="radio"
           options={['Yes', 'No']}
           width="full"
@@ -748,7 +768,6 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           width="half"
         />
       </PrintableFormSection>
-      </div>
 
     </PrintableFormLayout>
   );

@@ -1031,11 +1031,11 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
     // Transform new regular notes
     const newTransformedRegularNotes: MemberNote[] = newCaspioNotes.map(caspioNote => ({
       id: `caspio_${caspioNote.PK_ID}`,
-      clientId2: caspioNote.Client_ID2.toString(),
+      clientId2: String(caspioNote.Client_ID2 ?? '').trim(),
       memberName: caspioNote.Senior_Full_Name || 'Unknown Member',
       noteText: caspioNote.Comments || '',
       noteType: 'General',
-      createdBy: caspioNote.User_ID.toString(),
+      createdBy: String(caspioNote.User_ID ?? 'unknown').trim(),
       createdByName: caspioNote.User_Full_Name || `User ${caspioNote.User_ID}`,
       assignedTo: caspioNote.Follow_Up_Assignment || undefined,
       assignedToName: caspioNote.Assigned_First || undefined,
@@ -1054,11 +1054,11 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
     // Transform new ILS notes
     const newTransformedILSNotes: MemberNote[] = newILSNotes.map(ilsNote => ({
       id: `ils_${ilsNote.table_ID}`,
-      clientId2: ilsNote.Client_ID2.toString(),
+      clientId2: String(ilsNote.Client_ID2 ?? '').trim(),
       memberName: ilsNote.Senior_First_Last || `${ilsNote.Senior_First} ${ilsNote.Senior_Last}` || 'Unknown Member',
       noteText: ilsNote.Note || '',
       noteType: 'Administrative',
-      createdBy: ilsNote.User_ID.toString(),
+      createdBy: String(ilsNote.User_ID ?? 'unknown').trim(),
       createdByName: ilsNote.User_First_Last || `${ilsNote.User_First} ${ilsNote.User_Last}` || `User ${ilsNote.User_ID}`,
       assignedTo: undefined,
       assignedToName: undefined,

@@ -1256,11 +1256,12 @@ function AdminHeader() {
     return (
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {items.map((item) => (
-          <Link
+          <button
             key={item.key}
-            href={item.href}
+            type="button"
+            onClick={() => router.push(item.href)}
             className={cn(
-              "inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent",
+              "inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent cursor-pointer",
               item.count > 0 ? "" : "opacity-60"
             )}
             title={`${item.title}${item.count > 0 ? ' — click to open' : ' — currently zero'}`}
@@ -1277,7 +1278,7 @@ function AdminHeader() {
                 <span className="text-muted-foreground">{item.count}</span>
               </>
             )}
-          </Link>
+          </button>
         ))}
       </div>
     );
@@ -1337,11 +1338,12 @@ function AdminHeader() {
     return (
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {items.map((item) => (
-          <Link
+          <button
             key={item.key}
-            href={item.href}
+            type="button"
+            onClick={() => router.push(item.href)}
             className={cn(
-              "inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent",
+              "inline-flex items-center gap-2 rounded-full border border-border px-2.5 py-1 hover:bg-accent cursor-pointer",
               item.dim ? "opacity-60" : ""
             )}
             title={item.title || "Open related action items"}
@@ -1349,7 +1351,7 @@ function AdminHeader() {
             <span className={`h-2 w-2 rounded-full ${item.dot}`} />
             {item.key === 'notes' && item.isNew ? <BellRing className="h-3 w-3 text-blue-600" /> : null}
             <span className="font-semibold text-foreground">{item.label}</span>
-          </Link>
+          </button>
         ))}
       </div>
     );

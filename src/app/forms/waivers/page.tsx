@@ -64,7 +64,6 @@ function WaiversFormComponent() {
     const [ackLiability, setAckLiability] = useState(false);
     const [ackFoc, setAckFoc] = useState(false);
     const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
-    const [ackSocDetermination, setAckSocDetermination] = useState(false);
     const [focChoice, setFocChoice] = useState<'accept' | 'decline' | undefined>(undefined);
 
 
@@ -89,8 +88,14 @@ function WaiversFormComponent() {
                 setAckHipaa(form.ackHipaa || false);
                 setAckLiability(form.ackLiability || false);
                 setAckFoc(form.ackFoc || false);
-                setAckRoomAndBoard(Boolean((form as any).ackRoomAndBoard ?? (application as any)?.ackRoomAndBoard));
-                setAckSocDetermination(Boolean((form as any).ackSocDetermination ?? (application as any)?.ackSocDetermination));
+                setAckRoomAndBoard(
+                  Boolean(
+                    (form as any).ackRoomAndBoard ??
+                    (application as any)?.ackRoomAndBoard ??
+                    (form as any).ackSocDetermination ??
+                    (application as any)?.ackSocDetermination
+                  )
+                );
                 setMonthlyIncome(toDollarAmount(String((form as any)?.monthlyIncome ?? (application as any)?.monthlyIncome ?? '')));
                 setSignatureDate(form.dateCompleted ? new Date(form.dateCompleted.seconds * 1000).toLocaleDateString() : new Date().toLocaleDateString());
             } else {
@@ -104,7 +109,7 @@ function WaiversFormComponent() {
     }, [application]);
 
     const isFormComplete = () => {
-        if (!signerType || !signerName.trim() || !signerRelationship.trim() || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard || !ackSocDetermination) return false;
+        if (!signerType || !signerName.trim() || !signerRelationship.trim() || !focChoice || !ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard) return false;
         if (!monthlyIncome.trim()) return false;
         if (!toDollarAmount(monthlyIncome)) return false;
         return true;
@@ -151,7 +156,7 @@ function WaiversFormComponent() {
             ackLiability: ackLiability,
             ackFoc: ackFoc,
             ackRoomAndBoard: ackRoomAndBoard,
-            ackSocDetermination: ackSocDetermination,
+            ackSocDetermination: ackRoomAndBoard,
             monthlyIncome: formattedMonthlyIncome,
             dateCompleted: Timestamp.now(),
         };
@@ -177,7 +182,7 @@ function WaiversFormComponent() {
               {
                 forms: updatedForms,
                 ackRoomAndBoard: ackRoomAndBoard,
-                ackSocDetermination: ackSocDetermination,
+                ackSocDetermination: ackRoomAndBoard,
                 monthlyIncome: formattedMonthlyIncome,
                 lastUpdated: Timestamp.now(),
               },
@@ -351,32 +356,12 @@ function WaiversFormComponent() {
                                 </Alert>
                             </Section>
 
-                            <Section title="Room and Board Commitment Waiver" icon={FileText}>
+                            <Section title="Room and Board Commitment & Medi-Cal SOC Determination" icon={FileText}>
                                 <p>I understand the member is responsible for paying the RCFE/ARF the room and board portion, while the Managed Care Plan pays the assisted living service portion.</p>
-                                <p>I understand room and board amounts may vary by facility, geography, and private-room requests, and additional agreements may be required by the selected facility.</p>
+                                <p>I understand Room and Board payment depends on the member&apos;s monthly income.</p>
                                 <p>I acknowledge that inability to pay any room and board portion may impact eligibility for this community support program.</p>
-                                <Alert variant="warning" className="mt-4">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertTitle>Acknowledgment</AlertTitle>
-                                    <AlertDescription>
-                                        <div className="flex items-start space-x-2 mt-2">
-                                            <Checkbox
-                                              id="ack-room-board"
-                                              checked={ackRoomAndBoard}
-                                              onCheckedChange={(c) => setAckRoomAndBoard(!!c)}
-                                              disabled={isReadOnly}
-                                            />
-                                            <label htmlFor="ack-room-board" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                               I have read and understood the Room and Board Commitment waiver section.
-                                            </label>
-                                        </div>
-                                    </AlertDescription>
-                                </Alert>
-                            </Section>
-
-                            <Section title="Medi-Cal Share of Cost Determination" icon={FileText}>
                                 <p>
-                                  Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed.
+                                  CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed. Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). Generally, a monthly income of more than $1,801 (single)/$2,433 (couple) will have a Medi-Cal SOC.
                                 </p>
                                 <p>
                                   Proof of income might need to be furnished as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).
@@ -385,11 +370,8 @@ function WaiversFormComponent() {
                                   Members who receive less than $1,620 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
                                 </p>
                                 <div className="space-y-2 mt-4">
-                                    <p className="text-sm text-muted-foreground">
-                                      Program Information (SOC reduction details): https://connectcalaim.com/info/eligibility
-                                    </p>
                                     <Label htmlFor="monthly-income">
-                                      What is the member&apos;s total monthly income (required)? <span className="text-destructive">*</span>
+                                      What is the member&apos;s monthly income? <span className="text-destructive">*</span>
                                     </Label>
                                     <Input
                                       id="monthly-income"
@@ -407,17 +389,28 @@ function WaiversFormComponent() {
                                     <AlertDescription>
                                         <div className="flex items-start space-x-2 mt-2">
                                             <Checkbox
-                                              id="ack-soc-determination"
-                                              checked={ackSocDetermination}
-                                              onCheckedChange={(c) => setAckSocDetermination(!!c)}
+                                              id="ack-room-board"
+                                              checked={ackRoomAndBoard}
+                                              onCheckedChange={(c) => setAckRoomAndBoard(!!c)}
                                               disabled={isReadOnly}
                                             />
-                                            <label htmlFor="ack-soc-determination" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                               I have read and understood the Medi-Cal Share of Cost Determination section.
+                                            <label htmlFor="ack-room-board" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                               I have read and understood the Room and Board Commitment and Medi-Cal SOC Determination sections.
                                             </label>
                                         </div>
                                     </AlertDescription>
                                 </Alert>
+                                <p className="text-sm text-muted-foreground mt-4">
+                                  For more information about the room and board payment, SOC, or NMOHC, see our{' '}
+                                  <a
+                                    href="https://connectcalaim.com/info/eligibility"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="underline"
+                                  >
+                                    program information page
+                                  </a>.
+                                </p>
                             </Section>
 
                             <div className="mt-8 pt-6 border-t">
@@ -425,7 +418,7 @@ function WaiversFormComponent() {
                                 <div className="space-y-4 mt-4">
                                     <RadioGroup onValueChange={(v) => setSignerType(v as any)} value={signerType ?? ''} disabled={isReadOnly}>
                                         <Label>I am the: <span className="text-destructive">*</span></Label>
-                                        <div className="flex items-center gap-4">
+                                        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4">
                                             <div className="flex items-center space-x-2">
                                                 <RadioGroupItem value="member" id="signer-member" />
                                                 <Label htmlFor="signer-member">Member</Label>

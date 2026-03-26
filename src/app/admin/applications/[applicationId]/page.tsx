@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Suspense, useMemo, useState, useEffect } from 'react';
+import { Suspense, useMemo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter, useParams } from 'next/navigation';
 import {
@@ -1367,6 +1367,8 @@ function ApplicationDetailPageContent() {
   
   const applicationId = params.applicationId as string;
   const appUserId = searchParams.get('userId');
+  const quickActionTarget = String(searchParams.get('quickAction') || '').trim().toLowerCase();
+  const reminderTabTarget = String(searchParams.get('reminderTab') || '').trim().toLowerCase();
 
   type StandaloneUploadRow = {
     id: string;
@@ -1503,6 +1505,7 @@ function ApplicationDetailPageContent() {
   } | null>(null);
   const [isSendingStatusTestReminder, setIsSendingStatusTestReminder] = useState(false);
   const [isLoadingStatusReminderPreview, setIsLoadingStatusReminderPreview] = useState(false);
+  const [isReminderDialogOpen, setIsReminderDialogOpen] = useState(false);
   const [statusReminderPreview, setStatusReminderPreview] = useState<{
     recipientEmail: string;
     referrerName: string;
@@ -1517,6 +1520,8 @@ function ApplicationDetailPageContent() {
   const [rejectReasonByForm, setRejectReasonByForm] = useState<Record<string, string>>({});
   const [rejectingByForm, setRejectingByForm] = useState<Record<string, boolean>>({});
   const [rejectDialogForm, setRejectDialogForm] = useState<string | null>(null);
+  const emailReminderSectionRef = useRef<HTMLDivElement | null>(null);
+  const statusReminderSectionRef = useRef<HTMLDivElement | null>(null);
 
   const reminderFrequencyOptions = useMemo(() => [2, 7] as const, []);
   const staffTestReminderEmail = String(user?.email || '').trim();
@@ -1531,6 +1536,23 @@ function ApplicationDetailPageContent() {
     if (!Number.isFinite(raw) || raw <= 0) return 7;
     return Math.max(1, Math.min(30, Math.round(raw)));
   }, [application]);
+
+  useEffect(() => {
+    if (quickActionTarget !== 'reminders') return;
+    setIsReminderDialogOpen(true);
+    const quickActionsCard = document.getElementById('member-quick-actions');
+    quickActionsCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [quickActionTarget]);
+
+  useEffect(() => {
+    if (!isReminderDialogOpen) return;
+    if (reminderTabTarget !== 'email' && reminderTabTarget !== 'status') return;
+    const targetRef = reminderTabTarget === 'status' ? statusReminderSectionRef : emailReminderSectionRef;
+    const timer = window.setTimeout(() => {
+      targetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [isReminderDialogOpen, reminderTabTarget]);
 
   const updateReminderSettings = async (patch: Record<string, any>) => {
     if (!application?.id) return;
@@ -5452,7 +5474,7 @@ function ApplicationDetailPageContent() {
       </div>
 
       <aside className="lg:col-span-1 min-w-0 space-y-6">
-        <Card>
+        <Card id="member-quick-actions">
           <CardHeader>
             <CardTitle className="text-base">Quick actions</CardTitle>
             <CardDescription>
@@ -5761,7 +5783,7 @@ function ApplicationDetailPageContent() {
               </DialogContent>
             </Dialog>
 
-            <Dialog>
+            <Dialog open={isReminderDialogOpen} onOpenChange={setIsReminderDialogOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
                   <Mail className="h-4 w-4" />
@@ -5776,7 +5798,7 @@ function ApplicationDetailPageContent() {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                  <div ref={emailReminderSectionRef} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
                     <div className="flex items-center space-x-2">
                       <Mail className="h-4 w-4 text-muted-foreground" />
                       <div>
@@ -5914,7 +5936,7 @@ function ApplicationDetailPageContent() {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                  <div ref={statusReminderSectionRef} className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
                     <div className="flex items-center space-x-2">
                       <Bell className="h-4 w-4 text-muted-foreground" />
                       <div>
