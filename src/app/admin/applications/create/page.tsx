@@ -147,6 +147,17 @@ export default function CreateApplicationPage() {
     setMemberData({ ...memberData, contactPhone: formattedPhone });
   };
 
+  const formatMemberPhoneWithDashes = (value: string) => {
+    const phoneNumber = value.replace(/\D/g, '');
+    const limitedPhoneNumber = phoneNumber.substring(0, 10);
+    if (limitedPhoneNumber.length >= 6) {
+      return `${limitedPhoneNumber.substring(0, 3)}-${limitedPhoneNumber.substring(3, 6)}-${limitedPhoneNumber.substring(6)}`;
+    } else if (limitedPhoneNumber.length >= 3) {
+      return `${limitedPhoneNumber.substring(0, 3)}-${limitedPhoneNumber.substring(3)}`;
+    }
+    return limitedPhoneNumber;
+  };
+
   const createApplicationForMember = async () => {
     const isKaiserAuthReceived = intakeType === 'kaiser_auth_received_via_ils';
     const hasStandardRequired = memberData.contactPhone && memberData.contactFirstName && memberData.contactLastName;
@@ -499,10 +510,10 @@ export default function CreateApplicationPage() {
                   <Input
                     id="memberPhone"
                     type="tel"
-                    placeholder="555.123.4567"
+                    placeholder="555-123-4567"
                     value={memberData.memberPhone}
                     onChange={(e) => {
-                      const formattedPhone = formatPhoneNumber(e.target.value);
+                      const formattedPhone = formatMemberPhoneWithDashes(e.target.value);
                       setMemberData({ ...memberData, memberPhone: formattedPhone });
                     }}
                   />
@@ -517,7 +528,7 @@ export default function CreateApplicationPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="Authorization_Number_T038">Authorization Number_T038</Label>
+                  <Label htmlFor="Authorization_Number_T038">Authorization Number T2038</Label>
                   <Input
                     id="Authorization_Number_T038"
                     placeholder="Optional"
@@ -535,7 +546,7 @@ export default function CreateApplicationPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="Authorization_Start_T2038">Authorization_Start_T2038</Label>
+                  <Label htmlFor="Authorization_Start_T2038">Authorization Start T2038</Label>
                   <Input
                     id="Authorization_Start_T2038"
                     placeholder="MM/DD/YYYY"
