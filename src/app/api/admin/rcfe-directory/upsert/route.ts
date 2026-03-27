@@ -128,8 +128,10 @@ export async function POST(req: NextRequest) {
     if (failed.length > 0) {
       return NextResponse.json(
         {
-          success: false,
+          success: true,
+          partial: true,
           error: `Updated ${results.length - failed.length}/${results.length} records; some updates failed.`,
+          updatedCount: results.length - failed.length,
           failed,
         },
         { status: 207 }

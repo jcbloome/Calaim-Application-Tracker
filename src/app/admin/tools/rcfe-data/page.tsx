@@ -10,8 +10,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ArrowUpDown, Building2, RefreshCw } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ArrowUpDown, Building2, CheckCircle2, RefreshCw } from 'lucide-react';
 
 interface Member {
   Client_ID2: string;
@@ -48,6 +50,7 @@ interface RCFEDirectoryRow {
   memberCount: number;
   memberIds: string[];
   memberNames: string[];
+  members: Array<{ id: string; name: string }>;
 }
 
 type RCFESortField =
@@ -111,6 +114,7 @@ export default function RcfeDataToolsPage() {
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [search, setSearch] = useState('');
+  const [confirmationFilter, setConfirmationFilter] = useState<'all' | 'confirmed_there' | 'told_not_there' | 'not_confirmed'>('all');
   const [sortField, setSortField] = useState<RCFESortField>('RCFE_Name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [rcfeDrafts, setRcfeDrafts] = useState<
@@ -120,6 +124,8 @@ export default function RcfeDataToolsPage() {
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveInFlightRef = useRef(false);
+  const [memberPresenceStatus, setMemberPresenceStatus] = useState<Record<string, 'there' | 'not_there'>>({});
+  const confirmedStorageKey = 'rcfe-member-presence-status';
 
   const isHealthNetMember = (member: Member) => {
     const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
@@ -228,6 +234,7 @@ export default function RcfeDataToolsPage() {
         if (!existing.Number_of_Beds && beds) existing.Number_of_Beds = beds;
         if (memberId && !existing.memberIds.includes(memberId)) existing.memberIds.push(memberId);
         if (memberName && !existing.memberNames.includes(memberName)) existing.memberNames.push(memberName);
+        if (memberId && !existing.members.some((m) => m.id === memberId)) existing.members.push({ id: memberId, name: memberName || memberId });
       } else {
         grouped.set(key, {
           key,
@@ -243,6 +250,7 @@ export default function RcfeDataToolsPage() {
           memberCount: 1,
           memberIds: memberId ? [memberId] : [],
           memberNames: memberName ? [memberName] : [],
+          members: memberId ? [{ id: memberId, name: memberName || memberId }] : [],
         });
       }
     });
@@ -270,13 +278,22 @@ export default function RcfeDataToolsPage() {
   const visibleRows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const filtered = rcfeRows.filter((row) => {
+      const confirmedThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'there').length;
+      const toldNotThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'not_there').length;
+      const unresolvedCount = Math.max(0, row.members.length - confirmedThereCount - toldNotThereCount);
+
+      if (confirmationFilter === 'confirmed_there' && confirmedThereCount === 0) return false;
+      if (confirmationFilter === 'told_not_there' && toldNotThereCount === 0) return false;
+      if (confirmationFilter === 'not_confirmed' && unresolvedCount === 0) return false;
+
       if (!needle) return true;
       return (
         row.RCFE_Name.toLowerCase().includes(needle) ||
         row.RCFE_City_RCFE_Zip.toLowerCase().includes(needle) ||
         row.RCFE_Administrator.toLowerCase().includes(needle) ||
         row.RCFE_Administrator_Email.toLowerCase().includes(needle) ||
-        row.memberNames.some((name) => String(name || '').toLowerCase().includes(needle))
+        row.memberNames.some((name) => String(name || '').toLowerCase().includes(needle)) ||
+        row.members.some((m) => String(m.id || '').toLowerCase().includes(needle))
       );
     });
 
@@ -286,7 +303,7 @@ export default function RcfeDataToolsPage() {
       const bv = String((b as any)[sortField] || '').toLowerCase();
       return av.localeCompare(bv) * dir;
     });
-  }, [rcfeRows, search, sortField, sortDirection]);
+  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus]);
 
   const editedRows = useMemo(() => rcfeRows.filter((row) => hasDraftChanges(row)), [rcfeRows, rcfeDrafts]);
 
@@ -420,6 +437,35 @@ export default function RcfeDataToolsPage() {
     await syncEditedRows(editedRows, 'manual');
   }, [editedRows, syncEditedRows]);
 
+  const setMemberPresence = useCallback((memberId: string, status: 'there' | 'not_there', checked: boolean) => {
+    const key = String(memberId || '').trim();
+    if (!key) return;
+    setMemberPresenceStatus((prev) => {
+      const next = { ...prev };
+      if (!checked) {
+        if (next[key] === status) delete next[key];
+        return next;
+      }
+      next[key] = status;
+      return next;
+    });
+  }, []);
+
+  const toggleAllRowMembers = useCallback((row: RCFEDirectoryRow, status: 'there' | 'not_there', checked: boolean) => {
+    setMemberPresenceStatus((prev) => {
+      const next = { ...prev };
+      row.members.forEach((member) => {
+        if (!member.id) return;
+        if (!checked) {
+          if (next[member.id] === status) delete next[member.id];
+        } else {
+          next[member.id] = status;
+        }
+      });
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (editedRows.length === 0) return;
     if (autoSaveInFlightRef.current) return;
@@ -442,6 +488,27 @@ export default function RcfeDataToolsPage() {
       }
     };
   }, [editedRows, syncEditedRows]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(confirmedStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, 'there' | 'not_there'>;
+      if (parsed && typeof parsed === 'object') {
+        setMemberPresenceStatus(parsed);
+      }
+    } catch {
+      // ignore storage issues
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(confirmedStorageKey, JSON.stringify(memberPresenceStatus));
+    } catch {
+      // ignore storage issues
+    }
+  }, [memberPresenceStatus]);
 
   if (isLoading) {
     return (
@@ -492,7 +559,23 @@ export default function RcfeDataToolsPage() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Select
+                value={confirmationFilter}
+                onValueChange={(value) =>
+                  setConfirmationFilter(value as 'all' | 'confirmed_there' | 'told_not_there' | 'not_confirmed')
+                }
+              >
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Confirmation filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All RCFEs</SelectItem>
+                  <SelectItem value="confirmed_there">Has Confirmed There Members</SelectItem>
+                  <SelectItem value="told_not_there">Has Told Not There Members</SelectItem>
+                  <SelectItem value="not_confirmed">Has Unconfirmed Members</SelectItem>
+                </SelectContent>
+              </Select>
               <Badge variant="outline">{visibleRows.length} RCFEs</Badge>
               <Badge variant="secondary">{editedRows.length} Edited</Badge>
               <Badge variant={isAutoSaving ? 'default' : 'outline'}>
@@ -505,7 +588,6 @@ export default function RcfeDataToolsPage() {
           </div>
 
           <div className="w-full overflow-x-auto pb-2">
-            <TooltipProvider delayDuration={120}>
               <Table className="min-w-[1100px]">
                 <TableHeader>
                   <TableRow>
@@ -551,40 +633,89 @@ export default function RcfeDataToolsPage() {
                   ) : (
                     visibleRows.map((row) => {
                       const draft = getDraft(row);
+                      const verifiedCount = row.members.filter(
+                        (m) => memberPresenceStatus[m.id] === 'there' || memberPresenceStatus[m.id] === 'not_there'
+                      ).length;
+                      const allVerified = row.members.length > 0 && verifiedCount === row.members.length;
                       return (
                         <TableRow key={row.key}>
                           <TableCell className="max-w-[320px]">
-                            <div className="font-medium">{row.RCFE_Name || '-'}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="font-medium">{row.RCFE_Name || '-'}</div>
+                              {allVerified && (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700">
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  Verified
+                                </span>
+                              )}
+                            </div>
                             <div className="text-xs text-muted-foreground break-words">
                               {[toAddressCase(row.RCFE_Street), [toAddressCase(row.RCFE_City), normalizeZipInput(row.RCFE_Zip)].filter(Boolean).join(', ')]
                                 .filter(Boolean)
                                 .join(', ') || '-'}
                             </div>
                             <div className="text-xs mt-1">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
+                              <Popover>
+                                <PopoverTrigger asChild>
                                   <button type="button" className="font-medium text-left underline-offset-2 hover:underline">
                                     Members: {row.memberCount}
                                   </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" align="start" className="max-w-sm p-2">
-                                  <div className="text-xs font-semibold mb-1">Members ({row.memberCount})</div>
-                                  <div className="max-h-56 overflow-y-auto pr-1 space-y-1">
-                                    {row.memberNames.length > 0 ? (
-                                      row.memberNames
+                                </PopoverTrigger>
+                                <PopoverContent side="top" align="start" className="w-[320px] p-3">
+                                  <div className="text-xs font-semibold mb-2">Confirm members at RCFE ({row.memberCount})</div>
+                                  <div className="mb-2 flex items-center gap-2">
+                                    <Checkbox
+                                      checked={row.members.length > 0 && row.members.every((m) => memberPresenceStatus[m.id] === 'there')}
+                                      onCheckedChange={(checked) => toggleAllRowMembers(row, 'there', Boolean(checked))}
+                                    />
+                                    <span className="text-xs">Mark all Confirmed There</span>
+                                  </div>
+                                  <div className="mb-2 flex items-center gap-2">
+                                    <Checkbox
+                                      checked={row.members.length > 0 && row.members.every((m) => memberPresenceStatus[m.id] === 'not_there')}
+                                      onCheckedChange={(checked) => toggleAllRowMembers(row, 'not_there', Boolean(checked))}
+                                    />
+                                    <span className="text-xs">Mark all Told Not There</span>
+                                  </div>
+                                  <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
+                                    {row.members.length > 0 ? (
+                                      row.members
                                         .slice()
-                                        .sort((a, b) => a.localeCompare(b))
-                                        .map((memberName) => (
-                                          <div key={`${row.key}-${memberName}`} className="text-xs leading-tight">
-                                            {memberName}
+                                        .sort((a, b) => a.name.localeCompare(b.name))
+                                        .map((member) => (
+                                          <div key={`${row.key}-${member.id}`} className="space-y-1 rounded-sm border p-2">
+                                            <div className="text-xs leading-tight">{member.name}</div>
+                                            <div className="flex items-center gap-4">
+                                              <label className="flex items-center gap-2 text-[11px]">
+                                                <Checkbox
+                                                  checked={memberPresenceStatus[member.id] === 'there'}
+                                                  onCheckedChange={(checked) => setMemberPresence(member.id, 'there', Boolean(checked))}
+                                                />
+                                                <span>Confirmed There</span>
+                                              </label>
+                                              <label className="flex items-center gap-2 text-[11px]">
+                                                <Checkbox
+                                                  checked={memberPresenceStatus[member.id] === 'not_there'}
+                                                  onCheckedChange={(checked) => setMemberPresence(member.id, 'not_there', Boolean(checked))}
+                                                />
+                                                <span>Told Not There</span>
+                                              </label>
+                                            </div>
                                           </div>
                                         ))
                                     ) : (
                                       <div className="text-xs text-muted-foreground">No member names available</div>
                                     )}
                                   </div>
-                                </TooltipContent>
-                              </Tooltip>
+                                </PopoverContent>
+                              </Popover>
+                              <div className="text-[11px] text-muted-foreground mt-1">
+                                Verified: {verifiedCount}/{row.members.length}
+                                {' | '}
+                                Confirmed There: {row.members.filter((m) => memberPresenceStatus[m.id] === 'there').length}/{row.members.length}
+                                {' | '}
+                                Told Not There: {row.members.filter((m) => memberPresenceStatus[m.id] === 'not_there').length}
+                              </div>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -691,7 +822,6 @@ export default function RcfeDataToolsPage() {
                   )}
                 </TableBody>
               </Table>
-            </TooltipProvider>
           </div>
         </CardContent>
       </Card>
