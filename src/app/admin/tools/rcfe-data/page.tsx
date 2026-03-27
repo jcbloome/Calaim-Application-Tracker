@@ -126,6 +126,8 @@ export default function RcfeDataToolsPage() {
   const autoSaveInFlightRef = useRef(false);
   const [memberPresenceStatus, setMemberPresenceStatus] = useState<Record<string, 'there' | 'not_there'>>({});
   const confirmedStorageKey = 'rcfe-member-presence-status';
+  const [memberExtraDetails, setMemberExtraDetails] = useState<Record<string, string>>({});
+  const commentsStorageKey = 'rcfe-member-extra-details';
 
   const isHealthNetMember = (member: Member) => {
     const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
@@ -293,7 +295,11 @@ export default function RcfeDataToolsPage() {
         row.RCFE_Administrator.toLowerCase().includes(needle) ||
         row.RCFE_Administrator_Email.toLowerCase().includes(needle) ||
         row.memberNames.some((name) => String(name || '').toLowerCase().includes(needle)) ||
-        row.members.some((m) => String(m.id || '').toLowerCase().includes(needle))
+        row.members.some((m) => {
+          const memberId = String(m.id || '').toLowerCase();
+          const extra = String(memberExtraDetails[m.id] || '').toLowerCase();
+          return memberId.includes(needle) || extra.includes(needle);
+        })
       );
     });
 
@@ -303,7 +309,7 @@ export default function RcfeDataToolsPage() {
       const bv = String((b as any)[sortField] || '').toLowerCase();
       return av.localeCompare(bv) * dir;
     });
-  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus]);
+  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails]);
 
   const editedRows = useMemo(() => rcfeRows.filter((row) => hasDraftChanges(row)), [rcfeRows, rcfeDrafts]);
 
@@ -510,6 +516,27 @@ export default function RcfeDataToolsPage() {
     }
   }, [memberPresenceStatus]);
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(commentsStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      if (parsed && typeof parsed === 'object') {
+        setMemberExtraDetails(parsed);
+      }
+    } catch {
+      // ignore storage issues
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(commentsStorageKey, JSON.stringify(memberExtraDetails));
+    } catch {
+      // ignore storage issues
+    }
+  }, [memberExtraDetails]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -554,7 +581,7 @@ export default function RcfeDataToolsPage() {
           <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
             <div className="flex-1 max-w-lg">
               <Input
-                placeholder="Search RCFE, city, administrator, or member name..."
+                placeholder="Search RCFE, city, administrator, member name, or comments..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -700,6 +727,19 @@ export default function RcfeDataToolsPage() {
                                                 />
                                                 <span>Told Not There</span>
                                               </label>
+                                            </div>
+                                            <div className="pt-1">
+                                              <Input
+                                                value={String(memberExtraDetails[member.id] || '')}
+                                                onChange={(e) =>
+                                                  setMemberExtraDetails((prev) => ({
+                                                    ...prev,
+                                                    [member.id]: e.target.value,
+                                                  }))
+                                                }
+                                                placeholder="Extra details from admin..."
+                                                className="h-7 text-[11px]"
+                                              />
                                             </div>
                                           </div>
                                         ))
