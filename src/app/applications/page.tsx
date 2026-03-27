@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/componen
 import { Header } from '@/components/Header';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ApplicationListSkeleton } from '@/components/ui/application-skeleton';
-import { useUser, useFirestore, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
+import { useAuth, useUser, useFirestore, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { collection, doc, Query, Timestamp, writeBatch } from 'firebase/firestore';
 import { format } from 'date-fns';
 import {
@@ -220,6 +220,7 @@ const ApplicationsTable = ({
 };
 
 export default function MyApplicationsPage() {
+  const auth = useAuth();
   const { user, isUserLoading } = useUser();
   const { isAdmin, isSuperAdmin } = useAdmin();
   const firestore = useFirestore();
@@ -237,6 +238,7 @@ export default function MyApplicationsPage() {
   const applications = data || [];
 
   const [selected, setSelected] = useState<string[]>([]);
+  const [hasAttemptedClaim, setHasAttemptedClaim] = useState(false);
   
   useEffect(() => {
     if (isUserLoading) return; 
@@ -248,6 +250,43 @@ export default function MyApplicationsPage() {
         router.push('/admin');
     }
   }, [user, isUserLoading, router, isAdmin, isSuperAdmin]);
+
+  useEffect(() => {
+    const claimStartedApps = async () => {
+      if (!auth || !user || isUserLoading || isAdmin || isSuperAdmin || hasAttemptedClaim) return;
+      setHasAttemptedClaim(true);
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
+        const [firstName = '', ...lastNameParts] = String(user.displayName || '').trim().split(' ');
+        const response = await fetch('/api/applications/claim-admin-started', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            firstName,
+            lastName: lastNameParts.join(' '),
+          }),
+        });
+
+        if (!response.ok) return;
+        const result = await response.json().catch(() => null);
+        const claimedCount = Number(result?.claimedCount || 0);
+        if (claimedCount > 0) {
+          toast({
+            title: 'Application linked',
+            description: `${claimedCount} backend-started application(s) were linked to your account.`,
+          });
+        }
+      } catch (error) {
+        console.warn('Failed to auto-link admin-started applications:', error);
+      }
+    };
+
+    claimStartedApps();
+  }, [auth, user, isUserLoading, isAdmin, isSuperAdmin, hasAttemptedClaim, toast]);
 
   const isPageLoading = isUserLoading || isLoadingApplications;
 

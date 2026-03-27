@@ -34,6 +34,25 @@ async function trackLogin(firestore: any, user: User, role: 'Admin' | 'User') {
     }
 }
 
+async function claimAdminStartedApplications(user: User, firstName?: string, lastName?: string) {
+  try {
+    const token = await user.getIdToken();
+    await fetch('/api/applications/claim-admin-started', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        firstName: (firstName || '').trim(),
+        lastName: (lastName || '').trim(),
+      }),
+    });
+  } catch (error) {
+    console.warn('Failed to auto-link admin-started applications on signup:', error);
+  }
+}
+
 export default function SignUpPage() {
   const auth = useAuth();
   const firestore = useFirestore();
@@ -86,6 +105,9 @@ export default function SignUpPage() {
 
       // Track the signup/login event
       await trackLogin(firestore, newUser, 'User');
+
+      // Link any backend-started applications to this family account on first signup.
+      await claimAdminStartedApplications(newUser, firstName, lastName);
 
       toast({
         title: 'Account Created!',

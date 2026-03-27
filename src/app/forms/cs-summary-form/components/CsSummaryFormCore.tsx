@@ -73,6 +73,42 @@ function CsSummaryFormComponent() {
 
   const { formState: { errors, isValid }, trigger, getValues, handleSubmit, reset, setFocus, setError, clearErrors } = methods;
 
+  const normalizeForCompare = (value: unknown) => String(value || '').trim().toLowerCase();
+
+  const findLinkableAdminApplication = async (data: Partial<FormValues>) => {
+    if (!firestore) return null;
+    const normalizedMrn = String(data?.memberMrn || '').trim();
+    if (!normalizedMrn) return null;
+
+    const first = normalizeForCompare(data?.memberFirstName);
+    const last = normalizeForCompare(data?.memberLastName);
+    const currentPath = docRef?.path;
+
+    const adminAppsSnap = await getDocs(
+      query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))
+    );
+
+    const matches = adminAppsSnap.docs
+      .map((docSnapshot) => ({ id: docSnapshot.id, path: docSnapshot.ref.path, data: docSnapshot.data() as any }))
+      .filter((entry) => {
+        if (currentPath && entry.path === currentPath) return false;
+        const isAdminSeed = entry.id.startsWith('admin_app_') || Boolean(entry.data?.createdByAdmin);
+        if (!isAdminSeed) return false;
+        const status = normalizeForCompare(entry.data?.status);
+        if (status === 'approved' || status === 'completed & submitted') return false;
+        if (first && normalizeForCompare(entry.data?.memberFirstName) !== first) return false;
+        if (last && normalizeForCompare(entry.data?.memberLastName) !== last) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const aTs = Number((a.data?.lastUpdated as any)?.seconds || 0);
+        const bTs = Number((b.data?.lastUpdated as any)?.seconds || 0);
+        return bTs - aTs;
+      });
+
+    return matches.length > 0 ? matches[0] : null;
+  };
+
   const targetUserId = appUserId || user?.uid;
   const isAdminView = !!appUserId;
   const isAdminCreatedApp = internalApplicationId?.startsWith('admin_app_');
@@ -184,6 +220,17 @@ function CsSummaryFormComponent() {
       });
 
       if (duplicates.length > 0) {
+        const currentData = getValues();
+        const linkableAdmin = await findLinkableAdminApplication({
+          memberMrn: normalizedMrn,
+          memberFirstName: currentData.memberFirstName,
+          memberLastName: currentData.memberLastName,
+        });
+        const otherDuplicates = duplicates.filter((dup) => dup.id !== linkableAdmin?.id);
+        if (linkableAdmin && otherDuplicates.length === 0 && !internalApplicationId && !isAdminView) {
+          clearErrors('memberMrn');
+          return;
+        }
         setError('memberMrn', { type: 'manual', message: 'MRN already used in another application.' });
       } else {
         clearErrors('memberMrn');
@@ -209,66 +256,97 @@ function CsSummaryFormComponent() {
         let docId = internalApplicationId;
         let isNewDoc = false;
 
-        if (!docId) {
-            if (isAdminCreatedApp) {
-                // This shouldn't happen for admin-created apps, but handle it just in case
-                docId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-                setInternalApplicationId(docId);
-                isNewDoc = true;
-            } else {
-                docId = doc(collection(firestore, `users/${targetUserId}/applications`)).id;
-                setInternalApplicationId(docId);
-                isNewDoc = true;
-            }
-        }
+        let targetIsAdminCreatedDoc = Boolean(docId?.startsWith('admin_app_'));
 
-        // Determine the correct document reference
-        const docRef = isAdminCreatedApp 
+        const continueAdminSeedIfAny = async () => {
+          if (docId || isAdminView) return null;
+          const linkable = await findLinkableAdminApplication({
+            memberMrn: currentData.memberMrn,
+            memberFirstName: currentData.memberFirstName,
+            memberLastName: currentData.memberLastName,
+          });
+          return linkable;
+        };
+
+        const persistWithDoc = async () => {
+          if (!docId) {
+            if (targetIsAdminCreatedDoc) {
+              docId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+              setInternalApplicationId(docId);
+              isNewDoc = true;
+            } else {
+              docId = doc(collection(firestore, `users/${targetUserId}/applications`)).id;
+              setInternalApplicationId(docId);
+              isNewDoc = true;
+            }
+          }
+
+          // Determine the correct document reference
+          const resolvedDocRef = targetIsAdminCreatedDoc
             ? doc(firestore, 'applications', docId)
             : doc(firestore, `users/${targetUserId}/applications`, docId);
 
-        const sanitizedData = Object.fromEntries(
-            Object.entries(currentData).map(([key, value]) => [key, value === undefined ? null : value])
-        );
+          const sanitizedData = Object.fromEntries(
+              Object.entries(currentData).map(([key, value]) => [key, value === undefined ? null : value])
+          );
 
-        const dataToSave: Partial<Application> = {
-            ...sanitizedData,
-            id: docId,
-            userId: targetUserId,
-            status: 'In Progress',
-            lastUpdated: serverTimestamp(),
-            referrerName: `${currentData.referrerFirstName} ${currentData.referrerLastName}`.trim(),
+          const dataToSave: Partial<Application> = {
+              ...sanitizedData,
+              id: docId,
+              userId: targetUserId,
+              status: 'In Progress',
+              lastUpdated: serverTimestamp(),
+              referrerName: `${currentData.referrerFirstName} ${currentData.referrerLastName}`.trim(),
+          };
+
+          if (isNewDoc) {
+              dataToSave.submissionDate = serverTimestamp();
+          }
+
+          // For admin-created applications, mark them as such
+          if (targetIsAdminCreatedDoc) {
+              dataToSave.createdByAdmin = true;
+          }
+
+          setDoc(resolvedDocRef, dataToSave, { merge: true })
+              .then(() => {
+                  if (!isNavigating) {
+                      toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
+                  }
+                  resolve(docId);
+              })
+              .catch((error) => {
+                  const permissionError = new FirestorePermissionError({
+                      path: resolvedDocRef.path,
+                      operation: isNewDoc ? 'create' : 'update',
+                      requestResourceData: dataToSave,
+                  });
+                  errorEmitter.emit('permission-error', permissionError);
+
+                  if (!isNavigating) {
+                      toast({ variant: "destructive", title: "Save Error", description: `Could not save your progress: ${error.message}` });
+                  }
+                  reject(error);
+              });
         };
 
-        if (isNewDoc) {
-            dataToSave.submissionDate = serverTimestamp();
-        }
-
-        // For admin-created applications, mark them as such
-        if (isAdminCreatedApp) {
-            dataToSave.createdByAdmin = true;
-        }
-
-        setDoc(docRef, dataToSave, { merge: true })
-            .then(() => {
-                if (!isNavigating) {
-                    toast({ title: 'Progress Saved', description: 'Your changes have been saved.' });
-                }
-                resolve(docId);
-            })
-            .catch((error) => {
-                const permissionError = new FirestorePermissionError({
-                    path: docRef.path,
-                    operation: isNewDoc ? 'create' : 'update',
-                    requestResourceData: dataToSave,
+        continueAdminSeedIfAny()
+          .then((linked) => {
+            if (linked) {
+              docId = linked.id;
+              targetIsAdminCreatedDoc = true;
+              isNewDoc = false;
+              setInternalApplicationId(linked.id);
+              if (!isNavigating) {
+                toast({
+                  title: 'Linked existing application',
+                  description: 'Continuing the backend application started by staff.',
                 });
-                errorEmitter.emit('permission-error', permissionError);
-
-                if (!isNavigating) {
-                    toast({ variant: "destructive", title: "Save Error", description: `Could not save your progress: ${error.message}` });
-                }
-                reject(error);
-            });
+              }
+            }
+            return persistWithDoc();
+          })
+          .catch((err) => reject(err));
     });
   };
 
@@ -393,6 +471,15 @@ function CsSummaryFormComponent() {
     });
 
     if (duplicates.length > 0) {
+      const linkableAdmin = await findLinkableAdminApplication({
+        memberMrn: data.memberMrn,
+        memberFirstName: data.memberFirstName,
+        memberLastName: data.memberLastName,
+      });
+      const otherDuplicates = duplicates.filter((dup) => dup.id !== linkableAdmin?.id);
+      if (linkableAdmin && otherDuplicates.length === 0 && !internalApplicationId && !isAdminView) {
+        return false;
+      }
       toast({
         variant: 'destructive',
         title: 'Duplicate Application Found',
@@ -433,7 +520,7 @@ function CsSummaryFormComponent() {
              return;
         }
         
-        const reviewUrl = appUserId || isAdminCreatedApp
+        const reviewUrl = appUserId || finalAppId.startsWith('admin_app_')
           ? `/admin/forms/review?applicationId=${finalAppId}${appUserId ? `&userId=${appUserId}` : ''}`
           : `/forms/cs-summary-form/review?applicationId=${finalAppId}`;
         router.push(reviewUrl);
