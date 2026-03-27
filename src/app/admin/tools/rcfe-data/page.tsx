@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -60,6 +61,13 @@ type RCFESortField =
   | 'RCFE_Administrator_Email'
   | 'RCFE_Administrator_Phone'
   | 'Number_of_Beds';
+
+type RcfeDraftFields = {
+  RCFE_Administrator: string;
+  RCFE_Administrator_Email: string;
+  RCFE_Administrator_Phone: string;
+  Number_of_Beds: string;
+};
 
 const normalizeAdminName = (value: unknown) =>
   String(value || '')
@@ -120,9 +128,8 @@ export default function RcfeDataToolsPage() {
   const [confirmationFilter, setConfirmationFilter] = useState<'all' | 'confirmed_there' | 'told_not_there' | 'not_confirmed'>('all');
   const [sortField, setSortField] = useState<RCFESortField>('RCFE_Name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [rcfeDrafts, setRcfeDrafts] = useState<
-    Record<string, { RCFE_Administrator: string; RCFE_Administrator_Email: string; RCFE_Administrator_Phone: string; Number_of_Beds: string }>
-  >({});
+  const [rcfeDrafts, setRcfeDrafts] = useState<Record<string, RcfeDraftFields>>({});
+  const [rcfeFieldOverrides, setRcfeFieldOverrides] = useState<Record<string, RcfeDraftFields>>({});
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -131,12 +138,23 @@ export default function RcfeDataToolsPage() {
   const confirmedStorageKey = 'rcfe-member-presence-status';
   const [memberExtraDetails, setMemberExtraDetails] = useState<Record<string, string>>({});
   const commentsStorageKey = 'rcfe-member-extra-details';
+  const [memberVerifiedAt, setMemberVerifiedAt] = useState<Record<string, string>>({});
+  const verifiedAtStorageKey = 'rcfe-member-verified-at';
+  const rcfeOverridesStorageKey = 'rcfe-field-overrides';
   const progressDocRef = useMemo(
     () => (firestore ? doc(firestore, 'admin_tool_state', 'rcfe_data_progress') : null),
     [firestore]
   );
   const hasHydratedProgressRef = useRef(false);
   const progressSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [monthlySubject, setMonthlySubject] = useState(
+    `Monthly RCFE Member Verification - ${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}`
+  );
+  const [monthlyIntro, setMonthlyIntro] = useState(
+    'Hello RCFE Administrator,\n\nPlease review the member roster below and confirm which members are still residing at your RCFE. Reply to this email with any updates or corrections.'
+  );
+  const [isSendingMonthlyTest, setIsSendingMonthlyTest] = useState(false);
+  const [isSendingMonthlyBulk, setIsSendingMonthlyBulk] = useState(false);
 
   const isHealthNetMember = (member: Member) => {
     const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
@@ -175,6 +193,14 @@ export default function RcfeDataToolsPage() {
   const getRcfeAdministratorEmail = (member: Member) => String(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '').trim();
   const getRcfeAdministratorPhone = (member: Member) => String(member.RCFE_Administrator_Phone || member.RCFE_Admin_Phone || '').trim();
   const getRcfeBeds = (member: Member) => String(member.Number_of_Beds || '').trim();
+
+  const formatDateTimeSafe = (value: unknown) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const dt = new Date(raw);
+    if (Number.isNaN(dt.getTime())) return raw;
+    return dt.toLocaleString();
+  };
 
   const loadMembers = useCallback(async () => {
     setIsLoadingMembers(true);
@@ -271,12 +297,34 @@ export default function RcfeDataToolsPage() {
     return Array.from(grouped.values());
   }, [members]);
 
-  const getDraft = (row: RCFEDirectoryRow) => ({
-    RCFE_Administrator: normalizeAdminName(rcfeDrafts[row.key]?.RCFE_Administrator ?? row.RCFE_Administrator),
-    RCFE_Administrator_Email: rcfeDrafts[row.key]?.RCFE_Administrator_Email ?? row.RCFE_Administrator_Email,
-    RCFE_Administrator_Phone: rcfeDrafts[row.key]?.RCFE_Administrator_Phone ?? row.RCFE_Administrator_Phone,
-    Number_of_Beds: rcfeDrafts[row.key]?.Number_of_Beds ?? row.Number_of_Beds,
+  const getBaseDraft = (row: RCFEDirectoryRow): RcfeDraftFields => ({
+    RCFE_Administrator: row.RCFE_Administrator,
+    RCFE_Administrator_Email: row.RCFE_Administrator_Email,
+    RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
+    Number_of_Beds: row.Number_of_Beds,
   });
+
+  const getDraft = (row: RCFEDirectoryRow): RcfeDraftFields => {
+    const base = getBaseDraft(row);
+    const persisted = rcfeFieldOverrides[row.key];
+    const inSession = rcfeDrafts[row.key];
+    return {
+      RCFE_Administrator: normalizeAdminName(inSession?.RCFE_Administrator ?? persisted?.RCFE_Administrator ?? base.RCFE_Administrator),
+      RCFE_Administrator_Email: inSession?.RCFE_Administrator_Email ?? persisted?.RCFE_Administrator_Email ?? base.RCFE_Administrator_Email,
+      RCFE_Administrator_Phone: inSession?.RCFE_Administrator_Phone ?? persisted?.RCFE_Administrator_Phone ?? base.RCFE_Administrator_Phone,
+      Number_of_Beds: inSession?.Number_of_Beds ?? persisted?.Number_of_Beds ?? base.Number_of_Beds,
+    };
+  };
+
+  const updateDraftField = useCallback(
+    (row: RCFEDirectoryRow, updater: (current: RcfeDraftFields) => RcfeDraftFields) => {
+      const current = getDraft(row);
+      const next = updater(current);
+      setRcfeDrafts((prev) => ({ ...prev, [row.key]: next }));
+      setRcfeFieldOverrides((prev) => ({ ...prev, [row.key]: next }));
+    },
+    [rcfeDrafts, rcfeFieldOverrides]
+  );
 
   const hasDraftChanges = (row: RCFEDirectoryRow) => {
     const draft = getDraft(row);
@@ -287,6 +335,85 @@ export default function RcfeDataToolsPage() {
       String(draft.Number_of_Beds || '').trim() !== String(row.Number_of_Beds || '').trim()
     );
   };
+
+  const buildMonthlyEmailRows = useCallback(() => {
+    return rcfeRows
+      .map((row) => {
+        const draft = getDraft(row);
+        const adminEmail = String(draft.RCFE_Administrator_Email || '').trim().toLowerCase();
+        return {
+          rcfeName: row.RCFE_Name,
+          adminName: String(draft.RCFE_Administrator || '').trim(),
+          adminEmail,
+          members: row.members.map((member) => ({
+            id: member.id,
+            name: member.name,
+            status: memberPresenceStatus[member.id] || 'unknown',
+            lastVerifiedAt: memberVerifiedAt[member.id] || '',
+            extraDetails: memberExtraDetails[member.id] || '',
+          })),
+        };
+      })
+      .filter((row) => row.adminEmail.includes('@') && row.members.length > 0);
+  }, [rcfeRows, rcfeDrafts, rcfeFieldOverrides, memberPresenceStatus, memberVerifiedAt, memberExtraDetails]);
+
+  const sendMonthlyVerificationEmails = useCallback(
+    async (mode: 'test' | 'bulk') => {
+      try {
+        if (!auth?.currentUser) throw new Error('You must be signed in to send emails.');
+        if (!monthlySubject.trim() || !monthlyIntro.trim()) {
+          throw new Error('Subject and intro are required.');
+        }
+
+        const rows = buildMonthlyEmailRows();
+        if (rows.length === 0) {
+          throw new Error('No RCFE rows with valid admin emails and members were found.');
+        }
+
+        if (mode === 'test') setIsSendingMonthlyTest(true);
+        else setIsSendingMonthlyBulk(true);
+
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch('/api/admin/rcfe-data/send-monthly-verification', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            subject: monthlySubject,
+            intro: monthlyIntro,
+            rows,
+            isTest: mode === 'test',
+            testEmail: auth.currentUser?.email || '',
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok || !data?.success) {
+          throw new Error(data?.error || `Failed to send monthly verification emails (HTTP ${res.status})`);
+        }
+
+        toast({
+          title: mode === 'test' ? 'Monthly verification test sent' : 'Monthly verification emails sent',
+          description:
+            mode === 'test'
+              ? `Sent test email to ${auth.currentUser?.email || 'current user'}.`
+              : `Sent ${data?.sent || 0} emails${data?.failed ? ` (${data.failed} failed)` : ''}.`,
+          variant: data?.failed ? 'destructive' : 'default',
+        });
+      } catch (error: any) {
+        toast({
+          title: mode === 'test' ? 'Test send failed' : 'Bulk send failed',
+          description: error?.message || 'Unable to send monthly verification emails.',
+          variant: 'destructive',
+        });
+      } finally {
+        if (mode === 'test') setIsSendingMonthlyTest(false);
+        else setIsSendingMonthlyBulk(false);
+      }
+    },
+    [auth?.currentUser, monthlySubject, monthlyIntro, buildMonthlyEmailRows, toast]
+  );
 
   const visibleRows = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -322,7 +449,7 @@ export default function RcfeDataToolsPage() {
     });
   }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails]);
 
-  const editedRows = useMemo(() => rcfeRows.filter((row) => hasDraftChanges(row)), [rcfeRows, rcfeDrafts]);
+  const editedRows = useMemo(() => rcfeRows.filter((row) => hasDraftChanges(row)), [rcfeRows, rcfeDrafts, rcfeFieldOverrides]);
 
   const handleSort = (field: RCFESortField) => {
     if (sortField === field) {
@@ -397,6 +524,7 @@ export default function RcfeDataToolsPage() {
         )
       );
       setRcfeDrafts((prev) => ({ ...prev, [row.key]: draft }));
+      setRcfeFieldOverrides((prev) => ({ ...prev, [row.key]: draft }));
     },
     [auth?.currentUser, rcfeDrafts]
   );
@@ -469,6 +597,9 @@ export default function RcfeDataToolsPage() {
       next[key] = status;
       return next;
     });
+    if (checked) {
+      setMemberVerifiedAt((prev) => ({ ...prev, [key]: new Date().toISOString() }));
+    }
   }, []);
 
   const toggleAllRowMembers = useCallback((row: RCFEDirectoryRow, status: 'there' | 'not_there', checked: boolean) => {
@@ -484,6 +615,16 @@ export default function RcfeDataToolsPage() {
       });
       return next;
     });
+    if (checked) {
+      const stamp = new Date().toISOString();
+      setMemberVerifiedAt((prev) => {
+        const next = { ...prev };
+        row.members.forEach((member) => {
+          if (member.id) next[member.id] = stamp;
+        });
+        return next;
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -524,11 +665,53 @@ export default function RcfeDataToolsPage() {
 
   useEffect(() => {
     try {
+      const raw = window.localStorage.getItem(verifiedAtStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      if (parsed && typeof parsed === 'object') {
+        setMemberVerifiedAt(parsed);
+      }
+    } catch {
+      // ignore storage issues
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(rcfeOverridesStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, RcfeDraftFields>;
+      if (parsed && typeof parsed === 'object') {
+        setRcfeFieldOverrides(parsed);
+      }
+    } catch {
+      // ignore storage issues
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
       window.localStorage.setItem(confirmedStorageKey, JSON.stringify(memberPresenceStatus));
     } catch {
       // ignore storage issues
     }
   }, [memberPresenceStatus]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(verifiedAtStorageKey, JSON.stringify(memberVerifiedAt));
+    } catch {
+      // ignore storage issues
+    }
+  }, [memberVerifiedAt]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(rcfeOverridesStorageKey, JSON.stringify(rcfeFieldOverrides));
+    } catch {
+      // ignore storage issues
+    }
+  }, [rcfeFieldOverrides]);
 
   useEffect(() => {
     try {
@@ -558,11 +741,19 @@ export default function RcfeDataToolsPage() {
         const data = snap.data() as any;
         const fsPresence = (data?.memberPresenceStatus || {}) as Record<string, 'there' | 'not_there'>;
         const fsDetails = (data?.memberExtraDetails || {}) as Record<string, string>;
+        const fsVerifiedAt = (data?.memberVerifiedAt || {}) as Record<string, string>;
+        const fsOverrides = (data?.rcfeFieldOverrides || {}) as Record<string, RcfeDraftFields>;
         if (fsPresence && typeof fsPresence === 'object') {
           setMemberPresenceStatus((prev) => ({ ...prev, ...fsPresence }));
         }
         if (fsDetails && typeof fsDetails === 'object') {
           setMemberExtraDetails((prev) => ({ ...prev, ...fsDetails }));
+        }
+        if (fsVerifiedAt && typeof fsVerifiedAt === 'object') {
+          setMemberVerifiedAt((prev) => ({ ...prev, ...fsVerifiedAt }));
+        }
+        if (fsOverrides && typeof fsOverrides === 'object') {
+          setRcfeFieldOverrides((prev) => ({ ...prev, ...fsOverrides }));
         }
       } catch (error) {
         console.warn('Failed to load RCFE progress from Firestore:', error);
@@ -595,6 +786,8 @@ export default function RcfeDataToolsPage() {
           {
             memberPresenceStatus,
             memberExtraDetails,
+            memberVerifiedAt,
+            rcfeFieldOverrides,
             updatedAt: serverTimestamp(),
             updatedByUid: auth.currentUser?.uid || null,
             updatedByEmail: auth.currentUser?.email || null,
@@ -609,7 +802,7 @@ export default function RcfeDataToolsPage() {
     return () => {
       if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
     };
-  }, [progressDocRef, auth?.currentUser, memberPresenceStatus, memberExtraDetails]);
+  }, [progressDocRef, auth?.currentUser, memberPresenceStatus, memberExtraDetails, memberVerifiedAt, rcfeFieldOverrides]);
 
   if (isLoading) {
     return (
@@ -786,6 +979,9 @@ export default function RcfeDataToolsPage() {
                                         .map((member) => (
                                           <div key={`${row.key}-${member.id}`} className="space-y-1 rounded-sm border p-2">
                                             <div className="text-xs leading-tight">{member.name}</div>
+                                            <div className="text-[11px] text-muted-foreground">
+                                              Last Verified: {formatDateTimeSafe(memberVerifiedAt[member.id]) || 'Not yet'}
+                                            </div>
                                             <div className="flex items-center gap-4">
                                               <label className="flex items-center gap-2 text-[11px]">
                                                 <Checkbox
@@ -836,35 +1032,11 @@ export default function RcfeDataToolsPage() {
                             <Input
                               className="min-w-[160px]"
                               value={draft.RCFE_Administrator}
-                              onChange={(e) =>
-                                setRcfeDrafts((prev) => {
-                                  const base = prev[row.key] ?? {
-                                    RCFE_Administrator: row.RCFE_Administrator,
-                                    RCFE_Administrator_Email: row.RCFE_Administrator_Email,
-                                    RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
-                                    Number_of_Beds: row.Number_of_Beds,
-                                  };
-                                  return {
-                                    ...prev,
-                                    [row.key]: { ...base, RCFE_Administrator: e.target.value },
-                                  };
-                                })
-                              }
+                              onChange={(e) => updateDraftField(row, (current) => ({ ...current, RCFE_Administrator: e.target.value }))}
                               onBlur={(e) => {
                                 const normalized = normalizeAdminName(e.target.value);
                                 if (normalized !== e.target.value) {
-                                  setRcfeDrafts((prev) => {
-                                    const base = prev[row.key] ?? {
-                                      RCFE_Administrator: row.RCFE_Administrator,
-                                      RCFE_Administrator_Email: row.RCFE_Administrator_Email,
-                                      RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
-                                      Number_of_Beds: row.Number_of_Beds,
-                                    };
-                                    return {
-                                      ...prev,
-                                      [row.key]: { ...base, RCFE_Administrator: normalized },
-                                    };
-                                  });
+                                  updateDraftField(row, (current) => ({ ...current, RCFE_Administrator: normalized }));
                                 }
                               }}
                             />
@@ -873,40 +1045,14 @@ export default function RcfeDataToolsPage() {
                             <Input
                               className="min-w-[190px]"
                               value={draft.RCFE_Administrator_Email}
-                              onChange={(e) =>
-                                setRcfeDrafts((prev) => {
-                                  const base = prev[row.key] ?? {
-                                    RCFE_Administrator: row.RCFE_Administrator,
-                                    RCFE_Administrator_Email: row.RCFE_Administrator_Email,
-                                    RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
-                                    Number_of_Beds: row.Number_of_Beds,
-                                  };
-                                  return {
-                                    ...prev,
-                                    [row.key]: { ...base, RCFE_Administrator_Email: e.target.value },
-                                  };
-                                })
-                              }
+                              onChange={(e) => updateDraftField(row, (current) => ({ ...current, RCFE_Administrator_Email: e.target.value }))}
                             />
                           </TableCell>
                           <TableCell>
                             <Input
                               className="min-w-[150px]"
                               value={draft.RCFE_Administrator_Phone}
-                              onChange={(e) =>
-                                setRcfeDrafts((prev) => {
-                                  const base = prev[row.key] ?? {
-                                    RCFE_Administrator: row.RCFE_Administrator,
-                                    RCFE_Administrator_Email: row.RCFE_Administrator_Email,
-                                    RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
-                                    Number_of_Beds: row.Number_of_Beds,
-                                  };
-                                  return {
-                                    ...prev,
-                                    [row.key]: { ...base, RCFE_Administrator_Phone: e.target.value },
-                                  };
-                                })
-                              }
+                              onChange={(e) => updateDraftField(row, (current) => ({ ...current, RCFE_Administrator_Phone: e.target.value }))}
                             />
                           </TableCell>
                           <TableCell>
@@ -915,18 +1061,10 @@ export default function RcfeDataToolsPage() {
                               inputMode="numeric"
                               value={draft.Number_of_Beds}
                               onChange={(e) =>
-                                setRcfeDrafts((prev) => {
-                                  const base = prev[row.key] ?? {
-                                    RCFE_Administrator: row.RCFE_Administrator,
-                                    RCFE_Administrator_Email: row.RCFE_Administrator_Email,
-                                    RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
-                                    Number_of_Beds: row.Number_of_Beds,
-                                  };
-                                  return {
-                                    ...prev,
-                                    [row.key]: { ...base, Number_of_Beds: normalizeBedsInput(e.target.value) },
-                                  };
-                                })
+                                updateDraftField(row, (current) => ({
+                                  ...current,
+                                  Number_of_Beds: normalizeBedsInput(e.target.value),
+                                }))
                               }
                             />
                           </TableCell>
@@ -936,6 +1074,49 @@ export default function RcfeDataToolsPage() {
                   )}
                 </TableBody>
               </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Monthly Verification Email</CardTitle>
+          <CardDescription>
+            Send a monthly roster-confirmation email to RCFE administrators using the current member verification list.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Subject</label>
+            <Input
+              value={monthlySubject}
+              onChange={(e) => setMonthlySubject(e.target.value)}
+              placeholder="Monthly RCFE Member Verification - Month Year"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Message Intro</label>
+            <Textarea
+              value={monthlyIntro}
+              onChange={(e) => setMonthlyIntro(e.target.value)}
+              rows={4}
+              placeholder="Intro message before roster table..."
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => sendMonthlyVerificationEmails('test')}
+              disabled={isSendingMonthlyTest}
+            >
+              {isSendingMonthlyTest ? 'Sending Test...' : 'Send Test to Me'}
+            </Button>
+            <Button
+              onClick={() => sendMonthlyVerificationEmails('bulk')}
+              disabled={isSendingMonthlyBulk}
+            >
+              {isSendingMonthlyBulk ? 'Sending Bulk...' : 'Send Monthly Bulk Email'}
+            </Button>
           </div>
         </CardContent>
       </Card>
