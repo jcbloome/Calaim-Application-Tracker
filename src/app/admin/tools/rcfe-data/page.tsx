@@ -105,6 +105,7 @@ const toAddressCase = (value: unknown) =>
     .join(' ');
 
 const normalizeZipInput = (value: unknown) => String(value || '').replace(/[^\d-]/g, '');
+const normalizeRcfeName = (value: unknown) => toAddressCase(value);
 
 export default function RcfeDataToolsPage() {
   const { isAdmin, isLoading } = useAdmin();
@@ -155,12 +156,14 @@ export default function RcfeDataToolsPage() {
     return true;
   };
 
-  const getRcfeName = (member: Member) => normalizeRcfeNameForAssignment(member.RCFE_Name) || 'RCFE Unassigned';
+  const getRcfeName = (member: Member) =>
+    normalizeRcfeName(normalizeRcfeNameForAssignment(member.RCFE_Name) || 'RCFE Unassigned');
   const getRcfeStreet = (member: Member) => String(member.RCFE_Street || member.RCFE_Address || '').trim();
   const getRcfeCity = (member: Member) => String(member.RCFE_City || '').trim();
   const getRcfeZip = (member: Member) => String(member.RCFE_Zip || '').trim();
   const getRcfeCityZip = (member: Member) => [getRcfeCity(member), getRcfeZip(member)].filter(Boolean).join(', ');
-  const getRcfeAdministrator = (member: Member) => String(member.RCFE_Administrator || member.RCFE_Admin_Name || '').trim();
+  const getRcfeAdministrator = (member: Member) =>
+    normalizeAdminName(String(member.RCFE_Administrator || member.RCFE_Admin_Name || '').trim());
   const getRcfeAdministratorEmail = (member: Member) => String(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '').trim();
   const getRcfeAdministratorPhone = (member: Member) => String(member.RCFE_Administrator_Phone || member.RCFE_Admin_Phone || '').trim();
   const getRcfeBeds = (member: Member) => String(member.Number_of_Beds || '').trim();
@@ -261,7 +264,7 @@ export default function RcfeDataToolsPage() {
   }, [members]);
 
   const getDraft = (row: RCFEDirectoryRow) => ({
-    RCFE_Administrator: rcfeDrafts[row.key]?.RCFE_Administrator ?? row.RCFE_Administrator,
+    RCFE_Administrator: normalizeAdminName(rcfeDrafts[row.key]?.RCFE_Administrator ?? row.RCFE_Administrator),
     RCFE_Administrator_Email: rcfeDrafts[row.key]?.RCFE_Administrator_Email ?? row.RCFE_Administrator_Email,
     RCFE_Administrator_Phone: rcfeDrafts[row.key]?.RCFE_Administrator_Phone ?? row.RCFE_Administrator_Phone,
     Number_of_Beds: rcfeDrafts[row.key]?.Number_of_Beds ?? row.Number_of_Beds,
@@ -333,6 +336,7 @@ export default function RcfeDataToolsPage() {
         RCFE_Administrator: normalizeAdminName(raw.RCFE_Administrator),
         Number_of_Beds: normalizeBedsInput(raw.Number_of_Beds),
       };
+      const normalizedRcfeName = normalizeRcfeName(row.RCFE_Name);
       const normalizedStreet = toAddressCase(row.RCFE_Street);
       const normalizedCity = toAddressCase(row.RCFE_City);
       const normalizedZip = normalizeZipInput(row.RCFE_Zip);
@@ -350,6 +354,7 @@ export default function RcfeDataToolsPage() {
         body: JSON.stringify({
           memberIds: row.memberIds,
           updates: {
+            RCFE_Name: normalizedRcfeName,
             ...draft,
             RCFE_Street: normalizedStreet,
             RCFE_City: normalizedCity,
@@ -369,6 +374,7 @@ export default function RcfeDataToolsPage() {
           memberIdSet.has(String(member.Client_ID2 || '').trim())
             ? {
                 ...member,
+                RCFE_Name: normalizedRcfeName || member.RCFE_Name,
                 RCFE_Administrator: draft.RCFE_Administrator,
                 RCFE_Administrator_Email: draft.RCFE_Administrator_Email,
                 RCFE_Admin_Email: draft.RCFE_Administrator_Email,

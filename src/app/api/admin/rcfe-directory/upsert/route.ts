@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
     const rawUpdates = (body?.updates || {}) as Record<string, unknown>;
     const updates: Record<string, string> = {};
     const allowedFields = [
+      'RCFE_Name',
       'RCFE_Administrator',
       'RCFE_Administrator_Email',
       'RCFE_Administrator_Phone',
