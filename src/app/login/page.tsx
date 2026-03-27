@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { AccessibleButton } from '@/components/ui/accessible-button';
@@ -33,6 +33,7 @@ export default function LoginPage() {
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const enhancedToast = useEnhancedToast();
   const { user, isUserLoading, isAdmin } = useAdmin();
@@ -45,6 +46,10 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const redirectPathRaw = String(searchParams.get('redirect') || '').trim();
+  const redirectPath = redirectPathRaw.startsWith('/') && !redirectPathRaw.startsWith('//')
+    ? redirectPathRaw
+    : '/applications';
 
   useEffect(() => {
     const safeLocalStorageGet = (key: string) => {
@@ -80,13 +85,13 @@ export default function LoginPage() {
         if (isAdmin) {
           router.push('/admin');
         } else {
-          router.push('/applications');
+          router.push(redirectPath);
         }
       }
     };
 
     void run();
-  }, [user, isUserLoading, isAdmin, router, auth]);
+  }, [user, isUserLoading, isAdmin, router, auth, redirectPath]);
 
   const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();

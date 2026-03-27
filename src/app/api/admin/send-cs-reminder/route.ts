@@ -95,7 +95,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const userEmail = userData?.email || 'user@example.com';
+    const userEmail =
+      userData?.email ||
+      appData?.bestContactEmail ||
+      appData?.referrerEmail ||
+      appData?.repEmail ||
+      appData?.secondaryContactEmail ||
+      '';
     const userName = userData?.firstName && userData?.lastName 
       ? `${userData.firstName} ${userData.lastName}` 
       : userData?.displayName || userEmail || 'User';
@@ -126,18 +132,24 @@ export async function POST(request: NextRequest) {
     // If email reminder, send the email
     if (reminderType === 'email' && userEmail) {
       try {
-        const emailResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/api/email/send`, {
+        const baseUrl = String(
+          process.env.NEXT_PUBLIC_APP_URL ||
+          process.env.NEXT_PUBLIC_BASE_URL ||
+          'https://connectcalaim.com'
+        ).replace(/\/$/, '');
+        const inviteUrl = `${baseUrl}/invite/continue?applicationId=${encodeURIComponent(applicationId)}`;
+        const emailResponse = await fetch(`${baseUrl}/api/email/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: userEmail,
-            subject: 'Action Required: Complete Your CalAIM Application',
+            subject: 'Invitation: Continue Your CalAIM CS Summary',
             type: 'cs_summary_reminder',
             data: {
               userName,
               memberName: reminderData.memberName,
               applicationId,
-              confirmationUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/forms/cs-summary-form/review?applicationId=${applicationId}${userId ? `&userId=${userId}` : ''}`,
+              confirmationUrl: inviteUrl,
               supportEmail: 'support@connectionscare.com'
             }
           })
@@ -191,6 +203,11 @@ export async function POST(request: NextRequest) {
         await docRef.update({
           csSummaryReminderSent: true,
           csSummaryReminderSentAt: FieldValue.serverTimestamp(),
+          csSummaryInviteUrl: String(
+            process.env.NEXT_PUBLIC_APP_URL ||
+            process.env.NEXT_PUBLIC_BASE_URL ||
+            'https://connectcalaim.com'
+          ).replace(/\/$/, '') + `/invite/continue?applicationId=${encodeURIComponent(applicationId)}`,
           lastReminderType: reminderType
         });
       } catch (error) {

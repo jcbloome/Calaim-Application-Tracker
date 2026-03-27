@@ -5,6 +5,7 @@ const clean = (value: unknown) => String(value ?? '').trim();
 const esc = (value: unknown) => clean(value).replace(/'/g, "''");
 const looksLikeClientId2 = (fieldName: string) => /client[_\s-]*id2/i.test(clean(fieldName));
 const hasValue = (value: unknown) => clean(value).length > 0;
+const looksLikePkField = (fieldName: string) => /^pk_id$/i.test(clean(fieldName));
 
 const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<string, string> | null) => {
   const memberData: Record<string, any> = {};
@@ -116,7 +117,12 @@ export async function POST(request: NextRequest) {
     const lastNameField = clean(mapping?.memberLastName) || 'Senior_Last';
 
     const where = `${firstNameField}='${esc(firstName)}' AND ${lastNameField}='${esc(lastName)}'`;
-    const searchUrl = `${baseUrl}/tables/${membersTable}/records?q.where=${encodeURIComponent(where)}&q.limit=1`;
+    const searchUrl =
+      `${baseUrl}/tables/${membersTable}/records` +
+      `?q.where=${encodeURIComponent(where)}` +
+      `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2')}` +
+      `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
+      `&q.limit=1`;
     const searchResponse = await fetch(searchUrl, {
       method: 'GET',
       headers: {
@@ -124,17 +130,13 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
     });
+    let existingRow: Record<string, any> | null = null;
     if (searchResponse.ok) {
       const searchJson = await searchResponse.json().catch(() => ({} as any));
       if (Array.isArray(searchJson?.Result) && searchJson.Result.length > 0) {
-        return NextResponse.json(
-          { success: false, code: 'already-exists', message: `Member "${firstName} ${lastName}" already exists in Caspio.` },
-          { status: 409 }
-        );
+        existingRow = searchJson.Result[0] as Record<string, any>;
       }
     }
-
-    const generatedClientId2 = await createClientAndGetClientId2(baseUrl, token, firstName, lastName);
 
     const mappedFields = buildMemberDataFromMapping(applicationData, mapping);
     const mappedClientIdField = Object.keys(mappedFields).find((field) => looksLikeClientId2(field));
@@ -147,12 +149,23 @@ export async function POST(request: NextRequest) {
     const memberData: Record<string, any> = { ...mappedFields };
     if (!memberData[firstNameField]) memberData[firstNameField] = firstName;
     if (!memberData[lastNameField]) memberData[lastNameField] = lastName;
-    const currentClientId = clean(memberData[clientIdField]);
-    if (!currentClientId || currentClientId === '0') memberData[clientIdField] = generatedClientId2;
+    const existingClientId2 = clean(existingRow?.client_ID2 || existingRow?.Client_ID2);
+    if (existingClientId2) {
+      memberData[clientIdField] = existingClientId2;
+    } else {
+      const currentClientId = clean(memberData[clientIdField]);
+      if (!currentClientId || currentClientId === '0') {
+        const generatedClientId2 = await createClientAndGetClientId2(baseUrl, token, firstName, lastName);
+        memberData[clientIdField] = generatedClientId2;
+      }
+    }
     if (hasValue(assignedStaffName) && !hasValue(memberData.Kaiser_User_Assignment)) {
       // Keep Kaiser tracker assignment in Caspio aligned with admin assignment at push time.
       memberData.Kaiser_User_Assignment = assignedStaffName;
     }
+    Object.keys(memberData).forEach((key) => {
+      if (looksLikePkField(key)) delete memberData[key];
+    });
     if (Object.keys(memberData).length === 0) {
       return NextResponse.json(
         {
@@ -164,9 +177,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const insertUrl = `${baseUrl}/tables/${membersTable}/records`;
-    let insertResponse = await fetch(insertUrl, {
-      method: 'POST',
+    const isUpdate = Boolean(existingRow?.PK_ID || existingRow?.pk_id);
+    const updateWhere = isUpdate ? `PK_ID=${Number(existingRow?.PK_ID || existingRow?.pk_id || 0)}` : '';
+    const upsertUrl = isUpdate
+      ? `${baseUrl}/tables/${membersTable}/records?q.where=${encodeURIComponent(updateWhere)}`
+      : `${baseUrl}/tables/${membersTable}/records`;
+    const upsertMethod = isUpdate ? 'PUT' : 'POST';
+    let upsertResponse = await fetch(upsertUrl, {
+      method: upsertMethod,
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -175,15 +193,15 @@ export async function POST(request: NextRequest) {
     });
 
     // Some Caspio tables may not have Kaiser_User_Assignment. If so, retry once without it.
-    if (!insertResponse.ok && hasValue(memberData.Kaiser_User_Assignment)) {
-      const firstErrText = await insertResponse.text().catch(() => '');
+    if (!upsertResponse.ok && hasValue(memberData.Kaiser_User_Assignment)) {
+      const firstErrText = await upsertResponse.text().catch(() => '');
       const mentionsMissingAssignmentColumn =
         /columnnotfound/i.test(firstErrText) && /kaiser_user_assignment/i.test(firstErrText);
       if (mentionsMissingAssignmentColumn) {
         const fallbackData = { ...memberData };
         delete fallbackData.Kaiser_User_Assignment;
-        insertResponse = await fetch(insertUrl, {
-          method: 'POST',
+        upsertResponse = await fetch(upsertUrl, {
+          method: upsertMethod,
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -194,14 +212,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            code: 'caspio-insert-failed',
-            message: 'Failed to insert member record in Caspio.',
+            code: isUpdate ? 'caspio-update-failed' : 'caspio-insert-failed',
+            message: isUpdate
+              ? 'Failed to update member record in Caspio.'
+              : 'Failed to insert member record in Caspio.',
             details: {
-              caspioStatus: insertResponse.status,
+              caspioStatus: upsertResponse.status,
               caspioError: firstErrText,
               memberName: `${firstName} ${lastName}`.trim(),
-              generatedClientId2,
               clientIdField,
+              mode: isUpdate ? 'update' : 'create',
             },
           },
           { status: 500 }
@@ -209,30 +229,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!insertResponse.ok) {
-      const caspioError = await insertResponse.text().catch(() => '');
+    if (!upsertResponse.ok) {
+      const caspioError = await upsertResponse.text().catch(() => '');
       return NextResponse.json(
         {
           success: false,
-          code: 'caspio-insert-failed',
-          message: 'Failed to insert member record in Caspio.',
+          code: isUpdate ? 'caspio-update-failed' : 'caspio-insert-failed',
+          message: isUpdate
+            ? 'Failed to update member record in Caspio.'
+            : 'Failed to insert member record in Caspio.',
           details: {
-            caspioStatus: insertResponse.status,
+            caspioStatus: upsertResponse.status,
             caspioError,
             memberName: `${firstName} ${lastName}`.trim(),
-            generatedClientId2,
             clientIdField,
+            mode: isUpdate ? 'update' : 'create',
           },
         },
         { status: 500 }
       );
     }
 
-    const result = await insertResponse.json().catch(() => ({} as any));
+    const result = await upsertResponse.json().catch(() => ({} as any));
     return NextResponse.json({
       success: true,
-      message: `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio.`,
-      clientId2: generatedClientId2,
+      message: isUpdate
+        ? `Successfully updated Caspio profile for "${firstName} ${lastName}".`
+        : `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio.`,
+      mode: isUpdate ? 'update' : 'create',
+      clientId2: clean(memberData[clientIdField]),
       data: result,
     });
   } catch (error: any) {

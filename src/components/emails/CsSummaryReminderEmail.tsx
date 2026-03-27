@@ -34,8 +34,7 @@ export function CsSummaryReminderEmail({
         <h2 style={{ color: '#1f2937', marginTop: '0' }}>Hello {userName},</h2>
         
         <p style={{ color: '#4b5563', lineHeight: '1.6' }}>
-          We noticed that you've completed the CS Member Summary form for <strong>{memberName}</strong>, 
-          but it hasn't been confirmed yet.
+          You are invited to continue the CalAIM CS Summary application for <strong>{memberName}</strong>.
         </p>
 
         <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '6px', padding: '15px', margin: '20px 0' }}>
@@ -43,7 +42,7 @@ export function CsSummaryReminderEmail({
             ⚠️ Action Required
           </h3>
           <p style={{ color: '#92400e', margin: '0', fontSize: '14px' }}>
-            To complete your CalAIM application, you need to review and confirm your CS Member Summary form.
+            To continue this application, sign in (or create an account with this invited email), then verify the member&apos;s last name and date of birth.
           </p>
         </div>
 
@@ -51,9 +50,10 @@ export function CsSummaryReminderEmail({
           <strong>What you need to do:</strong>
         </p>
         <ol style={{ color: '#4b5563', lineHeight: '1.6', paddingLeft: '20px' }}>
-          <li>Click the "Complete Confirmation" button below</li>
-          <li>Review your CS Member Summary information</li>
-          <li>Click "Confirm" to finalize your application</li>
+          <li>Click the "Continue Application" button below</li>
+          <li>Sign in or create an account with this invited email address</li>
+          <li>Enter the member&apos;s last name and date of birth to verify access</li>
+          <li>Continue the CS Summary form</li>
         </ol>
 
         <div style={{ textAlign: 'center', margin: '30px 0' }}>
@@ -69,7 +69,7 @@ export function CsSummaryReminderEmail({
               display: 'inline-block'
             }}
           >
-            Complete Confirmation
+            Continue Application
           </a>
         </div>
 
@@ -130,15 +130,16 @@ CalAIM Application - Action Required
 
 Hello ${userName},
 
-We noticed that you've completed the CS Member Summary form for ${memberName}, but it hasn't been confirmed yet.
+You are invited to continue the CalAIM CS Summary application for ${memberName}.
 
 ACTION REQUIRED:
-To complete your CalAIM application, you need to review and confirm your CS Member Summary form.
+To continue this application, sign in (or create an account with this invited email), then verify the member's last name and date of birth.
 
 What you need to do:
 1. Visit: ${confirmationUrl}
-2. Review your CS Member Summary information
-3. Click "Confirm" to finalize your application
+2. Sign in or create an account with this invited email
+3. Enter the member's last name and date of birth
+4. Continue the CS Summary form
 
 Application Details:
 Member: ${memberName}

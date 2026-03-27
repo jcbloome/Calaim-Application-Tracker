@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { AccessibleButton } from '@/components/ui/accessible-button';
@@ -57,6 +57,7 @@ export default function SignUpPage() {
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const enhancedToast = useEnhancedToast();
   const { user, isUserLoading } = useUser();
@@ -68,12 +69,16 @@ export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const redirectPathRaw = String(searchParams.get('redirect') || '').trim();
+  const redirectPath = redirectPathRaw.startsWith('/') && !redirectPathRaw.startsWith('//')
+    ? redirectPathRaw
+    : '/applications';
 
   useEffect(() => {
     if (!isUserLoading && user) {
-      router.push('/applications');
+      router.push(redirectPath);
     }
-  }, [user, isUserLoading, router]);
+  }, [user, isUserLoading, router, redirectPath]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +119,7 @@ export default function SignUpPage() {
         description: 'You have been successfully signed up.',
       });
       
-      router.push('/applications');
+      router.push(redirectPath);
 
     } catch (err) {
       const authError = err as AuthError;

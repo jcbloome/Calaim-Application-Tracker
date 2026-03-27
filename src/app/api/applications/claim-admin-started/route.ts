@@ -18,6 +18,47 @@ function parseAuthToken(request: NextRequest): string | null {
   return token.trim();
 }
 
+function normalizeDateKey(value: unknown): string {
+  if (!value) return '';
+  if (typeof (value as any)?.toDate === 'function') {
+    const date = (value as any).toDate();
+    if (date instanceof Date && !Number.isNaN(date.getTime())) {
+      return date.toISOString().slice(0, 10);
+    }
+    return '';
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const raw = String(value).trim();
+  if (!raw) return '';
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  const usMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (usMatch) {
+    const mm = usMatch[1].padStart(2, '0');
+    const dd = usMatch[2].padStart(2, '0');
+    return `${usMatch[3]}-${mm}-${dd}`;
+  }
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return '';
+}
+
+function hasMatchingInviteEmail(data: Record<string, unknown>, email: string): boolean {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  const candidates = [
+    data.bestContactEmail,
+    data.referrerEmail,
+    data.secondaryContactEmail,
+    data.repEmail,
+  ].map((v) => normalizeEmail(v));
+  return candidates.includes(normalized);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const token = parseAuthToken(request);
@@ -41,23 +82,29 @@ export async function POST(request: NextRequest) {
 
     const familyFirst = normalizeName(payload.firstName);
     const familyLast = normalizeName(payload.lastName);
+    const requestedApplicationId = String(payload.applicationId || '').trim();
+    const inviteLastName = normalizeName(payload.memberLastName);
+    const inviteDob = normalizeDateKey(payload.memberDob);
     const shouldCheckFamilyName = Boolean(familyFirst || familyLast);
 
-    const candidateFields = ['bestContactEmail', 'referrerEmail', 'secondaryContactEmail', 'repEmail'] as const;
-    const queryValues = Array.from(new Set([String(decoded.email || '').trim(), email])).filter(Boolean);
-
-    const snapshots = await Promise.all(
-      candidateFields.flatMap((field) =>
-        queryValues.map((value) => adminDb.collection('applications').where(field, '==', value).get())
-      )
-    );
-
     const uniqueDocs = new Map<string, any>();
-    snapshots.forEach((snap) => {
-      snap.docs.forEach((d) => {
-        if (!uniqueDocs.has(d.id)) uniqueDocs.set(d.id, d);
+    if (requestedApplicationId) {
+      const docSnap = await adminDb.collection('applications').doc(requestedApplicationId).get();
+      if (docSnap.exists) uniqueDocs.set(docSnap.id, docSnap);
+    } else {
+      const candidateFields = ['bestContactEmail', 'referrerEmail', 'secondaryContactEmail', 'repEmail'] as const;
+      const queryValues = Array.from(new Set([String(decoded.email || '').trim(), email])).filter(Boolean);
+      const snapshots = await Promise.all(
+        candidateFields.flatMap((field) =>
+          queryValues.map((value) => adminDb.collection('applications').where(field, '==', value).get())
+        )
+      );
+      snapshots.forEach((snap) => {
+        snap.docs.forEach((d) => {
+          if (!uniqueDocs.has(d.id)) uniqueDocs.set(d.id, d);
+        });
       });
-    });
+    }
 
     if (uniqueDocs.size === 0) {
       return NextResponse.json({ success: true, claimedCount: 0, claimedApplicationIds: [] });
@@ -75,6 +122,8 @@ export async function POST(request: NextRequest) {
 
       const existingUserId = String(data.userId || '').trim();
       if (existingUserId && existingUserId !== uid) return;
+      const inviteEmailMatch = hasMatchingInviteEmail(data, email);
+      if (!inviteEmailMatch && existingUserId !== uid) return;
 
       if (shouldCheckFamilyName) {
         const candidateFirstNames = [
@@ -91,6 +140,14 @@ export async function POST(request: NextRequest) {
         const firstOk = !familyFirst || candidateFirstNames.length === 0 || candidateFirstNames.includes(familyFirst);
         const lastOk = !familyLast || candidateLastNames.length === 0 || candidateLastNames.includes(familyLast);
         if (!firstOk || !lastOk) return;
+      }
+
+      if (requestedApplicationId) {
+        if (!inviteLastName || !inviteDob) return;
+        const memberLast = normalizeName(data.memberLastName);
+        const memberDob = normalizeDateKey(data.memberDob);
+        if (!memberLast || !memberDob) return;
+        if (memberLast !== inviteLastName || memberDob !== inviteDob) return;
       }
 
       const status = normalizeName(data.status);
