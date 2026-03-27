@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play, MapPinned, Download, Building2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { loadGoogleMaps } from '@/lib/google-maps-loader';
@@ -316,6 +318,7 @@ function GeoAssignmentMap(props: { sw: GeoSw[]; selectedSwId: string; className?
 
 export default function SocialWorkerAssignmentsPage() {
   const { isAdmin, isLoading } = useAdmin();
+  const router = useRouter();
   const { toast } = useToast();
   const auth = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
@@ -349,7 +352,6 @@ export default function SocialWorkerAssignmentsPage() {
   const [rcfeDrafts, setRcfeDrafts] = useState<
     Record<string, { RCFE_Administrator: string; RCFE_Administrator_Email: string; RCFE_Administrator_Phone: string; Number_of_Beds: string }>
   >({});
-  const [savingRcfeByKey, setSavingRcfeByKey] = useState<Record<string, boolean>>({});
   const [isSavingAllRcfe, setIsSavingAllRcfe] = useState(false);
   
   // Geo assignment tool state (suggest/export only)
@@ -664,6 +666,29 @@ export default function SocialWorkerAssignmentsPage() {
     Number_of_Beds: rcfeDrafts[row.key]?.Number_of_Beds ?? row.Number_of_Beds,
   });
 
+  const normalizeAdminName = (value: unknown) =>
+    String(value || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .split(' ')
+      .filter(Boolean)
+      .map((token) =>
+        token
+          .split('-')
+          .map((part) =>
+            part
+              .split("'")
+              .map((seg) =>
+                seg ? `${seg.charAt(0).toUpperCase()}${seg.slice(1).toLowerCase()}` : seg
+              )
+              .join("'")
+          )
+          .join('-')
+      )
+      .join(' ');
+
+  const normalizeBedsInput = (value: unknown) => String(value || '').replace(/[^\d]/g, '');
+
   const hasRcfeDraftChanges = useCallback((row: RCFEDirectoryRow) => {
     const draft = getRcfeDraft(row);
     return (
@@ -714,9 +739,12 @@ export default function SocialWorkerAssignmentsPage() {
     try {
       if (!auth?.currentUser) throw new Error('You must be signed in to update RCFE data.');
       if (!row.memberIds.length) throw new Error('No member IDs available for this RCFE row.');
-      setSavingRcfeByKey((prev) => ({ ...prev, [row.key]: true }));
-
-      const draft = getRcfeDraft(row);
+      const rawDraft = getRcfeDraft(row);
+      const draft = {
+        ...rawDraft,
+        RCFE_Administrator: normalizeAdminName(rawDraft.RCFE_Administrator),
+        Number_of_Beds: normalizeBedsInput(rawDraft.Number_of_Beds),
+      };
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch('/api/admin/rcfe-directory/upsert', {
         method: 'POST',
@@ -749,6 +777,10 @@ export default function SocialWorkerAssignmentsPage() {
 
       setMembers((prev) => prev.map(applyUpdates));
       setKaiserAuthorizedMembers((prev) => prev.map(applyUpdates));
+      setRcfeDrafts((prev) => ({
+        ...prev,
+        [row.key]: draft,
+      }));
 
       if (!options?.silent) {
         toast({
@@ -766,8 +798,6 @@ export default function SocialWorkerAssignmentsPage() {
         });
       }
       return false;
-    } finally {
-      setSavingRcfeByKey((prev) => ({ ...prev, [row.key]: false }));
     }
   }, [auth?.currentUser, rcfeDrafts, toast]);
 
@@ -803,7 +833,7 @@ export default function SocialWorkerAssignmentsPage() {
 
     toast({
       title: 'RCFE bulk sync completed with errors',
-      description: `Synced ${successCount}, failed ${failureCount}. You can retry failed rows with Push to Caspio.`,
+      description: `Synced ${successCount}, failed ${failureCount}. You can retry with Push All Edited again.`,
       variant: 'destructive',
     });
   }, [editedRcfeRows, saveRcfeRowToCaspio, toast]);
@@ -1259,7 +1289,6 @@ export default function SocialWorkerAssignmentsPage() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="assignments">Member Assignments</TabsTrigger>
-          <TabsTrigger value="rcfe-data">RCFE Data</TabsTrigger>
           <TabsTrigger value="workload">Workload Analysis</TabsTrigger>
           <TabsTrigger value="geo">Geo Assignment</TabsTrigger>
         </TabsList>
@@ -1354,7 +1383,7 @@ export default function SocialWorkerAssignmentsPage() {
             <button
               type="button"
               className="text-left"
-              onClick={() => setActiveTab('rcfe-data')}
+              onClick={() => router.push('/admin/tools/rcfe-data')}
             >
               <Card className="border-indigo-200 bg-indigo-50 hover:bg-indigo-100 transition-colors cursor-pointer">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1364,7 +1393,7 @@ export default function SocialWorkerAssignmentsPage() {
                 <CardContent>
                   <div className="text-2xl font-bold text-indigo-800">{rcfeDirectoryRows.length}</div>
                   <p className="text-xs text-indigo-800">
-                    Click to open RCFE data table
+                    Click to open RCFE Data Management tool
                   </p>
                 </CardContent>
               </Card>
@@ -1891,37 +1920,20 @@ export default function SocialWorkerAssignmentsPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="w-full overflow-x-auto pb-2">
+                <TooltipProvider delayDuration={120}>
+                <Table className="min-w-[1180px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>
+                      <TableHead className="w-[320px]">
                         <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_Name')}>
-                          RCFE Name
-                          <ArrowUpDown className="h-3 w-3" />
-                        </button>
-                      </TableHead>
-                      <TableHead>
-                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('memberCount')}>
-                          Members
+                          RCFE Home
                           <ArrowUpDown className="h-3 w-3" />
                         </button>
                       </TableHead>
                       <TableHead>
                         <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_Administrator')}>
                           Admin Name
-                          <ArrowUpDown className="h-3 w-3" />
-                        </button>
-                      </TableHead>
-                      <TableHead>
-                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_Street')}>
-                          Street
-                          <ArrowUpDown className="h-3 w-3" />
-                        </button>
-                      </TableHead>
-                      <TableHead>
-                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_City_RCFE_Zip')}>
-                          City / Zip
                           <ArrowUpDown className="h-3 w-3" />
                         </button>
                       </TableHead>
@@ -1943,13 +1955,12 @@ export default function SocialWorkerAssignmentsPage() {
                           <ArrowUpDown className="h-3 w-3" />
                         </button>
                       </TableHead>
-                      <TableHead>Sync</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {visibleRcfeRows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-muted-foreground">
+                        <TableCell colSpan={5} className="text-muted-foreground">
                           No RCFEs match your search.
                         </TableCell>
                       </TableRow>
@@ -1958,19 +1969,47 @@ export default function SocialWorkerAssignmentsPage() {
                         const draft = getRcfeDraft(row);
                         return (
                           <TableRow key={row.key}>
-                            <TableCell className="font-medium">{row.RCFE_Name || '-'}</TableCell>
-                            <TableCell>
-                              <div className="font-medium">{row.memberCount}</div>
-                              {row.memberNames.length > 0 ? (
-                                <div className="text-xs text-muted-foreground mt-1 max-w-xs whitespace-pre-wrap">
-                                  {row.memberNames.slice().sort((a, b) => a.localeCompare(b)).join(', ')}
-                                </div>
-                              ) : (
-                                <div className="text-xs text-muted-foreground mt-1">No member names available</div>
-                              )}
+                            <TableCell className="max-w-[320px]">
+                              <div className="font-medium">{row.RCFE_Name || '-'}</div>
+                              <div className="text-xs text-muted-foreground break-words">
+                                {[String(row.RCFE_Street || '').trim(), String(row.RCFE_City_RCFE_Zip || '').trim()]
+                                  .filter(Boolean)
+                                  .join(', ') || '-'}
+                              </div>
+                              <div className="text-xs mt-1">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="font-medium text-left underline-offset-2 hover:underline"
+                                      aria-label={`View ${row.memberCount} members`}
+                                    >
+                                      Members: {row.memberCount}
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" align="start" className="max-w-sm p-2">
+                                    <div className="text-xs font-semibold mb-1">Members ({row.memberCount})</div>
+                                    <div className="max-h-56 overflow-y-auto pr-1 space-y-1">
+                                      {row.memberNames.length > 0 ? (
+                                        row.memberNames
+                                          .slice()
+                                          .sort((a, b) => a.localeCompare(b))
+                                          .map((memberName) => (
+                                            <div key={`${row.key}-${memberName}`} className="text-xs leading-tight">
+                                              {memberName}
+                                            </div>
+                                          ))
+                                      ) : (
+                                        <div className="text-xs text-muted-foreground">No member names available</div>
+                                      )}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
                             </TableCell>
                             <TableCell>
                               <Input
+                                className="min-w-[160px]"
                                 value={draft.RCFE_Administrator}
                                 onChange={(e) =>
                                   setRcfeDrafts((prev) => {
@@ -1987,12 +2026,28 @@ export default function SocialWorkerAssignmentsPage() {
                                   })
                                 }
                                 placeholder="Admin name"
+                                onBlur={(e) => {
+                                  const normalized = normalizeAdminName(e.target.value);
+                                  if (normalized !== e.target.value) {
+                                    setRcfeDrafts((prev) => {
+                                      const base = prev[row.key] ?? {
+                                        RCFE_Administrator: row.RCFE_Administrator,
+                                        RCFE_Administrator_Email: row.RCFE_Administrator_Email,
+                                        RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
+                                        Number_of_Beds: row.Number_of_Beds,
+                                      };
+                                      return {
+                                        ...prev,
+                                        [row.key]: { ...base, RCFE_Administrator: normalized },
+                                      };
+                                    });
+                                  }
+                                }}
                               />
                             </TableCell>
-                            <TableCell>{row.RCFE_Street || '-'}</TableCell>
-                            <TableCell>{row.RCFE_City_RCFE_Zip || '-'}</TableCell>
                             <TableCell>
                               <Input
+                                className="min-w-[190px]"
                                 value={draft.RCFE_Administrator_Email}
                                 onChange={(e) =>
                                   setRcfeDrafts((prev) => {
@@ -2013,6 +2068,7 @@ export default function SocialWorkerAssignmentsPage() {
                             </TableCell>
                             <TableCell>
                               <Input
+                                className="min-w-[150px]"
                                 value={draft.RCFE_Administrator_Phone}
                                 onChange={(e) =>
                                   setRcfeDrafts((prev) => {
@@ -2033,6 +2089,7 @@ export default function SocialWorkerAssignmentsPage() {
                             </TableCell>
                             <TableCell>
                               <Input
+                                className="min-w-[110px]"
                                 value={draft.Number_of_Beds}
                                 onChange={(e) =>
                                   setRcfeDrafts((prev) => {
@@ -2044,21 +2101,13 @@ export default function SocialWorkerAssignmentsPage() {
                                     };
                                     return {
                                       ...prev,
-                                      [row.key]: { ...base, Number_of_Beds: e.target.value },
+                                      [row.key]: { ...base, Number_of_Beds: normalizeBedsInput(e.target.value) },
                                     };
                                   })
                                 }
                                 placeholder="Number_of_Beds"
+                                inputMode="numeric"
                               />
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                size="sm"
-                                onClick={() => saveRcfeRowToCaspio(row)}
-                                disabled={Boolean(savingRcfeByKey[row.key])}
-                              >
-                                {savingRcfeByKey[row.key] ? 'Syncing...' : 'Push to Caspio'}
-                              </Button>
                             </TableCell>
                           </TableRow>
                         );
@@ -2066,6 +2115,7 @@ export default function SocialWorkerAssignmentsPage() {
                     )}
                   </TableBody>
                 </Table>
+                </TooltipProvider>
               </div>
             </CardContent>
           </Card>

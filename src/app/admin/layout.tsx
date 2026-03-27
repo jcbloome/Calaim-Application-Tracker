@@ -54,6 +54,7 @@ import {
   FileBarChart,
   UploadCloud,
   Download,
+  Building2,
   Receipt,
   Search,
   Monitor,
@@ -143,6 +144,7 @@ const adminNavLinks = [
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/ils-report-editor', label: 'ILS Member Update', icon: FileEdit },
+      { href: '/admin/tools/rcfe-data', label: 'RCFE Data Management', icon: Building2 },
       { href: '/admin/tools/ils-status-check', label: 'ILS Status Check', icon: FileText },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
       { isDivider: true, label: 'Claims', icon: FileBarChart },

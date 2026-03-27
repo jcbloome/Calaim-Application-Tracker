@@ -163,6 +163,14 @@ function PathwayPageContent() {
   });
 
   const isAdminCreatedApp = applicationId?.startsWith('admin_app_');
+
+  const getSafeForms = (value: unknown): FormStatusType[] => {
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is FormStatusType => {
+      const name = String((item as any)?.name || '').trim();
+      return name.length > 0;
+    });
+  };
   
   const docRef = useMemoFirebase(() => {
     if (!firestore || !applicationId) return null;
@@ -213,7 +221,8 @@ function PathwayPageContent() {
   }, [isLoading, application, isUserLoading, router, isAdminCreatedApp]);
 
   useEffect(() => {
-    if (application && docRef && application.pathway && (!application.forms || application.forms.length === 0)) {
+    const safeForms = getSafeForms(application?.forms);
+    if (application && docRef && application.pathway && safeForms.length === 0) {
         const pathwayRequirements = getPathwayRequirements(
           application.pathway as 'SNF Transition' | 'SNF Diversion',
           application.healthPlan
@@ -238,7 +247,7 @@ function PathwayPageContent() {
       if (!docRef || !application) return;
       const isInternalStaffUpload = Boolean(isAdmin || isSuperAdmin);
 
-      const existingForms = new Map(application.forms?.map(f => [f.name, f]) || []);
+      const existingForms = new Map(getSafeForms(application.forms).map(f => [f.name, f]));
       
       updates.forEach(update => {
           const name = String(update.name || '').trim();
@@ -718,7 +727,7 @@ function PathwayPageContent() {
     }
     return items;
   })();
-  const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
+  const formStatusMap = new Map(getSafeForms(application.forms).map(f => [f.name, f]));
   const completedCount = pathwayRequirements.reduce((acc, req) => {
     const form = formStatusMap.get(req.title);
     if (form?.status === 'Completed') return acc + 1;
