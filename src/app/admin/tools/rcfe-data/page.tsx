@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ArrowUpDown, Building2, CheckCircle2, RefreshCw } from 'lucide-react';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 interface Member {
   Client_ID2: string;
@@ -110,6 +111,7 @@ const normalizeRcfeName = (value: unknown) => toAddressCase(value);
 export default function RcfeDataToolsPage() {
   const { isAdmin, isLoading } = useAdmin();
   const auth = useAuth();
+  const firestore = useFirestore();
   const { toast } = useToast();
 
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
@@ -129,6 +131,12 @@ export default function RcfeDataToolsPage() {
   const confirmedStorageKey = 'rcfe-member-presence-status';
   const [memberExtraDetails, setMemberExtraDetails] = useState<Record<string, string>>({});
   const commentsStorageKey = 'rcfe-member-extra-details';
+  const progressDocRef = useMemo(
+    () => (firestore ? doc(firestore, 'admin_tool_state', 'rcfe_data_progress') : null),
+    [firestore]
+  );
+  const hasHydratedProgressRef = useRef(false);
+  const progressSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isHealthNetMember = (member: Member) => {
     const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
@@ -536,12 +544,72 @@ export default function RcfeDataToolsPage() {
   }, []);
 
   useEffect(() => {
+    const loadFirestoreProgress = async () => {
+      if (!progressDocRef) {
+        hasHydratedProgressRef.current = true;
+        return;
+      }
+      try {
+        const snap = await getDoc(progressDocRef);
+        if (!snap.exists()) {
+          hasHydratedProgressRef.current = true;
+          return;
+        }
+        const data = snap.data() as any;
+        const fsPresence = (data?.memberPresenceStatus || {}) as Record<string, 'there' | 'not_there'>;
+        const fsDetails = (data?.memberExtraDetails || {}) as Record<string, string>;
+        if (fsPresence && typeof fsPresence === 'object') {
+          setMemberPresenceStatus((prev) => ({ ...prev, ...fsPresence }));
+        }
+        if (fsDetails && typeof fsDetails === 'object') {
+          setMemberExtraDetails((prev) => ({ ...prev, ...fsDetails }));
+        }
+      } catch (error) {
+        console.warn('Failed to load RCFE progress from Firestore:', error);
+      } finally {
+        hasHydratedProgressRef.current = true;
+      }
+    };
+
+    void loadFirestoreProgress();
+  }, [progressDocRef]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(commentsStorageKey, JSON.stringify(memberExtraDetails));
     } catch {
       // ignore storage issues
     }
   }, [memberExtraDetails]);
+
+  useEffect(() => {
+    if (!hasHydratedProgressRef.current) return;
+    if (!progressDocRef) return;
+    if (!auth?.currentUser) return;
+
+    if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
+    progressSaveTimerRef.current = setTimeout(async () => {
+      try {
+        await setDoc(
+          progressDocRef,
+          {
+            memberPresenceStatus,
+            memberExtraDetails,
+            updatedAt: serverTimestamp(),
+            updatedByUid: auth.currentUser?.uid || null,
+            updatedByEmail: auth.currentUser?.email || null,
+          },
+          { merge: true }
+        );
+      } catch (error) {
+        console.warn('Failed to save RCFE progress to Firestore:', error);
+      }
+    }, 800);
+
+    return () => {
+      if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
+    };
+  }, [progressDocRef, auth?.currentUser, memberPresenceStatus, memberExtraDetails]);
 
   if (isLoading) {
     return (
