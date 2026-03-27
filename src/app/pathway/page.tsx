@@ -137,6 +137,36 @@ function parseCurrencyAmount(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function formatBirthDate(value: unknown): string {
+  if (value == null) return 'N/A';
+
+  try {
+    const ts = value as { toDate?: () => Date };
+    if (ts && typeof ts.toDate === 'function') {
+      const dt = ts.toDate();
+      if (dt instanceof Date && !Number.isNaN(dt.getTime())) {
+        return dt.toLocaleDateString();
+      }
+    }
+  } catch {
+    // fall through to string/date parsing
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toLocaleDateString();
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return 'N/A';
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleDateString();
+  }
+
+  return raw;
+}
+
 function PathwayPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
