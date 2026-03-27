@@ -193,8 +193,28 @@ export default function RcfeDataToolsPage() {
     return dt.toLocaleString();
   };
 
+  const fetchCachedMembers = useCallback(
+    async (showLoadedToast: boolean) => {
+      const res = await fetch('/api/all-members');
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || data?.details || `Fetch failed (HTTP ${res.status})`);
+      }
+
+      const allMembers = (Array.isArray(data.members) ? data.members : []) as Member[];
+      const scoped = allMembers.filter((m) => (isHealthNetMember(m) || isKaiserMember(m)) && isAuthorizedMember(m));
+      setMembers(scoped);
+      if (showLoadedToast) {
+        toast({ title: 'RCFE data loaded', description: `Loaded ${scoped.length} authorized members.` });
+      }
+      return scoped.length;
+    },
+    [toast]
+  );
+
   const loadMembers = useCallback(async () => {
     setIsLoadingMembers(true);
+    let syncErrorMessage = '';
     try {
       if (!auth?.currentUser) throw new Error('You must be signed in to sync.');
       const idToken = await auth.currentUser.getIdToken();
@@ -208,27 +228,41 @@ export default function RcfeDataToolsPage() {
       if (!syncRes.ok || !syncData?.success) {
         throw new Error(syncData?.error || syncData?.details || `Sync failed (HTTP ${syncRes.status})`);
       }
+    } catch (syncError: any) {
+      syncErrorMessage = String(syncError?.message || 'Sync failed.');
+    }
 
-      const res = await fetch('/api/all-members');
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || data?.details || `Fetch failed (HTTP ${res.status})`);
+    try {
+      const count = await fetchCachedMembers(!syncErrorMessage);
+      if (syncErrorMessage) {
+        toast({
+          title: 'Sync failed, loaded cached data',
+          description: `${syncErrorMessage} Showing ${count} existing authorized members.`,
+          variant: 'destructive',
+        });
       }
-
-      const allMembers = (Array.isArray(data.members) ? data.members : []) as Member[];
-      const scoped = allMembers.filter((m) => (isHealthNetMember(m) || isKaiserMember(m)) && isAuthorizedMember(m));
-      setMembers(scoped);
-      toast({ title: 'RCFE data loaded', description: `Loaded ${scoped.length} authorized members.` });
-    } catch (error: any) {
+    } catch (fetchError: any) {
+      const baseMessage = String(fetchError?.message || 'Could not load RCFE data.');
       toast({
         title: 'Load failed',
-        description: error?.message || 'Could not load RCFE data.',
+        description: syncErrorMessage ? `${syncErrorMessage} Also failed to load cache: ${baseMessage}` : baseMessage,
         variant: 'destructive',
       });
     } finally {
       setIsLoadingMembers(false);
     }
-  }, [auth?.currentUser, toast]);
+  }, [auth?.currentUser, fetchCachedMembers, toast]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (members.length > 0) return;
+    setIsLoadingMembers(true);
+    fetchCachedMembers(false)
+      .catch(() => {
+        // Keep this silent on initial page load.
+      })
+      .finally(() => setIsLoadingMembers(false));
+  }, [isAdmin, members.length, fetchCachedMembers]);
 
   const rcfeRows = useMemo<RCFEDirectoryRow[]>(() => {
     const grouped = new Map<string, RCFEDirectoryRow>();
