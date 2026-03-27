@@ -63,6 +63,15 @@ export interface CaspioMember {
   Hold_For_Social_Worker_Visit?: string;
   RCFE_Name: string;
   RCFE_Address: string;
+  RCFE_Street?: string;
+  RCFE_Street_Address?: string;
+  RCFE_City?: string;
+  RCFE_Zip?: string;
+  RCFE_Administrator?: string;
+  RCFE_Administrator_Email?: string;
+  RCFE_Admin_Email?: string;
+  RCFE_Administrator_Phone?: string;
+  Number_of_Beds?: string;
   Pathway: string;
   last_updated: string;
   [key: string]: any;
@@ -348,6 +357,17 @@ export function transformCaspioMember(member: CaspioMember): any {
     Hold_For_Social_Worker_Visit: hold,
     RCFE_Name: member.RCFE_Name || '',
     RCFE_Address: member.RCFE_Address || '',
+    RCFE_Street: (member as any)?.RCFE_Street || (member as any)?.RCFE_Street_Address || (member as any)?.RCFE_Address || '',
+    RCFE_City: (member as any)?.RCFE_City || '',
+    RCFE_Zip: (member as any)?.RCFE_Zip || '',
+    RCFE_City_RCFE_Zip: [String((member as any)?.RCFE_City || '').trim(), String((member as any)?.RCFE_Zip || '').trim()].filter(Boolean).join(', '),
+    RCFE_Administrator: (member as any)?.RCFE_Administrator || '',
+    RCFE_Administrator_Email:
+      (member as any)?.RCFE_Administrator_Email ||
+      (member as any)?.RCFE_Admin_Email ||
+      '',
+    RCFE_Administrator_Phone: (member as any)?.RCFE_Administrator_Phone || '',
+    Number_of_Beds: String((member as any)?.Number_of_Beds || '').trim(),
     pathway: (member as any)?.SNF_Diversion_or_Transition || member.Pathway || 'Unknown',
     last_updated: member.last_updated || new Date().toISOString()
   };

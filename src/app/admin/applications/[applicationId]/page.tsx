@@ -3620,6 +3620,29 @@ function ApplicationDetailPageContent() {
 
     setRejectingByForm((prev) => ({ ...prev, [formName]: true }));
     try {
+      const targetForms = (application.forms || []).filter(
+        (form: any) => String(form?.name || '').trim() === formName
+      );
+      const storagePathsToDelete = targetForms
+        .map((form: any) => String(form?.filePath || '').trim())
+        .filter(Boolean);
+
+      // Best-effort cleanup: remove prior uploaded file objects so the rejected component is a true reset.
+      if (storagePathsToDelete.length > 0) {
+        await Promise.all(
+          storagePathsToDelete.map(async (path) => {
+            try {
+              await deleteObject(ref(storage, path));
+            } catch (deleteErr: any) {
+              const code = String(deleteErr?.code || '').trim();
+              if (code !== 'storage/object-not-found' && code !== 'storage/unauthorized') {
+                console.warn('Reject redo: failed to delete prior storage object', { formName, path, code });
+              }
+            }
+          })
+        );
+      }
+
       const reviewerName = user?.displayName || user?.email || 'Admin';
       const reviewerUid = user?.uid || null;
       const isSummary = formName === 'CS Member Summary' || formName === 'CS Summary';

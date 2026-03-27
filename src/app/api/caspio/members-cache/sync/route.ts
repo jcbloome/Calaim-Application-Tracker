@@ -74,6 +74,8 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'RCFE_Admin_Email',
   'RCFE_Administrator_Email',
   'RCFE_Address',
+  'RCFE_Street',
+  'RCFE_Street_Address',
   'RCFE_City',
   'RCFE_State',
   'RCFE_Zip',
@@ -81,6 +83,7 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   // RCFE admin contact (joined from CalAIM_tbl_New_RCFE_Registration during sync)
   'RCFE_Administrator',
   'RCFE_Administrator_Phone',
+  'Number_of_Beds',
   'Pathway',
   'Next_Step_Due_Date',
   'workflow_step',

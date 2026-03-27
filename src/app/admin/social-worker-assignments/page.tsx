@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Users, UserPlus, Search, Filter, ArrowUpDown, ChevronUp, ChevronDown, Pause, Play, MapPinned, Download, Building2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -31,9 +31,33 @@ interface Member {
   Hold_For_Social_Worker: string;
   RCFE_Name: string;
   RCFE_Address: string;
+  RCFE_Street?: string;
+  RCFE_City?: string;
+  RCFE_Zip?: string;
+  RCFE_Administrator?: string;
+  RCFE_Administrator_Email?: string;
+  RCFE_Admin_Email?: string;
+  RCFE_Administrator_Phone?: string;
+  RCFE_Admin_Name?: string;
+  RCFE_Admin_Phone?: string;
+  Number_of_Beds?: string;
   Authorization_Start_Date_T2038?: string;
   pathway: string;
   last_updated: string;
+}
+
+interface RCFEDirectoryRow {
+  key: string;
+  RCFE_Name: string;
+  RCFE_Administrator: string;
+  RCFE_Street: string;
+  RCFE_City_RCFE_Zip: string;
+  RCFE_Administrator_Email: string;
+  RCFE_Administrator_Phone: string;
+  Number_of_Beds: string;
+  memberCount: number;
+  memberIds: string[];
+  memberNames: string[];
 }
 
 interface SocialWorkerStats {
@@ -308,6 +332,25 @@ export default function SocialWorkerAssignmentsPage() {
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [selectedSWForModal, setSelectedSWForModal] = useState<SocialWorkerStats | null>(null);
   const [memberModalPlan, setMemberModalPlan] = useState<'all' | 'healthNet' | 'kaiser'>('all');
+  const [activeTab, setActiveTab] = useState('overview');
+
+  type RCFESortField =
+    | 'RCFE_Name'
+    | 'memberCount'
+    | 'RCFE_Administrator'
+    | 'RCFE_Street'
+    | 'RCFE_City_RCFE_Zip'
+    | 'RCFE_Administrator_Email'
+    | 'RCFE_Administrator_Phone'
+    | 'Number_of_Beds';
+  const [rcfeSortField, setRcfeSortField] = useState<RCFESortField>('RCFE_Name');
+  const [rcfeSortDirection, setRcfeSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [rcfeSearch, setRcfeSearch] = useState('');
+  const [rcfeDrafts, setRcfeDrafts] = useState<
+    Record<string, { RCFE_Administrator: string; RCFE_Administrator_Email: string; RCFE_Administrator_Phone: string; Number_of_Beds: string }>
+  >({});
+  const [savingRcfeByKey, setSavingRcfeByKey] = useState<Record<string, boolean>>({});
+  const [isSavingAllRcfe, setIsSavingAllRcfe] = useState(false);
   
   // Geo assignment tool state (suggest/export only)
   const [geoCapacityPerSw, setGeoCapacityPerSw] = useState('30');
@@ -492,6 +535,30 @@ export default function SocialWorkerAssignmentsPage() {
     return normalized ? normalized : 'RCFE Unassigned';
   };
 
+  const getRcfeStreet = (member: Member) =>
+    String(member.RCFE_Street || member.RCFE_Address || '').trim();
+
+  const getRcfeCity = (member: Member) =>
+    String(member.RCFE_City || '').trim();
+
+  const getRcfeZip = (member: Member) =>
+    String(member.RCFE_Zip || '').trim();
+
+  const getRcfeCityZip = (member: Member) =>
+    [getRcfeCity(member), getRcfeZip(member)].filter(Boolean).join(', ');
+
+  const getRcfeAdministrator = (member: Member) =>
+    String(member.RCFE_Administrator || member.RCFE_Admin_Name || '').trim();
+
+  const getRcfeAdministratorEmail = (member: Member) =>
+    String(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '').trim();
+
+  const getRcfeAdministratorPhone = (member: Member) =>
+    String(member.RCFE_Administrator_Phone || member.RCFE_Admin_Phone || '').trim();
+
+  const getRcfeNumberOfBeds = (member: Member) =>
+    String(member.Number_of_Beds || '').trim();
+
   const isDueForSwAssignment = (member: Member) => {
     if (!isUnassignedSw(member)) return false;
     // We only assign SWs once a real RCFE has been selected (exclude placeholders like "CalAIM_Use...").
@@ -530,6 +597,216 @@ export default function SocialWorkerAssignmentsPage() {
   const atRcfeMembersCount = useMemo(() => (
     members.filter((member) => hasAssignedRcfe(member)).length
   ), [members]);
+
+  const rcfeDirectoryRows = useMemo<RCFEDirectoryRow[]>(() => {
+    const allMemberRows = [...members, ...kaiserAuthorizedMembers];
+    const grouped = new Map<string, RCFEDirectoryRow>();
+
+    allMemberRows.forEach((member) => {
+      if (!hasAssignedRcfe(member)) return;
+      const rcfeName = String(getRcfeFilterBucket(member) || '').trim();
+      if (!rcfeName || rcfeName === 'RCFE Unassigned') return;
+
+      const rcfeStreet = getRcfeStreet(member);
+      const rcfeCityZip = getRcfeCityZip(member);
+      const rcfeAdmin = getRcfeAdministrator(member);
+      const rcfeAdminEmail = getRcfeAdministratorEmail(member);
+      const rcfeAdminPhone = getRcfeAdministratorPhone(member);
+      const rcfeBeds = getRcfeNumberOfBeds(member);
+      const clientId2 = String(member.Client_ID2 || '').trim();
+      const memberName = String(member.memberName || '').trim() || `${String(member.memberFirstName || '').trim()} ${String(member.memberLastName || '').trim()}`.trim();
+      const key = [
+        rcfeName.toLowerCase(),
+        rcfeStreet.toLowerCase(),
+        rcfeCityZip.toLowerCase(),
+      ]
+        .filter(Boolean)
+        .join('|');
+
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.memberCount += 1;
+        if (!existing.RCFE_Administrator && rcfeAdmin) existing.RCFE_Administrator = rcfeAdmin;
+        if (!existing.RCFE_Street && rcfeStreet) existing.RCFE_Street = rcfeStreet;
+        if (!existing.RCFE_City_RCFE_Zip && rcfeCityZip) existing.RCFE_City_RCFE_Zip = rcfeCityZip;
+        if (!existing.RCFE_Administrator_Email && rcfeAdminEmail) existing.RCFE_Administrator_Email = rcfeAdminEmail;
+        if (!existing.RCFE_Administrator_Phone && rcfeAdminPhone) existing.RCFE_Administrator_Phone = rcfeAdminPhone;
+        if (!existing.Number_of_Beds && rcfeBeds) existing.Number_of_Beds = rcfeBeds;
+        if (clientId2 && !existing.memberIds.includes(clientId2)) existing.memberIds.push(clientId2);
+        if (memberName && !existing.memberNames.includes(memberName)) existing.memberNames.push(memberName);
+      } else {
+        grouped.set(key, {
+          key,
+          RCFE_Name: rcfeName,
+          RCFE_Administrator: rcfeAdmin,
+          RCFE_Street: rcfeStreet,
+          RCFE_City_RCFE_Zip: rcfeCityZip,
+          RCFE_Administrator_Email: rcfeAdminEmail,
+          RCFE_Administrator_Phone: rcfeAdminPhone,
+          Number_of_Beds: rcfeBeds,
+          memberCount: 1,
+          memberIds: clientId2 ? [clientId2] : [],
+          memberNames: memberName ? [memberName] : [],
+        });
+      }
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => {
+      if (b.memberCount !== a.memberCount) return b.memberCount - a.memberCount;
+      return a.RCFE_Name.localeCompare(b.RCFE_Name);
+    });
+  }, [members, kaiserAuthorizedMembers]);
+
+  const getRcfeDraft = (row: RCFEDirectoryRow) => ({
+    RCFE_Administrator: rcfeDrafts[row.key]?.RCFE_Administrator ?? row.RCFE_Administrator,
+    RCFE_Administrator_Email: rcfeDrafts[row.key]?.RCFE_Administrator_Email ?? row.RCFE_Administrator_Email,
+    RCFE_Administrator_Phone: rcfeDrafts[row.key]?.RCFE_Administrator_Phone ?? row.RCFE_Administrator_Phone,
+    Number_of_Beds: rcfeDrafts[row.key]?.Number_of_Beds ?? row.Number_of_Beds,
+  });
+
+  const hasRcfeDraftChanges = useCallback((row: RCFEDirectoryRow) => {
+    const draft = getRcfeDraft(row);
+    return (
+      String(draft.RCFE_Administrator || '').trim() !== String(row.RCFE_Administrator || '').trim() ||
+      String(draft.RCFE_Administrator_Email || '').trim() !== String(row.RCFE_Administrator_Email || '').trim() ||
+      String(draft.RCFE_Administrator_Phone || '').trim() !== String(row.RCFE_Administrator_Phone || '').trim() ||
+      String(draft.Number_of_Beds || '').trim() !== String(row.Number_of_Beds || '').trim()
+    );
+  }, [rcfeDrafts]);
+
+  const handleRcfeSort = (field: RCFESortField) => {
+    if (rcfeSortField === field) {
+      setRcfeSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setRcfeSortField(field);
+      setRcfeSortDirection('asc');
+    }
+  };
+
+  const visibleRcfeRows = useMemo(() => {
+    const needle = rcfeSearch.trim().toLowerCase();
+    const filtered = rcfeDirectoryRows.filter((row) => {
+      if (!needle) return true;
+      return (
+        row.RCFE_Name.toLowerCase().includes(needle) ||
+        row.RCFE_City_RCFE_Zip.toLowerCase().includes(needle) ||
+        row.RCFE_Administrator.toLowerCase().includes(needle) ||
+        row.RCFE_Administrator_Email.toLowerCase().includes(needle) ||
+        row.memberNames.some((name) => String(name || '').toLowerCase().includes(needle))
+      );
+    });
+
+    return filtered.sort((a, b) => {
+      const dir = rcfeSortDirection === 'asc' ? 1 : -1;
+      if (rcfeSortField === 'memberCount') return (a.memberCount - b.memberCount) * dir;
+      const av = String((a as any)[rcfeSortField] || '').toLowerCase();
+      const bv = String((b as any)[rcfeSortField] || '').toLowerCase();
+      return av.localeCompare(bv) * dir;
+    });
+  }, [rcfeDirectoryRows, rcfeSearch, rcfeSortDirection, rcfeSortField]);
+
+  const editedRcfeRows = useMemo(
+    () => rcfeDirectoryRows.filter((row) => hasRcfeDraftChanges(row)),
+    [rcfeDirectoryRows, hasRcfeDraftChanges]
+  );
+
+  const saveRcfeRowToCaspio = useCallback(async (row: RCFEDirectoryRow, options?: { silent?: boolean }) => {
+    try {
+      if (!auth?.currentUser) throw new Error('You must be signed in to update RCFE data.');
+      if (!row.memberIds.length) throw new Error('No member IDs available for this RCFE row.');
+      setSavingRcfeByKey((prev) => ({ ...prev, [row.key]: true }));
+
+      const draft = getRcfeDraft(row);
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/rcfe-directory/upsert', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          memberIds: row.memberIds,
+          updates: draft,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to update RCFE data (HTTP ${res.status})`);
+      }
+
+      const memberIdSet = new Set(row.memberIds.map((id) => String(id || '').trim()));
+      const applyUpdates = (member: Member): Member =>
+        memberIdSet.has(String(member.Client_ID2 || '').trim())
+          ? {
+              ...member,
+              RCFE_Administrator: draft.RCFE_Administrator,
+              RCFE_Administrator_Email: draft.RCFE_Administrator_Email,
+              RCFE_Admin_Email: draft.RCFE_Administrator_Email,
+              RCFE_Administrator_Phone: draft.RCFE_Administrator_Phone,
+              Number_of_Beds: draft.Number_of_Beds,
+            }
+          : member;
+
+      setMembers((prev) => prev.map(applyUpdates));
+      setKaiserAuthorizedMembers((prev) => prev.map(applyUpdates));
+
+      if (!options?.silent) {
+        toast({
+          title: 'RCFE data synced',
+          description: `Updated ${data?.updatedCount || row.memberIds.length} Caspio records.`,
+        });
+      }
+      return true;
+    } catch (error: any) {
+      if (!options?.silent) {
+        toast({
+          title: 'RCFE sync failed',
+          description: error?.message || 'Could not push RCFE updates to Caspio.',
+          variant: 'destructive',
+        });
+      }
+      return false;
+    } finally {
+      setSavingRcfeByKey((prev) => ({ ...prev, [row.key]: false }));
+    }
+  }, [auth?.currentUser, rcfeDrafts, toast]);
+
+  const saveAllEditedRcfeRows = useCallback(async () => {
+    if (editedRcfeRows.length === 0) {
+      toast({
+        title: 'No RCFE edits to push',
+        description: 'Make a change in RCFE Data first, then push.',
+      });
+      return;
+    }
+
+    setIsSavingAllRcfe(true);
+    let successCount = 0;
+    let failureCount = 0;
+    for (const row of editedRcfeRows) {
+      const ok = await saveRcfeRowToCaspio(row, { silent: true });
+      if (ok) {
+        successCount += 1;
+      } else {
+        failureCount += 1;
+      }
+    }
+    setIsSavingAllRcfe(false);
+
+    if (failureCount === 0) {
+      toast({
+        title: 'All RCFE edits synced',
+        description: `Successfully pushed ${successCount} edited RCFE row${successCount === 1 ? '' : 's'} to Caspio.`,
+      });
+      return;
+    }
+
+    toast({
+      title: 'RCFE bulk sync completed with errors',
+      description: `Synced ${successCount}, failed ${failureCount}. You can retry failed rows with Push to Caspio.`,
+      variant: 'destructive',
+    });
+  }, [editedRcfeRows, saveRcfeRowToCaspio, toast]);
 
   // Fetch and scope members for the SW tracker (Health Net + Authorized)
   const fetchAllMembers = async () => {
@@ -978,10 +1255,11 @@ export default function SocialWorkerAssignmentsPage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="assignments">Member Assignments</TabsTrigger>
+          <TabsTrigger value="rcfe-data">RCFE Data</TabsTrigger>
           <TabsTrigger value="workload">Workload Analysis</TabsTrigger>
           <TabsTrigger value="geo">Geo Assignment</TabsTrigger>
         </TabsList>
@@ -1072,6 +1350,25 @@ export default function SocialWorkerAssignmentsPage() {
                 </p>
               </CardContent>
             </Card>
+
+            <button
+              type="button"
+              className="text-left"
+              onClick={() => setActiveTab('rcfe-data')}
+            >
+              <Card className="border-indigo-200 bg-indigo-50 hover:bg-indigo-100 transition-colors cursor-pointer">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-indigo-800">Total RCFEs With Members</CardTitle>
+                  <MapPinned className="h-4 w-4 text-indigo-700" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-indigo-800">{rcfeDirectoryRows.length}</div>
+                  <p className="text-xs text-indigo-800">
+                    Click to open RCFE data table
+                  </p>
+                </CardContent>
+              </Card>
+            </button>
           </div>
 
           {/* Social Worker Summary Cards */}
@@ -1164,13 +1461,9 @@ export default function SocialWorkerAssignmentsPage() {
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                   <Users className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No Data Loaded</h3>
-                  <p className="text-muted-foreground mb-4 max-w-md">
+                  <p className="text-muted-foreground max-w-md">
                     Click "Sync from Caspio" to load member data and social worker assignments.
                   </p>
-                  <Button onClick={fetchAllMembers} disabled={isLoadingMembers}>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Sync from Caspio
-                  </Button>
                 </CardContent>
               </Card>
             )}
@@ -1561,6 +1854,215 @@ export default function SocialWorkerAssignmentsPage() {
                           </TableCell>
                         </TableRow>
                       ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="rcfe-data" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>RCFE Data Management</CardTitle>
+              <CardDescription>
+                Update RCFE administrator contact details and number of beds, then push updates to Caspio for members grouped under each RCFE.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+                <div className="flex-1 max-w-lg">
+                  <Input
+                    placeholder="Search RCFE, city, administrator, or member name..."
+                    value={rcfeSearch}
+                    onChange={(e) => setRcfeSearch(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{visibleRcfeRows.length} RCFEs</Badge>
+                  <Badge variant="secondary">{editedRcfeRows.length} Edited</Badge>
+                  <Button
+                    onClick={saveAllEditedRcfeRows}
+                    disabled={isSavingAllRcfe || editedRcfeRows.length === 0}
+                  >
+                    {isSavingAllRcfe ? 'Syncing edited rows...' : `Push All Edited (${editedRcfeRows.length})`}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>
+                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_Name')}>
+                          RCFE Name
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
+                      <TableHead>
+                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('memberCount')}>
+                          Members
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
+                      <TableHead>
+                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_Administrator')}>
+                          Admin Name
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
+                      <TableHead>
+                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_Street')}>
+                          Street
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
+                      <TableHead>
+                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_City_RCFE_Zip')}>
+                          City / Zip
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
+                      <TableHead>
+                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_Administrator_Email')}>
+                          Admin Email
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
+                      <TableHead>
+                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('RCFE_Administrator_Phone')}>
+                          Admin Phone
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
+                      <TableHead>
+                        <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleRcfeSort('Number_of_Beds')}>
+                          Number of Beds
+                          <ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      </TableHead>
+                      <TableHead>Sync</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleRcfeRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="text-muted-foreground">
+                          No RCFEs match your search.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      visibleRcfeRows.map((row) => {
+                        const draft = getRcfeDraft(row);
+                        return (
+                          <TableRow key={row.key}>
+                            <TableCell className="font-medium">{row.RCFE_Name || '-'}</TableCell>
+                            <TableCell>
+                              <div className="font-medium">{row.memberCount}</div>
+                              {row.memberNames.length > 0 ? (
+                                <div className="text-xs text-muted-foreground mt-1 max-w-xs whitespace-pre-wrap">
+                                  {row.memberNames.slice().sort((a, b) => a.localeCompare(b)).join(', ')}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground mt-1">No member names available</div>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={draft.RCFE_Administrator}
+                                onChange={(e) =>
+                                  setRcfeDrafts((prev) => {
+                                    const base = prev[row.key] ?? {
+                                      RCFE_Administrator: row.RCFE_Administrator,
+                                      RCFE_Administrator_Email: row.RCFE_Administrator_Email,
+                                      RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
+                                      Number_of_Beds: row.Number_of_Beds,
+                                    };
+                                    return {
+                                      ...prev,
+                                      [row.key]: { ...base, RCFE_Administrator: e.target.value },
+                                    };
+                                  })
+                                }
+                                placeholder="Admin name"
+                              />
+                            </TableCell>
+                            <TableCell>{row.RCFE_Street || '-'}</TableCell>
+                            <TableCell>{row.RCFE_City_RCFE_Zip || '-'}</TableCell>
+                            <TableCell>
+                              <Input
+                                value={draft.RCFE_Administrator_Email}
+                                onChange={(e) =>
+                                  setRcfeDrafts((prev) => {
+                                    const base = prev[row.key] ?? {
+                                      RCFE_Administrator: row.RCFE_Administrator,
+                                      RCFE_Administrator_Email: row.RCFE_Administrator_Email,
+                                      RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
+                                      Number_of_Beds: row.Number_of_Beds,
+                                    };
+                                    return {
+                                      ...prev,
+                                      [row.key]: { ...base, RCFE_Administrator_Email: e.target.value },
+                                    };
+                                  })
+                                }
+                                placeholder="admin@email.com"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={draft.RCFE_Administrator_Phone}
+                                onChange={(e) =>
+                                  setRcfeDrafts((prev) => {
+                                    const base = prev[row.key] ?? {
+                                      RCFE_Administrator: row.RCFE_Administrator,
+                                      RCFE_Administrator_Email: row.RCFE_Administrator_Email,
+                                      RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
+                                      Number_of_Beds: row.Number_of_Beds,
+                                    };
+                                    return {
+                                      ...prev,
+                                      [row.key]: { ...base, RCFE_Administrator_Phone: e.target.value },
+                                    };
+                                  })
+                                }
+                                placeholder="(xxx) xxx-xxxx"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={draft.Number_of_Beds}
+                                onChange={(e) =>
+                                  setRcfeDrafts((prev) => {
+                                    const base = prev[row.key] ?? {
+                                      RCFE_Administrator: row.RCFE_Administrator,
+                                      RCFE_Administrator_Email: row.RCFE_Administrator_Email,
+                                      RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
+                                      Number_of_Beds: row.Number_of_Beds,
+                                    };
+                                    return {
+                                      ...prev,
+                                      [row.key]: { ...base, Number_of_Beds: e.target.value },
+                                    };
+                                  })
+                                }
+                                placeholder="Number_of_Beds"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                onClick={() => saveRcfeRowToCaspio(row)}
+                                disabled={Boolean(savingRcfeByKey[row.key])}
+                              >
+                                {savingRcfeByKey[row.key] ? 'Syncing...' : 'Push to Caspio'}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
