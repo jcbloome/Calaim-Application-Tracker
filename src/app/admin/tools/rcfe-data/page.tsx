@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -38,6 +38,8 @@ interface RCFEDirectoryRow {
   key: string;
   RCFE_Name: string;
   RCFE_Street: string;
+  RCFE_City: string;
+  RCFE_Zip: string;
   RCFE_City_RCFE_Zip: string;
   RCFE_Administrator: string;
   RCFE_Administrator_Email: string;
@@ -76,6 +78,31 @@ const normalizeAdminName = (value: unknown) =>
 
 const normalizeBedsInput = (value: unknown) => String(value || '').replace(/[^\d]/g, '');
 
+const toAddressCase = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((token) => {
+      const upper = token.toUpperCase();
+      const directional = new Set(['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW']);
+      if (directional.has(upper)) return upper;
+
+      return token
+        .split('-')
+        .map((part) =>
+          part
+            .split("'")
+            .map((seg) => (seg ? `${seg.charAt(0).toUpperCase()}${seg.slice(1).toLowerCase()}` : seg))
+            .join("'")
+        )
+        .join('-');
+    })
+    .join(' ');
+
+const normalizeZipInput = (value: unknown) => String(value || '').replace(/[^\d-]/g, '');
+
 export default function RcfeDataToolsPage() {
   const { isAdmin, isLoading } = useAdmin();
   const auth = useAuth();
@@ -90,6 +117,9 @@ export default function RcfeDataToolsPage() {
     Record<string, { RCFE_Administrator: string; RCFE_Administrator_Email: string; RCFE_Administrator_Phone: string; Number_of_Beds: string }>
   >({});
   const [isSavingAll, setIsSavingAll] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveInFlightRef = useRef(false);
 
   const isHealthNetMember = (member: Member) => {
     const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
@@ -119,7 +149,9 @@ export default function RcfeDataToolsPage() {
 
   const getRcfeName = (member: Member) => normalizeRcfeNameForAssignment(member.RCFE_Name) || 'RCFE Unassigned';
   const getRcfeStreet = (member: Member) => String(member.RCFE_Street || member.RCFE_Address || '').trim();
-  const getRcfeCityZip = (member: Member) => [String(member.RCFE_City || '').trim(), String(member.RCFE_Zip || '').trim()].filter(Boolean).join(', ');
+  const getRcfeCity = (member: Member) => String(member.RCFE_City || '').trim();
+  const getRcfeZip = (member: Member) => String(member.RCFE_Zip || '').trim();
+  const getRcfeCityZip = (member: Member) => [getRcfeCity(member), getRcfeZip(member)].filter(Boolean).join(', ');
   const getRcfeAdministrator = (member: Member) => String(member.RCFE_Administrator || member.RCFE_Admin_Name || '').trim();
   const getRcfeAdministratorEmail = (member: Member) => String(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '').trim();
   const getRcfeAdministratorPhone = (member: Member) => String(member.RCFE_Administrator_Phone || member.RCFE_Admin_Phone || '').trim();
@@ -171,6 +203,8 @@ export default function RcfeDataToolsPage() {
       if (!rcfeName || rcfeName === 'RCFE Unassigned') return;
 
       const street = getRcfeStreet(member);
+      const city = getRcfeCity(member);
+      const zip = getRcfeZip(member);
       const cityZip = getRcfeCityZip(member);
       const adminName = getRcfeAdministrator(member);
       const adminEmail = getRcfeAdministratorEmail(member);
@@ -186,6 +220,9 @@ export default function RcfeDataToolsPage() {
       if (existing) {
         existing.memberCount += 1;
         if (!existing.RCFE_Administrator && adminName) existing.RCFE_Administrator = adminName;
+        if (!existing.RCFE_Street && street) existing.RCFE_Street = street;
+        if (!existing.RCFE_City && city) existing.RCFE_City = city;
+        if (!existing.RCFE_Zip && zip) existing.RCFE_Zip = zip;
         if (!existing.RCFE_Administrator_Email && adminEmail) existing.RCFE_Administrator_Email = adminEmail;
         if (!existing.RCFE_Administrator_Phone && adminPhone) existing.RCFE_Administrator_Phone = adminPhone;
         if (!existing.Number_of_Beds && beds) existing.Number_of_Beds = beds;
@@ -196,6 +233,8 @@ export default function RcfeDataToolsPage() {
           key,
           RCFE_Name: rcfeName,
           RCFE_Street: street,
+          RCFE_City: city,
+          RCFE_Zip: zip,
           RCFE_City_RCFE_Zip: cityZip,
           RCFE_Administrator: adminName,
           RCFE_Administrator_Email: adminEmail,
@@ -271,6 +310,12 @@ export default function RcfeDataToolsPage() {
         RCFE_Administrator: normalizeAdminName(raw.RCFE_Administrator),
         Number_of_Beds: normalizeBedsInput(raw.Number_of_Beds),
       };
+      const normalizedStreet = toAddressCase(row.RCFE_Street);
+      const normalizedCity = toAddressCase(row.RCFE_City);
+      const normalizedZip = normalizeZipInput(row.RCFE_Zip);
+      const normalizedAddress = [normalizedStreet, [normalizedCity, normalizedZip].filter(Boolean).join(', ')]
+        .filter(Boolean)
+        .join(', ');
 
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch('/api/admin/rcfe-directory/upsert', {
@@ -281,7 +326,13 @@ export default function RcfeDataToolsPage() {
         },
         body: JSON.stringify({
           memberIds: row.memberIds,
-          updates: draft,
+          updates: {
+            ...draft,
+            RCFE_Street: normalizedStreet,
+            RCFE_City: normalizedCity,
+            RCFE_Zip: normalizedZip,
+            RCFE_Address: normalizedAddress,
+          },
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -300,6 +351,10 @@ export default function RcfeDataToolsPage() {
                 RCFE_Admin_Email: draft.RCFE_Administrator_Email,
                 RCFE_Administrator_Phone: draft.RCFE_Administrator_Phone,
                 Number_of_Beds: draft.Number_of_Beds,
+                RCFE_Street: normalizedStreet || member.RCFE_Street,
+                RCFE_City: normalizedCity || member.RCFE_City,
+                RCFE_Zip: normalizedZip || member.RCFE_Zip,
+                RCFE_Address: normalizedAddress || member.RCFE_Address,
               }
             : member
         )
@@ -309,15 +364,23 @@ export default function RcfeDataToolsPage() {
     [auth?.currentUser, rcfeDrafts]
   );
 
-  const pushAllEdited = useCallback(async () => {
-    if (editedRows.length === 0) {
-      toast({ title: 'No edits to push', description: 'Make a change first, then push all edited.' });
-      return;
+  const syncEditedRows = useCallback(async (rows: RCFEDirectoryRow[], mode: 'auto' | 'manual') => {
+    if (rows.length === 0) {
+      if (mode === 'manual') {
+        toast({ title: 'No edits to push', description: 'Make a change first, then push all edited.' });
+      }
+      return { success: 0, failed: 0 };
     }
-    setIsSavingAll(true);
+
+    if (mode === 'manual') {
+      setIsSavingAll(true);
+    } else {
+      setIsAutoSaving(true);
+    }
+
     let success = 0;
     let failed = 0;
-    for (const row of editedRows) {
+    for (const row of rows) {
       try {
         await saveRow(row);
         success += 1;
@@ -325,19 +388,60 @@ export default function RcfeDataToolsPage() {
         failed += 1;
       }
     }
-    setIsSavingAll(false);
 
-    if (failed === 0) {
-      toast({ title: 'All edits synced', description: `Successfully pushed ${success} RCFE row(s).` });
-      return;
+    if (mode === 'manual') {
+      setIsSavingAll(false);
+    } else {
+      setIsAutoSaving(false);
     }
 
-    toast({
-      title: 'RCFE sync completed with errors',
-      description: `Synced ${success}, failed ${failed}. You can run Push All Edited again.`,
-      variant: 'destructive',
-    });
+    if (mode === 'manual') {
+      if (failed === 0) {
+        toast({ title: 'All edits synced', description: `Successfully pushed ${success} RCFE row(s).` });
+      } else {
+        toast({
+          title: 'RCFE sync completed with errors',
+          description: `Synced ${success}, failed ${failed}. You can run Push All Edited again.`,
+          variant: 'destructive',
+        });
+      }
+    } else if (failed > 0) {
+      toast({
+        title: 'Some autosave updates failed',
+        description: `Autosaved ${success}, failed ${failed}. Use Push All Edited to retry.`,
+        variant: 'destructive',
+      });
+    }
+
+    return { success, failed };
   }, [editedRows, saveRow, toast]);
+
+  const pushAllEdited = useCallback(async () => {
+    await syncEditedRows(editedRows, 'manual');
+  }, [editedRows, syncEditedRows]);
+
+  useEffect(() => {
+    if (editedRows.length === 0) return;
+    if (autoSaveInFlightRef.current) return;
+
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(async () => {
+      if (autoSaveInFlightRef.current) return;
+      autoSaveInFlightRef.current = true;
+      try {
+        const snapshotRows = [...editedRows];
+        await syncEditedRows(snapshotRows, 'auto');
+      } finally {
+        autoSaveInFlightRef.current = false;
+      }
+    }, 1200);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [editedRows, syncEditedRows]);
 
   if (isLoading) {
     return (
@@ -391,6 +495,9 @@ export default function RcfeDataToolsPage() {
             <div className="flex items-center gap-2">
               <Badge variant="outline">{visibleRows.length} RCFEs</Badge>
               <Badge variant="secondary">{editedRows.length} Edited</Badge>
+              <Badge variant={isAutoSaving ? 'default' : 'outline'}>
+                {isAutoSaving ? 'Autosaving...' : 'Autosave on'}
+              </Badge>
               <Button onClick={pushAllEdited} disabled={isSavingAll || editedRows.length === 0}>
                 {isSavingAll ? 'Syncing edited rows...' : `Push All Edited (${editedRows.length})`}
               </Button>
@@ -449,7 +556,7 @@ export default function RcfeDataToolsPage() {
                           <TableCell className="max-w-[320px]">
                             <div className="font-medium">{row.RCFE_Name || '-'}</div>
                             <div className="text-xs text-muted-foreground break-words">
-                              {[String(row.RCFE_Street || '').trim(), String(row.RCFE_City_RCFE_Zip || '').trim()]
+                              {[toAddressCase(row.RCFE_Street), [toAddressCase(row.RCFE_City), normalizeZipInput(row.RCFE_Zip)].filter(Boolean).join(', ')]
                                 .filter(Boolean)
                                 .join(', ') || '-'}
                             </div>

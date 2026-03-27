@@ -64,6 +64,10 @@ export async function POST(req: NextRequest) {
       'RCFE_Administrator_Email',
       'RCFE_Administrator_Phone',
       'Number_of_Beds',
+      'RCFE_Street',
+      'RCFE_City',
+      'RCFE_Zip',
+      'RCFE_Address',
     ] as const;
 
     allowedFields.forEach((field) => {
