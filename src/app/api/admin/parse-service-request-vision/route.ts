@@ -2,7 +2,7 @@
  * API Route: Parse Service Request PDF using Vision
  * 
  * For scanned PDFs, this converts the first page to an image
- * and uses AI vision (Claude) to extract structured data.
+ * and uses AI vision (Gemini) to extract structured data.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,11 +10,9 @@ import { convert } from 'pdf-poppler';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '');
 
 interface ExtractedFields {
   memberFirstName: string;
@@ -83,9 +81,10 @@ export async function POST(request: NextRequest) {
 
     const imagePath = path.join(tempImageDir, imageFile);
     const imageBuffer = fs.readFileSync(imagePath);
-    const base64Image = imageBuffer.toString('base64');
 
-    // Use Claude Vision to extract fields
+    // Use Gemini Vision to extract fields
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
     const prompt = `You are extracting data from a Kaiser Permanente Service Request Form.
 
 Extract the following fields from the image and return ONLY a valid JSON object with these exact keys:
@@ -123,34 +122,16 @@ Instructions:
 
 Return ONLY the JSON object, no other text.`;
 
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: 'image/png',
-                data: base64Image,
-              },
-            },
-            {
-              type: 'text',
-              text: prompt,
-            },
-          ],
-        },
-      ],
-    });
+    const imagePart = {
+      inlineData: {
+        data: imageBuffer.toString('base64'),
+        mimeType: 'image/png',
+      },
+    };
 
-    // Parse the response
-    const responseText = message.content[0].type === 'text' 
-      ? message.content[0].text 
-      : '';
+    const result = await model.generateContent([prompt, imagePart]);
+    const response = await result.response;
+    const responseText = response.text();
 
     // Extract JSON from response (in case there's extra text)
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);

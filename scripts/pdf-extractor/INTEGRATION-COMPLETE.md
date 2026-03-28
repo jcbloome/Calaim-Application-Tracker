@@ -17,7 +17,7 @@ For scanned PDFs like the Jim Kovacich example:
 
 1. PDF is sent to the server
 2. First page is converted to high-quality PNG (page 2 is skipped - it's just HIPAA notice)
-3. Image is sent to Claude Vision API
+3. Image is sent to Google Gemini Vision API
 4. AI extracts all 14 required fields
 5. Fields are automatically populated in the form
 
@@ -35,29 +35,33 @@ For scanned PDFs like the Jim Kovacich example:
 
 - New API endpoint for vision-based extraction
 - Converts PDF first page to image
-- Uses Claude 3.5 Sonnet for field extraction
+- Uses Google Gemini 1.5 Flash for field extraction
 - Returns structured JSON matching your field names
 
 ### 3. Environment Variables
 **File**: `.env.local`
 
-- Added `ANTHROPIC_API_KEY` placeholder
+- Added `GEMINI_API_KEY` placeholder
 
 ## Setup Required
 
-### 1. Get Anthropic API Key
+### 1. Get Google Gemini API Key
 
-1. Go to https://console.anthropic.com/
-2. Sign up or log in
-3. Create a new API key
+**Option A: Google AI Studio (Easiest)**
+1. Go to https://aistudio.google.com/app/apikey
+2. Sign in with your Google account
+3. Click "Create API Key"
 4. Copy the key
+
+**Option B: Use Existing Google Cloud API Key**
+- If you already have a Google Cloud API key with Generative AI enabled, you can use that
 
 ### 2. Add to Environment
 
 Update `.env.local`:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-api03-your-actual-key-here
+GEMINI_API_KEY=AIzaSy...your-actual-key-here
 ```
 
 ### 3. Restart Dev Server
@@ -111,20 +115,28 @@ npm run dev
 
 ## Cost Considerations
 
-### Anthropic API Pricing (as of 2026)
-- Claude 3.5 Sonnet: ~$3 per 1M input tokens
+### Google Gemini API Pricing (as of 2026)
+- Gemini 1.5 Flash: **FREE** up to 15 requests per minute
+- After free tier: ~$0.075 per 1M input tokens (25x cheaper than competitors)
 - Each PDF image: ~1,500 tokens
-- **Cost per PDF**: ~$0.0045 (less than half a cent)
+- **Cost per PDF**: ~$0.0001 (essentially free for most use cases)
 
 ### When Vision is Used
 - Only for scanned PDFs (no text layer)
 - Not used for digital PDFs with text
 
+### Why Gemini?
+- **Free tier**: Perfect for your use case
+- **Fast**: Gemini 1.5 Flash is optimized for speed
+- **Accurate**: Excellent OCR and form extraction
+- **Already integrated**: You're using Google Cloud
+
 ## Troubleshooting
 
 ### "No API key" error
-- Make sure `ANTHROPIC_API_KEY` is set in `.env.local`
+- Make sure `GEMINI_API_KEY` is set in `.env.local`
 - Restart your dev server after adding the key
+- Verify the key is valid at https://aistudio.google.com/app/apikey
 
 ### "Failed to convert PDF"
 - Ensure `pdf-poppler` is installed: `npm install pdf-poppler`
@@ -138,11 +150,16 @@ npm run dev
 - Check browser console for errors
 - Verify the PDF truly has no text layer (try copying text from it)
 
+### "API quota exceeded"
+- Free tier: 15 requests per minute
+- If you need more, enable billing in Google Cloud Console
+- Cost is minimal (~$0.0001 per PDF)
+
 ## Next Steps
 
-1. **Add your Anthropic API key** to `.env.local`
+1. **Add your Gemini API key** to `.env.local`
 2. **Test with a scanned PDF** to verify it works
-3. **Monitor API usage** in Anthropic console if needed
+3. **Monitor API usage** (optional) in Google AI Studio if needed
 
 ## Support Files
 
