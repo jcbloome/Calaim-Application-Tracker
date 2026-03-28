@@ -55,6 +55,8 @@ interface ApplicationData {
     status: 'Pending' | 'Completed';
     type: string;
     href: string;
+    revisionRequestedAt?: unknown;
+    revisionRequestedReason?: string;
   }>;
 }
 
@@ -72,6 +74,13 @@ const getBadgeVariant = (status: ApplicationStatus) => {
     default:
       return 'bg-gray-100 text-gray-800 border-gray-200';
   }
+};
+
+const getPendingRevisionCount = (app: ApplicationData): number => {
+  return (app.forms || []).filter((form) => {
+    if (form.status !== 'Pending') return false;
+    return Boolean(String((form as any).revisionRequestedAt || '').trim()) || Boolean(String((form as any).revisionRequestedReason || '').trim());
+  }).length;
 };
 
 const ApplicationsTable = ({
@@ -111,6 +120,8 @@ const ApplicationsTable = ({
 
   const getActionText = (app: ApplicationData) => {
     if (app.status === 'In Progress' || app.status === 'Requires Revision') {
+      const revisionCount = getPendingRevisionCount(app);
+      if (revisionCount > 0) return `Continue Revisions (${revisionCount})`;
       // Check if CS Member Summary form is completed
       const csSummaryForm = app.forms?.find(form => 
         form.name === 'CS Member Summary' || form.name === 'CS Summary'
@@ -172,6 +183,11 @@ const ApplicationsTable = ({
                       <Badge variant="outline" className={getBadgeVariant(app.status)}>
                         {app.status}
                       </Badge>
+                      {getPendingRevisionCount(app) > 0 && (
+                        <div className="mt-1 text-xs text-amber-700">
+                          {getPendingRevisionCount(app)} item(s) need revision
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">{app.healthPlan} - {app.pathway}</TableCell>
                     <TableCell className="hidden sm:table-cell">{app.lastUpdated ? format(app.lastUpdated.toDate(), 'MM/dd/yyyy') : 'N/A'}</TableCell>

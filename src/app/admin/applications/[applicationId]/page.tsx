@@ -3697,8 +3697,21 @@ function ApplicationDetailPageContent() {
 
       if (sendEmail) {
         const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
+        const applicantPathwayUrl = `https://connectcalaim.com/pathway?applicationId=${encodeURIComponent(String(applicationId || ''))}`;
         const subject = `Action needed: Please redo ${formName}`;
-        const emailMessage = `Please redo the "${formName}" form.\n\nReason: ${reason}\n\nLog in to the application portal and update this form so we can continue processing.\n\nLogin: ${applicantPortalLoginUrl}`;
+        const emailMessage = [
+          `We reviewed your application and need an updated submission for: "${formName}".`,
+          '',
+          'What to update:',
+          `- ${reason}`,
+          '',
+          'What happens next:',
+          '- This form has been reset so you can upload or complete it again.',
+          '- Once you resubmit, our team will continue processing your application.',
+          '',
+          `Go directly to your application: ${applicantPathwayUrl}`,
+          `Portal login: ${applicantPortalLoginUrl}`,
+        ].join('\n');
         const response = await fetch('/api/email/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

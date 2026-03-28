@@ -102,6 +102,34 @@ function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
     );
 }
 
+type RequirementReviewState = 'pending' | 'needs_revision' | 'under_review' | 'reviewed';
+
+function getRequirementReviewState(formInfo?: FormStatusType): RequirementReviewState {
+  if (!formInfo) return 'pending';
+  if (formInfo.status === 'Completed') {
+    if (Boolean((formInfo as any).acknowledged)) return 'reviewed';
+    return 'under_review';
+  }
+
+  if (Boolean((formInfo as any).revisionRequestedAt) || Boolean((formInfo as any).revisionRequestedReason)) {
+    return 'needs_revision';
+  }
+  return 'pending';
+}
+
+function getRequirementReviewLabel(state: RequirementReviewState): string {
+  switch (state) {
+    case 'reviewed':
+      return 'Reviewed by staff';
+    case 'under_review':
+      return 'Submitted - under review';
+    case 'needs_revision':
+      return 'Needs revision';
+    default:
+      return 'Pending upload';
+  }
+}
+
 function QuickViewField({
   label,
   value,
@@ -767,6 +795,21 @@ function PathwayPageContent() {
   const totalCount = pathwayRequirements.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
   const allRequiredFormsComplete = completedCount === totalCount;
+  const missingRequiredRequirements = orderedPathwayRequirements.filter((req) => {
+    const formInfo = formStatusMap.get(req.title);
+    return formInfo?.status !== 'Completed';
+  });
+  const rejectedRequirements = orderedPathwayRequirements
+    .map((req) => {
+      const formInfo = formStatusMap.get(req.title);
+      const state = getRequirementReviewState(formInfo);
+      if (state !== 'needs_revision') return null;
+      return {
+        title: req.title,
+        reason: String((formInfo as any)?.revisionRequestedReason || '').trim(),
+      };
+    })
+    .filter((item): item is { title: string; reason: string } => Boolean(item));
 
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
@@ -1120,6 +1163,22 @@ function PathwayPageContent() {
                         </AlertDescription>
                     </Alert>
                 )}
+                {application.status === 'Requires Revision' && rejectedRequirements.length > 0 && (
+                    <Alert variant="warning">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Action needed: Please resubmit rejected item(s)</AlertTitle>
+                        <AlertDescription>
+                          <div className="mt-1 space-y-1 text-sm">
+                            {rejectedRequirements.map((item) => (
+                              <div key={item.title}>
+                                <span className="font-medium">{item.title}</span>
+                                {item.reason ? ` - ${item.reason}` : ''}
+                              </div>
+                            ))}
+                          </div>
+                        </AlertDescription>
+                    </Alert>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                     <div className="truncate col-span-2 sm:col-span-1"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
                     <div><strong>Status:</strong> <span className="font-semibold">{application.status}</span></div>
@@ -1133,11 +1192,23 @@ function PathwayPageContent() {
                         {orderedPathwayRequirements.map((req) => {
                             const formInfo = formStatusMap.get(req.title);
                             const isCompleted = formInfo?.status === 'Completed';
+                            const reviewState = getRequirementReviewState(formInfo);
                             return (
                                 <div key={req.id} className="flex items-center gap-2 text-sm">
                                     <Checkbox checked={isCompleted} disabled />
-                                    <span className={cn(isCompleted ? 'text-green-700' : 'text-muted-foreground')}>
+                                    <span
+                                      className={cn(
+                                        reviewState === 'reviewed' || reviewState === 'under_review'
+                                          ? 'text-green-700'
+                                          : reviewState === 'needs_revision'
+                                          ? 'text-amber-700'
+                                          : 'text-muted-foreground'
+                                      )}
+                                    >
                                         {req.title}
+                                        <span className="ml-2 text-xs font-normal">
+                                          ({getRequirementReviewLabel(reviewState)})
+                                        </span>
                                     </span>
                                 </div>
                             );
@@ -1147,17 +1218,30 @@ function PathwayPageContent() {
                 </CardContent>
                 {(!isReadOnly && (application.status === 'In Progress' || application.status === 'Requires Revision')) && (
                     <CardFooter>
-                        <Button 
-                            className="w-full bg-emerald-600 text-white hover:bg-emerald-700" 
-                            disabled={!allRequiredFormsComplete || isSubmitting || servicesDeclined}
-                            onClick={handleSubmitApplication}
-                        >
-                            {isSubmitting ? (
-                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
-                            ) : (
-                                <><Send className="mr-2 h-4 w-4" /> Submit Application for Review</>
-                            )}
-                        </Button>
+                        <div className="w-full space-y-3">
+                          {!allRequiredFormsComplete && (
+                            <Alert variant="warning">
+                              <Info className="h-4 w-4" />
+                              <AlertTitle>Complete required items before submitting</AlertTitle>
+                              <AlertDescription>
+                                <div className="mt-1 text-sm">
+                                  Missing: {missingRequiredRequirements.map((req) => req.title).join(', ')}
+                                </div>
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                          <Button 
+                              className="w-full bg-emerald-600 text-white hover:bg-emerald-700" 
+                              disabled={!allRequiredFormsComplete || isSubmitting || servicesDeclined}
+                              onClick={handleSubmitApplication}
+                          >
+                              {isSubmitting ? (
+                                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+                              ) : (
+                                  <><Send className="mr-2 h-4 w-4" /> Submit Application for Review</>
+                              )}
+                          </Button>
+                        </div>
                     </CardFooter>
                 )}
             </Card>
@@ -1166,6 +1250,7 @@ function PathwayPageContent() {
                 {orderedPathwayRequirements.map((req) => {
                     const formInfo = formStatusMap.get(req.title);
                     const status = formInfo?.status || 'Pending';
+                    const reviewState = getRequirementReviewState(formInfo);
                     
                     return (
                         <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
@@ -1186,6 +1271,23 @@ function PathwayPageContent() {
                             </CardHeader>
                             <CardContent className="flex flex-col flex-grow justify-end gap-4">
                                 <StatusIndicator status={status} />
+                                <p
+                                  className={cn(
+                                    'text-xs',
+                                    reviewState === 'reviewed' || reviewState === 'under_review'
+                                      ? 'text-green-700'
+                                      : reviewState === 'needs_revision'
+                                      ? 'text-amber-700 font-medium'
+                                      : 'text-muted-foreground'
+                                  )}
+                                >
+                                  {getRequirementReviewLabel(reviewState)}
+                                </p>
+                                {reviewState === 'needs_revision' && Boolean((formInfo as any)?.revisionRequestedReason) && (
+                                  <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                                    {String((formInfo as any)?.revisionRequestedReason || '').trim()}
+                                  </div>
+                                )}
                                 {getFormAction(req)}
                             </CardContent>
                         </Card>

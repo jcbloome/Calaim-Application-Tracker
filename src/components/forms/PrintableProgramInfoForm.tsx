@@ -57,13 +57,16 @@ export function PrintableProgramInfoForm({
           Community Support for Assisted Living Transitions
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          There are 14 Community Supports (CS), and this application portal is for one of them, called 
-          Assisted Living Transitions. This CS gives eligible members the choice to reside in an assisted 
-          living setting—such as a Residential Care Facility for the Elderly (RCFE) or an Adult Residential 
-          Facility (ARF)—as a safe alternative to a skilled nursing facility (SNF), promoting greater 
-          independence and community integration. The CS is either for SNF Diversion (for members coming 
-          from a community-based setting at risk of premature institutionalization) or SNF Transitions 
-          (for members residing in SNFs eligible to reside in assisted living settings).
+          There are 14 Community Supports (CS), and this application portal is for one of them, called
+          Assisted Living Transitions. This CS gives eligible members the choice to reside in an assisted
+          living setting-such as a Residential Care Facility for the Elderly (RCFE) or an Adult Residential
+          Facility (ARF)-as a safe alternative to a skilled nursing facility (SNF), promoting greater
+          independence and community integration.
+        </p>
+        <p className="mt-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+          The CS is either for SNF Diversion (e.g. for members coming from a community-based setting (e.g., from
+          home or hospital) at risk of premature institutionalization or SNF Transitions (e.g., for members residing
+          in SNFs) eligible to reside in assisted living settings.
         </p>
       </div>
 
@@ -75,21 +78,10 @@ export function PrintableProgramInfoForm({
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
           For 35 years Connections has helped private paid families find care homes. We are excited to now 
           be partnered with MCPs as a CS Provider that assists with understanding the program, finding 
-          participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS. Once a member is placed, we also send a MSW to 
-          visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination.
+          participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS.
         </p>
-      </div>
-
-      {/* Importance of ISP Contact */}
-      <div className="col-span-full mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
-          Importance of the ISP Contact
-        </h2>
-        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          The Individual Service Plan (ISP) is a clinical assessment required to determine the member’s
-          level of care and to secure Managed Care Plan (MCP) authorization. Connections must know who
-          to contact to review clinical notes and coordinate the ISP (often a SNF social worker or care
-          coordinator—not the primary care doctor).
+        <p className="mt-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+          Once a member is placed, we also send a MSW to visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination.
         </p>
       </div>
 
@@ -126,229 +118,8 @@ export function PrintableProgramInfoForm({
           Medicare vs. Medi-Cal
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's 
-          Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit. While they are 
-          different, Medicare-covered days in a facility can count toward the 60-day stay requirement for the 
-          SNF Transition pathway.
-        </p>
-      </div>
-
-      {/* Share of Cost */}
-      <div className="col-span-full mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
-          Share of Cost (SOC)
-        </h2>
-        <div className="mt-4 p-3 print:p-3 bg-yellow-50 print:bg-white border print:border-black">
-          <h3 className="font-semibold text-gray-900 print:text-black mb-2">Share of Cost (SOC) Information:</h3>
-          <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-            Share of Cost is usually triggered if a member receives more than <strong>$1,800/month</strong>, 
-            although this number can vary by county and by particular circumstances. Members in SNFs may not 
-            show a SOC since the facility receives most of their income, but this may change when transitioning 
-            to community living.
-          </p>
-        </div>
-
-        <div className="mt-4 p-4 print:p-4 bg-slate-50 print:bg-white border print:border-black">
-          <h3 className="text-lg font-semibold text-gray-900 print:text-black">
-            Eliminating Medi-Cal Share of Cost: The Key to CalAIM
-          </h3>
-          <div className="mt-3 space-y-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-            <p>
-              If you have Medi-Cal with a Share of Cost, you may be missing out on life-changing benefits. Programs like
-              CalAIM (which provides care coordination and placement in residential care homes) generally require members
-              to have <strong>Full-Scope, $0 Share of Cost</strong> Medi-Cal.
-            </p>
-            <p>
-              For many seniors and disabled individuals, a monthly income above <strong>$1,856</strong> (the 2026 limit)
-              triggers a high Share of Cost. However, California’s <strong>250% Working Disabled Program (WDP)</strong>{' '}
-              offers a legal way to eliminate that cost and keep more of your money.
-            </p>
-          </div>
-
-          <h4 className="mt-4 font-semibold text-gray-900 print:text-black">
-            How the 250% Working Disabled Program Works
-          </h4>
-          <ul className="mt-2 list-disc pl-5 space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
-            <li>
-              <strong>The WDP allows you to have a much higher income</strong>—up to <strong>$3,260</strong> per month—
-              with a <strong>$0 monthly premium</strong> and <strong>$0 Share of Cost</strong>.
-            </li>
-            <li>
-              <strong>Broad definition of “work”</strong>: You do not need a traditional full-time job. “Working” can
-              include part-time tasks like pet sitting, consulting for a neighbor, or even recycling. There are no minimum
-              hours required.
-            </li>
-            <li>
-              <strong>Income protection</strong>: Most disability-related income (like SSDI or private disability) is not
-              counted toward the limit. Even if your SSDI converted to Social Security Retirement, it may still be exempt.
-            </li>
-            <li>
-              <strong>CalAIM ready</strong>: Once your Share of Cost is $0, you immediately qualify for CalAIM services,
-              including Enhanced Care Management and Community Supports for care home placement.
-            </li>
-          </ul>
-
-          <h4 className="mt-5 font-semibold text-gray-900 print:text-black">
-            Additional SOC Reduction Strategies (County Eligibility Process)
-          </h4>
-          <div className="mt-2 space-y-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-            <div>
-              <p className="font-semibold text-gray-900 print:text-black">
-                1. The "Excess Income" Room and Board Adjustment
-              </p>
-              <p>
-                Under California law (and often reflected in RCFE Admission Agreements), there is a distinction
-                between what an SSI recipient pays and what a private-pay or high-income resident pays.
-              </p>
-              <ul className="mt-2 list-disc pl-5 space-y-1">
-                <li>
-                  <strong>The SSI Rate Cap:</strong> For residents on SSI, the room and board rate is strictly
-                  capped (currently around $1,444.07 for 2026).
-                </li>
-                <li>
-                  <strong>The Non-SSI Exception:</strong> If a member has income other than SSI (for example, a
-                  higher Social Security check), the facility may charge the basic room and board rate plus an
-                  additional amount depending on the admission agreement.
-                </li>
-                <li>
-                  <strong>The Strategy:</strong> By increasing the room and board charge on the admission
-                  agreement to align with the member’s total income (minus the Personal Needs Allowance of $182),
-                  the member’s countable income can be reduced.
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-900 print:text-black">
-                2. The "Medical Expense" Spend-Down (Paperwork Fix)
-              </p>
-              <p>
-                If the board-and-care deduction is not available when CalAIM is paying for care, a spend-down
-                strategy can still reduce SOC to $0 by documenting incurred medical or remedial expenses.
-              </p>
-              <ul className="mt-2 list-disc pl-5 space-y-1">
-                <li>
-                  <strong>Remedial Care Expenses:</strong> The portion of an RCFE bill above the standard room and
-                  board amount may be argued as remedial care expense.
-                </li>
-                <li>
-                  <strong>How to report:</strong> Submit RCFE invoices to County Social Services (DPSS) as
-                  incurred medical expenses. Out-of-pocket amounts paid by the member can count toward meeting SOC.
-                </li>
-              </ul>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-900 print:text-black">
-                3. Purchase Supplemental Insurance (Often the Cleanest Fix)
-              </p>
-              <p>
-                To reduce SOC before final county calculation, lower gross countable income by documenting
-                deductible premiums and health insurance costs.
-              </p>
-              <ul className="mt-2 list-disc pl-5 space-y-1">
-                <li>
-                  <strong>Dental/Vision/Health premiums:</strong> Monthly premiums (for example, $150) are
-                  deductible by the county.
-                </li>
-                <li>
-                  <strong>Medicare Part B/D:</strong> Ensure all premium deductions are captured by the county
-                  eligibility worker.
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <h4 className="mt-5 font-semibold text-gray-900 print:text-black">Summary of Where to Go</h4>
-          <p className="mt-2 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-            These updates must be submitted to the <strong>County Social Services Eligibility Worker</strong>{' '}
-            (not the health plan):
-          </p>
-          <ul className="mt-2 list-disc pl-5 space-y-1 text-sm print:text-xs text-gray-700 print:text-black">
-            <li>
-              <strong>Revised Admission Agreement:</strong> showing higher room and board obligation up to the
-              member’s available income.
-            </li>
-            <li>
-              <strong>Medical receipts:</strong> out-of-pocket costs such as incontinence supplies, OTC
-              medications, transportation, and related expenses.
-            </li>
-            <li>
-              <strong>Insurance proof:</strong> monthly premium documentation for supplemental plans.
-            </li>
-          </ul>
-          <div className="mt-3 rounded border border-zinc-300 bg-white p-3 text-sm print:text-xs text-gray-700 print:text-black">
-            <strong>Crucial note:</strong> once county deductions are entered and the case reflects zero SOC, the
-            CalAIM managed care plan typically sees eligibility updates in approximately 24-48 hours.
-          </div>
-
-          <h4 className="mt-4 font-semibold text-gray-900 print:text-black">Who to Contact for Help</h4>
-          <p className="mt-2 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-            Navigating Medi-Cal rules is complex. We recommend contacting these free, state-funded organizations to help
-            you transition to a $0 Share of Cost:
-          </p>
-
-          <div className="mt-3 space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
-            <div>
-              <div className="font-semibold text-gray-900 print:text-black">
-                1. HICAP (Health Insurance Counseling &amp; Advocacy Program)
-              </div>
-              <div>HICAP provides free, unbiased counseling on Medicare and Medi-Cal. They are experts at the Working Disabled Program.</div>
-              <div>
-                <strong>Phone:</strong>{' '}
-                <a className="text-blue-600 print:text-black hover:underline" href="tel:18004340222">1-800-434-0222</a>
-              </div>
-              <div>
-                <strong>Website:</strong>{' '}
-                <a className="text-blue-600 print:text-black hover:underline" href="https://aging.ca.gov/hicap" target="_blank" rel="noopener noreferrer">
-                  aging.ca.gov/hicap
-                </a>
-              </div>
-            </div>
-
-            <div>
-              <div className="font-semibold text-gray-900 print:text-black">2. Health Consumer Alliance (HCA)</div>
-              <div>The HCA offers free legal assistance for Californians struggling with Medi-Cal eligibility or high Share of Cost.</div>
-              <div>
-                <strong>Phone:</strong>{' '}
-                <a className="text-blue-600 print:text-black hover:underline" href="tel:18888043536">1-888-804-3536</a>
-              </div>
-              <div>
-                <strong>Website:</strong>{' '}
-                <a className="text-blue-600 print:text-black hover:underline" href="https://healthconsumer.org" target="_blank" rel="noopener noreferrer">
-                  healthconsumer.org
-                </a>
-              </div>
-            </div>
-
-            <div>
-              <div className="font-semibold text-gray-900 print:text-black">3. Your Local County Social Services (DPSS)</div>
-              <div>
-                To officially switch programs, you must contact your local county eligibility worker. Ask them specifically for an{' '}
-                <strong>“evaluation for the 250% Working Disabled Program.”</strong>
-              </div>
-              <div>
-                <strong>Online Portal:</strong>{' '}
-                <a className="text-blue-600 print:text-black hover:underline" href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">
-                  BenefitsCal.com
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Benefitscal.com */}
-      <div className="col-span-full mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
-          Benefitscal.com
-        </h2>
-        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          A one stop shop to apply and review Medi-Cal benefits including possible share of cost information 
-          and to add for the member an authorized representative/power of attorney.
-        </p>
-        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed mt-2">
-          Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-black hover:underline">www.benefitscal.com</a> for current SOC verification and more information.
+          Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's
+          Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit.
         </p>
       </div>
 
@@ -418,9 +189,178 @@ export function PrintableProgramInfoForm({
           <div className="p-3 print:p-4 border print:border-black">
             <h3 className="font-semibold text-gray-900 print:text-black mb-2">2. Contact the Medi-Cal Managed Care Ombudsman</h3>
             <p className="text-sm print:text-xs text-gray-700 print:text-black mb-2">
-              <strong>Phone:</strong> 1-888-452-8609 | <strong>Email:</strong> MMCDOmbudsmanOffice@dhcs.ca.gov
+              If HCO says they cannot speed up the process, the Medi-Cal Managed Care Ombudsman is the "escalation" office.
+              They have the authority to investigate enrollment errors and can sometimes manually override an assignment if
+              it is preventing a member from receiving necessary care or a safe discharge.
+            </p>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black mb-1">
+              <strong>Phone:</strong> 1-888-452-8609
+            </p>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black mb-1">
+              <strong>Email:</strong> MMCDOmbudsmanOffice@dhcs.ca.gov
+            </p>
+            <p className="text-sm print:text-xs text-gray-700 print:text-black">
+              <strong>What to say:</strong> "The member was randomly assigned to Molina despite requesting Health Net. This error is preventing access to CalAIM SNF-to-community transition services, effectively keeping the member institutionalized longer than necessary."
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Share of Cost */}
+      <div className="col-span-full mb-8 p-4 print:p-6 bg-red-50 print:bg-white border print:border-black">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
+          Share of Cost (SOC)
+        </h2>
+        <div className="space-y-4 text-sm print:text-xs text-gray-700 print:text-black">
+          <p className="font-semibold text-red-700 print:text-black">
+            Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.
+          </p>
+          <p>
+            A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It is the amount of money you may
+            have to pay each month toward medical-related services or supplies before your Medi-Cal coverage
+            begins to pay.
+          </p>
+          <p>
+            This usually happens when income is above the limit for free Medi-Cal but the person still qualifies
+            for the program.
+          </p>
+          <p>
+            For information on reducing SOC, visit{' '}
+            <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-black hover:underline">
+              canhr.org/understanding-the-share-of-cost-for-medi-cal
+            </a>{' '}
+            or contact your county case worker.
+          </p>
+          <div className="mt-4 rounded border border-zinc-300 bg-white p-3">
+            <h3 className="text-base font-semibold text-gray-900 print:text-black">
+              Eliminating Medi-Cal Share of Cost: The Key to CalAIM
+            </h3>
+            <div className="mt-2 space-y-2">
+              <p>
+                If you have Medi-Cal with a Share of Cost, you may be missing out on life-changing benefits.
+                Programs like CalAIM (which provides care coordination and placement in residential care homes)
+                generally require members to have <strong>Full-Scope, $0 Share of Cost</strong> Medi-Cal.
+              </p>
+              <p>
+                For many seniors and disabled individuals, a monthly income above <strong>$1,856</strong> (the 2026 limit)
+                triggers a high Share of Cost. However, California&apos;s <strong>250% Working Disabled Program (WDP)</strong> offers
+                a legal way to eliminate that cost and keep more of your money.
+              </p>
+            </div>
+
+            <h4 className="mt-3 font-semibold text-gray-900 print:text-black">How the 250% Working Disabled Program Works</h4>
+            <ul className="mt-2 list-disc pl-5 space-y-1">
+              <li><strong>Higher income allowed:</strong> up to <strong>$3,260</strong> per month with a <strong>$0 monthly premium</strong> and <strong>$0 Share of Cost</strong>.</li>
+              <li><strong>Broad definition of "work":</strong> no traditional full-time job required. "Working" can include part-time tasks like pet sitting, consulting for a neighbor, or even recycling. No minimum hours required.</li>
+              <li><strong>Income protection:</strong> most disability-related income (like SSDI or private disability) is not counted toward the limit. Even if SSDI converted to Social Security Retirement, it may still be exempt.</li>
+              <li><strong>CalAIM ready:</strong> once Share of Cost is $0, you can qualify for CalAIM services, including Enhanced Care Management and Community Supports for care home placement.</li>
+            </ul>
+
+            <h4 className="mt-4 font-semibold text-gray-900 print:text-black">Additional SOC Reduction Strategies (County Eligibility Process)</h4>
+            <div className="mt-2 space-y-3">
+              <div>
+                <p className="font-semibold text-gray-900 print:text-black">1. The "Excess Income" Room and Board Adjustment</p>
+                <p>Under California law (and often reflected in RCFE admission agreements), there is a distinction between what an SSI recipient pays and what a private-pay or high-income resident pays.</p>
+                <ul className="mt-1 list-disc pl-5 space-y-1">
+                  <li><strong>The SSI Rate Cap:</strong> for residents on SSI, room and board is strictly capped (around $1,444.07 for 2026).</li>
+                  <li><strong>The Non-SSI Exception:</strong> if a member has income other than SSI, the facility may charge the basic room and board amount plus additional contract-based charges.</li>
+                  <li><strong>The Strategy:</strong> increasing room and board obligations on the admission agreement (minus the $182 personal needs allowance) may reduce countable income.</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 print:text-black">2. The "Medical Expense" Spend-Down (Paperwork Fix)</p>
+                <p>When board-and-care deduction is unavailable because CalAIM is paying for care, a spend-down strategy can still reduce SOC by documenting incurred medical or remedial expenses.</p>
+                <ul className="mt-1 list-disc pl-5 space-y-1">
+                  <li><strong>Remedial care expenses:</strong> the RCFE amount above standard room and board may be treated as remedial care expense.</li>
+                  <li><strong>How to report:</strong> submit RCFE invoices to County Social Services (DPSS) as incurred medical expenses. Member out-of-pocket payments count toward SOC.</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 print:text-black">3. Purchase Supplemental Insurance (Often the Cleanest Fix)</p>
+                <p>Lower gross countable income before SOC calculation by documenting deductible premiums and insurance deductions.</p>
+                <ul className="mt-1 list-disc pl-5 space-y-1">
+                  <li><strong>Dental/Vision/Health premiums:</strong> monthly premiums are deductible by the county.</li>
+                  <li><strong>Medicare Part B/D:</strong> ensure all premiums are captured by the county eligibility worker.</li>
+                </ul>
+              </div>
+            </div>
+            <h4 className="mt-4 font-semibold text-gray-900 print:text-black">Summary of Where to Go</h4>
+            <p className="mt-1">
+              Take the following to the <strong>County Social Services Eligibility Worker</strong> (not the health plan):
+            </p>
+            <ul className="mt-1 list-disc pl-5 space-y-1">
+              <li><strong>Revised admission agreement:</strong> showing higher room and board obligation up to available income.</li>
+              <li><strong>Medical receipts:</strong> out-of-pocket costs (incontinence supplies, OTC meds, transportation, etc.).</li>
+              <li><strong>Insurance proof:</strong> monthly supplemental premium documentation.</li>
+            </ul>
+            <div className="mt-2 rounded border border-cyan-300 bg-cyan-50 p-2">
+              <strong>Crucial note:</strong> once county deductions are entered and the case reflects zero SOC, the CalAIM managed care plan typically sees eligibility updates in about 24-48 hours.
+            </div>
+            <h4 className="mt-4 font-semibold text-gray-900 print:text-black">Who to Contact for Help</h4>
+            <div className="mt-2 space-y-2">
+              <p><strong>1. HICAP (Health Insurance Counseling &amp; Advocacy Program)</strong><br />Free, unbiased counseling on Medicare and Medi-Cal. Experts at the Working Disabled Program.<br /><strong>Phone:</strong> 1-800-434-0222<br /><strong>Website:</strong> aging.ca.gov/hicap</p>
+              <p><strong>2. Health Consumer Alliance (HCA)</strong><br />Free legal assistance for Californians struggling with Medi-Cal eligibility or high Share of Cost.<br /><strong>Phone:</strong> 1-888-804-3536<br /><strong>Website:</strong> healthconsumer.org</p>
+              <p><strong>3. Your Local County Social Services (DPSS)</strong><br />Contact your local county eligibility worker and ask for an <strong>"evaluation for the 250% Working Disabled Program."</strong><br /><strong>Online Portal:</strong> BenefitsCal.com</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Benefitscal.com */}
+      <div className="col-span-full mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
+          Benefitscal.com
+        </h2>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+          A one stop shop to apply and review Medi-Cal benefits including possible share of cost information
+          and to add for the member an authorized representative/power of attorney.
+        </p>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed mt-2">
+          Visit{' '}
+          <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-black hover:underline">
+            www.benefitscal.com
+          </a>{' '}
+          for current SOC verification and more information.
+        </p>
+      </div>
+
+      {/* NMOHC */}
+      <div className="col-span-full mb-8 p-4 print:p-6 bg-cyan-50 print:bg-white border print:border-black">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
+          Non-Medical Out-of-Home Care (NMOHC) Payment
+        </h2>
+        <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
+          <p>
+            NMOHC is a payment supplement that boosts a person's monthly SSI check because they live in a
+            licensed assisted living home rather than an apartment or house.
+          </p>
+          <p>
+            In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state
+            recognizes that costs are much higher than someone living independently. To help cover this, the person
+            moves from the "Independent Living" rate to the "NMOHC" rate.
+          </p>
+          <p>
+            <strong>1. Confirm Financial Eligibility (The "Paper" Test)</strong>
+          </p>
+          <p>
+            Since NMOHC is part of the SSI program, you can verify the financial requirements now.
+          </p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
+            <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
+            <li>Note: One car and the primary home are usually excluded from this limit.</li>
+          </ul>
+          <p>
+            <strong>2. Verification with Social Security (The "Pre-Move" Call)</strong>
+          </p>
+          <p>
+            Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC
+            eligibility and the supplement amount.
+          </p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Tell them the person plans to move into a licensed RCFE.</li>
+            <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
+          </ul>
         </div>
       </div>
 
@@ -429,84 +369,28 @@ export function PrintableProgramInfoForm({
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
           "Room and Board" and "Assisted Living" Payments
         </h2>
-        <div className="space-y-4 text-sm print:text-xs text-gray-700 print:text-black">
+        <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
           <p>
-            The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is 
+            The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is
             responsible for paying the RCFE the 'assisted living' portion.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <h3 className="font-semibold text-gray-900 print:text-black mb-2">With SSI/SSP & NMOHC:</h3>
-              <ul className="list-disc list-inside space-y-1">
-                <li>SSI/SSP bumped up to $1,626.07</li>
-                <li>Member retains $182 for personal needs</li>
-                <li>RCFE receives $1,444.07 for room and board</li>
-                <li>Minimum payment: $1,447.00</li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-900 print:text-black mb-2">Without NMOHC:</h3>
-              <ul className="list-disc list-inside space-y-1">
-                <li>Still have room and board obligation</li>
-                <li>Amount may be flexible</li>
-                <li>Depends on RCFE and tier level</li>
-                <li>Cannot pay = usually not eligible</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Share of Cost */}
-      <div className="col-span-full mb-8 p-4 print:p-6 bg-red-50 print:bg-white border print:border-black">
-        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
-          Important: Share of Cost (SOC)
-        </h2>
-        <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
-          <p className="font-semibold text-red-700 print:text-black">
-            Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply.
+          <p>
+            For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.
           </p>
           <p>
-            A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you 
-            may have to pay each month towards medical-related services before your Medi-Cal coverage begins to pay.
+            Members not eligible for the NMOHC will still have a 'room and board' obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.
           </p>
           <p>
-            For information on eliminating share of cost, visit the California Advocates for Nursing Home 
-            Reform (CANHR) website at <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">https://canhr.org/understanding-the-share-of-cost-for-medi-cal/</a> or contact your case worker.
+            Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a 'room and board' payment from the member (or their family).
           </p>
-        </div>
-      </div>
-
-      {/* CalAIM Turnaround Time */}
-      <div className="col-span-full mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
-          CalAIM Turnaround Time
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <div className="p-4 print:p-4 border print:border-black">
-            <h3 className="font-semibold text-gray-900 print:text-black mb-3">
-              Health Net: 5-7 Business Days
-            </h3>
-            <ol className="list-decimal list-inside space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
-              <li>Compile required documents, RN does virtual ISP visit</li>
-              <li>Determine tiered rate</li>
-              <li>Recommend RCFEs to family</li>
-              <li>Submit authorization request and receive determination</li>
-            </ol>
-          </div>
-          <div className="p-4 print:p-4 border print:border-black">
-            <h3 className="font-semibold text-gray-900 print:text-black mb-3">
-              Kaiser: 4-8 Weeks
-            </h3>
-            <ol className="list-decimal list-inside space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
-              <li>Compile documents & request authorization</li>
-              <li>Receive authorization determination</li>
-              <li>If approved, RN does in-person ISP visit</li>
-              <li>Send ISP to Kaiser for tier level</li>
-              <li>Receive tier level, recommend RCFEs</li>
-              <li>RCFE contracts with Kaiser, member moves in</li>
-            </ol>
-          </div>
+          <p>
+            Working with CalAIM is at the discretion of the RCFEs. Many RCFEs, especially in more expensive areas, most likely will not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas.
+          </p>
+          <p>
+            The "assisted living" payment paid by the MCP is a fixed rate based on level of care but may not
+            align with market rate in certain counties or for all RCFEs. Supplementing the "room and board" to
+            arrive at market rate is at the discretion of the families.
+          </p>
         </div>
       </div>
 
@@ -526,56 +410,43 @@ export function PrintableProgramInfoForm({
         </p>
       </div>
 
-      {/* Next Steps: Required Forms by Pathway */}
+      {/* CalAIM Turnaround Time */}
+      <div className="col-span-full mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
+          CalAIM Turnaround Time
+        </h2>
+        <p className="font-semibold text-sm print:text-xs text-gray-900 print:text-black">For Health Net (5-7 business days):</p>
+        <ol className="list-decimal pl-5 mt-2 space-y-1 text-sm print:text-xs text-gray-700 print:text-black">
+          <li>We compile all the required documents, have a RN do a virtual ISP visit with appropriate party.</li>
+          <li>We determine the tiered rate.</li>
+          <li>We recommend RCFEs to the family (in many cases, the family already knows the RCFE they would like for their relative).</li>
+          <li>We submit the authorization request and receive the determination (approval or denial) within 5-7 business days.</li>
+        </ol>
+        <p className="mt-4 font-semibold text-sm print:text-xs text-gray-900 print:text-black">For Kaiser (4-8 weeks):</p>
+        <ol className="list-decimal pl-5 mt-2 space-y-1 text-sm print:text-xs text-gray-700 print:text-black">
+          <li>Compile required documents &amp; Request Authorization.</li>
+          <li>Receive authorization determination.</li>
+          <li>If approved, send RN (or MSW with RN sign off) to do in-person visit with ISP tool.</li>
+          <li>Send ISP tool to Kaiser for tier level.</li>
+          <li>Receive tier level and recommend RCFEs to family.</li>
+          <li>Once RCFE is selected sent RCFE to Kaiser for contracting and when RCFE receives Kaiser contract member can move into the RCFE.</li>
+        </ol>
+      </div>
+
+      {/* Next Steps: The Application */}
       <div className="col-span-full mb-8 p-4 print:p-6 bg-green-50 print:bg-white border print:border-black">
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4">
-          Required Forms by Pathway
+          Next Steps: The Application
         </h2>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {/* SNF Diversion Pathway */}
-          <div className="p-4 print:p-4 border print:border-black">
-            <h3 className="font-semibold text-gray-900 print:text-black mb-3">SNF Diversion Pathway</h3>
-            <p className="text-sm print:text-xs text-gray-700 print:text-black mb-3">
-              <em>For members at risk of SNF placement who want to go directly to assisted living</em>
-            </p>
-            <ul className="list-disc list-inside space-y-1 text-sm print:text-xs text-gray-700 print:text-black">
-              <li>CS Summary Form</li>
-              <li>Declaration of Eligibility (signed by PCP)</li>
-              <li>Current Medication List</li>
-              <li>POA Waiver and Release of Liability</li>
-              <li>Freedom of Choice Form</li>
-              <li>HIPAA Authorization Form</li>
-              <li>Form 602 (Medi-Cal Application)</li>
-              <li>Proof of Income (Social Security Annual Award Letter OR 3 months of bank statements showing Social Security income)</li>
-            </ul>
-          </div>
-
-          {/* SNF Transition Pathway */}
-          <div className="p-4 print:p-4 border print:border-black">
-            <h3 className="font-semibold text-gray-900 print:text-black mb-3">SNF Transition Pathway</h3>
-            <p className="text-sm print:text-xs text-gray-700 print:text-black mb-3">
-              <em>For members currently in a SNF who want to transition to assisted living</em>
-            </p>
-            <ul className="list-disc list-inside space-y-1 text-sm print:text-xs text-gray-700 print:text-black">
-              <li>CS Summary Form</li>
-              <li>Declaration of Eligibility (signed by PCP)</li>
-              <li>SNF Admission Documentation</li>
-              <li>Current Medication List</li>
-              <li>POA Waiver and Release of Liability</li>
-              <li>Freedom of Choice Form</li>
-              <li>HIPAA Authorization Form</li>
-              <li>Form 602 (Medi-Cal Application)</li>
-              <li>Proof of Income (Social Security Annual Award Letter OR 3 months of bank statements showing Social Security income)</li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="mt-4 p-3 print:p-4 bg-blue-50 print:bg-white border print:border-black">
-          <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
-            <p><strong>Note:</strong> Additional documents may be requested based on your specific situation and managed care plan requirements.</p>
-          </div>
-        </div>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black">
+          The next section is for filling out the CS Summary Form. This is the core of your application.
+        </p>
+        <p className="mt-2 text-sm print:text-xs text-gray-700 print:text-black">
+          Kaiser turnaround is typically 4-8 weeks.
+        </p>
+        <p className="mt-2 text-sm print:text-xs text-gray-700 print:text-black">
+          Based on the selections you make in the summary form (like the pathway), a personalized list of other required documents will be generated for you to upload.
+        </p>
       </div>
     </PrintableFormLayout>
   );

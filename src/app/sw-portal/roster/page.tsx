@@ -523,6 +523,58 @@ export default function SWRosterPage() {
     return needsQuestionnaire[0];
   }, [needsQuestionnaire]);
 
+  const monthlyQueueStats = useMemo(() => {
+    if (!statusIconsReady) {
+      return { totalAssigned: totals.memberCount, notStarted: 0, inProgress: 0, completed: 0 };
+    }
+
+    let notStarted = 0;
+    let inProgress = 0;
+    let completed = 0;
+    let totalAssigned = 0;
+
+    for (const f of facilities) {
+      for (const m of f.members || []) {
+        totalAssigned += 1;
+        const s = monthStatuses[String(m.id || '').trim()];
+        const flags = computeSwVisitStatusFlags(s);
+        if (flags.nextAction === 'questionnaire') notStarted += 1;
+        else if (flags.nextAction === 'signoff' || flags.nextAction === 'submit-claim') inProgress += 1;
+        else completed += 1;
+      }
+    }
+
+    return { totalAssigned, notStarted, inProgress, completed };
+  }, [facilities, monthStatuses, statusIconsReady, totals.memberCount]);
+
+  const monthPacing = useMemo(() => {
+    const [yRaw, mRaw] = String(statusMonth || '').split('-');
+    const year = Number(yRaw);
+    const monthNum = Number(mRaw);
+    if (!Number.isFinite(year) || !Number.isFinite(monthNum) || monthNum < 1 || monthNum > 12) {
+      return { expectedDone: 0, remainingDays: 0, onTrack: true };
+    }
+    const today = new Date();
+    const monthStart = new Date(year, monthNum - 1, 1);
+    const monthEnd = new Date(year, monthNum, 0);
+    const isPastMonth =
+      today.getFullYear() > year || (today.getFullYear() === year && today.getMonth() + 1 > monthNum);
+    const isFutureMonth =
+      today.getFullYear() < year || (today.getFullYear() === year && today.getMonth() + 1 < monthNum);
+
+    let elapsedDays = 0;
+    if (isPastMonth) elapsedDays = monthEnd.getDate();
+    else if (isFutureMonth) elapsedDays = 0;
+    else elapsedDays = today.getDate();
+
+    const totalDays = monthEnd.getDate();
+    const ratio = totalDays > 0 ? elapsedDays / totalDays : 0;
+    const expectedDone = Math.round(monthlyQueueStats.totalAssigned * ratio);
+    const remainingDays = isPastMonth ? 0 : Math.max(0, monthEnd.getDate() - (isFutureMonth ? 0 : today.getDate()));
+    const onTrack = monthlyQueueStats.completed >= expectedDone;
+    return { expectedDone, remainingDays, onTrack };
+  }, [monthlyQueueStats.completed, monthlyQueueStats.totalAssigned, statusMonth]);
+
   // Keyboard shortcuts for speed:
   // - / focus search
   // - N start next questionnaire
@@ -712,8 +764,8 @@ export default function SWRosterPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between print:hidden">
         <div>
           <h1 className="text-3xl font-bold">Social Worker Roster</h1>
-          <p className="text-muted-foreground">Live assignment roster from the latest Caspio cache sync.</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <p className="text-muted-foreground">Attractive monthly work view with quick questionnaire access.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
             <Badge variant="secondary" className="gap-1">
               <Building2 className="h-3.5 w-3.5" />
               {totals.facilityCount} RCFE{totals.facilityCount === 1 ? '' : 's'}
@@ -722,83 +774,21 @@ export default function SWRosterPage() {
               <Users className="h-3.5 w-3.5" />
               {totals.memberCount} member{totals.memberCount === 1 ? '' : 's'}
             </Badge>
-            {noAssignmentsSinceLastMonth ? (
-              <Badge variant="outline">No assignments since last month</Badge>
-            ) : (
-              <Badge variant="outline">New since last month: {newAssignmentsSinceLastMonthCount}</Badge>
-            )}
-            {lastSync ? (
-              <span>Cache last updated: {lastSync}</span>
-            ) : null}
-            <span className="inline-flex items-center gap-2">
-              <span>• Roster:</span>
-              <span>
-                {rosterLastRefreshLabel
-                  ? `Last refresh ${rosterLastRefreshLabel}${rosterLastRefreshOk === false ? ' (failed)' : ''}`
-                  : 'Not loaded yet'}
-              </span>
-              <span className="text-muted-foreground">(Reflects daily Caspio sync; use refresh for latest.)</span>
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span>• Status icons:</span>
-              <span>
-                {statusIconsLastRefreshLabel
-                  ? `Last refresh ${statusIconsLastRefreshLabel}${statusIconsLastRefreshOk === false ? ' (failed)' : ''}`
-                  : 'Not loaded yet'}
-              </span>
-              <span className="text-muted-foreground">(Auto-updates while open; if icons are missing, refresh here.)</span>
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span>• Month:</span>
-              <Select value={statusMonth} onValueChange={setStatusMonth}>
-                <SelectTrigger className="h-7 w-[190px] bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {monthOptions.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span>• Sort:</span>
-              <Select value={facilitySort} onValueChange={(v) => setFacilitySort(v as any)}>
-                <SelectTrigger className="h-7 w-[160px] bg-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="assigned">Assigned order</SelectItem>
-                  <SelectItem value="rcfe-az">RCFE A–Z</SelectItem>
-                  <SelectItem value="rcfe-za">RCFE Z–A</SelectItem>
-                </SelectContent>
-              </Select>
+            <Badge variant="outline">
+              {noAssignmentsSinceLastMonth ? 'No assignments since last month' : `New since last month: ${newAssignmentsSinceLastMonthCount}`}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              {statusIconsLastRefreshLabel
+                ? `Status refresh: ${statusIconsLastRefreshLabel}${statusIconsLastRefreshOk === false ? ' (failed)' : ''}`
+                : 'Status refresh pending'}
             </span>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <span className="font-medium text-slate-900">Icons:</span>
-            <span className="inline-flex items-center gap-1">
-              {renderStatusIcon({ on: true, label: 'Questionnaire completed' })} Q
-            </span>
-            <span className="inline-flex items-center gap-1">
-              {renderStatusIcon({ on: true, label: 'Signed off' })} S
-            </span>
-            <span className="inline-flex items-center gap-1">
-              {renderStatusIcon({ on: true, label: 'Claim submitted' })} C
-            </span>
-            <span className="inline-flex items-center gap-1">
-              {renderStatusIcon({ on: true, label: 'Claim paid' })} P
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span
-                className="inline-flex h-2 w-2 rounded-full bg-rose-500"
-                aria-label="Needs action indicator"
-                title="Needs action"
-              />
-              Needs action
-            </span>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline" className="gap-1">Q questionnaire</Badge>
+            <Badge variant="outline" className="gap-1">S sign-off</Badge>
+            <Badge variant="outline" className="gap-1">C claim submitted</Badge>
+            <Badge variant="outline" className="gap-1">P paid</Badge>
+            <Badge variant="outline" className="gap-1 text-rose-700 border-rose-200 bg-rose-50">Needs action</Badge>
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -826,6 +816,90 @@ export default function SWRosterPage() {
           </Button>
         </div>
       </div>
+
+      <Card className="print:hidden">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Month & View Controls</CardTitle>
+          <CardDescription>Pick month, sorting, and filter to keep your roster focused.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">Month:</span>
+            <Select value={statusMonth} onValueChange={setStatusMonth}>
+              <SelectTrigger className="h-8 w-[190px] bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground">Sort:</span>
+            <Select value={facilitySort} onValueChange={(v) => setFacilitySort(v as any)}>
+              <SelectTrigger className="h-8 w-[160px] bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="assigned">Assigned order</SelectItem>
+                <SelectItem value="rcfe-az">RCFE A–Z</SelectItem>
+                <SelectItem value="rcfe-za">RCFE Z–A</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={needsActionOnly}
+              onCheckedChange={(v) => setNeedsActionOnly(Boolean(v))}
+              disabled={!statusIconsReady}
+            />
+            <span className="text-sm text-muted-foreground">Needs action only</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="print:hidden border-primary/20 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">My Monthly Focus</CardTitle>
+          <CardDescription>Work at your convenience and stay on track for month-end completion.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-4">
+            <div className="rounded-md border bg-white p-2 text-sm">
+              <div className="text-xs text-muted-foreground">Assigned</div>
+              <div className="text-xl font-semibold">{monthlyQueueStats.totalAssigned}</div>
+            </div>
+            <div className="rounded-md border bg-white p-2 text-sm">
+              <div className="text-xs text-muted-foreground">Not started</div>
+              <div className="text-xl font-semibold">{monthlyQueueStats.notStarted}</div>
+            </div>
+            <div className="rounded-md border bg-white p-2 text-sm">
+              <div className="text-xs text-muted-foreground">In progress</div>
+              <div className="text-xl font-semibold">{monthlyQueueStats.inProgress}</div>
+            </div>
+            <div className="rounded-md border bg-white p-2 text-sm">
+              <div className="text-xs text-muted-foreground">Completed</div>
+              <div className="text-xl font-semibold text-emerald-700">{monthlyQueueStats.completed}</div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs text-muted-foreground">
+              {monthPacing.onTrack ? 'On track for this month' : 'Recommended: complete a few more this week'} • Target by now: {monthPacing.expectedDone} • Days left: {monthPacing.remainingDays}
+            </div>
+            {nextQuestionnaire ? (
+              <Button asChild className="w-full sm:w-auto">
+                <Link href={`/sw-visit-verification?rcfeId=${encodeURIComponent(nextQuestionnaire.rcfeId)}&memberId=${encodeURIComponent(nextQuestionnaire.memberId)}`}>
+                  Start next questionnaire: {nextQuestionnaire.memberName}
+                </Link>
+              </Button>
+            ) : (
+              <Button disabled className="w-full sm:w-auto">No pending questionnaires</Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {(nextQuestionnaire || loadingDraftsToday || draftsToday.length > 0 || pinnedFacilities.length > 0 || recentMembers.length > 0) ? (
         <div className="grid gap-4 print:hidden lg:grid-cols-2">
@@ -958,50 +1032,17 @@ export default function SWRosterPage() {
 
       <Card className="print:hidden">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Search</CardTitle>
-          <CardDescription>Filter by home name, address, or member name.</CardDescription>
+          <CardTitle className="text-base">Search Roster</CardTitle>
+          <CardDescription>Filter by home name, address, city, county, or member name.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-2">
           <div className="flex items-center gap-2">
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input ref={searchInputRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type to search…" />
           </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-md border bg-white px-3 py-2">
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={needsActionOnly}
-                onCheckedChange={(v) => setNeedsActionOnly(Boolean(v))}
-                disabled={!statusIconsReady}
-              />
-              <span className="text-sm text-muted-foreground">Needs action only</span>
-            </div>
-
-            {!statusIconsReady ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => void refreshMonthStatuses()}
-                disabled={loadingMonthStatuses || !hasLoadedOnce}
-                className="gap-2"
-              >
-                <RefreshCw className={`h-4 w-4 ${loadingMonthStatuses ? 'animate-spin' : ''}`} />
-                Load status icons
-              </Button>
-            ) : null}
+          <div className="text-xs text-muted-foreground">
+            Tip: press <span className="font-medium">/</span> to focus search, <span className="font-medium">N</span> for next questionnaire, and <span className="font-medium">P</span> to print.
           </div>
-
-          {!statusIconsReady ? (
-            <div className="text-xs text-muted-foreground">
-              The “Needs action” filter requires status icons for the selected month. Click “Load status icons” above.
-            </div>
-          ) : statusIconsLastRefreshLabel ? (
-            <div className="text-xs text-muted-foreground">
-              Status icons last refreshed: {statusIconsLastRefreshLabel}
-              {statusIconsLastRefreshOk === false ? ' (failed)' : ''}. Auto-updates while open.
-            </div>
-          ) : null}
         </CardContent>
       </Card>
 

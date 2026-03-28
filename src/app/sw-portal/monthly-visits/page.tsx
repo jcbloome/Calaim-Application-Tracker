@@ -1,17 +1,21 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useAuth, useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { Loader2, Download, Printer, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Loader2, Download, Printer, CheckCircle, AlertTriangle, Target, CalendarDays, Sparkles } from 'lucide-react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { format } from 'date-fns';
+import { format, endOfMonth } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
 
 type MonthlyRow = {
   date: string;
@@ -44,6 +48,14 @@ type ClaimSubmission = {
   claimDate?: any;
 };
 
+type AssignedMember = {
+  memberId: string;
+  memberName: string;
+  rcfeId: string;
+  rcfeName: string;
+  rcfeAddress?: string;
+};
+
 const VISIT_FEE_RATE = 45;
 const DAILY_GAS_AMOUNT = 20;
 
@@ -60,6 +72,7 @@ export default function SWMonthlyVisitsPage() {
   const [rows, setRows] = useState<MonthlyRow[]>([]);
   const [duplicates, setDuplicates] = useState<DuplicateInfo[]>([]);
   const [claims, setClaims] = useState<ClaimSubmission[]>([]);
+  const [assignedMembers, setAssignedMembers] = useState<AssignedMember[]>([]);
 
   const completedMemberKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -94,6 +107,65 @@ export default function SWMonthlyVisitsPage() {
     });
     return m;
   }, [rows]);
+
+  const monthStatusesByMember = useMemo(() => {
+    const map = new Map<string, MonthlyRow>();
+    rows.forEach((r) => {
+      const memberId = String(r.memberId || '').trim();
+      if (!memberId) return;
+      map.set(memberId, r);
+    });
+    return map;
+  }, [rows]);
+
+  const monthlyMemberStates = useMemo(() => {
+    return assignedMembers.map((member) => {
+      const row = monthStatusesByMember.get(member.memberId);
+      const flags = computeSwVisitStatusFlags(
+        row
+          ? {
+              visitId: row.visitId,
+              signedOff: row.signedOff,
+              claimStatus: row.claimStatus,
+              claimSubmitted: row.claimSubmitted,
+              claimPaid: row.claimPaid,
+              claimId: row.claimId,
+            }
+          : undefined
+      );
+      return {
+        ...member,
+        flags,
+        visitDay: row?.date ? String(row.date).slice(0, 10) : '',
+      };
+    });
+  }, [assignedMembers, monthStatusesByMember]);
+
+  const queueStats = useMemo(() => {
+    const notStarted = monthlyMemberStates.filter((m) => m.flags.nextAction === 'questionnaire');
+    const inProgress = monthlyMemberStates.filter((m) => m.flags.nextAction === 'signoff' || m.flags.nextAction === 'submit-claim');
+    const completed = monthlyMemberStates.filter((m) => m.flags.nextAction === 'none');
+    return { notStarted, inProgress, completed };
+  }, [monthlyMemberStates]);
+
+  const monthPacing = useMemo(() => {
+    const [yearRaw, monthRaw] = String(month || '').split('-');
+    const year = Number(yearRaw);
+    const monthNum = Number(monthRaw);
+    if (!Number.isFinite(year) || !Number.isFinite(monthNum) || monthNum < 1 || monthNum > 12) {
+      return { remainingDays: 0, expectedDone: 0, onTrack: true };
+    }
+    const monthStart = new Date(year, monthNum - 1, 1);
+    const monthEnd = endOfMonth(monthStart);
+    const today = new Date();
+    const totalDays = monthEnd.getDate();
+    const elapsedDays = Math.min(Math.max(today.getDate(), 1), totalDays);
+    const progressRatio = totalDays > 0 ? elapsedDays / totalDays : 1;
+    const expectedDone = Math.round(assignedMembers.length * progressRatio);
+    const remainingDays = Math.max(0, monthEnd.getDate() - today.getDate());
+    const onTrack = queueStats.completed.length >= expectedDone;
+    return { remainingDays, expectedDone, onTrack };
+  }, [assignedMembers.length, month, queueStats.completed.length]);
 
   const invoiceTotals = useMemo(() => {
     const visitFees = completedCount * VISIT_FEE_RATE;
@@ -130,6 +202,39 @@ export default function SWMonthlyVisitsPage() {
     setClaims([...next].sort((a, b) => sortKey(b) - sortKey(a)));
   }, [firestore, user?.email]);
 
+  const fetchAssignments = useCallback(async () => {
+    if (!user?.email) return;
+    const res = await fetch(
+      `/api/sw-visits?socialWorkerId=${encodeURIComponent(user.email)}&month=${encodeURIComponent(month)}`
+    );
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data?.success) {
+      throw new Error(data?.error || `Failed to load assigned members (HTTP ${res.status})`);
+    }
+
+    const rcfeList = Array.isArray(data?.rcfeList) ? data.rcfeList : [];
+    const deduped = new Map<string, AssignedMember>();
+    rcfeList.forEach((rcfe: any) => {
+      const rcfeId = String(rcfe?.id || '').trim();
+      const rcfeName = String(rcfe?.name || '').trim();
+      const rcfeAddress = String(rcfe?.address || '').trim();
+      const members = Array.isArray(rcfe?.members) ? rcfe.members : [];
+      members.forEach((m: any) => {
+        const memberId = String(m?.id || '').trim();
+        if (!memberId) return;
+        if (deduped.has(memberId)) return;
+        deduped.set(memberId, {
+          memberId,
+          memberName: String(m?.name || '').trim() || 'Member',
+          rcfeId,
+          rcfeName: rcfeName || 'RCFE',
+          rcfeAddress,
+        });
+      });
+    });
+    setAssignedMembers(Array.from(deduped.values()));
+  }, [month, user?.email]);
+
   const fetchMonthlyRows = useCallback(async () => {
     if (!auth?.currentUser) return;
     const idToken = await auth.currentUser.getIdToken();
@@ -150,7 +255,7 @@ export default function SWMonthlyVisitsPage() {
     if (!isSocialWorker || swLoading) return;
     setIsLoading(true);
     try {
-      await Promise.all([fetchMonthlyRows(), fetchClaims()]);
+      await Promise.all([fetchMonthlyRows(), fetchClaims(), fetchAssignments()]);
     } catch (e: any) {
       toast({
         title: 'Could not load monthly visits',
@@ -160,7 +265,7 @@ export default function SWMonthlyVisitsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [fetchClaims, fetchMonthlyRows, isSocialWorker, swLoading, toast]);
+  }, [fetchAssignments, fetchClaims, fetchMonthlyRows, isSocialWorker, swLoading, toast]);
 
   useEffect(() => {
     void loadAll();
@@ -231,8 +336,8 @@ export default function SWMonthlyVisitsPage() {
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Visits</h1>
-          <p className="text-muted-foreground">View your visits by month.</p>
+          <h1 className="text-2xl font-bold">Monthly Questionnaires</h1>
+          <p className="text-muted-foreground">Track completion at your pace, with a clear month-end target.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="w-full sm:w-[180px]">
@@ -249,18 +354,161 @@ export default function SWMonthlyVisitsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <Card>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Completed members</CardTitle>
-            <CardDescription>{month}</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarDays className="h-4 w-4 text-primary" />
+              My Month
+            </CardTitle>
+            <CardDescription>
+              Flexible daily workflow, with all assigned questionnaires due by month end.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{completedCount}</div>
-            <div className="text-xs text-muted-foreground">1 visit per member per month</div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="text-xs text-muted-foreground">Assigned members</div>
+                <div className="mt-1 text-2xl font-semibold">{assignedMembers.length}</div>
+              </div>
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="text-xs text-muted-foreground">Completed questionnaires</div>
+                <div className="mt-1 text-2xl font-semibold">{queueStats.completed.length}</div>
+              </div>
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="text-xs text-muted-foreground">Remaining this month</div>
+                <div className="mt-1 text-2xl font-semibold">
+                  {Math.max(0, assignedMembers.length - queueStats.completed.length)}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4">
+              <Progress
+                value={assignedMembers.length > 0 ? (queueStats.completed.length / assignedMembers.length) * 100 : 0}
+                className="h-2"
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <Badge variant="secondary">{queueStats.notStarted.length} not started</Badge>
+              <Badge variant="secondary">{queueStats.inProgress.length} in progress</Badge>
+              <Badge className="bg-emerald-600 hover:bg-emerald-600">{queueStats.completed.length} completed</Badge>
+              <span className={cn('ml-auto', monthPacing.onTrack ? 'text-emerald-700' : 'text-amber-700')}>
+                {monthPacing.onTrack ? 'On track for this month' : 'Pace up to stay on track'} • Target by now: {monthPacing.expectedDone}
+              </span>
+            </div>
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Target className="h-4 w-4 text-primary" />
+              Month Pacing
+            </CardTitle>
+            <CardDescription>{month} completion pacing</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-3xl font-semibold">
+              {assignedMembers.length > 0 ? Math.round((queueStats.completed.length / assignedMembers.length) * 100) : 0}%
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {monthPacing.remainingDays} day(s) left in this month
+            </div>
+            <div className={cn('rounded-md border p-2 text-xs', monthPacing.onTrack ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800')}>
+              {monthPacing.onTrack
+                ? 'Great progress. Continue at your convenience.'
+                : 'Recommended: complete a few questionnaires this week to avoid a month-end rush.'}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Not started</CardTitle>
+            <CardDescription>Start these when convenient this month.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {queueStats.notStarted.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No members waiting to start.</div>
+            ) : (
+              queueStats.notStarted.slice(0, 6).map((m) => (
+                <div key={`ns-${m.memberId}`} className="rounded-md border p-2">
+                  <div className="text-sm font-medium">{m.memberName}</div>
+                  <div className="text-xs text-muted-foreground">{m.rcfeName}</div>
+                  <div className="mt-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/sw-visit-verification?rcfeId=${encodeURIComponent(m.rcfeId)}&memberId=${encodeURIComponent(m.memberId)}`}>
+                        Start
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">In progress</CardTitle>
+            <CardDescription>Questionnaire done, next operational step pending.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {queueStats.inProgress.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No pending follow-up actions.</div>
+            ) : (
+              queueStats.inProgress.slice(0, 6).map((m) => (
+                <div key={`ip-${m.memberId}`} className="rounded-md border p-2">
+                  <div className="text-sm font-medium">{m.memberName}</div>
+                  <div className="text-xs text-muted-foreground">{m.rcfeName}</div>
+                  <div className="mt-1 text-xs text-amber-700">
+                    Next: {m.flags.nextAction === 'signoff' ? 'RCFE sign-off' : 'Submit claim'}
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/sw-visit-verification?rcfeId=${encodeURIComponent(m.rcfeId)}&memberId=${encodeURIComponent(m.memberId)}`}>
+                        Open
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="ghost">
+                      <Link href={m.flags.nextAction === 'signoff' ? '/sw-portal/sign-off' : '/sw-portal/submit-claims'}>
+                        Next step
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Sparkles className="h-4 w-4 text-emerald-600" />
+              Completed
+            </CardTitle>
+            <CardDescription>Already done this month.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {queueStats.completed.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No completed questionnaires yet for this month.</div>
+            ) : (
+              queueStats.completed.slice(0, 6).map((m) => (
+                <div key={`done-${m.memberId}`} className="rounded-md border bg-emerald-50/50 p-2">
+                  <div className="text-sm font-medium">{m.memberName}</div>
+                  <div className="text-xs text-muted-foreground">{m.rcfeName}</div>
+                  <div className="mt-1 text-xs text-emerald-700">{m.visitDay ? `Completed on ${m.visitDay}` : 'Completed'}</div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Invoice total (from visits)</CardTitle>
