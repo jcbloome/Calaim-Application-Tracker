@@ -131,9 +131,6 @@ export default function RcfeDataToolsPage() {
   const [rcfeDrafts, setRcfeDrafts] = useState<Record<string, RcfeDraftFields>>({});
   const [rcfeFieldOverrides, setRcfeFieldOverrides] = useState<Record<string, RcfeDraftFields>>({});
   const [isSavingAll, setIsSavingAll] = useState(false);
-  const [isAutoSaving, setIsAutoSaving] = useState(false);
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoSaveInFlightRef = useRef(false);
   const [memberPresenceStatus, setMemberPresenceStatus] = useState<Record<string, 'there' | 'not_there'>>({});
   const confirmedStorageKey = 'rcfe-member-presence-status';
   const [memberExtraDetails, setMemberExtraDetails] = useState<Record<string, string>>({});
@@ -475,19 +472,13 @@ export default function RcfeDataToolsPage() {
     [auth?.currentUser, rcfeDrafts]
   );
 
-  const syncEditedRows = useCallback(async (rows: RCFEDirectoryRow[], mode: 'auto' | 'manual') => {
+  const syncEditedRows = useCallback(async (rows: RCFEDirectoryRow[]) => {
     if (rows.length === 0) {
-      if (mode === 'manual') {
-        toast({ title: 'No edits to push', description: 'Make a change first, then push all edited.' });
-      }
+      toast({ title: 'No edits to push', description: 'Make a change first, then push all edited.' });
       return { success: 0, failed: 0 };
     }
 
-    if (mode === 'manual') {
-      setIsSavingAll(true);
-    } else {
-      setIsAutoSaving(true);
-    }
+    setIsSavingAll(true);
 
     let success = 0;
     let failed = 0;
@@ -500,35 +491,23 @@ export default function RcfeDataToolsPage() {
       }
     }
 
-    if (mode === 'manual') {
-      setIsSavingAll(false);
-    } else {
-      setIsAutoSaving(false);
-    }
+    setIsSavingAll(false);
 
-    if (mode === 'manual') {
-      if (failed === 0) {
-        toast({ title: 'All edits synced', description: `Successfully pushed ${success} RCFE row(s).` });
-      } else {
-        toast({
-          title: 'RCFE sync completed with errors',
-          description: `Synced ${success}, failed ${failed}. You can run Push All Edited again.`,
-          variant: 'destructive',
-        });
-      }
-    } else if (failed > 0) {
+    if (failed === 0) {
+      toast({ title: 'All edits synced', description: `Successfully pushed ${success} RCFE row(s).` });
+    } else {
       toast({
-        title: 'Some autosave updates failed',
-        description: `Autosaved ${success}, failed ${failed}. Use Push All Edited to retry.`,
+        title: 'RCFE sync completed with errors',
+        description: `Synced ${success}, failed ${failed}. You can run Push All Edited again.`,
         variant: 'destructive',
       });
     }
 
     return { success, failed };
-  }, [editedRows, saveRow, toast]);
+  }, [saveRow, toast]);
 
   const pushAllEdited = useCallback(async () => {
-    await syncEditedRows(editedRows, 'manual');
+    await syncEditedRows(editedRows);
   }, [editedRows, syncEditedRows]);
 
   const setMemberPresence = useCallback((memberId: string, status: 'there' | 'not_there', checked: boolean) => {
@@ -572,29 +551,6 @@ export default function RcfeDataToolsPage() {
       });
     }
   }, []);
-
-  useEffect(() => {
-    if (editedRows.length === 0) return;
-    if (autoSaveInFlightRef.current) return;
-
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    autoSaveTimerRef.current = setTimeout(async () => {
-      if (autoSaveInFlightRef.current) return;
-      autoSaveInFlightRef.current = true;
-      try {
-        const snapshotRows = [...editedRows];
-        await syncEditedRows(snapshotRows, 'auto');
-      } finally {
-        autoSaveInFlightRef.current = false;
-      }
-    }, 1200);
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
-    };
-  }, [editedRows, syncEditedRows]);
 
   useEffect(() => {
     try {
@@ -780,7 +736,7 @@ export default function RcfeDataToolsPage() {
             RCFE Data Management
           </h1>
           <p className="text-muted-foreground">
-            Update RCFE administrator contact details and number of beds, then push updates for grouped member records.
+            Update RCFE administrator contact details and number of beds. Draft edits persist in Firestore; Caspio updates are push-only on demand.
           </p>
         </div>
         <Button onClick={loadMembers} disabled={isLoadingMembers}>
@@ -823,9 +779,7 @@ export default function RcfeDataToolsPage() {
               </Select>
               <Badge variant="outline">{visibleRows.length} RCFEs</Badge>
               <Badge variant="secondary">{editedRows.length} Edited</Badge>
-              <Badge variant={isAutoSaving ? 'default' : 'outline'}>
-                {isAutoSaving ? 'Autosaving...' : 'Autosave on'}
-              </Badge>
+              <Badge variant="outline">Drafts saved to Firestore</Badge>
               <Button onClick={pushAllEdited} disabled={isSavingAll || editedRows.length === 0}>
                 {isSavingAll ? 'Syncing edited rows...' : `Push All Edited (${editedRows.length})`}
               </Button>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { adminAuth, adminDb, default as admin } from '@/firebase-admin';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,10 @@ async function requireAdminFromToken(idToken: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    if (isCaspioWriteReadOnly()) {
+      return NextResponse.json(caspioWriteBlockedResponse(), { status: 423 });
+    }
+
     const authHeader = req.headers.get('authorization') || '';
     const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
     const idToken = tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';

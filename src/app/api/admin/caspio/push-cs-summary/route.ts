@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
+import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
 
 const clean = (value: unknown) => String(value ?? '').trim();
 const esc = (value: unknown) => clean(value).replace(/'/g, "''");
@@ -80,6 +81,10 @@ async function createClientAndGetClientId2(
 
 export async function POST(request: NextRequest) {
   try {
+    if (isCaspioWriteReadOnly()) {
+      return NextResponse.json(caspioWriteBlockedResponse(), { status: 423 });
+    }
+
     const body = await request.json().catch(() => ({} as any));
     const applicationData = body?.applicationData || null;
     const mapping = (body?.mapping || null) as Record<string, string> | null;

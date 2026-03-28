@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { adminAuth, adminDb, default as admin } from '@/firebase-admin';
+import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,10 @@ async function canUpdateIlsDates(idToken: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    if (isCaspioWriteReadOnly()) {
+      return NextResponse.json(caspioWriteBlockedResponse(), { status: 423 });
+    }
+
     const body = await req.json().catch(() => ({} as any));
     const idToken = String(body?.idToken || '').trim();
     const clientId2 = String(body?.clientId2 || '').trim();

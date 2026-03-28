@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
+import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
 
 export async function POST(request: NextRequest) {
   try {
+    if (isCaspioWriteReadOnly()) {
+      return NextResponse.json(caspioWriteBlockedResponse(), { status: 423 });
+    }
+
     const { memberId, authorizationData } = await request.json();
     
     if (!memberId || !authorizationData) {

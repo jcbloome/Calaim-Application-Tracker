@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { publishCsSummaryToCaspio } from '@/lib/caspio-single-publisher';
+import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
 
 export async function POST(request: NextRequest) {
   try {
+    if (isCaspioWriteReadOnly()) {
+      return NextResponse.json(caspioWriteBlockedResponse(), { status: 423 });
+    }
+
     const authHeader = request.headers.get('authorization') || '';
     const expectedSecret = (process.env.CASPIO_PUBLISH_SECRET || process.env.CRON_SECRET || '').trim();
     if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
