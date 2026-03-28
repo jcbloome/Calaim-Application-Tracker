@@ -769,6 +769,31 @@ function PushToCaspioDialog({
     const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
     const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
     const hasAssignedStaff = Boolean(assignedStaffId || assignedStaffName);
+    const isKaiserAuthReceivedIntake =
+      Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
+      String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils';
+    const toClean = (value: unknown) => String(value ?? '').trim();
+    const readinessChecks = [
+      { key: 'memberFirstName', label: 'Member first name', required: true, ready: Boolean(toClean((application as any)?.memberFirstName)) },
+      { key: 'memberLastName', label: 'Member last name', required: true, ready: Boolean(toClean((application as any)?.memberLastName)) },
+      { key: 'authorizationNumber', label: 'Authorization Number T038', required: isKaiserAuthReceivedIntake, ready: Boolean(toClean((application as any)?.Authorization_Number_T038)) },
+      { key: 'authorizationStart', label: 'Authorization Start T2038', required: isKaiserAuthReceivedIntake, ready: Boolean(toClean((application as any)?.Authorization_Start_T2038)) },
+      { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
+      { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
+      { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
+      {
+        key: 'familyEmail',
+        label: 'Family/POA email',
+        required: false,
+        ready: Boolean(
+          toClean((application as any)?.bestContactEmail) ||
+          toClean((application as any)?.referrerEmail) ||
+          toClean((application as any)?.repEmail)
+        ),
+      },
+    ];
+    const missingRequiredReadiness = readinessChecks.filter((item) => item.required && !item.ready);
+    const readinessComplete = missingRequiredReadiness.length === 0;
     const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
         if (!hasAssignedStaff) {
             toast({
@@ -990,6 +1015,27 @@ function PushToCaspioDialog({
                         </AlertDescription>
                     </Alert>
                 )}
+                <div className="space-y-2 rounded-md border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-medium">Caspio push readiness</div>
+                        <Badge variant={readinessComplete ? 'default' : 'secondary'}>
+                            {readinessComplete ? 'Ready' : `${missingRequiredReadiness.length} required field(s) missing`}
+                        </Badge>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        {readinessChecks.map((item) => (
+                            <div key={item.key} className={cn('flex items-center justify-between gap-2', item.ready ? 'text-green-700' : item.required ? 'text-red-700' : 'text-muted-foreground')}>
+                                <span>{item.label}{item.required ? ' *' : ''}</span>
+                                <span>{item.ready ? 'OK' : item.required ? 'Missing' : 'Optional'}</span>
+                            </div>
+                        ))}
+                    </div>
+                    {!readinessComplete ? (
+                        <div className="text-xs text-red-700">
+                            Fill all required items above before pushing to Caspio.
+                        </div>
+                    ) : null}
+                </div>
                 {caspioMappingPreview && Object.keys(caspioMappingPreview).length > 0 ? (
                     <div className="space-y-3">
                         <div className="text-sm text-muted-foreground">
@@ -1065,7 +1111,7 @@ function PushToCaspioDialog({
                               }
                             })();
                         }}
-                        disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0 || isSendingToCaspio || isAlreadySent || !hasAssignedStaff}
+                        disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0 || isSendingToCaspio || isAlreadySent || !hasAssignedStaff || !readinessComplete}
                     >
                         Confirm & Push
                     </AlertDialogAction>
