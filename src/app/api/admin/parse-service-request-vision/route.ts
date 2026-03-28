@@ -12,7 +12,13 @@ import * as path from 'path';
 import * as os from 'os';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '');
+// Try multiple possible API key sources
+const apiKey = process.env.GEMINI_API_KEY 
+  || process.env.GOOGLE_API_KEY 
+  || process.env.FIREBASE_API_KEY 
+  || '';
+
+const genAI = new GoogleGenerativeAI(apiKey);
 
 interface ExtractedFields {
   memberFirstName: string;
@@ -83,7 +89,7 @@ export async function POST(request: NextRequest) {
     const imageBuffer = fs.readFileSync(imagePath);
 
     // Use Gemini Vision to extract fields
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = `You are extracting data from a Kaiser Permanente Service Request Form.
 
