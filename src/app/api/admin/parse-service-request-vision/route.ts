@@ -81,16 +81,20 @@ Extract the following fields from the image and return ONLY a valid JSON object 
 }
 
 Instructions:
-- Member Name: Split into first and last name
-- MRN: Medical Record Number
+- Member Name: Split into first and last name, use Title Case (e.g., "Jim Kovacich" not "JIM KOVACICH")
+- MRN: Medical Record Number (keep as-is)
 - DOB: Format as MM/DD/YYYY
-- Address: Split into street, city, state, zip (county can be empty)
+- Address: Split into street, city, state, zip (county can be empty), use Title Case for street and city
+- State: Two-letter uppercase code (e.g., "CA")
 - Member Phone: Format with dashes (e.g., 562-432-2700)
 - Cell Phone: Use for contactPhone, format as digits only (e.g., 5624322700)
 - Email: Lowercase
-- Authorization Number: From "Authorization #" field
+- Authorization Number: From "Authorization #" field (keep as-is)
 - Authorization Start/End: Format as MM/DD/YYYY
-- Diagnostic Code: From "DX Code" field
+- Diagnostic Code: From "DX Code" field (keep as-is)
+
+IMPORTANT: Use proper Title Case for names, addresses, and cities (First Letter Of Each Word Capitalized).
+Do NOT return ALL CAPS text.
 
 Return ONLY the JSON object, no other text.`;
 
@@ -114,6 +118,48 @@ Return ONLY the JSON object, no other text.`;
     }
 
     const extractedFields: Partial<ExtractedFields> = JSON.parse(jsonMatch[0]);
+
+    // Format fields to proper case (Title Case for names/addresses, etc.)
+    const formatToTitleCase = (text: string): string => {
+      if (!text) return text;
+      return text
+        .toLowerCase()
+        .split(' ')
+        .map(word => {
+          // Keep common abbreviations uppercase
+          if (['apt', 'ste', 'po', 'ca', 'st', 'rd', 'ave', 'dr', 'ln', 'blvd'].includes(word.toLowerCase())) {
+            return word.toUpperCase();
+          }
+          // Capitalize first letter of each word
+          return word.charAt(0).toUpperCase() + word.slice(1);
+        })
+        .join(' ');
+    };
+
+    // Apply formatting to name and address fields
+    if (extractedFields.memberFirstName) {
+      extractedFields.memberFirstName = formatToTitleCase(extractedFields.memberFirstName);
+    }
+    if (extractedFields.memberLastName) {
+      extractedFields.memberLastName = formatToTitleCase(extractedFields.memberLastName);
+    }
+    if (extractedFields.memberCustomaryAddress) {
+      extractedFields.memberCustomaryAddress = formatToTitleCase(extractedFields.memberCustomaryAddress);
+    }
+    if (extractedFields.memberCustomaryCity) {
+      extractedFields.memberCustomaryCity = formatToTitleCase(extractedFields.memberCustomaryCity);
+    }
+    if (extractedFields.memberCustomaryCounty) {
+      extractedFields.memberCustomaryCounty = formatToTitleCase(extractedFields.memberCustomaryCounty);
+    }
+    // State should always be uppercase
+    if (extractedFields.memberCustomaryState) {
+      extractedFields.memberCustomaryState = extractedFields.memberCustomaryState.toUpperCase();
+    }
+    // Email should always be lowercase
+    if (extractedFields.contactEmail) {
+      extractedFields.contactEmail = extractedFields.contactEmail.toLowerCase();
+    }
 
     // Filter out empty fields
     const parsedFieldKeys = Object.keys(extractedFields).filter(
