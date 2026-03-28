@@ -10,9 +10,8 @@ import {
 import { PublicHeader } from '@/components/PublicHeader';
 import React from 'react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
-import { GlossaryDialog } from '@/components/GlossaryDialog';
+import { acronyms } from '@/lib/data';
 
 interface InfoSection {
   title: string;
@@ -72,10 +71,22 @@ export default function InfoPage() {
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
                 Program Information
               </h1>
-              <div className="mt-4">
-                <GlossaryDialog className="bg-blue-600 text-white hover:bg-blue-700 border-blue-600" />
-              </div>
             </div>
+
+            <Card className="shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-xl sm:text-2xl">Acronym Glossary</CardTitle>
+              </CardHeader>
+              <CardContent className="prose prose-sm max-w-none text-gray-700">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {acronyms.map((item) => (
+                    <p key={item.term} className="mb-0">
+                      <strong>{item.term}:</strong> {item.definition}
+                    </p>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
 
             {infoSections.map((section, index) => (
                 <Card key={index} className="shadow-sm">
@@ -112,7 +123,7 @@ export default function InfoPage() {
             ))}
             <div className="mt-8 w-full border-t pt-4">
                 <div className="text-left mb-2">
-                    <span className="text-sm text-muted-foreground">Page 1 of 3</span>
+                    <span className="text-sm text-muted-foreground">Page 1 of 4</span>
                 </div>
                 <div className="flex justify-end">
                     <Link href="/info/details" className="text-sm font-medium text-primary hover:underline">

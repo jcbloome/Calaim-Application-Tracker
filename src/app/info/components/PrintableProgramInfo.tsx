@@ -119,10 +119,10 @@ export function PrintableProgramInfo() {
             <p>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">www.benefitscal.com</a> for current SOC verification and more information.</p>
 
             <SectionTitle>Managed Care Plans We Work With</SectionTitle>
-            <p>Connections currently is only contracted with <strong>Health Net</strong> and <strong>Kaiser</strong> for the CS for Assisted Living Transitions. You must switch to one of these plans if you would like to work with Connections.</p>
+            <p>Connections currently is only contracted with <strong>Health Net</strong> and <strong>Kaiser</strong> for the CS for Assisted Living Transitions.</p>
             <ul className="list-disc pl-5 space-y-2">
-                <li><strong>Health Net:</strong> Serving members in Sacramento and Los Ángeles counties.</li>
-                <li><strong>Kaiser Permanente:</strong> Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser.</li>
+                <li><strong>Health Net:</strong> Serving members in <strong>Sacramento</strong> and <strong>Los Angeles</strong> counties.</li>
+                <li><strong>Kaiser Permanente:</strong> Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser. Kaiser is active in these counties: Alameda, Alpine, Amador, Butte, Calaveras, Colusa, Contra Costa, Del Norte, El Dorado, Fresno, Glenn, Humboldt, Imperial, Inyo, Kern, Kings, Lake, Lassen, Los Angeles, Madera, Marin, Mariposa, Mendocino, Merced, Modoc, Mono, Monterey, Napa, Nevada, Orange, Placer, Plumas, Riverside, Sacramento, San Benito, San Bernardino, San Diego, San Francisco, San Joaquin, San Luis Obispo, San Mateo, Santa Barbara, Santa Clara, Santa Cruz, Shasta, Sierra, Siskiyou, Solano, Sonoma, Stanislaus, Sutter, Tehama, Trinity, Tulare, Tuolumne, Ventura, Yolo, and Yuba.</li>
             </ul>
 
             <SectionTitle>Switching to Health Net or Kaiser</SectionTitle>
@@ -219,7 +219,7 @@ export function PrintableProgramInfo() {
                 <li>We submit the authorization request and receive the determination (approval or denial) within 5-7 business days.</li>
             </ol>
 
-            <SubTitle>For Kaiser: 2-4 weeks</SubTitle>
+            <SubTitle>For Kaiser: 4-8 weeks</SubTitle>
             <ol className="list-decimal pl-5 space-y-1">
                 <li>Compile required documents &amp; Request Authorization.</li>
                 <li>Receive authorization determination.</li>
@@ -231,6 +231,7 @@ export function PrintableProgramInfo() {
 
             <SectionTitle>Next Steps: The Application</SectionTitle>
             <p>The next section is for filling out the CS Summary Form. This is the core of your application.</p>
+            <p>Kaiser turnaround is typically 4-8 weeks.</p>
             <p>Based on the selections you make in the summary form (like the pathway), a personalized list of other required documents will be generated for you to upload.</p>
             
         </article>

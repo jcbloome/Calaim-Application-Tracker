@@ -359,19 +359,18 @@ export function PrintableProgramInfoForm({
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed mb-4">
           Connections currently is only contracted with <strong>Health Net</strong> and <strong>Kaiser</strong> for the CS for Assisted Living Transitions. 
-          You must switch to one of these plans if you would like to work with Connections.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="p-4 print:p-4 border print:border-black">
             <h3 className="font-semibold text-gray-900 print:text-black">Health Net</h3>
             <p className="text-sm print:text-xs text-gray-700 print:text-black">
-              Serving members in Sacramento and Los Angeles counties.
+              Serving members in <strong>Sacramento</strong> and <strong>Los Angeles</strong> counties.
             </p>
           </div>
           <div className="p-4 print:p-4 border print:border-black">
             <h3 className="font-semibold text-gray-900 print:text-black">Kaiser Permanente</h3>
             <p className="text-sm print:text-xs text-gray-700 print:text-black">
-              Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser.
+              Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser. Kaiser is active in these counties: Alameda, Alpine, Amador, Butte, Calaveras, Colusa, Contra Costa, Del Norte, El Dorado, Fresno, Glenn, Humboldt, Imperial, Inyo, Kern, Kings, Lake, Lassen, Los Angeles, Madera, Marin, Mariposa, Mendocino, Merced, Modoc, Mono, Monterey, Napa, Nevada, Orange, Placer, Plumas, Riverside, Sacramento, San Benito, San Bernardino, San Diego, San Francisco, San Joaquin, San Luis Obispo, San Mateo, Santa Barbara, Santa Clara, Santa Cruz, Shasta, Sierra, Siskiyou, Solano, Sonoma, Stanislaus, Sutter, Tehama, Trinity, Tulare, Tuolumne, Ventura, Yolo, and Yuba.
             </p>
           </div>
         </div>
@@ -497,7 +496,7 @@ export function PrintableProgramInfoForm({
           </div>
           <div className="p-4 print:p-4 border print:border-black">
             <h3 className="font-semibold text-gray-900 print:text-black mb-3">
-              Kaiser: 2-4 Weeks
+              Kaiser: 4-8 Weeks
             </h3>
             <ol className="list-decimal list-inside space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
               <li>Compile documents & request authorization</li>
