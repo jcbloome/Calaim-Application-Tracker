@@ -643,15 +643,39 @@ export default function CreateApplicationPage() {
       setServiceRequestTextPreview(text ? text.slice(0, 8000) : '');
 
       if (!text) {
-        // No text layer - use vision API
+        // No text layer - use vision API with browser-based image conversion
         toast({
           title: 'Scanned PDF detected',
           description: 'Using AI vision to extract fields...',
           variant: 'default',
         });
 
+        // Convert PDF page to image in browser
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 2.0 });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const context = canvas.getContext('2d');
+        
+        if (!context) {
+          throw new Error('Could not get canvas context');
+        }
+
+        await page.render({
+          canvasContext: context,
+          viewport: viewport,
+        }).promise;
+
+        // Convert canvas to blob
+        const blob = await new Promise<Blob>((resolve) => {
+          canvas.toBlob((b) => resolve(b!), 'image/png');
+        });
+
+        // Send image to vision API
         const formData = new FormData();
-        formData.append('pdf', serviceRequestFile);
+        formData.append('image', blob, 'page.png');
 
         const response = await fetch('/api/admin/parse-service-request-vision', {
           method: 'POST',

@@ -1,15 +1,11 @@
 /**
- * API Route: Parse Service Request PDF using Vision
+ * API Route: Parse Service Request Form Image using Vision
  * 
- * For scanned PDFs, this converts the first page to an image
- * and uses AI vision (Gemini) to extract structured data.
+ * Accepts an image (converted from PDF in browser) and uses
+ * Gemini Vision to extract structured data.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { convert } from 'pdf-poppler';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Try multiple possible API key sources
@@ -40,53 +36,23 @@ interface ExtractedFields {
 }
 
 export async function POST(request: NextRequest) {
-  let tempPdfPath: string | null = null;
-  let tempImageDir: string | null = null;
-
   try {
-    // Get the PDF file from the request
+    // Get the image file from the request
     const formData = await request.formData();
-    const file = formData.get('pdf') as File;
+    const file = formData.get('image') as File;
 
     if (!file) {
       return NextResponse.json(
-        { error: 'No PDF file provided' },
+        { error: 'No image file provided' },
         { status: 400 }
       );
     }
 
-    // Create temp directory for processing
-    tempImageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-vision-'));
+    console.log('[Vision API] Received image:', file.name, file.size, 'bytes');
     
-    // Save PDF to temp file
-    const pdfBuffer = Buffer.from(await file.arrayBuffer());
-    tempPdfPath = path.join(tempImageDir, 'temp.pdf');
-    fs.writeFileSync(tempPdfPath, pdfBuffer);
-
-    // Convert first page to PNG
-    const options = {
-      format: 'png',
-      out_dir: tempImageDir,
-      out_prefix: 'page',
-      page: 1, // Only first page (second page is HIPAA notice)
-      scale: 2048, // High quality for vision
-    };
-
-    await convert(tempPdfPath, options);
-
-    // Find the generated image
-    const files = fs.readdirSync(tempImageDir);
-    const imageFile = files.find(f => f.startsWith('page') && f.endsWith('.png'));
-
-    if (!imageFile) {
-      return NextResponse.json(
-        { error: 'Failed to convert PDF to image' },
-        { status: 500 }
-      );
-    }
-
-    const imagePath = path.join(tempImageDir, imageFile);
-    const imageBuffer = fs.readFileSync(imagePath);
+    // Convert image to buffer
+    const imageBuffer = Buffer.from(await file.arrayBuffer());
+    console.log(`[Vision API] Image buffer ready: ${imageBuffer.length} bytes`);
 
     // Use Gemini Vision to extract fields
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
@@ -135,9 +101,11 @@ Return ONLY the JSON object, no other text.`;
       },
     };
 
+    console.log('[Vision API] Sending to Gemini...');
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
     const responseText = response.text();
+    console.log('[Vision API] Gemini response received');
 
     // Extract JSON from response (in case there's extra text)
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -161,26 +129,15 @@ Return ONLY the JSON object, no other text.`;
     });
 
   } catch (error: any) {
-    console.error('Vision PDF parsing error:', error);
+    console.error('[Vision API] Error:', error);
+    console.error('[Vision API] Stack:', error.stack);
     return NextResponse.json(
       { 
         error: 'Failed to parse PDF with vision',
         details: error.message,
+        stack: error.stack,
       },
       { status: 500 }
     );
-  } finally {
-    // Cleanup temp files
-    if (tempImageDir && fs.existsSync(tempImageDir)) {
-      try {
-        const files = fs.readdirSync(tempImageDir);
-        files.forEach(file => {
-          fs.unlinkSync(path.join(tempImageDir!, file));
-        });
-        fs.rmdirSync(tempImageDir);
-      } catch (cleanupError) {
-        console.error('Cleanup error:', cleanupError);
-      }
-    }
   }
 }
