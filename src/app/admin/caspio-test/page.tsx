@@ -278,11 +278,13 @@ export default function CaspioTestPage() {
   const [namedDrafts, setNamedDrafts] = useState<Record<string, {[key: string]: string}>>({});
   const [selectedDraftName, setSelectedDraftName] = useState('');
   const [lastDraftName, setLastDraftName] = useState('');
+  const [currentDraftMappings, setCurrentDraftMappings] = useState<{[key: string]: string} | null>(null);
   const draftKey = 'calaim_cs_caspio_mapping_draft';
   const lockedKey = 'calaim_cs_caspio_mapping';
   const caspioFieldsKey = 'calaim_caspio_fields_cache';
   const namedDraftsKey = 'calaim_cs_caspio_mapping_named_drafts';
   const lastDraftNameKey = 'calaim_cs_caspio_mapping_last_draft_name';
+  const currentDraftOptionValue = '__current_draft__';
   
   // Use new Caspio integration module
   const { 
@@ -318,6 +320,7 @@ export default function CaspioTestPage() {
           const parsedDraft = JSON.parse(draftStored);
           if (parsedDraft && typeof parsedDraft === 'object') {
             setFieldMappings(parsedDraft);
+            setCurrentDraftMappings(parsedDraft);
             setHasDraftMappings(Object.keys(parsedDraft).length > 0);
           }
         }
@@ -358,12 +361,22 @@ export default function CaspioTestPage() {
     if (lockedMappings) return;
     if (Object.keys(fieldMappings).length === 0) {
       localStorage.removeItem(draftKey);
+      setCurrentDraftMappings(null);
       setHasDraftMappings(false);
       return;
     }
     localStorage.setItem(draftKey, JSON.stringify(fieldMappings));
+    setCurrentDraftMappings(fieldMappings);
     setHasDraftMappings(true);
   }, [fieldMappings, lockedMappings]);
+
+  useEffect(() => {
+    const hasNamedDraft = selectedDraftName && Object.prototype.hasOwnProperty.call(namedDrafts, selectedDraftName);
+    const isCurrentDraft = selectedDraftName === currentDraftOptionValue;
+    if (!selectedDraftName) return;
+    if (hasNamedDraft || (isCurrentDraft && currentDraftMappings)) return;
+    setSelectedDraftName('');
+  }, [selectedDraftName, namedDrafts, currentDraftMappings]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1348,6 +1361,9 @@ export default function CaspioTestPage() {
                     <p className="text-xs text-blue-700 mt-1">
                       Last updated: {isLoadingCachedFields ? 'Loading cached fields...' : (lastRefreshTime > 0 ? new Date(lastRefreshTime).toLocaleString() : 'Not yet loaded')}
                     </p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      Recent draft: {lastDraftName || (hasDraftMappings ? 'Current auto-saved draft' : 'None')}
+                    </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <AlertDialog open={clearAllOpen} onOpenChange={setClearAllOpen}>
@@ -1369,9 +1385,13 @@ export default function CaspioTestPage() {
                             onClick={() => {
                               setFieldMappings({});
                               setLockedMappings(null);
+                              setCurrentDraftMappings(null);
+                              setSelectedDraftName('');
                               localStorage.removeItem(lockedKey);
+                              localStorage.removeItem(draftKey);
                               setHasLockedMappings(false);
                               setLockedMappingCount(0);
+                              setHasDraftMappings(false);
                             }}
                           >
                             Clear All
@@ -1406,6 +1426,7 @@ export default function CaspioTestPage() {
                             setLockedMappings(fieldMappings);
                             localStorage.setItem(lockedKey, JSON.stringify(fieldMappings));
                             localStorage.removeItem(draftKey);
+                            setCurrentDraftMappings(null);
                             setHasDraftMappings(false);
                             const count = Object.keys(fieldMappings).length;
                             setLockedMappingCount(count);
@@ -1499,16 +1520,23 @@ export default function CaspioTestPage() {
                         <SelectValue placeholder="Select draft" />
                       </SelectTrigger>
                       <SelectContent>
-                        {Object.keys(namedDrafts).length === 0 ? (
+                        {!currentDraftMappings && Object.keys(namedDrafts).length === 0 ? (
                           <SelectItem value="no-drafts" disabled>
                             No saved drafts
                           </SelectItem>
                         ) : (
-                          Object.keys(namedDrafts).map((name) => (
-                            <SelectItem key={name} value={name}>
-                              {name}
-                            </SelectItem>
-                          ))
+                          <>
+                            {currentDraftMappings && (
+                              <SelectItem value={currentDraftOptionValue}>
+                                Current auto-saved draft
+                              </SelectItem>
+                            )}
+                            {Object.keys(namedDrafts).map((name) => (
+                              <SelectItem key={name} value={name}>
+                                {name}
+                              </SelectItem>
+                            ))}
+                          </>
                         )}
                       </SelectContent>
                     </Select>
@@ -1516,7 +1544,11 @@ export default function CaspioTestPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        if (!selectedDraftName || !namedDrafts[selectedDraftName]) {
+                        const isCurrentDraftSelected = selectedDraftName === currentDraftOptionValue;
+                        const selectedDraft = isCurrentDraftSelected
+                          ? currentDraftMappings
+                          : namedDrafts[selectedDraftName];
+                        if (!selectedDraftName || !selectedDraft) {
                           toast({
                             variant: "destructive",
                             title: "No Saved Draft",
@@ -1525,12 +1557,17 @@ export default function CaspioTestPage() {
                           return;
                         }
                         try {
-                          const selectedDraft = namedDrafts[selectedDraftName];
                           setFieldMappings((prev) => ({ ...selectedDraft, ...prev }));
                           setHasDraftMappings(Object.keys(selectedDraft).length > 0);
+                          if (!isCurrentDraftSelected) {
+                            setLastDraftName(selectedDraftName);
+                            localStorage.setItem(lastDraftNameKey, selectedDraftName);
+                          }
                           toast({
                             title: "Draft Loaded",
-                            description: `Draft "${selectedDraftName}" merged. Existing matches were kept.`,
+                            description: isCurrentDraftSelected
+                              ? 'Current auto-saved draft merged. Existing matches were kept.'
+                              : `Draft "${selectedDraftName}" merged. Existing matches were kept.`,
                           });
                         } catch (error: any) {
                           console.error('Failed to load mapping draft:', error);
