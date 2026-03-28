@@ -157,12 +157,12 @@ export function PrintableProgramInfo() {
             <p>Working with CalAIM is at the discretion of the RCFEs. Many RCFEs, especially in more expensive areas, most likely will not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas.</p>
 
             <SectionTitle>Share of Cost (SOC)</SectionTitle>
+            <p>Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.</p>
             <p>A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay.</p>
             <p>This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.</p>
             <div style={{ backgroundColor: '#dbeafe', padding: '12px', border: '1px solid #3b82f6', borderRadius: '6px', margin: '12px 0' }}>
               <p><strong>SOC is usually triggered if a member receives more than $1,800/month</strong>, although this number can vary by county and by particular circumstances.</p>
             </div>
-            <p>Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.</p>
             <p>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">California Advocates for Nursing Home Reform (CANHR)</a>.</p>
 
             <SubTitle>Additional SOC Reduction Strategies (County Eligibility Process)</SubTitle>

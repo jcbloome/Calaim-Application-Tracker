@@ -463,12 +463,12 @@ export function PrintableProgramInfoForm({
           Important: Share of Cost (SOC)
         </h2>
         <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
+          <p className="font-semibold text-red-700 print:text-black">
+            Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply.
+          </p>
           <p>
             A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you 
             may have to pay each month towards medical-related services before your Medi-Cal coverage begins to pay.
-          </p>
-          <p className="font-semibold text-red-700 print:text-black">
-            Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply.
           </p>
           <p>
             For information on eliminating share of cost, visit the California Advocates for Nursing Home 

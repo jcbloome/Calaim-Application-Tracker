@@ -50,9 +50,9 @@ const infoSections = [
   {
     title: 'Share of Cost (SOC)',
     content: [
+      'Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.',
       "A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay.",
       'This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.',
-      'Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.',
       <>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">California Advocates for Nursing Home Reform (CANHR)</a>.</>,
       <div key="soc-wdp" className="mt-4 not-prose rounded-lg border border-border bg-slate-50 p-4">
         <div className="text-base font-semibold text-gray-900">
@@ -234,6 +234,8 @@ const infoSections = [
 ];
 
 export default function InfoFinancialPage() {
+  const orderedInfoSections = [infoSections[2], infoSections[3], infoSections[0], infoSections[1]];
+
   return (
     <>
       <PublicHeader />
@@ -248,7 +250,7 @@ export default function InfoFinancialPage() {
             </div>
           </div>
 
-          {infoSections.map((section, index) => (
+          {orderedInfoSections.map((section, index) => (
             <Card key={index} className="shadow-sm">
               <CardHeader>
                 <CardTitle className="text-xl sm:text-2xl">{section.title}</CardTitle>
