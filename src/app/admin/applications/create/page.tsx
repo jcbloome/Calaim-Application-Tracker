@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Bell, FileText, Loader2, Upload, Users } from 'lucide-react';
+import { ArrowLeft, Bell, FileText, Loader2, RotateCcw, Upload, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
@@ -15,6 +15,449 @@ import { addDoc, collection, doc, getDocs, query, serverTimestamp, setDoc, where
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+let pdfJsLoaderPromise: Promise<any> | null = null;
+const loadPdfJs = async () => {
+  if (pdfJsLoaderPromise) return pdfJsLoaderPromise;
+  pdfJsLoaderPromise = import(
+    /* webpackIgnore: true */
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.min.mjs'
+  ).then((mod: any) => {
+    const pdfjs = mod?.getDocument ? mod : mod?.default || mod;
+    try {
+      if (pdfjs?.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
+        pdfjs.GlobalWorkerOptions.workerSrc =
+          'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.530/legacy/build/pdf.worker.min.mjs';
+      }
+    } catch {
+      // no-op
+    }
+    return pdfjs;
+  });
+  return pdfJsLoaderPromise;
+};
+
+const toMmDdYyyy = (rawValue: unknown): string => {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
+  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slash) {
+    const mm = slash[1].padStart(2, '0');
+    const dd = slash[2].padStart(2, '0');
+    const yyyy = slash[3].length === 2 ? `20${slash[3]}` : slash[3];
+    return `${mm}/${dd}/${yyyy}`;
+  }
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+    const dd = String(parsed.getDate()).padStart(2, '0');
+    const yyyy = String(parsed.getFullYear());
+    return `${mm}/${dd}/${yyyy}`;
+  }
+  return raw;
+};
+
+const toDateInputValue = (rawValue: unknown): string => {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slash) {
+    const mm = slash[1].padStart(2, '0');
+    const dd = slash[2].padStart(2, '0');
+    const yyyy = slash[3].length === 2 ? `20${slash[3]}` : slash[3];
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return '';
+};
+
+const parseMemberName = (rawValue: unknown): { firstName: string; lastName: string } => {
+  const raw = String(rawValue || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return { firstName: '', lastName: '' };
+  if (raw.includes(',')) {
+    const [last, first] = raw.split(',').map((part) => String(part || '').trim());
+    return { firstName: first || '', lastName: last || '' };
+  }
+  const parts = raw.split(' ').filter(Boolean);
+  if (parts.length <= 1) return { firstName: raw, lastName: '' };
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  };
+};
+
+const toNameCase = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((token) => `${token.charAt(0).toUpperCase()}${token.slice(1).toLowerCase()}`)
+    .join(' ');
+
+const findFirst = (text: string, patterns: RegExp[]) => {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const value = String(match?.[1] || '').trim();
+    if (value) return value;
+  }
+  return '';
+};
+
+const findLabeledValue = (text: string, labelPattern: string, stopLabels: string[]) => {
+  const stop = stopLabels.join('|');
+  const pattern = new RegExp(
+    `${labelPattern}\\b\\s*(?:[:#-]|\\s)?\\s*([\\s\\S]*?)(?=\\s*(?:${stop})\\b(?:\\s*[:#-])?|$)`,
+    'i'
+  );
+  const match = text.match(pattern);
+  return String(match?.[1] || '').replace(/\s+/g, ' ').trim();
+};
+
+const truncateAtNextLabel = (value: string) => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const nextLabel = text.match(
+    /\b(?:member|patient)?\s*(?:phone|cell(?:ular)?|mobile|email|dob|date\s*of\s*birth|mrn|authorization|provider|care\s*manager)\b/i
+  );
+  if (!nextLabel || typeof nextLabel.index !== 'number') return text;
+  return text.slice(0, nextLabel.index).trim().replace(/[,:;\-]+$/, '').trim();
+};
+
+const parseAddressParts = (rawValue: unknown) => {
+  const raw = String(rawValue || '').replace(/\s+/g, ' ').trim();
+  if (!raw) {
+    return { street: '', city: '', state: '', zip: '', county: '' };
+  }
+
+  const cleaned = raw.replace(/\s{2,}/g, ' ').trim();
+  const cityStateZipMatch = cleaned.match(/(.+?),\s*([A-Za-z .'-]+?)\s+([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  if (cityStateZipMatch) {
+    return {
+      street: cityStateZipMatch[1].trim(),
+      city: cityStateZipMatch[2].trim(),
+      state: cityStateZipMatch[3].trim().toUpperCase(),
+      zip: cityStateZipMatch[4].trim(),
+      county: '',
+    };
+  }
+
+  const commaParts = cleaned.split(',').map((p) => p.trim()).filter(Boolean);
+  if (commaParts.length >= 3) {
+    const street = commaParts[0];
+    const city = commaParts[1];
+    const stateZip = commaParts[2].match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    return {
+      street,
+      city,
+      state: String(stateZip?.[1] || '').toUpperCase(),
+      zip: String(stateZip?.[2] || ''),
+      county: '',
+    };
+  }
+
+  return { street: cleaned, city: '', state: '', zip: '', county: '' };
+};
+
+const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: string }) => {
+  const text = String(params.text || '');
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const flattened = lines.join('\n');
+
+  const memberNameRaw =
+    findFirst(flattened, [
+      /(?:member|patient|beneficiary)\s*name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})/i,
+      /name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})\s*(?:dob|date of birth|mrn|member id|auth|authorization)/i,
+    ]) ||
+    (() => {
+      const fileBase = String(params.fileName || '').replace(/\.pdf$/i, '').trim();
+      const noDatePrefix = fileBase.replace(/^\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}\s+/, '');
+      const candidate = noDatePrefix.split('-')[0].replace(/\(.*?\)/g, '').trim();
+      if (!candidate) return '';
+      return candidate
+        .split(' ')
+        .filter((w) => /^[A-Za-z'-]+$/.test(w))
+        .slice(0, 3)
+        .join(' ');
+    })();
+
+  const authorizationNumber = findFirst(flattened, [
+    /authorization\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+    /\bauth(?:orization)?\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+    /\bref(?:erence)?\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+  ]);
+
+  const authorizationStart = findFirst(flattened, [
+    /authorization\s*(?:start|from)\s*(?:date)?\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\beffective\s*date\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\bstart\s*date\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+  ]);
+
+  const authorizationEnd = findFirst(flattened, [
+    /authorization\s*(?:end|to)\s*(?:date)?\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\btermination\s*date\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\bend\s*date\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+  ]);
+
+  const diagnosticCode = findFirst(flattened, [
+    /(?:diagnostic|diagnosis|dx)\s*code\s*[:#-]?\s*([A-Z0-9.-]{3,10})/i,
+    /\bicd(?:-10)?\s*[:#-]?\s*([A-Z0-9.-]{3,10})/i,
+  ]);
+
+  const memberMrn = findFirst(flattened, [
+    /\bmrn\b\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+    /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+  ]);
+
+  const memberAddress = findLabeledValue(flattened, 'member\\s*address', [
+    'member\\s*phone',
+    'cell\\s*phone',
+    'email',
+    'population\\s*of\\s*focus',
+    'provider',
+    'authorization',
+    'care\\s*manager',
+  ]);
+
+  const memberPhone = findFirst(flattened, [
+    /member\s*phone\s*:\s*([()0-9.\-\s]{7,})/i,
+    /\bphone\s*:\s*([()0-9.\-\s]{7,})/i,
+  ]);
+
+  const cellPhone = findFirst(flattened, [
+    /cell\s*phone\s*:\s*([()0-9.\-\s]{7,})/i,
+  ]);
+
+  const memberEmail = findFirst(flattened, [
+    /email\s*:\s*([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
+  ]);
+
+  const parsedName = parseMemberName(memberNameRaw);
+  const updates: Record<string, string> = {};
+  if (parsedName.firstName) updates.memberFirstName = toNameCase(parsedName.firstName);
+  if (parsedName.lastName) updates.memberLastName = toNameCase(parsedName.lastName);
+  if (memberMrn) updates.memberMrn = memberMrn;
+  if (authorizationNumber) updates.Authorization_Number_T038 = authorizationNumber;
+  if (authorizationStart) updates.Authorization_Start_T2038 = toMmDdYyyy(authorizationStart);
+  if (authorizationEnd) updates.Authorization_End_T2038 = toMmDdYyyy(authorizationEnd);
+  if (diagnosticCode) updates.Diagnostic_Code = diagnosticCode;
+  if (memberAddress) updates.memberCustomaryAddress = memberAddress;
+  if (cellPhone || memberPhone) {
+    const normalizedPhone = String(cellPhone || memberPhone || '').replace(/[^\d-]/g, '').trim();
+    if (normalizedPhone) updates.memberPhone = normalizedPhone;
+  }
+  if (memberPhone) {
+    const normalizedContactPhone = String(memberPhone || '').replace(/[^\d.()-]/g, '').trim();
+    if (normalizedContactPhone) updates.contactPhone = normalizedContactPhone;
+  }
+  if (memberEmail) updates.contactEmail = memberEmail.toLowerCase();
+  return updates;
+};
+
+const extractServiceRequestFields = (params: { text: string; fileName: string }) => {
+  const text = String(params.text || '');
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const flattened = lines.join('\n');
+
+  const memberNameRaw =
+    findFirst(flattened, [
+      /(?:member|patient|beneficiary)\s*name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})/i,
+      /name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})\s*(?:dob|date of birth|mrn|member id|auth|authorization)/i,
+    ]) ||
+    (() => {
+      const fileBase = String(params.fileName || '').replace(/\.pdf$/i, '').trim();
+      const noDatePrefix = fileBase.replace(/^\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}\s+/, '');
+      const candidate = noDatePrefix.split('-')[0].replace(/\(.*?\)/g, '').trim();
+      if (!candidate) return '';
+      const uppercaseWords = candidate
+        .split(' ')
+        .filter((w) => /^[A-Za-z'-]+$/.test(w))
+        .slice(0, 3)
+        .join(' ');
+      return uppercaseWords;
+    })();
+
+  const authorizationNumber = findFirst(flattened, [
+    /authorization\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+    /\bauth(?:orization)?\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+    /\bref(?:erence)?\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
+  ]);
+
+  const authorizationStart = findFirst(flattened, [
+    /authorization\s*(?:start|from)\s*(?:date)?\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\beffective\s*date\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\bstart\s*date\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\bfrom\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})\s*(?:to|-)\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+  ]);
+
+  const authorizationEnd = findFirst(flattened, [
+    /authorization\s*(?:end|to)\s*(?:date)?\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\btermination\s*date\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\bend\s*date\s*[:#-]?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\bfrom\s*\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}\s*(?:to|-)\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+  ]);
+
+  const diagnosticCode = findFirst(flattened, [
+    /(?:diagnostic|diagnosis|dx)\s*code\s*[:#-]?\s*([A-Z0-9.-]{3,10})/i,
+    /\bicd(?:-10)?\s*[:#-]?\s*([A-Z0-9.-]{3,10})/i,
+    /\bdiagnosis\s*[:#-]?\s*([A-Z][0-9][A-Z0-9.-]{1,8})/i,
+  ]);
+
+  const memberMrn = findFirst(flattened, [
+    /\bmrn(?:\s*(?:number|no\.?|#))?\b\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
+    /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
+    /member\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
+    /patient\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
+  ]);
+
+  const memberAddressRaw =
+    findLabeledValue(flattened, '(?:member|patient)?\\s*address', [
+      'member\\s*phone',
+      'patient\\s*phone',
+      'phone',
+      'cell\\s*phone',
+      'mobile\\s*phone',
+      'dob',
+      'date\\s*of\\s*birth',
+      'email',
+      'population\\s*of\\s*focus',
+      'provider',
+      'authorization',
+      'care\\s*manager',
+    ]) ||
+    findFirst(flattened, [
+      /(?:member|patient)\s*address\s*[:#-]?\s*([^\n]{8,})/i,
+      /\baddress\s*[:#-]?\s*([^\n]{8,})/i,
+    ]);
+  const memberAddress = truncateAtNextLabel(memberAddressRaw);
+
+  const memberDob = findFirst(flattened, [
+    /(?:member|patient|beneficiary)?\s*(?:dob|date\s*of\s*birth)\s*[:#-]?\s*(?:\r?\n\s*)?(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+    /\bdob\b\s*[:#-]?\s*(?:\r?\n\s*)?(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+  ]);
+
+  const memberPhone = findFirst(flattened, [
+    /member\s*phone\s*[:#-]?\s*(?:\r?\n\s*)?([+()0-9.\-\s]{7,})/i,
+    /patient\s*phone\s*[:#-]?\s*(?:\r?\n\s*)?([+()0-9.\-\s]{7,})/i,
+    /\bphone\s*[:#-]?\s*(?:\r?\n\s*)?([+()0-9.\-\s]{7,})/i,
+  ]);
+
+  const cellPhone = findFirst(flattened, [
+    /cell\s*phone\s*[:#-]?\s*(?:\r?\n\s*)?([+()0-9.\-\s]{7,})/i,
+    /mobile\s*phone\s*[:#-]?\s*(?:\r?\n\s*)?([+()0-9.\-\s]{7,})/i,
+  ]);
+
+  const memberEmail = findFirst(flattened, [
+    /(?:member|patient)?\s*email\s*[:#-]?\s*(?:\r?\n\s*)?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
+  ]);
+
+  const parsedName = parseMemberName(memberNameRaw);
+  const parsedAddress = parseAddressParts(memberAddress);
+
+  const updates: Partial<{
+    memberFirstName: string;
+    memberLastName: string;
+    memberMrn: string;
+    memberPhone: string;
+    memberDob: string;
+    Authorization_Number_T038: string;
+    Authorization_Start_T2038: string;
+    Authorization_End_T2038: string;
+    Diagnostic_Code: string;
+    memberCustomaryLocation: string;
+    memberCustomaryAddress: string;
+    memberCustomaryCity: string;
+    memberCustomaryState: string;
+    memberCustomaryZip: string;
+    memberCustomaryCounty: string;
+    contactPhone: string;
+    contactEmail: string;
+  }> = {};
+
+  if (parsedName.firstName) updates.memberFirstName = toNameCase(parsedName.firstName);
+  if (parsedName.lastName) updates.memberLastName = toNameCase(parsedName.lastName);
+  if (memberMrn) updates.memberMrn = memberMrn;
+  if (authorizationNumber) updates.Authorization_Number_T038 = authorizationNumber;
+  if (authorizationStart) updates.Authorization_Start_T2038 = toMmDdYyyy(authorizationStart);
+  if (authorizationEnd) updates.Authorization_End_T2038 = toMmDdYyyy(authorizationEnd);
+  if (diagnosticCode) updates.Diagnostic_Code = diagnosticCode;
+  if (memberDob) updates.memberDob = toMmDdYyyy(memberDob);
+  if (memberAddress) {
+    updates.memberCustomaryAddress = parsedAddress.street || memberAddress;
+    if (parsedAddress.city) updates.memberCustomaryCity = parsedAddress.city;
+    if (parsedAddress.state) updates.memberCustomaryState = parsedAddress.state;
+    if (parsedAddress.zip) updates.memberCustomaryZip = parsedAddress.zip;
+    if (parsedAddress.county) updates.memberCustomaryCounty = parsedAddress.county;
+  }
+  if (cellPhone || memberPhone) {
+    const normalizedPhone = String(cellPhone || memberPhone || '').replace(/[^\d-]/g, '').trim();
+    if (normalizedPhone) updates.memberPhone = normalizedPhone;
+  }
+  if (memberPhone) {
+    const normalizedContactPhone = String(memberPhone || '').replace(/[^\d.()-]/g, '').trim();
+    if (normalizedContactPhone) updates.contactPhone = normalizedContactPhone;
+  }
+  if (memberEmail) updates.contactEmail = memberEmail.toLowerCase();
+
+  // Safety fallback: preserve original fast extraction behavior for core fields.
+  const legacyUpdates = extractServiceRequestFieldsLegacy(params);
+  const mergedUpdates = { ...legacyUpdates, ...updates };
+  const mergedFields = Object.keys(mergedUpdates);
+
+  return {
+    updates: mergedUpdates,
+    parsedFields: mergedFields,
+    warnings:
+      mergedFields.length === 0
+        ? ['No recognizable fields were found. The PDF may be scanned or use different labels.']
+        : [],
+  };
+};
+
+const getEmptyMemberData = () => ({
+  memberFirstName: '',
+  memberLastName: '',
+  memberMrn: '',
+  memberDob: '',
+  memberPhone: '',
+  memberCustomaryLocation: '',
+  memberCustomaryAddress: '',
+  memberCustomaryCity: '',
+  memberCustomaryState: '',
+  memberCustomaryZip: '',
+  memberCustomaryCounty: '',
+  Authorization_Number_T038: '',
+  Authorization_Start_T2038: '',
+  Authorization_End_T2038: '',
+  Diagnostic_Code: '',
+  contactFirstName: '',
+  contactLastName: '',
+  contactPhone: '',
+  contactEmail: '',
+  contactRelationship: '',
+  notes: '',
+});
+
+const normalizeMemberPatch = (patch: Record<string, unknown>) => {
+  const normalized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null || value === undefined) {
+      normalized[key] = '';
+      continue;
+    }
+    normalized[key] = typeof value === 'string' ? value : String(value);
+  }
+  return normalized;
+};
 
 export default function CreateApplicationPage() {
   const router = useRouter();
@@ -31,23 +474,14 @@ export default function CreateApplicationPage() {
   const [selectedAssignedStaffName, setSelectedAssignedStaffName] = useState('');
   const [selectedStaffActionItemCount, setSelectedStaffActionItemCount] = useState(0);
   const [eligibilityScreenshotFiles, setEligibilityScreenshotFiles] = useState<File[]>([]);
-  const [memberData, setMemberData] = useState({
-    memberFirstName: '',
-    memberLastName: '',
-    memberMrn: '',
-    memberPhone: '',
-    memberCustomaryLocation: '',
-    Authorization_Number_T038: '',
-    Authorization_Start_T2038: '',
-    Authorization_End_T2038: '',
-    Diagnostic_Code: '',
-    contactFirstName: '',
-    contactLastName: '',
-    contactPhone: '',
-    contactEmail: '',
-    contactRelationship: '',
-    notes: ''
-  });
+  const [serviceRequestFile, setServiceRequestFile] = useState<File | null>(null);
+  const [isParsingServiceRequest, setIsParsingServiceRequest] = useState(false);
+  const [serviceRequestParsedFields, setServiceRequestParsedFields] = useState<string[]>([]);
+  const [serviceRequestWarnings, setServiceRequestWarnings] = useState<string[]>([]);
+  const [serviceRequestParseMode, setServiceRequestParseMode] = useState<'none' | 'text' | 'vision'>('none');
+  const [serviceRequestTextPreview, setServiceRequestTextPreview] = useState('');
+  const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [memberData, setMemberData] = useState(getEmptyMemberData);
 
   useEffect(() => {
     const loadKaiserStaff = async () => {
@@ -158,6 +592,176 @@ export default function CreateApplicationPage() {
     return limitedPhoneNumber;
   };
 
+  const parseServiceRequestPdfAndApply = async () => {
+    if (!serviceRequestFile) {
+      toast({ title: 'No PDF selected', description: 'Choose a Service Request Form PDF first.', variant: 'destructive' });
+      return;
+    }
+    setIsParsingServiceRequest(true);
+    setServiceRequestParsedFields([]);
+    setServiceRequestWarnings([]);
+    setServiceRequestParseMode('none');
+    try {
+      const pdfjs = await loadPdfJs();
+      const bytes = await serviceRequestFile.arrayBuffer();
+      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true });
+      const pdf = await loadingTask.promise;
+      const lines: string[] = [];
+      const warnings: string[] = [];
+      const maxPagesForText = Math.min(pdf.numPages, 8);
+      if (pdf.numPages > maxPagesForText) warnings.push(`Parsed first ${maxPagesForText} pages.`);
+
+      for (let pageNum = 1; pageNum <= maxPagesForText; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const tc = await page.getTextContent();
+        const items = (tc.items || []) as Array<any>;
+        const rows: Array<{ str: string; x: number; y: number }> = [];
+        for (const it of items) {
+          const str = String(it?.str || '').trim();
+          if (!str) continue;
+          const tr = it?.transform || [];
+          const x = Number(tr?.[4] ?? 0);
+          const y = Number(tr?.[5] ?? 0);
+          rows.push({ str, x, y });
+        }
+        const byY = new Map<number, Array<{ str: string; x: number }>>();
+        for (const row of rows) {
+          const yk = Math.round(row.y);
+          const arr = byY.get(yk) || [];
+          arr.push({ str: row.str, x: row.x });
+          byY.set(yk, arr);
+        }
+        const yKeys = Array.from(byY.keys()).sort((a, b) => b - a);
+        for (const yk of yKeys) {
+          const parts = (byY.get(yk) || []).sort((a, b) => a.x - b.x).map((p) => p.str);
+          const line = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
+          if (line) lines.push(line);
+        }
+      }
+
+      const text = lines.join('\n').trim();
+      setServiceRequestTextPreview(text ? text.slice(0, 8000) : '');
+
+      if (!text) {
+        // No text layer - use vision API
+        toast({
+          title: 'Scanned PDF detected',
+          description: 'Using AI vision to extract fields...',
+          variant: 'default',
+        });
+
+        const formData = new FormData();
+        formData.append('pdf', serviceRequestFile);
+
+        const response = await fetch('/api/admin/parse-service-request-vision', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Vision parsing failed');
+        }
+
+        const visionResult = await response.json();
+        const updates = visionResult.fields;
+        const parsedFieldKeys = visionResult.parsedFieldKeys;
+        const visionWarnings = visionResult.warnings || [];
+
+        if (parsedFieldKeys.length === 0) {
+          setServiceRequestWarnings(visionWarnings);
+          setServiceRequestParseMode('vision');
+          toast({
+            title: 'No fields extracted',
+            description: 'Could not extract fields from scanned PDF. Please enter data manually.',
+            variant: 'default',
+          });
+          return;
+        }
+
+        setMemberData((prev) => ({ ...prev, ...normalizeMemberPatch(updates as Record<string, unknown>) }));
+        setServiceRequestParsedFields(parsedFieldKeys);
+        setServiceRequestWarnings(visionWarnings);
+        setServiceRequestParseMode('vision');
+        toast({
+          title: 'Service request parsed (Vision)',
+          description: `Autofilled ${parsedFieldKeys.length} field(s) using AI vision.`,
+        });
+        return;
+      }
+
+      const parsed = extractServiceRequestFields({ text, fileName: serviceRequestFile.name });
+      const updates = parsed.updates;
+      const parsedFieldKeys = parsed.parsedFields;
+      warnings.push(...parsed.warnings);
+
+      if (parsedFieldKeys.length === 0) {
+        setServiceRequestWarnings(warnings);
+        setServiceRequestParseMode('text');
+        toast({
+          title: 'No autofill fields found',
+          description: warnings[0] || 'No matching fields were found. You can continue entering data manually.',
+          variant: 'default',
+        });
+        return;
+      }
+
+      setMemberData((prev) => ({ ...prev, ...normalizeMemberPatch(updates as Record<string, unknown>) }));
+      setServiceRequestParsedFields(parsedFieldKeys);
+      setServiceRequestWarnings(warnings);
+      setServiceRequestParseMode('text');
+      toast({
+        title: 'Service request parsed',
+        description: `Autofilled ${parsedFieldKeys.length} field(s) from PDF text.`,
+      });
+    } catch (error: any) {
+      const safeMessage = String(error?.message || 'Could not parse Service Request PDF.');
+      // Avoid logging raw Error objects in dev overlay, which can appear as unhandled runtime errors.
+      console.warn('Service request parse failed:', safeMessage);
+      toast({
+        title: 'Parse failed',
+        description: safeMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsParsingServiceRequest(false);
+    }
+  };
+
+  const clearServiceRequestFile = () => {
+    setServiceRequestFile(null);
+    setServiceRequestParsedFields([]);
+    setServiceRequestWarnings([]);
+    setServiceRequestParseMode('none');
+    setServiceRequestTextPreview('');
+    if (serviceRequestFileInputRef.current) {
+      serviceRequestFileInputRef.current.value = '';
+    }
+    toast({
+      title: 'Service request file removed',
+      description: 'You can choose a different PDF.',
+    });
+  };
+
+  const resetAllCreateFields = () => {
+    setMemberData(getEmptyMemberData());
+    setSelectedAssignedStaffId('');
+    setSelectedAssignedStaffName('');
+    setSelectedStaffActionItemCount(0);
+    setEligibilityScreenshotFiles([]);
+    setServiceRequestFile(null);
+    setServiceRequestParsedFields([]);
+    setServiceRequestWarnings([]);
+    setServiceRequestTextPreview('');
+    if (serviceRequestFileInputRef.current) {
+      serviceRequestFileInputRef.current.value = '';
+    }
+    toast({
+      title: 'Form reset',
+      description: 'All entered fields were cleared so you can start over.',
+    });
+  };
+
   const createApplicationForMember = async () => {
     const isKaiserAuthReceived = intakeType === 'kaiser_auth_received_via_ils';
     const hasStandardRequired = memberData.contactPhone && memberData.contactFirstName && memberData.contactLastName;
@@ -192,6 +796,7 @@ export default function CreateApplicationPage() {
         ...(isKaiserAuthReceived
           ? {
               memberMrn: memberData.memberMrn || '',
+              memberDob: memberData.memberDob || '',
               memberPhone: memberData.memberPhone || '',
               Authorization_Number_T038: memberData.Authorization_Number_T038 || '',
               Authorization_Start_T2038: memberData.Authorization_Start_T2038 || '',
@@ -204,11 +809,11 @@ export default function CreateApplicationPage() {
               currentState: 'Unknown',
               currentZip: 'Unknown',
               currentCounty: 'Unknown',
-              customaryAddress: memberData.memberCustomaryLocation || '',
-              customaryCity: 'Unknown',
-              customaryState: 'Unknown',
-              customaryZip: 'Unknown',
-              customaryCounty: 'Unknown',
+              customaryAddress: memberData.memberCustomaryAddress || '',
+              customaryCity: memberData.memberCustomaryCity || '',
+              customaryState: memberData.memberCustomaryState || '',
+              customaryZip: memberData.memberCustomaryZip || '',
+              customaryCounty: memberData.memberCustomaryCounty || '',
             }
           : {}),
 
@@ -442,8 +1047,7 @@ export default function CreateApplicationPage() {
                 <Label htmlFor="memberFirstName">Member First Name *</Label>
                 <Input
                   id="memberFirstName"
-                  placeholder="Member's first name"
-                  value={memberData.memberFirstName}
+                  value={memberData.memberFirstName || ''}
                   onChange={(e) => setMemberData({ ...memberData, memberFirstName: e.target.value })}
                 />
               </div>
@@ -451,8 +1055,7 @@ export default function CreateApplicationPage() {
                 <Label htmlFor="memberLastName">Member Last Name *</Label>
                 <Input
                   id="memberLastName"
-                  placeholder="Member's last name"
-                  value={memberData.memberLastName}
+                  value={memberData.memberLastName || ''}
                   onChange={(e) => setMemberData({ ...memberData, memberLastName: e.target.value })}
                 />
               </div>
@@ -500,8 +1103,7 @@ export default function CreateApplicationPage() {
                   <Label htmlFor="memberMrn">Member MRN</Label>
                   <Input
                     id="memberMrn"
-                    placeholder="Member MRN"
-                    value={memberData.memberMrn}
+                    value={memberData.memberMrn || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberMrn: e.target.value })}
                   />
                 </div>
@@ -510,8 +1112,7 @@ export default function CreateApplicationPage() {
                   <Input
                     id="memberPhone"
                     type="tel"
-                    placeholder="555-123-4567"
-                    value={memberData.memberPhone}
+                    value={memberData.memberPhone || ''}
                     onChange={(e) => {
                       const formattedPhone = formatMemberPhoneWithDashes(e.target.value);
                       setMemberData({ ...memberData, memberPhone: formattedPhone });
@@ -519,20 +1120,66 @@ export default function CreateApplicationPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="memberCustomaryLocation">Member Customary Location</Label>
+                  <Label htmlFor="memberDob">Member DOB</Label>
+                  <Input
+                    id="memberDob"
+                    value={memberData.memberDob || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberDob: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberCustomaryLocation">Member Customary Location Type</Label>
                   <Input
                     id="memberCustomaryLocation"
-                    placeholder="Home, SNF, Assisted Living, Unknown..."
-                    value={memberData.memberCustomaryLocation}
+                    value={memberData.memberCustomaryLocation || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberCustomaryLocation: e.target.value })}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label htmlFor="memberCustomaryAddress">Member Customary Street Address</Label>
+                  <Input
+                    id="memberCustomaryAddress"
+                    value={memberData.memberCustomaryAddress || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberCustomaryAddress: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberCustomaryCity">Member Customary City</Label>
+                  <Input
+                    id="memberCustomaryCity"
+                    value={memberData.memberCustomaryCity || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberCustomaryCity: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberCustomaryState">Member Customary State</Label>
+                  <Input
+                    id="memberCustomaryState"
+                    value={memberData.memberCustomaryState || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberCustomaryState: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberCustomaryZip">Member Customary ZIP</Label>
+                  <Input
+                    id="memberCustomaryZip"
+                    value={memberData.memberCustomaryZip || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberCustomaryZip: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberCustomaryCounty">Member Customary County</Label>
+                  <Input
+                    id="memberCustomaryCounty"
+                    value={memberData.memberCustomaryCounty || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberCustomaryCounty: e.target.value })}
                   />
                 </div>
                 <div>
                   <Label htmlFor="Authorization_Number_T038">Authorization Number T2038</Label>
                   <Input
                     id="Authorization_Number_T038"
-                    placeholder="Optional"
-                    value={memberData.Authorization_Number_T038}
+                    value={memberData.Authorization_Number_T038 || ''}
                     onChange={(e) => setMemberData({ ...memberData, Authorization_Number_T038: e.target.value })}
                   />
                 </div>
@@ -540,8 +1187,7 @@ export default function CreateApplicationPage() {
                   <Label htmlFor="Diagnostic_Code">Diagnostic Code</Label>
                   <Input
                     id="Diagnostic_Code"
-                    placeholder="Enter diagnostic code"
-                    value={memberData.Diagnostic_Code}
+                    value={memberData.Diagnostic_Code || ''}
                     onChange={(e) => setMemberData({ ...memberData, Diagnostic_Code: e.target.value })}
                   />
                 </div>
@@ -549,18 +1195,18 @@ export default function CreateApplicationPage() {
                   <Label htmlFor="Authorization_Start_T2038">Authorization Start T2038</Label>
                   <Input
                     id="Authorization_Start_T2038"
-                    placeholder="MM/DD/YYYY"
-                    value={memberData.Authorization_Start_T2038}
-                    onChange={(e) => setMemberData({ ...memberData, Authorization_Start_T2038: e.target.value })}
+                    type="date"
+                    value={toDateInputValue(memberData.Authorization_Start_T2038)}
+                    onChange={(e) => setMemberData({ ...memberData, Authorization_Start_T2038: toMmDdYyyy(e.target.value) })}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="Authorization_End_T2038">Authorization_End_T2038</Label>
+                  <Label htmlFor="Authorization_End_T2038">Authorization End T2038</Label>
                   <Input
                     id="Authorization_End_T2038"
-                    placeholder="MM/DD/YYYY"
-                    value={memberData.Authorization_End_T2038}
-                    onChange={(e) => setMemberData({ ...memberData, Authorization_End_T2038: e.target.value })}
+                    type="date"
+                    value={toDateInputValue(memberData.Authorization_End_T2038)}
+                    onChange={(e) => setMemberData({ ...memberData, Authorization_End_T2038: toMmDdYyyy(e.target.value) })}
                   />
                 </div>
                 <div className="md:col-span-2 p-3 border rounded-md bg-muted/20">
@@ -582,6 +1228,76 @@ export default function CreateApplicationPage() {
                       ? `${eligibilityScreenshotFiles.length} file(s) selected`
                       : 'Upload one or more screenshot pages.'}
                   </div>
+                </div>
+                <div className="md:col-span-2 p-3 border rounded-md bg-blue-50/60">
+                  <Label htmlFor="serviceRequestPdf">Service Request Form (Kaiser PDF)</Label>
+                  <Input
+                    id="serviceRequestPdf"
+                    ref={serviceRequestFileInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="mt-2"
+                    onChange={(e) => {
+                      const selected = e.target.files?.[0] || null;
+                      setServiceRequestFile(selected);
+                      setServiceRequestParsedFields([]);
+                      setServiceRequestWarnings([]);
+                    }}
+                  />
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={parseServiceRequestPdfAndApply}
+                      disabled={!serviceRequestFile || isParsingServiceRequest}
+                    >
+                      {isParsingServiceRequest ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Parsing PDF...
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="mr-2 h-4 w-4" />
+                          Parse PDF & Autofill
+                        </>
+                      )}
+                    </Button>
+                    <div className="text-xs text-muted-foreground">
+                      {serviceRequestFile ? `Selected: ${serviceRequestFile.name}` : 'Upload Kaiser Service Request Form PDF'}
+                    </div>
+                    {serviceRequestFile && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearServiceRequestFile}
+                        disabled={isParsingServiceRequest}
+                      >
+                        Remove file
+                      </Button>
+                    )}
+                  </div>
+                  {serviceRequestParsedFields.length > 0 && (
+                    <div className="text-xs text-green-700 mt-2">
+                      Parsed via text: {serviceRequestParsedFields.join(', ')}
+                    </div>
+                  )}
+                  {serviceRequestWarnings.length > 0 && (
+                    <div className="text-xs text-amber-700 mt-2">
+                      {serviceRequestWarnings.join(' ')}
+                    </div>
+                  )}
+                  {serviceRequestTextPreview && (
+                    <div className="mt-3 rounded-md border bg-muted/20 p-3">
+                      <div className="text-xs font-medium mb-2">
+                        Extracted Text Preview (troubleshooting, first ~8k chars)
+                      </div>
+                      <pre className="text-xs whitespace-pre-wrap break-words max-h-56 overflow-auto">
+                        {serviceRequestTextPreview}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -605,8 +1321,7 @@ export default function CreateApplicationPage() {
                 <Label htmlFor="contactFirstName">Contact First Name{intakeType === 'standard' ? ' *' : ''}</Label>
                 <Input
                   id="contactFirstName"
-                  placeholder="Contact person's first name"
-                  value={memberData.contactFirstName}
+                  value={memberData.contactFirstName || ''}
                   onChange={(e) => setMemberData({ ...memberData, contactFirstName: e.target.value })}
                 />
               </div>
@@ -614,8 +1329,7 @@ export default function CreateApplicationPage() {
                 <Label htmlFor="contactLastName">Contact Last Name{intakeType === 'standard' ? ' *' : ''}</Label>
                 <Input
                   id="contactLastName"
-                  placeholder="Contact person's last name"
-                  value={memberData.contactLastName}
+                  value={memberData.contactLastName || ''}
                   onChange={(e) => setMemberData({ ...memberData, contactLastName: e.target.value })}
                 />
               </div>
@@ -624,8 +1338,7 @@ export default function CreateApplicationPage() {
                 <Input
                   id="contactPhone"
                   type="tel"
-                  placeholder="555.123.4567"
-                  value={memberData.contactPhone}
+                  value={memberData.contactPhone || ''}
                   onChange={handlePhoneChange}
                 />
               </div>
@@ -633,8 +1346,7 @@ export default function CreateApplicationPage() {
                 <Label htmlFor="contactRelationship">Relationship to Member</Label>
                 <Input
                   id="contactRelationship"
-                  placeholder="e.g., Daughter, Son, Case Manager"
-                  value={memberData.contactRelationship}
+                  value={memberData.contactRelationship || ''}
                   onChange={(e) => setMemberData({ ...memberData, contactRelationship: e.target.value })}
                 />
               </div>
@@ -643,8 +1355,7 @@ export default function CreateApplicationPage() {
                 <Input
                   id="contactEmail"
                   type="email"
-                  placeholder="contact@example.com (leave blank if no email)"
-                  value={memberData.contactEmail}
+                  value={memberData.contactEmail || ''}
                   onChange={(e) => setMemberData({ ...memberData, contactEmail: e.target.value })}
                 />
               </div>
@@ -656,8 +1367,7 @@ export default function CreateApplicationPage() {
             <Label htmlFor="notes">Admin Notes (Optional)</Label>
             <Textarea
               id="notes"
-              placeholder="Any additional notes about this application or special circumstances..."
-              value={memberData.notes}
+              value={memberData.notes || ''}
               onChange={(e) => setMemberData({ ...memberData, notes: e.target.value })}
               rows={3}
             />
@@ -682,6 +1392,16 @@ export default function CreateApplicationPage() {
                   : 'Create Application & Continue to CS Summary Form'}
               </>
             )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={resetAllCreateFields}
+            disabled={isCreating}
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Reset Form (Start Over)
           </Button>
 
           {!isFormValid && (

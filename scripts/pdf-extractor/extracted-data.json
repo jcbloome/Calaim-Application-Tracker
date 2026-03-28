@@ -1,0 +1,18 @@
+{
+  "memberFirstName": "Jim",
+  "memberLastName": "Kovacich",
+  "memberMrn": "000014539648",
+  "memberDob": "04/06/1948",
+  "memberCustomaryAddress": "1007 E. CARSON STREET, APT. 6",
+  "memberCustomaryCity": "LONG BEACH",
+  "memberCustomaryState": "CA",
+  "memberCustomaryZip": "90807",
+  "memberCustomaryCounty": "",
+  "memberPhone": "562-432-2700",
+  "contactPhone": "5624322700",
+  "contactEmail": "jmk720@gmail.com",
+  "Authorization_Number_T038": "7944120251124",
+  "Authorization_Start_T2038": "02/05/2026",
+  "Authorization_End_T2038": "03/16/2026",
+  "Diagnostic_Code": "R69"
+}

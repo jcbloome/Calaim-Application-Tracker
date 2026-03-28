@@ -17,6 +17,7 @@
     "fix-git": "git config --local --unset-all credential.helper"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@genkit-ai/google-genai": "*",
     "@google-cloud/firestore": "^7.11.6",
     "@hookform/resolvers": "^3.4.0",
@@ -43,6 +44,7 @@
     "@radix-ui/react-tooltip": "^1.0.7",
     "@react-email/components": "^0.0.16",
     "@react-email/render": "^0.0.16",
+    "canvas": "^3.2.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
@@ -55,6 +57,7 @@
     "lucide-react": "^0.378.0",
     "next": "15.0.7",
     "pdf-lib": "^1.17.1",
+    "pdf-poppler": "^0.2.3",
     "pdf2pic": "^3.2.0",
     "pdfjs-dist": "^5.4.530",
     "react": "^18.3.1",
