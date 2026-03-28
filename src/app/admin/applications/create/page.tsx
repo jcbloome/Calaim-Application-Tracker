@@ -481,6 +481,7 @@ export default function CreateApplicationPage() {
   const [serviceRequestParseMode, setServiceRequestParseMode] = useState<'none' | 'text' | 'vision'>('none');
   const [serviceRequestTextPreview, setServiceRequestTextPreview] = useState('');
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
+  const parseAbortControllerRef = useRef<AbortController | null>(null);
   const [memberData, setMemberData] = useState(getEmptyMemberData);
 
   useEffect(() => {
@@ -597,6 +598,10 @@ export default function CreateApplicationPage() {
       toast({ title: 'No PDF selected', description: 'Choose a Service Request Form PDF first.', variant: 'destructive' });
       return;
     }
+    
+    // Create abort controller for this parse operation
+    parseAbortControllerRef.current = new AbortController();
+    
     setIsParsingServiceRequest(true);
     setServiceRequestParsedFields([]);
     setServiceRequestWarnings([]);
@@ -680,6 +685,7 @@ export default function CreateApplicationPage() {
         const response = await fetch('/api/admin/parse-service-request-vision', {
           method: 'POST',
           body: formData,
+          signal: parseAbortControllerRef.current?.signal,
         });
 
         if (!response.ok) {
@@ -739,6 +745,16 @@ export default function CreateApplicationPage() {
         description: `Autofilled ${parsedFieldKeys.length} field(s) from PDF text.`,
       });
     } catch (error: any) {
+      // Check if it was aborted
+      if (error.name === 'AbortError') {
+        toast({
+          title: 'Parsing cancelled',
+          description: 'PDF parsing was stopped.',
+          variant: 'default',
+        });
+        return;
+      }
+      
       const safeMessage = String(error?.message || 'Could not parse Service Request PDF.');
       // Avoid logging raw Error objects in dev overlay, which can appear as unhandled runtime errors.
       console.warn('Service request parse failed:', safeMessage);
@@ -749,6 +765,18 @@ export default function CreateApplicationPage() {
       });
     } finally {
       setIsParsingServiceRequest(false);
+      parseAbortControllerRef.current = null;
+    }
+  };
+
+  const cancelParsing = () => {
+    if (parseAbortControllerRef.current) {
+      parseAbortControllerRef.current.abort();
+      toast({
+        title: 'Cancelling...',
+        description: 'Stopping PDF parsing.',
+        variant: 'default',
+      });
     }
   };
 
@@ -1269,34 +1297,45 @@ export default function CreateApplicationPage() {
                     }}
                   />
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={parseServiceRequestPdfAndApply}
-                      disabled={!serviceRequestFile || isParsingServiceRequest}
-                    >
-                      {isParsingServiceRequest ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Parsing PDF...
-                        </>
-                      ) : (
-                        <>
-                          <FileText className="mr-2 h-4 w-4" />
-                          Parse PDF & Autofill
-                        </>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={parseServiceRequestPdfAndApply}
+                        disabled={!serviceRequestFile || isParsingServiceRequest}
+                      >
+                        {isParsingServiceRequest ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Parsing PDF...
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="mr-2 h-4 w-4" />
+                            Parse PDF & Autofill
+                          </>
+                        )}
+                      </Button>
+                      {isParsingServiceRequest && (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={cancelParsing}
+                        >
+                          Stop
+                        </Button>
                       )}
-                    </Button>
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       {serviceRequestFile ? `Selected: ${serviceRequestFile.name}` : 'Upload Kaiser Service Request Form PDF'}
                     </div>
-                    {serviceRequestFile && (
+                    {serviceRequestFile && !isParsingServiceRequest && (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         onClick={clearServiceRequestFile}
-                        disabled={isParsingServiceRequest}
                       >
                         Remove file
                       </Button>
