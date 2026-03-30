@@ -70,7 +70,7 @@ These show up in the Next.js codebase (do not commit real values):
 ### Server-only environment variables (web runtime)
 - **Caspio**: `CASPIO_BASE_URL`, `CASPIO_CLIENT_ID`, `CASPIO_CLIENT_SECRET`, `CASPIO_TABLE_NAME`
 - **Email**: `RESEND_API_KEY` (required for most email flows); `SENDGRID_API_KEY` exists in Functions code (legacy)
-- **Cron auth**: `CRON_SECRET` (guards `/api/cron/reminders`)
+- **Cron auth**: `CRON_SECRET` (guards cron endpoints like `/api/cron/reminders` and `/api/cron/caspio-members-sync`)
 - **AI** (if used): `ANTHROPIC_API_KEY`
 - **Firebase Admin credentials** (only needed in certain local/self-host contexts):
   - `GOOGLE_APPLICATION_CREDENTIALS_JSON` (preferred for local) or `GOOGLE_APPLICATION_CREDENTIALS` (path)
@@ -199,6 +199,14 @@ See `desktop/CODE_SIGNING.md` and set:
 - Confirm Caspio webhook health (recent events, successful processing).
 - Confirm desktop download route works (`/admin/desktop-installer` redirect/metadata).
 - Add notable changes to `PROJECT_LOG.md` and update `SESSION_LOG.md` after major ships.
+
+### Daily Caspio members cache sync (recommended)
+- Endpoint: `GET /api/cron/caspio-members-sync?mode=incremental`
+- Auth header: `Authorization: Bearer ${CRON_SECRET}`
+- Behavior: runs the same members cache sync used by admin tools, but in scheduler-safe cron mode.
+- Notes:
+  - SW portal refreshes read only from this admin-synced Firestore cache.
+  - Use `mode=full` only for occasional backfills or schema-change recovery.
 
 ---
 

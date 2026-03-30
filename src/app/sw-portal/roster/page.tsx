@@ -146,8 +146,19 @@ export default function SWRosterPage() {
   const [requestingQuickSync, setRequestingQuickSync] = useState(false);
   const currentRosterMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
 
-  const refreshRoster = useCallback(async () => {
-    if (!user?.email) return;
+  const refreshRoster = useCallback(async (opts?: { silent?: boolean }) => {
+    const socialWorkerEmail = String((user as any)?.email || auth?.currentUser?.email || '').trim();
+    if (!socialWorkerEmail) {
+      setError('Unable to determine social worker account for roster refresh.');
+      if (!opts?.silent) {
+        toast({
+          title: 'Could not refresh roster',
+          description: 'Missing social worker account email. Please sign out and sign in again.',
+          variant: 'destructive',
+        });
+      }
+      return;
+    }
     const startedAt = new Date().toISOString();
     setLoading(true);
     setError(null);
@@ -155,7 +166,8 @@ export default function SWRosterPage() {
       // Use the SW assignments endpoint that resolves SW_ID/name from cache.
       // This is more reliable than exact-email matching in Caspio fields.
       const res = await fetch(
-        `/api/sw-visits?socialWorkerId=${encodeURIComponent(user.email)}&month=${encodeURIComponent(currentRosterMonth)}`
+        `/api/sw-visits?socialWorkerId=${encodeURIComponent(socialWorkerEmail)}&month=${encodeURIComponent(currentRosterMonth)}&_ts=${Date.now()}`,
+        { cache: 'no-store' }
       );
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || !data?.success) {
@@ -169,15 +181,28 @@ export default function SWRosterPage() {
       setHasLoadedOnce(true);
       setRosterLastRefreshAt(startedAt);
       setRosterLastRefreshOk(true);
+      if (!opts?.silent) {
+        toast({
+          title: 'Roster refreshed',
+          description: `${nextFacilities.length} RCFEs loaded.`,
+        });
+      }
     } catch (e: any) {
       setError(e?.message || 'Failed to load roster.');
       setHasLoadedOnce(true);
       setRosterLastRefreshAt(startedAt);
       setRosterLastRefreshOk(false);
+      if (!opts?.silent) {
+        toast({
+          title: 'Could not refresh roster',
+          description: e?.message || 'Roster refresh failed. Please try again.',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setLoading(false);
     }
-  }, [currentRosterMonth, user?.email]);
+  }, [auth?.currentUser?.email, currentRosterMonth, toast, user]);
 
   const requestQuickSync = useCallback(async () => {
     if (!auth?.currentUser) return;
@@ -372,7 +397,7 @@ export default function SWRosterPage() {
     if (!isSocialWorker) return;
     if (hasLoadedOnce) return;
     if (loading) return;
-    void refreshRoster();
+    void refreshRoster({ silent: true });
   }, [hasLoadedOnce, isLoading, isSocialWorker, loading, refreshRoster]);
 
   // Hydrate search query from URL (used by header global search).
@@ -795,11 +820,15 @@ export default function SWRosterPage() {
           <Button
             className="w-full sm:w-auto"
             variant="outline"
-            onClick={() => void refreshRoster()}
+            onClick={() => {
+              void refreshRoster();
+              void refreshMonthStatuses();
+              void refreshDraftsToday();
+            }}
             disabled={loading}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh roster
+            Refresh roster view
           </Button>
           <Button
             className="w-full sm:w-auto"
@@ -814,6 +843,9 @@ export default function SWRosterPage() {
             <Printer className="h-4 w-4 mr-2" />
             Print / Save PDF
           </Button>
+          <span className="text-xs text-muted-foreground">
+            SW refresh uses admin-synced cache only.
+          </span>
         </div>
       </div>
 

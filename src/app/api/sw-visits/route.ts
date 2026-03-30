@@ -334,7 +334,6 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const socialWorkerId = searchParams.get('socialWorkerId');
     const rosterMonth = toRosterMonth(searchParams.get('month'));
-    const forceRefresh = searchParams.get('refresh') === '1';
     
     if (!socialWorkerId) {
       return NextResponse.json({ 
@@ -835,7 +834,7 @@ export async function GET(req: NextRequest) {
       newAssignmentsSinceLastMonthCount,
       noAssignmentsSinceLastMonth: newAssignmentsSinceLastMonthCount === 0,
       matcherVersion: SW_ROSTER_MATCHER_VERSION,
-      forceRefreshApplied: forceRefresh,
+      cacheSource: 'admin-synced-members-cache',
     };
 
     return NextResponse.json(responseBody);
