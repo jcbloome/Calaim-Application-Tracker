@@ -539,9 +539,32 @@ export default function SocialWorkerAssignmentsPage() {
     return null;
   };
 
+  const normalizeSwDisplayName = (raw: unknown) => {
+    const source = String(raw || '').trim();
+    if (!source) return 'Unassigned';
+    const lower = source.toLowerCase();
+    if (lower === 'unassigned' || lower === 'unknown' || lower === 'n/a') return 'Unassigned';
+
+    // Normalize "Last, First" into "First Last" for consistent display.
+    if (source.includes(',')) {
+      const [lastRaw, firstRaw] = source.split(',').map((p) => p.trim()).filter(Boolean);
+      if (lastRaw && firstRaw) return `${firstRaw} ${lastRaw}`.replace(/\s+/g, ' ').trim();
+    }
+    return source.replace(/\s+/g, ' ').trim();
+  };
+
+  const getSwSortKey = (raw: unknown) => {
+    const name = normalizeSwDisplayName(raw);
+    if (name === 'Unassigned') return '~~~~';
+    const parts = name.split(' ').filter(Boolean);
+    if (parts.length <= 1) return name.toLowerCase();
+    const last = parts[parts.length - 1].toLowerCase();
+    const first = parts.slice(0, -1).join(' ').toLowerCase();
+    return `${last} ${first}`;
+  };
+
   const isUnassignedSw = (member: Member) => {
-    const v = String(member.Social_Worker_Assigned || '').trim();
-    return !v || v.toLowerCase() === 'unassigned';
+    return normalizeSwDisplayName(member.Social_Worker_Assigned) === 'Unassigned';
   };
 
   const getRcfeFilterBucket = (member: Member) => {
@@ -914,7 +937,7 @@ export default function SocialWorkerAssignmentsPage() {
         const swData = await swRes.json().catch(() => ({} as any));
         const swNames = Array.isArray(swData?.staff)
           ? swData.staff
-              .map((sw: any) => String(sw?.name || '').trim())
+              .map((sw: any) => normalizeSwDisplayName(sw?.name))
               .filter((name: string) => {
                 const lower = name.toLowerCase();
                 return Boolean(name) && lower !== 'unassigned' && lower !== 'unknown';
@@ -1088,7 +1111,7 @@ export default function SocialWorkerAssignmentsPage() {
 
     // Health Net authorized (used by SW monthly visit portal scope)
     members.forEach((member) => {
-      const swName = member.Social_Worker_Assigned || 'Unassigned';
+      const swName = normalizeSwDisplayName(member.Social_Worker_Assigned);
       const stat = ensureStat(swName);
 
       stat.memberCount += 1;
@@ -1127,7 +1150,7 @@ export default function SocialWorkerAssignmentsPage() {
 
     // Kaiser authorized (informational only; not included in SW portal monthly visits)
     kaiserAuthorizedMembers.forEach((member) => {
-      const swName = member.Social_Worker_Assigned || 'Unassigned';
+      const swName = normalizeSwDisplayName(member.Social_Worker_Assigned);
       const stat = ensureStat(swName);
       stat.kaiserAuthorizedCount += 1;
       stat.kaiserMembers.push(member);
@@ -1139,7 +1162,7 @@ export default function SocialWorkerAssignmentsPage() {
 
     // Ensure SW cards remain visible even with zero assigned members.
     allSocialWorkerNames.forEach((name) => {
-      const trimmed = String(name || '').trim();
+      const trimmed = normalizeSwDisplayName(name);
       if (!trimmed) return;
       if (trimmed.toLowerCase() === 'unassigned') return;
       ensureStat(trimmed);
@@ -1149,7 +1172,7 @@ export default function SocialWorkerAssignmentsPage() {
       // Keep "Unassigned" at the end, otherwise alphabetical A-Z.
       if (a.name === 'Unassigned') return 1;
       if (b.name === 'Unassigned') return -1;
-      return String(a.name || '').localeCompare(String(b.name || ''));
+      return getSwSortKey(a.name).localeCompare(getSwSortKey(b.name));
     });
   }, [members, kaiserAuthorizedMembers, allSocialWorkerNames]);
 
@@ -1217,8 +1240,8 @@ export default function SocialWorkerAssignmentsPage() {
         (member.Social_Worker_Assigned || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (member.SW_One_Time_Kaiser || '').toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesSW = selectedSocialWorker === 'all' || 
-        (member.Social_Worker_Assigned || 'Unassigned') === selectedSocialWorker;
+      const matchesSW = selectedSocialWorker === 'all' ||
+        normalizeSwDisplayName(member.Social_Worker_Assigned) === selectedSocialWorker;
       
       const matchesMCO = selectedMCO === 'all' || 
         (member.CalAIM_MCO || 'Unknown') === selectedMCO;
@@ -1272,8 +1295,8 @@ export default function SocialWorkerAssignmentsPage() {
           bValue = b.CalAIM_Status || 'No Status';
           break;
         case 'Social_Worker_Assigned':
-          aValue = a.Social_Worker_Assigned || 'Unassigned';
-          bValue = b.Social_Worker_Assigned || 'Unassigned';
+          aValue = getSwSortKey(a.Social_Worker_Assigned);
+          bValue = getSwSortKey(b.Social_Worker_Assigned);
           break;
         case 'RCFE_Name':
           aValue = getRcfeFilterBucket(a);
