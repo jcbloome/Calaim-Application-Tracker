@@ -320,14 +320,6 @@ export async function GET(request: NextRequest) {
       byPathwayMap.set(path, (byPathwayMap.get(path) || 0) + 1);
     });
 
-    const byCountyList = Object.values(membersByCounty)
-      .map((c: any) => ({
-        name: cleanKey(c?.county, 'Unknown'),
-        value: Number(c?.totalMembers || 0),
-      }))
-      .filter((x) => x.value > 0)
-      .sort((a, b) => b.value - a.value);
-    
     // Show some examples of authorized members
     if (filteredMembers.length > 0) {
       console.log('✅ Sample authorized members with unique IDs:');
@@ -391,6 +383,14 @@ export async function GET(request: NextRequest) {
 
       return acc;
     }, {});
+
+    const byCountyList = Object.values(membersByCounty)
+      .map((c: any) => ({
+        name: cleanKey(c?.county, 'Unknown'),
+        value: Number(c?.totalMembers || 0),
+      }))
+      .filter((x) => x.value > 0)
+      .sort((a, b) => b.value - a.value);
 
     // Also group by city for more granular data
     const membersByCity = filteredMembers.reduce((acc: any, member) => {
