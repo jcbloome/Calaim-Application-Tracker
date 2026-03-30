@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Plus, Minus, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import { loadGoogleMaps } from '@/lib/google-maps-loader';
+import { API_PATHS } from '@/lib/api-paths';
 
 // Helper function to get county coordinates
 const getCountyCoordinates = (county: string) => {
@@ -203,9 +204,9 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
     try {
       // Fetch real RCFE, staff, and member data from APIs
       const [staffResult, rcfeResult, memberResult] = await Promise.all([
-        fetchJsonSafe('/api/staff-locations'),
-        fetchJsonSafe('/api/rcfe-locations'),
-        fetchJsonSafe('/api/member-locations')
+        fetchJsonSafe(API_PATHS.staffLocations),
+        fetchJsonSafe(API_PATHS.rcfeLocations),
+        fetchJsonSafe(API_PATHS.memberLocations)
       ]);
 
       console.log('📊 Staff API result:', staffResult);

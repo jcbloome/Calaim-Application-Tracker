@@ -43,6 +43,7 @@ import { useToast } from '@/hooks/use-toast';
 import SimpleMapTest from '@/components/SimpleMapTest';
 import { ResourceDetailModal } from '@/components/ResourceDetailModal';
 import { useAuth } from '@/firebase';
+import { API_PATHS } from '@/lib/api-paths';
 
 interface ResourceCounts {
   rcfes: number;
@@ -89,6 +90,8 @@ interface RCFEMemberData {
   }[];
 }
 
+type ResourceModalType = 'socialWorkers' | 'rns' | 'rcfes' | 'members';
+
 export default function MapIntelligencePage() {
   const { toast } = useToast();
   const auth = useAuth();
@@ -102,8 +105,11 @@ export default function MapIntelligencePage() {
   });
   
   const [isMapLoading, setIsMapLoading] = useState(false);
-  const [selectedResource, setSelectedResource] = useState<string | null>(null);
+  const [selectedResource, setSelectedResource] = useState<ResourceModalType | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [staffByCountyData, setStaffByCountyData] = useState<Record<string, any>>({});
+  const [rcfeByCountyData, setRcfeByCountyData] = useState<Record<string, any>>({});
+  const [memberLocationData, setMemberLocationData] = useState<Record<string, any> | undefined>(undefined);
 
   // Monthly Visits state
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -129,7 +135,7 @@ export default function MapIntelligencePage() {
     setIsLoadingRcfeMembers(true);
     try {
       // Fetch real member data from existing member-locations API
-      const response = await fetch('/api/member-locations');
+      const response = await fetch(API_PATHS.memberLocations);
       const data = await response.json();
       
       if (data.success && data.data && data.data.members) {
@@ -203,9 +209,9 @@ export default function MapIntelligencePage() {
     setIsMapLoading(true);
     try {
       const [rcfeResponse, staffResponse, memberResponse] = await Promise.all([
-        fetch('/api/rcfe-locations'),
-        fetch('/api/staff-locations'),
-        fetch('/api/member-locations'),
+        fetch(API_PATHS.rcfeLocations),
+        fetch(API_PATHS.staffLocations),
+        fetch(API_PATHS.memberLocations),
       ]);
 
       const [rcfeData, staffData, memberData] = await Promise.all([
@@ -214,9 +220,64 @@ export default function MapIntelligencePage() {
         memberResponse.json(),
       ]);
 
+      const rawStaffByCounty = (staffData?.success ? staffData?.data?.staffByCounty : {}) || {};
+      const rawRcfeByCounty = (rcfeData?.success ? rcfeData?.data?.rcfesByCounty : {}) || {};
+      const rawMemberData = memberData?.success ? memberData?.data : undefined;
+      const membersByCounty = rawMemberData?.membersByCounty || {};
+      const allMembers = Object.values(membersByCounty).flatMap((county: any) => county?.members || []);
+
+      // Align social worker count with assignment-driven SW names shown in SW Assignments.
+      const normalizedAssignedSw = new Set<string>();
+      const socialWorkersByCountyFromMembers: Record<string, any> = {};
+      allMembers.forEach((member: any) => {
+        const rawName =
+          String(member?.socialWorkerAssigned || member?.assignedStaff || '').trim();
+        if (!rawName) return;
+        const lower = rawName.toLowerCase();
+        if (lower === 'unassigned' || lower === 'unknown' || lower === 'n/a') return;
+        normalizedAssignedSw.add(rawName);
+
+        const county = String(member?.county || 'Unknown').trim() || 'Unknown';
+        if (!socialWorkersByCountyFromMembers[county]) {
+          socialWorkersByCountyFromMembers[county] = {};
+        }
+        if (!socialWorkersByCountyFromMembers[county][rawName]) {
+          socialWorkersByCountyFromMembers[county][rawName] = {
+            id: `sw-${county}-${rawName}`,
+            name: rawName,
+            role: 'Social Worker',
+            county,
+            city: String(member?.city || '').trim(),
+            email: '',
+            phone: '',
+            status: 'Active',
+          };
+        }
+      });
+
+      const mergedStaffByCounty: Record<string, any> = {};
+      const allCounties = new Set<string>([
+        ...Object.keys(rawStaffByCounty),
+        ...Object.keys(socialWorkersByCountyFromMembers),
+      ]);
+      allCounties.forEach((county) => {
+        const existingCounty = rawStaffByCounty[county] || {};
+        const derivedSw = Object.values(socialWorkersByCountyFromMembers[county] || {});
+        mergedStaffByCounty[county] = {
+          county,
+          socialWorkers: derivedSw,
+          rns: existingCounty?.rns || [],
+          total: derivedSw.length + Number((existingCounty?.rns || []).length),
+        };
+      });
+
+      setStaffByCountyData(mergedStaffByCounty);
+      setRcfeByCountyData(rawRcfeByCounty);
+      setMemberLocationData(rawMemberData);
+
       const counts: ResourceCounts = {
         rcfes: rcfeData.success ? (rcfeData.data?.totalRCFEs || 0) : 0,
-        socialWorkers: staffData.success ? (staffData.data?.breakdown?.socialWorkers || 0) : 0,
+        socialWorkers: normalizedAssignedSw.size,
         registeredNurses: staffData.success ? (staffData.data?.breakdown?.rns || 0) : 0,
         authorizedMembers: memberData.success ? (memberData.data?.totalMembers || 0) : 0,
       };
@@ -243,10 +304,10 @@ export default function MapIntelligencePage() {
       const authHeaders: Record<string, string> = idToken ? { Authorization: `Bearer ${idToken}` } : {};
 
       const [staffResponse, memberResponse, rcfeResponse, eftResponse] = await Promise.all([
-        fetch('/api/caspio-staff'),
-        fetch('/api/member-locations'),
-        fetch('/api/rcfe-locations'),
-        fetch('/api/caspio/eft-setup', { headers: authHeaders }),
+        fetch(API_PATHS.caspioStaff),
+        fetch(API_PATHS.memberLocations),
+        fetch(API_PATHS.rcfeLocations),
+        fetch(API_PATHS.caspioEftSetup, { headers: authHeaders }),
       ]);
 
       const [staffData, memberData, rcfeData, eftData] = await Promise.all([
@@ -349,7 +410,14 @@ export default function MapIntelligencePage() {
 
   // Resource counts are now loaded directly from APIs in useEffect
 
-  const handleResourceClick = (resourceType: string) => {
+  const handleResourceClick = (resourceType: ResourceModalType) => {
+    if (!memberLocationData && !Object.keys(staffByCountyData).length && !Object.keys(rcfeByCountyData).length) {
+      toast({
+        title: 'Load data first',
+        description: 'Click "Load Data" to populate searchable resource details.',
+      });
+      return;
+    }
     setSelectedResource(resourceType);
     setIsModalOpen(true);
   };
@@ -505,7 +573,7 @@ export default function MapIntelligencePage() {
           onClick={async () => {
             console.log('🧪 Testing API directly...');
             try {
-              const response = await fetch('/api/member-locations');
+              const response = await fetch(API_PATHS.memberLocations);
               const data = await response.json();
               console.log('🧪 Direct API test result:', data);
               alert(`API Test: ${data.success ? 'SUCCESS' : 'FAILED'} - Total Members: ${data.data?.totalMembers || 0}`);
@@ -555,7 +623,7 @@ export default function MapIntelligencePage() {
               </CardContent>
             </Card>
 
-            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('registeredNurses')}>
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('rns')}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Registered Nurses</CardTitle>
                 <Stethoscope className="h-4 w-4 text-muted-foreground" />
@@ -566,7 +634,7 @@ export default function MapIntelligencePage() {
               </CardContent>
             </Card>
 
-            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('authorizedMembers')}>
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('members')}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Authorized Members</CardTitle>
                 <UserCheck className="h-4 w-4 text-muted-foreground" />
@@ -976,7 +1044,10 @@ export default function MapIntelligencePage() {
       <ResourceDetailModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        resourceType={selectedResource}
+        type={selectedResource || 'socialWorkers'}
+        staffData={staffByCountyData}
+        rcfeData={rcfeByCountyData}
+        memberData={memberLocationData}
       />
     </div>
   );

@@ -17,6 +17,7 @@ import { AlertTriangle, Clock, CheckCircle, Calendar, User, RefreshCw, Edit, Use
 import { useToast } from '@/hooks/use-toast';
 import { loadGoogleMaps } from '@/lib/google-maps-loader';
 import { normalizeRcfeNameForAssignment } from '@/lib/rcfe-utils';
+import { API_PATHS } from '@/lib/api-paths';
 
 interface Member {
   id: string;
@@ -402,7 +403,7 @@ export default function SocialWorkerAssignmentsPage() {
     setAssignmentEditorSaving(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/admin/sw-assignments/override-upsert', {
+      const res = await fetch(API_PATHS.swAssignmentsOverrideUpsert, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
@@ -746,7 +747,7 @@ export default function SocialWorkerAssignmentsPage() {
         Number_of_Beds: normalizeBedsInput(rawDraft.Number_of_Beds),
       };
       const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/admin/rcfe-directory/upsert', {
+      const res = await fetch(API_PATHS.rcfeDirectoryUpsert, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -847,7 +848,7 @@ export default function SocialWorkerAssignmentsPage() {
       }
 
       const idToken = await auth.currentUser.getIdToken();
-      const syncRes = await fetch('/api/caspio/members-cache/sync', {
+      const syncRes = await fetch(API_PATHS.caspioMembersCacheSync, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken, mode: 'full' }),
@@ -861,7 +862,7 @@ export default function SocialWorkerAssignmentsPage() {
         throw new Error(msg);
       }
 
-      const response = await fetch('/api/all-members');
+      const response = await fetch(API_PATHS.allMembers);
       const responseData = await response.json().catch(() => ({} as any));
       if (!response.ok) {
         const msg =
@@ -913,7 +914,7 @@ export default function SocialWorkerAssignmentsPage() {
       const maxMiles =
         geoMaxMiles.trim() === '' ? null : Number.isFinite(Number(geoMaxMiles)) ? Number(geoMaxMiles) : null;
 
-      const res = await fetch('/api/tools/sw-geo-assign/suggest', {
+      const res = await fetch(API_PATHS.swGeoAssignSuggest, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
@@ -1098,6 +1099,11 @@ export default function SocialWorkerAssignmentsPage() {
       return (b.healthNetAuthorizedCount + b.kaiserAuthorizedCount) - (a.healthNetAuthorizedCount + a.kaiserAuthorizedCount);
     });
   }, [members, kaiserAuthorizedMembers]);
+
+  const totalSocialWorkersCount = useMemo(
+    () => socialWorkerStats.filter((sw) => sw.name !== 'Unassigned').length,
+    [socialWorkerStats]
+  );
 
   const openMemberModal = useCallback((sw: SocialWorkerStats, plan: 'all' | 'healthNet' | 'kaiser' = 'all') => {
     setSelectedSWForModal(sw);
@@ -1304,6 +1310,19 @@ export default function SocialWorkerAssignmentsPage() {
                 <div className="text-2xl font-bold">{members.length}</div>
                 <p className="text-xs text-muted-foreground">
                   Members in sync scope
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Social Workers</CardTitle>
+                <User className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{totalSocialWorkersCount}</div>
+                <p className="text-xs text-muted-foreground">
+                  Unique assigned social workers (excluding Unassigned)
                 </p>
               </CardContent>
             </Card>

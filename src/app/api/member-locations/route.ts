@@ -25,6 +25,7 @@ interface CalAIMMember {
   kaiserStatus?: string;
   calaimStatus?: string;
   assignedStaff?: string;
+  socialWorkerAssigned?: string;
   rcfeRegisteredId?: string;
   rcfeName?: string;
   rcfeAddress?: string;
@@ -256,7 +257,12 @@ export async function GET(request: NextRequest) {
       // Use EXACT same CalAIM_Status field as authorization tracker
       const status = getStatusValue(record) || 'Unknown';
       const kaiserStatus = record.Kaiser_Status || record.kaiser_status || '';
-      const assignedStaff = record.kaiser_user_assignment || record.assigned_staff || '';
+      const assignedStaff =
+        record.Social_Worker_Assigned ||
+        record.social_worker_assigned ||
+        record.kaiser_user_assignment ||
+        record.assigned_staff ||
+        '';
       
       // RCFE Information using the registered ID and related fields
       const rcfeRegisteredId = record.RCFE_Registered_ID || record.rcfe_registered_id || '';
@@ -287,6 +293,7 @@ export async function GET(request: NextRequest) {
         kaiserStatus,
         calaimStatus: status,
         assignedStaff,
+        socialWorkerAssigned: assignedStaff,
         rcfeRegisteredId,
         rcfeName,
         rcfeAddress,
@@ -463,6 +470,7 @@ export async function GET(request: NextRequest) {
         membersByCounty,
         membersByCity,
         membersByRCFE,
+        members: filteredMembers,
         totalMembers: filteredMembers.length,
         counties: Object.keys(membersByCounty).length,
         cities: Object.keys(membersByCity).length,
