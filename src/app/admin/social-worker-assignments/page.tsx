@@ -456,7 +456,7 @@ export default function SocialWorkerAssignmentsPage() {
 
       toast({
         title: 'Assignment updated',
-        description: `${assignmentEditorMember.memberName} → ${toSwEmail || 'Unassigned'}`,
+        description: `${formatMemberNameLastFirst(assignmentEditorMember)} → ${toSwEmail || 'Unassigned'}`,
       });
       setAssignmentEditorOpen(false);
     } catch (e: any) {
@@ -551,6 +551,25 @@ export default function SocialWorkerAssignmentsPage() {
       if (lastRaw && firstRaw) return `${firstRaw} ${lastRaw}`.replace(/\s+/g, ' ').trim();
     }
     return source.replace(/\s+/g, ' ').trim();
+  };
+
+  const formatMemberNameLastFirst = (member: Pick<Member, 'memberName' | 'memberFirstName' | 'memberLastName'>) => {
+    const first = String(member.memberFirstName || '').trim();
+    const last = String(member.memberLastName || '').trim();
+    if (last && first) return `${last}, ${first}`;
+    if (last) return last;
+    if (first) return first;
+
+    const fallback = String(member.memberName || '').trim().replace(/\s+/g, ' ');
+    if (!fallback) return 'Unknown Member';
+    if (fallback.includes(',')) return fallback;
+    const parts = fallback.split(' ').filter(Boolean);
+    if (parts.length >= 2) {
+      const lastToken = String(parts.pop() || '').trim();
+      const firstTokens = parts.join(' ').trim();
+      if (lastToken && firstTokens) return `${lastToken}, ${firstTokens}`;
+    }
+    return fallback;
   };
 
   const getSwSortKey = (raw: unknown) => {
@@ -651,7 +670,7 @@ export default function SocialWorkerAssignmentsPage() {
       const rcfeAdminPhone = getRcfeAdministratorPhone(member);
       const rcfeBeds = getRcfeNumberOfBeds(member);
       const clientId2 = String(member.Client_ID2 || '').trim();
-      const memberName = String(member.memberName || '').trim() || `${String(member.memberFirstName || '').trim()} ${String(member.memberLastName || '').trim()}`.trim();
+      const memberName = formatMemberNameLastFirst(member);
       const key = [
         rcfeName.toLowerCase(),
         rcfeStreet.toLowerCase(),
@@ -1235,6 +1254,7 @@ export default function SocialWorkerAssignmentsPage() {
       if (!isHealthNetMember(member) || !isAuthorizedMember(member)) return false;
 
       const matchesSearch = !searchTerm || 
+        formatMemberNameLastFirst(member).toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.Client_ID2.toString().includes(searchTerm) ||
         (member.Social_Worker_Assigned || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1275,8 +1295,8 @@ export default function SocialWorkerAssignmentsPage() {
 
       switch (sortField) {
         case 'memberName':
-          aValue = a.memberName || '';
-          bValue = b.memberName || '';
+          aValue = formatMemberNameLastFirst(a);
+          bValue = formatMemberNameLastFirst(b);
           break;
         case 'Client_ID2':
           aValue = a.Client_ID2 || '';
@@ -1922,7 +1942,7 @@ export default function SocialWorkerAssignmentsPage() {
                                 </div>
                               )}
                               <span className={isHold(member.Hold_For_Social_Worker) ? 'text-red-800' : ''}>
-                                {member.memberName}
+                                {formatMemberNameLastFirst(member)}
                               </span>
                             </div>
                           </TableCell>
@@ -2609,7 +2629,7 @@ export default function SocialWorkerAssignmentsPage() {
           {assignmentEditorMember ? (
             <div className="space-y-4">
               <div className="rounded-md border p-3">
-                <div className="font-medium">{assignmentEditorMember.memberName}</div>
+                <div className="font-medium">{formatMemberNameLastFirst(assignmentEditorMember)}</div>
                 <div className="text-xs text-muted-foreground">Client_ID2: {assignmentEditorMember.Client_ID2}</div>
                 <div className="text-xs text-muted-foreground">
                   Current: {assignmentEditorMember.Social_Worker_Assigned || 'Unassigned'}
@@ -2694,13 +2714,13 @@ export default function SocialWorkerAssignmentsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {modalMembers
                   .slice()
-                  .sort((a, b) => String(a.memberName || '').localeCompare(String(b.memberName || '')))
+                  .sort((a, b) => formatMemberNameLastFirst(a).localeCompare(formatMemberNameLastFirst(b)))
                   .map((member) => {
                     const memberRcfe = getRcfeFilterBucket(member);
                     const plan = isKaiserMember(member) ? 'Kaiser' : 'Health Net';
                     return (
                       <div key={`${member.Client_ID2}-${plan}`} className="text-sm p-3 border rounded-lg bg-muted/40">
-                        <div className="font-medium">{member.memberName}</div>
+                        <div className="font-medium">{formatMemberNameLastFirst(member)}</div>
                         <div className="text-muted-foreground">{plan} • ID: {member.Client_ID2}</div>
                         <div className="text-muted-foreground">
                           {memberRcfe} {isHold(member.Hold_For_Social_Worker) ? '• On Hold' : '• Not On Hold'}
