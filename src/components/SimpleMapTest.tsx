@@ -170,20 +170,43 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
     toggleLayer('MEMBERS', showMembers);
   }, [showMembers, markers]);
 
+  const fetchJsonSafe = async (url: string) => {
+    const response = await fetch(url, { cache: 'no-store' });
+    const contentType = response.headers.get('content-type') || '';
+
+    // Some environments return an HTML login/error page for API routes.
+    if (!contentType.toLowerCase().includes('application/json')) {
+      return {
+        success: false,
+        error: `Non-JSON response from ${url} (status ${response.status})`,
+      };
+    }
+
+    const payload = await response.json().catch(() => ({
+      success: false,
+      error: `Invalid JSON response from ${url}`,
+    }));
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: payload?.error || `Request failed for ${url} (${response.status})`,
+      };
+    }
+
+    return payload;
+  };
+
   const addCalAIMOverlays = async (map: any) => {
     console.log('🎯 Adding CalAIM overlays...');
 
     try {
       // Fetch real RCFE, staff, and member data from APIs
-      const [staffResponse, rcfeResponse, memberResponse] = await Promise.all([
-        fetch('/api/staff-locations'),
-        fetch('/api/rcfe-locations'),
-        fetch('/api/member-locations')
+      const [staffResult, rcfeResult, memberResult] = await Promise.all([
+        fetchJsonSafe('/api/staff-locations'),
+        fetchJsonSafe('/api/rcfe-locations'),
+        fetchJsonSafe('/api/member-locations')
       ]);
-
-      const staffResult = await staffResponse.json();
-      const rcfeResult = await rcfeResponse.json();
-      const memberResult = await memberResponse.json();
 
       console.log('📊 Staff API result:', staffResult);
       console.log('🏠 RCFE API result:', rcfeResult);
@@ -456,7 +479,7 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
     console.log(`✅ Added ${calAIMData.length} CalAIM markers`);
 
     } catch (error: any) {
-      console.error('❌ Error loading CalAIM data:', error);
+      console.warn('Map data load fell back to sample markers:', error?.message || error);
       
       // Fall back to sample data
       const sampleData = [
