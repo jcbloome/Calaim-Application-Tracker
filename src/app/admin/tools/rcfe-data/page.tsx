@@ -19,6 +19,7 @@ import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 interface Member {
   Client_ID2: string;
+  RCFE_Registered_ID?: string;
   memberName: string;
   memberFirstName?: string;
   memberLastName?: string;
@@ -29,6 +30,8 @@ interface Member {
   RCFE_Street?: string;
   RCFE_City?: string;
   RCFE_Zip?: string;
+  RCFE_County?: string;
+  Member_County?: string;
   RCFE_Administrator?: string;
   RCFE_Administrator_Email?: string;
   RCFE_Admin_Email?: string;
@@ -41,9 +44,11 @@ interface Member {
 interface RCFEDirectoryRow {
   key: string;
   RCFE_Name: string;
+  rcfeRegisteredIds: string[];
   RCFE_Street: string;
   RCFE_City: string;
   RCFE_Zip: string;
+  RCFE_County: string;
   RCFE_City_RCFE_Zip: string;
   RCFE_Administrator: string;
   RCFE_Administrator_Email: string;
@@ -57,12 +62,14 @@ interface RCFEDirectoryRow {
 
 type RCFESortField =
   | 'RCFE_Name'
+  | 'RCFE_County'
   | 'RCFE_Administrator'
   | 'RCFE_Administrator_Email'
   | 'RCFE_Administrator_Phone'
   | 'Number_of_Beds';
 
 type RcfeDraftFields = {
+  RCFE_County: string;
   RCFE_Administrator: string;
   RCFE_Administrator_Email: string;
   RCFE_Administrator_Phone: string;
@@ -115,6 +122,10 @@ const toAddressCase = (value: unknown) =>
 
 const normalizeZipInput = (value: unknown) => String(value || '').replace(/[^\d-]/g, '');
 const normalizeRcfeName = (value: unknown) => toAddressCase(value);
+const normalizeCountyInput = (value: unknown) =>
+  toAddressCase(value)
+    .replace(/\s+county$/i, '')
+    .trim();
 
 export default function RcfeDataToolsPage() {
   const { isAdmin, isLoading } = useAdmin();
@@ -131,6 +142,13 @@ export default function RcfeDataToolsPage() {
   const [rcfeDrafts, setRcfeDrafts] = useState<Record<string, RcfeDraftFields>>({});
   const [rcfeFieldOverrides, setRcfeFieldOverrides] = useState<Record<string, RcfeDraftFields>>({});
   const [isSavingAll, setIsSavingAll] = useState(false);
+  const [updatedRowTimestamps, setUpdatedRowTimestamps] = useState<Record<string, string>>({});
+  const [lastPushResult, setLastPushResult] = useState<{
+    attempted: number;
+    success: number;
+    failed: number;
+    at: string;
+  } | null>(null);
   const [memberPresenceStatus, setMemberPresenceStatus] = useState<Record<string, 'there' | 'not_there'>>({});
   const confirmedStorageKey = 'rcfe-member-presence-status';
   const [memberExtraDetails, setMemberExtraDetails] = useState<Record<string, string>>({});
@@ -175,6 +193,7 @@ export default function RcfeDataToolsPage() {
   const getRcfeStreet = (member: Member) => String(member.RCFE_Street || member.RCFE_Address || '').trim();
   const getRcfeCity = (member: Member) => String(member.RCFE_City || '').trim();
   const getRcfeZip = (member: Member) => String(member.RCFE_Zip || '').trim();
+  const getRcfeCounty = (member: Member) => normalizeCountyInput(member.RCFE_County || member.Member_County || '');
   const getRcfeCityZip = (member: Member) => [getRcfeCity(member), getRcfeZip(member)].filter(Boolean).join(', ');
   const getRcfeAdministrator = (member: Member) =>
     normalizeAdminName(String(member.RCFE_Administrator || member.RCFE_Admin_Name || '').trim());
@@ -272,12 +291,14 @@ export default function RcfeDataToolsPage() {
       const street = getRcfeStreet(member);
       const city = getRcfeCity(member);
       const zip = getRcfeZip(member);
+      const county = getRcfeCounty(member);
       const cityZip = getRcfeCityZip(member);
       const adminName = getRcfeAdministrator(member);
       const adminEmail = getRcfeAdministratorEmail(member);
       const adminPhone = getRcfeAdministratorPhone(member);
       const beds = getRcfeBeds(member);
       const memberId = String(member.Client_ID2 || '').trim();
+      const rcfeRegisteredId = String(member.RCFE_Registered_ID || '').trim();
       const memberName =
         String(member.memberName || '').trim() ||
         `${String(member.memberFirstName || '').trim()} ${String(member.memberLastName || '').trim()}`.trim();
@@ -290,9 +311,13 @@ export default function RcfeDataToolsPage() {
         if (!existing.RCFE_Street && street) existing.RCFE_Street = street;
         if (!existing.RCFE_City && city) existing.RCFE_City = city;
         if (!existing.RCFE_Zip && zip) existing.RCFE_Zip = zip;
+        if (!existing.RCFE_County && county) existing.RCFE_County = county;
         if (!existing.RCFE_Administrator_Email && adminEmail) existing.RCFE_Administrator_Email = adminEmail;
         if (!existing.RCFE_Administrator_Phone && adminPhone) existing.RCFE_Administrator_Phone = adminPhone;
         if (!existing.Number_of_Beds && beds) existing.Number_of_Beds = beds;
+        if (rcfeRegisteredId && !existing.rcfeRegisteredIds.includes(rcfeRegisteredId)) {
+          existing.rcfeRegisteredIds.push(rcfeRegisteredId);
+        }
         if (memberId && !existing.memberIds.includes(memberId)) existing.memberIds.push(memberId);
         if (memberName && !existing.memberNames.includes(memberName)) existing.memberNames.push(memberName);
         if (memberId && !existing.members.some((m) => m.id === memberId)) existing.members.push({ id: memberId, name: memberName || memberId });
@@ -300,9 +325,11 @@ export default function RcfeDataToolsPage() {
         grouped.set(key, {
           key,
           RCFE_Name: rcfeName,
+          rcfeRegisteredIds: rcfeRegisteredId ? [rcfeRegisteredId] : [],
           RCFE_Street: street,
           RCFE_City: city,
           RCFE_Zip: zip,
+          RCFE_County: county,
           RCFE_City_RCFE_Zip: cityZip,
           RCFE_Administrator: adminName,
           RCFE_Administrator_Email: adminEmail,
@@ -320,6 +347,7 @@ export default function RcfeDataToolsPage() {
   }, [members]);
 
   const getBaseDraft = (row: RCFEDirectoryRow): RcfeDraftFields => ({
+    RCFE_County: row.RCFE_County,
     RCFE_Administrator: row.RCFE_Administrator,
     RCFE_Administrator_Email: row.RCFE_Administrator_Email,
     RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
@@ -331,6 +359,7 @@ export default function RcfeDataToolsPage() {
     const persisted = rcfeFieldOverrides[row.key];
     const inSession = rcfeDrafts[row.key];
     return {
+      RCFE_County: normalizeCountyInput(inSession?.RCFE_County ?? persisted?.RCFE_County ?? base.RCFE_County),
       RCFE_Administrator: normalizeAdminName(inSession?.RCFE_Administrator ?? persisted?.RCFE_Administrator ?? base.RCFE_Administrator),
       RCFE_Administrator_Email: inSession?.RCFE_Administrator_Email ?? persisted?.RCFE_Administrator_Email ?? base.RCFE_Administrator_Email,
       RCFE_Administrator_Phone: inSession?.RCFE_Administrator_Phone ?? persisted?.RCFE_Administrator_Phone ?? base.RCFE_Administrator_Phone,
@@ -344,6 +373,19 @@ export default function RcfeDataToolsPage() {
       const next = updater(current);
       setRcfeDrafts((prev) => ({ ...prev, [row.key]: next }));
       setRcfeFieldOverrides((prev) => ({ ...prev, [row.key]: next }));
+      setUpdatedRowTimestamps((prev) => {
+        if (!prev[row.key]) return prev;
+        const changed =
+          String(next.RCFE_County || '').trim() !== String(row.RCFE_County || '').trim() ||
+          String(next.RCFE_Administrator || '').trim() !== String(row.RCFE_Administrator || '').trim() ||
+          String(next.RCFE_Administrator_Email || '').trim() !== String(row.RCFE_Administrator_Email || '').trim() ||
+          String(next.RCFE_Administrator_Phone || '').trim() !== String(row.RCFE_Administrator_Phone || '').trim() ||
+          String(next.Number_of_Beds || '').trim() !== String(row.Number_of_Beds || '').trim();
+        if (!changed) return prev;
+        const copy = { ...prev };
+        delete copy[row.key];
+        return copy;
+      });
     },
     [rcfeDrafts, rcfeFieldOverrides]
   );
@@ -351,6 +393,7 @@ export default function RcfeDataToolsPage() {
   const hasDraftChanges = (row: RCFEDirectoryRow) => {
     const draft = getDraft(row);
     return (
+      String(draft.RCFE_County || '').trim() !== String(row.RCFE_County || '').trim() ||
       String(draft.RCFE_Administrator || '').trim() !== String(row.RCFE_Administrator || '').trim() ||
       String(draft.RCFE_Administrator_Email || '').trim() !== String(row.RCFE_Administrator_Email || '').trim() ||
       String(draft.RCFE_Administrator_Phone || '').trim() !== String(row.RCFE_Administrator_Phone || '').trim() ||
@@ -372,6 +415,7 @@ export default function RcfeDataToolsPage() {
       if (!needle) return true;
       return (
         row.RCFE_Name.toLowerCase().includes(needle) ||
+        row.RCFE_County.toLowerCase().includes(needle) ||
         row.RCFE_City_RCFE_Zip.toLowerCase().includes(needle) ||
         row.RCFE_Administrator.toLowerCase().includes(needle) ||
         row.RCFE_Administrator_Email.toLowerCase().includes(needle) ||
@@ -393,6 +437,10 @@ export default function RcfeDataToolsPage() {
   }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails]);
 
   const editedRows = useMemo(() => rcfeRows.filter((row) => hasDraftChanges(row)), [rcfeRows, rcfeDrafts, rcfeFieldOverrides]);
+  const updatedRowsCount = useMemo(
+    () => rcfeRows.filter((row) => Boolean(updatedRowTimestamps[row.key])).length,
+    [rcfeRows, updatedRowTimestamps]
+  );
 
   const handleSort = (field: RCFESortField) => {
     if (sortField === field) {
@@ -411,6 +459,7 @@ export default function RcfeDataToolsPage() {
       const raw = getDraft(row);
       const draft = {
         ...raw,
+        RCFE_County: normalizeCountyInput(raw.RCFE_County),
         RCFE_Administrator: normalizeAdminName(raw.RCFE_Administrator),
         Number_of_Beds: normalizeBedsInput(raw.Number_of_Beds),
       };
@@ -431,6 +480,7 @@ export default function RcfeDataToolsPage() {
         },
         body: JSON.stringify({
           memberIds: row.memberIds,
+          rcfeRegisteredIds: row.rcfeRegisteredIds,
           updates: {
             RCFE_Name: normalizedRcfeName,
             ...draft,
@@ -461,6 +511,7 @@ export default function RcfeDataToolsPage() {
                 RCFE_Street: normalizedStreet || member.RCFE_Street,
                 RCFE_City: normalizedCity || member.RCFE_City,
                 RCFE_Zip: normalizedZip || member.RCFE_Zip,
+                RCFE_County: draft.RCFE_County || member.RCFE_County,
                 RCFE_Address: normalizedAddress || member.RCFE_Address,
               }
             : member
@@ -475,23 +526,32 @@ export default function RcfeDataToolsPage() {
   const syncEditedRows = useCallback(async (rows: RCFEDirectoryRow[]) => {
     if (rows.length === 0) {
       toast({ title: 'No edits to push', description: 'Make a change first, then push all edited.' });
-      return { success: 0, failed: 0 };
+      return { attempted: 0, success: 0, failed: 0 };
     }
 
     setIsSavingAll(true);
 
+    const attempted = rows.length;
     let success = 0;
     let failed = 0;
     for (const row of rows) {
       try {
         await saveRow(row);
         success += 1;
+        const stamp = new Date().toISOString();
+        setUpdatedRowTimestamps((prev) => ({ ...prev, [row.key]: stamp }));
       } catch {
         failed += 1;
       }
     }
 
     setIsSavingAll(false);
+    setLastPushResult({
+      attempted,
+      success,
+      failed,
+      at: new Date().toISOString(),
+    });
 
     if (failed === 0) {
       toast({ title: 'All edits synced', description: `Successfully pushed ${success} RCFE row(s).` });
@@ -503,7 +563,7 @@ export default function RcfeDataToolsPage() {
       });
     }
 
-    return { success, failed };
+    return { attempted, success, failed };
   }, [saveRow, toast]);
 
   const pushAllEdited = useCallback(async () => {
@@ -778,7 +838,14 @@ export default function RcfeDataToolsPage() {
                 </SelectContent>
               </Select>
               <Badge variant="outline">{visibleRows.length} RCFEs</Badge>
-              <Badge variant="secondary">{editedRows.length} Edited</Badge>
+              <Badge variant="secondary">Needs Update: {editedRows.length}</Badge>
+              <Badge variant="outline">Already Updated: {updatedRowsCount}</Badge>
+              {lastPushResult ? (
+                <Badge variant="outline">
+                  Last Push: {lastPushResult.success}/{lastPushResult.attempted}
+                  {lastPushResult.failed > 0 ? ` (${lastPushResult.failed} failed)` : ''}
+                </Badge>
+              ) : null}
               <Badge variant="outline">Drafts saved to Firestore</Badge>
               <Button onClick={pushAllEdited} disabled={isSavingAll || editedRows.length === 0}>
                 {isSavingAll ? 'Syncing edited rows...' : `Push All Edited (${editedRows.length})`}
@@ -787,12 +854,18 @@ export default function RcfeDataToolsPage() {
           </div>
 
           <div className="w-full overflow-x-auto pb-2">
-              <Table className="min-w-[1100px]">
+              <Table className="min-w-[1240px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[320px]">
                       <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleSort('RCFE_Name')}>
                         RCFE Home
+                        <ArrowUpDown className="h-3 w-3" />
+                      </button>
+                    </TableHead>
+                    <TableHead>
+                      <button type="button" className="inline-flex items-center gap-1 font-medium" onClick={() => handleSort('RCFE_County')}>
+                        County
                         <ArrowUpDown className="h-3 w-3" />
                       </button>
                     </TableHead>
@@ -825,13 +898,15 @@ export default function RcfeDataToolsPage() {
                 <TableBody>
                   {visibleRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-muted-foreground">
+                      <TableCell colSpan={6} className="text-muted-foreground">
                         No RCFEs match your search.
                       </TableCell>
                     </TableRow>
                   ) : (
                     visibleRows.map((row) => {
                       const draft = getDraft(row);
+                      const hasPendingChanges = hasDraftChanges(row);
+                      const updatedAt = updatedRowTimestamps[row.key];
                       const verifiedCount = row.members.filter(
                         (m) => memberPresenceStatus[m.id] === 'there' || memberPresenceStatus[m.id] === 'not_there'
                       ).length;
@@ -847,6 +922,12 @@ export default function RcfeDataToolsPage() {
                                   Verified
                                 </span>
                               )}
+                              {!hasPendingChanges && updatedAt ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700">
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  Updated
+                                </span>
+                              ) : null}
                             </div>
                             <div className="text-xs text-muted-foreground break-words">
                               {[toAddressCase(row.RCFE_Street), [toAddressCase(row.RCFE_City), normalizeZipInput(row.RCFE_Zip)].filter(Boolean).join(', ')]
@@ -930,8 +1011,22 @@ export default function RcfeDataToolsPage() {
                                 Confirmed There: {row.members.filter((m) => memberPresenceStatus[m.id] === 'there').length}/{row.members.length}
                                 {' | '}
                                 Told Not There: {row.members.filter((m) => memberPresenceStatus[m.id] === 'not_there').length}
+                                {!hasPendingChanges && updatedAt ? ` | Updated: ${formatDateTimeSafe(updatedAt)}` : ''}
                               </div>
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="min-w-[140px]"
+                              value={draft.RCFE_County}
+                              onChange={(e) => updateDraftField(row, (current) => ({ ...current, RCFE_County: e.target.value }))}
+                              onBlur={(e) => {
+                                const normalized = normalizeCountyInput(e.target.value);
+                                if (normalized !== e.target.value) {
+                                  updateDraftField(row, (current) => ({ ...current, RCFE_County: normalized }));
+                                }
+                              }}
+                            />
                           </TableCell>
                           <TableCell>
                             <Input

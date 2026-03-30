@@ -58,6 +58,9 @@ export async function POST(req: NextRequest) {
     const memberIds = Array.isArray(body?.memberIds)
       ? body.memberIds.map((v: unknown) => String(v || '').trim()).filter(Boolean)
       : [];
+    const rcfeRegisteredIds = Array.isArray(body?.rcfeRegisteredIds)
+      ? body.rcfeRegisteredIds.map((v: unknown) => String(v || '').trim()).filter(Boolean)
+      : [];
     if (memberIds.length === 0) {
       return NextResponse.json({ success: false, error: 'memberIds is required' }, { status: 400 });
     }
@@ -73,6 +76,7 @@ export async function POST(req: NextRequest) {
       'RCFE_Street',
       'RCFE_City',
       'RCFE_Zip',
+      'RCFE_County',
       'RCFE_Address',
     ] as const;
 
@@ -121,12 +125,39 @@ export async function POST(req: NextRequest) {
     );
 
     const failed = results.filter((r) => !r.ok);
+    const countyUpdateValue = String(updates.RCFE_County || '').trim();
+    const uniqueRcfeRegisteredIds = Array.from(new Set(rcfeRegisteredIds));
+    let rcfeTableCountyUpdate = { attempted: 0, updated: 0, failed: 0 };
+    if (countyUpdateValue && uniqueRcfeRegisteredIds.length > 0) {
+      rcfeTableCountyUpdate.attempted = uniqueRcfeRegisteredIds.length;
+      for (const rcfeRegisteredId of uniqueRcfeRegisteredIds) {
+        const escapedRcfeRegisteredId = rcfeRegisteredId.replace(/'/g, "''");
+        const whereClause = `RCFE_Registered_ID='${escapedRcfeRegisteredId}'`;
+        const rcfeApiUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_New_RCFE_Registration/records?q.where=${encodeURIComponent(whereClause)}`;
+        const rcfeRes = await fetch(rcfeApiUrl, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ RCFE_County: countyUpdateValue }),
+        });
+        if (rcfeRes.ok) {
+          rcfeTableCountyUpdate.updated += 1;
+        } else {
+          rcfeTableCountyUpdate.failed += 1;
+        }
+      }
+    }
+
     await adminDb.collection('system_note_log').add({
       type: 'rcfe_directory_update',
       actorUid: authz.uid,
       actorEmail: authz.email,
       memberIds,
+      rcfeRegisteredIds: uniqueRcfeRegisteredIds,
       updates,
+      rcfeTableCountyUpdate,
       failedCount: failed.length,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -138,6 +169,7 @@ export async function POST(req: NextRequest) {
           partial: true,
           error: `Updated ${results.length - failed.length}/${results.length} records; some updates failed.`,
           updatedCount: results.length - failed.length,
+          rcfeTableCountyUpdate,
           failed,
         },
         { status: 207 }
@@ -148,6 +180,7 @@ export async function POST(req: NextRequest) {
       success: true,
       updatedCount: results.length,
       updates,
+      rcfeTableCountyUpdate,
     });
   } catch (error: any) {
     console.error('Error updating RCFE directory fields:', error);
