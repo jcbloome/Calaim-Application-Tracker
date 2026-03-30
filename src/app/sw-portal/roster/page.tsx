@@ -523,6 +523,14 @@ export default function SWRosterPage() {
     return needsQuestionnaire[0];
   }, [needsQuestionnaire]);
 
+  const totals = useMemo(() => {
+    const facilityCount = facilities.length;
+    const memberCount = facilities.reduce((sum, f) => sum + (Array.isArray(f.members) ? f.members.length : 0), 0);
+    return { facilityCount, memberCount };
+  }, [facilities]);
+
+  const statusIconsReady = monthStatusesLoaded && monthStatusesMonth === statusMonth;
+
   const monthlyQueueStats = useMemo(() => {
     if (!statusIconsReady) {
       return { totalAssigned: totals.memberCount, notStarted: 0, inProgress: 0, completed: 0 };
@@ -619,8 +627,6 @@ export default function SWRosterPage() {
     return pinnedRcfeIds.map((id) => byId.get(String(id || '').trim())).filter(Boolean) as RosterFacility[];
   }, [facilities, pinnedRcfeIds]);
 
-  const statusIconsReady = monthStatusesLoaded && monthStatusesMonth === statusMonth;
-
   const filteredFacilities = useMemo(() => {
     const q = query.trim().toLowerCase();
     const searched = !q
@@ -671,12 +677,6 @@ export default function SWRosterPage() {
   const displayFacilities = useMemo(() => sortFacilities(filteredFacilities), [filteredFacilities, sortFacilities]);
 
   const printFacilities = useMemo(() => sortFacilities(filteredFacilities), [filteredFacilities, sortFacilities]);
-
-  const totals = useMemo(() => {
-    const facilityCount = facilities.length;
-    const memberCount = facilities.reduce((sum, f) => sum + (Array.isArray(f.members) ? f.members.length : 0), 0);
-    return { facilityCount, memberCount };
-  }, [facilities]);
 
   const statusIconsLastRefreshLabel = useMemo(() => {
     if (!statusIconsLastRefreshAt) return '';
