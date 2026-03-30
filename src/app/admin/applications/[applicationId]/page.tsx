@@ -3735,7 +3735,11 @@ function ApplicationDetailPageContent() {
 
       let found = false;
       const updatedForms = (application.forms || []).map((form: any) => {
-        if (String(form?.name || '').trim() !== formName) return form;
+        const currentName = String(form?.name || '').trim();
+        const isWaiversAlias =
+          (currentName === 'Waivers' && String(formName || '').trim() === 'Waivers & Authorizations') ||
+          (currentName === 'Waivers & Authorizations' && String(formName || '').trim() === 'Waivers');
+        if (currentName !== formName && !isWaiversAlias) return form;
         found = true;
         const isWaiversForm = String(formName || '').trim() === 'Waivers & Authorizations';
         const existingHistory = Array.isArray((form as any)?.revisionHistory)
@@ -3810,6 +3814,10 @@ function ApplicationDetailPageContent() {
       };
 
       if (formName === 'Waivers & Authorizations') {
+        patch.choice = null;
+        patch.ackHipaa = false;
+        patch.ackLiability = false;
+        patch.ackFoc = false;
         patch.ackRoomAndBoard = false;
         patch.ackSocDetermination = false;
         patch.monthlyIncome = '';

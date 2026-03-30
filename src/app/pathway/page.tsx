@@ -104,15 +104,17 @@ function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
 
 type RequirementReviewState = 'pending' | 'needs_revision' | 'under_review' | 'reviewed';
 
+function hasOpenRevisionRequest(formInfo?: FormStatusType): boolean {
+  if (!formInfo) return false;
+  return Boolean((formInfo as any).revisionRequestedAt) || Boolean((formInfo as any).revisionRequestedReason);
+}
+
 function getRequirementReviewState(formInfo?: FormStatusType): RequirementReviewState {
   if (!formInfo) return 'pending';
+  if (hasOpenRevisionRequest(formInfo)) return 'needs_revision';
   if (formInfo.status === 'Completed') {
     if (Boolean((formInfo as any).acknowledged)) return 'reviewed';
     return 'under_review';
-  }
-
-  if (Boolean((formInfo as any).revisionRequestedAt) || Boolean((formInfo as any).revisionRequestedReason)) {
-    return 'needs_revision';
   }
   return 'pending';
 }
@@ -321,12 +323,23 @@ function PathwayPageContent() {
           // Referrer uploads should *reset* acknowledgement so staff sees it as new.
           const shouldResetAcknowledge =
             !isInternalStaffUpload && isCompleted && hasFile && !isSummary;
+          const shouldClearRevision = isCompleted;
 
           const next = {
             ...(existingForm || { name, status: 'Pending' }),
             ...update,
             ...(shouldAutoAcknowledge ? { acknowledged: true } : {}),
-            ...(shouldResetAcknowledge ? { acknowledged: false } : {})
+            ...(shouldResetAcknowledge ? { acknowledged: false } : {}),
+            ...(shouldClearRevision
+              ? {
+                  revisionRequestedReason: null,
+                  revisionRequestedAt: null,
+                  revisionRequestedBy: null,
+                  revisionRequestedByUid: null,
+                  revisionEmailTo: null,
+                  revisionEmailSentAt: null,
+                }
+              : {})
           } as any;
 
           existingForms.set(name, next);
@@ -788,7 +801,7 @@ function PathwayPageContent() {
   const formStatusMap = new Map(getSafeForms(application.forms).map(f => [f.name, f]));
   const completedCount = pathwayRequirements.reduce((acc, req) => {
     const form = formStatusMap.get(req.title);
-    if (form?.status === 'Completed') return acc + 1;
+    if (form?.status === 'Completed' && !hasOpenRevisionRequest(form)) return acc + 1;
     return acc;
   }, 0);
   
@@ -797,7 +810,7 @@ function PathwayPageContent() {
   const allRequiredFormsComplete = completedCount === totalCount;
   const missingRequiredRequirements = orderedPathwayRequirements.filter((req) => {
     const formInfo = formStatusMap.get(req.title);
-    return formInfo?.status !== 'Completed';
+    return formInfo?.status !== 'Completed' || hasOpenRevisionRequest(formInfo);
   });
   const rejectedRequirements = orderedPathwayRequirements
     .map((req) => {
@@ -837,7 +850,7 @@ function PathwayPageContent() {
 
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
-    const isCompleted = formInfo?.status === 'Completed';
+    const isCompleted = formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo);
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
     
     if (isReadOnly) {
@@ -1191,7 +1204,7 @@ function PathwayPageContent() {
                     <div className="space-y-2 rounded-md border p-3">
                         {orderedPathwayRequirements.map((req) => {
                             const formInfo = formStatusMap.get(req.title);
-                            const isCompleted = formInfo?.status === 'Completed';
+                            const isCompleted = formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo);
                             const reviewState = getRequirementReviewState(formInfo);
                             return (
                                 <div key={req.id} className="flex items-center gap-2 text-sm">
@@ -1249,7 +1262,7 @@ function PathwayPageContent() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {orderedPathwayRequirements.map((req) => {
                     const formInfo = formStatusMap.get(req.title);
-                    const status = formInfo?.status || 'Pending';
+                    const status = (formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo)) ? 'Completed' : 'Pending';
                     const reviewState = getRequirementReviewState(formInfo);
                     
                     return (

@@ -211,6 +211,17 @@ function WaiversFormComponent() {
             monthlyIncome: formattedMonthlyIncome,
             incomeSource: incomeSource,
             dateCompleted: Timestamp.now(),
+            // Clear prior reject flags on resubmission.
+            revisionRequestedReason: null as any,
+            revisionRequestedAt: null as any,
+            revisionRequestedBy: null as any,
+            revisionRequestedByUid: null as any,
+            revisionEmailTo: null as any,
+            revisionEmailSentAt: null as any,
+            acknowledged: false,
+            acknowledgedBy: null as any,
+            acknowledgedByUid: null as any,
+            acknowledgedDate: null as any,
         };
 
         let updatedForms: FormStatus[];
