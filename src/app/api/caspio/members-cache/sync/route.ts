@@ -853,12 +853,25 @@ export async function POST(req: NextRequest) {
     }
 
     const nextSyncAt = maxModified ? maxModified.toISOString() : now.toISOString();
+    const runAtIso = now.toISOString();
+    const runTrigger = cronAuthorized ? 'auto' : 'manual';
     await settingsRef.set(
       {
         lastSyncAt: nextSyncAt,
-        lastRunAt: now.toISOString(),
+        lastRunAt: runAtIso,
         lastMode: effectiveMode,
         lastRunByUid: uid,
+        lastRunTrigger: runTrigger,
+        ...(cronAuthorized
+          ? {
+              lastAutoSyncAt: runAtIso,
+              lastAutoSyncMode: effectiveMode,
+            }
+          : {
+              lastManualSyncAt: runAtIso,
+              lastManualSyncMode: effectiveMode,
+              lastManualSyncByUid: uid,
+            }),
         lastSelectSignature: selectSignature,
         lastRunSummary: {
           fetched: rawMembers.length,

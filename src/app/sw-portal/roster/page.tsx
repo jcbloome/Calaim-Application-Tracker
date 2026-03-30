@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Printer, Search, Building2, MapPin, Users, Sparkles, RefreshCw, CheckCircle2, Circle, Pin, Clock } from 'lucide-react';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
+import { API_PATHS } from '@/lib/api-paths';
 
 type RosterMember = {
   id: string;
@@ -86,6 +87,15 @@ type DraftVisit = {
   updatedAt?: string;
 };
 
+type MembersCacheStatus = {
+  lastRunAt?: string | null;
+  lastSyncAt?: string | null;
+  lastMode?: string | null;
+  lastRunTrigger?: 'auto' | 'manual' | string | null;
+  lastAutoSyncAt?: string | null;
+  lastManualSyncAt?: string | null;
+};
+
 const LS_PINNED_RCFES = 'swRosterPinnedRcfeIds_v1';
 const LS_RECENT_MEMBERS = 'swRosterRecentMembers_v1';
 
@@ -119,7 +129,7 @@ export default function SWRosterPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [facilities, setFacilities] = useState<RosterFacility[]>([]);
-  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [membersCacheStatus, setMembersCacheStatus] = useState<MembersCacheStatus | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
   const [monthRows, setMonthRows] = useState<MonthExportRow[]>([]);
@@ -176,6 +186,9 @@ export default function SWRosterPage() {
 
       const nextFacilities = Array.isArray(data?.rcfeList) ? (data.rcfeList as RosterFacility[]) : [];
       setFacilities(nextFacilities);
+      if (data?.cacheStatus) {
+        setMembersCacheStatus((prev) => ({ ...(prev || {}), ...(data.cacheStatus as MembersCacheStatus) }));
+      }
       setNewAssignmentsSinceLastMonthCount(Number(data?.newAssignmentsSinceLastMonthCount || 0));
       setNoAssignmentsSinceLastMonth(Boolean(data?.noAssignmentsSinceLastMonth));
       setHasLoadedOnce(true);
@@ -321,14 +334,15 @@ export default function SWRosterPage() {
 
     const loadStatus = async () => {
       try {
-        const res = await fetch('/api/caspio/members-cache/status');
+        const res = await fetch(API_PATHS.caspioMembersCacheStatus, { cache: 'no-store' });
         const data = await res.json().catch(() => ({} as any));
-        const ts =
-          data?.settings?.lastSuccessAt ||
-          data?.settings?.lastRunAt ||
-          data?.settings?.lastSyncAt ||
-          null;
-        if (!cancelled) setLastSync(ts ? String(ts) : null);
+        const settings = (data?.settings || {}) as MembersCacheStatus & { lastSuccessAt?: string | null };
+        if (!cancelled) {
+          setMembersCacheStatus({
+            ...settings,
+            lastRunAt: settings?.lastRunAt || settings?.lastSuccessAt || settings?.lastSyncAt || null,
+          });
+        }
       } catch {
         // ignore
       }
@@ -730,6 +744,18 @@ export default function SWRosterPage() {
     }
   }, [draftsLastRefreshAt]);
 
+  const formatDateTime = useCallback((value?: string | null) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    try {
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return raw;
+      return d.toLocaleString();
+    } catch {
+      return raw;
+    }
+  }, []);
+
   // statusIconsReady is declared above filteredFacilities (used there).
 
   const draftsByMemberId = useMemo(() => {
@@ -807,6 +833,15 @@ export default function SWRosterPage() {
                 ? `Status refresh: ${statusIconsLastRefreshLabel}${statusIconsLastRefreshOk === false ? ' (failed)' : ''}`
                 : 'Status refresh pending'}
             </span>
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            You are viewing the admin-synced members cache. Last auto sync:{' '}
+            {formatDateTime(membersCacheStatus?.lastAutoSyncAt) || 'not recorded'}
+            {' • '}Last manual sync:{' '}
+            {formatDateTime(membersCacheStatus?.lastManualSyncAt) || 'not recorded'}
+            {' • '}Latest sync run:{' '}
+            {formatDateTime(membersCacheStatus?.lastRunAt || membersCacheStatus?.lastSyncAt) || 'not recorded'}
+            {membersCacheStatus?.lastRunTrigger ? ` (${membersCacheStatus.lastRunTrigger})` : ''}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline" className="gap-1">Q questionnaire</Badge>
@@ -1243,7 +1278,11 @@ export default function SWRosterPage() {
         <div className="hidden print:block space-y-4">
           <div className="text-center">
             <div className="text-xl font-bold">Monthly Roster</div>
-            {lastSync ? <div className="text-xs text-muted-foreground">Cache last updated: {lastSync}</div> : null}
+            {membersCacheStatus?.lastRunAt || membersCacheStatus?.lastSyncAt ? (
+              <div className="text-xs text-muted-foreground">
+                Cache last updated: {formatDateTime(membersCacheStatus?.lastRunAt || membersCacheStatus?.lastSyncAt)}
+              </div>
+            ) : null}
           </div>
           {printFacilities.map((f) => (
             <div key={`print-${f.id}`} className="break-inside-avoid">

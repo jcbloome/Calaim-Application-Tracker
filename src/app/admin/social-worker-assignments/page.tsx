@@ -82,6 +82,15 @@ interface SocialWorkerStats {
   monthlyVisitEligibleCount: number;
 }
 
+interface MembersCacheStatus {
+  lastRunAt?: string | null;
+  lastSyncAt?: string | null;
+  lastMode?: string | null;
+  lastRunTrigger?: 'auto' | 'manual' | string | null;
+  lastAutoSyncAt?: string | null;
+  lastManualSyncAt?: string | null;
+}
+
 type GeoLatLng = { lat: number; lng: number; formattedAddress: string; cached: boolean };
 
 type GeoAssignedRcfe = {
@@ -324,7 +333,9 @@ export default function SocialWorkerAssignmentsPage() {
   const auth = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [kaiserAuthorizedMembers, setKaiserAuthorizedMembers] = useState<Member[]>([]);
+  const [allSocialWorkerNames, setAllSocialWorkerNames] = useState<string[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [membersCacheStatus, setMembersCacheStatus] = useState<MembersCacheStatus | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSocialWorker, setSelectedSocialWorker] = useState('all');
   const [selectedMCO, setSelectedMCO] = useState('all');
@@ -839,6 +850,17 @@ export default function SocialWorkerAssignmentsPage() {
     });
   }, [editedRcfeRows, saveRcfeRowToCaspio, toast]);
 
+  const loadMembersCacheStatus = useCallback(async () => {
+    try {
+      const res = await fetch(API_PATHS.caspioMembersCacheStatus, { cache: 'no-store' });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) return;
+      setMembersCacheStatus((data?.settings || {}) as MembersCacheStatus);
+    } catch {
+      // best-effort only
+    }
+  }, []);
+
   // Fetch and scope members for the SW tracker (Health Net + Authorized)
   const fetchAllMembers = async () => {
     setIsLoadingMembers(true);
@@ -885,6 +907,24 @@ export default function SocialWorkerAssignmentsPage() {
       ));
       setMembers(healthNetAuthorizedMembers);
       setKaiserAuthorizedMembers(kaiserAuthorized);
+
+      // Keep the SW list stable even when an SW has zero assigned members.
+      try {
+        const swRes = await fetch(API_PATHS.caspioStaff, { cache: 'no-store' });
+        const swData = await swRes.json().catch(() => ({} as any));
+        const swNames = Array.isArray(swData?.staff)
+          ? swData.staff
+              .map((sw: any) => String(sw?.name || '').trim())
+              .filter((name: string) => {
+                const lower = name.toLowerCase();
+                return Boolean(name) && lower !== 'unassigned' && lower !== 'unknown';
+              })
+          : [];
+        setAllSocialWorkerNames(Array.from(new Set(swNames)));
+      } catch {
+        // Best-effort only; stats still derive from member assignments.
+      }
+      await loadMembersCacheStatus();
       
       toast({
         title: "Data Loaded Successfully",
@@ -901,6 +941,11 @@ export default function SocialWorkerAssignmentsPage() {
       setIsLoadingMembers(false);
     }
   };
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void loadMembersCacheStatus();
+  }, [isAdmin, loadMembersCacheStatus]);
 
   const runGeoSuggest = useCallback(async () => {
     setGeoLoading(true);
@@ -1092,13 +1137,29 @@ export default function SocialWorkerAssignmentsPage() {
       stat.mcoBreakdown[mco] = (stat.mcoBreakdown[mco] || 0) + 1;
     });
 
+    // Ensure SW cards remain visible even with zero assigned members.
+    allSocialWorkerNames.forEach((name) => {
+      const trimmed = String(name || '').trim();
+      if (!trimmed) return;
+      if (trimmed.toLowerCase() === 'unassigned') return;
+      ensureStat(trimmed);
+    });
+
     return Object.values(stats).sort((a, b) => {
-      // Sort: Unassigned last, then by member count descending
+      // Keep "Unassigned" at the end, otherwise alphabetical A-Z.
       if (a.name === 'Unassigned') return 1;
       if (b.name === 'Unassigned') return -1;
-      return (b.healthNetAuthorizedCount + b.kaiserAuthorizedCount) - (a.healthNetAuthorizedCount + a.kaiserAuthorizedCount);
+      return String(a.name || '').localeCompare(String(b.name || ''));
     });
-  }, [members, kaiserAuthorizedMembers]);
+  }, [members, kaiserAuthorizedMembers, allSocialWorkerNames]);
+
+  const formatDateTime = (value?: string | null) => {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleString();
+  };
 
   const totalSocialWorkersCount = useMemo(
     () => socialWorkerStats.filter((sw) => sw.name !== 'Unassigned').length,
@@ -1284,6 +1345,15 @@ export default function SocialWorkerAssignmentsPage() {
           <p className="text-muted-foreground">
             Health Net authorized tracker sync | {members.length} total authorized Health Net members
           </p>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Members cache auto-sync runs daily. Last auto sync:{' '}
+            {formatDateTime(membersCacheStatus?.lastAutoSyncAt) || 'not recorded'}
+            {' • '}Last manual sync:{' '}
+            {formatDateTime(membersCacheStatus?.lastManualSyncAt) || 'not recorded'}
+            {' • '}Latest run:{' '}
+            {formatDateTime(membersCacheStatus?.lastRunAt || membersCacheStatus?.lastSyncAt) || 'not recorded'}
+            {membersCacheStatus?.lastRunTrigger ? ` (${membersCacheStatus.lastRunTrigger})` : ''}
+          </div>
         </div>
         <Button onClick={fetchAllMembers} disabled={isLoadingMembers}>
           <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingMembers ? 'animate-spin' : ''}`} />
