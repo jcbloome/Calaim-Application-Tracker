@@ -29,11 +29,28 @@ const getCountyCoordinates = (county: string) => {
   return countyCoords[county] || { lat: 36.7783, lng: -119.4179 }; // Default to CA center
 };
 
+const isCaliforniaCoordinate = (lat: number, lng: number) =>
+  Number.isFinite(lat) &&
+  Number.isFinite(lng) &&
+  lat >= 32 &&
+  lat <= 43 &&
+  lng >= -125 &&
+  lng <= -114;
+
+const deterministicOffset = (seed: string, spread = 0.08) => {
+  let hash = 0;
+  const s = String(seed || '');
+  for (let i = 0; i < s.length; i += 1) {
+    hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  }
+  const norm = ((hash % 1000) + 1000) % 1000; // 0..999
+  return ((norm / 999) - 0.5) * spread;
+};
+
 interface SimpleMapTestProps {
   shouldLoadMap?: boolean;
   resourceCounts?: {
     socialWorkers?: number;
-    registeredNurses?: number;
     rcfeFacilities?: number;
     authorizedMembers?: number;
   };
@@ -49,7 +66,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
   
   // Layer visibility states
   const [showSocialWorkers, setShowSocialWorkers] = useState(true);
-  const [showRNs, setShowRNs] = useState(true);
   const [showRCFEs, setShowRCFEs] = useState(true);
   const [showMembers, setShowMembers] = useState(true);
 
@@ -160,10 +176,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
   }, [showSocialWorkers, markers]);
 
   React.useEffect(() => {
-    toggleLayer('RN', showRNs);
-  }, [showRNs, markers]);
-
-  React.useEffect(() => {
     toggleLayer('RCFE', showRCFEs);
   }, [showRCFEs, markers]);
 
@@ -202,6 +214,32 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
     console.log('🎯 Adding CalAIM overlays...');
 
     try {
+      const geocoder = new window.google.maps.Geocoder();
+      const geocodeCache = new Map<string, { lat: number; lng: number }>();
+      let geocodeAttempts = 0;
+      const maxGeocodeAttempts = 120;
+      const geocodeAddress = async (address: string) => {
+        const key = String(address || '').trim();
+        if (!key) return null;
+        if (geocodeCache.has(key)) return geocodeCache.get(key)!;
+        if (geocodeAttempts >= maxGeocodeAttempts) return null;
+        geocodeAttempts += 1;
+        try {
+          const result = await geocoder.geocode({ address: key });
+          const first = result?.results?.[0];
+          const loc = first?.geometry?.location;
+          if (!loc) return null;
+          const lat = Number(loc.lat());
+          const lng = Number(loc.lng());
+          if (!isCaliforniaCoordinate(lat, lng)) return null;
+          const coord = { lat, lng };
+          geocodeCache.set(key, coord);
+          return coord;
+        } catch {
+          return null;
+        }
+      };
+
       // Fetch real RCFE, staff, and member data from APIs
       const [staffResult, rcfeResult, memberResult] = await Promise.all([
         fetchJsonSafe(API_PATHS.staffLocations),
@@ -224,7 +262,7 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
 
       let calAIMData: any[] = [];
 
-      // Add staff data (Social Workers and RNs)
+      // Add staff data (Social Workers)
       if (staffResult.success && staffResult.data?.staffByCounty) {
         Object.entries(staffResult.data.staffByCounty).forEach(([county, data]: [string, any]) => {
           // Add Social Workers
@@ -232,24 +270,11 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
             calAIMData.push({
               type: 'SW',
               name: sw.name || `${sw.firstName || ''} ${sw.lastName || ''}`.trim() || 'Social Worker',
-              lat: getCountyCoordinates(county).lat + (Math.random() - 0.5) * 0.1,
-              lng: getCountyCoordinates(county).lng + (Math.random() - 0.5) * 0.1,
+              lat: getCountyCoordinates(county).lat + deterministicOffset(`${sw.name || ''}-${county}-sw-lat`),
+              lng: getCountyCoordinates(county).lng + deterministicOffset(`${sw.name || ''}-${county}-sw-lng`),
               county: county,
               email: sw.email,
               phone: sw.phone
-            });
-          });
-
-          // Add Registered Nurses
-          data.rns?.forEach((rn: any, index: number) => {
-            calAIMData.push({
-              type: 'RN',
-              name: rn.name || `${rn.firstName || ''} ${rn.lastName || ''}`.trim() || 'Registered Nurse',
-              lat: getCountyCoordinates(county).lat + (Math.random() - 0.5) * 0.1,
-              lng: getCountyCoordinates(county).lng + (Math.random() - 0.5) * 0.1,
-              county: county,
-              email: rn.email,
-              phone: rn.phone
             });
           });
         });
@@ -257,13 +282,32 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
 
       // Add RCFE data with member counts using Registered ID matching
       if (rcfeResult.success && rcfeResult.data?.rcfesByCounty) {
-        Object.entries(rcfeResult.data.rcfesByCounty).forEach(([county, data]: [string, any]) => {
-          data.facilities?.forEach((rcfe: any) => {
+        for (const [county, data] of Object.entries(rcfeResult.data.rcfesByCounty) as Array<[string, any]>) {
+          for (const rcfe of (data.facilities || [])) {
             // Find members at this RCFE using the registered ID
             const rcfeRegisteredId = rcfe.registeredId || rcfe.id || rcfe.licenseNumber;
             const membersAtRCFE = memberResult.success && memberResult.data?.membersByRCFE?.[rcfeRegisteredId];
             const memberCount = membersAtRCFE?.totalMembers || 0;
             const membersList = membersAtRCFE?.members || [];
+
+            const rcfeLat =
+              Number(rcfe.latitude ?? rcfe.lat ?? rcfe.RCFE_Latitude ?? rcfe.Latitude);
+            const rcfeLng =
+              Number(rcfe.longitude ?? rcfe.lng ?? rcfe.RCFE_Longitude ?? rcfe.Longitude);
+
+            let lat = rcfeLat;
+            let lng = rcfeLng;
+            if (!isCaliforniaCoordinate(lat, lng)) {
+              const geocodeQuery = [rcfe.address, rcfe.city, county, 'CA'].filter(Boolean).join(', ');
+              const geo = await geocodeAddress(geocodeQuery);
+              if (geo) {
+                lat = geo.lat;
+                lng = geo.lng;
+              } else {
+                lat = getCountyCoordinates(county).lat + deterministicOffset(`${rcfe.name || rcfeRegisteredId}-lat`);
+                lng = getCountyCoordinates(county).lng + deterministicOffset(`${rcfe.name || rcfeRegisteredId}-lng`);
+              }
+            }
 
             console.log(`🏠 RCFE: ${rcfe.name} (ID: ${rcfeRegisteredId}) - ${memberCount} members`);
             if (memberCount > 0) {
@@ -275,8 +319,8 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
             calAIMData.push({
               type: 'RCFE',
               name: rcfe.name,
-              lat: getCountyCoordinates(county).lat + (Math.random() - 0.5) * 0.1,
-              lng: getCountyCoordinates(county).lng + (Math.random() - 0.5) * 0.1,
+              lat,
+              lng,
               county: county,
               address: rcfe.address,
               phone: rcfe.phone,
@@ -287,8 +331,8 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
               memberCount: memberCount,
               membersList: membersList
             });
-          });
-        });
+          }
+        }
       }
 
       // Add CalAIM Member data
@@ -314,7 +358,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
       console.log(`📋 Total CalAIM data points: ${calAIMData.length}`);
       console.log('📊 Breakdown:', {
         socialWorkers: calAIMData.filter(d => d.type === 'SW').length,
-        registeredNurses: calAIMData.filter(d => d.type === 'RN').length,
         rcfes: calAIMData.filter(d => d.type === 'RCFE').length,
         memberCounties: calAIMData.filter(d => d.type === 'MEMBERS').length,
         totalMembers: calAIMData.filter(d => d.type === 'MEMBERS').reduce((sum, d) => sum + (d.totalMembers || 0), 0)
@@ -325,7 +368,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
         console.log('⚠️ No real data found, using sample data');
         calAIMData = [
           { type: 'SW', name: 'Sample Social Worker', lat: 34.0522, lng: -118.2437, county: 'Los Angeles' },
-          { type: 'RN', name: 'Sample Registered Nurse', lat: 34.0722, lng: -118.2637, county: 'Los Angeles' },
           { type: 'RCFE', name: 'Sample RCFE Facility', lat: 34.0422, lng: -118.2537, county: 'Los Angeles', beds: 12 }
         ];
       }
@@ -348,25 +390,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
             title = `Social Worker: ${item.name}`;
             content = `<div style="padding:8px;">
             <h3>👩‍💼 Social Worker</h3>
-            <p><strong>${item.name}</strong></p>
-            <p>📍 ${item.county} County</p>
-            ${item.email ? `<p>📧 ${item.email}</p>` : ''}
-            ${item.phone ? `<p>📞 ${item.phone}</p>` : ''}
-          </div>`;
-            break;
-            
-          case 'RN':
-            icon = {
-              path: window.google.maps.SymbolPath.CIRCLE,
-              fillColor: '#3b82f6', // Blue for Registered Nurses
-              fillOpacity: 1,
-              strokeColor: '#ffffff',
-              strokeWeight: 2,
-              scale: 8
-            };
-            title = `Registered Nurse: ${item.name}`;
-            content = `<div style="padding:8px;">
-            <h3>👩‍⚕️ Registered Nurse</h3>
             <p><strong>${item.name}</strong></p>
             <p>📍 ${item.county} County</p>
             ${item.email ? `<p>📧 ${item.email}</p>` : ''}
@@ -474,7 +497,7 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
       });
     });
 
-    // Store markers for layer controls (SW/RN/RCFE/MEMBERS).
+    // Store markers for layer controls (SW/RCFE/MEMBERS).
     setMarkers(createdMarkers);
 
     console.log(`✅ Added ${calAIMData.length} CalAIM markers`);
@@ -485,7 +508,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
       // Fall back to sample data
       const sampleData = [
         { type: 'SW', name: 'Sample Social Worker', lat: 34.0522, lng: -118.2437, county: 'Los Angeles' },
-        { type: 'RN', name: 'Sample Registered Nurse', lat: 34.0722, lng: -118.2637, county: 'Los Angeles' },
         { type: 'RCFE', name: 'Sample RCFE Facility', lat: 34.0422, lng: -118.2537, county: 'Los Angeles', beds: 12 }
       ];
 
@@ -507,19 +529,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
             };
             title = `Social Worker: ${item.name}`;
             content = `<div style="padding:8px;"><h3>👩‍💼 Social Worker</h3><p><strong>${item.name}</strong></p><p>📍 ${item.county} County</p></div>`;
-            break;
-            
-          case 'RN':
-            icon = {
-              path: window.google.maps.SymbolPath.CIRCLE,
-              fillColor: '#3b82f6',
-              fillOpacity: 1,
-              strokeColor: '#ffffff',
-              strokeWeight: 2,
-              scale: 8
-            };
-            title = `Registered Nurse: ${item.name}`;
-            content = `<div style="padding:8px;"><h3>👩‍⚕️ Registered Nurse</h3><p><strong>${item.name}</strong></p><p>📍 ${item.county} County</p></div>`;
             break;
             
           case 'RCFE':
@@ -606,7 +615,7 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
   }
 
   return (
-    <div className="w-full h-96 bg-gray-100 rounded-lg relative">
+    <div className="w-full h-full min-h-[360px] sm:min-h-[420px] bg-gray-100 rounded-lg relative">
       {/* Loading overlay */}
       {!mapLoaded && !error && (
         <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-10 rounded-lg">
@@ -621,30 +630,29 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
       <div 
         ref={mapRef} 
         className="w-full h-full rounded-lg bg-white"
-        style={{ minHeight: '384px' }}
       />
       
       
       {/* Custom Zoom Controls */}
       {mapInstance && (
-        <div className="absolute top-4 right-4 flex flex-col gap-1">
+        <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex flex-col gap-1">
           <button
             onClick={handleZoomIn}
-            className="bg-white hover:bg-gray-50 border border-gray-300 rounded-md p-2 shadow-sm transition-colors duration-200 flex items-center justify-center"
+            className="bg-white hover:bg-gray-50 border border-gray-300 rounded-md p-1.5 sm:p-2 shadow-sm transition-colors duration-200 flex items-center justify-center"
             title="Zoom In"
           >
             <Plus className="h-4 w-4 text-gray-700" />
           </button>
           <button
             onClick={handleZoomOut}
-            className="bg-white hover:bg-gray-50 border border-gray-300 rounded-md p-2 shadow-sm transition-colors duration-200 flex items-center justify-center"
+            className="bg-white hover:bg-gray-50 border border-gray-300 rounded-md p-1.5 sm:p-2 shadow-sm transition-colors duration-200 flex items-center justify-center"
             title="Zoom Out"
           >
             <Minus className="h-4 w-4 text-gray-700" />
           </button>
           <button
             onClick={handleResetZoom}
-            className="bg-white hover:bg-gray-50 border border-gray-300 rounded-md p-2 shadow-sm transition-colors duration-200 flex items-center justify-center"
+            className="bg-white hover:bg-gray-50 border border-gray-300 rounded-md p-1.5 sm:p-2 shadow-sm transition-colors duration-200 flex items-center justify-center"
             title="Reset to California View"
           >
             <RotateCcw className="h-4 w-4 text-gray-700" />
@@ -653,7 +661,7 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
       )}
       
       {/* Interactive Legend with Layer Controls */}
-      <div className="absolute bottom-4 left-4 bg-white p-3 rounded-lg shadow-lg border min-w-[250px]">
+      <div className="absolute bottom-2 left-2 right-2 sm:bottom-4 sm:left-4 sm:right-auto bg-white p-2 sm:p-3 rounded-lg shadow-lg border min-w-0 sm:min-w-[250px] max-w-[calc(100%-1rem)] sm:max-w-sm">
         <h4 className="font-semibold text-sm mb-3">Map Layers</h4>
         <div className="space-y-2">
           {/* Social Workers Layer */}
@@ -669,25 +677,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
             >
               {showSocialWorkers ? (
                 <Eye className="h-3 w-3 text-green-600" />
-              ) : (
-                <EyeOff className="h-3 w-3 text-gray-400" />
-              )}
-            </button>
-          </div>
-
-          {/* Registered Nurses Layer */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs">
-              <div className="w-3 h-3 rounded-full bg-blue-500" />
-              <span>Registered Nurses (RN): {resourceCounts?.registeredNurses || 0}</span>
-            </div>
-            <button
-              onClick={() => setShowRNs(!showRNs)}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
-              title={showRNs ? "Hide Registered Nurses" : "Show Registered Nurses"}
-            >
-              {showRNs ? (
-                <Eye className="h-3 w-3 text-blue-600" />
               ) : (
                 <EyeOff className="h-3 w-3 text-gray-400" />
               )}
@@ -738,7 +727,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
             <button
               onClick={() => {
                 setShowSocialWorkers(true);
-                setShowRNs(true);
                 setShowRCFEs(true);
                 setShowMembers(true);
               }}
@@ -749,7 +737,6 @@ export default function SimpleMapTest({ shouldLoadMap = true, resourceCounts }: 
             <button
               onClick={() => {
                 setShowSocialWorkers(false);
-                setShowRNs(false);
                 setShowRCFEs(false);
                 setShowMembers(false);
               }}

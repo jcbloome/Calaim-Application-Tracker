@@ -9,6 +9,8 @@ interface RCFE {
   county: string;
   city?: string;
   address?: string;
+  latitude?: number;
+  longitude?: number;
   phone?: string;
   capacity?: number;
   licensedBeds?: number;
@@ -176,6 +178,13 @@ export async function GET(request: NextRequest) {
       console.log('🔍 Sample RCFE record keys:', Object.keys(rcfeRecords[0] || {}));
     }
 
+    const parseCoordinate = (value: unknown): number | undefined => {
+      if (value == null) return undefined;
+      const n = Number(String(value).trim());
+      if (!Number.isFinite(n)) return undefined;
+      return n;
+    };
+
     // Map RCFE data
     const rcfes: RCFE[] = rcfeRecords.map((record: any) => {
       // Map field names from CalAIM_tbl_New_RCFE_Registration (user-confirmed field names)
@@ -199,6 +208,16 @@ export async function GET(request: NextRequest) {
                            record.facility_license || record.Facility_License || record.RCFE_License || '';
       const contactPerson = record.Contact_Person || record.contact_person || record.administrator || 
                            record.primary_contact || record.Administrator || record.Primary_Contact || '';
+      const latitude =
+        parseCoordinate(record.RCFE_Latitude) ??
+        parseCoordinate(record.RCFE_Lat) ??
+        parseCoordinate(record.Latitude) ??
+        parseCoordinate(record.lat);
+      const longitude =
+        parseCoordinate(record.RCFE_Longitude) ??
+        parseCoordinate(record.RCFE_Lng) ??
+        parseCoordinate(record.Longitude) ??
+        parseCoordinate(record.lng);
 
       return {
         id: record.ID || record.id || record.facility_id || record.RCFE_Registered_ID || Math.random().toString(36),
@@ -207,6 +226,8 @@ export async function GET(request: NextRequest) {
         county,
         city,
         address,
+        latitude,
+        longitude,
         phone,
         capacity: parseInt(capacity) || 0,
         licensedBeds: parseInt(capacity) || 0,

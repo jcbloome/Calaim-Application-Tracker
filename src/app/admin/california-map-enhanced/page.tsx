@@ -17,7 +17,6 @@ import {
   Users, 
   Building2, 
   Navigation, 
-  Stethoscope,
   UserCheck,
   Home,
   Loader2,
@@ -48,7 +47,6 @@ import { API_PATHS } from '@/lib/api-paths';
 interface ResourceCounts {
   rcfes: number;
   socialWorkers: number;
-  registeredNurses: number;
   authorizedMembers: number;
 }
 
@@ -90,7 +88,7 @@ interface RCFEMemberData {
   }[];
 }
 
-type ResourceModalType = 'socialWorkers' | 'rns' | 'rcfes' | 'members';
+type ResourceModalType = 'socialWorkers' | 'rcfes' | 'members';
 
 export default function MapIntelligencePage() {
   const { toast } = useToast();
@@ -100,7 +98,6 @@ export default function MapIntelligencePage() {
   const [resourceCounts, setResourceCounts] = useState<ResourceCounts>({
     rcfes: 0,
     socialWorkers: 0,
-    registeredNurses: 0,
     authorizedMembers: 0
   });
   
@@ -278,7 +275,6 @@ export default function MapIntelligencePage() {
       const counts: ResourceCounts = {
         rcfes: rcfeData.success ? (rcfeData.data?.totalRCFEs || 0) : 0,
         socialWorkers: normalizedAssignedSw.size,
-        registeredNurses: staffData.success ? (staffData.data?.breakdown?.rns || 0) : 0,
         authorizedMembers: memberData.success ? (memberData.data?.totalMembers || 0) : 0,
       };
 
@@ -549,7 +545,7 @@ export default function MapIntelligencePage() {
                 if (counts) {
                   toast({
                     title: 'Data Loaded',
-                    description: `Loaded ${counts.rcfes} RCFEs, ${counts.socialWorkers} social workers, ${counts.registeredNurses} nurses, and ${counts.authorizedMembers} authorized members`,
+                    description: `Loaded ${counts.rcfes} RCFEs, ${counts.socialWorkers} social workers, and ${counts.authorizedMembers} authorized members`,
                     className: 'bg-green-100 text-green-900 border-green-200',
                   });
                 }
@@ -600,7 +596,7 @@ export default function MapIntelligencePage() {
         {/* Interactive Map Tab */}
         <TabsContent value="map" className="space-y-6">
           {/* Resource Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('rcfes')}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">RCFEs</CardTitle>
@@ -620,17 +616,6 @@ export default function MapIntelligencePage() {
               <CardContent>
                 <div className="text-2xl font-bold">{resourceCounts.socialWorkers}</div>
                 <p className="text-xs text-muted-foreground">MSW professionals</p>
-              </CardContent>
-            </Card>
-
-            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleResourceClick('rns')}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Registered Nurses</CardTitle>
-                <Stethoscope className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{resourceCounts.registeredNurses}</div>
-                <p className="text-xs text-muted-foreground">RN professionals</p>
               </CardContent>
             </Card>
 
@@ -655,12 +640,11 @@ export default function MapIntelligencePage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[600px] w-full">
+              <div className="h-[56vh] min-h-[400px] md:h-[62vh] md:min-h-[520px] xl:h-[72vh] xl:min-h-[640px] w-full">
                 <SimpleMapTest 
                   shouldLoadMap={true}
                   resourceCounts={{
                     socialWorkers: resourceCounts.socialWorkers,
-                    registeredNurses: resourceCounts.registeredNurses,
                     rcfeFacilities: resourceCounts.rcfes,
                     authorizedMembers: resourceCounts.authorizedMembers
                   }}
