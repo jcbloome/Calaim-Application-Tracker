@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -456,13 +456,6 @@ export default function MapIntelligencePage() {
       return true;
     });
   }, [visits, visitFilter]);
-
-  useEffect(() => {
-    // Auto-load data so cards/tables populate on first page visit.
-    loadResourceCounts();
-    loadRcfeMemberData({ quiet: true });
-    loadVisitsAndStaff();
-  }, []);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
