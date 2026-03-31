@@ -14,7 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ArrowUpDown, Building2, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ArrowUpDown, Building2, CheckCircle2, Mail, RefreshCw } from 'lucide-react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 interface Member {
@@ -212,6 +213,30 @@ export default function RcfeDataToolsPage() {
   const verifiedAtStorageKey = 'rcfe-member-verified-at';
   const [memberVerifiedBy, setMemberVerifiedBy] = useState<Record<string, string>>({});
   const verifiedByStorageKey = 'rcfe-member-verified-by';
+  const [rcfeVerificationNotes, setRcfeVerificationNotes] = useState<Record<string, string>>({});
+  const rcfeVerificationNotesStorageKey = 'rcfe-verification-notes';
+  const [rcfeEmailListOnlySelections, setRcfeEmailListOnlySelections] = useState<Record<string, boolean>>({});
+  const rcfeEmailListOnlyStorageKey = 'rcfe-email-list-only';
+  const [sendingEmailByRcfe, setSendingEmailByRcfe] = useState<Record<string, boolean>>({});
+  const [emailListSentAtByRcfeKey, setEmailListSentAtByRcfeKey] = useState<Record<string, string>>({});
+  const [isRcfeEmailConfirmOpen, setIsRcfeEmailConfirmOpen] = useState(false);
+  const [pendingRcfeEmail, setPendingRcfeEmail] = useState<{
+    rcfeKey: string;
+    rcfeName: string;
+    adminName: string;
+    adminEmail: string;
+    subject: string;
+    intro: string;
+    customNote: string;
+    members: Array<{
+      id: string;
+      name: string;
+      planType: 'health_net' | 'kaiser' | 'other';
+      status: string;
+      lastVerifiedAt: string;
+      extraDetails: string;
+    }>;
+  } | null>(null);
   const rcfeOverridesStorageKey = 'rcfe-field-overrides';
   const progressDocRef = useMemo(
     () => (firestore ? doc(firestore, 'admin_tool_state', 'rcfe_data_progress') : null),
@@ -258,6 +283,11 @@ export default function RcfeDataToolsPage() {
   const getRcfeAdministratorEmail = (member: Member) => String(member.RCFE_Administrator_Email || member.RCFE_Admin_Email || '').trim();
   const getRcfeAdministratorPhone = (member: Member) => String(member.RCFE_Administrator_Phone || member.RCFE_Admin_Phone || '').trim();
   const getRcfeBeds = (member: Member) => String(member.Number_of_Beds || '').trim();
+  const getMemberPlanType = (member: Member): 'health_net' | 'kaiser' | 'other' => {
+    if (isHealthNetMember(member)) return 'health_net';
+    if (isKaiserMember(member)) return 'kaiser';
+    return 'other';
+  };
 
   const formatDateTimeSafe = (value: unknown) => {
     const raw = String(value || '').trim();
@@ -453,6 +483,40 @@ export default function RcfeDataToolsPage() {
     }
   }, [auth?.currentUser]);
 
+  const loadEmailListSentStatus = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/rcfe-data/send-monthly-verification', {
+        method: 'GET',
+        headers: { authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      });
+      const data = (await res.json().catch(() => ({} as any))) as any;
+      if (!res.ok || !data?.success) return;
+      const sentLog = Array.isArray(data?.sentLog) ? data.sentLog : [];
+      const next: Record<string, string> = {};
+      sentLog.forEach((entry: any) => {
+        const mode = String(entry?.emailMode || '').trim();
+        const ok = Boolean(entry?.success);
+        const isTest = Boolean(entry?.isTest);
+        if (mode !== 'email_list_only' || !ok || isTest) return;
+        const key = String(entry?.rcfeKey || '').trim();
+        const sentAt = String(entry?.sentAt || '').trim();
+        if (!key || !sentAt) return;
+        const currentMs = new Date(String(next[key] || '')).getTime();
+        const incomingMs = new Date(sentAt).getTime();
+        if (!Number.isFinite(incomingMs)) return;
+        if (!Number.isFinite(currentMs) || incomingMs > currentMs) {
+          next[key] = sentAt;
+        }
+      });
+      setEmailListSentAtByRcfeKey(next);
+    } catch {
+      // best effort only
+    }
+  }, [auth?.currentUser]);
+
   const loadMembers = useCallback(async () => {
     setIsLoadingMembers(true);
     let syncErrorMessage = '';
@@ -510,6 +574,11 @@ export default function RcfeDataToolsPage() {
     if (!isAdmin) return;
     void loadRcfePersistentStatus();
   }, [isAdmin, loadRcfePersistentStatus]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void loadEmailListSentStatus();
+  }, [isAdmin, loadEmailListSentStatus]);
 
   const rcfeRows = useMemo<RCFEDirectoryRow[]>(() => {
     const grouped = new Map<string, RCFEDirectoryRow>();
@@ -575,6 +644,16 @@ export default function RcfeDataToolsPage() {
     });
 
     return Array.from(grouped.values());
+  }, [members]);
+
+  const memberById = useMemo(() => {
+    const map: Record<string, Member> = {};
+    members.forEach((member) => {
+      const key = String(member.Client_ID2 || '').trim();
+      if (!key) return;
+      if (!map[key]) map[key] = member;
+    });
+    return map;
   }, [members]);
 
   const getPersistedStatusForRow = (row: RCFEDirectoryRow): RcfePersistentStatus | null => {
@@ -717,6 +796,9 @@ export default function RcfeDataToolsPage() {
         row.RCFE_City_RCFE_Zip.toLowerCase().includes(needle) ||
         row.RCFE_Administrator.toLowerCase().includes(needle) ||
         row.RCFE_Administrator_Email.toLowerCase().includes(needle) ||
+        String(rcfeVerificationNotes[row.key] || '')
+          .toLowerCase()
+          .includes(needle) ||
         row.memberNames.some((name) => String(name || '').toLowerCase().includes(needle)) ||
         row.members.some((m) => {
           const memberId = String(m.id || '').toLowerCase();
@@ -732,7 +814,7 @@ export default function RcfeDataToolsPage() {
       const bv = String((b as any)[sortField] || '').toLowerCase();
       return av.localeCompare(bv) * dir;
     });
-  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesBySignature, rcfeRegistryById, rcfeRegistryByName]);
+  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails, rcfeVerificationNotes, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesBySignature, rcfeRegistryById, rcfeRegistryByName]);
 
   const editedRows = useMemo(
     () => rcfeRows.filter((row) => hasDraftChanges(row)),
@@ -1005,6 +1087,146 @@ export default function RcfeDataToolsPage() {
     setIsStopRequested(true);
   }, [isSavingAll]);
 
+  const openRcfeEmailListPreview = useCallback(
+    (row: RCFEDirectoryRow) => {
+      const key = String(row.key || '').trim();
+      if (!key) return;
+      const adminEmail = String(getDraft(row).RCFE_Administrator_Email || row.RCFE_Administrator_Email || '').trim();
+      if (!adminEmail || !adminEmail.includes('@')) {
+        toast({
+          title: 'Missing admin email',
+          description: `Add a valid admin email for ${row.RCFE_Name} before sending.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+      const note = String(rcfeVerificationNotes[key] || '').trim();
+      if (!rcfeEmailListOnlySelections[key]) {
+        toast({
+          title: 'Select email-list option first',
+          description: 'Check "Email list only" for this RCFE before sending this custom email.',
+        });
+        return;
+      }
+
+      const membersPayload = row.members.map((member) => {
+        const source = memberById[member.id];
+        return {
+          id: String(member.id || '').trim(),
+          name: String(member.name || member.id).trim(),
+          planType: source ? getMemberPlanType(source) : 'other',
+          status: memberPresenceStatus[member.id] || 'unknown',
+          lastVerifiedAt: String(memberVerifiedAt[member.id] || '').trim(),
+          extraDetails: String(memberExtraDetails[member.id] || '').trim(),
+        };
+      });
+      if (!membersPayload.length) {
+        toast({ title: 'No members found', description: `No members found for ${row.RCFE_Name}.`, variant: 'destructive' });
+        return;
+      }
+      setPendingRcfeEmail({
+        rcfeKey: key,
+        rcfeName: row.RCFE_Name,
+        adminName: String(getDraft(row).RCFE_Administrator || row.RCFE_Administrator || '').trim(),
+        adminEmail,
+        subject: `Verification list requested - ${row.RCFE_Name}`,
+        intro: note
+          ? `Per your request, we are sending your current verification list below.\n\nNote from admin team: ${note}`
+          : 'Per your request, we are sending your current verification list below.',
+        customNote: note,
+        members: membersPayload,
+      });
+      setIsRcfeEmailConfirmOpen(true);
+    },
+    [getDraft, memberById, memberExtraDetails, memberPresenceStatus, memberVerifiedAt, rcfeEmailListOnlySelections, rcfeVerificationNotes, toast]
+  );
+
+  const sendPendingRcfeEmail = useCallback(async () => {
+    if (!pendingRcfeEmail) return;
+    const key = String(pendingRcfeEmail.rcfeKey || '').trim();
+    if (!key) return;
+    if (!auth?.currentUser) {
+      toast({ title: 'Sign in required', description: 'Please sign in to send RCFE verification emails.', variant: 'destructive' });
+      return;
+    }
+    setSendingEmailByRcfe((prev) => ({ ...prev, [key]: true }));
+    setIsRcfeEmailConfirmOpen(false);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/rcfe-data/send-monthly-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          subject: pendingRcfeEmail.subject,
+          intro: pendingRcfeEmail.intro,
+          isTest: false,
+          emailMode: 'email_list_only',
+          rows: [
+            {
+              rcfeKey: pendingRcfeEmail.rcfeKey,
+              rcfeName: pendingRcfeEmail.rcfeName,
+              adminName: pendingRcfeEmail.adminName,
+              adminEmail: pendingRcfeEmail.adminEmail,
+              customNote: pendingRcfeEmail.customNote,
+              members: pendingRcfeEmail.members,
+            },
+          ],
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Send failed (HTTP ${res.status})`);
+      }
+      toast({
+        title: 'Email list sent',
+        description: `Sent verification list to ${pendingRcfeEmail.adminEmail} for ${pendingRcfeEmail.rcfeName}.`,
+      });
+      await loadEmailListSentStatus();
+      setPendingRcfeEmail(null);
+    } catch (error: any) {
+      toast({
+        title: 'Failed to send email list',
+        description: String(error?.message || 'Unexpected send error'),
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingEmailByRcfe((prev) => ({ ...prev, [key]: false }));
+    }
+  }, [auth?.currentUser, pendingRcfeEmail, toast, loadEmailListSentStatus]);
+
+  const rcfeEmailPreviewText = useMemo(() => {
+    if (!pendingRcfeEmail) return '';
+    const statusLabel = (value: string) => {
+      if (value === 'there') return 'Confirmed There';
+      if (value === 'not_there') return 'Told Not There';
+      return 'Unverified';
+    };
+    const there = pendingRcfeEmail.members.filter((m) => m.status === 'there');
+    const notThere = pendingRcfeEmail.members.filter((m) => m.status === 'not_there');
+    const unknown = pendingRcfeEmail.members.filter((m) => m.status !== 'there' && m.status !== 'not_there');
+    const renderMembers = (title: string, list: typeof pendingRcfeEmail.members) =>
+      `${title} (${list.length})\n${list.length ? list.map((m) => `- ${m.name} (${m.id}) | ${statusLabel(m.status)}`).join('\n') : '- None listed'}`;
+    return [
+      `To: ${pendingRcfeEmail.adminEmail}`,
+      `Admin: ${pendingRcfeEmail.adminName || 'Unknown'}`,
+      `RCFE: ${pendingRcfeEmail.rcfeName}`,
+      `Subject: ${pendingRcfeEmail.subject}`,
+      '',
+      pendingRcfeEmail.intro,
+      '',
+      renderMembers('Members Verified at RCFE (Confirmed There)', there),
+      '',
+      renderMembers('Residents Not at RCFE (Told Not There)', notThere),
+      '',
+      renderMembers('Members Pending Verification', unknown),
+    ].join('\n');
+  }, [pendingRcfeEmail]);
+
+  
+
   const setMemberPresence = useCallback((memberId: string, status: 'there' | 'not_there', checked: boolean) => {
     const key = String(memberId || '').trim();
     if (!key) return;
@@ -1125,6 +1347,32 @@ export default function RcfeDataToolsPage() {
 
   useEffect(() => {
     try {
+      const raw = window.localStorage.getItem(rcfeVerificationNotesStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      if (parsed && typeof parsed === 'object') {
+        setRcfeVerificationNotes(parsed);
+      }
+    } catch {
+      // ignore storage issues
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(rcfeEmailListOnlyStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, boolean>;
+      if (parsed && typeof parsed === 'object') {
+        setRcfeEmailListOnlySelections(parsed);
+      }
+    } catch {
+      // ignore storage issues
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
       window.localStorage.setItem(confirmedStorageKey, JSON.stringify(memberPresenceStatus));
     } catch {
       // ignore storage issues
@@ -1157,6 +1405,22 @@ export default function RcfeDataToolsPage() {
 
   useEffect(() => {
     try {
+      window.localStorage.setItem(rcfeVerificationNotesStorageKey, JSON.stringify(rcfeVerificationNotes));
+    } catch {
+      // ignore storage issues
+    }
+  }, [rcfeVerificationNotes]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(rcfeEmailListOnlyStorageKey, JSON.stringify(rcfeEmailListOnlySelections));
+    } catch {
+      // ignore storage issues
+    }
+  }, [rcfeEmailListOnlySelections]);
+
+  useEffect(() => {
+    try {
       const raw = window.localStorage.getItem(commentsStorageKey);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Record<string, string>;
@@ -1186,6 +1450,8 @@ export default function RcfeDataToolsPage() {
         const fsVerifiedAt = (data?.memberVerifiedAt || {}) as Record<string, string>;
         const fsVerifiedBy = (data?.memberVerifiedBy || {}) as Record<string, string>;
         const fsOverrides = (data?.rcfeFieldOverrides || {}) as Record<string, RcfeDraftFields>;
+        const fsRcfeNotes = (data?.rcfeVerificationNotes || {}) as Record<string, string>;
+        const fsEmailListOnly = (data?.rcfeEmailListOnlySelections || {}) as Record<string, boolean>;
         if (fsPresence && typeof fsPresence === 'object') {
           setMemberPresenceStatus((prev) => ({ ...prev, ...fsPresence }));
         }
@@ -1200,6 +1466,12 @@ export default function RcfeDataToolsPage() {
         }
         if (fsOverrides && typeof fsOverrides === 'object') {
           setRcfeFieldOverrides((prev) => ({ ...prev, ...fsOverrides }));
+        }
+        if (fsRcfeNotes && typeof fsRcfeNotes === 'object') {
+          setRcfeVerificationNotes((prev) => ({ ...prev, ...fsRcfeNotes }));
+        }
+        if (fsEmailListOnly && typeof fsEmailListOnly === 'object') {
+          setRcfeEmailListOnlySelections((prev) => ({ ...prev, ...fsEmailListOnly }));
         }
       } catch (error) {
         console.warn('Failed to load RCFE progress from Firestore:', error);
@@ -1235,6 +1507,8 @@ export default function RcfeDataToolsPage() {
             memberVerifiedAt,
             memberVerifiedBy,
             rcfeFieldOverrides,
+            rcfeVerificationNotes,
+            rcfeEmailListOnlySelections,
             updatedAt: serverTimestamp(),
             updatedByUid: auth.currentUser?.uid || null,
             updatedByEmail: auth.currentUser?.email || null,
@@ -1249,7 +1523,7 @@ export default function RcfeDataToolsPage() {
     return () => {
       if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
     };
-  }, [progressDocRef, auth?.currentUser, memberPresenceStatus, memberExtraDetails, memberVerifiedAt, memberVerifiedBy, rcfeFieldOverrides]);
+  }, [progressDocRef, auth?.currentUser, memberPresenceStatus, memberExtraDetails, memberVerifiedAt, memberVerifiedBy, rcfeFieldOverrides, rcfeVerificationNotes, rcfeEmailListOnlySelections]);
 
   if (isLoading) {
     return (
@@ -1466,6 +1740,8 @@ export default function RcfeDataToolsPage() {
                           return (Number.isFinite(bMs) ? bMs : 0) - (Number.isFinite(aMs) ? aMs : 0);
                         })[0];
                       const rowVerifiedBy = latestVerifierEntry?.verifiedBy || '';
+                      const rowVerifiedAt = latestVerifierEntry?.verifiedAtRaw || '';
+                      const emailListSentAt = String(emailListSentAtByRcfeKey[row.key] || '').trim();
                       const verifiedCount = row.members.filter(
                         (m) => memberPresenceStatus[m.id] === 'there' || memberPresenceStatus[m.id] === 'not_there'
                       ).length;
@@ -1498,6 +1774,14 @@ export default function RcfeDataToolsPage() {
                                 Verified by: {rowVerifiedBy}
                               </div>
                             ) : null}
+                            <div className="text-[11px] text-muted-foreground mt-1">
+                              Last Verified: {formatDateTimeSafe(rowVerifiedAt) || 'Not yet'}
+                            </div>
+                            <div
+                              className={`text-[11px] ${emailListSentAt ? 'text-green-700 font-medium' : 'text-muted-foreground'}`}
+                            >
+                              Email List Sent: {formatDateTimeSafe(emailListSentAt) || 'Not yet sent'}
+                            </div>
                             <div className="text-xs mt-1">
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -1581,6 +1865,56 @@ export default function RcfeDataToolsPage() {
                                 {persistedBeds ? ` | Historical Beds: ${persistedBeds}` : ''}
                                 {!hasPendingChanges && updatedAt ? ` | Updated: ${formatDateTimeSafe(updatedAt)}` : ''}
                               </div>
+                              <div className="mt-2">
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button type="button" size="sm" variant="outline">
+                                      <Mail className="mr-2 h-3.5 w-3.5" />
+                                      Notes / Email List
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent side="top" align="start" className="w-[360px] p-3">
+                                    <div className="space-y-2">
+                                      <label className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+                                        <Checkbox
+                                          checked={Boolean(rcfeEmailListOnlySelections[row.key])}
+                                          onCheckedChange={(checked) =>
+                                            setRcfeEmailListOnlySelections((prev) => ({ ...prev, [row.key]: Boolean(checked) }))
+                                          }
+                                        />
+                                        <span>Email list only</span>
+                                      </label>
+                                      <Input
+                                        value={String(rcfeVerificationNotes[row.key] || '')}
+                                        onChange={(e) =>
+                                          setRcfeVerificationNotes((prev) => ({
+                                            ...prev,
+                                            [row.key]: e.target.value,
+                                          }))
+                                        }
+                                        placeholder="One-line note (optional)"
+                                        className="h-8 text-xs"
+                                      />
+                                      <div className="flex justify-end">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          disabled={Boolean(sendingEmailByRcfe[row.key])}
+                                          onClick={() => openRcfeEmailListPreview(row)}
+                                        >
+                                          {sendingEmailByRcfe[row.key] ? (
+                                            <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
+                                          ) : (
+                                            <Mail className="mr-2 h-3.5 w-3.5" />
+                                          )}
+                                          {sendingEmailByRcfe[row.key] ? 'Sending...' : 'Send Email List'}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -1645,6 +1979,42 @@ export default function RcfeDataToolsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isRcfeEmailConfirmOpen} onOpenChange={setIsRcfeEmailConfirmOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Confirm RCFE Email List Send</DialogTitle>
+            <DialogDescription>
+              Review the recipient and preview before sending this individual RCFE email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded border p-3 text-sm">
+              <div>
+                <span className="font-medium">RCFE:</span> {pendingRcfeEmail?.rcfeName || '—'}
+              </div>
+              <div>
+                <span className="font-medium">Admin:</span> {pendingRcfeEmail?.adminName || 'Unknown'} | {pendingRcfeEmail?.adminEmail || '—'}
+              </div>
+              <div>
+                <span className="font-medium">Members:</span> {pendingRcfeEmail?.members.length || 0}
+              </div>
+            </div>
+            <div className="rounded border p-3">
+              <div className="text-sm font-medium mb-2">Email preview</div>
+              <pre className="text-xs whitespace-pre-wrap bg-muted rounded p-3 max-h-[320px] overflow-y-auto">
+                {rcfeEmailPreviewText || 'No preview available.'}
+              </pre>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRcfeEmailConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={sendPendingRcfeEmail}>Confirm + Send</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

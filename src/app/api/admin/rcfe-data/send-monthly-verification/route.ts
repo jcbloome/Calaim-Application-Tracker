@@ -22,10 +22,11 @@ type VerificationRow = {
   rcfeName: string;
   adminName?: string;
   adminEmail: string;
+  customNote?: string;
   members: VerificationMember[];
 };
 
-type EmailMode = 'test' | 'bulk' | 'daily_followup';
+type EmailMode = 'test' | 'bulk' | 'daily_followup' | 'email_list_only';
 
 let resendClient: Resend | null = null;
 function getResendClient(): Resend | null {
@@ -277,12 +278,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'subject and intro are required' }, { status: 400 });
     }
 
+    const includeAllPlans = emailMode === 'email_list_only';
     const usableRows = rows
       .map((row) => ({
         rcfeKey: String(row?.rcfeKey || '').trim(),
         rcfeName: String(row?.rcfeName || '').trim(),
         adminName: String(row?.adminName || '').trim(),
         adminEmail: normalizeEmail(row?.adminEmail),
+        customNote: String(row?.customNote || '').trim(),
         members: Array.isArray(row?.members)
           ? row.members.map((m) => ({
               id: String(m?.id || '').trim(),
@@ -296,8 +299,8 @@ export async function POST(req: NextRequest) {
       }))
       .map((row) => ({
         ...row,
-        // Health Net only for current workflow; Kaiser-specific emails will be configured later.
-        members: row.members.filter((member) => member.planType === 'health_net'),
+        // Default workflow is Health Net only; "email_list_only" allows all members.
+        members: includeAllPlans ? row.members : row.members.filter((member) => member.planType === 'health_net'),
       }))
       .filter((row) => row.rcfeName && row.adminEmail && row.adminEmail.includes('@') && row.members.length > 0);
 
@@ -358,13 +361,18 @@ export async function POST(req: NextRequest) {
       const effectiveSubject =
         emailMode === 'daily_followup'
           ? `[Daily Follow-up ${timestamp}] ${subject}`
+          : emailMode === 'email_list_only'
+            ? `[RCFE Email List ${timestamp}] ${subject}`
           : subject;
 
       const html = `
         <div style="font-family:Arial,sans-serif;max-width:760px;margin:0 auto;line-height:1.5;color:#111827;">
           <p>${escapeHtml(intro).replace(/\n/g, '<br/>')}</p>
           <p style="margin-top:4px;color:#6b7280;"><strong>Generated:</strong> ${escapeHtml(timestamp)}</p>
-          <p style="margin-top:4px;color:#6b7280;"><strong>Plan scope:</strong> Health Net members only</p>
+          <p style="margin-top:4px;color:#6b7280;"><strong>Plan scope:</strong> ${
+            includeAllPlans ? 'All members included' : 'Health Net members only'
+          }</p>
+          ${row.customNote ? `<p style="margin-top:4px;color:#374151;"><strong>RCFE note:</strong> ${escapeHtml(row.customNote)}</p>` : ''}
           <p style="margin-top:4px;color:#6b7280;"><strong>Reply to assigned staff:</strong> ${escapeHtml(
             replyToDisplay || 'Assigned Health Net verification staff (not configured yet)'
           )}</p>
@@ -442,7 +450,12 @@ export async function POST(req: NextRequest) {
 
     const failed = results.filter((r) => r.error);
     await adminDb.collection('system_note_log').add({
-      type: emailMode === 'daily_followup' ? 'rcfe_daily_followup_email' : 'rcfe_monthly_verification_email',
+      type:
+        emailMode === 'daily_followup'
+          ? 'rcfe_daily_followup_email'
+          : emailMode === 'email_list_only'
+            ? 'rcfe_email_list_only'
+            : 'rcfe_monthly_verification_email',
       actorUid: authz.uid,
       actorEmail: authz.email,
       subject,

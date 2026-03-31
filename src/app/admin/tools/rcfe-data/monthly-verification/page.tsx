@@ -74,6 +74,13 @@ type EmailSendLogEntry = {
   success?: boolean;
 };
 
+const getEmailModeBadgeLabel = (entry: EmailSendLogEntry) => {
+  if (entry.emailMode === 'daily_followup') return 'Daily Follow-up';
+  if (entry.emailMode === 'email_list_only') return 'Email List Only';
+  if (entry.isTest) return 'Test';
+  return 'Monthly Bulk';
+};
+
 type ReplyToContacts = {
   healthNetEmails: string[];
   healthNetLabels: string[];
@@ -437,16 +444,6 @@ export default function RcfeMonthlyVerificationPage() {
     () => emailRows.filter((row) => row.members.some((member: any) => member.planType === 'kaiser')).length,
     [emailRows]
   );
-  const kaiserDraftRows = useMemo(
-    () =>
-      emailRows
-        .map((row) => ({
-          ...row,
-          members: row.members.filter((member: any) => member.planType === 'kaiser'),
-        }))
-        .filter((row) => row.members.length > 0),
-    [emailRows]
-  );
   const formatPreviewStatus = (status: string) => {
     if (status === 'there') return 'Confirmed There';
     if (status === 'not_there') return 'Told Not There';
@@ -737,7 +734,7 @@ export default function RcfeMonthlyVerificationPage() {
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">{emailRows.length} RCFEs with valid recipient emails</Badge>
             <Badge variant="outline">{healthNetEmailRows.length} Health Net RCFEs ready for email</Badge>
-            <Badge variant="outline">{dailyFollowupRows.length} Health Net RCFEs with "not there" members</Badge>
+            <Badge variant="outline">{dailyFollowupRows.length} Health Net RCFEs with &quot;not there&quot; members</Badge>
             <Badge variant="outline">Previous daily set: {previousDailySetRows.length}</Badge>
             <Badge variant="secondary">Kaiser RCFEs pending separate workflow: {kaiserEligibleRowsCount}</Badge>
             <Select
@@ -842,7 +839,7 @@ export default function RcfeMonthlyVerificationPage() {
               <p className="text-xs text-muted-foreground break-words">{replyToContacts.kaiserLabels.join(', ')}</p>
             ) : (
               <p className="text-xs text-amber-700">
-                Not configured. Go to Staff Management and enable "Member verification notify: Kaiser" for staff.
+                Not configured. Go to Staff Management and enable &quot;Member verification notify: Kaiser&quot; for staff.
               </p>
             )}
           </div>
@@ -965,7 +962,7 @@ export default function RcfeMonthlyVerificationPage() {
                 <div key={entry.id} className="border rounded-md p-3 text-sm">
                   <div className="flex flex-wrap gap-2 items-center">
                     <span className="font-medium">{entry.rcfeName}</span>
-                    <Badge variant="outline">{entry.emailMode === 'daily_followup' ? 'Daily Follow-up' : entry.isTest ? 'Test' : 'Monthly Bulk'}</Badge>
+                    <Badge variant="outline">{getEmailModeBadgeLabel(entry)}</Badge>
                     <Badge variant={entry.success ? 'default' : 'destructive'}>{entry.success ? 'Sent' : 'Failed'}</Badge>
                   </div>
                   <p className="text-muted-foreground">
