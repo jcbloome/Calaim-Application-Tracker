@@ -491,9 +491,7 @@ export default function RcfeMonthlyVerificationPage() {
           items.length
             ? items
                 .map((member) => {
-                  const lastVerified = member.lastVerifiedAt || 'Not recorded';
-                  const notes = member.extraDetails ? ` | Notes: ${member.extraDetails}` : '';
-                  return `- ${member.name} (${member.id}) | ${formatPreviewStatus(member.status)} | Last Verified: ${lastVerified}${notes}`;
+                  return `- ${member.name} (${member.id}) | ${formatPreviewStatus(member.status)}`;
                 })
                 .join('\n')
             : '- None listed'

@@ -325,16 +325,11 @@ export async function POST(req: NextRequest) {
         members
           .map((member) => {
             const status = toStatusLabel(member.status);
-            const lastVerified = member.lastVerifiedAt ? escapeHtml(member.lastVerifiedAt) : 'Not recorded';
-            const details = member.extraDetails
-              ? `<div style="font-size:12px;color:#6b7280;">Notes: ${escapeHtml(member.extraDetails)}</div>`
-              : '';
             return `
               <tr>
                 <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(member.name)}</td>
                 <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(member.id)}</td>
                 <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(status)}</td>
-                <td style="padding:8px;border:1px solid #e5e7eb;">${lastVerified}${details}</td>
               </tr>
             `;
           })
@@ -352,7 +347,6 @@ export async function POST(req: NextRequest) {
                 <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Member Name</th>
                 <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Client ID</th>
                 <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Current Status</th>
-                <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Last Verified / Notes</th>
               </tr>
             </thead>
             <tbody>${buildRowsHtml(members)}</tbody>
@@ -371,8 +365,8 @@ export async function POST(req: NextRequest) {
           <p>${escapeHtml(intro).replace(/\n/g, '<br/>')}</p>
           <p style="margin-top:4px;color:#6b7280;"><strong>Generated:</strong> ${escapeHtml(timestamp)}</p>
           <p style="margin-top:4px;color:#6b7280;"><strong>Plan scope:</strong> Health Net members only</p>
-          <p style="margin-top:4px;color:#6b7280;"><strong>Please respond to:</strong> ${escapeHtml(
-            replyToDisplay || 'Assigned Health Net verification staff'
+          <p style="margin-top:4px;color:#6b7280;"><strong>Reply to assigned staff:</strong> ${escapeHtml(
+            replyToDisplay || 'Assigned Health Net verification staff (not configured yet)'
           )}</p>
           <p><strong>RCFE:</strong> ${escapeHtml(row.rcfeName)}</p>
           <p style="margin-top:6px;"><strong>Please reply to confirm this roster for your RCFE.</strong></p>
