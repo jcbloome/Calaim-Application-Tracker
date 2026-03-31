@@ -105,7 +105,7 @@ export default function IlsChangeLogPage() {
           <Button variant="outline" asChild className="w-full sm:w-auto">
             <Link href="/admin/ils-report-editor">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to ILS Member Update
+              Back to ILS Member Requests
             </Link>
           </Button>
           <Button variant="outline" onClick={() => void loadAllChanges()} disabled={isLoading} className="w-full sm:w-auto">

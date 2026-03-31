@@ -31,6 +31,8 @@ type ReportPayload = {
     tierRequested: QueueRow[];
     rbPendingIlsContract: QueueRow[];
     t2038AuthOnly: QueueRow[];
+    needMoreContactInfoIls: QueueRow[];
+    finalRcfeMissingH2022Dates: QueueRow[];
   };
 };
 
@@ -88,6 +90,16 @@ export default function IlsReportPrintablePage() {
       { label: 'T2038 Requested', rows: payload.queues.t2038Requested, key: 't2038req' as const },
       { label: 'Tier Level Requested', rows: payload.queues.tierRequested, key: 'tier' as const },
       { label: 'R & B Sent Pending ILS Contract', rows: payload.queues.rbPendingIlsContract, key: 'rb' as const },
+      {
+        label: 'Need More Contact Info (ILS)',
+        rows: payload.queues.needMoreContactInfoIls,
+        key: 'needContactInfo' as const,
+      },
+      {
+        label: 'Final at RCFE Missing H2022 Start/End',
+        rows: payload.queues.finalRcfeMissingH2022Dates,
+        key: 'missingH2022' as const,
+      },
     ];
   }, [payload]);
 
@@ -102,7 +114,7 @@ export default function IlsReportPrintablePage() {
           <Button variant="outline" asChild>
             <Link href="/admin/ils-report-editor">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to ILS Member Update
+              Back to ILS Member Requests
             </Link>
           </Button>
         </div>
@@ -116,7 +128,7 @@ export default function IlsReportPrintablePage() {
         <Button variant="outline" asChild>
           <Link href="/admin/ils-report-editor">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to ILS Member Update
+            Back to ILS Member Requests
           </Link>
         </Button>
         <Button variant="outline" onClick={() => window.print()}>
@@ -126,7 +138,7 @@ export default function IlsReportPrintablePage() {
       </div>
 
       <div className="border-b-2 border-blue-600 pb-3 text-center">
-        <h1 className="text-2xl font-semibold">{payload.reportTitle || 'ILS Member Update Report'}</h1>
+        <h1 className="text-2xl font-semibold">{payload.reportTitle || 'ILS Member Requests Report'}</h1>
         <div className="text-sm text-muted-foreground">Report Date: {formatYmd(payload.reportDate)}</div>
         <div className="text-sm text-muted-foreground">Kaiser bottleneck members</div>
       </div>
@@ -156,6 +168,12 @@ export default function IlsReportPrintablePage() {
             </span>
             <span className="rounded-full border px-3 py-1 text-xs">
               <strong>R &amp; B Pending ILS Contract:</strong> {payload.queues.rbPendingIlsContract.length}
+            </span>
+            <span className="rounded-full border px-3 py-1 text-xs">
+              <strong>Need More Contact Info (ILS):</strong> {payload.queues.needMoreContactInfoIls.length}
+            </span>
+            <span className="rounded-full border px-3 py-1 text-xs">
+              <strong>Final at RCFE Missing H2022:</strong> {payload.queues.finalRcfeMissingH2022Dates.length}
             </span>
           </>
         )}

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle, Database, MapPin, CalendarClock } from 'lucide-react';
 import type { KaiserMember } from './shared';
@@ -133,6 +134,14 @@ export function KaiserSummaryCards({
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-0 space-y-2">
+          <div className="flex justify-end">
+            <Link
+              href="/admin/ils-report-editor"
+              className="text-[11px] text-cyan-700 hover:underline"
+            >
+              Open ILS Member Requests page
+            </Link>
+          </div>
           <button
             type="button"
             className="w-full rounded-md border border-cyan-200 bg-cyan-50 p-3 text-left hover:bg-cyan-100"
