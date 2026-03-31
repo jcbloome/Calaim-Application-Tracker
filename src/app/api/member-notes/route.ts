@@ -1345,15 +1345,73 @@ async function logSystemNoteAction(payload: {
 }
 
 export async function PUT(request: NextRequest) {
-  void request;
-  return NextResponse.json(
-    {
-      success: false,
-      error:
-        'Member notes are read-only in the app. Pull notes from Caspio and manage edits there to keep a single source of truth.',
-    },
-    { status: 405 }
-  );
+  try {
+    const body = (await request.json().catch(() => ({}))) as any;
+    const id = String(body?.id || '').trim();
+    const clientId2 = String(body?.clientId2 || '').trim();
+    const statusRaw = String(body?.status || '').trim().toLowerCase();
+    const nextStatus: MemberNote['status'] = statusRaw === 'closed' ? 'Closed' : 'Open';
+    const resolvedAt =
+      nextStatus === 'Closed'
+        ? String(body?.resolvedAt || '').trim() || new Date().toISOString()
+        : null;
+
+    if (!id || !clientId2) {
+      return NextResponse.json({ success: false, error: 'id and clientId2 are required' }, { status: 400 });
+    }
+
+    const actorName = String(body?.actorName || '').trim() || 'Admin';
+    const actorEmail = String(body?.actorEmail || '').trim();
+    const nowIso = new Date().toISOString();
+
+    if (adminDb && Timestamp) {
+      const noteRef = adminDb.collection(MEMBER_NOTES_COLLECTION).doc(id);
+      await noteRef.set(
+        {
+          status: nextStatus,
+          resolvedAt: resolvedAt ? Timestamp.fromDate(new Date(resolvedAt)) : null,
+          updatedAt: Timestamp.fromDate(new Date(nowIso)),
+          updatedByName: actorName,
+          updatedByEmail: actorEmail || null,
+        },
+        { merge: true }
+      );
+    }
+
+    const cachedList = memberNotesCache[clientId2] || [];
+    memberNotesCache[clientId2] = cachedList.map((note) =>
+      note.id === id
+        ? {
+            ...note,
+            status: nextStatus,
+            resolvedAt: resolvedAt || undefined,
+            updatedAt: nowIso,
+          }
+        : note
+    );
+
+    await logSystemNoteAction({
+      action: nextStatus === 'Closed' ? 'Member note closed' : 'Member note reopened',
+      noteId: id,
+      clientId2,
+      status: nextStatus,
+      actorName,
+      actorEmail,
+      source: 'MemberNotesUI',
+    });
+
+    return NextResponse.json({
+      success: true,
+      id,
+      clientId2,
+      status: nextStatus,
+      resolvedAt: resolvedAt || null,
+      updatedAt: nowIso,
+    });
+  } catch (error: any) {
+    console.error('Error updating member note status:', error);
+    return NextResponse.json({ success: false, error: error?.message || 'Failed to update note' }, { status: 500 });
+  }
 }
 
 export async function DELETE(request: NextRequest) {

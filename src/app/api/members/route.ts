@@ -8,6 +8,9 @@ interface Member {
   healthPlan: string;
   status: string;
   rcfeName?: string;
+  socialWorkerAssigned?: string;
+  kaiserUserAssignment?: string;
+  staffAssigned?: string;
   lastNoteDate?: string;
   noteCount: number;
 }
@@ -108,6 +111,9 @@ export async function GET(request: NextRequest) {
       healthPlan: member.CalAIM_MCO || 'Unknown',
       status: member.CalAIM_Status || 'Unknown',
       rcfeName: member.RCFE_Name || undefined,
+      socialWorkerAssigned: member.Social_Worker_Assigned || undefined,
+      kaiserUserAssignment: member.Kaiser_User_Assignment || undefined,
+      staffAssigned: member.Staff_Assigned || undefined,
       lastNoteDate: member.lastNoteDate || undefined,
       noteCount: 0 // Will be populated from note counts if needed
     }));

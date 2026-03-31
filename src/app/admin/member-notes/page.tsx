@@ -1,11 +1,10 @@
 'use client';
 
-import React, { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -20,32 +19,20 @@ import {
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { 
   Search, 
   FileText, 
   Bell, 
-  Plus, 
-  Eye, 
-  Edit, 
   Trash2,
-  Clock,
-  User,
-  AlertCircle,
   CheckCircle,
   Loader2,
   Download,
-  Upload,
-  Filter,
-  Calendar,
   MessageSquare
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
-import { getPriorityRank, isPriorityOrUrgent, normalizePriorityLabel } from '@/lib/notification-utils';
+import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 import { format } from 'date-fns';
 import { useSearchParams } from 'next/navigation';
 
@@ -56,6 +43,9 @@ interface Member {
   healthPlan: string;
   status: string;
   rcfeName?: string;
+  socialWorkerAssigned?: string;
+  kaiserUserAssignment?: string;
+  staffAssigned?: string;
   lastNoteDate?: string;
   noteCount: number;
 }
@@ -80,9 +70,37 @@ interface MemberNote {
   tags?: string[];
 }
 
+interface DailyTaskFollowup {
+  id?: string;
+  title: string;
+  description?: string;
+  memberName?: string;
+  memberClientId?: string;
+  assignedTo?: string;
+  assignedToName?: string;
+  dueDate?: string;
+  status?: string;
+  notes?: string;
+}
+
+interface HealthStatus {
+  overallHealth: 'healthy' | 'degraded' | 'down' | string;
+  uptimePercentage: number;
+  caspioApiHealth: 'healthy' | 'degraded' | 'down' | string;
+  firestoreHealth: 'healthy' | 'degraded' | 'down' | string;
+  failedSyncCount: number;
+  timeSinceLastSuccess: number;
+  recommendations?: string[];
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 function MemberNotesPageContent() {
   const { toast } = useToast();
-  const { user, isAdmin } = useAdmin();
+  const { user } = useAdmin();
   const searchParams = useSearchParams();
   const preselectId = searchParams.get('clientId2') || searchParams.get('memberId') || '';
   const autoSelectRef = useRef(false);
@@ -95,6 +113,7 @@ function MemberNotesPageContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [isNotesLoading, setIsNotesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [memberScope, setMemberScope] = useState<'all' | 'assigned_to_me' | 'kaiser_assignment'>('all');
   
   // Real-time sync status
   const [syncProgress, setSyncProgress] = useState({
@@ -114,28 +133,14 @@ function MemberNotesPageContent() {
 
   // ILS permissions state
   const [hasILSPermission, setHasILSPermission] = useState(false);
-  const [isCheckingILSPermission, setIsCheckingILSPermission] = useState(false);
-
-  // New note dialog state
-  const [isNewNoteDialogOpen, setIsNewNoteDialogOpen] = useState(false);
-  const [newNote, setNewNote] = useState({
-    noteText: '',
-    assignedTo: '',
-    assignedToName: '',
-    priority: 'General' as MemberNote['priority'],
-    status: 'Open' as MemberNote['status'],
-    followUpDate: '',
-    tags: [] as string[]
-  });
-
-  // Staff list for dropdown
-  const [staffList, setStaffList] = useState<Array<{uid: string, name: string, email: string}>>([]);
-  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+  const [, setIsCheckingILSPermission] = useState(false);
 
   // Health monitoring
-  const [healthStatus, setHealthStatus] = useState<any>(null);
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [showHealthDetails, setShowHealthDetails] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MemberNote | null>(null);
+  const [followUpTasks, setFollowUpTasks] = useState<DailyTaskFollowup[]>([]);
+  const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
@@ -179,35 +184,6 @@ function MemberNotesPageContent() {
     }
   }, [toast]);
 
-  // Load staff members for assignment dropdown
-  const loadStaffMembers = useCallback(async () => {
-    setIsLoadingStaff(true);
-    try {
-      const response = await fetch('/api/staff-members?includeFirebaseAdmins=true&includeCaspioStaff=true');
-      const data = await response.json();
-      
-      if (data.success) {
-        const raw = Array.isArray(data.staff) ? data.staff : [];
-        const byUid = new Map<string, { uid: string; name: string; email: string }>();
-        for (const s of raw) {
-          const uid = String(s?.uid || '').trim();
-          if (!uid) continue; // avoid duplicate keys/values + invalid assignments
-          if (byUid.has(uid)) continue;
-          byUid.set(uid, {
-            uid,
-            name: String(s?.name || '').trim() || uid,
-            email: String(s?.email || '').trim(),
-          });
-        }
-        setStaffList(Array.from(byUid.values()));
-      }
-    } catch (error) {
-      console.error('Error loading staff members:', error);
-    } finally {
-      setIsLoadingStaff(false);
-    }
-  }, []);
-
   // Load health status
   const loadHealthStatus = useCallback(async () => {
     try {
@@ -243,9 +219,8 @@ function MemberNotesPageContent() {
     };
 
     checkILSPermissions();
-    loadStaffMembers();
     loadHealthStatus();
-  }, [user?.uid, loadStaffMembers, loadHealthStatus]);
+  }, [user?.uid, loadHealthStatus]);
 
   // Don't load members on mount - only when searching
   // Search members when search term changes (with debounce)
@@ -262,8 +237,44 @@ function MemberNotesPageContent() {
     setSearchTerm(preselectId);
   }, [preselectId, searchTerm]);
 
-  // Since we're doing server-side search, we don't need client-side filtering
-  const filteredMembers = members;
+  const userMatchTokens = useMemo(() => {
+    const tokens = new Set<string>();
+    const add = (value: unknown) => {
+      const v = String(value || '').trim().toLowerCase();
+      if (!v) return;
+      tokens.add(v);
+    };
+    add(user?.displayName);
+    add(user?.email);
+    add(String(user?.email || '').split('@')[0]);
+    add(user?.uid);
+    return Array.from(tokens);
+  }, [user?.displayName, user?.email, user?.uid]);
+
+  const doesAssignmentMatchCurrentUser = useCallback(
+    (assignment: unknown) => {
+      const assigned = String(assignment || '').trim().toLowerCase();
+      if (!assigned || /^\d+$/.test(assigned)) return false;
+      return userMatchTokens.some((token) => assigned === token || assigned.includes(token) || token.includes(assigned));
+    },
+    [userMatchTokens]
+  );
+
+  const getMemberAssignment = useCallback((member: Member) => {
+    return String(member.socialWorkerAssigned || member.kaiserUserAssignment || member.staffAssigned || '').trim();
+  }, []);
+
+  const filteredMembers = useMemo(() => {
+    if (memberScope === 'all') return members;
+    if (memberScope === 'assigned_to_me') {
+      return members.filter((member) => doesAssignmentMatchCurrentUser(getMemberAssignment(member)));
+    }
+    return members.filter((member) => {
+      const isKaiser = String(member.healthPlan || '').toLowerCase().includes('kaiser');
+      if (!isKaiser) return false;
+      return doesAssignmentMatchCurrentUser(member.kaiserUserAssignment || getMemberAssignment(member));
+    });
+  }, [members, memberScope, doesAssignmentMatchCurrentUser, getMemberAssignment]);
 
   useEffect(() => {
     if (!preselectId || autoSelectRef.current || filteredMembers.length === 0) return;
@@ -274,14 +285,32 @@ function MemberNotesPageContent() {
     autoSelectRef.current = true;
     handleMemberSelect(match);
     handleRequestNotes(match);
-  }, [filteredMembers, preselectId]);
+  }, [filteredMembers, preselectId, handleRequestNotes]);
 
   const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
     setMemberNotes([]); // Clear notes when selecting a new member
   };
 
-  const handleRequestNotes = async (member: Member) => {
+  const loadFollowUpTasksForMember = useCallback(async (member: Member) => {
+    setIsFollowUpLoading(true);
+    try {
+      const response = await fetch('/api/daily-tasks');
+      const data = await response.json().catch(() => ({}));
+      const tasks = Array.isArray(data?.tasks) ? (data.tasks as DailyTaskFollowup[]) : [];
+      const memberId = String(member.clientId2 || '').trim();
+      const linked = tasks
+        .filter((task) => String(task.memberClientId || '').trim() === memberId)
+        .sort((a, b) => new Date(String(a?.dueDate || '')).getTime() - new Date(String(b?.dueDate || '')).getTime());
+      setFollowUpTasks(linked);
+    } catch {
+      setFollowUpTasks([]);
+    } finally {
+      setIsFollowUpLoading(false);
+    }
+  }, []);
+
+  const handleRequestNotes = useCallback(async (member: Member) => {
     setIsNotesLoading(true);
     setSyncProgress({
       isSync: true,
@@ -320,7 +349,9 @@ function MemberNotesPageContent() {
         });
       }, 500);
 
-      const response = await fetch(`/api/member-notes?clientId2=${member.clientId2}&forceSync=true`);
+      const response = await fetch(
+        `/api/member-notes?clientId2=${member.clientId2}&forceSync=false&skipSync=false&repairIfEmpty=true`
+      );
       const data = await response.json();
       
       clearInterval(progressInterval);
@@ -363,7 +394,7 @@ function MemberNotesPageContent() {
         throw new Error(data.error || 'Failed to load notes');
       }
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading member notes:', error);
       setSyncProgress({
         isSync: false,
@@ -375,93 +406,21 @@ function MemberNotesPageContent() {
       
       toast({
         title: "Error",
-        description: error.message || "Failed to load member notes",
+        description: getErrorMessage(error, "Failed to load member notes"),
         variant: "destructive"
       });
     } finally {
       setIsNotesLoading(false);
     }
-  };
+  }, [toast]);
 
-  const handleCreateNote = async () => {
-    if (!selectedMember || !newNote.noteText.trim()) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive"
-      });
+  useEffect(() => {
+    if (!selectedMember) {
+      setFollowUpTasks([]);
       return;
     }
-
-    try {
-      const noteData = {
-        clientId2: selectedMember.clientId2,
-        memberName: `${selectedMember.firstName} ${selectedMember.lastName}`,
-        noteText: newNote.noteText,
-        priority: newNote.priority,
-        status: newNote.status || 'Open',
-        assignedTo: newNote.assignedTo || undefined,
-        assignedToName: newNote.assignedToName || undefined,
-        followUpDate: newNote.followUpDate || undefined,
-        authorId: user?.uid || 'current-user', // Required field
-        authorName: user?.displayName || user?.email || 'Current User', // Required field
-        createdBy: user?.uid || 'current-user',
-        createdByName: user?.displayName || user?.email || 'Current User',
-        tags: newNote.tags,
-        sendNotification: Boolean(
-          newNote.assignedTo && isPriorityOrUrgent(newNote.priority)
-        ),
-        recipientIds: newNote.assignedTo ? [newNote.assignedTo] : []
-      };
-
-      const response = await fetch('/api/member-notes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(noteData),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setMemberNotes(prev => [data.note, ...prev]);
-        setIsNewNoteDialogOpen(false);
-        setNewNote({
-          noteText: '',
-          assignedTo: '',
-          assignedToName: '',
-          priority: 'General',
-          status: 'Open',
-          followUpDate: '',
-          tags: []
-        });
-
-        toast({
-          title: "Note Created",
-          description: "New note has been added and synced to Caspio",
-        });
-
-        // If note is assigned to someone, show notification
-        if (newNote.assignedTo) {
-          toast({
-            title: "Notification Sent",
-            description: `${newNote.assignedToName} has been notified of the new note`,
-          });
-        }
-      } else {
-        throw new Error(data.error || 'Failed to create note');
-      }
-
-    } catch (error: any) {
-      console.error('Error creating note:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create note",
-        variant: "destructive"
-      });
-    }
-  };
+    void loadFollowUpTasksForMember(selectedMember);
+  }, [selectedMember, loadFollowUpTasksForMember]);
 
 
   const filteredNotes = memberNotes.filter(note => {
@@ -542,11 +501,11 @@ function MemberNotesPageContent() {
         title: `Note ${nextStatus === 'Closed' ? 'Closed' : 'Reopened'}`,
         description: `This note has been marked as ${nextStatus.toLowerCase()}.`
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error resolving note:', error);
       toast({
         title: 'Error',
-        description: error.message || 'Failed to resolve note',
+        description: getErrorMessage(error, 'Failed to resolve note'),
         variant: 'destructive'
       });
     }
@@ -569,12 +528,12 @@ function MemberNotesPageContent() {
       if (!data.success) {
         throw new Error(data.error || 'Failed to delete note');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting note:', error);
       setMemberNotes(prev => [note, ...prev]);
       toast({
         title: 'Error',
-        description: error.message || 'Failed to delete note',
+        description: getErrorMessage(error, 'Failed to delete note'),
         variant: 'destructive'
       });
     }
@@ -697,6 +656,22 @@ function MemberNotesPageContent() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
+              <Label>Lookup Scope</Label>
+              <Select
+                value={memberScope}
+                onValueChange={(value) => setMemberScope(value as 'all' | 'assigned_to_me' | 'kaiser_assignment')}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All CalAIM Members</SelectItem>
+                  <SelectItem value="assigned_to_me">My Assigned Members</SelectItem>
+                  <SelectItem value="kaiser_assignment">Kaiser by Kaiser_User_Assignment</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="search">Search CalAIM Members (Last Name)</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -740,6 +715,9 @@ function MemberNotesPageContent() {
                         <p className="text-sm text-muted-foreground">{member.clientId2}</p>
                         {member.rcfeName && (
                           <p className="text-xs text-muted-foreground">{member.rcfeName}</p>
+                        )}
+                        {getMemberAssignment(member) && (
+                          <p className="text-xs text-muted-foreground">Assigned: {getMemberAssignment(member)}</p>
                         )}
                       </div>
                       <div className="text-right">
@@ -814,7 +792,7 @@ function MemberNotesPageContent() {
                 <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-lg font-medium mb-2">No Notes Loaded</h3>
                 <p className="text-muted-foreground mb-6">
-                  Click "Request Notes" to load notes for {selectedMember.firstName} {selectedMember.lastName}
+                  Click &quot;Request Notes&quot; to load notes for {selectedMember.firstName} {selectedMember.lastName}
                   <br />
                   <span className="text-xs">
                     This will fetch both regular notes and ILS notes from Caspio, then cache them in Firestore for faster future access.
@@ -860,6 +838,39 @@ function MemberNotesPageContent() {
               </div>
             ) : (
               <div className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Follow-up from Daily Task Calendar</CardTitle>
+                    <CardDescription>
+                      Tasks linked by Client ID for this assigned member.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {isFollowUpLoading ? (
+                      <div className="text-sm text-muted-foreground flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading follow-up tasks...
+                      </div>
+                    ) : followUpTasks.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No follow-up tasks found for this member.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {followUpTasks.map((task) => (
+                          <div key={task.id || `${task.title}-${task.dueDate}`} className="rounded border p-2 text-sm">
+                            <div className="font-medium">{task.title}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Due: {task.dueDate ? format(new Date(task.dueDate), 'MMM d, yyyy') : 'N/A'} • Status:{' '}
+                              {String(task.status || 'pending').replace(/_/g, ' ')}
+                              {task.assignedToName ? ` • Assigned: ${task.assignedToName}` : ''}
+                            </div>
+                            {task.notes ? <div className="text-xs mt-1">{task.notes}</div> : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Refresh Notes Button */}
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-muted-foreground">
@@ -991,8 +1002,23 @@ function MemberNotesPageContent() {
                               </Badge>
                             )}
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
+                          <div className="flex items-center gap-2">
+                            <div className="text-xs text-muted-foreground">
+                              {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[10px]"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleToggleStatus(note);
+                              }}
+                              title={(note.status || 'Open') === 'Closed' ? 'Reopen note' : 'Close note'}
+                            >
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              {(note.status || 'Open') === 'Closed' ? 'Reopen' : 'Close'}
+                            </Button>
                           </div>
                         </div>
                         
