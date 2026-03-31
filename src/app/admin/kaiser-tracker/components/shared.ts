@@ -28,6 +28,9 @@ export interface KaiserMember {
   ILS_RCFE_Sent_For_Contract_Date?: string;
   RCFE_Name?: string;
   RCFE_Admin_Email?: string;
+  Authorization_Start_Date_H2022?: string;
+  Authorization_End_Date_H2022?: string;
+  Need_More_Contact_Info_ILS?: string;
 }
 
 export const getMemberKey = (member: KaiserMember, index: number) =>

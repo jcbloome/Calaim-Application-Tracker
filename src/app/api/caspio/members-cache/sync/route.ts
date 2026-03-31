@@ -67,6 +67,7 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'Authorization_End_Date_T2038',
   'Authorization_Start_Date_H2022',
   'Authorization_End_Date_H2022',
+  'Need_More_Contact_Info_ILS',
   'Kaiser_H2022_Requested',
   'Kaiser_H2022_Received',
   'RCFE_Registered_ID',
