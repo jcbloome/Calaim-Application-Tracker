@@ -74,6 +74,7 @@ export default function AdminStatisticsPage() {
   const [memberData, setMemberData] = useState<any>(null);
   const [resourceLoading, setResourceLoading] = useState(false);
   const [resourceError, setResourceError] = useState<string | null>(null);
+  const [socialWorkersFromAssignmentsCount, setSocialWorkersFromAssignmentsCount] = useState<number>(0);
 
   // Status statistics state
   const [statusBreakdown, setStatusBreakdown] = useState<any>({});
@@ -81,6 +82,7 @@ export default function AdminStatisticsPage() {
   const [statsError, setStatsError] = useState<string | null>(null);
 
   const [isSyncingMembers, setIsSyncingMembers] = useState(false);
+  const [selectedMemberFilter, setSelectedMemberFilter] = useState<'authorized' | 'rcfe' | 'social_worker' | 'rn' | null>(null);
 
   const fetchApps = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
@@ -140,15 +142,17 @@ export default function AdminStatisticsPage() {
     setResourceError(null);
     
     try {
-      const [staffResponse, rcfeResponse, memberResponse] = await Promise.all([
+      const [staffResponse, rcfeResponse, memberResponse, swRosterResponse] = await Promise.all([
         fetch('/api/staff-locations', { cache: 'no-store' }),
         fetch('/api/rcfe-locations', { cache: 'no-store' }),
-        fetch('/api/member-locations', { cache: 'no-store' })
+        fetch('/api/member-locations', { cache: 'no-store' }),
+        fetch('/api/caspio-staff', { cache: 'no-store' }),
       ]);
 
       const staffResult = await staffResponse.json();
       const rcfeResult = await rcfeResponse.json();
       const memberResult = await memberResponse.json();
+      const swRosterResult = await swRosterResponse.json();
 
       if (staffResult.success) {
         setStaffData(staffResult.data.staffByCounty);
@@ -169,6 +173,31 @@ export default function AdminStatisticsPage() {
       } else {
         console.error('❌ Member data error:', memberResult.error);
         console.log('❌ Full member result:', memberResult);
+      }
+
+      if (swRosterResult?.success && Array.isArray(swRosterResult?.staff)) {
+        const normalizeSwDisplayName = (raw: unknown) => {
+          const source = String(raw || '').trim();
+          if (!source) return 'Unassigned';
+          const lower = source.toLowerCase();
+          if (lower === 'unassigned' || lower === 'unknown' || lower === 'n/a') return 'Unassigned';
+          if (source.includes(',')) {
+            const [lastRaw, firstRaw] = source.split(',').map((p) => p.trim()).filter(Boolean);
+            if (lastRaw && firstRaw) return `${firstRaw} ${lastRaw}`.replace(/\s+/g, ' ').trim();
+          }
+          return source.replace(/\s+/g, ' ').trim();
+        };
+        const uniqueSw = new Set(
+          swRosterResult.staff
+            .map((sw: any) => normalizeSwDisplayName(sw?.name))
+            .filter((name: string) => {
+              const lower = String(name || '').trim().toLowerCase();
+              return Boolean(lower) && lower !== 'unassigned' && lower !== 'unknown';
+            })
+        );
+        setSocialWorkersFromAssignmentsCount(uniqueSw.size);
+      } else {
+        setSocialWorkersFromAssignmentsCount(0);
       }
 
     } catch (error: any) {
@@ -229,7 +258,9 @@ export default function AdminStatisticsPage() {
     const staffKeys = Object.keys(staffData);
     const rcfeKeys = Object.keys(rcfeData);
     
-    const totalSocialWorkers = staffKeys.reduce((sum, key) => sum + (staffData[key]?.socialWorkers?.length || 0), 0);
+    const totalSocialWorkersByMap = staffKeys.reduce((sum, key) => sum + (staffData[key]?.socialWorkers?.length || 0), 0);
+    const totalSocialWorkers =
+      socialWorkersFromAssignmentsCount > 0 ? socialWorkersFromAssignmentsCount : totalSocialWorkersByMap;
     const totalRNs = staffKeys.reduce((sum, key) => sum + (staffData[key]?.rns?.length || 0), 0);
     const totalRCFEs = rcfeKeys.reduce((sum, key) => sum + (rcfeData[key]?.facilities?.length || 0), 0);
     const totalAuthorizedMembers = memberData?.totalMembers || 0;
@@ -249,6 +280,31 @@ export default function AdminStatisticsPage() {
       totalAuthorizedMembers
     };
   }, [staffData, rcfeData, memberData]);
+
+  const filteredResourceMembers = useMemo(() => {
+    const members = Array.isArray(memberData?.members) ? memberData.members : [];
+    if (!selectedMemberFilter) return [];
+    if (selectedMemberFilter === 'authorized') return members;
+    if (selectedMemberFilter === 'rcfe') {
+      return members.filter((m: any) => String(m?.rcfeRegisteredId || m?.rcfeName || '').trim() !== '');
+    }
+    if (selectedMemberFilter === 'social_worker') {
+      return members.filter((m: any) => String(m?.socialWorkerAssigned || m?.assignedStaff || '').trim() !== '');
+    }
+    // RN mapping is best-effort based on assigned staff labels.
+    return members.filter((m: any) => {
+      const assigned = String(m?.socialWorkerAssigned || m?.assignedStaff || '').trim().toLowerCase();
+      return assigned.includes(' rn') || assigned.startsWith('rn ') || assigned.includes('nurse');
+    });
+  }, [memberData, selectedMemberFilter]);
+
+  const selectedMemberFilterLabel = useMemo(() => {
+    if (selectedMemberFilter === 'authorized') return 'Authorized Members';
+    if (selectedMemberFilter === 'rcfe') return 'Members with RCFE Assignment';
+    if (selectedMemberFilter === 'social_worker') return 'Members with Social Worker Assignment';
+    if (selectedMemberFilter === 'rn') return 'Members with RN Assignment';
+    return '';
+  }, [selectedMemberFilter]);
 
   // -- ADDED: Calculation for topCities, below! --
   const { stats, availableYears, topCities } = useMemo(() => {
@@ -417,7 +473,17 @@ export default function AdminStatisticsPage() {
                         <Building2 className="h-6 w-6 md:h-8 md:w-8 text-purple-600" />
                         <div>
                             <p className="text-xl md:text-2xl font-bold text-purple-700">
-                                {resourceLoading ? <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" /> : resourceStats.totalRCFEs}
+                                {resourceLoading ? (
+                                  <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="hover:underline cursor-pointer"
+                                    onClick={() => setSelectedMemberFilter('rcfe')}
+                                  >
+                                    {resourceStats.totalRCFEs}
+                                  </button>
+                                )}
                             </p>
                             <p className="text-xs text-muted-foreground">Residential Care Facilities</p>
                         </div>
@@ -429,9 +495,20 @@ export default function AdminStatisticsPage() {
                         <Users className="h-6 w-6 md:h-8 md:w-8 text-green-600" />
                         <div>
                             <p className="text-xl md:text-2xl font-bold text-green-700">
-                                {resourceLoading ? <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" /> : resourceStats.totalSocialWorkers}
+                                {resourceLoading ? (
+                                  <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="hover:underline cursor-pointer"
+                                    onClick={() => setSelectedMemberFilter('social_worker')}
+                                  >
+                                    {resourceStats.totalSocialWorkers}
+                                  </button>
+                                )}
                             </p>
                             <p className="text-xs text-muted-foreground">Licensed Social Workers</p>
+                            <p className="text-[10px] text-muted-foreground">Aligned with Social Worker Assignments roster</p>
                         </div>
                     </div>
                 </StatCard>
@@ -441,7 +518,17 @@ export default function AdminStatisticsPage() {
                         <Stethoscope className="h-6 w-6 md:h-8 md:w-8 text-blue-600" />
                         <div>
                             <p className="text-xl md:text-2xl font-bold text-blue-700">
-                                {resourceLoading ? <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" /> : resourceStats.totalRNs}
+                                {resourceLoading ? (
+                                  <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="hover:underline cursor-pointer"
+                                    onClick={() => setSelectedMemberFilter('rn')}
+                                  >
+                                    {resourceStats.totalRNs}
+                                  </button>
+                                )}
                             </p>
                             <p className="text-xs text-muted-foreground">Licensed Nurses</p>
                         </div>
@@ -453,7 +540,17 @@ export default function AdminStatisticsPage() {
                         <UserCheck className="h-6 w-6 md:h-8 md:w-8 text-orange-600" />
                         <div>
                             <p className="text-xl md:text-2xl font-bold text-orange-700">
-                                {resourceLoading ? <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" /> : resourceStats.totalAuthorizedMembers}
+                                {resourceLoading ? (
+                                  <Loader2 className="h-4 w-4 md:h-6 md:w-6 animate-spin" />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="hover:underline cursor-pointer"
+                                    onClick={() => setSelectedMemberFilter('authorized')}
+                                  >
+                                    {resourceStats.totalAuthorizedMembers}
+                                  </button>
+                                )}
                             </p>
                             <p className="text-xs text-muted-foreground">CalAIM Members</p>
                         </div>
@@ -462,6 +559,53 @@ export default function AdminStatisticsPage() {
             </div>
             {resourceError && (
                 <p className="text-sm text-destructive mt-2">Error loading resource data: {resourceError}</p>
+            )}
+            {selectedMemberFilter && (
+              <Card className="mt-4">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle className="text-base">
+                      {selectedMemberFilterLabel} ({filteredResourceMembers.length})
+                    </CardTitle>
+                    <Button variant="outline" size="sm" onClick={() => setSelectedMemberFilter(null)}>
+                      Clear
+                    </Button>
+                  </div>
+                  <CardDescription>Click a metric number above to filter this member list.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {filteredResourceMembers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No members matched this filter.</p>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[420px] overflow-y-auto border rounded-md">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Member</TableHead>
+                            <TableHead>Client ID</TableHead>
+                            <TableHead>County</TableHead>
+                            <TableHead>Health Plan</TableHead>
+                            <TableHead>Assigned Staff</TableHead>
+                            <TableHead>RCFE</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredResourceMembers.map((member: any, idx: number) => (
+                            <TableRow key={`${member?.id || member?.recordId || member?.clientId2 || idx}`}>
+                              <TableCell>{`${member?.firstName || ''} ${member?.lastName || ''}`.trim() || 'Unknown'}</TableCell>
+                              <TableCell>{member?.clientId2 || member?.recordId || '—'}</TableCell>
+                              <TableCell>{member?.county || '—'}</TableCell>
+                              <TableCell>{member?.healthPlan || member?.mco || '—'}</TableCell>
+                              <TableCell>{member?.socialWorkerAssigned || member?.assignedStaff || '—'}</TableCell>
+                              <TableCell>{member?.rcfeName || member?.rcfeRegisteredId || '—'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             )}
         </div>
 
