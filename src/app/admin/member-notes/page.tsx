@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Search, 
   FileText, 
@@ -117,11 +118,9 @@ function MemberNotesPageContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [isNotesLoading, setIsNotesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [memberScope, setMemberScope] = useState<'all' | 'assigned_to_me' | 'kaiser_assignment'>('all');
+  const [memberScope, setMemberScope] = useState<'all' | 'kaiser_assignment'>('all');
   const [kaiserAssignmentFilter, setKaiserAssignmentFilter] = useState('all');
   const [kaiserAssignmentOptions, setKaiserAssignmentOptions] = useState<string[]>([]);
-  const [staffAssignmentFilter, setStaffAssignmentFilter] = useState('all');
-  const [staffAssignmentOptions, setStaffAssignmentOptions] = useState<string[]>([]);
   
   // Real-time sync status
   const [syncProgress, setSyncProgress] = useState({
@@ -149,14 +148,15 @@ function MemberNotesPageContent() {
   const [deleteTarget, setDeleteTarget] = useState<MemberNote | null>(null);
   const [followUpTasks, setFollowUpTasks] = useState<DailyTaskFollowup[]>([]);
   const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+  const [isBulkClosing, setIsBulkClosing] = useState(false);
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
     const trimmedSearch = search.trim();
     const shouldFilterKaiserByStaff =
       memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all';
-    const shouldFilterAnyStaff = staffAssignmentFilter !== 'all';
-    const shouldFetchWithoutSearch = shouldFilterKaiserByStaff || shouldFilterAnyStaff;
+    const shouldFetchWithoutSearch = shouldFilterKaiserByStaff;
     if (!trimmedSearch && !shouldFetchWithoutSearch) {
       setMembers([]);
       return;
@@ -173,9 +173,6 @@ function MemberNotesPageContent() {
       if (shouldFilterKaiserByStaff) {
         params.append('kaiserUserAssignment', kaiserAssignmentFilter);
       }
-      if (shouldFilterAnyStaff) {
-        params.append('assignedStaff', staffAssignmentFilter);
-      }
       
       const response = await fetch(`/api/members?${params.toString()}`);
       const data = await response.json();
@@ -186,7 +183,6 @@ function MemberNotesPageContent() {
           search: trimmedSearch,
           memberScope,
           kaiserAssignmentFilter,
-          staffAssignmentFilter,
         });
       } else {
         console.error('❌ Failed to search members:', data.error);
@@ -208,7 +204,7 @@ function MemberNotesPageContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, memberScope, kaiserAssignmentFilter, staffAssignmentFilter]);
+  }, [toast, memberScope, kaiserAssignmentFilter]);
 
   // Load health status
   const loadHealthStatus = useCallback(async () => {
@@ -244,44 +240,6 @@ function MemberNotesPageContent() {
       setKaiserAssignmentOptions(Array.from(uniqueAssignments).sort((a, b) => a.localeCompare(b)));
     } catch {
       setKaiserAssignmentOptions([]);
-    }
-  }, []);
-
-  const loadStaffAssignmentOptions = useCallback(async () => {
-    try {
-      const [staffRes, membersRes] = await Promise.all([
-        fetch('/api/staff-members?includeFirebaseAdmins=true&includeCaspioStaff=true'),
-        fetch('/api/members?limit=500')
-      ]);
-      const staffData = await staffRes.json().catch(() => ({}));
-      const membersData = await membersRes.json().catch(() => ({}));
-
-      const uniqueAssignments = new Set<string>();
-      if (Array.isArray(staffData?.staff)) {
-        for (const staff of staffData.staff as Array<{ name?: string }>) {
-          const name = normalizeAssignmentValue(staff?.name);
-          if (!name) continue;
-          uniqueAssignments.add(name);
-        }
-      }
-
-      if (Array.isArray(membersData?.members)) {
-        for (const member of membersData.members as Member[]) {
-          const assignments = [
-            normalizeAssignmentValue(member.kaiserUserAssignment),
-            normalizeAssignmentValue(member.staffAssigned),
-          ];
-          for (const assignment of assignments) {
-            if (!assignment) continue;
-            if (/^\d+$/.test(assignment)) continue;
-            uniqueAssignments.add(assignment);
-          }
-        }
-      }
-
-      setStaffAssignmentOptions(Array.from(uniqueAssignments).sort((a, b) => a.localeCompare(b)));
-    } catch {
-      setStaffAssignmentOptions([]);
     }
   }, []);
 
@@ -325,64 +283,23 @@ function MemberNotesPageContent() {
   }, [memberScope, loadKaiserAssignmentOptions]);
 
   useEffect(() => {
-    void loadStaffAssignmentOptions();
-  }, [loadStaffAssignmentOptions]);
-
-  useEffect(() => {
     if (!preselectId || searchTerm) return;
     setSearchTerm(preselectId);
   }, [preselectId, searchTerm]);
-
-  const userMatchTokens = useMemo(() => {
-    const tokens = new Set<string>();
-    const add = (value: unknown) => {
-      const v = String(value || '').trim().toLowerCase();
-      if (!v) return;
-      tokens.add(v);
-    };
-    add(user?.displayName);
-    add(user?.email);
-    add(String(user?.email || '').split('@')[0]);
-    add(user?.uid);
-    return Array.from(tokens);
-  }, [user?.displayName, user?.email, user?.uid]);
-
-  const doesAssignmentMatchCurrentUser = useCallback(
-    (assignment: unknown) => {
-      const assigned = String(assignment || '').trim().toLowerCase();
-      if (!assigned || /^\d+$/.test(assigned)) return false;
-      return userMatchTokens.some((token) => assigned === token || assigned.includes(token) || token.includes(assigned));
-    },
-    [userMatchTokens]
-  );
 
   const getMemberAssignment = useCallback((member: Member) => {
     return String(member.socialWorkerAssigned || member.kaiserUserAssignment || member.staffAssigned || '').trim();
   }, []);
 
-  const matchesSelectedStaff = useCallback((member: Member) => {
-    if (staffAssignmentFilter === 'all') return true;
-    const selectedStaff = normalizeAssignmentValue(staffAssignmentFilter);
-    const values = [
-      normalizeAssignmentValue(member.kaiserUserAssignment),
-      normalizeAssignmentValue(member.staffAssigned),
-    ];
-    return values.includes(selectedStaff);
-  }, [staffAssignmentFilter]);
-
   const filteredMembers = useMemo(() => {
-    const scopedMembers = members.filter(matchesSelectedStaff);
-    if (memberScope === 'all') return scopedMembers;
-    if (memberScope === 'assigned_to_me') {
-      return scopedMembers.filter((member) => doesAssignmentMatchCurrentUser(getMemberAssignment(member)));
-    }
-    return scopedMembers.filter((member) => {
+    if (memberScope === 'all') return members;
+    return members.filter((member) => {
       const isKaiser = String(member.healthPlan || '').toLowerCase().includes('kaiser');
       if (!isKaiser) return false;
       if (kaiserAssignmentFilter === 'all') return true;
       return normalizeAssignmentValue(member.kaiserUserAssignment) === kaiserAssignmentFilter;
     });
-  }, [members, memberScope, doesAssignmentMatchCurrentUser, getMemberAssignment, kaiserAssignmentFilter, matchesSelectedStaff]);
+  }, [members, memberScope, kaiserAssignmentFilter]);
 
   const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
@@ -592,7 +509,8 @@ function MemberNotesPageContent() {
           status: nextStatus,
           resolvedAt: nextStatus === 'Closed' ? new Date().toISOString() : null,
           actorName: user?.displayName || user?.email || 'Admin',
-          actorEmail: user?.email || ''
+          actorEmail: user?.email || '',
+          pushToCaspio: true,
         })
       });
 
@@ -604,6 +522,10 @@ function MemberNotesPageContent() {
       setMemberNotes(prev => prev.map(existing => (
         existing.id === note.id ? { ...existing, status: nextStatus } : existing
       )));
+
+      if (nextStatus === 'Closed' && selectedMember?.clientId2) {
+        await clearMemberFollowUpTasks(selectedMember.clientId2);
+      }
 
       toast({
         title: `Note ${nextStatus === 'Closed' ? 'Closed' : 'Reopened'}`,
@@ -618,6 +540,120 @@ function MemberNotesPageContent() {
       });
     }
   };
+
+  const clearMemberFollowUpTasks = useCallback(async (memberClientId: string) => {
+    const memberId = String(memberClientId || '').trim();
+    if (!memberId) return 0;
+    try {
+      const response = await fetch('/api/daily-tasks', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'clear_member_followups',
+          memberClientId: memberId,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) return 0;
+      return Number(data?.removedCount || 0);
+    } catch {
+      return 0;
+    }
+  }, []);
+
+  const toggleSelectedNote = useCallback((noteId: string, checked: boolean) => {
+    setSelectedNoteIds((prev) => {
+      if (checked) {
+        if (prev.includes(noteId)) return prev;
+        return [...prev, noteId];
+      }
+      return prev.filter((id) => id !== noteId);
+    });
+  }, []);
+
+  const selectableOpenNoteIds = useMemo(
+    () => sortedNotes.filter((note) => (note.status || 'Open') !== 'Closed').map((note) => note.id),
+    [sortedNotes]
+  );
+
+  const selectedOpenCount = useMemo(
+    () => selectedNoteIds.filter((id) => selectableOpenNoteIds.includes(id)).length,
+    [selectedNoteIds, selectableOpenNoteIds]
+  );
+
+  const selectAllOpenNotesInView = useCallback(() => {
+    setSelectedNoteIds(selectableOpenNoteIds);
+  }, [selectableOpenNoteIds]);
+
+  const clearSelectedNotes = useCallback(() => {
+    setSelectedNoteIds([]);
+  }, []);
+
+  const closeSelectedNotes = useCallback(async () => {
+    if (!selectedMember?.clientId2) return;
+    const targetIds = selectedNoteIds.filter(Boolean);
+    if (targetIds.length === 0) return;
+
+    const openNoteIds = targetIds.filter((id) => {
+      const note = memberNotes.find((n) => n.id === id);
+      return note && (note.status || 'Open') !== 'Closed';
+    });
+    if (openNoteIds.length === 0) {
+      toast({
+        title: 'Nothing to close',
+        description: 'Selected notes are already closed.',
+      });
+      return;
+    }
+
+    setIsBulkClosing(true);
+    try {
+      let closedCount = 0;
+      let failedCount = 0;
+      for (const noteId of openNoteIds) {
+        const response = await fetch('/api/member-notes', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: noteId,
+            clientId2: selectedMember.clientId2,
+            status: 'Closed',
+            resolvedAt: new Date().toISOString(),
+            actorName: user?.displayName || user?.email || 'Admin',
+            actorEmail: user?.email || '',
+            pushToCaspio: true,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) {
+          failedCount += 1;
+          continue;
+        }
+        closedCount += 1;
+      }
+
+      if (closedCount > 0) {
+        setMemberNotes((prev) =>
+          prev.map((note) =>
+            openNoteIds.includes(note.id) ? { ...note, status: 'Closed' } : note
+          )
+        );
+      }
+      const removedTasks = await clearMemberFollowUpTasks(selectedMember.clientId2);
+
+      setSelectedNoteIds([]);
+      toast({
+        title: 'Bulk close completed',
+        description: `${closedCount} closed${failedCount ? `, ${failedCount} failed` : ''}. Cleared ${removedTasks} daily task follow-up entries.`,
+      });
+    } finally {
+      setIsBulkClosing(false);
+    }
+  }, [selectedMember?.clientId2, selectedNoteIds, memberNotes, toast, user?.displayName, user?.email, clearMemberFollowUpTasks]);
+
+  useEffect(() => {
+    setSelectedNoteIds((prev) => prev.filter((id) => memberNotes.some((note) => note.id === id)));
+  }, [memberNotes]);
 
   const commitDeleteNote = async (note: MemberNote) => {
     try {
@@ -767,31 +803,14 @@ function MemberNotesPageContent() {
               <Label>Lookup Scope</Label>
               <Select
                 value={memberScope}
-                onValueChange={(value) => setMemberScope(value as 'all' | 'assigned_to_me' | 'kaiser_assignment')}
+                onValueChange={(value) => setMemberScope(value as 'all' | 'kaiser_assignment')}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All CalAIM Members</SelectItem>
-                  <SelectItem value="assigned_to_me">My Assigned Members</SelectItem>
-                  <SelectItem value="kaiser_assignment">Kaiser by Kaiser_User_Assignment</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>All Staff Assignment</Label>
-              <Select value={staffAssignmentFilter} onValueChange={setStaffAssignmentFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select staff assignment" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Staff</SelectItem>
-                  {staffAssignmentOptions.map((staff) => (
-                    <SelectItem key={staff} value={staff}>
-                      {staff}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="all">General Search (Last Name)</SelectItem>
+                  <SelectItem value="kaiser_assignment">Kaiser Staff Assigned Lookup</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -834,9 +853,6 @@ function MemberNotesPageContent() {
               <p className="text-xs text-muted-foreground">
                 {searchTerm.trim() ? 
                   `Searching Caspio for "${searchTerm}"...` : 
-                  staffAssignmentFilter !== 'all'
-                    ? `Loading members assigned to ${staffAssignmentFilter}...`
-                    :
                   memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all'
                     ? `Loading Kaiser members assigned to ${kaiserAssignmentFilter}...`
                     : 'Enter last name letters to find CalAIM members'
@@ -891,9 +907,6 @@ function MemberNotesPageContent() {
                   <p className="text-muted-foreground">
                     {searchTerm.trim() ? 
                       `No CalAIM members found for "${searchTerm}"` : 
-                      staffAssignmentFilter !== 'all'
-                        ? `No members found for ${staffAssignmentFilter}`
-                        :
                       memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all'
                         ? `No Kaiser members found for ${kaiserAssignmentFilter}`
                         : 'Enter a search term to find CalAIM members'
@@ -1050,6 +1063,49 @@ function MemberNotesPageContent() {
                     Sync Notes
                   </Button>
                 </div>
+                <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
+                  <div className="text-xs text-muted-foreground">
+                    Selected notes: <span className="font-medium text-foreground">{selectedNoteIds.length}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={selectAllOpenNotesInView}
+                      disabled={isBulkClosing || selectableOpenNoteIds.length === 0}
+                    >
+                      Select All Open
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={clearSelectedNotes}
+                      disabled={isBulkClosing || selectedNoteIds.length === 0}
+                    >
+                      Clear
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => void closeSelectedNotes()}
+                      disabled={isBulkClosing || selectedNoteIds.length === 0}
+                    >
+                      {isBulkClosing ? (
+                        <>
+                          <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          Closing...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="mr-2 h-3.5 w-3.5" />
+                          Close Selected Notes
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                <div className="text-[11px] text-muted-foreground -mt-1">
+                  Open notes in view: {selectableOpenNoteIds.length} | Selected open: {selectedOpenCount}
+                </div>
 
                 {/* Note Filters */}
                 <div className="flex gap-4 p-4 bg-gray-50 rounded-lg">
@@ -1141,6 +1197,14 @@ function MemberNotesPageContent() {
                         } ${!note.isRead ? 'border-blue-200 bg-blue-50' : ''}`}
                       >
                         <div className="flex items-start justify-between mb-2">
+                          <div className="mr-2 mt-1">
+                            <Checkbox
+                              checked={selectedNoteIds.includes(note.id)}
+                              onCheckedChange={(checked) => toggleSelectedNote(note.id, Boolean(checked))}
+                              onClick={(event) => event.stopPropagation()}
+                              aria-label={`Select note ${note.id}`}
+                            />
+                          </div>
                           <div className="flex gap-2 flex-wrap">
                             <Badge variant="outline" className={getPriorityColor(note.priority)}>
                               {normalizePriorityLabel(note.priority)}

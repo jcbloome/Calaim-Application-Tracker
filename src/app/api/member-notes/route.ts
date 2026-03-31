@@ -1216,6 +1216,57 @@ async function syncNoteToCaspio(note: MemberNote): Promise<{ success: boolean; e
   }
 }
 
+async function syncExistingNoteStatusToCaspio(params: {
+  noteId: string;
+  status: MemberNote['status'];
+}): Promise<{ success: boolean; skipped?: boolean; reason?: string; error?: string }> {
+  try {
+    const noteId = String(params.noteId || '').trim();
+    if (!noteId.startsWith('caspio_')) {
+      return { success: true, skipped: true, reason: 'not_caspio_note' };
+    }
+
+    const pkId = Number.parseInt(noteId.slice('caspio_'.length), 10);
+    if (!Number.isFinite(pkId) || pkId <= 0) {
+      return { success: false, error: 'Invalid Caspio note ID format' };
+    }
+
+    const { credentials, baseUrl } = getCaspioConfig();
+    const token = await getCaspioToken(credentials);
+    const whereClause = `PK_ID=${pkId}`;
+    const apiUrl =
+      `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records` +
+      `?q.where=${encodeURIComponent(whereClause)}`;
+
+    const nextStatus = params.status === 'Closed' ? 'Closed' : 'Open';
+    const payload: Record<string, unknown> = {
+      Note_Status: nextStatus,
+      Follow_Up_Status: nextStatus === 'Closed' ? 'Closed' : '🟢 Open',
+    };
+    if (nextStatus === 'Closed') {
+      payload.Follow_Up_Date = null;
+    }
+
+    const response = await fetch(apiUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      return { success: false, error: `Caspio update failed: ${response.status} ${errorText}` };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Failed to sync note status to Caspio' };
+  }
+}
+
 
 async function sendNoteNotification(note: MemberNote): Promise<void> {
   try {
@@ -1362,7 +1413,24 @@ export async function PUT(request: NextRequest) {
 
     const actorName = String(body?.actorName || '').trim() || 'Admin';
     const actorEmail = String(body?.actorEmail || '').trim();
+    const pushToCaspio = Boolean(body?.pushToCaspio);
     const nowIso = new Date().toISOString();
+
+    let caspioSync: { success: boolean; skipped?: boolean; reason?: string; error?: string } | null = null;
+    if (pushToCaspio) {
+      caspioSync = await syncExistingNoteStatusToCaspio({ noteId: id, status: nextStatus });
+      if (!caspioSync.success) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: caspioSync.error || 'Failed to sync status update to Caspio',
+            id,
+            clientId2,
+          },
+          { status: 502 }
+        );
+      }
+    }
 
     if (adminDb && Timestamp) {
       const noteRef = adminDb.collection(MEMBER_NOTES_COLLECTION).doc(id);
@@ -1407,6 +1475,7 @@ export async function PUT(request: NextRequest) {
       status: nextStatus,
       resolvedAt: resolvedAt || null,
       updatedAt: nowIso,
+      caspioSync,
     });
   } catch (error: any) {
     console.error('Error updating member note status:', error);

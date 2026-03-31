@@ -185,6 +185,28 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
+    const action = String(body?.action || '').trim().toLowerCase();
+    if (action === 'clear_member_followups') {
+      const memberClientId = String(body?.memberClientId || '').trim();
+      if (!memberClientId) {
+        return NextResponse.json(
+          { success: false, error: 'memberClientId is required' },
+          { status: 400 }
+        );
+      }
+
+      const before = tasks.length;
+      tasks = tasks.filter((task) => String(task?.memberClientId || '').trim() !== memberClientId);
+      const removedCount = Math.max(0, before - tasks.length);
+
+      return NextResponse.json({
+        success: true,
+        action: 'clear_member_followups',
+        memberClientId,
+        removedCount
+      });
+    }
+
     const { id, ...updates } = body;
     
     if (!id) {
