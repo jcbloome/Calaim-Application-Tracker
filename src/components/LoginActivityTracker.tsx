@@ -18,6 +18,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 interface LoginLog {
@@ -76,6 +77,7 @@ export default function LoginActivityTracker() {
   const [error, setError] = useState<string | null>(null);
   const [filterAction, setFilterAction] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
+  const [filterUserQuery, setFilterUserQuery] = useState<string>('');
   const [socialWorkerEmails, setSocialWorkerEmails] = useState<Set<string>>(new Set());
   const [rnEmails, setRnEmails] = useState<Set<string>>(new Set());
 
@@ -329,6 +331,17 @@ export default function LoginActivityTracker() {
     }
   };
 
+  const filteredLoginLogs = loginLogs.filter((log) => {
+    const role = normalizeRole(log);
+    if (filterRole !== 'all' && role !== filterRole) return false;
+    const query = filterUserQuery.trim().toLowerCase();
+    if (!query) return true;
+    const userEmail = String(log.userEmail || log.email || '').toLowerCase();
+    const userName = String(log.userName || log.displayName || '').toLowerCase();
+    const userId = String(log.userId || '').toLowerCase();
+    return userEmail.includes(query) || userName.includes(query) || userId.includes(query);
+  });
+
   if (isAdminLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -457,26 +470,22 @@ export default function LoginActivityTracker() {
                     <SelectItem value="forced_logout">Forced</SelectItem>
                   </SelectContent>
                 </Select>
+                <Input
+                  value={filterUserQuery}
+                  onChange={(e) => setFilterUserQuery(e.target.value)}
+                  placeholder="Search user..."
+                  className="w-36 h-6 text-xs"
+                />
               </div>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
             <div className="max-h-64 overflow-y-auto">
-              {loginLogs.filter((log) => {
-                const role = normalizeRole(log);
-                if (filterRole !== 'all' && role !== filterRole) return false;
-                return true;
-              }).length === 0 ? (
+              {filteredLoginLogs.length === 0 ? (
                 <p className="text-center text-muted-foreground py-4 text-xs">No login logs found</p>
               ) : (
                 <div className="space-y-1">
-                  {loginLogs
-                    .filter((log) => {
-                      const role = normalizeRole(log);
-                      if (filterRole !== 'all' && role !== filterRole) return false;
-                      return true;
-                    })
-                    .map((log) => {
+                  {filteredLoginLogs.map((log) => {
                     const userEmail = log.userEmail || log.email || '';
                     const userType = normalizeRole(log);
                     const userName = log.userName || log.displayName || userEmail || log.userId || 'Unknown User';

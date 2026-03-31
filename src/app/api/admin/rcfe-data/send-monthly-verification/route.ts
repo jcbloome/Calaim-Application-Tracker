@@ -87,6 +87,51 @@ async function requireAdminFromAuthHeader(req: NextRequest) {
   return requireAdminFromToken(idToken);
 }
 
+const uniqueNonEmpty = (values: unknown[]) =>
+  Array.from(new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean)));
+
+async function loadReplyToContacts() {
+  const notificationSnap = await adminDb.collection('system_settings').doc('notifications').get();
+  const data = (notificationSnap.data() || {}) as any;
+  const healthNetUids = uniqueNonEmpty(data?.memberVerificationHealthNetRecipientUids || []);
+  const kaiserUids = uniqueNonEmpty(data?.memberVerificationKaiserRecipientUids || []);
+  const allUids = Array.from(new Set([...healthNetUids, ...kaiserUids]));
+
+  const userDocs = await Promise.all(allUids.map((uid) => adminDb.collection('users').doc(uid).get()));
+  const usersByUid = userDocs.reduce((acc, docSnap) => {
+    acc[docSnap.id] = (docSnap.data() || {}) as any;
+    return acc;
+  }, {} as Record<string, any>);
+
+  const mapContacts = (uids: string[]) => {
+    const contacts = uids
+      .map((uid) => {
+        const user = usersByUid[uid] || {};
+        const email = normalizeEmail(user?.email || uid);
+        if (!email || !email.includes('@')) return null;
+        const first = String(user?.firstName || '').trim();
+        const last = String(user?.lastName || '').trim();
+        const name = [first, last].filter(Boolean).join(' ').trim();
+        const label = name ? `${name} <${email}>` : email;
+        return { email, label };
+      })
+      .filter(Boolean) as Array<{ email: string; label: string }>;
+    return {
+      emails: Array.from(new Set(contacts.map((c) => c.email))),
+      labels: Array.from(new Set(contacts.map((c) => c.label))),
+    };
+  };
+
+  const healthNet = mapContacts(healthNetUids);
+  const kaiser = mapContacts(kaiserUids);
+  return {
+    healthNetEmails: healthNet.emails,
+    healthNetLabels: healthNet.labels,
+    kaiserEmails: kaiser.emails,
+    kaiserLabels: kaiser.labels,
+  };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const authz = await requireAdminFromAuthHeader(req);
@@ -94,9 +139,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }
 
-    const [statusSnapshot, sentLogSnapshot] = await Promise.all([
+    const [statusSnapshot, sentLogSnapshot, replyToContacts] = await Promise.all([
       adminDb.collection('rcfe_daily_followup_status').limit(5000).get(),
       adminDb.collection('rcfe_verification_email_send_log').orderBy('sentAt', 'desc').limit(1000).get(),
+      loadReplyToContacts(),
     ]);
     const statuses = statusSnapshot.docs.map((docSnap) => {
       const data = (docSnap.data() || {}) as any;
@@ -119,6 +165,7 @@ export async function GET(req: NextRequest) {
         rcfeName: String(data?.rcfeName || '').trim() || 'Unknown RCFE',
         adminName: String(data?.adminName || '').trim() || null,
         adminEmail: String(data?.adminEmail || '').trim() || null,
+        batchId: String(data?.batchId || '').trim() || null,
         emailMode: String(data?.emailMode || '').trim() || 'bulk',
         sentAt: toIso(data?.sentAt),
         sentBy: String(data?.sentBy || '').trim() || null,
@@ -126,11 +173,75 @@ export async function GET(req: NextRequest) {
         success: Boolean(data?.success),
       };
     });
+    const dailySentEntries = sentLog.filter(
+      (entry) => entry?.emailMode === 'daily_followup' && entry?.success && !entry?.isTest
+    );
+    const toMinuteBucket = (iso: string | null | undefined) => {
+      const value = String(iso || '').trim();
+      return value ? value.slice(0, 16) : 'unknown';
+    };
+    const groupedByBatch = new Map<
+      string,
+      {
+        batchId: string | null;
+        sentAt: string | null;
+        sentBy: string | null;
+        rcfeKeys: Set<string>;
+        rcfeNames: Set<string>;
+        count: number;
+      }
+    >();
+    dailySentEntries.forEach((entry) => {
+      const explicitBatchId = String(entry?.batchId || '').trim();
+      const legacyKey = `legacy:${String(entry?.sentBy || '').trim().toLowerCase()}|${toMinuteBucket(entry?.sentAt)}`;
+      const key = explicitBatchId ? `batch:${explicitBatchId}` : legacyKey;
+      const current =
+        groupedByBatch.get(key) ||
+        {
+          batchId: explicitBatchId || null,
+          sentAt: entry?.sentAt || null,
+          sentBy: entry?.sentBy || null,
+          rcfeKeys: new Set<string>(),
+          rcfeNames: new Set<string>(),
+          count: 0,
+        };
+      const sentAtMs = new Date(String(entry?.sentAt || '')).getTime();
+      const currentMs = new Date(String(current.sentAt || '')).getTime();
+      if (Number.isFinite(sentAtMs) && (!Number.isFinite(currentMs) || sentAtMs > currentMs)) {
+        current.sentAt = entry?.sentAt || current.sentAt;
+      }
+      const rcfeKey = String(entry?.rcfeKey || '').trim();
+      const rcfeName = String(entry?.rcfeName || '').trim();
+      if (rcfeKey) current.rcfeKeys.add(rcfeKey);
+      if (rcfeName) current.rcfeNames.add(rcfeName);
+      current.count += 1;
+      groupedByBatch.set(key, current);
+    });
+    const dailyBatchHistory = Array.from(groupedByBatch.values())
+      .map((batch) => ({
+        batchId: batch.batchId,
+        sentAt: batch.sentAt,
+        sentBy: batch.sentBy,
+        rcfeKeys: Array.from(batch.rcfeKeys),
+        rcfeNames: Array.from(batch.rcfeNames),
+        count: batch.count,
+      }))
+      .sort((a, b) => new Date(String(b.sentAt || '')).getTime() - new Date(String(a.sentAt || '')).getTime());
+    const latestDailyBatch = dailyBatchHistory[0]
+      ? {
+          batchId: dailyBatchHistory[0].batchId,
+          sentAt: dailyBatchHistory[0].sentAt,
+          rcfeKeys: dailyBatchHistory[0].rcfeKeys,
+        }
+      : null;
 
     return NextResponse.json({
       success: true,
       statuses,
       sentLog,
+      dailyBatchHistory,
+      latestDailyBatch,
+      replyToContacts,
       count: statuses.length,
     });
   } catch (error: any) {
@@ -197,6 +308,11 @@ export async function POST(req: NextRequest) {
     const sendRows = isTest
       ? usableRows.slice(0, 1).map((row) => ({ ...row, adminEmail: testEmail || authz.email }))
       : usableRows;
+    const batchId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const replyToContacts = await loadReplyToContacts();
+    const replyToEmails = replyToContacts.healthNetEmails;
+    const replyToLabels = replyToContacts.healthNetLabels;
+    const replyToDisplay = replyToLabels.join(', ') || replyToEmails.join(', ');
 
     const results: Array<{ to: string; rcfeName: string; id?: string; error?: string }> = [];
 
@@ -255,6 +371,9 @@ export async function POST(req: NextRequest) {
           <p>${escapeHtml(intro).replace(/\n/g, '<br/>')}</p>
           <p style="margin-top:4px;color:#6b7280;"><strong>Generated:</strong> ${escapeHtml(timestamp)}</p>
           <p style="margin-top:4px;color:#6b7280;"><strong>Plan scope:</strong> Health Net members only</p>
+          <p style="margin-top:4px;color:#6b7280;"><strong>Please respond to:</strong> ${escapeHtml(
+            replyToDisplay || 'Assigned Health Net verification staff'
+          )}</p>
           <p><strong>RCFE:</strong> ${escapeHtml(row.rcfeName)}</p>
           <p style="margin-top:6px;"><strong>Please reply to confirm this roster for your RCFE.</strong></p>
           <p style="margin-top:4px;color:#374151;">
@@ -273,6 +392,7 @@ export async function POST(req: NextRequest) {
       const { data, error } = await resend.emails.send({
         from: 'Connections CalAIM <noreply@carehomefinders.com>',
         to: [row.adminEmail],
+        ...(replyToEmails.length ? { replyTo: replyToEmails } : {}),
         subject: effectiveSubject,
         html,
       });
@@ -284,10 +404,12 @@ export async function POST(req: NextRequest) {
           rcfeName: row.rcfeName,
           adminName: row.adminName || null,
           adminEmail: row.adminEmail,
+          batchId,
           emailMode,
           isTest,
           success: false,
           error: error.message,
+          replyToEmails,
           sentBy: authz.email || null,
           sentAt: admin.firestore.FieldValue.serverTimestamp(),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -299,10 +421,12 @@ export async function POST(req: NextRequest) {
           rcfeName: row.rcfeName,
           adminName: row.adminName || null,
           adminEmail: row.adminEmail,
+          batchId,
           emailMode,
           isTest,
           success: true,
           providerMessageId: data?.id || null,
+          replyToEmails,
           sentBy: authz.email || null,
           sentAt: admin.firestore.FieldValue.serverTimestamp(),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),

@@ -58,9 +58,11 @@ type DailyFollowupStatus = {
 };
 
 type EmailMode = 'test' | 'bulk' | 'daily_followup';
+type SendMode = EmailMode | 'daily_followup_previous';
 
 type EmailSendLogEntry = {
   id: string;
+  batchId?: string | null;
   rcfeKey?: string | null;
   rcfeName: string;
   adminName?: string | null;
@@ -70,6 +72,22 @@ type EmailSendLogEntry = {
   sentBy?: string | null;
   isTest?: boolean;
   success?: boolean;
+};
+
+type ReplyToContacts = {
+  healthNetEmails: string[];
+  healthNetLabels: string[];
+  kaiserEmails: string[];
+  kaiserLabels: string[];
+};
+
+type DailyBatchHistoryEntry = {
+  batchId?: string | null;
+  sentAt?: string | null;
+  sentBy?: string | null;
+  rcfeKeys: string[];
+  rcfeNames: string[];
+  count: number;
 };
 
 const normalizeAdminName = (value: unknown) =>
@@ -133,20 +151,25 @@ export default function RcfeMonthlyVerificationPage() {
   const [monthlyIntro, setMonthlyIntro] = useState(
     'Hello RCFE Administrator,\n\nPlease review this Health Net member list and reply to confirm who is still at your RCFE and who is not there. Please include any corrections.'
   );
-  const [kaiserDraftSubject, setKaiserDraftSubject] = useState(
-    `RCFE Member Eligibility Check (Kaiser) - ${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}`
-  );
-  const [kaiserDraftIntro, setKaiserDraftIntro] = useState(
-    'Hello RCFE Administrator,\n\nPlease review this Kaiser member list and reply to confirm who is still at your RCFE and who is not there. Please include any corrections.'
-  );
   const [isSendingMonthlyTest, setIsSendingMonthlyTest] = useState(false);
   const [isSendingMonthlyBulk, setIsSendingMonthlyBulk] = useState(false);
   const [isSendingDailyFollowup, setIsSendingDailyFollowup] = useState(false);
   const [dailyFollowupStatusByKey, setDailyFollowupStatusByKey] = useState<Record<string, DailyFollowupStatus>>({});
-  const [dailyFollowupFilter, setDailyFollowupFilter] = useState<'all' | 'not_yet_sent_or_new' | 'already_sent'>('not_yet_sent_or_new');
+  const [dailyFollowupFilter, setDailyFollowupFilter] = useState<
+    'all' | 'not_yet_sent_or_new' | 'already_sent' | 'previous_sent_set'
+  >('not_yet_sent_or_new');
   const [emailSentLog, setEmailSentLog] = useState<EmailSendLogEntry[]>([]);
+  const [dailyBatchHistory, setDailyBatchHistory] = useState<DailyBatchHistoryEntry[]>([]);
   const [isSendConfirmOpen, setIsSendConfirmOpen] = useState(false);
-  const [pendingSendMode, setPendingSendMode] = useState<EmailMode | null>(null);
+  const [pendingSendMode, setPendingSendMode] = useState<SendMode | null>(null);
+  const [latestDailyBatchRcfeKeys, setLatestDailyBatchRcfeKeys] = useState<string[]>([]);
+  const [latestDailyBatchSentAt, setLatestDailyBatchSentAt] = useState<string | null>(null);
+  const [replyToContacts, setReplyToContacts] = useState<ReplyToContacts>({
+    healthNetEmails: [],
+    healthNetLabels: [],
+    kaiserEmails: [],
+    kaiserLabels: [],
+  });
   const [pendingSendRows, setPendingSendRows] = useState<
     Array<{
       rcfeKey: string;
@@ -230,6 +253,7 @@ export default function RcfeMonthlyVerificationPage() {
       if (!res.ok || !data?.success) return;
       const statuses = Array.isArray(data?.statuses) ? data.statuses : [];
       const sentLog = Array.isArray(data?.sentLog) ? data.sentLog : [];
+      const batchHistory = Array.isArray(data?.dailyBatchHistory) ? data.dailyBatchHistory : [];
       const next: Record<string, DailyFollowupStatus> = {};
       statuses.forEach((row: any) => {
         const key = String(row?.rcfeKey || '').trim();
@@ -245,6 +269,7 @@ export default function RcfeMonthlyVerificationPage() {
       setEmailSentLog(
         sentLog.map((row: any) => ({
           id: String(row?.id || '').trim() || `${String(row?.rcfeName || 'unknown')}-${Math.random()}`,
+          batchId: String(row?.batchId || '').trim() || null,
           rcfeKey: String(row?.rcfeKey || '').trim() || null,
           rcfeName: String(row?.rcfeName || '').trim() || 'Unknown RCFE',
           adminName: String(row?.adminName || '').trim() || null,
@@ -256,6 +281,35 @@ export default function RcfeMonthlyVerificationPage() {
           success: Boolean(row?.success),
         }))
       );
+      setDailyBatchHistory(
+        batchHistory.map((row: any) => ({
+          batchId: String(row?.batchId || '').trim() || null,
+          sentAt: String(row?.sentAt || '').trim() || null,
+          sentBy: String(row?.sentBy || '').trim() || null,
+          rcfeKeys: Array.isArray(row?.rcfeKeys)
+            ? row.rcfeKeys.map((x: any) => String(x || '').trim()).filter(Boolean)
+            : [],
+          rcfeNames: Array.isArray(row?.rcfeNames)
+            ? row.rcfeNames.map((x: any) => String(x || '').trim()).filter(Boolean)
+            : [],
+          count: Number(row?.count || 0),
+        }))
+      );
+      const latestDailyBatch = data?.latestDailyBatch || null;
+      const batchKeys = Array.isArray(latestDailyBatch?.rcfeKeys) ? latestDailyBatch.rcfeKeys : [];
+      setLatestDailyBatchRcfeKeys(
+        batchKeys
+          .map((x: any) => String(x || '').trim())
+          .filter(Boolean)
+      );
+      setLatestDailyBatchSentAt(String(latestDailyBatch?.sentAt || '').trim() || null);
+      const contacts = data?.replyToContacts || {};
+      setReplyToContacts({
+        healthNetEmails: Array.isArray(contacts?.healthNetEmails) ? contacts.healthNetEmails : [],
+        healthNetLabels: Array.isArray(contacts?.healthNetLabels) ? contacts.healthNetLabels : [],
+        kaiserEmails: Array.isArray(contacts?.kaiserEmails) ? contacts.kaiserEmails : [],
+        kaiserLabels: Array.isArray(contacts?.kaiserLabels) ? contacts.kaiserLabels : [],
+      });
     } catch {
       // best effort only
     }
@@ -393,44 +447,91 @@ export default function RcfeMonthlyVerificationPage() {
         .filter((row) => row.members.length > 0),
     [emailRows]
   );
-  const kaiserDraftMemberCount = useMemo(
-    () => kaiserDraftRows.reduce((sum, row) => sum + row.members.length, 0),
-    [kaiserDraftRows]
-  );
   const formatPreviewStatus = (status: string) => {
     if (status === 'there') return 'Confirmed There';
     if (status === 'not_there') return 'Told Not There';
     return 'Unverified';
   };
-  const kaiserDraftPreview = useMemo(() => {
-    if (!kaiserDraftRows.length) return '';
-    const sample = kaiserDraftRows[0];
-    const lines = sample.members
-      .slice(0, 10)
-      .map((member) => `- ${member.name} (${member.id}) | ${formatPreviewStatus(member.status)}`)
-      .join('\n');
-    return [
-      `To: ${sample.adminEmail}`,
-      `Admin: ${sample.adminName || 'Unknown'}`,
-      `RCFE: ${sample.rcfeName}`,
-      `Subject: ${kaiserDraftSubject}`,
-      '',
-      kaiserDraftIntro,
-      '',
-      `Kaiser Members (${sample.members.length})`,
-      lines,
-      sample.members.length > 10 ? '- ...more members...' : '',
-      '',
-      'Sending is disabled until Kaiser workflow is finalized.',
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }, [kaiserDraftRows, kaiserDraftSubject, kaiserDraftIntro]);
+  const buildCompletePreview = useCallback(
+    (args: {
+      row?: {
+        rcfeKey: string;
+        rcfeName: string;
+        adminName: string;
+        adminEmail: string;
+        members: Array<{
+          id: string;
+          name: string;
+          planType: PlanType;
+          status: string;
+          lastVerifiedAt: string;
+          extraDetails: string;
+        }>;
+      };
+      subject: string;
+      intro: string;
+      respondToLabels: string[];
+      respondToEmails: string[];
+      mode: 'monthly' | 'daily' | 'kaiser';
+      planLabel: string;
+    }) => {
+      const row = args.row;
+      if (!row) return `No ${args.planLabel} RCFE rows are available.`;
+      const timestamp = new Date().toLocaleString();
+      const subject = args.mode === 'daily' ? `[Daily Follow-up ${timestamp}] ${args.subject}` : args.subject;
+      const respondTo =
+        args.respondToLabels.join(', ') || args.respondToEmails.join(', ') || 'Not configured';
+      const verifiedThere = row.members.filter((member) => member.status === 'there');
+      const notThere = row.members.filter((member) => member.status === 'not_there');
+      const unverified = row.members.filter(
+        (member) => member.status !== 'there' && member.status !== 'not_there'
+      );
+      const listMembers = (title: string, items: typeof row.members) =>
+        `${title} (${items.length})\n${
+          items.length
+            ? items
+                .map((member) => {
+                  const lastVerified = member.lastVerifiedAt || 'Not recorded';
+                  const notes = member.extraDetails ? ` | Notes: ${member.extraDetails}` : '';
+                  return `- ${member.name} (${member.id}) | ${formatPreviewStatus(member.status)} | Last Verified: ${lastVerified}${notes}`;
+                })
+                .join('\n')
+            : '- None listed'
+        }`;
+      return [
+        `To: ${row.adminEmail}`,
+        `Admin: ${row.adminName || 'Unknown'}`,
+        `Respond-to email(s): ${respondTo}`,
+        `RCFE: ${row.rcfeName}`,
+        `Generated: ${timestamp}`,
+        `Plan scope: ${args.planLabel}`,
+        `Subject: ${subject}`,
+        '',
+        args.intro,
+        '',
+        listMembers('Members Verified at RCFE (Confirmed There)', verifiedThere),
+        '',
+        listMembers('Residents Not at RCFE (Told Not There)', notThere),
+        '',
+        listMembers('Members Pending Verification', unverified),
+        '',
+        args.mode === 'kaiser'
+          ? 'Sending is disabled until Kaiser workflow is finalized.'
+          : 'Please reply to confirm all member statuses.',
+      ].join('\n');
+    },
+    []
+  );
 
   const dailyFollowupRows = useMemo(
     () => healthNetEmailRows.filter((row) => row.members.some((member: any) => member.status === 'not_there')),
     [healthNetEmailRows]
   );
+  const previousDailySetRows = useMemo(() => {
+    const keySet = new Set(latestDailyBatchRcfeKeys.map((x) => String(x || '').trim()).filter(Boolean));
+    if (keySet.size === 0) return [];
+    return dailyFollowupRows.filter((row) => keySet.has(String(row.rcfeKey || '').trim()));
+  }, [dailyFollowupRows, latestDailyBatchRcfeKeys]);
   const filteredDailyFollowupRows = useMemo(() => {
     const getLatestVerificationMs = (row: any) =>
       row.members.reduce((max: number, member: any) => {
@@ -440,6 +541,9 @@ export default function RcfeMonthlyVerificationPage() {
       }, 0);
 
     return dailyFollowupRows.filter((row: any) => {
+      if (dailyFollowupFilter === 'previous_sent_set') {
+        return latestDailyBatchRcfeKeys.includes(String(row.rcfeKey || '').trim());
+      }
       const status = dailyFollowupStatusByKey[String(row.rcfeKey || '').trim()];
       const sentMs = status?.lastDailyFollowupSentAt ? new Date(status.lastDailyFollowupSentAt).getTime() : 0;
       const latestVerificationMs = getLatestVerificationMs(row);
@@ -448,46 +552,32 @@ export default function RcfeMonthlyVerificationPage() {
       if (dailyFollowupFilter === 'already_sent') return !notYetSentOrNew;
       return notYetSentOrNew;
     });
-  }, [dailyFollowupRows, dailyFollowupStatusByKey, dailyFollowupFilter]);
+  }, [dailyFollowupRows, dailyFollowupStatusByKey, dailyFollowupFilter, latestDailyBatchRcfeKeys]);
 
   const getRowsForMode = useCallback(
-    (mode: EmailMode) => (mode === 'daily_followup' ? filteredDailyFollowupRows : healthNetEmailRows),
-    [healthNetEmailRows, filteredDailyFollowupRows]
+    (mode: SendMode) => {
+      if (mode === 'daily_followup') return filteredDailyFollowupRows;
+      if (mode === 'daily_followup_previous') return previousDailySetRows;
+      return healthNetEmailRows;
+    },
+    [healthNetEmailRows, filteredDailyFollowupRows, previousDailySetRows]
   );
 
   const sampleEmailPreview = useMemo(() => {
     if (!pendingSendRows.length || !pendingSendMode) return '';
-    const row = pendingSendRows[0];
-    const timestamp = new Date().toLocaleString();
-    const subjectPrefix = pendingSendMode === 'daily_followup' ? `[Daily Follow-up ${timestamp}] ` : '';
-    const verifiedThere = row.members.filter((member) => member.status === 'there');
-    const notThere = row.members.filter((member) => member.status === 'not_there');
-    const unverified = row.members.filter((member) => member.status !== 'there' && member.status !== 'not_there');
-    const toLines = (label: string, items: typeof row.members) =>
-      `${label} (${items.length})\n${items
-        .slice(0, 8)
-        .map((member) => `- ${member.name} (${member.id}) | ${formatPreviewStatus(member.status)}`)
-        .join('\n')}${items.length > 8 ? '\n- ...more members...' : ''}`;
-    return [
-      `To: ${row.adminEmail}`,
-      `Admin: ${row.adminName || 'Unknown'}`,
-      `RCFE: ${row.rcfeName}`,
-      `Subject: ${subjectPrefix}${monthlySubject}`,
-      '',
-      monthlyIntro,
-      '',
-      toLines('Members Verified at RCFE', verifiedThere),
-      '',
-      toLines('Residents Not at RCFE', notThere),
-      '',
-      toLines('Members Pending Verification', unverified),
-      '',
-      'Please reply to confirm all member statuses.',
-    ].join('\n');
-  }, [pendingSendRows, pendingSendMode, monthlySubject, monthlyIntro]);
+    return buildCompletePreview({
+      row: pendingSendRows[0],
+      subject: monthlySubject,
+      intro: monthlyIntro,
+      respondToLabels: replyToContacts.healthNetLabels,
+      respondToEmails: replyToContacts.healthNetEmails,
+      mode: pendingSendMode === 'daily_followup' || pendingSendMode === 'daily_followup_previous' ? 'daily' : 'monthly',
+      planLabel: 'Health Net members only',
+    });
+  }, [pendingSendRows, pendingSendMode, monthlySubject, monthlyIntro, replyToContacts, buildCompletePreview]);
 
   const openSendConfirmation = useCallback(
-    (mode: EmailMode) => {
+    (mode: SendMode) => {
       if (!monthlySubject.trim() || !monthlyIntro.trim()) {
         toast({
           title: 'Missing required fields',
@@ -516,7 +606,7 @@ export default function RcfeMonthlyVerificationPage() {
   );
 
   const sendMonthlyVerificationEmails = useCallback(
-    async (mode: EmailMode) => {
+    async (mode: SendMode) => {
       try {
         if (!auth?.currentUser) throw new Error('You must be signed in to send emails.');
         const targetRows = getRowsForMode(mode);
@@ -545,7 +635,7 @@ export default function RcfeMonthlyVerificationPage() {
             rows: targetRows,
             isTest: mode === 'test',
             testEmail: auth.currentUser?.email || '',
-            emailMode: mode,
+            emailMode: mode === 'daily_followup_previous' ? 'daily_followup' : mode,
           }),
         });
         const data = (await res.json().catch(() => ({}))) as any;
@@ -557,8 +647,10 @@ export default function RcfeMonthlyVerificationPage() {
           title:
             mode === 'test'
               ? 'Monthly verification test sent'
-              : mode === 'daily_followup'
-                ? 'Daily follow-up emails sent'
+              : mode === 'daily_followup' || mode === 'daily_followup_previous'
+                ? mode === 'daily_followup_previous'
+                  ? 'Previous daily set re-sent'
+                  : 'Daily follow-up emails sent'
                 : 'Monthly verification emails sent',
           description:
             mode === 'test'
@@ -576,7 +668,7 @@ export default function RcfeMonthlyVerificationPage() {
           title:
             mode === 'test'
               ? 'Test send failed'
-              : mode === 'daily_followup'
+              : mode === 'daily_followup' || mode === 'daily_followup_previous'
                 ? 'Daily follow-up send failed'
                 : 'Bulk send failed',
           description: error?.message || 'Unable to send monthly verification emails.',
@@ -640,7 +732,7 @@ export default function RcfeMonthlyVerificationPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Email Setup</CardTitle>
+          <CardTitle>Verification Emails</CardTitle>
           <CardDescription>Review the message and send test, monthly, or daily Health Net follow-up emails.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -648,11 +740,12 @@ export default function RcfeMonthlyVerificationPage() {
             <Badge variant="outline">{emailRows.length} RCFEs with valid recipient emails</Badge>
             <Badge variant="outline">{healthNetEmailRows.length} Health Net RCFEs ready for email</Badge>
             <Badge variant="outline">{dailyFollowupRows.length} Health Net RCFEs with "not there" members</Badge>
+            <Badge variant="outline">Previous daily set: {previousDailySetRows.length}</Badge>
             <Badge variant="secondary">Kaiser RCFEs pending separate workflow: {kaiserEligibleRowsCount}</Badge>
             <Select
               value={dailyFollowupFilter}
               onValueChange={(value) =>
-                setDailyFollowupFilter(value as 'all' | 'not_yet_sent_or_new' | 'already_sent')
+                setDailyFollowupFilter(value as 'all' | 'not_yet_sent_or_new' | 'already_sent' | 'previous_sent_set')
               }
             >
               <SelectTrigger className="w-[280px]">
@@ -661,10 +754,32 @@ export default function RcfeMonthlyVerificationPage() {
               <SelectContent>
                 <SelectItem value="not_yet_sent_or_new">Daily: Not Yet Sent / Newly Verified</SelectItem>
                 <SelectItem value="already_sent">Daily: Already Sent (No New Verification)</SelectItem>
+                <SelectItem value="previous_sent_set">Daily: Previous Sent Set</SelectItem>
                 <SelectItem value="all">Daily: All with Not There</SelectItem>
               </SelectContent>
             </Select>
             <Badge variant="outline">Daily target: {filteredDailyFollowupRows.length}</Badge>
+            {latestDailyBatchSentAt ? (
+              <Badge variant="outline">Last daily batch: {new Date(latestDailyBatchSentAt).toLocaleString()}</Badge>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div className="border rounded-md p-3 space-y-1">
+              <p className="text-sm font-medium">Assigned reply-to staff (Health Net)</p>
+              {replyToContacts.healthNetLabels.length > 0 ? (
+                <p className="text-xs text-muted-foreground break-words">{replyToContacts.healthNetLabels.join(', ')}</p>
+              ) : (
+                <p className="text-xs text-amber-700">No Health Net reply-to staff configured yet.</p>
+              )}
+            </div>
+            <div className="border rounded-md p-3 space-y-1">
+              <p className="text-sm font-medium">Assigned reply-to staff (Kaiser)</p>
+              {replyToContacts.kaiserLabels.length > 0 ? (
+                <p className="text-xs text-muted-foreground break-words">{replyToContacts.kaiserLabels.join(', ')}</p>
+              ) : (
+                <p className="text-xs text-amber-700">No Kaiser reply-to staff configured yet.</p>
+              )}
+            </div>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Subject</label>
@@ -704,6 +819,13 @@ export default function RcfeMonthlyVerificationPage() {
             >
               {isSendingDailyFollowup ? 'Sending Daily Follow-up...' : 'Review + Send Daily Not-There Follow-up'}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => openSendConfirmation('daily_followup_previous')}
+              disabled={isSendingDailyFollowup || previousDailySetRows.length === 0}
+            >
+              {isSendingDailyFollowup ? 'Sending...' : 'Review + Re-send Previous Daily Set'}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -716,35 +838,18 @@ export default function RcfeMonthlyVerificationPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">Kaiser draft RCFEs: {kaiserDraftRows.length}</Badge>
-            <Badge variant="outline">Kaiser draft members: {kaiserDraftMemberCount}</Badge>
+          <div className="border rounded-md p-3 space-y-1">
+            <p className="text-sm font-medium">Assigned reply-to staff (Kaiser)</p>
+            {replyToContacts.kaiserLabels.length > 0 ? (
+              <p className="text-xs text-muted-foreground break-words">{replyToContacts.kaiserLabels.join(', ')}</p>
+            ) : (
+              <p className="text-xs text-amber-700">
+                Not configured. Go to Staff Management and enable "Member verification notify: Kaiser" for staff.
+              </p>
+            )}
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Kaiser Subject (Draft)</label>
-            <Input
-              value={kaiserDraftSubject}
-              onChange={(e) => setKaiserDraftSubject(e.target.value)}
-              placeholder="RCFE Member Eligibility Check (Kaiser) - Month Year"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Kaiser Message Intro (Draft)</label>
-            <Textarea
-              value={kaiserDraftIntro}
-              onChange={(e) => setKaiserDraftIntro(e.target.value)}
-              rows={4}
-              placeholder="Kaiser intro message..."
-            />
-          </div>
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Kaiser Sample Preview (first RCFE)</p>
-            <pre className="text-xs whitespace-pre-wrap bg-muted rounded p-3">
-              {kaiserDraftPreview || 'No Kaiser RCFE rows are available yet.'}
-            </pre>
-          </div>
-          <Button variant="outline" disabled>
-            Send Kaiser Emails (Coming Soon)
+          <Button variant="outline" disabled className="w-full sm:w-auto">
+            Kaiser Verification Emails (Coming Soon)
           </Button>
         </CardContent>
       </Card>
@@ -753,7 +858,13 @@ export default function RcfeMonthlyVerificationPage() {
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>
-              Confirm {pendingSendMode === 'daily_followup' ? 'Daily Follow-up' : 'Monthly Bulk'} Email Send
+              Confirm{' '}
+              {pendingSendMode === 'daily_followup' || pendingSendMode === 'daily_followup_previous'
+                ? pendingSendMode === 'daily_followup_previous'
+                  ? 'Re-send Previous Daily Set'
+                  : 'Daily Follow-up'
+                : 'Monthly Bulk'}{' '}
+              Email Send
             </DialogTitle>
             <DialogDescription>
               Review exactly which RCFEs will be emailed, the admin contact, and a sample email preview before sending.
@@ -763,7 +874,14 @@ export default function RcfeMonthlyVerificationPage() {
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">{pendingSendRows.length} RCFEs queued</Badge>
-              <Badge variant="outline">Mode: {pendingSendMode === 'daily_followup' ? 'Daily Follow-up' : 'Monthly Bulk'}</Badge>
+              <Badge variant="outline">
+                Mode:{' '}
+                {pendingSendMode === 'daily_followup' || pendingSendMode === 'daily_followup_previous'
+                  ? pendingSendMode === 'daily_followup_previous'
+                    ? 'Re-send Previous Daily Set'
+                    : 'Daily Follow-up'
+                  : 'Monthly Bulk'}
+              </Badge>
             </div>
 
             <div className="border rounded-md p-3 space-y-2">
@@ -791,7 +909,7 @@ export default function RcfeMonthlyVerificationPage() {
               Cancel
             </Button>
             <Button
-              variant={pendingSendMode === 'daily_followup' ? 'destructive' : 'default'}
+              variant={pendingSendMode === 'daily_followup' || pendingSendMode === 'daily_followup_previous' ? 'destructive' : 'default'}
               onClick={async () => {
                 if (!pendingSendMode) return;
                 setIsSendConfirmOpen(false);
@@ -799,7 +917,11 @@ export default function RcfeMonthlyVerificationPage() {
               }}
               disabled={isSendingMonthlyBulk || isSendingDailyFollowup}
             >
-              {pendingSendMode === 'daily_followup' ? 'Confirm + Send Daily Follow-up' : 'Confirm + Send Monthly Bulk'}
+              {pendingSendMode === 'daily_followup' || pendingSendMode === 'daily_followup_previous'
+                ? pendingSendMode === 'daily_followup_previous'
+                  ? 'Confirm + Re-send Previous Daily Set'
+                  : 'Confirm + Send Daily Follow-up'
+                : 'Confirm + Send Monthly Bulk'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -808,9 +930,35 @@ export default function RcfeMonthlyVerificationPage() {
       <Card>
         <CardHeader>
           <CardTitle>Email Sent Log</CardTitle>
-          <CardDescription>Track RCFEs already emailed and sent dates.</CardDescription>
+          <CardDescription>Track daily sets and individual RCFE emails already sent.</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 space-y-2">
+            <p className="text-sm font-medium">Daily Sets Sent</p>
+            {dailyBatchHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No daily sets logged yet.</p>
+            ) : (
+              <div className="max-h-[240px] overflow-y-auto space-y-2">
+                {dailyBatchHistory.map((batch, idx) => (
+                  <div key={`${batch.batchId || 'legacy'}-${batch.sentAt || idx}`} className="border rounded-md p-3 text-sm">
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <Badge variant="outline">Daily Follow-up Set</Badge>
+                      <Badge variant="outline">{batch.rcfeNames.length} RCFEs</Badge>
+                      <span className="text-muted-foreground">
+                        {batch.sentAt ? new Date(batch.sentAt).toLocaleString() : 'Unknown send time'}
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground">
+                      Sent by: {batch.sentBy || 'Unknown'} {batch.batchId ? `| Batch: ${batch.batchId}` : '| Legacy batch'}
+                    </p>
+                    <p className="text-muted-foreground break-words">
+                      RCFEs: {batch.rcfeNames.join(', ') || 'No RCFE names recorded'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {emailSentLog.length === 0 ? (
             <p className="text-sm text-muted-foreground">No email sends logged yet.</p>
           ) : (
