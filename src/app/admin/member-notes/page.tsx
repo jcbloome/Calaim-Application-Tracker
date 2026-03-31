@@ -268,7 +268,6 @@ function MemberNotesPageContent() {
       if (Array.isArray(membersData?.members)) {
         for (const member of membersData.members as Member[]) {
           const assignments = [
-            normalizeAssignmentValue(member.socialWorkerAssigned),
             normalizeAssignmentValue(member.kaiserUserAssignment),
             normalizeAssignmentValue(member.staffAssigned),
           ];
@@ -365,7 +364,6 @@ function MemberNotesPageContent() {
     if (staffAssignmentFilter === 'all') return true;
     const selectedStaff = normalizeAssignmentValue(staffAssignmentFilter);
     const values = [
-      normalizeAssignmentValue(member.socialWorkerAssigned),
       normalizeAssignmentValue(member.kaiserUserAssignment),
       normalizeAssignmentValue(member.staffAssigned),
     ];

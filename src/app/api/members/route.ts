@@ -74,7 +74,7 @@ async function fetchCaspioMembers(
 
     if (assignedStaff) {
       const escapedStaff = assignedStaff.replace(/'/g, "''");
-      const staffFilter = `(Social_Worker_Assigned = '${escapedStaff}' OR Kaiser_User_Assignment = '${escapedStaff}' OR Staff_Assigned = '${escapedStaff}')`;
+      const staffFilter = `(Kaiser_User_Assignment = '${escapedStaff}' OR Staff_Assigned = '${escapedStaff}')`;
       if (queryParams.has('q.where')) {
         queryParams.set('q.where', `(${queryParams.get('q.where')}) AND ${staffFilter}`);
       } else {
