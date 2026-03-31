@@ -1,15 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider, FieldPath, FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Loader2, AlertCircle, Languages } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, Languages, CheckCircle2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, errorEmitter, FirestorePermissionError, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, getDoc, serverTimestamp, collection, collectionGroup, Timestamp, query, where, getDocs, FieldValue } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection, collectionGroup, query, where, getDocs } from 'firebase/firestore';
 import Link from 'next/link';
 
 import Step1 from './Step1';
@@ -20,7 +20,6 @@ import Step5 from './Step5';
 import { formSchema, type FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { Application } from '@/lib/definitions';
-import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { FormProgressIndicator } from '@/components/FormProgressIndicator';
 
 const steps = [
@@ -45,6 +44,13 @@ const steps = [
   ]},
 ];
 
+function formatFieldLabel(fieldName: string) {
+  return fieldName
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (str) => str.toUpperCase())
+    .trim();
+}
+
 function CsSummaryFormComponent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,12 +62,18 @@ function CsSummaryFormComponent() {
   const appUserId = searchParams.get('userId'); // For admins editing a user's app
 
   const [internalApplicationId, setInternalApplicationId] = useState<string | null>(applicationId);
-  const [existingApplicationData, setExistingApplicationData] = useState<Application | null>(null);
   const initialStep = parseInt(searchParams.get('step') || '1', 10);
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [isProcessing, setIsProcessing] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showSkipOption, setShowSkipOption] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
+  const [hasInteracted, setHasInteracted] = useState(false);
+  const [lastEditedAt, setLastEditedAt] = useState(0);
+  const initialWatchCompleteRef = useRef(false);
+  const lastSnapshotRef = useRef('');
 
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -71,7 +83,28 @@ function CsSummaryFormComponent() {
     }
   });
 
-  const { formState: { errors, isValid }, trigger, getValues, handleSubmit, reset, setFocus, setError, clearErrors } = methods;
+  const { formState: { errors }, trigger, getValues, handleSubmit, reset, setFocus, setError, clearErrors } = methods;
+  const watchedValues = methods.watch();
+
+  const fieldToStepMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    steps.forEach((step) => {
+      step.fields.forEach((field) => {
+        map[field] = step.id;
+      });
+    });
+    return map;
+  }, []);
+
+  const errorChecklist = useMemo(() => {
+    return Object.keys(errors || {})
+      .map((field) => ({
+        field,
+        step: fieldToStepMap[field] || 1,
+        label: formatFieldLabel(field),
+      }))
+      .sort((a, b) => a.step - b.step || a.label.localeCompare(b.label));
+  }, [errors, fieldToStepMap]);
 
   const normalizeForCompare = (value: unknown) => String(value || '').trim().toLowerCase();
 
@@ -142,7 +175,6 @@ function CsSummaryFormComponent() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as Application;
-          setExistingApplicationData(data);
           reset(data as FormValues);
           
           // Check if CS Summary is already completed and show skip option
@@ -154,7 +186,6 @@ function CsSummaryFormComponent() {
           }
         } else {
             setInternalApplicationId(null);
-            setExistingApplicationData(null);
             if (user && !isAdminView) { // Only reset referrer for new user forms
                 const displayName = user.displayName || '';
                 const nameParts = displayName.split(' ');
@@ -182,6 +213,64 @@ function CsSummaryFormComponent() {
     };
     fetchApplicationData();
   }, [docRef, user, firestore, reset, isAdminView, getValues, internalApplicationId]);
+
+  useEffect(() => {
+    const nextSnapshot = JSON.stringify(watchedValues || {});
+    if (!initialWatchCompleteRef.current) {
+      initialWatchCompleteRef.current = true;
+      lastSnapshotRef.current = nextSnapshot;
+      return;
+    }
+    if (nextSnapshot !== lastSnapshotRef.current) {
+      lastSnapshotRef.current = nextSnapshot;
+      setHasInteracted(true);
+      setLastEditedAt(Date.now());
+    }
+  }, [watchedValues]);
+
+  useEffect(() => {
+    if (!hasInteracted) return;
+    if (isProcessing) return;
+    if (!lastEditedAt) return;
+    if (!methods.formState.isDirty) return;
+    if (!firestore) return;
+    if (!isAdminCreatedApp && !targetUserId) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsAutoSaving(true);
+        setAutoSaveError(null);
+        const savedId = await saveProgress(true);
+        if (savedId) {
+          setLastSavedAt(new Date());
+        }
+      } catch (error: any) {
+        setAutoSaveError(String(error?.message || 'Autosave failed'));
+      } finally {
+        setIsAutoSaving(false);
+      }
+    }, 1800);
+
+    return () => clearTimeout(timer);
+  }, [
+    hasInteracted,
+    lastEditedAt,
+    isProcessing,
+    methods.formState.isDirty,
+    firestore,
+    isAdminCreatedApp,
+    targetUserId,
+  ]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!methods.formState.isDirty || isProcessing) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [methods.formState.isDirty, isProcessing]);
 
 
   useEffect(() => {
@@ -400,13 +489,6 @@ function CsSummaryFormComponent() {
     return null;
   };
 
-  const formatFieldLabel = (fieldName: string) => {
-    return fieldName
-      .replace(/([A-Z])/g, ' $1')
-      .replace(/^./, (str) => str.toUpperCase())
-      .trim();
-  };
-
   const onInvalid = (errors: FieldErrors<FormValues>) => {
     console.log("Form Validation Failed:", errors);
     
@@ -439,6 +521,17 @@ function CsSummaryFormComponent() {
         description: formatFieldLabel(firstErrorField)
       });
     }
+  };
+
+  const jumpToField = (fieldName: string) => {
+    const nextStep = fieldToStepMap[fieldName] || 1;
+    if (nextStep !== currentStep) {
+      setCurrentStep(nextStep);
+    }
+    setValidationError('Please fix the highlighted fields before continuing.');
+    setTimeout(() => {
+      setFocus(fieldName as FieldPath<FormValues>);
+    }, 100);
   };
 
   const checkForDuplicates = async (data: FormValues): Promise<boolean> => {
@@ -525,7 +618,7 @@ function CsSummaryFormComponent() {
           : `/forms/cs-summary-form/review?applicationId=${finalAppId}`;
         router.push(reviewUrl);
         
-    } catch (error) {
+    } catch {
         // Error is already handled and emitted by saveProgress
     } finally {
         setIsProcessing(false);
@@ -580,6 +673,20 @@ function CsSummaryFormComponent() {
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                       <div>
                           <h1 className="text-2xl font-bold">CS Member Summary</h1>
+                          <div className="mt-1 text-xs text-muted-foreground flex flex-wrap items-center gap-2">
+                            {isAutoSaving ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Loader2 className="h-3 w-3 animate-spin" /> Saving draft...
+                              </span>
+                            ) : lastSavedAt ? (
+                              <span className="inline-flex items-center gap-1 text-green-700">
+                                <CheckCircle2 className="h-3 w-3" /> Saved {lastSavedAt.toLocaleTimeString()}
+                              </span>
+                            ) : (
+                              <span>Draft saves automatically while you type.</span>
+                            )}
+                            {autoSaveError ? <span className="text-red-600">Autosave error: {autoSaveError}</span> : null}
+                          </div>
                       </div>
                       {!isAdminView && (
                           <Button 
@@ -605,10 +712,43 @@ function CsSummaryFormComponent() {
                    <span className="text-xs sm:text-sm font-medium text-muted-foreground text-center flex-shrink-0 px-2 sm:px-4 order-first sm:order-none">
                        Step {currentStep} of {steps.length}: <span className="hidden sm:inline">{steps[currentStep - 1].name}</span>
                    </span>
-                   <span className="hidden sm:block"></span>
+                   <Button
+                     type="button"
+                     variant="outline"
+                     size="sm"
+                     className="sm:w-auto"
+                     onClick={async () => {
+                       try {
+                         const savedId = await saveProgress(false);
+                         if (savedId) setLastSavedAt(new Date());
+                       } catch {
+                         // handled in saveProgress
+                       }
+                     }}
+                   >
+                     <Save className="mr-2 h-4 w-4" /> Save Draft
+                   </Button>
               </div>
               <Progress value={progress} className="w-full" />
             </div>
+
+            {errorChecklist.length > 0 && (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+                <div className="text-sm font-medium text-amber-900">Quick fixes needed before submit</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {errorChecklist.slice(0, 12).map((item) => (
+                    <button
+                      key={`err-${item.field}`}
+                      type="button"
+                      onClick={() => jumpToField(item.field)}
+                      className="rounded-full border border-amber-300 bg-white px-2.5 py-1 text-xs text-amber-900 hover:bg-amber-100"
+                    >
+                      Step {item.step}: {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Skip to Pathway Option for Completed Forms */}
             {showSkipOption && (
@@ -640,6 +780,17 @@ function CsSummaryFormComponent() {
             </div>
 
             <div className="mt-8 pt-5 border-t">
+               {currentStep === steps.length && (
+                <Alert className={errorChecklist.length > 0 ? 'mb-4 border-amber-300 bg-amber-50' : 'mb-4 border-green-300 bg-green-50'}>
+                  {errorChecklist.length > 0 ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                  <AlertTitle>{errorChecklist.length > 0 ? 'Not ready to submit yet' : 'Ready to submit'}</AlertTitle>
+                  <AlertDescription>
+                    {errorChecklist.length > 0
+                      ? `Please fix ${errorChecklist.length} required field(s) before reviewing and completing.`
+                      : 'All required sections look complete. You can continue to Review & Complete.'}
+                  </AlertDescription>
+                </Alert>
+              )}
                {validationError && (
                 <Alert variant="destructive" className="mb-4">
                   <AlertCircle className="h-4 w-4" />

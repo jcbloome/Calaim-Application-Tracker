@@ -16,6 +16,7 @@ const eligibilityCheckSchema = z.object({
   memberBirthday: z.string().min(1, 'Member birthday is required'),
   memberMrn: z.string().min(1, 'Medical Record Number (MRN) is required'),
   healthPlan: z.enum(['Kaiser', 'Health Net']),
+  pathway: z.string().optional(),
   county: z.string().min(1, 'County is required'),
   
   // Requester Information
@@ -144,9 +145,18 @@ export async function POST(request: NextRequest) {
       });
 
       if (recipientUids.length > 0) {
+        const memberMrn = String(data.memberMrn || '').trim() || '—';
+        const memberDob = String(data.memberBirthday || '').trim() || '—';
+        const memberCounty = String(data.county || '').trim() || '—';
+        const mcpName = String(data.healthPlan || '').trim() || '—';
+        const pathway = String(data.pathway || '').trim() || 'Eligibility Check';
         const basePayload: Record<string, any> = {
           title: 'Eligibility Check',
-          message: `${memberName || 'Member'} — ${data.healthPlan} • ${data.county}\nRequester: ${data.requesterEmail}`,
+          message:
+            `${memberName || 'Member'} — ${data.healthPlan} • ${memberCounty}\n` +
+            `MRN: ${memberMrn} • DOB: ${memberDob} • County: ${memberCounty}\n` +
+            `MCP: ${mcpName} • Pathway: ${pathway}\n` +
+            `Requester: ${data.requesterEmail}`,
           type: 'eligibility_check',
           priority: 'Priority',
           status: 'Open',
@@ -156,8 +166,12 @@ export async function POST(request: NextRequest) {
           actionUrl: `/admin/eligibility-checks?checkId=${encodeURIComponent(docRef.id)}`,
           eligibilityCheckId: docRef.id,
           memberName,
+          memberMrn: memberMrn === '—' ? null : memberMrn,
+          memberDob: memberDob === '—' ? null : memberDob,
+          mcpName: mcpName === '—' ? null : mcpName,
+          pathway,
           healthPlan: data.healthPlan,
-          county: data.county,
+          county: memberCounty === '—' ? null : memberCounty,
         };
 
         await Promise.all(

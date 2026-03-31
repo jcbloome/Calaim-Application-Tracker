@@ -109,8 +109,11 @@ export async function POST(request: NextRequest) {
     const referrerName = String(appData?.referrerName || '').trim() || 'there';
     const senderName = String(sentByName || '').trim() || 'The Connections Team';
     const subject = `Application progress update for ${memberName}`;
+    const processingSelected = /cs summary submitted - processing/i.test(statusText);
     const message = deniedSelected
       ? `Application progress update: ${statusText}. Reason: ${reason}`
+      : processingSelected
+        ? 'We received your CS Summary and are now processing your application. Our team will contact you if we need anything else.'
       : `Application progress update: ${statusText}.`;
 
     if (Boolean(previewOnly)) {

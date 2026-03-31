@@ -174,6 +174,23 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                 pendingCsReview: true,
             }, { merge: true });
 
+            // Send applicant a processing confirmation once CS Summary is submitted.
+            try {
+              await fetch('/api/admin/send-family-status-reminder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  applicationId,
+                  userId: isAdminCreatedApp ? null : targetUserId,
+                  statusValue: 'CS Summary Submitted - Processing',
+                  trigger: 'manual',
+                  sentByName: 'Connections Team',
+                }),
+              });
+            } catch (emailError) {
+              console.warn('Could not send CS summary processing email:', emailError);
+            }
+
             toast({
                 title: "Information Saved!",
                 description: "You will now be taken to the next steps.",

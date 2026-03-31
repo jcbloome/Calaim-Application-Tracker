@@ -317,6 +317,11 @@ export default function MyApplicationsPage() {
   const inProgressApps = applications.filter(
     app => app.status !== 'Completed & Submitted' && app.status !== 'Approved'
   );
+  const mostRecentInProgress = [...inProgressApps].sort((a, b) => {
+    const aMs = a.lastUpdated?.toDate?.().getTime?.() || 0;
+    const bMs = b.lastUpdated?.toDate?.().getTime?.() || 0;
+    return bMs - aMs;
+  })[0];
   const completedApps = applications.filter(
     app => app.status === 'Completed & Submitted' || app.status === 'Approved'
   );
@@ -413,6 +418,30 @@ export default function MyApplicationsPage() {
         }
 
         <div className="space-y-8">
+          {mostRecentInProgress && (
+            <Alert className="border-blue-200 bg-blue-50">
+              <AlertTitle>Continue where you left off</AlertTitle>
+              <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  {`${mostRecentInProgress.memberFirstName} ${mostRecentInProgress.memberLastName}`.trim()} was last updated on{' '}
+                  {mostRecentInProgress.lastUpdated ? format(mostRecentInProgress.lastUpdated.toDate(), 'MM/dd/yyyy') : 'recently'}.
+                </span>
+                <Button asChild size="sm">
+                  <Link href={(() => {
+                    const csSummaryForm = (mostRecentInProgress as any).forms?.find((form: any) =>
+                      form.name === 'CS Member Summary' || form.name === 'CS Summary'
+                    );
+                    if (csSummaryForm?.status === 'Completed') {
+                      return `/pathway?applicationId=${mostRecentInProgress.id}`;
+                    }
+                    return `/forms/cs-summary-form?applicationId=${mostRecentInProgress.id}`;
+                  })()}>
+                    Resume Application
+                  </Link>
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
           <ApplicationsTable
             title="In Progress"
             applications={inProgressApps}

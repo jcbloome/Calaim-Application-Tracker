@@ -9,6 +9,8 @@ type SubmitBody = {
   member?: {
     name?: string;
     birthdate?: string; // YYYY-MM-DD
+    county?: string;
+    pathway?: string;
     healthPlan?: string;
     medicalRecordNumber?: string;
     mediCalNumber?: string;
@@ -69,6 +71,8 @@ export async function POST(request: NextRequest) {
     const uploaderName = clean(`${uploaderFirst} ${uploaderLast}`.trim(), 140) || uploaderEmail || 'User';
 
     const healthPlan = clean(body?.member?.healthPlan, 40) || 'Other/Unknown';
+    const memberCounty = clean(body?.member?.county, 80);
+    const pathway = clean(body?.member?.pathway, 120);
     const medicalRecordNumberRaw = clean(body?.member?.medicalRecordNumber, 80);
     const mediCalNumberRaw = clean(body?.member?.mediCalNumber, 80);
     const kaiserMrnRaw = clean(body?.member?.kaiserMrn, 80);
@@ -92,6 +96,9 @@ export async function POST(request: NextRequest) {
       uploaderName,
       memberName,
       memberBirthdate: birthdate,
+      memberCounty: memberCounty || null,
+      pathway: pathway || null,
+      mcpName: healthPlan || null,
       healthPlan,
       medicalRecordNumber: medicalRecordNumber || null,
       mediCalNumber: mediCalNumber || null,
@@ -137,9 +144,17 @@ export async function POST(request: NextRequest) {
 
         if (recipientUids.length > 0) {
           const mrnLabel = medicalRecordNumber ? `MRN ${medicalRecordNumber}` : 'MRN —';
+          const dobLabel = birthdate || 'DOB —';
+          const countyLabel = memberCounty || 'County —';
+          const mcpLabel = healthPlan || '—';
+          const pathwayLabel = pathway || '—';
           const basePayload: Record<string, any> = {
             title: isAlft ? 'ALFT Upload' : 'Standalone Upload',
-            message: `${memberName || 'Member'} — ${healthPlan} • ${mrnLabel}\n${documentType}\nUploader: ${uploaderEmail || uploaderName}`,
+            message:
+              `${memberName || 'Member'} — ${healthPlan} • ${mrnLabel}\n` +
+              `DOB ${dobLabel} • ${countyLabel}\n` +
+              `MCP: ${mcpLabel} • Pathway: ${pathwayLabel}\n` +
+              `${documentType}\nUploader: ${uploaderEmail || uploaderName}`,
             type: isAlft ? 'alft_upload' : 'standalone_upload',
             priority: 'Priority',
             status: 'Open',
@@ -151,6 +166,10 @@ export async function POST(request: NextRequest) {
               : `/admin/standalone-uploads?focus=${encodeURIComponent(ref.id)}`,
             standaloneUploadId: ref.id,
             memberName,
+            memberBirthdate: birthdate || null,
+            memberCounty: memberCounty || null,
+            pathway: pathway || null,
+            mcpName: healthPlan || null,
             healthPlan,
             medicalRecordNumber: medicalRecordNumber || null,
             documentType,

@@ -67,6 +67,8 @@ export default function PrintablePackagePage() {
     const [uploaderLastName, setUploaderLastName] = useState('');
     const [memberName, setMemberName] = useState('');
     const [memberBirthdate, setMemberBirthdate] = useState(''); // YYYY-MM-DD
+    const [memberCounty, setMemberCounty] = useState('');
+    const [memberPathway, setMemberPathway] = useState('');
     const [healthPlan, setHealthPlan] = useState<'Kaiser' | 'Health Net' | 'Other/Unknown'>('Other/Unknown');
     const [medicalRecordNumber, setMedicalRecordNumber] = useState('');
 
@@ -182,6 +184,8 @@ export default function PrintablePackagePage() {
                         member: {
                             name: memberName.trim(),
                             birthdate: memberBirthdate,
+                            county: memberCounty.trim(),
+                            pathway: memberPathway.trim(),
                             healthPlan,
                             medicalRecordNumber: medicalRecordNumber.trim(),
                         },
@@ -215,6 +219,8 @@ export default function PrintablePackagePage() {
             setUploaderLastName('');
             setMemberName('');
             setMemberBirthdate('');
+            setMemberCounty('');
+            setMemberPathway('');
             setHealthPlan('Other/Unknown');
             setMedicalRecordNumber('');
 
@@ -425,6 +431,30 @@ export default function PrintablePackagePage() {
                                             Health Net: this is typically the same as the Medi-Cal #. Kaiser: enter the Kaiser MRN.
                                         </p>
                                     </div>
+                                    <div>
+                                        <Label htmlFor="member-county">Member County</Label>
+                                        <Input
+                                            id="member-county"
+                                            placeholder="Los Angeles"
+                                            value={memberCounty}
+                                            onChange={(e) => setMemberCounty(e.target.value)}
+                                        />
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Helps staff know whether to check Kaiser North or South eligibility portal.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label htmlFor="member-pathway">Pathway</Label>
+                                    <Input
+                                        id="member-pathway"
+                                        placeholder="SNF Transition"
+                                        value={memberPathway}
+                                        onChange={(e) => setMemberPathway(e.target.value)}
+                                    />
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        Optional, but recommended for action item routing.
+                                    </p>
                                 </div>
                                 <div>
                                     <Label htmlFor="document-type">Name of Document</Label>

@@ -1114,6 +1114,9 @@ function PathwayPageContent() {
                     {isUploading && (
                         <Progress value={currentProgress} className="h-1 w-full" />
                     )}
+                    <p className="text-xs text-muted-foreground">
+                      Accepted: PDF, Word, JPG, PNG (max 10MB). You can replace files anytime before submit.
+                    </p>
                     {req.href && req.href !== '#' && (
                         <Button asChild variant="link" className="w-full text-xs h-auto py-0">
                            <Link href={req.href} target="_blank">

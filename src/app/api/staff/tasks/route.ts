@@ -660,11 +660,19 @@ export async function GET(request: NextRequest) {
             eligSnap?.docs?.forEach((docSnap: any) => {
               const data = docSnap.data() || {};
               const memberName = String(data.memberName || `${data.memberFirstName || ''} ${data.memberLastName || ''}`).trim() || 'Member';
+              const memberMrn = String(data.memberMrn || '').trim() || '—';
+              const memberDob = String(data.memberBirthday || data.memberDob || '').trim() || '—';
+              const memberCounty = String(data.county || '').trim() || '—';
+              const mcpName = String(data.mcpName || data.healthPlan || '').trim() || '—';
+              const pathway = String(data.pathway || '').trim() || 'Eligibility Check';
               const dueDate = formatIso(data.timestamp || data.updatedAt || data.createdAt || new Date());
               reviewTasks.push({
                 id: `review-elig-${docSnap.id}`,
                 title: 'Eligibility Check Needs Review',
-                description: `${String(data.healthPlan || '').trim() || '—'} • ${String(data.county || '').trim() || '—'}`,
+                description:
+                  `${String(data.healthPlan || '').trim() || '—'} • ${memberCounty}\n` +
+                  `MRN: ${memberMrn} • DOB: ${memberDob} • County: ${memberCounty}\n` +
+                  `MCP: ${mcpName} • Pathway: ${pathway}`,
                 memberName,
                 memberClientId: String(data.memberMrn || '').trim(),
                 healthPlan: String(data.healthPlan || '').trim(),
@@ -709,11 +717,19 @@ export async function GET(request: NextRequest) {
 
               const memberName = String(data.memberName || '').trim() || 'Member';
               const docType = String(data.documentType || '').trim() || (alft ? 'ALFT Tool' : 'Standalone upload');
+              const memberMrn = String(data.medicalRecordNumber || data.kaiserMrn || data.mediCalNumber || '').trim() || '—';
+              const memberDob = String(data.memberBirthdate || '').trim() || '—';
+              const memberCounty = String(data.memberCounty || '').trim() || '—';
+              const mcpName = String(data.mcpName || data.healthPlan || '').trim() || '—';
+              const pathway = String(data.pathway || '').trim() || '—';
               const dueDate = formatIso(data.createdAt || data.updatedAt || new Date());
               reviewTasks.push({
                 id: `${alft ? 'review-alft' : 'review-standalone'}-${docSnap.id}`,
                 title: alft ? 'ALFT Upload Intake' : 'Standalone Upload Intake',
-                description: docType,
+                description:
+                  `${docType}\n` +
+                  `MRN: ${memberMrn} • DOB: ${memberDob} • County: ${memberCounty}\n` +
+                  `MCP: ${mcpName} • Pathway: ${pathway}`,
                 memberName,
                 memberClientId: String(data.medicalRecordNumber || data.kaiserMrn || data.mediCalNumber || '').trim(),
                 healthPlan: String(data.healthPlan || '').trim(),

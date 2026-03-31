@@ -2035,6 +2035,7 @@ function ApplicationDetailPageContent() {
   const kaiserFamilyProgressOptions = useMemo(
     () => [
       'Application Received',
+      'CS Summary Submitted - Processing',
       'Requesting Documents',
       'Authorization Request to MCP',
       'Authorization Received',
@@ -2054,6 +2055,7 @@ function ApplicationDetailPageContent() {
   const healthNetFamilyProgressOptions = useMemo(
     () => [
       'Application Received',
+      'CS Summary Submitted - Processing',
       'Requesting Documents',
       'RN ISP Scheduled',
       'RN ISP Complete',

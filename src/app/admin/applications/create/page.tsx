@@ -954,14 +954,27 @@ export default function CreateApplicationPage() {
       if (isKaiserAuthReceived && selectedAssignedStaffId) {
         try {
           const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
+          const memberMrn = String(memberData.memberMrn || '').trim() || '—';
+          const memberDob = String(memberData.memberDob || '').trim() || '—';
+          const memberCounty = String(memberData.memberCustomaryCounty || '').trim() || '—';
+          const mcpName = 'Kaiser';
+          const pathwayName = 'SNF Transition';
           const dueDate = new Date();
           dueDate.setHours(17, 0, 0, 0);
           const assignedByName = String(user?.displayName || user?.email || 'Manager').trim();
           await addDoc(collection(firestore, 'staff_notifications'), {
             userId: selectedAssignedStaffId,
             title: `Kaiser assignment: ${memberName}`,
-            message: `You were assigned ${memberName} in Application Pathway. Please review and complete the next step.`,
+            message:
+              `You were assigned ${memberName} in Application Pathway. Please review and complete the next step.\n` +
+              `MRN: ${memberMrn} • DOB: ${memberDob} • County: ${memberCounty}\n` +
+              `MCP: ${mcpName} • Pathway: ${pathwayName}`,
             memberName,
+            memberMrn: memberMrn === '—' ? null : memberMrn,
+            memberDob: memberDob === '—' ? null : memberDob,
+            county: memberCounty === '—' ? null : memberCounty,
+            mcpName,
+            pathway: pathwayName,
             healthPlan: 'Kaiser',
             type: 'assignment',
             priority: 'Priority',
