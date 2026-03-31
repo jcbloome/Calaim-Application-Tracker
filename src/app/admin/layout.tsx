@@ -186,6 +186,9 @@ const superAdminNavLinks = [
   }
 ];
 
+const ADMIN_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const ADMIN_LAST_ACTIVITY_KEY = 'calaim_admin_last_activity_at';
+
 function AdminHeader() {
   const { user, isAdmin, isSuperAdmin, isClaimsStaff } = useAdmin();
   const { isSocialWorker } = useSocialWorker();
@@ -2019,10 +2022,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, isAdmin } = useAdmin();
   const pathname = usePathname();
   const router = useRouter();
+  const auth = useAuth();
+  const firestore = useFirestore();
   const claimsSyncRef = useRef(false);
   const adminBootstrapRef = useRef<string>('');
   const adminBootstrapStartedAtRef = useRef<number>(0);
   const adminRedirectGraceRef = useRef<{ uid: string; startedAt: number }>({ uid: '', startedAt: 0 });
+  const adminIdleLogoutRef = useRef(false);
   const [adminBootstrap, setAdminBootstrap] = useState<{ inProgress: boolean; failed: boolean }>({
     inProgress: false,
     failed: false,
@@ -2225,6 +2231,99 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       }
     }
   }, [isLoading, isAdmin, isLoginPage, router, user, pathname, adminBootstrap.inProgress]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isLoading || !user || !isAdmin || isLoginPage || isDesktopNotificationWindow || isDesktopChatWindow) return;
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const readLastActivity = () => {
+      const fromStorage = Number(window.localStorage.getItem(ADMIN_LAST_ACTIVITY_KEY) || '0');
+      return Number.isFinite(fromStorage) && fromStorage > 0 ? fromStorage : Date.now();
+    };
+
+    const recordActivity = () => {
+      const now = Date.now();
+      window.localStorage.setItem(ADMIN_LAST_ACTIVITY_KEY, String(now));
+    };
+
+    const forceReauth = async () => {
+      if (adminIdleLogoutRef.current) return;
+      adminIdleLogoutRef.current = true;
+      const redirectTarget = `${window.location.pathname}${window.location.search}`;
+      try {
+        if (firestore && user?.uid) {
+          const role = 'Admin';
+          await trackLoginActivityClient(firestore, {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            role,
+            action: 'logout',
+            portal: 'admin',
+          });
+          await setPortalSessionOfflineClient(firestore, user.uid);
+        }
+      } catch {
+        // Best effort only.
+      }
+      try {
+        await fetch('/api/auth/admin-session', { method: 'DELETE' });
+      } catch {
+        // Best effort only.
+      }
+      try {
+        await auth?.signOut();
+      } catch {
+        // Best effort only.
+      }
+      window.localStorage.removeItem('calaim_session_type');
+      window.localStorage.removeItem('calaim_admin_context');
+      window.location.href = `/admin/login?redirect=${encodeURIComponent(redirectTarget)}`;
+    };
+
+    const checkIdle = () => {
+      const elapsed = Date.now() - readLastActivity();
+      if (elapsed >= ADMIN_IDLE_TIMEOUT_MS) {
+        void forceReauth();
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkIdle();
+      }
+    };
+
+    const activityEvents: Array<keyof WindowEventMap> = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'focus'];
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, recordActivity, { passive: true });
+    });
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    // Ensure this tab has an activity baseline, then periodically enforce timeout.
+    recordActivity();
+    intervalId = setInterval(checkIdle, 30_000);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, recordActivity);
+      });
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      adminIdleLogoutRef.current = false;
+    };
+  }, [
+    auth,
+    firestore,
+    isAdmin,
+    isDesktopChatWindow,
+    isDesktopNotificationWindow,
+    isLoading,
+    isLoginPage,
+    user,
+  ]);
 
   // Show loading spinner while checking authentication (but not for login page)
   if (isLoading && !isLoginPage) {
