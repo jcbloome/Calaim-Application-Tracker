@@ -11,14 +11,17 @@ from typing import Any, Dict, List, Optional, Tuple
 from pypdf import PdfReader
 
 
-AMOUNT_RE = re.compile(r"(?<!\d)(\d{1,3}(?:,\d{3})*\.\d{2})(?!\d)")
-PROC_RE = re.compile(r"\b(H2022|T2038)\b", re.IGNORECASE)
+AMOUNT_RE = re.compile(r"(?<!\d)(-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}|\((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\))(?!\d)")
+PROC_RE = re.compile(r"\b(H2022|T2038)(?:\b|(?=[A-Z0-9]))", re.IGNORECASE)
 DATE_TOKEN_RE = re.compile(r"\b(\d{2}/\d{2}/\d{2,4}|\d{4}-\d{2}-\d{2}|\d{8})\b")
 
 
 def _safe_float(raw: str) -> Optional[float]:
     try:
-        return float(raw.replace(",", ""))
+        token = str(raw or "").strip()
+        is_paren = token.startswith("(") and token.endswith(")")
+        value = float(token.replace(",", "").replace("(", "").replace(")", ""))
+        return -abs(value) if is_paren else value
     except Exception:
         return None
 
@@ -78,6 +81,22 @@ def _extract_remittance_date(lines: List[str]) -> Optional[str]:
     return None
 
 
+def _extract_era_grand_total(lines: List[str]) -> Optional[float]:
+    for i, ln in enumerate(lines):
+        if not re.search(r"\bTOTALS:\b", ln, re.IGNORECASE):
+            continue
+        for j in range(i, min(len(lines), i + 8)):
+            amts = AMOUNT_RE.findall(lines[j] or "")
+            if len(amts) < 3:
+                continue
+            nums = [_safe_float(a) for a in amts]
+            nums = [n for n in nums if n is not None]
+            if nums:
+                # Footer grand total/check amount is usually the last token on totals row.
+                return float(nums[-1])
+    return None
+
+
 @dataclass
 class EraRow:
     payer: str
@@ -101,11 +120,15 @@ def parse_pdf(path: str) -> Dict[str, Any]:
     reader = PdfReader(path)
     all_rows: List[EraRow] = []
     payer = "Health Net"
+    era_grand_total: Optional[float] = None
 
     for page_idx, page in enumerate(reader.pages):
         raw = page.extract_text() or ""
         lines = [ln.rstrip("\n") for ln in raw.splitlines() if ln.strip()]
         remit_date = _extract_remittance_date(lines)
+        page_grand_total = _extract_era_grand_total(lines)
+        if page_grand_total is not None:
+            era_grand_total = page_grand_total
 
         current_member: Dict[str, Any] = {
             "member_name": "",
@@ -182,18 +205,24 @@ def parse_pdf(path: str) -> Dict[str, Any]:
                 keys.add(key)
         return len(keys)
 
+    t2038_total = round(_sum_paid(all_rows, "T2038"), 2)
+    h2022_total = round(_sum_paid(all_rows, "H2022"), 2)
+    parser_total = round(t2038_total + h2022_total, 2)
     summary = {
         "total_rows": len(all_rows),
         "t2038": {
             "rows": sum(1 for r in all_rows if r.proc == "T2038"),
             "members": _unique_members(all_rows, "T2038"),
-            "total_paid": round(_sum_paid(all_rows, "T2038"), 2),
+            "total_paid": t2038_total,
         },
         "h2022": {
             "rows": sum(1 for r in all_rows if r.proc == "H2022"),
             "members": _unique_members(all_rows, "H2022"),
-            "total_paid": round(_sum_paid(all_rows, "H2022"), 2),
+            "total_paid": h2022_total,
         },
+        "era_grand_total": era_grand_total,
+        "parser_total": parser_total,
+        "variance": round(parser_total - era_grand_total, 2) if era_grand_total is not None else None,
     }
 
     return {

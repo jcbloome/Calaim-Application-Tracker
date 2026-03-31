@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
@@ -11,10 +11,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, FileUp, Download, FileText } from 'lucide-react';
+import { Loader2, FileUp, Download, FileText, FolderOpen } from 'lucide-react';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 
-type ExtractedPagesResult = { totalLines: number; pagesCount: number };
+type ExtractedPagesResult = {
+  totalLines: number;
+  pagesCount: number;
+  payer?: string;
+  summary?: EraSummary | null;
+  rows?: EraRow[];
+};
 
 type EraRow = {
   payer?: string;
@@ -38,6 +44,19 @@ type EraSummary = {
   total_rows?: number;
   t2038?: { rows?: number; members?: number; total_paid?: number };
   h2022?: { rows?: number; members?: number; total_paid?: number };
+  era_grand_total?: number | null;
+  parser_total?: number | null;
+  variance?: number | null;
+};
+
+type EraCacheHistoryItem = {
+  cacheKey: string;
+  fileName: string;
+  sourceMode: string;
+  totalRows: number;
+  payer?: string;
+  summary?: EraSummary | null;
+  updatedAt?: { _seconds?: number; seconds?: number } | string | null;
 };
 
 type ParsePhase = 'idle' | 'loading_pdfjs' | 'opening_pdf' | 'extracting' | 'uploading' | 'parsing' | 'done';
@@ -73,9 +92,10 @@ const loadPdfJs = async () => {
   return _pdfJsPromise;
 };
 
-// Capture amounts like 123.45, -123.45, or (123.45)
-const AMOUNT_RE = /(?<!\d)(-?\d{1,3}(?:,\d{3})*\.\d{2}|\(\d{1,3}(?:,\d{3})*\.\d{2}\))(?!\d)/g;
-const PROC_RE = /\b(H2022|T2038)\b/i;
+// Capture amounts like 123.45, 5693.46, 1,234.56, -123.45, or (123.45)
+const AMOUNT_RE = /(?<!\d)(-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}|\((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\))(?!\d)/g;
+// Support PROC values with or without separator before modifiers (e.g. "T2038 U5" or "T2038U5")
+const PROC_RE = /\b(H2022|T2038)(?:\b|(?=[A-Z0-9]))/i;
 
 const formatDuration = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -236,6 +256,22 @@ const pickPaid = (amounts: string[]) => {
   return typeof last === 'number' ? last : null;
 };
 
+const parseEraGrandTotalFromLines = (lines: string[]) => {
+  for (let i = 0; i < lines.length; i++) {
+    const ln = String(lines[i] || '');
+    if (!/\bTOTALS:\b/i.test(ln)) continue;
+    for (let j = i; j < Math.min(lines.length, i + 8); j++) {
+      const amounts = extractAmountsFromLine(lines[j] || '');
+      if (amounts.length < 3) continue;
+      const nums = amounts.map((a) => toNum(a)).filter((n): n is number => typeof n === 'number' && Number.isFinite(n));
+      if (!nums.length) continue;
+      // Footer grand total/check amount is typically the last amount on the totals numeric row.
+      return nums[nums.length - 1];
+    }
+  }
+  return null as number | null;
+};
+
 const toCsv = (rows: EraRow[]) => {
   const header = [
     'payer',
@@ -272,18 +308,25 @@ export default function EraParserPage() {
   const auth = useAuth();
 
   const [file, setFile] = useState<File | null>(null);
+  const [localPdfPath, setLocalPdfPath] = useState('');
+  const [localPathPickHint, setLocalPathPickHint] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [fastFallbackNotice, setFastFallbackNotice] = useState<string | null>(null);
   const [rows, setRows] = useState<EraRow[]>([]);
   const [summary, setSummary] = useState<EraSummary | null>(null);
   const [payer, setPayer] = useState<string>('Health Net');
+  const [resultsSearch, setResultsSearch] = useState('');
   const [phase, setPhase] = useState<ParsePhase>('idle');
   const [extractProgress, setExtractProgress] = useState<ExtractProgress | null>(null);
   const [openProgress, setOpenProgress] = useState<OpenProgress | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [lastExtracted, setLastExtracted] = useState<ExtractedPagesResult | null>(null);
+  const [cacheHistory, setCacheHistory] = useState<EraCacheHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [progressTick, setProgressTick] = useState(0);
+  const localPathPickerRef = useRef<HTMLInputElement | null>(null);
 
   // Used to re-render elapsed time during long "Opening PDF..." work where pdf.js provides no byte progress.
   void progressTick;
@@ -308,6 +351,16 @@ export default function EraParserPage() {
     }
     return s.size;
   }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    const q = String(resultsSearch || '').trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const member = String(r.member_name || '').toLowerCase();
+      const acnt = String(r.acnt || '').toLowerCase();
+      return member.includes(q) || acnt.includes(q);
+    });
+  }, [rows, resultsSearch]);
 
   const uploadPdfToTempStorage = async (pdfFile: File) => {
     if (!auth?.currentUser?.uid) throw new Error('Not signed in.');
@@ -373,6 +426,8 @@ export default function EraParserPage() {
     let h2022Rows = 0;
     const membersT2038 = new Set<string>();
     const membersH2022 = new Set<string>();
+    let eraGrandTotal: number | null = null;
+    const parsedRowsAcc: EraRow[] = [];
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       setPhase('extracting');
@@ -403,6 +458,10 @@ export default function EraParserPage() {
         if (ln) lines.push(ln);
       }
       totalLines += lines.length;
+      const pageGrandTotal = parseEraGrandTotalFromLines(lines);
+      if (typeof pageGrandTotal === 'number' && Number.isFinite(pageGrandTotal)) {
+        eraGrandTotal = pageGrandTotal;
+      }
 
       // Parse this page immediately and append results to the table + summary.
       const remittance_date = parseRemitDate(lines);
@@ -460,6 +519,7 @@ export default function EraParserPage() {
       }
 
       if (pageRows.length) {
+        parsedRowsAcc.push(...pageRows);
         for (const r of pageRows) {
           const memberKey = String(r.acnt || '').trim() || String(r.member_name || '').trim();
           if (r.proc === 'T2038') {
@@ -478,6 +538,12 @@ export default function EraParserPage() {
           total_rows: t2038Rows + h2022Rows,
           t2038: { rows: t2038Rows, members: membersT2038.size, total_paid: Number(t2038Paid.toFixed(2)) },
           h2022: { rows: h2022Rows, members: membersH2022.size, total_paid: Number(h2022Paid.toFixed(2)) },
+          era_grand_total: eraGrandTotal,
+          parser_total: Number((t2038Paid + h2022Paid).toFixed(2)),
+          variance:
+            typeof eraGrandTotal === 'number'
+              ? Number(((t2038Paid + h2022Paid) - eraGrandTotal).toFixed(2))
+              : null,
         });
       }
 
@@ -488,7 +554,21 @@ export default function EraParserPage() {
       await new Promise((r) => setTimeout(r, 0));
     }
 
-    const result = { totalLines, pagesCount: pdf.numPages };
+    const finalSummary: EraSummary = {
+      total_rows: t2038Rows + h2022Rows,
+      t2038: { rows: t2038Rows, members: membersT2038.size, total_paid: Number(t2038Paid.toFixed(2)) },
+      h2022: { rows: h2022Rows, members: membersH2022.size, total_paid: Number(h2022Paid.toFixed(2)) },
+      era_grand_total: eraGrandTotal,
+      parser_total: Number((t2038Paid + h2022Paid).toFixed(2)),
+      variance: typeof eraGrandTotal === 'number' ? Number(((t2038Paid + h2022Paid) - eraGrandTotal).toFixed(2)) : null,
+    };
+    const result: ExtractedPagesResult = {
+      totalLines,
+      pagesCount: pdf.numPages,
+      payer: payerLocal,
+      summary: finalSummary,
+      rows: parsedRowsAcc,
+    };
     setLastExtracted(result);
     setExtractProgress(null);
     return result;
@@ -509,6 +589,87 @@ export default function EraParserPage() {
   }, [isLoading, isSuperAdmin, router]);
 
   const parsedAtLabel = useMemo(() => new Date().toLocaleString(), []);
+
+  const toCacheKeyFromFile = (f: File | null) => {
+    if (!f) return null;
+    return `file:${String(f.name || '').toLowerCase()}|${Number(f.size || 0)}|${Number(f.lastModified || 0)}`;
+  };
+
+  const toCacheKeyFromPath = (p: string) => {
+    const v = String(p || '').trim().toLowerCase();
+    if (!v) return null;
+    return `path:${v}`;
+  };
+
+  const fetchCacheHistory = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    setHistoryLoading(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/era/parse?limit=25', {
+        method: 'GET',
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (res.ok && data?.success) {
+        setCacheHistory(Array.isArray(data?.history) ? data.history : []);
+      }
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [auth]);
+
+  const tryLoadFromCache = async (cacheKey: string | null) => {
+    if (!cacheKey || !auth?.currentUser) return false;
+    const idToken = await auth.currentUser.getIdToken();
+    const res = await fetch(`/api/admin/era/parse?cacheKey=${encodeURIComponent(cacheKey)}`, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${idToken}` },
+    });
+    const data = (await res.json().catch(() => ({}))) as any;
+    if (!res.ok || !data?.success) return false;
+    setPayer(String(data?.payer || 'Health Net'));
+    setRows(Array.isArray(data?.rows) ? data.rows : []);
+    setSummary((data?.summary || null) as EraSummary | null);
+    return true;
+  };
+
+  const saveToCache = async (payload: {
+    cacheKey: string | null;
+    fileName: string;
+    sourceMode: 'fast' | 'local' | 'local_path';
+    fileSize?: number | null;
+    fileLastModified?: number | null;
+    payer: string;
+    summary: EraSummary | null;
+    rows: EraRow[];
+  }) => {
+    if (!payload.cacheKey || !auth?.currentUser || payload.rows.length === 0) return;
+    const idToken = await auth.currentUser.getIdToken();
+    await fetch('/api/admin/era/parse', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        action: 'save_cache',
+        cacheKey: payload.cacheKey,
+        fileName: payload.fileName,
+        sourceMode: payload.sourceMode,
+        fileSize: payload.fileSize ?? null,
+        fileLastModified: payload.fileLastModified ?? null,
+        payer: payload.payer,
+        summary: payload.summary,
+        rows: payload.rows,
+      }),
+    }).catch(() => undefined);
+  };
+
+  useEffect(() => {
+    if (!auth?.currentUser) return;
+    fetchCacheHistory().catch(() => undefined);
+  }, [auth?.currentUser, fetchCacheHistory]);
 
   const downloadCsv = () => {
     const csv = toCsv(rows);
@@ -534,11 +695,28 @@ export default function EraParserPage() {
     setUploadProgress(null);
     setLastExtracted(null);
     try {
+      const cacheKey = toCacheKeyFromFile(file);
+      const loadedFromCache = await tryLoadFromCache(cacheKey);
+      if (loadedFromCache) {
+        setPhase('done');
+        return;
+      }
       // Local parsing (slow for large PDFs)
       const extracted = await extractPagesFromFile(file);
       if (!extracted.pagesCount || extracted.totalLines === 0) {
         throw new Error('No selectable text was found in this PDF (it may be scanned).');
       }
+      await saveToCache({
+        cacheKey,
+        fileName: String(file?.name || 'ERA PDF'),
+        sourceMode: 'local',
+        fileSize: Number(file?.size || 0),
+        fileLastModified: Number(file?.lastModified || 0),
+        payer: String(extracted.payer || payer || 'Health Net'),
+        summary: (extracted.summary || summary) as EraSummary | null,
+        rows: Array.isArray(extracted.rows) ? extracted.rows : rows,
+      });
+      await fetchCacheHistory();
       setPhase('done');
     } catch (e: any) {
       setError(e?.message || 'Failed to parse ERA PDF.');
@@ -556,6 +734,7 @@ export default function EraParserPage() {
     setUploading(true);
     setError(null);
     setErrorDetails(null);
+    setFastFallbackNotice(null);
     setRows([]);
     setSummary(null);
     setPhase('idle');
@@ -563,12 +742,16 @@ export default function EraParserPage() {
     setUploadProgress(null);
     setLastExtracted(null);
     try {
+      const cacheKey = toCacheKeyFromFile(file);
+      const loadedFromCache = await tryLoadFromCache(cacheKey);
+      if (loadedFromCache) {
+        setPhase('done');
+        return;
+      }
       let cleanupPath: string | null = null;
-      let url: string | null = null;
       try {
         const uploaded = await uploadPdfToTempStorage(file);
         cleanupPath = uploaded.fullPath;
-        url = uploaded.url;
       } catch (e: any) {
         const code = getErrCode(e);
         if (code.includes('storage/unauthorized') || code.includes('unauthorized')) throw e;
@@ -583,9 +766,23 @@ export default function EraParserPage() {
         const fn = httpsCallable(getFunctions(), 'parseEraPdfFromStorage');
         const data: any = await fn({ fullPath: cleanupPath }).then((r) => r.data);
         if (!data?.success) throw new Error(String(data?.error || 'Server parse failed.'));
-        setPayer(String(data?.payer || 'Health Net'));
-        setRows(Array.isArray(data?.rows) ? data.rows : []);
-        setSummary((data?.summary || null) as any);
+        const parsedPayer = String(data?.payer || 'Health Net');
+        const parsedRows = Array.isArray(data?.rows) ? data.rows : [];
+        const parsedSummary = (data?.summary || null) as EraSummary | null;
+        setPayer(parsedPayer);
+        setRows(parsedRows);
+        setSummary(parsedSummary);
+        await saveToCache({
+          cacheKey,
+          fileName: String(file?.name || 'ERA PDF'),
+          sourceMode: 'fast',
+          fileSize: Number(file?.size || 0),
+          fileLastModified: Number(file?.lastModified || 0),
+          payer: parsedPayer,
+          summary: parsedSummary,
+          rows: parsedRows,
+        });
+        await fetchCacheHistory();
         // Best-effort cleanup (ignore failures due to rules).
         deleteObject(storageRef(storage, cleanupPath)).catch(() => undefined);
       } else {
@@ -594,10 +791,57 @@ export default function EraParserPage() {
         if (!extracted.pagesCount || extracted.totalLines === 0) {
           throw new Error('No selectable text was found in this PDF (it may be scanned).');
         }
+        await saveToCache({
+          cacheKey,
+          fileName: String(file?.name || 'ERA PDF'),
+          sourceMode: 'local',
+          fileSize: Number(file?.size || 0),
+          fileLastModified: Number(file?.lastModified || 0),
+          payer: String(extracted.payer || payer || 'Health Net'),
+          summary: (extracted.summary || summary) as EraSummary | null,
+          rows: Array.isArray(extracted.rows) ? extracted.rows : rows,
+        });
+        await fetchCacheHistory();
       }
       setPhase('done');
     } catch (e: any) {
       const code = getErrCode(e);
+      // Auto-fallback so "fast" still completes when cloud/storage setup is missing.
+      try {
+        if (file) {
+          const extracted = await extractPagesFromFile(file);
+          if (!extracted.pagesCount || extracted.totalLines === 0) {
+            throw new Error('No selectable text was found in this PDF (it may be scanned).');
+          }
+          const cacheKey = toCacheKeyFromFile(file);
+          await saveToCache({
+            cacheKey,
+            fileName: String(file?.name || 'ERA PDF'),
+            sourceMode: 'local',
+            fileSize: Number(file?.size || 0),
+            fileLastModified: Number(file?.lastModified || 0),
+            payer: String(extracted.payer || payer || 'Health Net'),
+            summary: (extracted.summary || summary) as EraSummary | null,
+            rows: Array.isArray(extracted.rows) ? extracted.rows : rows,
+          });
+          await fetchCacheHistory();
+          setError(null);
+          setErrorDetails(null);
+          setFastFallbackNotice(
+            'Fast parser was unavailable, so this file was parsed locally (slow) automatically. You can still use results normally.'
+          );
+          setPhase('done');
+          return;
+        }
+      } catch (fallbackErr: any) {
+        const detail = `Fast parse error: ${String(e?.message || e)}\n\nLocal fallback error: ${String(
+          fallbackErr?.message || fallbackErr
+        )}`;
+        setError('Fast parser failed and local fallback also failed.');
+        setErrorDetails(detail.slice(0, 4000));
+        setPhase('idle');
+        return;
+      }
       if (code.includes('storage/unauthorized') || code.includes('unauthorized')) {
         setError('Fast mode blocked: Storage rules not deployed (storage/unauthorized).');
         setErrorDetails(
@@ -614,6 +858,87 @@ export default function EraParserPage() {
         const detail = String(e?.stack || e?.cause || '').trim();
         if (detail) setErrorDetails(detail.slice(0, 4000));
       }
+      setPhase('idle');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleParseFromPath = async () => {
+    if (!localPdfPath.trim()) return;
+    if (!auth?.currentUser) return;
+    setUploading(true);
+    setError(null);
+    setErrorDetails(null);
+    setRows([]);
+    setSummary(null);
+    setPhase('parsing');
+    setOpenProgress(null);
+    setUploadProgress(null);
+    setLastExtracted(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const cacheKey = toCacheKeyFromPath(localPdfPath);
+      const res = await fetch('/api/admin/era/parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          pdfPath: localPdfPath.trim(),
+          cacheKey,
+          sourceMode: 'local_path',
+          fileName: localPdfPath.split(/[\\/]/).pop() || 'ERA PDF',
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to parse local pdfPath (HTTP ${res.status}).`);
+      }
+      setPayer(String(data?.payer || 'Health Net'));
+      setRows(Array.isArray(data?.rows) ? data.rows : []);
+      setSummary((data?.summary || null) as any);
+      await fetchCacheHistory();
+      setPhase('done');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to parse local pdf path.');
+      const detail = String(e?.stack || e?.cause || '').trim();
+      if (detail) setErrorDetails(detail.slice(0, 4000));
+      setPhase('idle');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handlePickFileForLocalPath = (pickedFile: File | null) => {
+    if (!pickedFile) return;
+    const nativePath = String((pickedFile as any)?.path || '').trim();
+    if (nativePath) {
+      setLocalPdfPath(nativePath);
+      setFile(pickedFile);
+      setLocalPathPickHint(`Selected: ${nativePath}`);
+      return;
+    }
+    // Some browsers hide native file paths for security. Keep the file selected for local parsing fallback.
+    setFile(pickedFile);
+    setLocalPathPickHint(
+      'This browser does not expose full local paths. Use "Parse locally (slow)" with the selected file, or paste full path manually.'
+    );
+  };
+
+  const loadFromHistory = async (cacheKey: string) => {
+    if (uploading) return;
+    setUploading(true);
+    setError(null);
+    setErrorDetails(null);
+    setPhase('parsing');
+    try {
+      const loaded = await tryLoadFromCache(cacheKey);
+      if (!loaded) throw new Error('Could not load cached ERA parse.');
+      setPhase('done');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load cached ERA parse.');
       setPhase('idle');
     } finally {
       setUploading(false);
@@ -656,6 +981,12 @@ export default function EraParserPage() {
               </AlertDescription>
             </Alert>
           ) : null}
+          {fastFallbackNotice ? (
+            <Alert>
+              <AlertTitle>Fast parser fallback used</AlertTitle>
+              <AlertDescription>{fastFallbackNotice}</AlertDescription>
+            </Alert>
+          ) : null}
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1 space-y-2">
@@ -667,6 +998,39 @@ export default function EraParserPage() {
               />
               <div className="text-xs text-muted-foreground">
                 Best results when the PDF has selectable text (not a scanned image).
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs font-medium">Or parse by local file path (dev)</div>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={localPdfPath}
+                    onChange={(e) => setLocalPdfPath(e.target.value)}
+                    placeholder="C:\\Users\\...\\era_*.pdf"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => localPathPickerRef.current?.click()}
+                    disabled={uploading}
+                  >
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Select File
+                  </Button>
+                  <input
+                    ref={localPathPickerRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={(e) => handlePickFileForLocalPath(e.target.files?.[0] || null)}
+                  />
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Use this for local debug when Python is unavailable. Works only in local development.
+                </div>
+                {localPathPickHint ? (
+                  <div className="text-[11px] text-muted-foreground">{localPathPickHint}</div>
+                ) : null}
               </div>
               {uploading ? (
                 <div className="space-y-2 pt-1">
@@ -741,6 +1105,9 @@ export default function EraParserPage() {
               <Button variant="outline" onClick={handleParseLocal} disabled={!file || uploading}>
                 Parse locally (slow)
               </Button>
+              <Button variant="outline" onClick={handleParseFromPath} disabled={!localPdfPath.trim() || uploading}>
+                Parse local path (dev)
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -787,22 +1154,60 @@ export default function EraParserPage() {
               <div className="text-xs text-muted-foreground">Deduped by ACNT (fallback: member name)</div>
             </div>
           </CardContent>
+          <CardContent className="pt-0">
+            {typeof summary?.era_grand_total === 'number' ? (
+              <div className="rounded-md border p-3 text-sm">
+                <div className="font-medium">ERA footer cross-check</div>
+                <div className="text-muted-foreground">
+                  ERA grand total: <span className="font-medium text-foreground">${Number(summary.era_grand_total).toFixed(2)}</span>
+                  {' • '}
+                  Parsed total: <span className="font-medium text-foreground">${Number(summary.parser_total || 0).toFixed(2)}</span>
+                  {' • '}
+                  Variance:{' '}
+                  <span
+                    className={
+                      Math.abs(Number(summary.variance || 0)) <= 0.01 ? 'font-medium text-green-700' : 'font-medium text-amber-700'
+                    }
+                  >
+                    ${Number(summary.variance || 0).toFixed(2)}
+                  </span>
+                  {' • '}
+                  <span className={Math.abs(Number(summary.variance || 0)) <= 0.01 ? 'text-green-700 font-medium' : 'text-amber-700 font-medium'}>
+                    {Math.abs(Number(summary.variance || 0)) <= 0.01 ? 'Match' : 'Mismatch'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                ERA footer total not found in extracted text for this file.
+              </div>
+            )}
+          </CardContent>
         </Card>
       ) : null}
 
       {rows.length > 0 ? (
         <Card>
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardHeader className="flex flex-col gap-3">
             <div>
               <CardTitle>Extracted lines</CardTitle>
               <CardDescription>
-                Showing {Math.min(rows.length, 200)} of {rows.length}. Download CSV for full export.
+                Showing {Math.min(filteredRows.length, 200)} of {filteredRows.length}
+                {filteredRows.length !== rows.length ? ` (filtered from ${rows.length})` : ''}. Download CSV for full export.
               </CardDescription>
             </div>
-            <Button variant="outline" onClick={downloadCsv}>
-              <Download className="mr-2 h-4 w-4" />
-              Download CSV
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Input
+                value={resultsSearch}
+                onChange={(e) => setResultsSearch(e.target.value)}
+                placeholder="Search by member name or account number..."
+                className="w-full sm:max-w-md"
+              />
+              <Button variant="outline" onClick={downloadCsv}>
+                <Download className="mr-2 h-4 w-4" />
+                Download CSV
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-auto rounded-md border">
@@ -819,7 +1224,7 @@ export default function EraParserPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.slice(0, 200).map((r, idx) => (
+                  {filteredRows.slice(0, 200).map((r, idx) => (
                     <tr key={`${idx}-${r.member_name}-${r.proc}`} className="border-t">
                       <td className="px-3 py-2 max-w-[360px] truncate">{r.member_name || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.acnt || '—'}</td>
@@ -838,6 +1243,40 @@ export default function EraParserPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent parsed ERAs</CardTitle>
+          <CardDescription>Saved in Firestore so repeated files can be opened quickly.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={fetchCacheHistory} disabled={historyLoading || uploading}>
+              {historyLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Refresh
+            </Button>
+          </div>
+          {cacheHistory.length === 0 ? (
+            <div className="rounded-md border p-3 text-sm text-muted-foreground">No parsed ERA files saved yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {cacheHistory.map((item) => (
+                <div key={item.cacheKey} className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-medium">{item.fileName || 'ERA PDF'}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {item.totalRows || 0} rows • {item.sourceMode || 'unknown'} • {item.payer || 'Health Net'}
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => loadFromHistory(item.cacheKey)} disabled={uploading}>
+                    Open
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

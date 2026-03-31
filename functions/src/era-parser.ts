@@ -19,9 +19,10 @@ type EraRow = {
   source_line: string;
 };
 
-// Capture amounts like 123.45, -123.45, or (123.45)
-const AMOUNT_RE = /(?<!\d)(-?\d{1,3}(?:,\d{3})*\.\d{2}|\(\d{1,3}(?:,\d{3})*\.\d{2}\))(?!\d)/g;
-const PROC_RE = /\b(H2022|T2038)\b/i;
+// Capture amounts like 123.45, 5693.46, 1,234.56, -123.45, or (123.45)
+const AMOUNT_RE = /(?<!\d)(-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}|\((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\))(?!\d)/g;
+// Support PROC values with or without separator before modifiers (e.g. "T2038 U5" or "T2038U5")
+const PROC_RE = /\b(H2022|T2038)(?:\b|(?=[A-Z0-9]))/i;
 
 const toIsoFromMmddyy = (mmddyy: string) => {
   const raw = String(mmddyy || "").trim();
@@ -156,6 +157,23 @@ const pickPaid = (amounts: string[]) => {
   return typeof last === "number" ? last : null;
 };
 
+const parseEraGrandTotalFromLines = (lines: string[]) => {
+  for (let i = 0; i < lines.length; i++) {
+    const ln = String(lines[i] || "");
+    if (!/\bTOTALS:\b/i.test(ln)) continue;
+    for (let j = i; j < Math.min(lines.length, i + 8); j++) {
+      const amounts = extractAmountsFromLine(lines[j] || "");
+      if (amounts.length < 3) continue;
+      const nums = amounts
+        .map((a) => toNum(a))
+        .filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+      if (!nums.length) continue;
+      return nums[nums.length - 1];
+    }
+  }
+  return null as number | null;
+};
+
 async function requireSuperAdmin(auth: any) {
   const uid = String(auth?.uid || "").trim();
   const token = auth?.token || {};
@@ -202,6 +220,7 @@ export const parseEraPdfFromStorage = onCall(
 
     const payer = "Health Net";
     const allRows: EraRow[] = [];
+    let eraGrandTotal: number | null = null;
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
@@ -229,6 +248,10 @@ export const parseEraPdfFromStorage = onCall(
         const parts = (byY.get(yk) || []).sort((a, b) => a.x - b.x).map((p) => p.str);
         const ln = parts.join(" ").replace(/\s{2,}/g, " ").trim();
         if (ln) lines.push(ln);
+      }
+      const pageGrandTotal = parseEraGrandTotalFromLines(lines);
+      if (typeof pageGrandTotal === "number" && Number.isFinite(pageGrandTotal)) {
+        eraGrandTotal = pageGrandTotal;
       }
 
       const remittance_date = parseRemitDate(lines);
@@ -297,10 +320,16 @@ export const parseEraPdfFromStorage = onCall(
       return s.size;
     };
 
+    const t2038Total = sumPaid("T2038");
+    const h2022Total = sumPaid("H2022");
+    const parserTotal = Number((t2038Total + h2022Total).toFixed(2));
     const summary = {
       total_rows: allRows.length,
-      t2038: { rows: allRows.filter((r) => r.proc === "T2038").length, members: uniqueMembers("T2038"), total_paid: sumPaid("T2038") },
-      h2022: { rows: allRows.filter((r) => r.proc === "H2022").length, members: uniqueMembers("H2022"), total_paid: sumPaid("H2022") },
+      t2038: { rows: allRows.filter((r) => r.proc === "T2038").length, members: uniqueMembers("T2038"), total_paid: t2038Total },
+      h2022: { rows: allRows.filter((r) => r.proc === "H2022").length, members: uniqueMembers("H2022"), total_paid: h2022Total },
+      era_grand_total: eraGrandTotal,
+      parser_total: parserTotal,
+      variance: typeof eraGrandTotal === "number" ? Number((parserTotal - eraGrandTotal).toFixed(2)) : null,
     };
 
     // Return rows + summary (UI can limit display)
