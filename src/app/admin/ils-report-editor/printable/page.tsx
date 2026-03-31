@@ -84,21 +84,45 @@ export default function IlsReportPrintablePage() {
   const cards = useMemo(() => {
     if (!payload) return [];
     if (payload.includeT2038) {
-      return [{ label: 'T2038 Auth Only Email', rows: payload.queues.t2038AuthOnly, key: 't2038' as const }];
+      return [
+        {
+          label: 'T2038 Auth Only Email',
+          rows: payload.queues.t2038AuthOnly,
+          key: 't2038' as const,
+          showIlsConnected: false,
+        },
+      ];
     }
     return [
-      { label: 'T2038 Requested', rows: payload.queues.t2038Requested, key: 't2038req' as const },
-      { label: 'Tier Level Requested', rows: payload.queues.tierRequested, key: 'tier' as const },
-      { label: 'R & B Sent Pending ILS Contract', rows: payload.queues.rbPendingIlsContract, key: 'rb' as const },
+      {
+        label: 'T2038 Requested',
+        rows: payload.queues.t2038Requested,
+        key: 't2038req' as const,
+        showIlsConnected: false,
+      },
+      {
+        label: 'Tier Level Requested',
+        rows: payload.queues.tierRequested,
+        key: 'tier' as const,
+        showIlsConnected: false,
+      },
+      {
+        label: 'R & B Sent Pending ILS Contract',
+        rows: payload.queues.rbPendingIlsContract,
+        key: 'rb' as const,
+        showIlsConnected: true,
+      },
       {
         label: 'Need More Contact Info (ILS)',
         rows: payload.queues.needMoreContactInfoIls,
         key: 'needContactInfo' as const,
+        showIlsConnected: false,
       },
       {
         label: 'Final at RCFE Missing H2022 Start/End',
         rows: payload.queues.finalRcfeMissingH2022Dates,
         key: 'missingH2022' as const,
+        showIlsConnected: true,
       },
     ];
   }, [payload]);
@@ -190,14 +214,16 @@ export default function IlsReportPrintablePage() {
                 <tr>
                   <th className="border bg-slate-100 p-1 text-left">Member</th>
                   <th className="border bg-slate-100 p-1 text-left">MRN / Birth Date</th>
-                  <th className="border bg-slate-100 p-1 text-left">ILS Connected</th>
+                  {card.showIlsConnected ? (
+                    <th className="border bg-slate-100 p-1 text-left">ILS Connected</th>
+                  ) : null}
                   <th className="border bg-slate-100 p-1 text-left">Request Date</th>
                 </tr>
               </thead>
               <tbody>
                 {card.rows.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="border p-2 text-muted-foreground">
+                    <td colSpan={card.showIlsConnected ? 4 : 3} className="border p-2 text-muted-foreground">
                       None
                     </td>
                   </tr>
@@ -218,7 +244,13 @@ export default function IlsReportPrintablePage() {
                         {row.memberMrn || '-'}
                         <div className="text-[10px] text-muted-foreground">Birth Date: {formatYmd(row.birthDate)}</div>
                       </td>
-                      <td className="border p-1 align-top">{row.ilsConnected ? '✓' : '●'}</td>
+                      {card.showIlsConnected ? (
+                        <td className="border p-1 align-top">
+                          <span className={row.ilsConnected ? 'ils-conn-yes' : 'ils-conn-no'}>
+                            {row.ilsConnected ? '● Yes' : '● No'}
+                          </span>
+                        </td>
+                      ) : null}
                       <td className="border p-1 align-top">{formatYmd(row.requestedDate)}</td>
                     </tr>
                   ))
@@ -242,6 +274,14 @@ export default function IlsReportPrintablePage() {
       </div>
 
       <style jsx global>{`
+        .ils-conn-yes {
+          color: #15803d;
+          font-weight: 600;
+        }
+        .ils-conn-no {
+          color: #dc2626;
+          font-weight: 600;
+        }
         @media print {
           @page {
             size: letter;
@@ -253,6 +293,11 @@ export default function IlsReportPrintablePage() {
           .ils-print-root {
             max-width: none !important;
             padding: 0 !important;
+          }
+          .ils-conn-yes,
+          .ils-conn-no {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
         }
       `}</style>

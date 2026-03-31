@@ -1019,7 +1019,7 @@ export default function ILSReportEditorPage() {
       <Card>
         <CardHeader>
           <CardTitle>Requested queues</CardTitle>
-          <CardDescription>Member name • MRN • Birth Date • ILS Connected • Request Date</CardDescription>
+          <CardDescription>Member name • MRN • Birth Date • Request Date</CardDescription>
         </CardHeader>
         <CardContent>
           {members.length === 0 ? (
@@ -1048,6 +1048,7 @@ export default function ILSReportEditorPage() {
                     label: 'R & B Sent Pending ILS Contract',
                     rows: queues.rbPendingIlsContract,
                     editable: true,
+                    showIlsConnected: true,
                   },
                   {
                     key: 'needMoreContactInfoIls' as const,
@@ -1055,6 +1056,7 @@ export default function ILSReportEditorPage() {
                     label: 'Need More Contact Info (ILS)',
                     rows: queues.needMoreContactInfoIls,
                     editable: false,
+                    showIlsConnected: false,
                   },
                   {
                     key: 'finalRcfeMissingH2022Dates' as const,
@@ -1062,6 +1064,7 @@ export default function ILSReportEditorPage() {
                     label: 'Final at RCFE Missing H2022 Start/End',
                     rows: queues.finalRcfeMissingH2022Dates,
                     editable: false,
+                    showIlsConnected: true,
                   },
                 ] as const
               ).map((q) => (
@@ -1072,7 +1075,9 @@ export default function ILSReportEditorPage() {
                   </div>
                   <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>Member / MRN / Birth Date</span>
-                    <span className="hidden sm:inline font-medium">Request Date</span>
+                    <span className="hidden sm:inline font-medium">
+                      {q.showIlsConnected ? 'ILS Connected • Request Date' : 'Request Date'}
+                    </span>
                   </div>
                   <div className="space-y-1 text-sm">
                     {q.rows.length === 0 ? (
@@ -1083,11 +1088,13 @@ export default function ILSReportEditorPage() {
                           <div className="min-w-0">
                             <div className="truncate font-medium flex items-center gap-2">
                               <span className="truncate">{r.memberName || '—'}</span>
-                              {r.ilsConnected ? (
-                                <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-label="ILS connected: yes" />
-                              ) : (
-                                <Circle className="h-4 w-4 shrink-0 text-red-500 fill-red-500" aria-label="ILS connected: no" />
-                              )}
+                              {q.showIlsConnected
+                                ? r.ilsConnected ? (
+                                    <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-label="ILS connected: yes" />
+                                  ) : (
+                                    <Circle className="h-4 w-4 shrink-0 text-red-500 fill-red-500" aria-label="ILS connected: no" />
+                                  )
+                                : null}
                             </div>
                             <div className="text-xs text-muted-foreground">
                               MRN: <span className="font-mono">{r.memberMrn || '—'}</span>
