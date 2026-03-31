@@ -159,8 +159,7 @@ export async function GET(request: NextRequest) {
         compactStatus === 'final member at rcfe';
       const rbRequested = Boolean(toYmd(m?.Kaiser_H2022_Requested));
       const rbReceived = Boolean(toYmd(m?.Kaiser_H2022_Received));
-      const ilsConnected = isTruthyLike(m?.ILS_Connected);
-      return (byStatus || rbRequested) && !rbReceived && !ilsConnected;
+      return (byStatus || rbRequested) && !rbReceived;
     });
     const needMoreContactInfoMembers = rows.filter((m: any) => isTruthyLike(m?.Need_More_Contact_Info_ILS));
     const finalRcfeMissingH2022Members = rows.filter((m: any) => {

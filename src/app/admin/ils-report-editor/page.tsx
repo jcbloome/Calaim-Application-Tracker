@@ -234,8 +234,7 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
     compactStatus === 'final member at rcfe';
   const rbRequested = Boolean(toYmd(member.Kaiser_H2022_Requested));
   const rbReceived = hasMeaningfulValue(member.Kaiser_H2022_Received) || Boolean(toYmd(member.Kaiser_H2022_Received));
-  const connectedToIls = isIlsConnected((member as any).ILS_Connected);
-  return (rbPendingByStatus || rbRequested) && !rbReceived && !connectedToIls;
+  return (rbPendingByStatus || rbRequested) && !rbReceived;
 };
 
 const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
