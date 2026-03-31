@@ -85,6 +85,7 @@ type QueueKey =
   | 't2038_auth_only_email'
   | 't2038_requested'
   | 'tier_level_requested'
+  | 'tier_level_appeals'
   | 'rb_sent_pending_ils_contract'
   | 'need_more_contact_info_ils'
   | 'final_rcfe_missing_h2022_dates';
@@ -211,6 +212,10 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
     // Show only members still pending with ILS (requested exists, received not set).
     return requested && !received;
   }
+  if (key === 'tier_level_appeals') {
+    const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
+    return compactStatus === 'tier level appeals' || compactStatus === 'tier level appeal';
+  }
   if (key === 'need_more_contact_info_ils') {
     return isTruthyLike((member as any).Need_More_Contact_Info_ILS);
   }
@@ -237,6 +242,8 @@ const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
   if (key === 't2038_requested') return toYmd(member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date);
   if (key === 'tier_level_requested')
     return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
+  if (key === 'tier_level_appeals')
+    return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || (member as any).Kaiser_Next_Step_Date);
   if (key === 't2038_auth_only_email') return toYmd(member.Kaiser_T2038_Requested_Date);
   if (key === 'rb_sent_pending_ils_contract') return toYmd(member.Kaiser_H2022_Requested);
   if (key === 'need_more_contact_info_ils') return toYmd((member as any).Kaiser_Next_Step_Date);
@@ -390,6 +397,7 @@ export default function ILSReportEditorPage() {
               queueIncludes(m, 't2038_auth_only_email') ||
               queueIncludes(m, 't2038_requested') ||
               queueIncludes(m, 'tier_level_requested') ||
+              queueIncludes(m, 'tier_level_appeals') ||
               queueIncludes(m, 'rb_sent_pending_ils_contract') ||
               queueIncludes(m, 'need_more_contact_info_ils') ||
               queueIncludes(m, 'final_rcfe_missing_h2022_dates')
@@ -399,6 +407,7 @@ export default function ILSReportEditorPage() {
               ymdSortKey(queueRequestedDate(a, 't2038_auth_only_email')),
               ymdSortKey(queueRequestedDate(a, 't2038_requested')),
               ymdSortKey(queueRequestedDate(a, 'tier_level_requested')),
+              ymdSortKey(queueRequestedDate(a, 'tier_level_appeals')),
               ymdSortKey(queueRequestedDate(a, 'rb_sent_pending_ils_contract')),
               ymdSortKey(queueRequestedDate(a, 'need_more_contact_info_ils')),
               ymdSortKey(queueRequestedDate(a, 'final_rcfe_missing_h2022_dates')),
@@ -407,6 +416,7 @@ export default function ILSReportEditorPage() {
               ymdSortKey(queueRequestedDate(b, 't2038_auth_only_email')),
               ymdSortKey(queueRequestedDate(b, 't2038_requested')),
               ymdSortKey(queueRequestedDate(b, 'tier_level_requested')),
+              ymdSortKey(queueRequestedDate(b, 'tier_level_appeals')),
               ymdSortKey(queueRequestedDate(b, 'rb_sent_pending_ils_contract')),
               ymdSortKey(queueRequestedDate(b, 'need_more_contact_info_ils')),
               ymdSortKey(queueRequestedDate(b, 'final_rcfe_missing_h2022_dates')),
@@ -646,6 +656,7 @@ export default function ILSReportEditorPage() {
     const queues = {
       t2038Requested: makeRows('t2038_requested'),
       tierRequested: makeRows('tier_level_requested'),
+      tierAppeals: makeRows('tier_level_appeals'),
       rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
       t2038AuthOnly: makeRows('t2038_auth_only_email'),
       needMoreContactInfoIls: makeRows('need_more_contact_info_ils'),
@@ -655,6 +666,7 @@ export default function ILSReportEditorPage() {
     const uniqueMemberIds = new Set<string>([
       ...queues.t2038Requested.map((r) => r.id).filter(Boolean),
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
+      ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
       ...queues.needMoreContactInfoIls.map((r) => r.id).filter(Boolean),
       ...queues.finalRcfeMissingH2022Dates.map((r) => r.id).filter(Boolean),
@@ -705,6 +717,7 @@ export default function ILSReportEditorPage() {
     return {
       t2038Requested: makeRows('t2038_requested'),
       tierRequested: makeRows('tier_level_requested'),
+      tierAppeals: makeRows('tier_level_appeals'),
       rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
       t2038AuthOnly: makeRows('t2038_auth_only_email'),
       needMoreContactInfoIls: makeRows('need_more_contact_info_ils'),
@@ -717,6 +730,7 @@ export default function ILSReportEditorPage() {
     const uniqueMemberIds = new Set<string>([
       ...queues.t2038Requested.map((r) => r.id).filter(Boolean),
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
+      ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
       ...queues.needMoreContactInfoIls.map((r) => r.id).filter(Boolean),
       ...queues.finalRcfeMissingH2022Dates.map((r) => r.id).filter(Boolean),
@@ -726,6 +740,7 @@ export default function ILSReportEditorPage() {
       t2038AuthOnly: queues.t2038AuthOnly.length,
       t2038Requested: queues.t2038Requested.length,
       tierRequested: queues.tierRequested.length,
+      tierAppeals: queues.tierAppeals.length,
       rbPendingIlsContract: queues.rbPendingIlsContract.length,
       needMoreContactInfoIls: queues.needMoreContactInfoIls.length,
       finalRcfeMissingH2022Dates: queues.finalRcfeMissingH2022Dates.length,
@@ -735,6 +750,7 @@ export default function ILSReportEditorPage() {
     queues.t2038AuthOnly,
     queues.t2038Requested,
     queues.tierRequested,
+    queues.tierAppeals,
     queues.needMoreContactInfoIls,
     queues.finalRcfeMissingH2022Dates,
   ]);
@@ -754,6 +770,7 @@ export default function ILSReportEditorPage() {
   const queueLabel = (value: string) => {
     const v = String(value || '').trim().toLowerCase();
     if (v === 'tier_level_requested') return 'Tier Level Requested';
+    if (v === 'tier_level_appeals') return 'Tier Level Appeals';
     if (v === 'rb_sent_pending_ils_contract') return 'R & B Sent Pending ILS Contract';
     if (v === 't2038_requested') return 'T2038 Requested';
     if (v === 't2038_auth_only_email') return 'T2038 Auth Only Email';
@@ -972,7 +989,7 @@ export default function ILSReportEditorPage() {
       </Card>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -981,6 +998,18 @@ export default function ILSReportEditorPage() {
                 <p className="text-xs text-muted-foreground">Total in queues</p>
               </div>
               <FileText className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-amber-700">{stats.tierAppeals}</p>
+                <p className="text-xs text-muted-foreground">Tier Level Appeals</p>
+              </div>
+              <Clock className="h-4 w-4 text-amber-700" />
             </div>
           </CardContent>
         </Card>
@@ -1072,6 +1101,14 @@ export default function ILSReportEditorPage() {
                     label: 'Tier Level Requested',
                     rows: queues.tierRequested,
                     editable: true,
+                  },
+                  {
+                    key: 'tierAppeals' as const,
+                    queueKey: 'tier_level_appeals' as const,
+                    label: 'Tier Level Appeals',
+                    rows: queues.tierAppeals,
+                    editable: false,
+                    showIlsConnected: false,
                   },
                   {
                     key: 'rbPendingIlsContract' as const,

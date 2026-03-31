@@ -146,6 +146,10 @@ export async function GET(request: NextRequest) {
       );
       return requested && !received;
     });
+    const tierAppealsMembers = rows.filter((m: any) => {
+      const compactStatus = normalizeStatus(m?.Kaiser_Status).replace(/[^a-z0-9]+/g, ' ').trim();
+      return compactStatus === 'tier level appeals' || compactStatus === 'tier level appeal';
+    });
     const rbPendingIlsContractMembers = rows.filter((m: any) => {
       const status = normalizeStatus(m?.Kaiser_Status);
       const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
@@ -180,6 +184,17 @@ export async function GET(request: NextRequest) {
               m?.Tier_Request_Date
           )
       ),
+      tierAppeals: queueRows(
+        tierAppealsMembers,
+        (m) =>
+          toYmd(
+            m?.Kaiser_Tier_Level_Requested ||
+              m?.Kaiser_Tier_Level_Requested_Date ||
+              m?.Tier_Level_Request_Date ||
+              m?.Tier_Level_Requested_Date ||
+              m?.Tier_Request_Date
+          )
+      ),
       rbPendingIlsContract: queueRows(rbPendingIlsContractMembers, (m) => toYmd(m?.Kaiser_H2022_Requested)),
       needMoreContactInfoIls: queueRows(needMoreContactInfoMembers, () => ''),
       finalRcfeMissingH2022Dates: queueRows(finalRcfeMissingH2022Members, () => ''),
@@ -189,6 +204,7 @@ export async function GET(request: NextRequest) {
       ...queues.t2038AuthOnly.map((r) => r.id).filter(Boolean),
       ...queues.t2038Requested.map((r) => r.id).filter(Boolean),
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
+      ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
       ...queues.needMoreContactInfoIls.map((r) => r.id).filter(Boolean),
       ...queues.finalRcfeMissingH2022Dates.map((r) => r.id).filter(Boolean),
@@ -216,6 +232,7 @@ export async function GET(request: NextRequest) {
             <div>T2038 Auth Only Email: <strong>${queues.t2038AuthOnly.length}</strong></div>
             <div>T2038 Requested: <strong>${queues.t2038Requested.length}</strong></div>
             <div>Tier Level Requested: <strong>${queues.tierRequested.length}</strong></div>
+            <div>Tier Level Appeals: <strong>${queues.tierAppeals.length}</strong></div>
             <div>R &amp; B Pending ILS Contract: <strong>${queues.rbPendingIlsContract.length}</strong></div>
             <div>Need More Contact Info (ILS): <strong>${queues.needMoreContactInfoIls.length}</strong></div>
             <div>Final at RCFE Missing H2022 Start/End: <strong>${queues.finalRcfeMissingH2022Dates.length}</strong></div>
@@ -225,6 +242,7 @@ export async function GET(request: NextRequest) {
             ['T2038 Auth Only Email', queues.t2038AuthOnly],
             ['T2038 Requested', queues.t2038Requested],
             ['Tier Level Requested', queues.tierRequested],
+            ['Tier Level Appeals', queues.tierAppeals],
             ['R &amp; B Pending ILS Contract', queues.rbPendingIlsContract],
             ['Need More Contact Info (ILS)', queues.needMoreContactInfoIls],
             ['Final at RCFE Missing H2022 Start/End', queues.finalRcfeMissingH2022Dates],

@@ -44,11 +44,13 @@ export function KaiserSummaryCards({
   // - T2038 Requested
   // - H2022 Requested
   // - Tier Level Requested
+  // - Tier Level Appeals
   const ilsRequestStatusMatchers = [
     { key: 't2038', label: 'T2038 Auth Only Email', accepts: ['t2038 auth only email', 't2308 auth only'] },
     { key: 't2038_requested', label: 'T2038 Requested', accepts: ['t2038 requested'] },
     { key: 'h2022', label: 'H2022 Requested', accepts: ['h2022 requested'] },
     { key: 'tier', label: 'Tier Level Requested', accepts: ['tier level requested'] },
+    { key: 'tier_appeals', label: 'Tier Level Appeals', accepts: ['tier level appeals', 'tier level appeal'] },
   ] as const;
 
   const getIlsStatusRequestBucketKey = (status: string): string | null => {

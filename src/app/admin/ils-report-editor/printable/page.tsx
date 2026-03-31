@@ -29,6 +29,7 @@ type ReportPayload = {
   queues: {
     t2038Requested: QueueRow[];
     tierRequested: QueueRow[];
+    tierAppeals: QueueRow[];
     rbPendingIlsContract: QueueRow[];
     t2038AuthOnly: QueueRow[];
     needMoreContactInfoIls: QueueRow[];
@@ -104,6 +105,12 @@ export default function IlsReportPrintablePage() {
         label: 'Tier Level Requested',
         rows: payload.queues.tierRequested,
         key: 'tier' as const,
+        showIlsConnected: false,
+      },
+      {
+        label: 'Tier Level Appeals',
+        rows: payload.queues.tierAppeals,
+        key: 'tierAppeals' as const,
         showIlsConnected: false,
       },
       {
@@ -189,6 +196,9 @@ export default function IlsReportPrintablePage() {
             </span>
             <span className="rounded-full border px-3 py-1 text-xs">
               <strong>Tier Level Requested:</strong> {payload.queues.tierRequested.length}
+            </span>
+            <span className="rounded-full border px-3 py-1 text-xs">
+              <strong>Tier Level Appeals:</strong> {payload.queues.tierAppeals.length}
             </span>
             <span className="rounded-full border px-3 py-1 text-xs">
               <strong>R &amp; B Pending ILS Contract:</strong> {payload.queues.rbPendingIlsContract.length}
