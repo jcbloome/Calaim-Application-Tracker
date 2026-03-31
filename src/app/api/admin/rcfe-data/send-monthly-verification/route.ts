@@ -23,6 +23,8 @@ type VerificationRow = {
   members: VerificationMember[];
 };
 
+type EmailMode = 'test' | 'bulk' | 'daily_followup';
+
 let resendClient: Resend | null = null;
 function getResendClient(): Resend | null {
   if (resendClient) return resendClient;
@@ -97,6 +99,7 @@ export async function POST(req: NextRequest) {
     const intro = String(body?.intro || '').trim();
     const isTest = Boolean(body?.isTest);
     const testEmail = normalizeEmail(body?.testEmail);
+    const emailMode = (String(body?.emailMode || (isTest ? 'test' : 'bulk')).trim() as EmailMode) || 'bulk';
     const rows = Array.isArray(body?.rows) ? (body.rows as VerificationRow[]) : [];
 
     if (!subject || !intro) {
@@ -174,9 +177,16 @@ export async function POST(req: NextRequest) {
         `;
       };
 
+      const timestamp = new Date().toLocaleString();
+      const effectiveSubject =
+        emailMode === 'daily_followup'
+          ? `[Daily Follow-up ${timestamp}] ${subject}`
+          : subject;
+
       const html = `
         <div style="font-family:Arial,sans-serif;max-width:760px;margin:0 auto;line-height:1.5;color:#111827;">
           <p>${escapeHtml(intro).replace(/\n/g, '<br/>')}</p>
+          <p style="margin-top:4px;color:#6b7280;"><strong>Generated:</strong> ${escapeHtml(timestamp)}</p>
           <p><strong>RCFE:</strong> ${escapeHtml(row.rcfeName)}</p>
           <p style="margin-top:6px;"><strong>Please reply to confirm this roster for your RCFE.</strong></p>
           <p style="margin-top:4px;color:#374151;">
@@ -195,7 +205,7 @@ export async function POST(req: NextRequest) {
       const { data, error } = await resend.emails.send({
         from: 'Connections CalAIM <noreply@carehomefinders.com>',
         to: [row.adminEmail],
-        subject,
+        subject: effectiveSubject,
         html,
       });
 
@@ -208,10 +218,11 @@ export async function POST(req: NextRequest) {
 
     const failed = results.filter((r) => r.error);
     await adminDb.collection('system_note_log').add({
-      type: 'rcfe_monthly_verification_email',
+      type: emailMode === 'daily_followup' ? 'rcfe_daily_followup_email' : 'rcfe_monthly_verification_email',
       actorUid: authz.uid,
       actorEmail: authz.email,
       subject,
+      emailMode,
       isTest,
       attempted: results.length,
       failed: failed.length,

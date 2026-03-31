@@ -96,6 +96,7 @@ export default function RcfeMonthlyVerificationPage() {
   );
   const [isSendingMonthlyTest, setIsSendingMonthlyTest] = useState(false);
   const [isSendingMonthlyBulk, setIsSendingMonthlyBulk] = useState(false);
+  const [isSendingDailyFollowup, setIsSendingDailyFollowup] = useState(false);
 
   const progressDocRef = useMemo(
     () => (firestore ? doc(firestore, 'admin_tool_state', 'rcfe_data_progress') : null),
@@ -244,19 +245,29 @@ export default function RcfeMonthlyVerificationPage() {
     return Array.from(grouped.values()).filter((row) => row.adminEmail.includes('@') && row.members.length > 0);
   }, [members, memberPresenceStatus, memberExtraDetails, memberVerifiedAt, rcfeFieldOverrides]);
 
+  const dailyFollowupRows = useMemo(
+    () => emailRows.filter((row) => row.members.some((member) => member.status === 'not_there')),
+    [emailRows]
+  );
+
   const sendMonthlyVerificationEmails = useCallback(
-    async (mode: 'test' | 'bulk') => {
+    async (mode: 'test' | 'bulk' | 'daily_followup') => {
       try {
         if (!auth?.currentUser) throw new Error('You must be signed in to send emails.');
         if (!monthlySubject.trim() || !monthlyIntro.trim()) {
           throw new Error('Subject and intro are required.');
         }
-        if (emailRows.length === 0) {
-          throw new Error('No RCFE rows with valid admin emails and members were found.');
+        if ((mode === 'daily_followup' ? dailyFollowupRows : emailRows).length === 0) {
+          throw new Error(
+            mode === 'daily_followup'
+              ? 'No RCFEs currently have members marked as not there.'
+              : 'No RCFE rows with valid admin emails and members were found.'
+          );
         }
 
         if (mode === 'test') setIsSendingMonthlyTest(true);
-        else setIsSendingMonthlyBulk(true);
+        else if (mode === 'bulk') setIsSendingMonthlyBulk(true);
+        else setIsSendingDailyFollowup(true);
 
         const idToken = await auth.currentUser.getIdToken();
         const res = await fetch('/api/admin/rcfe-data/send-monthly-verification', {
@@ -268,9 +279,10 @@ export default function RcfeMonthlyVerificationPage() {
           body: JSON.stringify({
             subject: monthlySubject,
             intro: monthlyIntro,
-            rows: emailRows,
+            rows: mode === 'daily_followup' ? dailyFollowupRows : emailRows,
             isTest: mode === 'test',
             testEmail: auth.currentUser?.email || '',
+            emailMode: mode,
           }),
         });
         const data = (await res.json().catch(() => ({}))) as any;
@@ -279,7 +291,12 @@ export default function RcfeMonthlyVerificationPage() {
         }
 
         toast({
-          title: mode === 'test' ? 'Monthly verification test sent' : 'Monthly verification emails sent',
+          title:
+            mode === 'test'
+              ? 'Monthly verification test sent'
+              : mode === 'daily_followup'
+                ? 'Daily follow-up emails sent'
+                : 'Monthly verification emails sent',
           description:
             mode === 'test'
               ? `Sent test email to ${auth.currentUser?.email || 'current user'}.`
@@ -288,16 +305,22 @@ export default function RcfeMonthlyVerificationPage() {
         });
       } catch (error: any) {
         toast({
-          title: mode === 'test' ? 'Test send failed' : 'Bulk send failed',
+          title:
+            mode === 'test'
+              ? 'Test send failed'
+              : mode === 'daily_followup'
+                ? 'Daily follow-up send failed'
+                : 'Bulk send failed',
           description: error?.message || 'Unable to send monthly verification emails.',
           variant: 'destructive',
         });
       } finally {
         if (mode === 'test') setIsSendingMonthlyTest(false);
-        else setIsSendingMonthlyBulk(false);
+        else if (mode === 'bulk') setIsSendingMonthlyBulk(false);
+        else setIsSendingDailyFollowup(false);
       }
     },
-    [auth?.currentUser, monthlySubject, monthlyIntro, emailRows, toast]
+    [auth?.currentUser, monthlySubject, monthlyIntro, emailRows, dailyFollowupRows, toast]
   );
 
   if (isLoading) {
@@ -355,6 +378,7 @@ export default function RcfeMonthlyVerificationPage() {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">{emailRows.length} RCFEs with valid recipient emails</Badge>
+            <Badge variant="outline">{dailyFollowupRows.length} RCFEs with "not there" members</Badge>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Subject</label>
@@ -386,6 +410,13 @@ export default function RcfeMonthlyVerificationPage() {
               disabled={isSendingMonthlyBulk}
             >
               {isSendingMonthlyBulk ? 'Sending Bulk...' : 'Send Monthly Bulk Email'}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => sendMonthlyVerificationEmails('daily_followup')}
+              disabled={isSendingDailyFollowup}
+            >
+              {isSendingDailyFollowup ? 'Sending Daily Follow-up...' : 'Send Daily Not-There Follow-up'}
             </Button>
           </div>
         </CardContent>

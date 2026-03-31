@@ -210,6 +210,8 @@ export default function RcfeDataToolsPage() {
   const commentsStorageKey = 'rcfe-member-extra-details';
   const [memberVerifiedAt, setMemberVerifiedAt] = useState<Record<string, string>>({});
   const verifiedAtStorageKey = 'rcfe-member-verified-at';
+  const [memberVerifiedBy, setMemberVerifiedBy] = useState<Record<string, string>>({});
+  const verifiedByStorageKey = 'rcfe-member-verified-by';
   const rcfeOverridesStorageKey = 'rcfe-field-overrides';
   const progressDocRef = useMemo(
     () => (firestore ? doc(firestore, 'admin_tool_state', 'rcfe_data_progress') : null),
@@ -264,6 +266,14 @@ export default function RcfeDataToolsPage() {
     if (Number.isNaN(dt.getTime())) return raw;
     return dt.toLocaleString();
   };
+
+  const getCurrentVerifierName = useCallback(() => {
+    const displayName = String(auth?.currentUser?.displayName || '').trim();
+    if (displayName) return displayName;
+    const email = String(auth?.currentUser?.email || '').trim();
+    if (email) return email;
+    return 'Admin staff';
+  }, [auth?.currentUser?.displayName, auth?.currentUser?.email]);
 
   const fetchCachedMembers = useCallback(
     async (showLoadedToast: boolean) => {
@@ -998,7 +1008,9 @@ export default function RcfeDataToolsPage() {
   const setMemberPresence = useCallback((memberId: string, status: 'there' | 'not_there', checked: boolean) => {
     const key = String(memberId || '').trim();
     if (!key) return;
+    let previousStatus: 'there' | 'not_there' | undefined;
     setMemberPresenceStatus((prev) => {
+      previousStatus = prev[key];
       const next = { ...prev };
       if (!checked) {
         if (next[key] === status) delete next[key];
@@ -1007,10 +1019,24 @@ export default function RcfeDataToolsPage() {
       next[key] = status;
       return next;
     });
+    if (checked && status === 'there' && previousStatus === 'not_there') {
+      const stamp = new Date().toLocaleString();
+      const note = `Member verified by admin (${stamp})`;
+      setMemberExtraDetails((prev) => {
+        const current = String(prev[key] || '').trim();
+        if (current.includes('Member verified by admin')) return prev;
+        return {
+          ...prev,
+          [key]: current ? `${note}. ${current}` : note,
+        };
+      });
+    }
     if (checked) {
+      const verifier = getCurrentVerifierName();
+      setMemberVerifiedBy((prev) => ({ ...prev, [key]: verifier }));
       setMemberVerifiedAt((prev) => ({ ...prev, [key]: new Date().toISOString() }));
     }
-  }, []);
+  }, [getCurrentVerifierName]);
 
   const toggleAllRowMembers = useCallback((row: RCFEDirectoryRow, status: 'there' | 'not_there', checked: boolean) => {
     setMemberPresenceStatus((prev) => {
@@ -1027,6 +1053,7 @@ export default function RcfeDataToolsPage() {
     });
     if (checked) {
       const stamp = new Date().toISOString();
+      const verifier = getCurrentVerifierName();
       setMemberVerifiedAt((prev) => {
         const next = { ...prev };
         row.members.forEach((member) => {
@@ -1034,8 +1061,15 @@ export default function RcfeDataToolsPage() {
         });
         return next;
       });
+      setMemberVerifiedBy((prev) => {
+        const next = { ...prev };
+        row.members.forEach((member) => {
+          if (member.id) next[member.id] = verifier;
+        });
+        return next;
+      });
     }
-  }, []);
+  }, [getCurrentVerifierName]);
 
   useEffect(() => {
     try {
@@ -1057,6 +1091,19 @@ export default function RcfeDataToolsPage() {
       const parsed = JSON.parse(raw) as Record<string, string>;
       if (parsed && typeof parsed === 'object') {
         setMemberVerifiedAt(parsed);
+      }
+    } catch {
+      // ignore storage issues
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(verifiedByStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      if (parsed && typeof parsed === 'object') {
+        setMemberVerifiedBy(parsed);
       }
     } catch {
       // ignore storage issues
@@ -1091,6 +1138,14 @@ export default function RcfeDataToolsPage() {
       // ignore storage issues
     }
   }, [memberVerifiedAt]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(verifiedByStorageKey, JSON.stringify(memberVerifiedBy));
+    } catch {
+      // ignore storage issues
+    }
+  }, [memberVerifiedBy]);
 
   useEffect(() => {
     try {
@@ -1129,6 +1184,7 @@ export default function RcfeDataToolsPage() {
         const fsPresence = (data?.memberPresenceStatus || {}) as Record<string, 'there' | 'not_there'>;
         const fsDetails = (data?.memberExtraDetails || {}) as Record<string, string>;
         const fsVerifiedAt = (data?.memberVerifiedAt || {}) as Record<string, string>;
+        const fsVerifiedBy = (data?.memberVerifiedBy || {}) as Record<string, string>;
         const fsOverrides = (data?.rcfeFieldOverrides || {}) as Record<string, RcfeDraftFields>;
         if (fsPresence && typeof fsPresence === 'object') {
           setMemberPresenceStatus((prev) => ({ ...prev, ...fsPresence }));
@@ -1138,6 +1194,9 @@ export default function RcfeDataToolsPage() {
         }
         if (fsVerifiedAt && typeof fsVerifiedAt === 'object') {
           setMemberVerifiedAt((prev) => ({ ...prev, ...fsVerifiedAt }));
+        }
+        if (fsVerifiedBy && typeof fsVerifiedBy === 'object') {
+          setMemberVerifiedBy((prev) => ({ ...prev, ...fsVerifiedBy }));
         }
         if (fsOverrides && typeof fsOverrides === 'object') {
           setRcfeFieldOverrides((prev) => ({ ...prev, ...fsOverrides }));
@@ -1174,6 +1233,7 @@ export default function RcfeDataToolsPage() {
             memberPresenceStatus,
             memberExtraDetails,
             memberVerifiedAt,
+            memberVerifiedBy,
             rcfeFieldOverrides,
             updatedAt: serverTimestamp(),
             updatedByUid: auth.currentUser?.uid || null,
@@ -1189,7 +1249,7 @@ export default function RcfeDataToolsPage() {
     return () => {
       if (progressSaveTimerRef.current) clearTimeout(progressSaveTimerRef.current);
     };
-  }, [progressDocRef, auth?.currentUser, memberPresenceStatus, memberExtraDetails, memberVerifiedAt, rcfeFieldOverrides]);
+  }, [progressDocRef, auth?.currentUser, memberPresenceStatus, memberExtraDetails, memberVerifiedAt, memberVerifiedBy, rcfeFieldOverrides]);
 
   if (isLoading) {
     return (
@@ -1394,6 +1454,18 @@ export default function RcfeDataToolsPage() {
                       const persisted = getPersistedStatusForRow(row);
                       const history = getHistoricalFallbackForRow(row);
                       const persistedBeds = String(persisted?.lastNumberOfBeds || history?.lastNumberOfBeds || '').trim();
+                      const latestVerifierEntry = row.members
+                        .map((member) => ({
+                          verifiedAtRaw: memberVerifiedAt[member.id] || '',
+                          verifiedBy: String(memberVerifiedBy[member.id] || '').trim(),
+                        }))
+                        .filter((entry) => entry.verifiedBy)
+                        .sort((a, b) => {
+                          const aMs = new Date(a.verifiedAtRaw || '').getTime();
+                          const bMs = new Date(b.verifiedAtRaw || '').getTime();
+                          return (Number.isFinite(bMs) ? bMs : 0) - (Number.isFinite(aMs) ? aMs : 0);
+                        })[0];
+                      const rowVerifiedBy = latestVerifierEntry?.verifiedBy || '';
                       const verifiedCount = row.members.filter(
                         (m) => memberPresenceStatus[m.id] === 'there' || memberPresenceStatus[m.id] === 'not_there'
                       ).length;
@@ -1421,6 +1493,11 @@ export default function RcfeDataToolsPage() {
                                 .filter(Boolean)
                                 .join(', ') || '-'}
                             </div>
+                            {rowVerifiedBy ? (
+                              <div className="text-[11px] text-muted-foreground mt-1">
+                                Verified by: {rowVerifiedBy}
+                              </div>
+                            ) : null}
                             <div className="text-xs mt-1">
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -1454,6 +1531,9 @@ export default function RcfeDataToolsPage() {
                                             <div className="text-xs leading-tight">{member.name}</div>
                                             <div className="text-[11px] text-muted-foreground">
                                               Last Verified: {formatDateTimeSafe(memberVerifiedAt[member.id]) || 'Not yet'}
+                                            </div>
+                                            <div className="text-[11px] text-muted-foreground">
+                                              Verified by: {String(memberVerifiedBy[member.id] || '').trim() || 'Not recorded'}
                                             </div>
                                             <div className="flex items-center gap-4">
                                               <label className="flex items-center gap-2 text-[11px]">
