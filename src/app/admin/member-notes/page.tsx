@@ -276,17 +276,6 @@ function MemberNotesPageContent() {
     });
   }, [members, memberScope, doesAssignmentMatchCurrentUser, getMemberAssignment]);
 
-  useEffect(() => {
-    if (!preselectId || autoSelectRef.current || filteredMembers.length === 0) return;
-    const match = filteredMembers.find(
-      (member) => String(member.clientId2).trim() === String(preselectId).trim()
-    );
-    if (!match) return;
-    autoSelectRef.current = true;
-    handleMemberSelect(match);
-    handleRequestNotes(match);
-  }, [filteredMembers, preselectId, handleRequestNotes]);
-
   const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
     setMemberNotes([]); // Clear notes when selecting a new member
@@ -413,6 +402,17 @@ function MemberNotesPageContent() {
       setIsNotesLoading(false);
     }
   }, [toast]);
+
+  useEffect(() => {
+    if (!preselectId || autoSelectRef.current || filteredMembers.length === 0) return;
+    const match = filteredMembers.find(
+      (member) => String(member.clientId2).trim() === String(preselectId).trim()
+    );
+    if (!match) return;
+    autoSelectRef.current = true;
+    handleMemberSelect(match);
+    void handleRequestNotes(match);
+  }, [filteredMembers, preselectId, handleRequestNotes]);
 
   useEffect(() => {
     if (!selectedMember) {
