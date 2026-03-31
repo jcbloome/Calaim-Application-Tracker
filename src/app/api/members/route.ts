@@ -37,9 +37,12 @@ async function fetchCaspioMembers(
     
     // Add search filters
     if (search) {
-      // Search by last name prefix only
+      // Search broadly so last-name lookup returns full historical member set.
       const escapedSearch = search.replace(/'/g, "''");
-      queryParams.append('q.where', `Senior_Last LIKE '${escapedSearch}%'`);
+      queryParams.append(
+        'q.where',
+        `(Senior_Last LIKE '%${escapedSearch}%' OR Senior_First LIKE '%${escapedSearch}%' OR RCFE_Name LIKE '%${escapedSearch}%')`
+      );
     }
     
     // Add health plan filter

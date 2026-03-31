@@ -5,6 +5,50 @@ import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
 
 const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
+const normalizeText = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const buildUserTokens = (email: string, displayName: string) => {
+  const tokens = new Set<string>();
+  const add = (value: unknown) => {
+    const normalized = normalizeText(value);
+    if (!normalized) return;
+    tokens.add(normalized);
+    normalized.split(' ').forEach((part) => {
+      if (part.length >= 3) tokens.add(part);
+    });
+  };
+  add(displayName);
+  add(email);
+  add(String(email || '').split('@')[0] || '');
+  return Array.from(tokens);
+};
+
+const assignmentMatchesUser = (assignment: unknown, email: string, displayName: string): boolean => {
+  const normalizedAssignment = normalizeText(assignment);
+  if (!normalizedAssignment || /^\d+$/.test(normalizedAssignment.replace(/\s+/g, ''))) return false;
+  const tokens = buildUserTokens(email, displayName);
+  return tokens.some(
+    (token) =>
+      normalizedAssignment === token ||
+      normalizedAssignment.includes(token) ||
+      token.includes(normalizedAssignment)
+  );
+};
+
+const isLikelyClinicalLabel = (...values: unknown[]) => {
+  const merged = values
+    .map((value) => normalizeText(value))
+    .filter(Boolean)
+    .join(' ');
+  if (!merged) return false;
+  return /\b(rn|nurse|social worker|msw|lcsw|lmft|clinical|therapist)\b/.test(merged);
+};
 
 async function canAccessIlsMembers(request: NextRequest): Promise<boolean> {
   const authHeader = request.headers.get('authorization') || '';
@@ -15,6 +59,7 @@ async function canAccessIlsMembers(request: NextRequest): Promise<boolean> {
     const decoded = await adminAuth.verifyIdToken(token);
     const uid = String(decoded.uid || '').trim();
     const email = normalizeEmail((decoded as any).email);
+    const displayName = String((decoded as any).name || '').trim();
     if (!uid || !email) return false;
     if (isBlockedPortalEmail(email)) return false;
 
@@ -29,7 +74,71 @@ async function canAccessIlsMembers(request: NextRequest): Promise<boolean> {
 
     const ilsData = (ilsAccessDoc.exists ? ilsAccessDoc.data() : {}) as any;
     const allowedEmails = Array.isArray(ilsData?.allowedEmails) ? ilsData.allowedEmails.map(normalizeEmail).filter(Boolean) : [];
-    return allowedEmails.includes(email);
+    if (allowedEmails.includes(email)) return true;
+
+    const [userByUid, userByEmail, adminRoleByUid, adminRoleByEmail, swByUid, swByEmail, cacheSnap] = await Promise.all([
+      adminDb.collection('users').doc(uid).get(),
+      adminDb.collection('users').doc(email).get(),
+      adminDb.collection('roles_admin').doc(uid).get(),
+      adminDb.collection('roles_admin').doc(email).get(),
+      adminDb.collection('socialWorkers').doc(uid).get(),
+      adminDb.collection('socialWorkers').doc(email).get(),
+      adminDb.collection('caspio_members_cache').where('CalAIM_MCO', '==', 'Kaiser').limit(5000).get(),
+    ]);
+
+    const userData = userByUid.exists
+      ? (userByUid.data() as any)
+      : userByEmail.exists
+        ? (userByEmail.data() as any)
+        : null;
+
+    const socialWorkerData = swByUid.exists
+      ? (swByUid.data() as any)
+      : swByEmail.exists
+        ? (swByEmail.data() as any)
+        : null;
+    const isSocialWorker = Boolean(socialWorkerData && socialWorkerData.isActive !== false);
+
+    const hasStaffFlag = Boolean(
+      userData?.isStaff ||
+      userData?.isKaiserStaff ||
+      userData?.isHealthNetStaff ||
+      userData?.isClaimsStaff ||
+      userData?.isKaiserAssignmentManager ||
+      adminRoleByUid.exists ||
+      adminRoleByEmail.exists
+    );
+    if (!hasStaffFlag || isSocialWorker) return false;
+
+    const clinicalLike = isLikelyClinicalLabel(
+      displayName,
+      email,
+      userData?.firstName,
+      userData?.lastName,
+      userData?.displayName,
+      userData?.role,
+      userData?.roleType,
+      userData?.title,
+      userData?.jobTitle,
+      userData?.discipline,
+      userData?.credentials
+    );
+    if (clinicalLike) return false;
+
+    // Keep compatibility for legacy Kaiser assignment-based staff grants.
+    for (const doc of cacheSnap.docs) {
+      const row = doc.data() as any;
+      const assignmentCandidates = [
+        row?.Kaiser_User_Assignment,
+        row?.Staff_Assigned,
+        row?.staff_assigned,
+        row?.kaiser_user_assignment,
+      ];
+      if (assignmentCandidates.some((candidate) => assignmentMatchesUser(candidate, email, displayName))) {
+        return true;
+      }
+    }
+    return true;
   } catch {
     return false;
   }

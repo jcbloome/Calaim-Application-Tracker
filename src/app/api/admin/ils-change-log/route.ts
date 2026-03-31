@@ -6,6 +6,22 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
+const normalizeText = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isLikelyClinicalLabel = (...values: unknown[]) => {
+  const merged = values
+    .map((value) => normalizeText(value))
+    .filter(Boolean)
+    .join(' ');
+  if (!merged) return false;
+  return /\b(rn|nurse|social worker|msw|lcsw|lmft|clinical|therapist)\b/.test(merged);
+};
 
 async function canAccessIlsLog(idToken: string) {
   const decoded = await adminAuth.verifyIdToken(idToken);
@@ -35,7 +51,48 @@ async function canAccessIlsLog(idToken: string) {
 
   const allowedEmails = ilsAccess.exists ? ((ilsAccess.data()?.allowedEmails || []) as unknown[]) : [];
   const allowed = allowedEmails.map(normalizeEmail).includes(email);
-  if (!allowed) return { ok: false as const, status: 403, error: 'Unauthorized' };
+  if (allowed) return { ok: true as const, uid, email };
+
+  const [userByUid, userByEmail, swByUid, swByEmail] = await Promise.all([
+    adminDb.collection('users').doc(uid).get(),
+    adminDb.collection('users').doc(email).get(),
+    adminDb.collection('socialWorkers').doc(uid).get(),
+    adminDb.collection('socialWorkers').doc(email).get(),
+  ]);
+  const userData = userByUid.exists
+    ? (userByUid.data() as any)
+    : userByEmail.exists
+      ? (userByEmail.data() as any)
+      : null;
+  const hasStaffFlag = Boolean(
+    userData?.isStaff ||
+    userData?.isKaiserStaff ||
+    userData?.isHealthNetStaff ||
+    userData?.isClaimsStaff ||
+    userData?.isKaiserAssignmentManager
+  );
+  const socialWorkerData = swByUid.exists
+    ? (swByUid.data() as any)
+    : swByEmail.exists
+      ? (swByEmail.data() as any)
+      : null;
+  const isSocialWorker = Boolean(socialWorkerData && socialWorkerData.isActive !== false);
+  const clinicalLike = isLikelyClinicalLabel(
+    (decoded as any)?.name,
+    email,
+    userData?.firstName,
+    userData?.lastName,
+    userData?.displayName,
+    userData?.role,
+    userData?.roleType,
+    userData?.title,
+    userData?.jobTitle,
+    userData?.discipline,
+    userData?.credentials
+  );
+  if (!hasStaffFlag || isSocialWorker || clinicalLike) {
+    return { ok: false as const, status: 403, error: 'Unauthorized' };
+  }
   return { ok: true as const, uid, email };
 }
 

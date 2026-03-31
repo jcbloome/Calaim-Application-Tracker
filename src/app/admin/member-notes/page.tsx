@@ -18,13 +18,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
-import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Search, 
   FileText, 
-  Bell, 
   Trash2,
   CheckCircle,
   Loader2,
@@ -33,7 +31,6 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
-import { getPriorityRank, normalizePriorityLabel } from '@/lib/notification-utils';
 import { format } from 'date-fns';
 import { useSearchParams } from 'next/navigation';
 
@@ -84,16 +81,6 @@ interface DailyTaskFollowup {
   notes?: string;
 }
 
-interface HealthStatus {
-  overallHealth: 'healthy' | 'degraded' | 'down' | string;
-  uptimePercentage: number;
-  caspioApiHealth: 'healthy' | 'degraded' | 'down' | string;
-  firestoreHealth: 'healthy' | 'degraded' | 'down' | string;
-  failedSyncCount: number;
-  timeSinceLastSuccess: number;
-  recommendations?: string[];
-}
-
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
   return fallback;
@@ -122,29 +109,9 @@ function MemberNotesPageContent() {
   const [kaiserAssignmentFilter, setKaiserAssignmentFilter] = useState('all');
   const [kaiserAssignmentOptions, setKaiserAssignmentOptions] = useState<string[]>([]);
   
-  // Real-time sync status
-  const [syncProgress, setSyncProgress] = useState({
-    isSync: false,
-    progress: 0,
-    stage: 'idle' as 'idle' | 'fetching-regular' | 'fetching-ils' | 'saving' | 'complete',
-    message: '',
-    notesFound: { regular: 0, ils: 0, total: 0 }
-  });
   const [noteFilter, setNoteFilter] = useState({
-    type: 'all',
-    priority: 'all',
-    assignedTo: 'all',
-    source: 'all',
     status: 'all'
   });
-
-  // ILS permissions state
-  const [hasILSPermission, setHasILSPermission] = useState(false);
-  const [, setIsCheckingILSPermission] = useState(false);
-
-  // Health monitoring
-  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
-  const [showHealthDetails, setShowHealthDetails] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MemberNote | null>(null);
   const [followUpTasks, setFollowUpTasks] = useState<DailyTaskFollowup[]>([]);
   const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
@@ -166,29 +133,76 @@ function MemberNotesPageContent() {
     try {
       const params = new URLSearchParams();
       if (trimmedSearch) params.append('search', trimmedSearch);
-      params.append('limit', shouldFetchWithoutSearch ? '200' : '20');
+      params.append('limit', shouldFetchWithoutSearch ? '300' : '200');
       if (memberScope === 'kaiser_assignment') {
         params.append('healthPlan', 'Kaiser');
       }
       if (shouldFilterKaiserByStaff) {
         params.append('kaiserUserAssignment', kaiserAssignmentFilter);
       }
-      
-      const response = await fetch(`/api/members?${params.toString()}`);
-      const data = await response.json();
-      
-      if (data.success) {
-        setMembers(data.members);
-        console.log(`✅ Found ${data.members.length} CalAIM members`, {
+
+      const membersPromise = fetch(`/api/members?${params.toString()}`).then((r) => r.json());
+      const historyPromise =
+        trimmedSearch.length >= 2
+          ? fetch(`/api/member-notes?search=${encodeURIComponent(trimmedSearch)}`).then((r) => r.json())
+          : Promise.resolve(null);
+
+      const [memberData, historyData] = await Promise.all([membersPromise, historyPromise]);
+
+      if (memberData.success) {
+        const merged = new Map<string, Member>();
+        for (const member of (memberData.members || []) as Member[]) {
+          const key = String(member.clientId2 || '').trim();
+          if (!key) continue;
+          merged.set(key, member);
+        }
+
+        const historyRecords = Array.isArray(historyData?.results)
+          ? historyData.results
+          : Array.isArray(historyData?.notes)
+            ? historyData.notes
+            : [];
+        for (const record of historyRecords) {
+          const clientId2 = String(
+            record?.clientId2 ||
+              record?.memberId ||
+              record?.Client_ID2 ||
+              record?.notes?.[0]?.clientId2 ||
+              ''
+          ).trim();
+          if (!clientId2 || merged.has(clientId2)) continue;
+          const memberName = String(record?.memberName || record?.notes?.[0]?.memberName || '').trim();
+          const nameParts = memberName.split(/\s+/).filter(Boolean);
+          const firstName = nameParts.slice(0, -1).join(' ') || 'Unknown';
+          const lastName = nameParts.slice(-1).join(' ') || memberName || 'Unknown';
+          merged.set(clientId2, {
+            clientId2,
+            firstName,
+            lastName,
+            healthPlan: 'Unknown',
+            status: 'From Notes History',
+            noteCount: 0
+          });
+        }
+
+        const mergedMembers = Array.from(merged.values()).sort((a, b) => {
+          const aLast = String(a.lastName || '').toLowerCase();
+          const bLast = String(b.lastName || '').toLowerCase();
+          if (aLast !== bLast) return aLast.localeCompare(bLast);
+          return String(a.firstName || '').toLowerCase().localeCompare(String(b.firstName || '').toLowerCase());
+        });
+
+        setMembers(mergedMembers);
+        console.log(`✅ Found ${mergedMembers.length} CalAIM members`, {
           search: trimmedSearch,
           memberScope,
           kaiserAssignmentFilter,
         });
       } else {
-        console.error('❌ Failed to search members:', data.error);
+        console.error('❌ Failed to search members:', memberData.error);
         toast({
           title: "Search Error",
-          description: data.error || "Failed to search CalAIM members",
+          description: memberData.error || "Failed to search CalAIM members",
           variant: "destructive"
         });
         setMembers([]);
@@ -205,20 +219,6 @@ function MemberNotesPageContent() {
       setIsLoading(false);
     }
   }, [toast, memberScope, kaiserAssignmentFilter]);
-
-  // Load health status
-  const loadHealthStatus = useCallback(async () => {
-    try {
-      const response = await fetch('/api/member-notes/health');
-      const data = await response.json();
-      
-      if (data.success) {
-        setHealthStatus(data.health);
-      }
-    } catch (error) {
-      console.error('Error loading health status:', error);
-    }
-  }, []);
 
   const loadKaiserAssignmentOptions = useCallback(async () => {
     try {
@@ -242,30 +242,6 @@ function MemberNotesPageContent() {
       setKaiserAssignmentOptions([]);
     }
   }, []);
-
-  // Check ILS permissions on mount
-  useEffect(() => {
-    const checkILSPermissions = async () => {
-      if (!user?.uid) return;
-      
-      setIsCheckingILSPermission(true);
-      try {
-        const response = await fetch(`/api/admin/ils-permissions?userId=${user.uid}`);
-        const data = await response.json();
-        
-        if (data.success) {
-          setHasILSPermission(data.hasILSPermission);
-        }
-      } catch (error) {
-        console.error('Error checking ILS permissions:', error);
-      } finally {
-        setIsCheckingILSPermission(false);
-      }
-    };
-
-    checkILSPermissions();
-    loadHealthStatus();
-  }, [user?.uid, loadHealthStatus]);
 
   // Don't load members on mount - only when searching
   // Search members when search term changes (with debounce)
@@ -304,6 +280,7 @@ function MemberNotesPageContent() {
   const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
     setMemberNotes([]); // Clear notes when selecting a new member
+    setSelectedNoteIds([]);
   };
 
   const loadFollowUpTasksForMember = useCallback(async (member: Member) => {
@@ -326,65 +303,15 @@ function MemberNotesPageContent() {
 
   const handleRequestNotes = useCallback(async (member: Member) => {
     setIsNotesLoading(true);
-    setSyncProgress({
-      isSync: true,
-      progress: 0,
-      stage: 'fetching-regular',
-      message: 'Fetching regular notes from Caspio...',
-      notesFound: { regular: 0, ils: 0, total: 0 }
-    });
-    
     try {
-      // Simulate progress updates
-      const progressInterval = setInterval(() => {
-        setSyncProgress(prev => {
-          if (prev.stage === 'fetching-regular' && prev.progress < 30) {
-            return { ...prev, progress: prev.progress + 10 };
-          } else if (prev.stage === 'fetching-regular' && prev.progress >= 30) {
-            return { 
-              ...prev, 
-              stage: 'fetching-ils', 
-              progress: 40,
-              message: 'Fetching ILS notes from Caspio...'
-            };
-          } else if (prev.stage === 'fetching-ils' && prev.progress < 70) {
-            return { ...prev, progress: prev.progress + 10 };
-          } else if (prev.stage === 'fetching-ils' && prev.progress >= 70) {
-            return { 
-              ...prev, 
-              stage: 'saving', 
-              progress: 80,
-              message: 'Saving notes to Firestore...'
-            };
-          } else if (prev.stage === 'saving' && prev.progress < 95) {
-            return { ...prev, progress: prev.progress + 5 };
-          }
-          return prev;
-        });
-      }, 500);
-
       const response = await fetch(
         `/api/member-notes?clientId2=${member.clientId2}&forceSync=false&skipSync=false&repairIfEmpty=true`
       );
       const data = await response.json();
-      
-      clearInterval(progressInterval);
-      
+
       if (data.success) {
         setMemberNotes(data.notes);
-        
-        setSyncProgress({
-          isSync: false,
-          progress: 100,
-          stage: 'complete',
-          message: 'Sync completed successfully!',
-          notesFound: {
-            regular: data.regularNotes || 0,
-            ils: data.ilsNotes || 0,
-            total: data.totalNotes || 0
-          }
-        });
-        
+
         const syncType = data.isFirstSync ? 'imported from Caspio' : 
                         data.newNotesCount > 0 ? `synced ${data.newNotesCount} new notes` : 
                         'already up to date';
@@ -393,31 +320,12 @@ function MemberNotesPageContent() {
           title: "Notes Loaded",
           description: `${data.notes.length} notes for ${member.firstName} ${member.lastName} - ${syncType}`,
         });
-
-        // Reset progress after 3 seconds
-        setTimeout(() => {
-          setSyncProgress({
-            isSync: false,
-            progress: 0,
-            stage: 'idle',
-            message: '',
-            notesFound: { regular: 0, ils: 0, total: 0 }
-          });
-        }, 3000);
       } else {
         throw new Error(data.error || 'Failed to load notes');
       }
       
     } catch (error: unknown) {
       console.error('Error loading member notes:', error);
-      setSyncProgress({
-        isSync: false,
-        progress: 0,
-        stage: 'idle',
-        message: 'Sync failed',
-        notesFound: { regular: 0, ils: 0, total: 0 }
-      });
-      
       toast({
         title: "Error",
         description: getErrorMessage(error, "Failed to load member notes"),
@@ -435,9 +343,10 @@ function MemberNotesPageContent() {
     );
     if (!match) return;
     autoSelectRef.current = true;
-    handleMemberSelect(match);
-    void handleRequestNotes(match);
-  }, [filteredMembers, preselectId, handleRequestNotes]);
+    setSelectedMember(match);
+    setMemberNotes([]);
+    setSelectedNoteIds([]);
+  }, [filteredMembers, preselectId]);
 
   useEffect(() => {
     if (!selectedMember) {
@@ -447,12 +356,13 @@ function MemberNotesPageContent() {
     void loadFollowUpTasksForMember(selectedMember);
   }, [selectedMember, loadFollowUpTasksForMember]);
 
+  useEffect(() => {
+    if (!selectedMember) return;
+    void handleRequestNotes(selectedMember);
+  }, [selectedMember, handleRequestNotes]);
+
 
   const filteredNotes = memberNotes.filter(note => {
-    if (noteFilter.type !== 'all' && note.noteType !== noteFilter.type) return false;
-    if (noteFilter.priority !== 'all' && normalizePriorityLabel(note.priority) !== noteFilter.priority) return false;
-    if (noteFilter.assignedTo !== 'all' && note.assignedTo !== noteFilter.assignedTo) return false;
-    if (noteFilter.source !== 'all' && note.source !== noteFilter.source) return false;
     if (noteFilter.status !== 'all') {
       const currentStatus = note.status || 'Open';
       if (noteFilter.status !== currentStatus) return false;
@@ -461,10 +371,6 @@ function MemberNotesPageContent() {
   });
 
   const sortedNotes = [...filteredNotes].sort((a, b) => {
-    const aPriority = normalizePriorityLabel(a.priority);
-    const bPriority = normalizePriorityLabel(b.priority);
-    const rankDiff = getPriorityRank(bPriority) - getPriorityRank(aPriority);
-    if (rankDiff !== 0) return rankDiff;
     const aTime = new Date(a.createdAt || 0).getTime();
     const bTime = new Date(b.createdAt || 0).getTime();
     return bTime - aTime;
@@ -479,23 +385,6 @@ function MemberNotesPageContent() {
       setSelectedNoteId(sortedNotes[0].id);
     }
   }, [sortedNotes, selectedNoteId]);
-
-  const getPriorityColor = (priority: string) => {
-    const label = normalizePriorityLabel(priority);
-    if (label === 'Urgent') return 'bg-red-100 text-red-800 border-red-200';
-    if (label === 'Priority') return 'bg-orange-100 text-orange-800 border-orange-200';
-    return 'bg-gray-100 text-gray-800 border-gray-200';
-  };
-
-  const getSourceColor = (source: string) => {
-    switch (source) {
-      case 'Caspio': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'ILS': return 'bg-green-100 text-green-800 border-green-200';
-      case 'App': return 'bg-purple-100 text-purple-800 border-purple-200';
-      case 'Admin': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
 
   const handleToggleStatus = async (note: MemberNote) => {
     try {
@@ -701,87 +590,8 @@ function MemberNotesPageContent() {
           <div>
             <h1 className="text-3xl font-bold">Member Notes Lookup</h1>
             <p className="text-muted-foreground">
-              Search and manage notes for CalAIM members across all health plans. Includes both regular notes and ILS notes with smart caching.
+              Fast lookup from cached historical notes with incremental Caspio updates.
             </p>
-            <div className="flex gap-2 mt-2">
-              <Badge className="bg-blue-100 text-blue-800 border-blue-200">
-                ✓ Regular Notes Integration
-              </Badge>
-              <Badge className="bg-purple-100 text-purple-800 border-purple-200">
-                ✓ ILS Notes Integration
-              </Badge>
-              {hasILSPermission && (
-                <Badge className="bg-green-100 text-green-800 border-green-200">
-                  ✓ ILS Permissions Enabled
-                </Badge>
-              )}
-              <Badge className="bg-orange-100 text-orange-800 border-orange-200">
-                ✓ Smart Caching & Sync
-              </Badge>
-              {healthStatus && (
-                <Badge 
-                  className={`cursor-pointer hover:opacity-80 ${
-                    healthStatus.overallHealth === 'healthy' 
-                      ? 'bg-green-100 text-green-800 border-green-200'
-                      : healthStatus.overallHealth === 'degraded'
-                      ? 'bg-yellow-100 text-yellow-800 border-yellow-200'
-                      : 'bg-red-100 text-red-800 border-red-200'
-                  }`}
-                  onClick={() => setShowHealthDetails(!showHealthDetails)}
-                >
-                  {healthStatus.overallHealth === 'healthy' ? '🟢' : 
-                   healthStatus.overallHealth === 'degraded' ? '🟡' : '🔴'} 
-                  System {healthStatus.overallHealth} ({healthStatus.uptimePercentage}%)
-                </Badge>
-              )}
-            </div>
-            
-            {/* Health Details */}
-            {showHealthDetails && healthStatus && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
-                <h4 className="font-medium mb-2">System Health Status</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Caspio API:</span>
-                    <Badge className={`ml-2 ${
-                      healthStatus.caspioApiHealth === 'healthy' ? 'bg-green-100 text-green-800' :
-                      healthStatus.caspioApiHealth === 'degraded' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {healthStatus.caspioApiHealth}
-                    </Badge>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Firestore:</span>
-                    <Badge className={`ml-2 ${
-                      healthStatus.firestoreHealth === 'healthy' ? 'bg-green-100 text-green-800' :
-                      healthStatus.firestoreHealth === 'degraded' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {healthStatus.firestoreHealth}
-                    </Badge>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Failed Syncs:</span>
-                    <span className="ml-2 font-medium">{healthStatus.failedSyncCount}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Last Success:</span>
-                    <span className="ml-2 font-medium">{healthStatus.timeSinceLastSuccess}m ago</span>
-                  </div>
-                </div>
-                {healthStatus.recommendations && healthStatus.recommendations.length > 0 && (
-                  <div className="mt-3">
-                    <span className="text-muted-foreground text-sm">Recommendations:</span>
-                    <ul className="mt-1 text-xs space-y-1">
-                      {healthStatus.recommendations.map((rec: string, idx: number) => (
-                        <li key={idx} className="text-muted-foreground">{rec}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -852,7 +662,7 @@ function MemberNotesPageContent() {
               </div>
               <p className="text-xs text-muted-foreground">
                 {searchTerm.trim() ? 
-                  `Searching Caspio for "${searchTerm}"...` : 
+                  `Searching members for "${searchTerm}"...` : 
                   memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all'
                     ? `Loading Kaiser members assigned to ${kaiserAssignmentFilter}...`
                     : 'Enter last name letters to find CalAIM members'
@@ -913,7 +723,7 @@ function MemberNotesPageContent() {
                     }
                   </p>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Search by member name, Client ID, or RCFE name
+                    Search checks last name, first name, and RCFE name.
                   </p>
                 </div>
               )}
@@ -958,51 +768,19 @@ function MemberNotesPageContent() {
             ) : memberNotes.length === 0 ? (
               <div className="text-center py-12">
                 <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">No Notes Loaded</h3>
-                <p className="text-muted-foreground mb-6">
-                  Click &quot;Request Notes&quot; to load notes for {selectedMember.firstName} {selectedMember.lastName}
-                  <br />
-                  <span className="text-xs">
-                    This will fetch both regular notes and ILS notes from Caspio, then cache them in Firestore for faster future access.
-                  </span>
+                <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
+                <p className="text-muted-foreground mb-4">
+                  No notes are currently available for {selectedMember.firstName} {selectedMember.lastName}.
                 </p>
-                <div className="space-y-4">
-                  <Button 
-                    onClick={() => handleRequestNotes(selectedMember)}
-                    disabled={isNotesLoading || syncProgress.isSync}
-                    size="lg"
-                    className="bg-blue-600 hover:bg-blue-700 w-full"
-                  >
-                    {isNotesLoading || syncProgress.isSync ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        {syncProgress.message || 'Loading Notes...'}
-                      </>
-                    ) : (
-                      <>
-                        <Download className="mr-2 h-4 w-4" />
-                        Request Notes
-                      </>
-                    )}
-                  </Button>
-                  
-                  {/* Sync Progress Indicator */}
-                  {(syncProgress.isSync || syncProgress.stage === 'complete') && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">{syncProgress.message}</span>
-                        <span className="font-medium">{syncProgress.progress}%</span>
-                      </div>
-                      <Progress value={syncProgress.progress} className="h-2" />
-                      
-                      {syncProgress.stage === 'complete' && syncProgress.notesFound.total > 0 && (
-                        <div className="text-xs text-muted-foreground bg-green-50 p-2 rounded border border-green-200">
-                          ✅ Found {syncProgress.notesFound.total} total notes: {syncProgress.notesFound.regular} regular + {syncProgress.notesFound.ils} ILS
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleRequestNotes(selectedMember)}
+                  disabled={isNotesLoading}
+                >
+                  <Download className="mr-2 h-3 w-3" />
+                  Sync Notes
+                </Button>
               </div>
             ) : (
               <div className="space-y-4">
@@ -1043,11 +821,6 @@ function MemberNotesPageContent() {
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-muted-foreground">
                     Showing {memberNotes.length} notes for {selectedMember.firstName} {selectedMember.lastName}
-                    <div className="text-xs mt-1">
-                      Regular: {filteredNotes.filter(n => n.source === 'Caspio').length} • 
-                      ILS: {filteredNotes.filter(n => n.source === 'ILS').length} • 
-                      App: {filteredNotes.filter(n => n.source === 'App' || n.source === 'Admin').length}
-                    </div>
                   </div>
                   <Button 
                     variant="outline" 
@@ -1107,60 +880,6 @@ function MemberNotesPageContent() {
                   Open notes in view: {selectableOpenNoteIds.length} | Selected open: {selectedOpenCount}
                 </div>
 
-                {/* Note Filters */}
-                <div className="flex gap-4 p-4 bg-gray-50 rounded-lg">
-                  <Select value={noteFilter.type} onValueChange={(value) => setNoteFilter(prev => ({ ...prev, type: value }))}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="General">General</SelectItem>
-                      <SelectItem value="Medical">Medical</SelectItem>
-                      <SelectItem value="Social">Social</SelectItem>
-                      <SelectItem value="Administrative">Administrative</SelectItem>
-                      <SelectItem value="Follow-up">Follow-up</SelectItem>
-                      <SelectItem value="Emergency">Emergency</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  
-                  <Select value={noteFilter.priority} onValueChange={(value) => setNoteFilter(prev => ({ ...prev, priority: value }))}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Priority</SelectItem>
-                      <SelectItem value="Urgent">Urgent</SelectItem>
-                      <SelectItem value="Priority">Priority</SelectItem>
-                      <SelectItem value="General">General</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={noteFilter.source} onValueChange={(value) => setNoteFilter(prev => ({ ...prev, source: value }))}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Sources</SelectItem>
-                      <SelectItem value="Caspio">Caspio</SelectItem>
-                      <SelectItem value="ILS">ILS</SelectItem>
-                      <SelectItem value="App">App</SelectItem>
-                      <SelectItem value="Admin">Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={noteFilter.status} onValueChange={(value) => setNoteFilter(prev => ({ ...prev, status: value }))}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="Open">Open</SelectItem>
-                      <SelectItem value="Closed">Closed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 <div className="flex flex-wrap items-center gap-2 px-4">
                   <Button
                     size="sm"
@@ -1206,20 +925,7 @@ function MemberNotesPageContent() {
                             />
                           </div>
                           <div className="flex gap-2 flex-wrap">
-                            <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                              {normalizePriorityLabel(note.priority)}
-                            </Badge>
-                            <Badge variant="outline">{note.noteType}</Badge>
-                            <Badge variant="outline" className={getSourceColor(note.source)}>
-                              {note.source}
-                            </Badge>
                             <Badge variant="outline">{note.status || 'Open'}</Badge>
-                            {!note.isRead && (
-                              <Badge className="bg-blue-600">
-                                <Bell className="h-3 w-3 mr-1" />
-                                New
-                              </Badge>
-                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="text-xs text-muted-foreground">
@@ -1250,6 +956,13 @@ function MemberNotesPageContent() {
                               <span className="font-medium">Assigned to:</span> {note.assignedToName}
                             </>
                           )}
+                          {note.followUpDate && (
+                            <>
+                              <span className="mx-2">•</span>
+                              <span className="font-medium">Follow-up:</span>{' '}
+                              {format(new Date(note.followUpDate), 'MMM d, yyyy')}
+                            </>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1259,7 +972,7 @@ function MemberNotesPageContent() {
                         <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                         <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
                         <p className="text-muted-foreground">
-                          No notes match the current filters
+                          No notes match the selected status filter
                         </p>
                       </div>
                     )}
@@ -1281,14 +994,7 @@ function MemberNotesPageContent() {
                             return (
                               <div className="space-y-3 text-sm">
                                 <div className="flex flex-wrap gap-2">
-                                  <Badge variant="outline" className={getPriorityColor(note.priority)}>
-                                    {normalizePriorityLabel(note.priority)}
-                                  </Badge>
-                                  <Badge variant="outline">{note.noteType}</Badge>
                                   <Badge variant="outline">{note.status || 'Open'}</Badge>
-                                  <Badge variant="outline" className={getSourceColor(note.source)}>
-                                    {note.source}
-                                  </Badge>
                                 </div>
                                 <div>
                                   <p className="font-medium">Note</p>

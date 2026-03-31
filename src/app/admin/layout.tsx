@@ -1667,6 +1667,18 @@ function AdminHeader() {
   } else if (isSuperAdmin) {
     // Super admins see everything
     combinedNavLinks = [...adminNavLinks, ...superAdminNavLinks];
+  } else if (!isAdmin) {
+    // Non-admin staff get a limited tools nav.
+    combinedNavLinks = adminNavLinks
+      .filter((nav) => nav.label === 'Tools')
+      .map((nav: any) => ({
+        ...nav,
+        submenuItems: (Array.isArray(nav?.submenuItems) ? nav.submenuItems : []).filter((item: any) =>
+          ['/admin/ils-report-editor', '/admin/tools/ils-status-check', '/admin/reports/ils'].includes(
+            String(item?.href || '')
+          )
+        ),
+      }));
   } else {
     // Regular admins see admin nav links, hide SW tab for all regular admins
     combinedNavLinks = adminNavLinks.filter(nav => nav.label !== 'SW');
@@ -2097,6 +2109,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const allowNonAdmin =
       pathname?.startsWith('/admin/my-notes') ||
       pathname?.startsWith('/admin/reports/ils') ||
+      pathname?.startsWith('/admin/ils-report-editor') ||
+      pathname?.startsWith('/admin/tools/ils-status-check') ||
       pathname === '/admin/desktop-notification-window' ||
       pathname === '/admin/desktop-chat-window';
 
@@ -2170,6 +2184,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       const allowNonAdmin =
         pathname?.startsWith('/admin/my-notes') ||
         pathname?.startsWith('/admin/reports/ils') ||
+        pathname?.startsWith('/admin/ils-report-editor') ||
+        pathname?.startsWith('/admin/tools/ils-status-check') ||
         pathname === '/admin/desktop-notification-window' ||
         pathname === '/admin/desktop-chat-window';
 

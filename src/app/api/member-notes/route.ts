@@ -749,9 +749,9 @@ export async function GET(request: NextRequest) {
     const metaOnly = searchParams.get('metaOnly') === 'true';
     const searchQuery = searchParams.get('search');
 
-    // Handle full-text search across all notes using new module
+    // Handle full-text search across all cached historical notes.
     if (searchQuery && !clientId2) {
-      return await handleGlobalNoteSearchWithModule(searchQuery);
+      return await handleGlobalNoteSearch(searchQuery);
     }
 
     if (!clientId2) {

@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/firebase';
 
 type KaiserMember = {
   client_ID2: string;
@@ -63,6 +64,7 @@ const isRateLimitError = (error: unknown) => {
 
 export default function IlsStatusCheckPage() {
   const { toast } = useToast();
+  const auth = useAuth();
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [notesByClientId, setNotesByClientId] = useState<Record<string, MemberNote[]>>({});
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -75,6 +77,8 @@ export default function IlsStatusCheckPage() {
   const [noteDateTo, setNoteDateTo] = useState('');
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [lastSyncNewNotes, setLastSyncNewNotes] = useState(0);
+  const [accessLoading, setAccessLoading] = useState(true);
+  const [canAccessIlsTools, setCanAccessIlsTools] = useState(false);
 
   const stopRef = useRef(false);
   const controllersRef = useRef<Set<AbortController>>(new Set());
@@ -83,6 +87,27 @@ export default function IlsStatusCheckPage() {
   const getMemberAssignment = useCallback((m: KaiserMember) => {
     return String(m.Kaiser_User_Assignment || 'Unassigned').trim() || 'Unassigned';
   }, []);
+
+  const checkIlsToolsAccess = useCallback(async () => {
+    if (!auth?.currentUser) {
+      setCanAccessIlsTools(false);
+      setAccessLoading(false);
+      return;
+    }
+    setAccessLoading(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/ils-member-access', {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      setCanAccessIlsTools(Boolean(res.ok && data?.success && data?.canAccessIlsMembersPage));
+    } catch {
+      setCanAccessIlsTools(false);
+    } finally {
+      setAccessLoading(false);
+    }
+  }, [auth]);
 
   const matchesAssignmentFilter = useCallback(
     (m: KaiserMember) => (assignmentFilter === 'all' ? true : getMemberAssignment(m) === assignmentFilter),
@@ -535,6 +560,34 @@ export default function IlsStatusCheckPage() {
     a.click();
     URL.revokeObjectURL(url);
   }, [filteredReportRows, toast]);
+
+  useEffect(() => {
+    void checkIlsToolsAccess();
+  }, [checkIlsToolsAccess]);
+
+  if (accessLoading) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          Checking ILS tools access...
+        </div>
+      </div>
+    );
+  }
+
+  if (!canAccessIlsTools) {
+    return (
+      <div className="container mx-auto p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescription>You need Kaiser-assigned staff access to use ILS tools.</CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-6 space-y-6">

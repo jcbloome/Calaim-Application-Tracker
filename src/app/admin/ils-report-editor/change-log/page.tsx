@@ -23,12 +23,35 @@ interface IlsChangeLogRow {
 }
 
 export default function IlsChangeLogPage() {
-  const { isAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { isLoading: isAdminLoading } = useAdmin();
   const auth = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [rows, setRows] = useState<IlsChangeLogRow[]>([]);
   const [search, setSearch] = useState('');
+  const [accessLoading, setAccessLoading] = useState(true);
+  const [canAccessIlsTools, setCanAccessIlsTools] = useState(false);
+
+  const checkIlsToolsAccess = async () => {
+    if (!auth?.currentUser) {
+      setCanAccessIlsTools(false);
+      setAccessLoading(false);
+      return;
+    }
+    setAccessLoading(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/ils-member-access', {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      setCanAccessIlsTools(Boolean(res.ok && data?.success && data?.canAccessIlsMembersPage));
+    } catch {
+      setCanAccessIlsTools(false);
+    } finally {
+      setAccessLoading(false);
+    }
+  };
 
   const loadAllChanges = async () => {
     try {
@@ -58,6 +81,14 @@ export default function IlsChangeLogPage() {
     loadAllChanges().catch(() => {});
   }, [auth?.currentUser?.uid]);
 
+  useEffect(() => {
+    if (isAdminLoading) return;
+    checkIlsToolsAccess().catch(() => {
+      setCanAccessIlsTools(false);
+      setAccessLoading(false);
+    });
+  }, [auth?.currentUser?.uid, isAdminLoading]);
+
   const todayKey = format(new Date(), 'yyyy-MM-dd');
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -73,7 +104,7 @@ export default function IlsChangeLogPage() {
 
   const todayRows = filtered.filter((r) => String(r.dateKey || '').trim() === todayKey);
 
-  if (isAdminLoading) {
+  if (isAdminLoading || accessLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -81,13 +112,13 @@ export default function IlsChangeLogPage() {
     );
   }
 
-  if (!isAdmin) {
+  if (!canAccessIlsTools) {
     return (
       <div className="container mx-auto py-8">
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You need administrator access to view the ILS change log.</CardDescription>
+            <CardDescription>You need core staff access to view the ILS change log.</CardDescription>
           </CardHeader>
         </Card>
       </div>

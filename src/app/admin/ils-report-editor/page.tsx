@@ -277,7 +277,30 @@ export default function ILSReportEditorPage() {
   const [selectedMemberNotes, setSelectedMemberNotes] = useState<MemberNote[]>([]);
   const [isLoadingMemberNotes, setIsLoadingMemberNotes] = useState(false);
   const [memberNotesMeta, setMemberNotesMeta] = useState<{ didSync: boolean; count: number }>({ didSync: false, count: 0 });
+  const [accessLoading, setAccessLoading] = useState(true);
+  const [canAccessIlsTools, setCanAccessIlsTools] = useState(false);
   const { toast } = useToast();
+
+  const checkIlsToolsAccess = async () => {
+    if (!auth?.currentUser) {
+      setCanAccessIlsTools(false);
+      setAccessLoading(false);
+      return;
+    }
+    setAccessLoading(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/ils-member-access', {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => ({} as any));
+      setCanAccessIlsTools(Boolean(res.ok && data?.success && data?.canAccessIlsMembersPage));
+    } catch {
+      setCanAccessIlsTools(false);
+    } finally {
+      setAccessLoading(false);
+    }
+  };
 
   // Load Kaiser members for ILS report
   const loadMembers = async () => {
@@ -287,14 +310,14 @@ export default function ILSReportEditorPage() {
 
       // On-demand full sync from Caspio → Firestore cache, then read from cache.
       const idToken = await auth.currentUser.getIdToken();
+      // Staff without admin can still access this page; sync is best-effort for admins.
       const syncRes = await fetch('/api/caspio/members-cache/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken, mode: 'full' }),
       });
-      const syncData = await syncRes.json().catch(() => ({} as any));
-      if (!syncRes.ok || !syncData?.success) {
-        throw new Error(syncData?.error || `Failed to sync members cache (HTTP ${syncRes.status})`);
+      if (!syncRes.ok) {
+        console.warn(`Skipping members-cache sync (HTTP ${syncRes.status}); reading existing cache.`);
       }
 
       const response = await fetch('/api/kaiser-members');
@@ -764,13 +787,21 @@ export default function ILSReportEditorPage() {
   }, [auth?.currentUser?.uid]);
 
   useEffect(() => {
+    if (isAdminLoading) return;
+    checkIlsToolsAccess().catch(() => {
+      setCanAccessIlsTools(false);
+      setAccessLoading(false);
+    });
+  }, [auth?.currentUser?.uid, isAdmin, isAdminLoading]);
+
+  useEffect(() => {
     setSelectedMemberNotes([]);
     setMemberNotesMeta({ didSync: false, count: 0 });
   }, [selectedMemberForNotes]);
 
   // Removed auto-loading useEffect - now only loads when "Load Members" button is pressed
 
-  if (isAdminLoading) {
+  if (isAdminLoading || accessLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -778,7 +809,7 @@ export default function ILSReportEditorPage() {
     );
   }
 
-  if (!isAdmin) {
+  if (!canAccessIlsTools) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Card className="w-full max-w-md">
@@ -788,7 +819,7 @@ export default function ILSReportEditorPage() {
               Access Denied
             </CardTitle>
             <CardDescription>
-              You need administrator privileges to access the ILS report editor.
+              You need Kaiser-assigned staff access to use ILS Member Requests tools.
             </CardDescription>
           </CardHeader>
         </Card>
