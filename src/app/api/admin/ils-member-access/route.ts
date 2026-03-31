@@ -4,6 +4,7 @@ import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
 
 const SETTINGS_DOC = adminDb.collection('system_settings').doc('ils_member_access');
+const SPECIAL_ILS_STAFF_EMAILS = new Set<string>(['jocelyn@ilshealth.com']);
 
 type Requester = {
   uid: string;
@@ -177,8 +178,9 @@ export async function GET(request: NextRequest) {
       : [];
 
     const hasCoreStaff = await hasCoreStaffAccess(requester);
+    const isSpecialIlsStaff = SPECIAL_ILS_STAFF_EMAILS.has(requester.email);
     const canAccessIlsMembersPage =
-      requester.isSuperAdmin || allowedEmails.includes(requester.email) || hasCoreStaff;
+      requester.isSuperAdmin || allowedEmails.includes(requester.email) || hasCoreStaff || isSpecialIlsStaff;
 
     return NextResponse.json({
       success: true,
@@ -188,6 +190,8 @@ export async function GET(request: NextRequest) {
         ? 'super_admin'
         : allowedEmails.includes(requester.email)
           ? 'allowlist'
+          : isSpecialIlsStaff
+            ? 'special_ils_staff'
           : hasCoreStaff
             ? 'core_staff'
             : 'none',

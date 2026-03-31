@@ -6,6 +6,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
+const SPECIAL_ILS_STAFF_EMAILS = new Set<string>(['jocelyn@ilshealth.com']);
 const normalizeText = (value: unknown) =>
   String(value ?? '')
     .trim()
@@ -29,7 +30,12 @@ async function canAccessIlsLog(idToken: string) {
   const email = normalizeEmail((decoded as any)?.email);
   if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
 
-  if (Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin) || isHardcodedAdminEmail(email)) {
+  if (
+    Boolean((decoded as any)?.admin) ||
+    Boolean((decoded as any)?.superAdmin) ||
+    isHardcodedAdminEmail(email) ||
+    SPECIAL_ILS_STAFF_EMAILS.has(email)
+  ) {
     return { ok: true as const, uid, email };
   }
 
@@ -51,7 +57,7 @@ async function canAccessIlsLog(idToken: string) {
 
   const allowedEmails = ilsAccess.exists ? ((ilsAccess.data()?.allowedEmails || []) as unknown[]) : [];
   const allowed = allowedEmails.map(normalizeEmail).includes(email);
-  if (allowed) return { ok: true as const, uid, email };
+  if (allowed || SPECIAL_ILS_STAFF_EMAILS.has(email)) return { ok: true as const, uid, email };
 
   const [userByUid, userByEmail, swByUid, swByEmail] = await Promise.all([
     adminDb.collection('users').doc(uid).get(),

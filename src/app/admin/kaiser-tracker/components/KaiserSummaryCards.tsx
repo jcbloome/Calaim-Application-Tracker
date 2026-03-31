@@ -85,7 +85,17 @@ export function KaiserSummaryCards({
 
   const isFinalMemberAtRcfe = (value: unknown) => {
     const normalized = normalize(String(value || ''));
-    return normalized === 'final member at rcfe';
+    return normalized === 'final member at rcfe' || normalized === 'final at rcfe';
+  };
+
+  const isRbPendingOrFinalAtRcfeStatus = (value: unknown) => {
+    const normalized = normalize(String(value || ''));
+    return (
+      normalized === 'r b sent pending ils contract' ||
+      normalized === 'r b pending ils contract' ||
+      normalized === 'final member at rcfe' ||
+      normalized === 'final at rcfe'
+    );
   };
 
   const needsMoreContactInfoMembers = members.filter((m) => isTruthyLike((m as any)?.Need_More_Contact_Info_ILS));
@@ -95,11 +105,15 @@ export function KaiserSummaryCards({
     const hasEnd = hasH2022DateValue((m as any)?.Authorization_End_Date_H2022);
     return !hasStart || !hasEnd;
   });
+  const rbAndFinalIlsConnectedMembers = members.filter((m) =>
+    isRbPendingOrFinalAtRcfeStatus(getEffectiveKaiserStatus(m))
+  );
 
   const ilsStatusRequestMembers = members.filter((m) => Boolean(getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(m))));
   const ilsMemberRequestsMembers = members.filter((m) => {
     return (
       Boolean(getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(m))) ||
+      rbAndFinalIlsConnectedMembers.some((x) => x.client_ID2 === m.client_ID2) ||
       isTruthyLike((m as any)?.Need_More_Contact_Info_ILS) ||
       missingH2022DateMembers.some((x) => x.client_ID2 === m.client_ID2)
     );
@@ -182,6 +196,22 @@ export function KaiserSummaryCards({
             ))}
           </div>
           <div className="border-t pt-2 space-y-1">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-cyan-800 hover:bg-cyan-50 hover:underline"
+              onClick={() =>
+                openMemberModal(
+                  rbAndFinalIlsConnectedMembers,
+                  'ILS Member Requests — R & B Pending / Final at RCFE',
+                  `${rbAndFinalIlsConnectedMembers.length} Kaiser members in R & B Sent Pending ILS Contract or Final at RCFE`,
+                  'kaiser_status',
+                  'ils_member_requests_rb_pending_or_final_rcfe'
+                )
+              }
+            >
+              <span className="truncate pr-2">R &amp; B pending + Final at RCFE (ILS Connected)</span>
+              <span className="font-semibold text-cyan-800">{rbAndFinalIlsConnectedMembers.length}</span>
+            </button>
             <button
               type="button"
               className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-cyan-800 hover:bg-cyan-50 hover:underline"

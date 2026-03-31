@@ -72,6 +72,7 @@ interface IlsQueueChangeLogRow {
   id: string;
   memberName: string;
   clientId2?: string;
+  memberId?: string;
   queue: string;
   changes?: Record<string, any>;
   changedByEmail?: string;
@@ -80,6 +81,9 @@ interface IlsQueueChangeLogRow {
   queueChangeFlag?: boolean;
   eventType?: string;
 }
+
+const ILS_STAFF_NOTE_EMAIL = 'jocelyn@ilshealth.com';
+const NEW_ILS_NOTE_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 type QueueKey =
   | 't2038_auth_only_email'
@@ -166,7 +170,7 @@ const isTruthyLike = (value: any): boolean => {
 
 const isFinalMemberAtRcfe = (value: any): boolean => {
   const normalized = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
-  return normalized === 'final member at rcfe';
+  return normalized === 'final member at rcfe' || normalized === 'final at rcfe';
 };
 
 const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
@@ -231,7 +235,8 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
   const rbPendingByStatus =
     status === 'r&b sent pending ils contract' ||
     status === 'r & b sent pending ils contract' ||
-    compactStatus === 'final member at rcfe';
+    compactStatus === 'final member at rcfe' ||
+    compactStatus === 'final at rcfe';
   const rbRequested = Boolean(toYmd(member.Kaiser_H2022_Requested));
   const rbReceived = hasMeaningfulValue(member.Kaiser_H2022_Received) || Boolean(toYmd(member.Kaiser_H2022_Received));
   return (rbPendingByStatus || rbRequested) && !rbReceived;
@@ -279,6 +284,9 @@ export default function ILSReportEditorPage() {
   const [isLoadingIlsLog, setIsLoadingIlsLog] = useState(false);
   const [ilsLogRows, setIlsLogRows] = useState<IlsQueueChangeLogRow[]>([]);
   const [ilsLogSearch, setIlsLogSearch] = useState('');
+  const [ilsStaffNoteText, setIlsStaffNoteText] = useState('');
+  const [ilsStaffNoteMemberId, setIlsStaffNoteMemberId] = useState('');
+  const [isSavingIlsStaffNote, setIsSavingIlsStaffNote] = useState(false);
   const [selectedMemberForNotes, setSelectedMemberForNotes] = useState('');
   const [selectedMemberNotes, setSelectedMemberNotes] = useState<MemberNote[]>([]);
   const [isLoadingMemberNotes, setIsLoadingMemberNotes] = useState(false);
@@ -286,6 +294,8 @@ export default function ILSReportEditorPage() {
   const [accessLoading, setAccessLoading] = useState(true);
   const [canAccessIlsTools, setCanAccessIlsTools] = useState(false);
   const { toast } = useToast();
+  const currentUserEmail = String(auth?.currentUser?.email || '').trim().toLowerCase();
+  const canEditIlsStaffNotes = currentUserEmail === ILS_STAFF_NOTE_EMAIL || Boolean(isAdmin);
 
   const checkIlsToolsAccess = async () => {
     if (!auth?.currentUser) {
@@ -557,6 +567,66 @@ export default function ILSReportEditorPage() {
     });
   };
 
+  const submitIlsStaffNote = async () => {
+    const noteText = String(ilsStaffNoteText || '').trim();
+    if (!noteText) {
+      toast({
+        variant: 'destructive',
+        title: 'Note required',
+        description: 'Enter a note before saving.',
+      });
+      return;
+    }
+    if (!auth?.currentUser) return;
+
+    const selectedMember = members.find((m) => String(m.id || '') === String(ilsStaffNoteMemberId || ''));
+    const memberId = String(selectedMember?.id || '').trim();
+    const clientId2 = String(selectedMember?.client_ID2 || '').trim();
+    const memberName = String(selectedMember?.memberName || '').trim() || 'General ILS Note';
+
+    setIsSavingIlsStaffNote(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/ils-change-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          action: 'create',
+          eventType: 'staff_note',
+          queue: 'ils_staff_note',
+          queueChangeFlag: false,
+          memberId,
+          clientId2,
+          memberName,
+          changes: {
+            noteText,
+            createdByIlsStaff: currentUserEmail || 'unknown',
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to save note (HTTP ${res.status})`);
+      }
+      setIlsStaffNoteText('');
+      await loadIlsChangeLog();
+      toast({
+        title: 'ILS note saved',
+        description: memberId ? `Saved for ${memberName}.` : 'Saved as general ILS note.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Save failed',
+        description: error?.message || 'Could not save ILS note.',
+      });
+    } finally {
+      setIsSavingIlsStaffNote(false);
+    }
+  };
+
   const loadIlsChangeLog = async () => {
     try {
       if (!auth?.currentUser) return;
@@ -766,6 +836,46 @@ export default function ILSReportEditorPage() {
     });
   }, [ilsLogRows, ilsLogSearch]);
 
+  const ilsStaffNotes = useMemo(() => {
+    return ilsLogRows
+      .filter((row) => row.queue === 'ils_staff_note' || row.eventType === 'staff_note')
+      .map((row) => {
+        const noteText = String(row?.changes?.noteText || '').trim();
+        const memberId = String(row?.memberId || '').trim();
+        const clientId2 = String(row?.clientId2 || '').trim();
+        const authorEmail = String(row?.changedByEmail || '').trim().toLowerCase();
+        const createdAtIso = String(row?.createdAtIso || '').trim();
+        const createdMs = createdAtIso ? new Date(createdAtIso).getTime() : 0;
+        const isRecent = createdMs > 0 && Date.now() - createdMs <= NEW_ILS_NOTE_WINDOW_MS;
+        const isJocelynNote = authorEmail === ILS_STAFF_NOTE_EMAIL;
+        return {
+          ...row,
+          noteText,
+          memberId,
+          clientId2,
+          authorEmail,
+          createdMs,
+          isRecent,
+          isJocelynNote,
+          isNewForKaiserAdmin: isJocelynNote && isRecent,
+        };
+      })
+      .filter((row) => row.noteText.length > 0);
+  }, [ilsLogRows]);
+
+  const latestIlsStaffNoteByMember = useMemo(() => {
+    const map = new Map<string, (typeof ilsStaffNotes)[number]>();
+    for (const note of ilsStaffNotes) {
+      const key = String(note.memberId || note.clientId2 || '').trim();
+      if (!key) continue;
+      const prev = map.get(key);
+      if (!prev || note.createdMs > prev.createdMs) {
+        map.set(key, note);
+      }
+    }
+    return map;
+  }, [ilsStaffNotes]);
+
   const queueLabel = (value: string) => {
     const v = String(value || '').trim().toLowerCase();
     if (v === 'tier_level_requested') return 'Tier Level Requested';
@@ -773,6 +883,7 @@ export default function ILSReportEditorPage() {
     if (v === 'rb_sent_pending_ils_contract') return 'R & B Sent Pending ILS Contract';
     if (v === 't2038_requested') return 'T2038 Requested';
     if (v === 't2038_auth_only_email') return 'T2038 Auth Only Email';
+    if (v === 'ils_staff_note') return 'ILS Staff Note';
     return value || 'Unknown Queue';
   };
 
@@ -1112,7 +1223,7 @@ export default function ILSReportEditorPage() {
                   {
                     key: 'rbPendingIlsContract' as const,
                     queueKey: 'rb_sent_pending_ils_contract' as const,
-                    label: 'R & B Sent Pending ILS Contract',
+                    label: 'R & B Sent Pending ILS Contract / Final at RCFE',
                     rows: queues.rbPendingIlsContract,
                     editable: true,
                     showIlsConnected: true,
@@ -1150,7 +1261,9 @@ export default function ILSReportEditorPage() {
                     {q.rows.length === 0 ? (
                       <div className="text-muted-foreground">None</div>
                     ) : (
-                      q.rows.slice(0, 60).map((r) => (
+                      q.rows.slice(0, 60).map((r) => {
+                        const latestIlsNote = latestIlsStaffNoteByMember.get(String(r.id || '').trim());
+                        return (
                         <div key={`${q.key}-${r.id}`} className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
                             <div className="truncate font-medium flex items-center gap-2">
@@ -1162,6 +1275,9 @@ export default function ILSReportEditorPage() {
                                     <Circle className="h-4 w-4 shrink-0 text-red-500 fill-red-500" aria-label="ILS connected: no" />
                                   )
                                 : null}
+                              {latestIlsNote?.isNewForKaiserAdmin ? (
+                                <Badge className="bg-green-100 text-green-900 border-green-200">New ILS note</Badge>
+                              ) : null}
                             </div>
                             <div className="text-xs text-muted-foreground">
                               MRN: <span className="font-mono">{r.memberMrn || '—'}</span>
@@ -1185,6 +1301,17 @@ export default function ILSReportEditorPage() {
                                 </div>
                               </>
                             ) : null}
+                            {latestIlsNote ? (
+                              <div
+                                className={`mt-1 rounded border px-2 py-1 text-[11px] ${
+                                  latestIlsNote.isNewForKaiserAdmin
+                                    ? 'bg-green-50 border-green-200 text-green-900'
+                                    : 'bg-muted/40 text-muted-foreground'
+                                }`}
+                              >
+                                ILS note ({latestIlsNote.authorEmail || 'staff'}): {latestIlsNote.noteText}
+                              </div>
+                            ) : null}
                           </div>
                           <div className="shrink-0 text-left sm:text-right">
                             <div className="text-xs font-mono text-muted-foreground">
@@ -1204,7 +1331,7 @@ export default function ILSReportEditorPage() {
                             ) : null}
                           </div>
                         </div>
-                      ))
+                      )})
                     )}
                     {q.rows.length > 60 ? (
                       <div className="text-xs text-muted-foreground pt-1">+ {q.rows.length - 60} more... (see generated report)</div>
@@ -1219,13 +1346,100 @@ export default function ILSReportEditorPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>ILS Staff Notes</CardTitle>
+          <CardDescription>
+            Shared notes for Kaiser admins. New Jocelyn notes are highlighted in green for daily follow-up.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge variant="secondary">Total notes: {ilsStaffNotes.length}</Badge>
+            <Badge className="bg-green-100 text-green-900 border-green-200">
+              New from Jocelyn: {ilsStaffNotes.filter((n) => n.isNewForKaiserAdmin).length}
+            </Badge>
+          </div>
+
+          {canEditIlsStaffNotes ? (
+            <div className="rounded-md border p-3 space-y-2">
+              <div className="text-sm font-medium">Add ILS note</div>
+              <Select
+                value={ilsStaffNoteMemberId || 'none'}
+                onValueChange={(value) => setIlsStaffNoteMemberId(value === 'none' ? '' : value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Attach to a member (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">General note (no specific member)</SelectItem>
+                  {members
+                    .slice()
+                    .sort((a, b) => String(a.memberName || '').localeCompare(String(b.memberName || '')))
+                    .map((member) => (
+                      <SelectItem key={`ils-staff-note-member-${member.id}`} value={String(member.id || '')}>
+                        {member.memberName || 'Unnamed member'} {member.memberMrn ? `- ${member.memberMrn}` : ''}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Textarea
+                value={ilsStaffNoteText}
+                onChange={(e) => setIlsStaffNoteText(e.target.value)}
+                placeholder="Enter update for Kaiser admin review..."
+                rows={3}
+              />
+              <div className="flex justify-end">
+                <Button type="button" onClick={submitIlsStaffNote} disabled={isSavingIlsStaffNote}>
+                  {isSavingIlsStaffNote ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Save ILS Note
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground rounded-md border p-3">
+              Read-only view. ILS staff can add notes from the limited portal card.
+            </div>
+          )}
+
+          <div className="max-h-[320px] overflow-y-auto space-y-2 pr-1">
+            {ilsStaffNotes.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No ILS staff notes yet.</div>
+            ) : (
+              ilsStaffNotes.slice(0, 200).map((note) => (
+                <div
+                  key={`ils-staff-note-${note.id}`}
+                  className={`rounded-md border p-3 ${
+                    note.isNewForKaiserAdmin
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-background'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    {note.isNewForKaiserAdmin ? (
+                      <Badge className="bg-green-100 text-green-900 border-green-200">New</Badge>
+                    ) : null}
+                    <Badge variant="outline">{note.memberName || 'General note'}</Badge>
+                    <span className="text-muted-foreground">
+                      {note.createdAtIso ? format(new Date(note.createdAtIso), 'MM/dd/yyyy h:mm a') : 'Unknown time'}
+                    </span>
+                    <span className="text-muted-foreground">By: {note.changedByEmail || 'Unknown'}</span>
+                  </div>
+                  <div className="mt-2 text-sm whitespace-pre-wrap">{note.noteText}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>ILS Member Notes Lookup</CardTitle>
           <CardDescription>
             Select a member name to review notes (including historical Kaiser tracker notes).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_auto] gap-2">
+          <div className="space-y-2">
             <Select value={selectedMemberForNotes} onValueChange={setSelectedMemberForNotes}>
               <SelectTrigger>
                 <SelectValue placeholder="Select member name" />
@@ -1241,23 +1455,25 @@ export default function ILSReportEditorPage() {
                   ))}
               </SelectContent>
             </Select>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => loadMemberNotes({ forceSync: false })}
-              disabled={!selectedMemberForNotes || isLoadingMemberNotes}
-            >
-              {isLoadingMemberNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-              View Notes
-            </Button>
-            <Button
-              type="button"
-              onClick={() => loadMemberNotes({ forceSync: true })}
-              disabled={!selectedMemberForNotes || isLoadingMemberNotes}
-            >
-              {isLoadingMemberNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Pull Historical Notes
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => loadMemberNotes({ forceSync: false })}
+                disabled={!selectedMemberForNotes || isLoadingMemberNotes}
+              >
+                {isLoadingMemberNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                View Notes
+              </Button>
+              <Button
+                type="button"
+                onClick={() => loadMemberNotes({ forceSync: true })}
+                disabled={!selectedMemberForNotes || isLoadingMemberNotes}
+              >
+                {isLoadingMemberNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Pull Historical Notes
+              </Button>
+            </div>
           </div>
 
           <div className="text-xs text-muted-foreground">
@@ -1266,22 +1482,28 @@ export default function ILSReportEditorPage() {
               : 'Select a member to view notes.'}
           </div>
 
-          <div className="max-h-[340px] overflow-y-auto space-y-2 pr-1">
+          <div className="max-h-[70vh] overflow-y-auto pr-1">
             {!selectedMemberForNotes ? (
               <div className="text-sm text-muted-foreground">No member selected yet.</div>
             ) : selectedMemberNotes.length === 0 ? (
               <div className="text-sm text-muted-foreground">No notes found for this member.</div>
             ) : (
-              selectedMemberNotes.slice(0, 250).map((note) => (
-                <div key={`ils-note-${note.id}`} className="rounded-md border p-3">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <Badge variant="outline">{note.source || 'Note'}</Badge>
-                    <span>{formatDateTimeSafe(note.createdAt)}</span>
-                    {note.createdByName ? <span>By: {note.createdByName}</span> : null}
-                  </div>
-                  <div className="mt-2 text-sm whitespace-pre-wrap">{note.noteText || ''}</div>
+              <div className="rounded-md border overflow-hidden">
+                <div className="border-b bg-muted/40 px-3 py-2 text-[11px] font-medium text-muted-foreground">
+                  Notes
                 </div>
-              ))
+                {selectedMemberNotes.slice(0, 250).map((note) => (
+                  <div
+                    key={`ils-note-${note.id}`}
+                    className="border-b last:border-b-0 px-3 py-2 text-xs"
+                  >
+                    <div className="whitespace-pre-wrap break-words">{note.noteText || ''}</div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {formatDateTimeSafe(note.createdAt)} • By: {note.createdByName || '-'} • {note.source || 'Note'}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </CardContent>

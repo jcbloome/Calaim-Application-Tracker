@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,7 +100,6 @@ function MemberNotesPageContent() {
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [memberNotes, setMemberNotes] = useState<MemberNote[]>([]);
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isNotesLoading, setIsNotesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -376,16 +374,6 @@ function MemberNotesPageContent() {
     return bTime - aTime;
   });
 
-  useEffect(() => {
-    if (sortedNotes.length === 0) {
-      setSelectedNoteId(null);
-      return;
-    }
-    if (!selectedNoteId || !sortedNotes.some((note) => note.id === selectedNoteId)) {
-      setSelectedNoteId(sortedNotes[0].id);
-    }
-  }, [sortedNotes, selectedNoteId]);
-
   const handleToggleStatus = async (note: MemberNote) => {
     try {
       const nextStatus = (note.status || 'Open') === 'Closed' ? 'Open' : 'Closed';
@@ -596,9 +584,8 @@ function MemberNotesPageContent() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Member Search Panel */}
-        <Card className="lg:col-span-1">
+      <div className="space-y-4">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Search className="h-5 w-5" />
@@ -609,68 +596,71 @@ function MemberNotesPageContent() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Lookup Scope</Label>
-              <Select
-                value={memberScope}
-                onValueChange={(value) => setMemberScope(value as 'all' | 'kaiser_assignment')}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">General Search (Last Name)</SelectItem>
-                  <SelectItem value="kaiser_assignment">Kaiser Staff Assigned Lookup</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {memberScope === 'kaiser_assignment' && (
+            <div className="space-y-3">
               <div className="space-y-2">
-                <Label>Kaiser_User_Assignment Staff</Label>
-                <Select value={kaiserAssignmentFilter} onValueChange={setKaiserAssignmentFilter}>
+                <Label>Lookup Scope</Label>
+                <Select
+                  value={memberScope}
+                  onValueChange={(value) => setMemberScope(value as 'all' | 'kaiser_assignment')}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select Kaiser staff" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Kaiser Assignments</SelectItem>
-                    {kaiserAssignmentOptions.map((staff) => (
-                      <SelectItem key={staff} value={staff}>
-                        {staff}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="all">General Search (Last Name)</SelectItem>
+                    <SelectItem value="kaiser_assignment">Kaiser Staff Assigned Lookup</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {memberScope === 'kaiser_assignment' && (
+                <div className="space-y-2">
+                  <Label>Kaiser_User_Assignment Staff</Label>
+                  <Select value={kaiserAssignmentFilter} onValueChange={setKaiserAssignmentFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Kaiser staff" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Kaiser Assignments</SelectItem>
+                      {kaiserAssignmentOptions.map((staff) => (
+                        <SelectItem key={staff} value={staff}>
+                          {staff}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Select a staff name to load all Kaiser members assigned to that staff.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="search">Search CalAIM Members (Last Name)</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="search"
+                    placeholder="Type last name..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                  {isLoading && (
+                    <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Select a staff name to load all Kaiser members assigned to that staff.
+                  {searchTerm.trim()
+                    ? `Searching members for "${searchTerm}"...`
+                    : memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all'
+                      ? `Loading Kaiser members assigned to ${kaiserAssignmentFilter}...`
+                      : 'Enter last name letters to find CalAIM members'}
                 </p>
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="search">Search CalAIM Members (Last Name)</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="search"
-                  placeholder="Type last name..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-                {isLoading && (
-                  <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-muted-foreground" />
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {searchTerm.trim() ? 
-                  `Searching members for "${searchTerm}"...` : 
-                  memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all'
-                    ? `Loading Kaiser members assigned to ${kaiserAssignmentFilter}...`
-                    : 'Enter last name letters to find CalAIM members'
-                }
-              </p>
             </div>
 
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div className="space-y-2 max-h-72 overflow-y-auto">
               {isLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -731,8 +721,7 @@ function MemberNotesPageContent() {
           </CardContent>
         </Card>
 
-        {/* Notes Panel */}
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -784,40 +773,32 @@ function MemberNotesPageContent() {
               </div>
             ) : (
               <div className="space-y-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Follow-up from Daily Task Calendar</CardTitle>
-                    <CardDescription>
-                      Tasks linked by Client ID for this assigned member.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {isFollowUpLoading ? (
-                      <div className="text-sm text-muted-foreground flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading follow-up tasks...
-                      </div>
-                    ) : followUpTasks.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No follow-up tasks found for this member.</div>
-                    ) : (
-                      <div className="space-y-2">
-                        {followUpTasks.map((task) => (
-                          <div key={task.id || `${task.title}-${task.dueDate}`} className="rounded border p-2 text-sm">
-                            <div className="font-medium">{task.title}</div>
-                            <div className="text-xs text-muted-foreground">
-                              Due: {task.dueDate ? format(new Date(task.dueDate), 'MMM d, yyyy') : 'N/A'} • Status:{' '}
-                              {String(task.status || 'pending').replace(/_/g, ' ')}
-                              {task.assignedToName ? ` • Assigned: ${task.assignedToName}` : ''}
-                            </div>
-                            {task.notes ? <div className="text-xs mt-1">{task.notes}</div> : null}
+                <div className="rounded-md border p-3">
+                  <div className="text-sm font-medium mb-2">Follow-up from Daily Task Calendar</div>
+                  {isFollowUpLoading ? (
+                    <div className="text-sm text-muted-foreground flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading follow-up tasks...
+                    </div>
+                  ) : followUpTasks.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No follow-up tasks found for this member.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {followUpTasks.map((task) => (
+                        <div key={task.id || `${task.title}-${task.dueDate}`} className="rounded border p-2 text-sm">
+                          <div className="font-medium">{task.title}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Due: {task.dueDate ? format(new Date(task.dueDate), 'MMM d, yyyy') : 'N/A'} • Status:{' '}
+                            {String(task.status || 'pending').replace(/_/g, ' ')}
+                            {task.assignedToName ? ` • Assigned: ${task.assignedToName}` : ''}
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                          {task.notes ? <div className="text-xs mt-1">{task.notes}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-                {/* Refresh Notes Button */}
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-muted-foreground">
                     Showing {memberNotes.length} notes for {selectedMember.firstName} {selectedMember.lastName}
@@ -904,163 +885,93 @@ function MemberNotesPageContent() {
                   </Button>
                 </div>
 
-                {/* Notes List + Detail */}
-                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4">
-                  <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                    {sortedNotes.map((note) => (
-                      <div
-                        key={note.id}
-                        onClick={() => setSelectedNoteId(note.id)}
-                        className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                          selectedNoteId === note.id ? 'border-primary bg-primary/5' : ''
-                        } ${!note.isRead ? 'border-blue-200 bg-blue-50' : ''}`}
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="mr-2 mt-1">
-                            <Checkbox
-                              checked={selectedNoteIds.includes(note.id)}
-                              onCheckedChange={(checked) => toggleSelectedNote(note.id, Boolean(checked))}
-                              onClick={(event) => event.stopPropagation()}
-                              aria-label={`Select note ${note.id}`}
-                            />
-                          </div>
-                          <div className="flex gap-2 flex-wrap">
-                            <Badge variant="outline">{note.status || 'Open'}</Badge>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-xs text-muted-foreground">
-                              {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-6 px-2 text-[10px]"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void handleToggleStatus(note);
-                              }}
-                              title={(note.status || 'Open') === 'Closed' ? 'Reopen note' : 'Close note'}
-                            >
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              {(note.status || 'Open') === 'Closed' ? 'Reopen' : 'Close'}
-                            </Button>
-                          </div>
+                <div className="rounded-md border divide-y max-h-[70vh] overflow-y-auto">
+                  {sortedNotes.map((note) => (
+                    <div key={note.id} className={`p-3 ${!note.isRead ? 'bg-blue-50' : ''}`}>
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={selectedNoteIds.includes(note.id)}
+                            onCheckedChange={(checked) => toggleSelectedNote(note.id, Boolean(checked))}
+                            aria-label={`Select note ${note.id}`}
+                          />
+                          <Badge variant="outline">{note.status || 'Open'}</Badge>
                         </div>
-                        
-                        <p className="text-sm mb-2 line-clamp-2">{note.noteText}</p>
-                        <div className="text-xs text-muted-foreground">
-                          <span className="font-medium">By:</span> {note.createdByName}
-                          {note.assignedToName && (
-                            <>
-                              <span className="mx-2">•</span>
-                              <span className="font-medium">Assigned to:</span> {note.assignedToName}
-                            </>
-                          )}
-                          {note.followUpDate && (
-                            <>
-                              <span className="mx-2">•</span>
-                              <span className="font-medium">Follow-up:</span>{' '}
-                              {format(new Date(note.followUpDate), 'MMM d, yyyy')}
-                            </>
-                          )}
+                        <div className="flex items-center gap-2">
+                          <div className="text-[11px] text-muted-foreground">
+                            {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[10px]"
+                            onClick={() => void handleToggleStatus(note)}
+                            title={(note.status || 'Open') === 'Closed' ? 'Reopen note' : 'Close note'}
+                          >
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            {(note.status || 'Open') === 'Closed' ? 'Reopen' : 'Close'}
+                          </Button>
+                          <AlertDialog
+                            open={deleteTarget?.id === note.id}
+                            onOpenChange={(open) => {
+                              if (!open) setDeleteTarget(null);
+                            }}
+                          >
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-2 text-[10px] text-red-600 hover:text-red-700"
+                                onClick={() => setDeleteTarget(note)}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This removes the note from Caspio and Firestore.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => {
+                                    if (deleteTarget) {
+                                      requestDeleteNote(deleteTarget);
+                                    }
+                                    setDeleteTarget(null);
+                                  }}
+                                  className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </div>
-                    ))}
-                    
-                    {sortedNotes.length === 0 && (
-                      <div className="text-center py-8">
-                        <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                        <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
-                        <p className="text-muted-foreground">
-                          No notes match the selected status filter
-                        </p>
-                      </div>
-                    )}
-                  </div>
 
-                  <div className="space-y-3">
-                    <Card className="sticky top-4">
-                      <CardHeader>
-                        <CardTitle>Note Details</CardTitle>
-                        <CardDescription>Selected note information</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {sortedNotes.length === 0 || !selectedNoteId ? (
-                          <div className="text-sm text-muted-foreground">Select a note to view details.</div>
-                        ) : (
-                          (() => {
-                            const note = sortedNotes.find((n) => n.id === selectedNoteId);
-                            if (!note) return <div className="text-sm text-muted-foreground">Select a note to view details.</div>;
-                            return (
-                              <div className="space-y-3 text-sm">
-                                <div className="flex flex-wrap gap-2">
-                                  <Badge variant="outline">{note.status || 'Open'}</Badge>
-                                </div>
-                                <div>
-                                  <p className="font-medium">Note</p>
-                                  <p className="text-muted-foreground whitespace-pre-wrap">{note.noteText}</p>
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  <div>Created: {format(new Date(note.createdAt), 'MMM d, yyyy h:mm a')}</div>
-                                  <div>By: {note.createdByName}</div>
-                                  {note.assignedToName && <div>Assigned to: {note.assignedToName}</div>}
-                                  {note.followUpDate && (
-                                    <div>Follow-up: {format(new Date(note.followUpDate), 'MMM d, yyyy')}</div>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground text-xs">
-                                    {(note.status || 'Open') === 'Closed' ? 'Closed' : 'Open'}
-                                  </span>
-                                  <Switch
-                                    checked={(note.status || 'Open') !== 'Closed'}
-                                    onCheckedChange={() => handleToggleStatus(note)}
-                                  />
-                                  <AlertDialog open={deleteTarget?.id === note.id} onOpenChange={(open) => {
-                                    if (!open) setDeleteTarget(null);
-                                  }}>
-                                    <AlertDialogTrigger asChild>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 text-xs text-red-600 hover:text-red-700"
-                                        onClick={() => setDeleteTarget(note)}
-                                      >
-                                        <Trash2 className="h-3 w-3 mr-1" />
-                                        Delete
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>Delete this note?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          This removes the note from Caspio and Firestore.
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction
-                                          onClick={() => {
-                                            if (deleteTarget) {
-                                              requestDeleteNote(deleteTarget);
-                                            }
-                                            setDeleteTarget(null);
-                                          }}
-                                          className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-                                        >
-                                          Delete
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
-                                </div>
-                              </div>
-                            );
-                          })()
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
+                      <div className="text-sm whitespace-pre-wrap break-words">{note.noteText}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        By: {note.createdByName}
+                        {note.assignedToName ? ` • Assigned to: ${note.assignedToName}` : ''}
+                        {note.followUpDate ? ` • Follow-up: ${format(new Date(note.followUpDate), 'MMM d, yyyy')}` : ''}
+                      </div>
+                    </div>
+                  ))}
+
+                  {sortedNotes.length === 0 && (
+                    <div className="text-center py-8">
+                      <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
+                      <p className="text-muted-foreground">
+                        No notes match the selected status filter
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
