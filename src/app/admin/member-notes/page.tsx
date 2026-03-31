@@ -120,6 +120,8 @@ function MemberNotesPageContent() {
   const [memberScope, setMemberScope] = useState<'all' | 'assigned_to_me' | 'kaiser_assignment'>('all');
   const [kaiserAssignmentFilter, setKaiserAssignmentFilter] = useState('all');
   const [kaiserAssignmentOptions, setKaiserAssignmentOptions] = useState<string[]>([]);
+  const [staffAssignmentFilter, setStaffAssignmentFilter] = useState('all');
+  const [staffAssignmentOptions, setStaffAssignmentOptions] = useState<string[]>([]);
   
   // Real-time sync status
   const [syncProgress, setSyncProgress] = useState({
@@ -153,7 +155,8 @@ function MemberNotesPageContent() {
     const trimmedSearch = search.trim();
     const shouldFilterKaiserByStaff =
       memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all';
-    const shouldFetchWithoutSearch = shouldFilterKaiserByStaff;
+    const shouldFilterAnyStaff = staffAssignmentFilter !== 'all';
+    const shouldFetchWithoutSearch = shouldFilterKaiserByStaff || shouldFilterAnyStaff;
     if (!trimmedSearch && !shouldFetchWithoutSearch) {
       setMembers([]);
       return;
@@ -170,6 +173,9 @@ function MemberNotesPageContent() {
       if (shouldFilterKaiserByStaff) {
         params.append('kaiserUserAssignment', kaiserAssignmentFilter);
       }
+      if (shouldFilterAnyStaff) {
+        params.append('assignedStaff', staffAssignmentFilter);
+      }
       
       const response = await fetch(`/api/members?${params.toString()}`);
       const data = await response.json();
@@ -180,6 +186,7 @@ function MemberNotesPageContent() {
           search: trimmedSearch,
           memberScope,
           kaiserAssignmentFilter,
+          staffAssignmentFilter,
         });
       } else {
         console.error('❌ Failed to search members:', data.error);
@@ -201,7 +208,7 @@ function MemberNotesPageContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, memberScope, kaiserAssignmentFilter]);
+  }, [toast, memberScope, kaiserAssignmentFilter, staffAssignmentFilter]);
 
   // Load health status
   const loadHealthStatus = useCallback(async () => {
@@ -237,6 +244,45 @@ function MemberNotesPageContent() {
       setKaiserAssignmentOptions(Array.from(uniqueAssignments).sort((a, b) => a.localeCompare(b)));
     } catch {
       setKaiserAssignmentOptions([]);
+    }
+  }, []);
+
+  const loadStaffAssignmentOptions = useCallback(async () => {
+    try {
+      const [staffRes, membersRes] = await Promise.all([
+        fetch('/api/staff-members?includeFirebaseAdmins=true&includeCaspioStaff=true'),
+        fetch('/api/members?limit=500')
+      ]);
+      const staffData = await staffRes.json().catch(() => ({}));
+      const membersData = await membersRes.json().catch(() => ({}));
+
+      const uniqueAssignments = new Set<string>();
+      if (Array.isArray(staffData?.staff)) {
+        for (const staff of staffData.staff as Array<{ name?: string }>) {
+          const name = normalizeAssignmentValue(staff?.name);
+          if (!name) continue;
+          uniqueAssignments.add(name);
+        }
+      }
+
+      if (Array.isArray(membersData?.members)) {
+        for (const member of membersData.members as Member[]) {
+          const assignments = [
+            normalizeAssignmentValue(member.socialWorkerAssigned),
+            normalizeAssignmentValue(member.kaiserUserAssignment),
+            normalizeAssignmentValue(member.staffAssigned),
+          ];
+          for (const assignment of assignments) {
+            if (!assignment) continue;
+            if (/^\d+$/.test(assignment)) continue;
+            uniqueAssignments.add(assignment);
+          }
+        }
+      }
+
+      setStaffAssignmentOptions(Array.from(uniqueAssignments).sort((a, b) => a.localeCompare(b)));
+    } catch {
+      setStaffAssignmentOptions([]);
     }
   }, []);
 
@@ -280,6 +326,10 @@ function MemberNotesPageContent() {
   }, [memberScope, loadKaiserAssignmentOptions]);
 
   useEffect(() => {
+    void loadStaffAssignmentOptions();
+  }, [loadStaffAssignmentOptions]);
+
+  useEffect(() => {
     if (!preselectId || searchTerm) return;
     setSearchTerm(preselectId);
   }, [preselectId, searchTerm]);
@@ -311,18 +361,30 @@ function MemberNotesPageContent() {
     return String(member.socialWorkerAssigned || member.kaiserUserAssignment || member.staffAssigned || '').trim();
   }, []);
 
+  const matchesSelectedStaff = useCallback((member: Member) => {
+    if (staffAssignmentFilter === 'all') return true;
+    const selectedStaff = normalizeAssignmentValue(staffAssignmentFilter);
+    const values = [
+      normalizeAssignmentValue(member.socialWorkerAssigned),
+      normalizeAssignmentValue(member.kaiserUserAssignment),
+      normalizeAssignmentValue(member.staffAssigned),
+    ];
+    return values.includes(selectedStaff);
+  }, [staffAssignmentFilter]);
+
   const filteredMembers = useMemo(() => {
-    if (memberScope === 'all') return members;
+    const scopedMembers = members.filter(matchesSelectedStaff);
+    if (memberScope === 'all') return scopedMembers;
     if (memberScope === 'assigned_to_me') {
-      return members.filter((member) => doesAssignmentMatchCurrentUser(getMemberAssignment(member)));
+      return scopedMembers.filter((member) => doesAssignmentMatchCurrentUser(getMemberAssignment(member)));
     }
-    return members.filter((member) => {
+    return scopedMembers.filter((member) => {
       const isKaiser = String(member.healthPlan || '').toLowerCase().includes('kaiser');
       if (!isKaiser) return false;
       if (kaiserAssignmentFilter === 'all') return true;
       return normalizeAssignmentValue(member.kaiserUserAssignment) === kaiserAssignmentFilter;
     });
-  }, [members, memberScope, doesAssignmentMatchCurrentUser, getMemberAssignment, kaiserAssignmentFilter]);
+  }, [members, memberScope, doesAssignmentMatchCurrentUser, getMemberAssignment, kaiserAssignmentFilter, matchesSelectedStaff]);
 
   const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
@@ -719,6 +781,22 @@ function MemberNotesPageContent() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label>All Staff Assignment</Label>
+              <Select value={staffAssignmentFilter} onValueChange={setStaffAssignmentFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select staff assignment" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Staff</SelectItem>
+                  {staffAssignmentOptions.map((staff) => (
+                    <SelectItem key={staff} value={staff}>
+                      {staff}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {memberScope === 'kaiser_assignment' && (
               <div className="space-y-2">
                 <Label>Kaiser_User_Assignment Staff</Label>
@@ -758,6 +836,9 @@ function MemberNotesPageContent() {
               <p className="text-xs text-muted-foreground">
                 {searchTerm.trim() ? 
                   `Searching Caspio for "${searchTerm}"...` : 
+                  staffAssignmentFilter !== 'all'
+                    ? `Loading members assigned to ${staffAssignmentFilter}...`
+                    :
                   memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all'
                     ? `Loading Kaiser members assigned to ${kaiserAssignmentFilter}...`
                     : 'Enter last name letters to find CalAIM members'
@@ -812,6 +893,9 @@ function MemberNotesPageContent() {
                   <p className="text-muted-foreground">
                     {searchTerm.trim() ? 
                       `No CalAIM members found for "${searchTerm}"` : 
+                      staffAssignmentFilter !== 'all'
+                        ? `No members found for ${staffAssignmentFilter}`
+                        :
                       memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all'
                         ? `No Kaiser members found for ${kaiserAssignmentFilter}`
                         : 'Enter a search term to find CalAIM members'

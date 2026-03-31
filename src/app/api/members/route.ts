@@ -21,6 +21,7 @@ async function fetchCaspioMembers(
   healthPlan?: string,
   status?: string,
   kaiserUserAssignment?: string,
+  assignedStaff?: string,
   limit: number = 50,
   offset: number = 0
 ) {
@@ -70,6 +71,16 @@ async function fetchCaspioMembers(
         queryParams.append('q.where', assignmentFilter);
       }
     }
+
+    if (assignedStaff) {
+      const escapedStaff = assignedStaff.replace(/'/g, "''");
+      const staffFilter = `(Social_Worker_Assigned = '${escapedStaff}' OR Kaiser_User_Assignment = '${escapedStaff}' OR Staff_Assigned = '${escapedStaff}')`;
+      if (queryParams.has('q.where')) {
+        queryParams.set('q.where', `(${queryParams.get('q.where')}) AND ${staffFilter}`);
+      } else {
+        queryParams.append('q.where', staffFilter);
+      }
+    }
     
     // Add pagination
     queryParams.append('q.limit', limit.toString());
@@ -113,13 +124,22 @@ export async function GET(request: NextRequest) {
     const healthPlan = searchParams.get('healthPlan') || '';
     const status = searchParams.get('status') || '';
     const kaiserUserAssignment = searchParams.get('kaiserUserAssignment') || '';
+    const assignedStaff = searchParams.get('assignedStaff') || '';
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    console.log('📥 Fetching CalAIM members with filters:', { search, healthPlan, status, kaiserUserAssignment, limit, offset });
+    console.log('📥 Fetching CalAIM members with filters:', {
+      search,
+      healthPlan,
+      status,
+      kaiserUserAssignment,
+      assignedStaff,
+      limit,
+      offset
+    });
 
     // Fetch members from Caspio
-    const caspioMembers = await fetchCaspioMembers(search, healthPlan, status, kaiserUserAssignment, limit, offset);
+    const caspioMembers = await fetchCaspioMembers(search, healthPlan, status, kaiserUserAssignment, assignedStaff, limit, offset);
 
     // Transform Caspio data to our Member interface - using correct field names
     const transformedMembers: Member[] = caspioMembers.map((member: any) => ({
