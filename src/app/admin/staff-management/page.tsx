@@ -61,6 +61,8 @@ export default function StaffManagementPage() {
     const [interofficeElectronEnabled, setInterofficeElectronEnabled] = useState(true);
     const [ilsNotePermissions, setIlsNotePermissions] = useState<string[]>([]);
     const [swVisitDeletePermissions, setSwVisitDeletePermissions] = useState<string[]>([]);
+    const [memberVerificationKaiserRecipientUids, setMemberVerificationKaiserRecipientUids] = useState<string[]>([]);
+    const [memberVerificationHealthNetRecipientUids, setMemberVerificationHealthNetRecipientUids] = useState<string[]>([]);
     const [isSavingNotifications, setIsSavingNotifications] = useState(false);
     const [newStaffFirstName, setNewStaffFirstName] = useState('');
     const [newStaffLastName, setNewStaffLastName] = useState('');
@@ -293,6 +295,8 @@ export default function StaffManagementPage() {
         setNotificationRecipients((prev) => normalizeIdList(prev));
         setIlsNotePermissions((prev) => normalizeIdList(prev));
         setSwVisitDeletePermissions((prev) => normalizeIdList(prev));
+        setMemberVerificationKaiserRecipientUids((prev) => normalizeIdList(prev));
+        setMemberVerificationHealthNetRecipientUids((prev) => normalizeIdList(prev));
 
         // reviewRecipients map
         setReviewRecipients((prev) => {
@@ -344,11 +348,15 @@ export default function StaffManagementPage() {
                 setInterofficeElectronEnabled(Boolean((data as any)?.interofficeElectronEnabled ?? (data as any)?.interofficeNotificationsEnabled ?? true));
                 setIlsNotePermissions(data?.ilsNotePermissions || []);
                 setSwVisitDeletePermissions((data as any)?.swVisitDeletePermissions || []);
+                setMemberVerificationKaiserRecipientUids((data as any)?.memberVerificationKaiserRecipientUids || []);
+                setMemberVerificationHealthNetRecipientUids((data as any)?.memberVerificationHealthNetRecipientUids || []);
                 setWebAppNotificationsEnabled(Boolean((data as any)?.webAppNotificationsEnabled ?? true));
                 setSuppressWebWhenDesktopActive(Boolean((data as any)?.suppressWebWhenDesktopActive ?? true));
             } else {
                 setNotificationRecipientsHadField(false);
                 setInterofficeElectronEnabled(true);
+                setMemberVerificationKaiserRecipientUids([]);
+                setMemberVerificationHealthNetRecipientUids([]);
             }
 
             if (adminAccessSnap?.exists()) {
@@ -645,6 +653,23 @@ export default function StaffManagementPage() {
         queueAutoSave();
     };
 
+    const handleMemberVerificationNotifyToggle = (
+        plan: 'kaiser' | 'healthnet',
+        uid: string,
+        checked: boolean
+    ) => {
+        if (plan === 'kaiser') {
+            setMemberVerificationKaiserRecipientUids((prev) =>
+                checked ? Array.from(new Set([...prev, uid])) : prev.filter((id) => id !== uid)
+            );
+        } else {
+            setMemberVerificationHealthNetRecipientUids((prev) =>
+                checked ? Array.from(new Set([...prev, uid])) : prev.filter((id) => id !== uid)
+            );
+        }
+        queueAutoSave();
+    };
+
     const toggleIlsMemberTargetAccess = (targetEmail: string, checked: boolean) => {
         const email = String(targetEmail || '').trim().toLowerCase();
         if (!email) return;
@@ -681,6 +706,12 @@ export default function StaffManagementPage() {
                 interofficeElectronEnabled: Boolean(interofficeElectronEnabled),
                 ilsNotePermissions: ilsNotePermissions,
                 swVisitDeletePermissions: swVisitDeletePermissions,
+                memberVerificationKaiserRecipientUids: Array.from(
+                    new Set((memberVerificationKaiserRecipientUids || []).map((x) => String(x || '').trim()).filter(Boolean))
+                ),
+                memberVerificationHealthNetRecipientUids: Array.from(
+                    new Set((memberVerificationHealthNetRecipientUids || []).map((x) => String(x || '').trim()).filter(Boolean))
+                ),
                 webAppNotificationsEnabled: Boolean(webAppNotificationsEnabled),
                 suppressWebWhenDesktopActive: Boolean(suppressWebWhenDesktopActive),
             };
@@ -1330,6 +1361,34 @@ export default function StaffManagementPage() {
                                                 checked={ilsNotePermissions.includes(staff.uid)} 
                                                 onCheckedChange={(checked) => handleIlsNoteToggle(staff.uid, !!checked)} 
                                                 aria-label={`Toggle ILS note permissions for ${staff.email}`} 
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Mail className={`h-4 w-4 ${memberVerificationKaiserRecipientUids.includes(staff.uid) ? 'text-orange-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`member-verify-kaiser-${staff.uid}`} className="text-sm font-medium">Member verification notify: Kaiser</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`member-verify-kaiser-${staff.uid}`}
+                                                checked={memberVerificationKaiserRecipientUids.includes(staff.uid)}
+                                                onCheckedChange={(checked) =>
+                                                    handleMemberVerificationNotifyToggle('kaiser', staff.uid, Boolean(checked))
+                                                }
+                                                aria-label={`Toggle Kaiser member verification notifications for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <Mail className={`h-4 w-4 ${memberVerificationHealthNetRecipientUids.includes(staff.uid) ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`member-verify-healthnet-${staff.uid}`} className="text-sm font-medium">Member verification notify: Health Net</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`member-verify-healthnet-${staff.uid}`}
+                                                checked={memberVerificationHealthNetRecipientUids.includes(staff.uid)}
+                                                onCheckedChange={(checked) =>
+                                                    handleMemberVerificationNotifyToggle('healthnet', staff.uid, Boolean(checked))
+                                                }
+                                                aria-label={`Toggle Health Net member verification notifications for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">

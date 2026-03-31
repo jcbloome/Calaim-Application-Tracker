@@ -11,12 +11,14 @@ const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCas
 type VerificationMember = {
   id: string;
   name: string;
+  planType?: 'health_net' | 'kaiser' | 'other';
   status?: 'there' | 'not_there' | 'unknown';
   lastVerifiedAt?: string;
   extraDetails?: string;
 };
 
 type VerificationRow = {
+  rcfeKey?: string;
   rcfeName: string;
   adminName?: string;
   adminEmail: string;
@@ -75,16 +77,74 @@ const escapeHtml = (value: unknown) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-export async function POST(req: NextRequest) {
+async function requireAdminFromAuthHeader(req: NextRequest) {
+  const authHeader = req.headers.get('authorization') || '';
+  const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+  const idToken = tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
+  if (!idToken) {
+    return { ok: false as const, status: 401, error: 'Missing Authorization Bearer token' };
+  }
+  return requireAdminFromToken(idToken);
+}
+
+export async function GET(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization') || '';
-    const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-    const idToken = tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
+    const authz = await requireAdminFromAuthHeader(req);
+    if (!authz.ok) {
+      return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }
 
-    const authz = await requireAdminFromToken(idToken);
+    const [statusSnapshot, sentLogSnapshot] = await Promise.all([
+      adminDb.collection('rcfe_daily_followup_status').limit(5000).get(),
+      adminDb.collection('rcfe_verification_email_send_log').orderBy('sentAt', 'desc').limit(1000).get(),
+    ]);
+    const statuses = statusSnapshot.docs.map((docSnap) => {
+      const data = (docSnap.data() || {}) as any;
+      const toIso = (v: any) =>
+        typeof v?.toDate === 'function' ? v.toDate().toISOString() : String(v || '').trim() || null;
+      return {
+        rcfeKey: String(data?.rcfeKey || docSnap.id || '').trim(),
+        rcfeName: String(data?.rcfeName || '').trim(),
+        lastDailyFollowupSentAt: toIso(data?.lastDailyFollowupSentAt),
+        lastDailyFollowupSentBy: String(data?.lastDailyFollowupSentBy || '').trim() || null,
+      };
+    });
+    const sentLog = sentLogSnapshot.docs.map((docSnap) => {
+      const data = (docSnap.data() || {}) as any;
+      const toIso = (v: any) =>
+        typeof v?.toDate === 'function' ? v.toDate().toISOString() : String(v || '').trim() || null;
+      return {
+        id: docSnap.id,
+        rcfeKey: String(data?.rcfeKey || '').trim() || null,
+        rcfeName: String(data?.rcfeName || '').trim() || 'Unknown RCFE',
+        adminName: String(data?.adminName || '').trim() || null,
+        adminEmail: String(data?.adminEmail || '').trim() || null,
+        emailMode: String(data?.emailMode || '').trim() || 'bulk',
+        sentAt: toIso(data?.sentAt),
+        sentBy: String(data?.sentBy || '').trim() || null,
+        isTest: Boolean(data?.isTest),
+        success: Boolean(data?.success),
+      };
+    });
+
+    return NextResponse.json({
+      success: true,
+      statuses,
+      sentLog,
+      count: statuses.length,
+    });
+  } catch (error: any) {
+    console.error('Error loading RCFE daily follow-up status:', error);
+    return NextResponse.json(
+      { success: false, error: error?.message || 'Failed to load RCFE daily follow-up status' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const authz = await requireAdminFromAuthHeader(req);
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }
@@ -108,6 +168,7 @@ export async function POST(req: NextRequest) {
 
     const usableRows = rows
       .map((row) => ({
+        rcfeKey: String(row?.rcfeKey || '').trim(),
         rcfeName: String(row?.rcfeName || '').trim(),
         adminName: String(row?.adminName || '').trim(),
         adminEmail: normalizeEmail(row?.adminEmail),
@@ -115,11 +176,17 @@ export async function POST(req: NextRequest) {
           ? row.members.map((m) => ({
               id: String(m?.id || '').trim(),
               name: String(m?.name || '').trim(),
+              planType: (String((m as any)?.planType || '').trim().toLowerCase() as any) || 'other',
               status: (String(m?.status || '').trim() as any) || 'unknown',
               lastVerifiedAt: String(m?.lastVerifiedAt || '').trim(),
               extraDetails: String(m?.extraDetails || '').trim(),
             }))
           : [],
+      }))
+      .map((row) => ({
+        ...row,
+        // Health Net only for current workflow; Kaiser-specific emails will be configured later.
+        members: row.members.filter((member) => member.planType === 'health_net'),
       }))
       .filter((row) => row.rcfeName && row.adminEmail && row.adminEmail.includes('@') && row.members.length > 0);
 
@@ -187,13 +254,14 @@ export async function POST(req: NextRequest) {
         <div style="font-family:Arial,sans-serif;max-width:760px;margin:0 auto;line-height:1.5;color:#111827;">
           <p>${escapeHtml(intro).replace(/\n/g, '<br/>')}</p>
           <p style="margin-top:4px;color:#6b7280;"><strong>Generated:</strong> ${escapeHtml(timestamp)}</p>
+          <p style="margin-top:4px;color:#6b7280;"><strong>Plan scope:</strong> Health Net members only</p>
           <p><strong>RCFE:</strong> ${escapeHtml(row.rcfeName)}</p>
           <p style="margin-top:6px;"><strong>Please reply to confirm this roster for your RCFE.</strong></p>
           <p style="margin-top:4px;color:#374151;">
-            In your reply, please confirm:
-            <br/>1) Members listed as <strong>Confirmed There</strong> still reside at your RCFE.
-            <br/>2) Members listed as <strong>Told Not There</strong> have moved out / are no longer residents.
-            <br/>3) Any corrections needed for member status or roster details.
+            Please reply and confirm:
+            <br/>1) Who is still living at your RCFE.
+            <br/>2) Who is not currently at your RCFE.
+            <br/>3) Any corrections we should make.
           </p>
           ${buildSection('Members Verified at RCFE (Confirmed There)', verifiedThere)}
           ${buildSection('Residents Not at RCFE (Told Not There)', notAtRcfe)}
@@ -211,8 +279,46 @@ export async function POST(req: NextRequest) {
 
       if (error) {
         results.push({ to: row.adminEmail, rcfeName: row.rcfeName, error: error.message });
+        await adminDb.collection('rcfe_verification_email_send_log').add({
+          rcfeKey: row.rcfeKey || null,
+          rcfeName: row.rcfeName,
+          adminName: row.adminName || null,
+          adminEmail: row.adminEmail,
+          emailMode,
+          isTest,
+          success: false,
+          error: error.message,
+          sentBy: authz.email || null,
+          sentAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
       } else {
         results.push({ to: row.adminEmail, rcfeName: row.rcfeName, id: data?.id });
+        await adminDb.collection('rcfe_verification_email_send_log').add({
+          rcfeKey: row.rcfeKey || null,
+          rcfeName: row.rcfeName,
+          adminName: row.adminName || null,
+          adminEmail: row.adminEmail,
+          emailMode,
+          isTest,
+          success: true,
+          providerMessageId: data?.id || null,
+          sentBy: authz.email || null,
+          sentAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        if (emailMode === 'daily_followup' && row.rcfeKey) {
+          await adminDb.collection('rcfe_daily_followup_status').doc(row.rcfeKey).set(
+            {
+              rcfeKey: row.rcfeKey,
+              rcfeName: row.rcfeName,
+              lastDailyFollowupSentAt: admin.firestore.FieldValue.serverTimestamp(),
+              lastDailyFollowupSentBy: authz.email || null,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
       }
     }
 
