@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useMemo, Suspense, useEffect } from 'react';
+import React, { useState, Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, FileCheck2, AlertCircle, Lock, ShieldCheck, FileText, HeartHandshake } from 'lucide-react';

@@ -478,7 +478,7 @@ export default function CreateApplicationPage() {
   const [isParsingServiceRequest, setIsParsingServiceRequest] = useState(false);
   const [serviceRequestParsedFields, setServiceRequestParsedFields] = useState<string[]>([]);
   const [serviceRequestWarnings, setServiceRequestWarnings] = useState<string[]>([]);
-  const [serviceRequestParseMode, setServiceRequestParseMode] = useState<'none' | 'text' | 'vision'>('none');
+  const [, setServiceRequestParseMode] = useState<'none' | 'text' | 'vision'>('none');
   const [serviceRequestTextPreview, setServiceRequestTextPreview] = useState('');
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
   const parseAbortControllerRef = useRef<AbortController | null>(null);
@@ -1036,7 +1036,7 @@ export default function CreateApplicationPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Create Application for Member</h1>
         <p className="text-gray-600 mt-2">
-          Create a CS Summary application on behalf of a member/family. This is for families who need assistance completing their application or don't have email access.
+          Create a CS Summary application on behalf of a member/family. This is for families who need assistance completing their application or don&apos;t have email access.
         </p>
       </div>
 
@@ -1045,7 +1045,7 @@ export default function CreateApplicationPage() {
         <Users className="h-4 w-4" />
         <AlertDescription>
           <strong>Admin Application Creation:</strong> Use this form when families request help completing their CalAIM application. 
-          You'll provide basic member and contact information, then complete the full CS Summary form on their behalf.
+          You&apos;ll provide basic member and contact information, then complete the full CS Summary form on their behalf.
         </AlertDescription>
       </Alert>
 
@@ -1424,7 +1424,7 @@ export default function CreateApplicationPage() {
                   value={memberData.contactEmail || ''}
                   onChange={(e) => setMemberData({ ...memberData, contactEmail: e.target.value })}
                 />
-                <p className="mt-1 text-xs text-muted-foreground">If no email, enter "N/A".</p>
+                <p className="mt-1 text-xs text-muted-foreground">If no email, enter &quot;N/A&quot;.</p>
               </div>
             </div>
           </div>
