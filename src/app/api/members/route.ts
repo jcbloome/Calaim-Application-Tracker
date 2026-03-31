@@ -16,7 +16,14 @@ interface Member {
 }
 
 // Fetch members from Caspio CalAIM_tbl_Members
-async function fetchCaspioMembers(search?: string, healthPlan?: string, status?: string, limit: number = 50, offset: number = 0) {
+async function fetchCaspioMembers(
+  search?: string,
+  healthPlan?: string,
+  status?: string,
+  kaiserUserAssignment?: string,
+  limit: number = 50,
+  offset: number = 0
+) {
   try {
     const credentials = getCaspioCredentialsFromEnv();
     const token = await getCaspioToken(credentials);
@@ -51,6 +58,16 @@ async function fetchCaspioMembers(search?: string, healthPlan?: string, status?:
         queryParams.set('q.where', `(${queryParams.get('q.where')}) AND ${statusFilter}`);
       } else {
         queryParams.append('q.where', statusFilter);
+      }
+    }
+
+    if (kaiserUserAssignment) {
+      const escapedAssignment = kaiserUserAssignment.replace(/'/g, "''");
+      const assignmentFilter = `Kaiser_User_Assignment = '${escapedAssignment}'`;
+      if (queryParams.has('q.where')) {
+        queryParams.set('q.where', `(${queryParams.get('q.where')}) AND ${assignmentFilter}`);
+      } else {
+        queryParams.append('q.where', assignmentFilter);
       }
     }
     
@@ -95,13 +112,14 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || '';
     const healthPlan = searchParams.get('healthPlan') || '';
     const status = searchParams.get('status') || '';
+    const kaiserUserAssignment = searchParams.get('kaiserUserAssignment') || '';
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    console.log('📥 Fetching CalAIM members with filters:', { search, healthPlan, status, limit, offset });
+    console.log('📥 Fetching CalAIM members with filters:', { search, healthPlan, status, kaiserUserAssignment, limit, offset });
 
     // Fetch members from Caspio
-    const caspioMembers = await fetchCaspioMembers(search, healthPlan, status, limit, offset);
+    const caspioMembers = await fetchCaspioMembers(search, healthPlan, status, kaiserUserAssignment, limit, offset);
 
     // Transform Caspio data to our Member interface - using correct field names
     const transformedMembers: Member[] = caspioMembers.map((member: any) => ({

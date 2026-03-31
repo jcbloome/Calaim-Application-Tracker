@@ -98,6 +98,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function normalizeAssignmentValue(value: unknown): string {
+  return String(value || '').trim();
+}
+
 function MemberNotesPageContent() {
   const { toast } = useToast();
   const { user } = useAdmin();
@@ -114,6 +118,8 @@ function MemberNotesPageContent() {
   const [isNotesLoading, setIsNotesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [memberScope, setMemberScope] = useState<'all' | 'assigned_to_me' | 'kaiser_assignment'>('all');
+  const [kaiserAssignmentFilter, setKaiserAssignmentFilter] = useState('all');
+  const [kaiserAssignmentOptions, setKaiserAssignmentOptions] = useState<string[]>([]);
   
   // Real-time sync status
   const [syncProgress, setSyncProgress] = useState({
@@ -144,8 +150,11 @@ function MemberNotesPageContent() {
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
-    // Only search if there's a search term (don't load all members by default)
-    if (!search.trim()) {
+    const trimmedSearch = search.trim();
+    const shouldFilterKaiserByStaff =
+      memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all';
+    const shouldFetchWithoutSearch = shouldFilterKaiserByStaff;
+    if (!trimmedSearch && !shouldFetchWithoutSearch) {
       setMembers([]);
       return;
     }
@@ -153,15 +162,25 @@ function MemberNotesPageContent() {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append('search', search.trim());
-      params.append('limit', '20'); // Reduced limit for faster searches
+      if (trimmedSearch) params.append('search', trimmedSearch);
+      params.append('limit', shouldFetchWithoutSearch ? '200' : '20');
+      if (memberScope === 'kaiser_assignment') {
+        params.append('healthPlan', 'Kaiser');
+      }
+      if (shouldFilterKaiserByStaff) {
+        params.append('kaiserUserAssignment', kaiserAssignmentFilter);
+      }
       
       const response = await fetch(`/api/members?${params.toString()}`);
       const data = await response.json();
       
       if (data.success) {
         setMembers(data.members);
-        console.log(`✅ Found ${data.members.length} CalAIM members matching "${search}"`);
+        console.log(`✅ Found ${data.members.length} CalAIM members`, {
+          search: trimmedSearch,
+          memberScope,
+          kaiserAssignmentFilter,
+        });
       } else {
         console.error('❌ Failed to search members:', data.error);
         toast({
@@ -182,7 +201,7 @@ function MemberNotesPageContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, memberScope, kaiserAssignmentFilter]);
 
   // Load health status
   const loadHealthStatus = useCallback(async () => {
@@ -195,6 +214,29 @@ function MemberNotesPageContent() {
       }
     } catch (error) {
       console.error('Error loading health status:', error);
+    }
+  }, []);
+
+  const loadKaiserAssignmentOptions = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('healthPlan', 'Kaiser');
+      params.append('limit', '500');
+      const response = await fetch(`/api/members?${params.toString()}`);
+      const data = await response.json();
+      if (!data?.success || !Array.isArray(data?.members)) {
+        setKaiserAssignmentOptions([]);
+        return;
+      }
+      const uniqueAssignments = new Set<string>();
+      for (const member of data.members as Member[]) {
+        const assigned = normalizeAssignmentValue(member.kaiserUserAssignment);
+        if (!assigned) continue;
+        uniqueAssignments.add(assigned);
+      }
+      setKaiserAssignmentOptions(Array.from(uniqueAssignments).sort((a, b) => a.localeCompare(b)));
+    } catch {
+      setKaiserAssignmentOptions([]);
     }
   }, []);
 
@@ -231,6 +273,11 @@ function MemberNotesPageContent() {
 
     return () => clearTimeout(timeoutId);
   }, [searchTerm, fetchMembers]);
+
+  useEffect(() => {
+    if (memberScope !== 'kaiser_assignment') return;
+    void loadKaiserAssignmentOptions();
+  }, [memberScope, loadKaiserAssignmentOptions]);
 
   useEffect(() => {
     if (!preselectId || searchTerm) return;
@@ -272,9 +319,10 @@ function MemberNotesPageContent() {
     return members.filter((member) => {
       const isKaiser = String(member.healthPlan || '').toLowerCase().includes('kaiser');
       if (!isKaiser) return false;
-      return doesAssignmentMatchCurrentUser(member.kaiserUserAssignment || getMemberAssignment(member));
+      if (kaiserAssignmentFilter === 'all') return true;
+      return normalizeAssignmentValue(member.kaiserUserAssignment) === kaiserAssignmentFilter;
     });
-  }, [members, memberScope, doesAssignmentMatchCurrentUser, getMemberAssignment]);
+  }, [members, memberScope, doesAssignmentMatchCurrentUser, getMemberAssignment, kaiserAssignmentFilter]);
 
   const handleMemberSelect = (member: Member) => {
     setSelectedMember(member);
@@ -671,6 +719,27 @@ function MemberNotesPageContent() {
                 </SelectContent>
               </Select>
             </div>
+            {memberScope === 'kaiser_assignment' && (
+              <div className="space-y-2">
+                <Label>Kaiser_User_Assignment Staff</Label>
+                <Select value={kaiserAssignmentFilter} onValueChange={setKaiserAssignmentFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Kaiser staff" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Kaiser Assignments</SelectItem>
+                    {kaiserAssignmentOptions.map((staff) => (
+                      <SelectItem key={staff} value={staff}>
+                        {staff}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Select a staff name to load all Kaiser members assigned to that staff.
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="search">Search CalAIM Members (Last Name)</Label>
               <div className="relative">
@@ -689,7 +758,9 @@ function MemberNotesPageContent() {
               <p className="text-xs text-muted-foreground">
                 {searchTerm.trim() ? 
                   `Searching Caspio for "${searchTerm}"...` : 
-                  'Enter last name letters to find CalAIM members'
+                  memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all'
+                    ? `Loading Kaiser members assigned to ${kaiserAssignmentFilter}...`
+                    : 'Enter last name letters to find CalAIM members'
                 }
               </p>
             </div>
@@ -741,7 +812,9 @@ function MemberNotesPageContent() {
                   <p className="text-muted-foreground">
                     {searchTerm.trim() ? 
                       `No CalAIM members found for "${searchTerm}"` : 
-                      'Enter a search term to find CalAIM members'
+                      memberScope === 'kaiser_assignment' && kaiserAssignmentFilter !== 'all'
+                        ? `No Kaiser members found for ${kaiserAssignmentFilter}`
+                        : 'Enter a search term to find CalAIM members'
                     }
                   </p>
                   <p className="text-xs text-muted-foreground mt-2">
