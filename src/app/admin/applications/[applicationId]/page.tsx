@@ -3169,17 +3169,22 @@ function ApplicationDetailPageContent() {
     standardFileName.replace(/[^\w.-]/g, '_');
 
   const getComponentStatus = (componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
-    const form = application?.forms?.find((f) => {
-      const name = String(f?.name || '').trim();
-      if (name === componentKey) return true;
-      // Backward compatibility with older naming in existing applications.
-      if (
-        componentKey === 'Room and Board/Tier Level Agreement' &&
-        (name === 'Room and Board/Tier Level Commitment' || name === 'Room and Board Commitment')
-      ) {
-        return true;
+    const equivalentNames = (() => {
+      const names = new Set<string>([componentKey]);
+      if (componentKey === 'Waivers & Authorizations' || componentKey === 'Waivers') {
+        names.add('Waivers');
+        names.add('Waivers & Authorizations');
       }
-      return false;
+      if (componentKey === 'Room and Board/Tier Level Agreement') {
+        names.add('Room and Board/Tier Level Commitment');
+        names.add('Room and Board Commitment');
+      }
+      return names;
+    })();
+
+    const matchingForms = (application?.forms || []).filter((f) => {
+      const name = String(f?.name || '').trim();
+      return equivalentNames.has(name);
     });
 
     if (componentKey === 'Eligibility Check') {
@@ -3200,7 +3205,16 @@ function ApplicationDetailPageContent() {
       return 'Not Applicable';
     }
 
-    if (form?.status === 'Completed') {
+    const statuses = matchingForms.map((f) => String(f?.status || '').trim().toLowerCase());
+    const hasPendingLikeStatus = statuses.some((status) =>
+      status === 'pending' || status === 'requires revision' || status === 'rejected'
+    );
+    if (hasPendingLikeStatus) {
+      return 'Pending';
+    }
+
+    const hasCompleted = statuses.some((status) => status === 'completed');
+    if (hasCompleted) {
       return 'Completed';
     }
 
