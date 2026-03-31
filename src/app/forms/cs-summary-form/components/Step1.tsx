@@ -172,8 +172,9 @@ export default function Step1({
                 <FormItem>
                   <FormLabel>Date of Birth <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} />
+                    <Input {...field} value={field.value ?? ''} placeholder="MM/DD/YYYY" />
                   </FormControl>
+                  <FormDescription>Use MM/DD/YYYY format (example: 01/31/1940).</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -437,8 +438,16 @@ export default function Step1({
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input type="email" {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} />
+                    <Input
+                      type="text"
+                      inputMode="email"
+                      {...field}
+                      value={field.value ?? ''}
+                      readOnly={!isAdminView}
+                      className={!isAdminView ? "bg-muted" : ""}
+                    />
                   </FormControl>
+                  <FormDescription>If no email, enter "N/A".</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -546,7 +555,7 @@ export default function Step1({
                   <FormField control={control} name="bestContactEmail" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                        <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
                         <FormDescription>If no email, enter "N/A".</FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -589,7 +598,7 @@ export default function Step1({
                     <FormField control={control} name="secondaryContactEmail" render={({ field }) => (
                        <FormItem>
                           <FormLabel>Email</FormLabel>
-                          <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                          <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
                            <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -646,7 +655,7 @@ export default function Step1({
                     <FormField control={control} name="repEmail" render={({ field }) => (
                         <FormItem>
                           <FormLabel>Email</FormLabel>
-                          <FormControl><Input type="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl>
+                          <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl>
                            <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
                         </FormItem>

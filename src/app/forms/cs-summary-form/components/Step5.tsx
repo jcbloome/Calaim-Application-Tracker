@@ -87,7 +87,7 @@ export default function Step5() {
           <FormField control={control} name="ispEmail" render={({ field }) => (
             <FormItem>
               <FormLabel>ISP Contact Email</FormLabel>
-              <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+              <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
               <FormDescription>If no email, enter "N/A".</FormDescription>
               <FormMessage />
             </FormItem>
@@ -233,7 +233,7 @@ export default function Step5() {
               <FormField control={control} name="rcfeAdminEmail" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Administrator Email {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel>
-                  <FormControl><Input type="email" {...field} value={field.value ?? ''} /></FormControl>
+                  <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
                   <FormDescription>If no email, enter "N/A".</FormDescription>
                   <FormMessage />
                 </FormItem>

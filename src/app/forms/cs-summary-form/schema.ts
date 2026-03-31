@@ -59,7 +59,7 @@ export const formSchema = z.object({
     // Step 1 - Referrer Info
     referrerFirstName: optionalString,
     referrerLastName: optionalString,
-    referrerEmail: optionalString,
+    referrerEmail: optionalEmail,
     referrerPhone: requiredPhone,
     referrerRelationship: requiredString,
     agency: optionalString,

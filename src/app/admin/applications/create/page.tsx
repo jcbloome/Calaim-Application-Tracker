@@ -1175,9 +1175,11 @@ export default function CreateApplicationPage() {
                   <Label htmlFor="memberDob">Member DOB</Label>
                   <Input
                     id="memberDob"
+                    placeholder="MM/DD/YYYY"
                     value={memberData.memberDob || ''}
                     onChange={(e) => setMemberData({ ...memberData, memberDob: e.target.value })}
                   />
+                  <p className="mt-1 text-xs text-muted-foreground">Use MM/DD/YYYY format (example: 01/31/1940).</p>
                 </div>
                 <div>
                   <Label htmlFor="memberCustomaryLocation">Member Customary Location Type</Label>
@@ -1417,10 +1419,12 @@ export default function CreateApplicationPage() {
                 <Label htmlFor="contactEmail">Contact Email (Optional)</Label>
                 <Input
                   id="contactEmail"
-                  type="email"
+                  type="text"
+                  inputMode="email"
                   value={memberData.contactEmail || ''}
                   onChange={(e) => setMemberData({ ...memberData, contactEmail: e.target.value })}
                 />
+                <p className="mt-1 text-xs text-muted-foreground">If no email, enter "N/A".</p>
               </div>
             </div>
           </div>

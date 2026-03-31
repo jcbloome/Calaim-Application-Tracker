@@ -433,6 +433,13 @@ function WaiversFormComponent() {
                                 <p>
                                   Proof of income might need to be furnished as part of this application process (for example, an annual award letter or 3 months of bank statements showing Social Security income).
                                 </p>
+                                <Alert className="mt-4 border-amber-300 bg-amber-50/80 text-amber-900">
+                                  <AlertCircle className="h-4 w-4" />
+                                  <AlertTitle>Monthly income is required to submit</AlertTitle>
+                                  <AlertDescription>
+                                    Families often miss this step. Please enter monthly income below so we can determine SOC and complete waiver submission.
+                                  </AlertDescription>
+                                </Alert>
                                 <div className="space-y-2 mt-4">
                                     <Label htmlFor="monthly-income">
                                       What is the member&apos;s monthly income? <span className="text-destructive">*</span>
