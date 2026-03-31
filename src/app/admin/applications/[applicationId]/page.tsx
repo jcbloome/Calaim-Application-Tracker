@@ -3456,6 +3456,19 @@ function ApplicationDetailPageContent() {
   } else if (!formStatusMap.get('Room and Board/Tier Level Agreement') && formStatusMap.get('Room and Board Commitment')) {
     formStatusMap.set('Room and Board/Tier Level Agreement', formStatusMap.get('Room and Board Commitment') as any);
   }
+  if (!formStatusMap.get('Waivers & Authorizations') && formStatusMap.get('Waivers')) {
+    formStatusMap.set('Waivers & Authorizations', formStatusMap.get('Waivers') as any);
+  } else if (!formStatusMap.get('Waivers') && formStatusMap.get('Waivers & Authorizations')) {
+    formStatusMap.set('Waivers', formStatusMap.get('Waivers & Authorizations') as any);
+  }
+  const getCanonicalFormName = (raw: unknown) => {
+    const name = String(raw || '').trim();
+    if (name === 'Waivers') return 'Waivers & Authorizations';
+    if (name === 'Room and Board/Tier Level Commitment' || name === 'Room and Board Commitment') {
+      return 'Room and Board/Tier Level Agreement';
+    }
+    return name;
+  };
   
   const completedCount = pathwayRequirements.reduce((acc, req) => {
     const form = formStatusMap.get(req.title);
@@ -3530,15 +3543,37 @@ function ApplicationDetailPageContent() {
     requiredPathwayFormTitles.add('Room and Board/Tier Level Commitment');
     requiredPathwayFormTitles.add('Room and Board Commitment');
   }
+  if (requiredPathwayFormTitles.has('Waivers & Authorizations')) {
+    requiredPathwayFormTitles.add('Waivers');
+  }
   const pendingFormAlerts = completedForms.filter((form) => {
-    const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
-    const isRequiredForPathway = requiredPathwayFormTitles.has(form.name);
+    const canonicalName = getCanonicalFormName(form.name);
+    const isSummary = canonicalName === 'CS Member Summary' || canonicalName === 'CS Summary';
+    const isRequiredForPathway = requiredPathwayFormTitles.has(canonicalName);
     if (!isSummary && !isRequiredForPathway) return false;
     if (isSummary) {
       return !application.applicationChecked;
     }
     return !form.acknowledged;
   });
+  const waiverAlertExists = pendingFormAlerts.some(
+    (form) => getCanonicalFormName(form.name) === 'Waivers & Authorizations'
+  );
+  const waiverNeedsCompletion = (() => {
+    const waiver = (formStatusMap.get('Waivers & Authorizations') || formStatusMap.get('Waivers')) as any;
+    return !waiver || waiver.status !== 'Completed';
+  })();
+  const pendingFormAlertsWithWaivers = waiverAlertExists || !waiverNeedsCompletion
+    ? pendingFormAlerts
+    : [
+        ...pendingFormAlerts,
+        {
+          name: 'Waivers & Authorizations',
+          status: 'Pending',
+          acknowledged: false,
+          dateCompleted: null,
+        } as any,
+      ];
 
   const getReviewerMeta = (reqTitle: string, formInfo?: any) => {
     const isSummary = reqTitle === 'CS Member Summary' || reqTitle === 'CS Summary';
@@ -5127,14 +5162,17 @@ function ApplicationDetailPageContent() {
 
             <div className="space-y-2">
                 <Label className="text-sm font-medium">Documents needing acknowledgement</Label>
-                {pendingFormAlerts.length === 0 ? (
+                {pendingFormAlertsWithWaivers.length === 0 ? (
                     <div className="text-xs text-muted-foreground ml-6">No documents pending acknowledgement.</div>
                 ) : (
                     <div className="space-y-1 ml-6">
-                        {pendingFormAlerts.map((form) => (
+                        {pendingFormAlertsWithWaivers.map((form) => (
                             <div key={`${form.name}-${form.status}-${form.dateCompleted?.seconds || form.dateCompleted || ''}`} className="flex items-center gap-2 text-sm">
                                 <span className="h-2 w-2 rounded-full bg-blue-600" />
-                                {form.name}
+                                {getCanonicalFormName(form.name)}
+                                {String(form?.status || '').trim() !== 'Completed' ? (
+                                  <span className="text-xs text-amber-700">(Pending completion)</span>
+                                ) : null}
                             </div>
                         ))}
                     </div>
