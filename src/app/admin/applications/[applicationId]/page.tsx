@@ -2238,6 +2238,10 @@ function ApplicationDetailPageContent() {
     () => getAuthorizationTypes(application?.healthPlan),
     [application?.healthPlan]
   );
+  const isKaiserApplication = useMemo(() => {
+    const plan = String(application?.healthPlan || '').trim().toLowerCase();
+    return plan.includes('kaiser');
+  }, [application?.healthPlan]);
 
   const authorizationRecords = useMemo(() => {
     return ((application as any)?.authorizationRecords || []) as Array<{
@@ -2252,6 +2256,21 @@ function ApplicationDetailPageContent() {
       expiryNotifiedAt?: string;
     }>;
   }, [application]);
+  const kaiserH2022Records = useMemo(() => {
+    const records = authorizationRecords.filter((record) =>
+      String(record?.type || '')
+        .trim()
+        .toLowerCase()
+        .includes('h2022')
+    );
+    return records.sort((a, b) => {
+      const aMs = new Date(String(a?.endDate || '')).getTime();
+      const bMs = new Date(String(b?.endDate || '')).getTime();
+      const safeA = Number.isFinite(aMs) ? aMs : 0;
+      const safeB = Number.isFinite(bMs) ? bMs : 0;
+      return safeB - safeA;
+    });
+  }, [authorizationRecords]);
 
   const ispRecords = useMemo(() => {
     return ((application as any)?.ispRecords || []) as Array<{
@@ -6349,6 +6368,26 @@ function ApplicationDetailPageContent() {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
+                  {isKaiserApplication ? (
+                    <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm">
+                      <div className="font-medium text-indigo-900">Kaiser ongoing H2022 authorizations</div>
+                      <div className="mt-1 text-indigo-800">
+                        Use this section for ongoing six-month reassessment authorizations after T2038 expires.
+                        Upload the H2022 PDF and keep start/end dates current.
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary">H2022 records: {kaiserH2022Records.length}</Badge>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAuthorizationUpload((prev) => ({ ...prev, type: 'H2022' }))}
+                        >
+                          Set Type to H2022
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="space-y-2">
                     <Label htmlFor="authorization-type">Authorization Type</Label>
                     <Select
@@ -6411,6 +6450,48 @@ function ApplicationDetailPageContent() {
                       placeholder="Search by type, date, or file name..."
                     />
                   </div>
+
+                  {isKaiserApplication ? (
+                    <div className="space-y-2">
+                      <Label>Ongoing H2022 end-date tracker</Label>
+                      {kaiserH2022Records.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No H2022 records uploaded yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {kaiserH2022Records.map((record) => {
+                            const daysUntilEnd = getDaysUntil(record.endDate);
+                            const isExpiringSoon = typeof daysUntilEnd === 'number' && daysUntilEnd <= 30;
+                            return (
+                              <div key={`h2022-${record.id || `${record.startDate}-${record.fileName}`}`} className="rounded-md border p-2 text-sm">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="font-medium">
+                                    H2022
+                                    {isExpiringSoon ? (
+                                      <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
+                                        Expires in {daysUntilEnd} days
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {record.downloadURL ? (
+                                    <Button asChild variant="ghost" size="sm">
+                                      <a href={record.downloadURL} target="_blank" rel="noopener noreferrer">
+                                        <Download className="mr-2 h-4 w-4" />
+                                        View PDF
+                                      </a>
+                                    </Button>
+                                  ) : null}
+                                </div>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  Start: {formatAuthorizationDate(record.startDate)} | End: {formatAuthorizationDate(record.endDate)}
+                                  {record.fileName ? ` | File: ${record.fileName}` : ''}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
 
                   {filteredAuthorizationRecords.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No authorization records found.</p>
