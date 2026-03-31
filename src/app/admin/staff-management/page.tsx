@@ -776,6 +776,10 @@ export default function StaffManagementPage() {
                 }),
             ]);
 
+            // Refresh cards/settings from source-of-truth after every save so UI stays current
+            // without requiring manual page refresh.
+            await Promise.all([fetchAllStaff(), fetchNotificationRecipients()]);
+
             if (!options?.silentSuccess) {
                 toast({ 
                     title: "Settings Saved", 
