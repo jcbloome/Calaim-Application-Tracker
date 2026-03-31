@@ -4871,9 +4871,132 @@ function ApplicationDetailPageContent() {
     displayedPathwayRequirements.length + (consolidatedMedicalDocuments.length > 0 ? 1 : 0);
   const showAdminPlaceholderCard = adminPrimaryCardsCount % 2 === 1;
   const workspaceKaiserTierLevelValue = String((application as any)?.Kaiser_Tier_Level || (application as any)?.Tier_Level || '').trim();
+  const hasInterofficeDraft = Boolean(
+    interofficeNote.message.trim() ||
+    interofficeNote.recipientIds.length > 0 ||
+    String(interofficeNote.followUpDate || '').trim()
+  );
+  const hasAuthorizationDraft = Boolean(
+    String(authorizationUpload.type || '').trim() ||
+    String(authorizationUpload.startDate || '').trim() ||
+    String(authorizationUpload.endDate || '').trim() ||
+    authorizationUpload.file
+  );
+  const hasIspDraft = Boolean(String(ispUpload.planDate || '').trim() || ispUpload.file);
+  const hasRoomBoardDraft = Boolean(
+    String(rcfeSignerEmailInput || '').trim() || String(agreedRoomBoardAmountInput || '').trim()
+  );
+  const hasUnsavedDrafts = hasInterofficeDraft || hasAuthorizationDraft || hasIspDraft || hasRoomBoardDraft;
+  const csEditHref = `/admin/forms/edit?applicationId=${encodeURIComponent(applicationId)}&userId=${encodeURIComponent(
+    String(appUserId || '')
+  )}`;
+  const missingQuickFixes: Array<{ label: string; href: string }> = [];
+  if (!String((application as any)?.memberMrn || '').trim()) {
+    missingQuickFixes.push({ label: 'Member MRN', href: csEditHref });
+  }
+  if (!String((application as any)?.memberDob || '').trim()) {
+    missingQuickFixes.push({ label: 'Member DOB', href: csEditHref });
+  }
+  if (
+    !String((application as any)?.currentCounty || '').trim() &&
+    !String((application as any)?.memberCustomaryCounty || '').trim()
+  ) {
+    missingQuickFixes.push({ label: 'Member County', href: csEditHref });
+  }
+  if (!String((application as any)?.healthPlan || '').trim()) {
+    missingQuickFixes.push({ label: 'MCP / Health Plan', href: `/admin/applications/${applicationId}?userId=${encodeURIComponent(String(appUserId || ''))}` });
+  }
+  if (!String((application as any)?.pathway || '').trim()) {
+    missingQuickFixes.push({ label: 'Pathway', href: `/admin/applications/${applicationId}?userId=${encodeURIComponent(String(appUserId || ''))}` });
+  }
+
+  const handleQuickSave = async () => {
+    if (isSubmitting || authorizationUploading || ispUploading) return;
+    try {
+      if (hasInterofficeDraft) {
+        await handleSendInterofficeNote();
+        return;
+      }
+      if (hasAuthorizationDraft) {
+        await handleAuthorizationUpload();
+        return;
+      }
+      if (hasIspDraft) {
+        await handleIspUpload();
+        return;
+      }
+      toast({
+        title: 'Nothing to save',
+        description: 'No interoffice, authorization, or ISP draft is currently in progress.',
+      });
+    } catch (error) {
+      console.warn('Quick save failed:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (!hasUnsavedDrafts) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedDrafts]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isSaveShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's';
+      if (!isSaveShortcut) return;
+      event.preventDefault();
+      void handleQuickSave();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleQuickSave]);
 
   return (
     <div className="grid w-full min-w-0 grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="lg:col-span-3 sticky top-2 z-30 rounded-lg border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="text-xs text-muted-foreground">
+            Admin quick actions {hasUnsavedDrafts ? '• Draft changes in progress' : '• No unsaved drafts'}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => router.push('/admin/applications')}>
+              Back to Applications
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                document.getElementById('member-quick-actions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+            >
+              Open Quick Actions
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleQuickSave()}
+              disabled={isSubmitting || authorizationUploading || ispUploading}
+            >
+              Save Active Draft (Ctrl/Cmd+S)
+            </Button>
+          </div>
+        </div>
+        {missingQuickFixes.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-amber-700">Quick fixes needed:</span>
+            {missingQuickFixes.map((item) => (
+              <Button key={item.label} asChild type="button" variant="outline" size="sm" className="h-7">
+                <Link href={item.href}>{item.label}</Link>
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
       <Dialog
         open={intakeImportOpen}
         onOpenChange={(open) => {

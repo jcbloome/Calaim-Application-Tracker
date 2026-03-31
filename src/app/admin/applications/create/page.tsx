@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -482,6 +482,7 @@ export default function CreateApplicationPage() {
   const [serviceRequestTextPreview, setServiceRequestTextPreview] = useState('');
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
   const parseAbortControllerRef = useRef<AbortController | null>(null);
+  const createApplicationRef = useRef<() => Promise<void> | void>(() => {});
   const [memberData, setMemberData] = useState(getEmptyMemberData);
 
   useEffect(() => {
@@ -1034,6 +1035,109 @@ export default function CreateApplicationPage() {
                            )
                      );
 
+  const missingRequiredFields = useMemo(() => {
+    const missing: Array<{ id: string; label: string }> = [];
+    if (!String(memberData.memberFirstName || '').trim()) {
+      missing.push({ id: 'memberFirstName', label: 'Member First Name' });
+    }
+    if (!String(memberData.memberLastName || '').trim()) {
+      missing.push({ id: 'memberLastName', label: 'Member Last Name' });
+    }
+    if (intakeType === 'standard') {
+      if (!String(memberData.contactFirstName || '').trim()) {
+        missing.push({ id: 'contactFirstName', label: 'Contact First Name' });
+      }
+      if (!String(memberData.contactLastName || '').trim()) {
+        missing.push({ id: 'contactLastName', label: 'Contact Last Name' });
+      }
+      const contactPhoneDigits = String(memberData.contactPhone || '').replace(/\D/g, '');
+      if (!contactPhoneDigits) {
+        missing.push({ id: 'contactPhone', label: 'Contact Phone' });
+      } else if (contactPhoneDigits.length < 10) {
+        missing.push({ id: 'contactPhone', label: 'Contact Phone (10 digits)' });
+      }
+    }
+    return missing;
+  }, [
+    intakeType,
+    memberData.memberFirstName,
+    memberData.memberLastName,
+    memberData.contactFirstName,
+    memberData.contactLastName,
+    memberData.contactPhone,
+  ]);
+
+  const hasUnsavedChanges = useMemo(() => {
+    const memberDefaults = getEmptyMemberData();
+    const normalizedMemberData = Object.keys(memberDefaults).reduce<Record<string, string>>((acc, key) => {
+      acc[key] = String((memberData as any)?.[key] || '');
+      return acc;
+    }, {});
+    const baseMemberData = Object.keys(memberDefaults).reduce<Record<string, string>>((acc, key) => {
+      acc[key] = String((memberDefaults as any)?.[key] || '');
+      return acc;
+    }, {});
+
+    const currentSnapshot = JSON.stringify({
+      intakeType,
+      memberData: normalizedMemberData,
+      selectedAssignedStaffId: String(selectedAssignedStaffId || ''),
+      selectedAssignedStaffName: String(selectedAssignedStaffName || ''),
+      eligibilityScreenshotCount: eligibilityScreenshotFiles.length,
+      serviceRequestFileName: serviceRequestFile?.name || '',
+    });
+    const initialSnapshot = JSON.stringify({
+      intakeType: 'standard',
+      memberData: baseMemberData,
+      selectedAssignedStaffId: '',
+      selectedAssignedStaffName: '',
+      eligibilityScreenshotCount: 0,
+      serviceRequestFileName: '',
+    });
+    return currentSnapshot !== initialSnapshot;
+  }, [
+    intakeType,
+    memberData,
+    selectedAssignedStaffId,
+    selectedAssignedStaffName,
+    eligibilityScreenshotFiles.length,
+    serviceRequestFile?.name,
+  ]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges || isCreating) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges, isCreating]);
+
+  useEffect(() => {
+    createApplicationRef.current = createApplicationForMember;
+  }, [createApplicationForMember]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isSaveShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's';
+      if (!isSaveShortcut) return;
+      event.preventDefault();
+      if (isCreating) return;
+      if (!isFormValid) {
+        toast({
+          title: 'Missing Information',
+          description: 'Fill required fields before creating the application.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      void createApplicationRef.current?.();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isCreating, isFormValid, toast]);
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       {/* Header */}
@@ -1061,6 +1165,37 @@ export default function CreateApplicationPage() {
           You&apos;ll provide basic member and contact information, then complete the full CS Summary form on their behalf.
         </AlertDescription>
       </Alert>
+
+      {missingRequiredFields.length > 0 && (
+        <Alert className="mb-6 border-amber-200 bg-amber-50">
+          <AlertDescription className="text-amber-900">
+            <div className="font-medium">Quick fixes needed ({missingRequiredFields.length})</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {missingRequiredFields.map((field) => (
+                <Button
+                  key={`${field.id}-${field.label}`}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 border-amber-300 bg-white"
+                  onClick={() => {
+                    const el = document.getElementById(field.id) as HTMLInputElement | HTMLTextAreaElement | null;
+                    if (!el) return;
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    try {
+                      el.focus();
+                    } catch {
+                      // no-op
+                    }
+                  }}
+                >
+                  {field.label}
+                </Button>
+              ))}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Member & Contact Information */}
       <Card>
@@ -1453,36 +1588,39 @@ export default function CreateApplicationPage() {
             />
           </div>
 
-          <Button 
-            onClick={createApplicationForMember}
-            disabled={isCreating || !isFormValid}
-            className="w-full"
-            size="lg"
-          >
-            {isCreating ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating Application...
-              </>
-            ) : (
-              <>
-                <FileText className="mr-2 h-4 w-4" />
-                {intakeType === 'kaiser_auth_received_via_ils'
-                  ? 'Create Kaiser Skeleton Application'
-                  : 'Create Application & Continue to CS Summary Form'}
-              </>
-            )}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={resetAllCreateFields}
-            disabled={isCreating}
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Reset Form (Start Over)
-          </Button>
+          <div className="sticky bottom-3 z-20 space-y-2 rounded-lg border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">
+            <Button 
+              onClick={createApplicationForMember}
+              disabled={isCreating || !isFormValid}
+              className="w-full"
+              size="lg"
+            >
+              {isCreating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating Application...
+                </>
+              ) : (
+                <>
+                  <FileText className="mr-2 h-4 w-4" />
+                  {intakeType === 'kaiser_auth_received_via_ils'
+                    ? 'Create Kaiser Skeleton Application'
+                    : 'Create Application & Continue to CS Summary Form'}
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={resetAllCreateFields}
+              disabled={isCreating}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Reset Form (Start Over)
+            </Button>
+            <p className="text-center text-xs text-muted-foreground">Shortcut: Ctrl/Cmd + S to create application</p>
+          </div>
 
           {!isFormValid && (
             <div className="text-sm text-gray-500 text-center space-y-1">
