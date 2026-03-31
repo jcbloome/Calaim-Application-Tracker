@@ -187,7 +187,7 @@ const superAdminNavLinks = [
 ];
 
 function AdminHeader() {
-  const { user, isSuperAdmin, isClaimsStaff } = useAdmin();
+  const { user, isAdmin, isSuperAdmin, isClaimsStaff } = useAdmin();
   const { isSocialWorker } = useSocialWorker();
   const auth = useAuth();
   const firestore = useFirestore();
