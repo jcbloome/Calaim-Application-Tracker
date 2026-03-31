@@ -40,28 +40,14 @@ export function KaiserSummaryCards({
 
   // Consolidated ILS updates:
   // - T2038 Auth Only Email
+  // - T2038 Requested
   // - H2022 Requested
   // - Tier Level Requested
-  // - R&B Sent (mapped to R&B Signed)
-  // - Pending ILS Contract (mapped to contract-email-needed statuses)
   const ilsUpdateMatchers = [
     { key: 't2038', label: 'T2038 Auth Only Email', accepts: ['t2038 auth only email', 't2308 auth only'] },
+    { key: 't2038_requested', label: 'T2038 Requested', accepts: ['t2038 requested'] },
     { key: 'h2022', label: 'H2022 Requested', accepts: ['h2022 requested'] },
     { key: 'tier', label: 'Tier Level Requested', accepts: ['tier level requested'] },
-    {
-      key: 'rb',
-      label: 'R&B Sent',
-      accepts: [
-        'r b signed',
-        'r b sent',
-        'r&b sent pending ils contract',
-        'r & b sent pending ils contract',
-        // Keep legacy workflow labels rolled into R&B Sent.
-        'ils contract email needed',
-        'ils rcfe contract email needed',
-        'ils sent for contract',
-      ],
-    },
   ] as const;
 
   const getIlsBucketKey = (status: string): string | null => {

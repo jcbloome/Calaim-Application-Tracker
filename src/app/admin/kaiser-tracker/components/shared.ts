@@ -41,8 +41,19 @@ export const hasMeaningfulValue = (value: unknown) => {
 };
 
 export const getEffectiveKaiserStatus = (member: Partial<KaiserMember> & Record<string, any>): string => {
-  // If Kaiser has authorized (email flag present) but official T2038 isn't received yet,
-  // bucket these into "T2038 Auth Only Email" for summary/reporting.
+  // Preserve explicit Kaiser status first (for example, "T2038 Requested").
+  // Only use "T2038 Auth Only Email" as a fallback label when status is blank/unknown.
+  const raw =
+    member?.Kaiser_Status ??
+    member?.Kaiser_ID_Status ??
+    member?.KaiserIdStatus ??
+    member?.KaiserStatus ??
+    '';
+  const normalizedRaw = normalizeKaiserStatusName(String(raw));
+  if (hasMeaningfulValue(normalizedRaw) && normalizedRaw !== 'Unknown') {
+    return normalizedRaw;
+  }
+
   const hasAuthEmail = hasMeaningfulValue(member?.T2038_Auth_Email_Kaiser);
   const hasOfficialAuth =
     hasMeaningfulValue(member?.Kaiser_T2038_Received_Date) ||
@@ -50,16 +61,7 @@ export const getEffectiveKaiserStatus = (member: Partial<KaiserMember> & Record<
     hasMeaningfulValue(member?.Kaiser_T2038_Received);
 
   if (hasAuthEmail && !hasOfficialAuth) return 'T2038 Auth Only Email';
-
-  const raw =
-    member?.Kaiser_Status ??
-    member?.Kaiser_ID_Status ??
-    member?.KaiserIdStatus ??
-    member?.KaiserStatus ??
-    '';
-  if (!hasMeaningfulValue(raw)) return 'Unknown';
-
-  return normalizeKaiserStatusName(String(raw));
+  return 'Unknown';
 };
 
 export const getStatusColor = (status: string): string => {
@@ -96,6 +98,7 @@ export const getStatusColor = (status: string): string => {
     'ILS Contract Email Needed': 'bg-blue-50 text-blue-700 border-blue-200',
     'ILS/RCFE_Member_At_RCFE_Need_Conf': 'bg-amber-50 text-amber-800 border-amber-200',
     'ILS/RCFE_Member_At_RCFE_Confirmed': 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    'Final- Member at RCFE': 'bg-emerald-50 text-emerald-800 border-emerald-200',
   };
 
   return statusColors[normalized] || statusColors[status] || 'bg-gray-50 text-gray-700 border-gray-200';

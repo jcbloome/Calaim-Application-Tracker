@@ -30,12 +30,32 @@ export const KAISER_STATUS_ALIASES: Record<string, string> = {
   [normalizeKey('RN Visit Complete Pending Signatures')]: 'RN Visit Complete, Pending Signatures',
   [normalizeKey('RN Visit Complete - Pending Signatures')]: 'RN Visit Complete, Pending Signatures',
   [normalizeKey('Case Close')]: 'Case Closed',
+  [normalizeKey('Final Member at RCFE')]: 'Final- Member at RCFE',
+  [normalizeKey('Final - Member at RCFE')]: 'Final- Member at RCFE',
+  [normalizeKey('Final- ILS/RCFE Contract Completed')]: 'Final- Member at RCFE',
+  [normalizeKey('ILS/RCFE_Member_At_RCFE_Confirmed')]: 'Final- Member at RCFE',
 };
 
 export function normalizeKaiserStatusName(raw: string): string {
   const trimmed = String(raw || '').trim();
   if (!trimmed) return '';
-  return KAISER_STATUS_ALIASES[normalizeKey(trimmed)] || trimmed;
+  const normalized = normalizeKey(trimmed);
+  const directAlias = KAISER_STATUS_ALIASES[normalized];
+  if (directAlias) return directAlias;
+
+  // Defensive normalization for legacy "Final ..." RCFE completion labels
+  // that differ by punctuation/spacing in Caspio exports.
+  const loose = normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const isFinalRcfeVariant =
+    loose.includes('final') &&
+    loose.includes('rcfe') &&
+    (loose.includes('member at rcfe') || loose.includes('ils rcfe'));
+  if (isFinalRcfeVariant) return 'Final- Member at RCFE';
+
+  return trimmed;
 }
 
 export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
@@ -227,9 +247,9 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 60,
-    status: 'ILS/RCFE_Member_At_RCFE_Confirmed',
+    status: 'Final- Member at RCFE',
     sortOrder: 15.9,
-    description: 'Member is at RCFE; confirmation received',
+    description: 'Final status: member at RCFE',
     category: 'completion',
     isActive: true
   },

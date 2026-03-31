@@ -88,7 +88,8 @@ const getStatusIcon = (status: string) => {
     'RCFE_Located': <MapPin className="h-3 w-3" />,
     'ILS Contract Email Needed': <Mail className="h-3 w-3" />,
     'ILS/RCFE_Member_At_RCFE_Need_Conf': <AlertTriangle className="h-3 w-3" />,
-    'ILS/RCFE_Member_At_RCFE_Confirmed': <CheckCircle className="h-3 w-3" />
+    'ILS/RCFE_Member_At_RCFE_Confirmed': <CheckCircle className="h-3 w-3" />,
+    'Final- Member at RCFE': <CheckCircle className="h-3 w-3" />
   };
   
   return iconMap[normalized] || iconMap[status] || <Clock className="h-3 w-3" />;
@@ -241,6 +242,22 @@ const COUNTIES = [
   'Fresno',
   'Imperial'
 ];
+
+const sortKaiserMembersAlphabetically = (input: KaiserMember[]): KaiserMember[] => {
+  return [...input].sort((a, b) => {
+    const aLast = String(a?.memberLastName || '').trim().toLowerCase();
+    const bLast = String(b?.memberLastName || '').trim().toLowerCase();
+    if (aLast !== bLast) return aLast.localeCompare(bLast);
+
+    const aFirst = String(a?.memberFirstName || '').trim().toLowerCase();
+    const bFirst = String(b?.memberFirstName || '').trim().toLowerCase();
+    if (aFirst !== bFirst) return aFirst.localeCompare(bFirst);
+
+    const aId = String(a?.client_ID2 || '').trim();
+    const bId = String(b?.client_ID2 || '').trim();
+    return aId.localeCompare(bId);
+  });
+};
 
 function KaiserTrackerPageContent() {
   const { isAdmin, isLoading: isAdminLoading, user } = useAdmin();
@@ -428,7 +445,7 @@ function KaiserTrackerPageContent() {
     filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'staff_members',
     filterValue: string
   ) => {
-    setModalMembers(memberList);
+    setModalMembers(sortKaiserMembersAlphabetically(memberList));
     setModalTitle(title);
     setModalDescription(description);
     setModalFilterType(filterType);
@@ -442,7 +459,7 @@ function KaiserTrackerPageContent() {
     setStaffMemberModal({
       isOpen: true,
       staffName,
-      members
+      members: sortKaiserMembersAlphabetically(members)
     });
   };
 
