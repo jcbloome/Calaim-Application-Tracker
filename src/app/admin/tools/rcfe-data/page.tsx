@@ -60,6 +60,26 @@ interface RCFEDirectoryRow {
   members: Array<{ id: string; name: string }>;
 }
 
+interface RcfePersistentStatus {
+  rcfeRegisteredId: string;
+  lastUpdatedAt?: string | null;
+  lastUpdatedByEmail?: string | null;
+  lastNumberOfBeds?: string | null;
+  lastCounty?: string | null;
+}
+
+interface RcfeHistoricalFallback {
+  lastUpdatedAt?: string | null;
+  lastUpdatedByEmail?: string | null;
+  lastNumberOfBeds?: string | null;
+  lastCounty?: string | null;
+}
+
+interface RcfeProgressOverride {
+  Number_of_Beds?: string | null;
+  RCFE_County?: string | null;
+}
+
 type RCFESortField =
   | 'RCFE_Name'
   | 'RCFE_County'
@@ -126,6 +146,20 @@ const normalizeCountyInput = (value: unknown) =>
   toAddressCase(value)
     .replace(/\s+county$/i, '')
     .trim();
+const buildRcfeSignature = (name: unknown, street: unknown, city: unknown, zip: unknown) =>
+  [name, street, city, zip]
+    .map((v) =>
+      String(v || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+    )
+    .join('|');
+const normalizeKey = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 
 export default function RcfeDataToolsPage() {
   const { isAdmin, isLoading } = useAdmin();
@@ -135,6 +169,11 @@ export default function RcfeDataToolsPage() {
 
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
+  const [rcfePersistentStatusById, setRcfePersistentStatusById] = useState<Record<string, RcfePersistentStatus>>({});
+  const [rcfeHistoricalBySignature, setRcfeHistoricalBySignature] = useState<Record<string, RcfeHistoricalFallback>>({});
+  const [rcfeHistoricalByName, setRcfeHistoricalByName] = useState<Record<string, RcfeHistoricalFallback>>({});
+  const [rcfeProgressOverridesByKey, setRcfeProgressOverridesByKey] = useState<Record<string, RcfeProgressOverride>>({});
+  const [rcfeProgressOverridesByName, setRcfeProgressOverridesByName] = useState<Record<string, RcfeProgressOverride>>({});
   const [search, setSearch] = useState('');
   const [confirmationFilter, setConfirmationFilter] = useState<'all' | 'confirmed_there' | 'told_not_there' | 'not_confirmed'>('all');
   const [sortField, setSortField] = useState<RCFESortField>('RCFE_Name');
@@ -228,6 +267,84 @@ export default function RcfeDataToolsPage() {
     [toast]
   );
 
+  const loadRcfePersistentStatus = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/rcfe-directory/upsert', {
+        method: 'GET',
+        headers: { authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) return;
+      const list = Array.isArray(data?.statuses) ? data.statuses : [];
+      const next: Record<string, RcfePersistentStatus> = {};
+      list.forEach((item: any) => {
+        const rid = String(item?.rcfeRegisteredId || '').trim();
+        if (!rid) return;
+        next[rid] = {
+          rcfeRegisteredId: rid,
+          lastUpdatedAt: String(item?.lastUpdatedAt || '').trim() || null,
+          lastUpdatedByEmail: String(item?.lastUpdatedByEmail || '').trim() || null,
+          lastNumberOfBeds: String(item?.lastNumberOfBeds || '').trim() || null,
+          lastCounty: String(item?.lastCounty || '').trim() || null,
+        };
+      });
+      setRcfePersistentStatusById(next);
+      const rawHistory = (data?.historyBySignature || {}) as Record<string, any>;
+      const historyNext: Record<string, RcfeHistoricalFallback> = {};
+      Object.entries(rawHistory).forEach(([key, value]) => {
+        const normalizedKey = String(key || '').trim().toLowerCase();
+        if (!normalizedKey) return;
+        historyNext[normalizedKey] = {
+          lastUpdatedAt: String(value?.lastUpdatedAt || '').trim() || null,
+          lastUpdatedByEmail: String(value?.lastUpdatedByEmail || '').trim() || null,
+          lastNumberOfBeds: String(value?.lastNumberOfBeds || '').trim() || null,
+          lastCounty: String(value?.lastCounty || '').trim() || null,
+        };
+      });
+      setRcfeHistoricalBySignature(historyNext);
+      const rawByName = (data?.historyByName || {}) as Record<string, any>;
+      const byNameNext: Record<string, RcfeHistoricalFallback> = {};
+      Object.entries(rawByName).forEach(([key, value]) => {
+        const normalizedKey = String(key || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!normalizedKey) return;
+        byNameNext[normalizedKey] = {
+          lastUpdatedAt: String(value?.lastUpdatedAt || '').trim() || null,
+          lastUpdatedByEmail: String(value?.lastUpdatedByEmail || '').trim() || null,
+          lastNumberOfBeds: String(value?.lastNumberOfBeds || '').trim() || null,
+          lastCounty: String(value?.lastCounty || '').trim() || null,
+        };
+      });
+      setRcfeHistoricalByName(byNameNext);
+      const rawProgressOverrides = (data?.progressOverrides || {}) as Record<string, any>;
+      const progressNext: Record<string, RcfeProgressOverride> = {};
+      Object.entries(rawProgressOverrides).forEach(([key, value]) => {
+        const normalizedKey = normalizeKey(key);
+        if (!normalizedKey) return;
+        progressNext[normalizedKey] = {
+          Number_of_Beds: String(value?.Number_of_Beds || '').trim() || null,
+          RCFE_County: String(value?.RCFE_County || '').trim() || null,
+        };
+      });
+      setRcfeProgressOverridesByKey(progressNext);
+      const rawProgressByName = (data?.progressByName || {}) as Record<string, any>;
+      const progressByNameNext: Record<string, RcfeProgressOverride> = {};
+      Object.entries(rawProgressByName).forEach(([key, value]) => {
+        const normalizedKey = normalizeKey(key);
+        if (!normalizedKey) return;
+        progressByNameNext[normalizedKey] = {
+          Number_of_Beds: String(value?.Number_of_Beds || '').trim() || null,
+          RCFE_County: String(value?.RCFE_County || '').trim() || null,
+        };
+      });
+      setRcfeProgressOverridesByName(progressByNameNext);
+    } catch {
+      // best effort only
+    }
+  }, [auth?.currentUser]);
+
   const loadMembers = useCallback(async () => {
     setIsLoadingMembers(true);
     let syncErrorMessage = '';
@@ -250,6 +367,7 @@ export default function RcfeDataToolsPage() {
 
     try {
       const count = await fetchCachedMembers(!syncErrorMessage);
+      await loadRcfePersistentStatus();
       if (syncErrorMessage) {
         toast({
           title: 'Sync failed, loaded cached data',
@@ -267,7 +385,7 @@ export default function RcfeDataToolsPage() {
     } finally {
       setIsLoadingMembers(false);
     }
-  }, [auth?.currentUser, fetchCachedMembers, toast]);
+  }, [auth?.currentUser, fetchCachedMembers, loadRcfePersistentStatus, toast]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -279,6 +397,11 @@ export default function RcfeDataToolsPage() {
       })
       .finally(() => setIsLoadingMembers(false));
   }, [isAdmin, members.length, fetchCachedMembers]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void loadRcfePersistentStatus();
+  }, [isAdmin, loadRcfePersistentStatus]);
 
   const rcfeRows = useMemo<RCFEDirectoryRow[]>(() => {
     const grouped = new Map<string, RCFEDirectoryRow>();
@@ -346,13 +469,44 @@ export default function RcfeDataToolsPage() {
     return Array.from(grouped.values());
   }, [members]);
 
-  const getBaseDraft = (row: RCFEDirectoryRow): RcfeDraftFields => ({
-    RCFE_County: row.RCFE_County,
+  const getPersistedStatusForRow = (row: RCFEDirectoryRow): RcfePersistentStatus | null => {
+    for (const rid of row.rcfeRegisteredIds) {
+      const key = String(rid || '').trim();
+      if (!key) continue;
+      const status = rcfePersistentStatusById[key];
+      if (status) return status;
+    }
+    return null;
+  };
+
+  const getHistoricalFallbackForRow = (row: RCFEDirectoryRow): RcfeHistoricalFallback | null => {
+    const key = buildRcfeSignature(row.RCFE_Name, row.RCFE_Street, row.RCFE_City, row.RCFE_Zip);
+    if (key && rcfeHistoricalBySignature[key]) return rcfeHistoricalBySignature[key];
+    const byNameKey = String(row.RCFE_Name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!byNameKey) return null;
+    return rcfeHistoricalByName[byNameKey] || null;
+  };
+
+  const getProgressOverrideForRow = (row: RCFEDirectoryRow): RcfeProgressOverride | null => {
+    const key = normalizeKey(row.key);
+    if (key && rcfeProgressOverridesByKey[key]) return rcfeProgressOverridesByKey[key];
+    const byNameKey = normalizeKey(row.RCFE_Name);
+    if (!byNameKey) return null;
+    return rcfeProgressOverridesByName[byNameKey] || null;
+  };
+
+  const getBaseDraft = (row: RCFEDirectoryRow): RcfeDraftFields => {
+    const persisted = getPersistedStatusForRow(row);
+    const history = getHistoricalFallbackForRow(row);
+    const progress = getProgressOverrideForRow(row);
+    return {
+    RCFE_County: row.RCFE_County || String(persisted?.lastCounty || history?.lastCounty || progress?.RCFE_County || '').trim(),
     RCFE_Administrator: row.RCFE_Administrator,
     RCFE_Administrator_Email: row.RCFE_Administrator_Email,
     RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
-    Number_of_Beds: row.Number_of_Beds,
-  });
+    Number_of_Beds: row.Number_of_Beds || String(persisted?.lastNumberOfBeds || history?.lastNumberOfBeds || progress?.Number_of_Beds || '').trim(),
+  };
+  };
 
   const getDraft = (row: RCFEDirectoryRow): RcfeDraftFields => {
     const base = getBaseDraft(row);
@@ -375,29 +529,31 @@ export default function RcfeDataToolsPage() {
       setRcfeFieldOverrides((prev) => ({ ...prev, [row.key]: next }));
       setUpdatedRowTimestamps((prev) => {
         if (!prev[row.key]) return prev;
+        const base = getBaseDraft(row);
         const changed =
-          String(next.RCFE_County || '').trim() !== String(row.RCFE_County || '').trim() ||
-          String(next.RCFE_Administrator || '').trim() !== String(row.RCFE_Administrator || '').trim() ||
-          String(next.RCFE_Administrator_Email || '').trim() !== String(row.RCFE_Administrator_Email || '').trim() ||
-          String(next.RCFE_Administrator_Phone || '').trim() !== String(row.RCFE_Administrator_Phone || '').trim() ||
-          String(next.Number_of_Beds || '').trim() !== String(row.Number_of_Beds || '').trim();
+          String(next.RCFE_County || '').trim() !== String(base.RCFE_County || '').trim() ||
+          String(next.RCFE_Administrator || '').trim() !== String(base.RCFE_Administrator || '').trim() ||
+          String(next.RCFE_Administrator_Email || '').trim() !== String(base.RCFE_Administrator_Email || '').trim() ||
+          String(next.RCFE_Administrator_Phone || '').trim() !== String(base.RCFE_Administrator_Phone || '').trim() ||
+          String(next.Number_of_Beds || '').trim() !== String(base.Number_of_Beds || '').trim();
         if (!changed) return prev;
         const copy = { ...prev };
         delete copy[row.key];
         return copy;
       });
     },
-    [rcfeDrafts, rcfeFieldOverrides]
+    [rcfeDrafts, rcfeFieldOverrides, rcfePersistentStatusById]
   );
 
   const hasDraftChanges = (row: RCFEDirectoryRow) => {
     const draft = getDraft(row);
+    const base = getBaseDraft(row);
     return (
-      String(draft.RCFE_County || '').trim() !== String(row.RCFE_County || '').trim() ||
-      String(draft.RCFE_Administrator || '').trim() !== String(row.RCFE_Administrator || '').trim() ||
-      String(draft.RCFE_Administrator_Email || '').trim() !== String(row.RCFE_Administrator_Email || '').trim() ||
-      String(draft.RCFE_Administrator_Phone || '').trim() !== String(row.RCFE_Administrator_Phone || '').trim() ||
-      String(draft.Number_of_Beds || '').trim() !== String(row.Number_of_Beds || '').trim()
+      String(draft.RCFE_County || '').trim() !== String(base.RCFE_County || '').trim() ||
+      String(draft.RCFE_Administrator || '').trim() !== String(base.RCFE_Administrator || '').trim() ||
+      String(draft.RCFE_Administrator_Email || '').trim() !== String(base.RCFE_Administrator_Email || '').trim() ||
+      String(draft.RCFE_Administrator_Phone || '').trim() !== String(base.RCFE_Administrator_Phone || '').trim() ||
+      String(draft.Number_of_Beds || '').trim() !== String(base.Number_of_Beds || '').trim()
     );
   };
 
@@ -434,13 +590,83 @@ export default function RcfeDataToolsPage() {
       const bv = String((b as any)[sortField] || '').toLowerCase();
       return av.localeCompare(bv) * dir;
     });
-  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails]);
+  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesByName]);
 
-  const editedRows = useMemo(() => rcfeRows.filter((row) => hasDraftChanges(row)), [rcfeRows, rcfeDrafts, rcfeFieldOverrides]);
+  const editedRows = useMemo(
+    () => rcfeRows.filter((row) => hasDraftChanges(row)),
+    [rcfeRows, rcfeDrafts, rcfeFieldOverrides, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesByName]
+  );
+  const countyBackfillRows = useMemo(
+    () =>
+      rcfeRows.filter((row) => {
+        if (hasDraftChanges(row)) return false;
+        if (updatedRowTimestamps[row.key]) return false;
+        if (!row.rcfeRegisteredIds.length) return false;
+        const county = normalizeCountyInput(row.RCFE_County);
+        if (!county) return false;
+        const persisted = getPersistedStatusForRow(row);
+        const persistedCounty = normalizeCountyInput(persisted?.lastCounty || '');
+        if (persistedCounty && persistedCounty.toLowerCase() === county.toLowerCase()) return false;
+        return true;
+      }),
+    [rcfeRows, rcfeDrafts, rcfeFieldOverrides, updatedRowTimestamps, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesByName]
+  );
+  const rowsPendingPush = useMemo(() => {
+    const byKey = new Map<string, RCFEDirectoryRow>();
+    editedRows.forEach((row) => byKey.set(row.key, row));
+    countyBackfillRows.forEach((row) => {
+      if (!byKey.has(row.key)) byKey.set(row.key, row);
+    });
+    return Array.from(byKey.values());
+  }, [editedRows, countyBackfillRows]);
   const updatedRowsCount = useMemo(
     () => rcfeRows.filter((row) => Boolean(updatedRowTimestamps[row.key])).length,
     [rcfeRows, updatedRowTimestamps]
   );
+  const historicalBedsKnownCount = useMemo(
+    () =>
+      rcfeRows.filter((row) => {
+        if (String(row.Number_of_Beds || '').trim()) return true;
+        const persisted = getPersistedStatusForRow(row);
+        if (String(persisted?.lastNumberOfBeds || '').trim()) return true;
+        const history = getHistoricalFallbackForRow(row);
+        if (String(history?.lastNumberOfBeds || '').trim()) return true;
+        const progress = getProgressOverrideForRow(row);
+        return Boolean(String(progress?.Number_of_Beds || '').trim());
+      }).length,
+    [rcfeRows, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesByName]
+  );
+  const memberVerificationSummary = useMemo(() => {
+    const uniqueMemberIds = new Set<string>();
+    rcfeRows.forEach((row) => {
+      row.members.forEach((member) => {
+        const id = String(member.id || '').trim();
+        if (id) uniqueMemberIds.add(id);
+      });
+    });
+
+    let verifiedThere = 0;
+    let notAtRcfe = 0;
+    let unverified = 0;
+
+    uniqueMemberIds.forEach((id) => {
+      const status = memberPresenceStatus[id];
+      if (status === 'there') {
+        verifiedThere += 1;
+      } else if (status === 'not_there') {
+        notAtRcfe += 1;
+      } else {
+        unverified += 1;
+      }
+    });
+
+    return {
+      total: uniqueMemberIds.size,
+      verifiedThere,
+      notAtRcfe,
+      unverified,
+    };
+  }, [rcfeRows, memberPresenceStatus]);
 
   const handleSort = (field: RCFESortField) => {
     if (sortField === field) {
@@ -519,13 +745,14 @@ export default function RcfeDataToolsPage() {
       );
       setRcfeDrafts((prev) => ({ ...prev, [row.key]: draft }));
       setRcfeFieldOverrides((prev) => ({ ...prev, [row.key]: draft }));
+      await loadRcfePersistentStatus();
     },
-    [auth?.currentUser, rcfeDrafts]
+    [auth?.currentUser, rcfeDrafts, loadRcfePersistentStatus]
   );
 
   const syncEditedRows = useCallback(async (rows: RCFEDirectoryRow[]) => {
     if (rows.length === 0) {
-      toast({ title: 'No edits to push', description: 'Make a change first, then push all edited.' });
+      toast({ title: 'No rows to push', description: 'No edited rows or county backfill rows are pending.' });
       return { attempted: 0, success: 0, failed: 0 };
     }
 
@@ -567,8 +794,8 @@ export default function RcfeDataToolsPage() {
   }, [saveRow, toast]);
 
   const pushAllEdited = useCallback(async () => {
-    await syncEditedRows(editedRows);
-  }, [editedRows, syncEditedRows]);
+    await syncEditedRows(rowsPendingPush);
+  }, [rowsPendingPush, syncEditedRows]);
 
   const setMemberPresence = useCallback((memberId: string, status: 'there' | 'not_there', checked: boolean) => {
     const key = String(memberId || '').trim();
@@ -838,7 +1065,33 @@ export default function RcfeDataToolsPage() {
                 </SelectContent>
               </Select>
               <Badge variant="outline">{visibleRows.length} RCFEs</Badge>
+              <Button
+                type="button"
+                variant={confirmationFilter === 'confirmed_there' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setConfirmationFilter('confirmed_there')}
+              >
+                Verified There: {memberVerificationSummary.verifiedThere}
+              </Button>
+              <Button
+                type="button"
+                variant={confirmationFilter === 'told_not_there' ? 'destructive' : 'outline'}
+                size="sm"
+                onClick={() => setConfirmationFilter('told_not_there')}
+              >
+                Not at RCFE: {memberVerificationSummary.notAtRcfe}
+              </Button>
+              <Button
+                type="button"
+                variant={confirmationFilter === 'not_confirmed' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setConfirmationFilter('not_confirmed')}
+              >
+                Unverified: {memberVerificationSummary.unverified}
+              </Button>
               <Badge variant="secondary">Needs Update: {editedRows.length}</Badge>
+              <Badge variant="outline">County Backfill Pending: {countyBackfillRows.length}</Badge>
+              <Badge variant="outline">Beds Known (Historical): {historicalBedsKnownCount}</Badge>
               <Badge variant="outline">Already Updated: {updatedRowsCount}</Badge>
               {lastPushResult ? (
                 <Badge variant="outline">
@@ -847,8 +1100,8 @@ export default function RcfeDataToolsPage() {
                 </Badge>
               ) : null}
               <Badge variant="outline">Drafts saved to Firestore</Badge>
-              <Button onClick={pushAllEdited} disabled={isSavingAll || editedRows.length === 0}>
-                {isSavingAll ? 'Syncing edited rows...' : `Push All Edited (${editedRows.length})`}
+              <Button onClick={pushAllEdited} disabled={isSavingAll || rowsPendingPush.length === 0}>
+                {isSavingAll ? 'Syncing rows...' : `Push All Edited (${rowsPendingPush.length})`}
               </Button>
             </div>
           </div>
@@ -907,6 +1160,9 @@ export default function RcfeDataToolsPage() {
                       const draft = getDraft(row);
                       const hasPendingChanges = hasDraftChanges(row);
                       const updatedAt = updatedRowTimestamps[row.key];
+                      const persisted = getPersistedStatusForRow(row);
+                      const history = getHistoricalFallbackForRow(row);
+                      const persistedBeds = String(persisted?.lastNumberOfBeds || history?.lastNumberOfBeds || '').trim();
                       const verifiedCount = row.members.filter(
                         (m) => memberPresenceStatus[m.id] === 'there' || memberPresenceStatus[m.id] === 'not_there'
                       ).length;
@@ -1011,6 +1267,7 @@ export default function RcfeDataToolsPage() {
                                 Confirmed There: {row.members.filter((m) => memberPresenceStatus[m.id] === 'there').length}/{row.members.length}
                                 {' | '}
                                 Told Not There: {row.members.filter((m) => memberPresenceStatus[m.id] === 'not_there').length}
+                                {persistedBeds ? ` | Historical Beds: ${persistedBeds}` : ''}
                                 {!hasPendingChanges && updatedAt ? ` | Updated: ${formatDateTimeSafe(updatedAt)}` : ''}
                               </div>
                             </div>
