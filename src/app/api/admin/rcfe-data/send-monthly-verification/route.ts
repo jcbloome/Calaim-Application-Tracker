@@ -131,27 +131,36 @@ export async function POST(req: NextRequest) {
     const results: Array<{ to: string; rcfeName: string; id?: string; error?: string }> = [];
 
     for (const row of sendRows) {
-      const rowsHtml = row.members
-        .map((member) => {
-          const status = toStatusLabel(member.status);
-          const lastVerified = member.lastVerifiedAt ? escapeHtml(member.lastVerifiedAt) : 'Not recorded';
-          const details = member.extraDetails ? `<div style="font-size:12px;color:#6b7280;">Notes: ${escapeHtml(member.extraDetails)}</div>` : '';
-          return `
-            <tr>
-              <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(member.name)}</td>
-              <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(member.id)}</td>
-              <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(status)}</td>
-              <td style="padding:8px;border:1px solid #e5e7eb;">${lastVerified}${details}</td>
-            </tr>
-          `;
-        })
-        .join('');
+      const verifiedThere = row.members.filter((m) => m.status === 'there');
+      const notAtRcfe = row.members.filter((m) => m.status === 'not_there');
+      const unverified = row.members.filter((m) => m.status !== 'there' && m.status !== 'not_there');
 
-      const html = `
-        <div style="font-family:Arial,sans-serif;max-width:760px;margin:0 auto;line-height:1.5;color:#111827;">
-          <p>${escapeHtml(intro).replace(/\n/g, '<br/>')}</p>
-          <p><strong>RCFE:</strong> ${escapeHtml(row.rcfeName)}</p>
-          <table style="border-collapse:collapse;width:100%;margin-top:10px;">
+      const buildRowsHtml = (members: VerificationMember[]) =>
+        members
+          .map((member) => {
+            const status = toStatusLabel(member.status);
+            const lastVerified = member.lastVerifiedAt ? escapeHtml(member.lastVerifiedAt) : 'Not recorded';
+            const details = member.extraDetails
+              ? `<div style="font-size:12px;color:#6b7280;">Notes: ${escapeHtml(member.extraDetails)}</div>`
+              : '';
+            return `
+              <tr>
+                <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(member.name)}</td>
+                <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(member.id)}</td>
+                <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(status)}</td>
+                <td style="padding:8px;border:1px solid #e5e7eb;">${lastVerified}${details}</td>
+              </tr>
+            `;
+          })
+          .join('');
+
+      const buildSection = (title: string, members: VerificationMember[]) => {
+        if (members.length === 0) {
+          return `<p style="margin:8px 0 0;color:#6b7280;"><strong>${escapeHtml(title)}:</strong> None listed.</p>`;
+        }
+        return `
+          <h3 style="margin:14px 0 6px;font-size:15px;">${escapeHtml(title)} (${members.length})</h3>
+          <table style="border-collapse:collapse;width:100%;margin-top:6px;">
             <thead>
               <tr>
                 <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Member Name</th>
@@ -160,9 +169,26 @@ export async function POST(req: NextRequest) {
                 <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Last Verified / Notes</th>
               </tr>
             </thead>
-            <tbody>${rowsHtml}</tbody>
+            <tbody>${buildRowsHtml(members)}</tbody>
           </table>
-          <p style="margin-top:12px;">Please reply with any updates for members who have moved or no longer reside at the RCFE.</p>
+        `;
+      };
+
+      const html = `
+        <div style="font-family:Arial,sans-serif;max-width:760px;margin:0 auto;line-height:1.5;color:#111827;">
+          <p>${escapeHtml(intro).replace(/\n/g, '<br/>')}</p>
+          <p><strong>RCFE:</strong> ${escapeHtml(row.rcfeName)}</p>
+          <p style="margin-top:6px;"><strong>Please reply to confirm this roster for your RCFE.</strong></p>
+          <p style="margin-top:4px;color:#374151;">
+            In your reply, please confirm:
+            <br/>1) Members listed as <strong>Confirmed There</strong> still reside at your RCFE.
+            <br/>2) Members listed as <strong>Told Not There</strong> have moved out / are no longer residents.
+            <br/>3) Any corrections needed for member status or roster details.
+          </p>
+          ${buildSection('Members Verified at RCFE (Confirmed There)', verifiedThere)}
+          ${buildSection('Residents Not at RCFE (Told Not There)', notAtRcfe)}
+          ${buildSection('Members Pending Verification', unverified)}
+          <p style="margin-top:12px;">Thank you for confirming by email reply.</p>
         </div>
       `;
 

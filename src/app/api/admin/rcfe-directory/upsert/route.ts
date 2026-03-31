@@ -76,6 +76,68 @@ const normalizeLooseKey = (value: unknown) =>
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 
+const normalizeCompositeKey = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .split('|')
+    .map((segment) => segment.replace(/[^a-z0-9]/g, ''))
+    .join('|');
+
+type RcfeRegistryRow = {
+  rcfeRegisteredId: string;
+  rcfeName: string;
+  numberOfBeds: string | null;
+  county: string | null;
+};
+
+async function fetchRcfeRegistryBedMaps() {
+  const credentials = getCaspioCredentialsFromEnv();
+  const token = await getCaspioToken(credentials);
+  const byRegisteredId: Record<string, RcfeRegistryRow> = {};
+  const byName: Record<string, RcfeRegistryRow> = {};
+
+  const pageSize = 1000;
+  const maxPages = 20;
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const selectFields = ['RCFE_Registered_ID', 'RCFE_Name', 'Number_of_Beds', 'RCFE_County'].join(',');
+    const url = `${credentials.baseUrl}/rest/v2/tables/${encodeURIComponent(
+      'CalAIM_tbl_New_RCFE_Registration'
+    )}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}&q.select=${encodeURIComponent(selectFields)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    });
+    if (!res.ok) break;
+    const data = (await res.json().catch(() => ({}))) as any;
+    const rows = Array.isArray(data?.Result) ? data.Result : [];
+    if (rows.length === 0) break;
+
+    rows.forEach((r: any) => {
+      const rcfeRegisteredId = String(r?.RCFE_Registered_ID || r?.ID || r?.id || '').trim();
+      const rcfeName = String(r?.RCFE_Name || '').trim();
+      const numberOfBeds = String(r?.Number_of_Beds || '').trim() || null;
+      const county = String(r?.RCFE_County || '').trim() || null;
+      const payload: RcfeRegistryRow = { rcfeRegisteredId, rcfeName, numberOfBeds, county };
+      if (rcfeRegisteredId && !byRegisteredId[rcfeRegisteredId]) {
+        byRegisteredId[rcfeRegisteredId] = payload;
+      }
+      const normalizedName = normalizeLookupToken(rcfeName);
+      if (normalizedName && !byName[normalizedName]) {
+        byName[normalizedName] = payload;
+      }
+    });
+
+    if (rows.length < pageSize) break;
+  }
+
+  return { byRegisteredId, byName };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const authHeader = req.headers.get('authorization') || '';
@@ -113,7 +175,9 @@ export async function GET(req: NextRequest) {
     const historyBySignature: Record<string, { lastNumberOfBeds: string | null; lastCounty: string | null; lastUpdatedAt: string | null; lastUpdatedByEmail: string | null }> = {};
     const historyByName: Record<string, { lastNumberOfBeds: string | null; lastCounty: string | null; lastUpdatedAt: string | null; lastUpdatedByEmail: string | null }> = {};
     let progressOverrides: Record<string, { Number_of_Beds?: string | null; RCFE_County?: string | null }> = {};
-    let progressByName: Record<string, { Number_of_Beds?: string | null; RCFE_County?: string | null }> = {};
+    let progressBySignature: Record<string, { Number_of_Beds?: string | null; RCFE_County?: string | null }> = {};
+    let rcfeRegistryByRegisteredId: Record<string, RcfeRegistryRow> = {};
+    let rcfeRegistryByName: Record<string, RcfeRegistryRow> = {};
     try {
       const logsSnap = await adminDb
         .collection('system_note_log')
@@ -158,20 +222,27 @@ export async function GET(req: NextRequest) {
       const rawOverrides = (progressData?.rcfeFieldOverrides || {}) as Record<string, any>;
       const next: Record<string, { Number_of_Beds?: string | null; RCFE_County?: string | null }> = {};
       Object.entries(rawOverrides).forEach(([key, value]) => {
-        const normalizedKey = normalizeLooseKey(key);
+        const normalizedKey = String(key || '').trim().toLowerCase();
         if (!normalizedKey) return;
         const payload = {
           Number_of_Beds: String(value?.Number_of_Beds || '').trim() || null,
           RCFE_County: String(value?.RCFE_County || '').trim() || null,
         };
         next[normalizedKey] = payload;
-        const rawNamePart = String(key || '').split('|')[0] || '';
-        const normalizedName = normalizeLooseKey(rawNamePart);
-        if (normalizedName && !progressByName[normalizedName]) {
-          progressByName[normalizedName] = payload;
+        const signature = normalizeCompositeKey(key);
+        if (signature && !progressBySignature[signature]) {
+          progressBySignature[signature] = payload;
         }
       });
       progressOverrides = next;
+    } catch {
+      // best effort only
+    }
+
+    try {
+      const maps = await fetchRcfeRegistryBedMaps();
+      rcfeRegistryByRegisteredId = maps.byRegisteredId;
+      rcfeRegistryByName = maps.byName;
     } catch {
       // best effort only
     }
@@ -182,7 +253,9 @@ export async function GET(req: NextRequest) {
       historyBySignature,
       historyByName,
       progressOverrides,
-      progressByName,
+      progressBySignature,
+      rcfeRegistryByRegisteredId,
+      rcfeRegistryByName,
       count: statuses.length,
     });
   } catch (error: any) {

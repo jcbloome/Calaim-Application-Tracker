@@ -92,7 +92,7 @@ export default function RcfeMonthlyVerificationPage() {
     `Monthly RCFE Member Verification - ${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}`
   );
   const [monthlyIntro, setMonthlyIntro] = useState(
-    'Hello RCFE Administrator,\n\nPlease review the member roster below and confirm which members are still residing at your RCFE. Reply to this email with any updates or corrections.'
+    'Hello RCFE Administrator,\n\nPlease review the member roster below and reply to confirm both groups: members verified at your RCFE and residents reported as not at the RCFE. Include any corrections or updates in your response.'
   );
   const [isSendingMonthlyTest, setIsSendingMonthlyTest] = useState(false);
   const [isSendingMonthlyBulk, setIsSendingMonthlyBulk] = useState(false);

@@ -80,6 +80,13 @@ interface RcfeProgressOverride {
   RCFE_County?: string | null;
 }
 
+interface RcfeRegistryRecord {
+  rcfeRegisteredId: string;
+  rcfeName: string;
+  numberOfBeds?: string | null;
+  county?: string | null;
+}
+
 type RCFESortField =
   | 'RCFE_Name'
   | 'RCFE_County'
@@ -146,6 +153,11 @@ const normalizeCountyInput = (value: unknown) =>
   toAddressCase(value)
     .replace(/\s+county$/i, '')
     .trim();
+const normalizeRcfeLookupToken = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 const buildRcfeSignature = (name: unknown, street: unknown, city: unknown, zip: unknown) =>
   [name, street, city, zip]
     .map((v) =>
@@ -158,8 +170,7 @@ const buildRcfeSignature = (name: unknown, street: unknown, city: unknown, zip: 
 const normalizeKey = (value: unknown) =>
   String(value || '')
     .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+    .toLowerCase();
 
 export default function RcfeDataToolsPage() {
   const { isAdmin, isLoading } = useAdmin();
@@ -173,14 +184,19 @@ export default function RcfeDataToolsPage() {
   const [rcfeHistoricalBySignature, setRcfeHistoricalBySignature] = useState<Record<string, RcfeHistoricalFallback>>({});
   const [rcfeHistoricalByName, setRcfeHistoricalByName] = useState<Record<string, RcfeHistoricalFallback>>({});
   const [rcfeProgressOverridesByKey, setRcfeProgressOverridesByKey] = useState<Record<string, RcfeProgressOverride>>({});
-  const [rcfeProgressOverridesByName, setRcfeProgressOverridesByName] = useState<Record<string, RcfeProgressOverride>>({});
+  const [rcfeProgressOverridesBySignature, setRcfeProgressOverridesBySignature] = useState<Record<string, RcfeProgressOverride>>({});
+  const [rcfeRegistryById, setRcfeRegistryById] = useState<Record<string, RcfeRegistryRecord>>({});
+  const [rcfeRegistryByName, setRcfeRegistryByName] = useState<Record<string, RcfeRegistryRecord>>({});
   const [search, setSearch] = useState('');
-  const [confirmationFilter, setConfirmationFilter] = useState<'all' | 'confirmed_there' | 'told_not_there' | 'not_confirmed'>('all');
+  const [confirmationFilter, setConfirmationFilter] = useState<
+    'all' | 'rcfe_verified' | 'rcfe_not_verified' | 'confirmed_there' | 'told_not_there' | 'not_confirmed'
+  >('all');
   const [sortField, setSortField] = useState<RCFESortField>('RCFE_Name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [rcfeDrafts, setRcfeDrafts] = useState<Record<string, RcfeDraftFields>>({});
   const [rcfeFieldOverrides, setRcfeFieldOverrides] = useState<Record<string, RcfeDraftFields>>({});
   const [isSavingAll, setIsSavingAll] = useState(false);
+  const [isStopRequested, setIsStopRequested] = useState(false);
   const [updatedRowTimestamps, setUpdatedRowTimestamps] = useState<Record<string, string>>({});
   const [lastPushResult, setLastPushResult] = useState<{
     attempted: number;
@@ -201,6 +217,7 @@ export default function RcfeDataToolsPage() {
   );
   const hasHydratedProgressRef = useRef(false);
   const progressSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopSyncRequestedRef = useRef(false);
   const isHealthNetMember = (member: Member) => {
     const plan = String(member?.CalAIM_MCO || '').trim().toLowerCase();
     return plan.includes('health') && plan.includes('net');
@@ -258,11 +275,66 @@ export default function RcfeDataToolsPage() {
 
       const allMembers = (Array.isArray(data.members) ? data.members : []) as Member[];
       const scoped = allMembers.filter((m) => (isHealthNetMember(m) || isKaiserMember(m)) && isAuthorizedMember(m));
-      setMembers(scoped);
-      if (showLoadedToast) {
-        toast({ title: 'RCFE data loaded', description: `Loaded ${scoped.length} authorized members.` });
+
+      // Hydrate Number_of_Beds directly from RCFE registry API so beds show even when member cache is blank.
+      let hydrated = scoped;
+      try {
+        const rcfeRes = await fetch('/api/rcfe-locations', { cache: 'no-store' });
+        const rcfeData = (await rcfeRes.json().catch(() => ({}))) as any;
+        if (rcfeRes.ok && rcfeData?.success && rcfeData?.data?.rcfesByCounty) {
+          const bedsByRegisteredId: Record<string, string> = {};
+          const bedsByName: Record<string, string> = {};
+          const countyByRegisteredId: Record<string, string> = {};
+          const countyByName: Record<string, string> = {};
+
+          Object.values(rcfeData.data.rcfesByCounty as Record<string, any>).forEach((bucket: any) => {
+            const facilities = Array.isArray(bucket?.facilities) ? bucket.facilities : [];
+            facilities.forEach((rcfe: any) => {
+              const rid = String(rcfe?.registeredId || rcfe?.id || '').trim();
+              const name = normalizeRcfeLookupToken(rcfe?.name || '');
+              const beds = String(rcfe?.capacity || rcfe?.licensedBeds || '').trim();
+              const county = String(rcfe?.county || '').trim();
+              if (beds) {
+                if (rid && !bedsByRegisteredId[rid]) bedsByRegisteredId[rid] = beds;
+                if (name && !bedsByName[name]) bedsByName[name] = beds;
+              }
+              if (county) {
+                if (rid && !countyByRegisteredId[rid]) countyByRegisteredId[rid] = county;
+                if (name && !countyByName[name]) countyByName[name] = county;
+              }
+            });
+          });
+
+          hydrated = scoped.map((member) => {
+            const rid = String(member.RCFE_Registered_ID || '').trim();
+            const nameKey = normalizeRcfeLookupToken(member.RCFE_Name || '');
+            const beds =
+              String(member.Number_of_Beds || '').trim() ||
+              (rid ? bedsByRegisteredId[rid] : '') ||
+              (nameKey ? bedsByName[nameKey] : '') ||
+              '';
+            const county =
+              String(member.RCFE_County || '').trim() ||
+              (rid ? countyByRegisteredId[rid] : '') ||
+              (nameKey ? countyByName[nameKey] : '') ||
+              '';
+            if (!beds && !county) return member;
+            return {
+              ...member,
+              Number_of_Beds: beds || member.Number_of_Beds,
+              RCFE_County: county || member.RCFE_County,
+            };
+          });
+        }
+      } catch {
+        // Best effort: continue with scoped members if RCFE enrichment fails.
       }
-      return scoped.length;
+
+      setMembers(hydrated);
+      if (showLoadedToast) {
+        toast({ title: 'RCFE data loaded', description: `Loaded ${hydrated.length} authorized members.` });
+      }
+      return hydrated.length;
     },
     [toast]
   );
@@ -329,17 +401,43 @@ export default function RcfeDataToolsPage() {
         };
       });
       setRcfeProgressOverridesByKey(progressNext);
-      const rawProgressByName = (data?.progressByName || {}) as Record<string, any>;
-      const progressByNameNext: Record<string, RcfeProgressOverride> = {};
-      Object.entries(rawProgressByName).forEach(([key, value]) => {
-        const normalizedKey = normalizeKey(key);
+      const rawProgressBySignature = (data?.progressBySignature || {}) as Record<string, any>;
+      const progressBySignatureNext: Record<string, RcfeProgressOverride> = {};
+      Object.entries(rawProgressBySignature).forEach(([key, value]) => {
+        const normalizedKey = String(key || '').trim().toLowerCase();
         if (!normalizedKey) return;
-        progressByNameNext[normalizedKey] = {
+        progressBySignatureNext[normalizedKey] = {
           Number_of_Beds: String(value?.Number_of_Beds || '').trim() || null,
           RCFE_County: String(value?.RCFE_County || '').trim() || null,
         };
       });
-      setRcfeProgressOverridesByName(progressByNameNext);
+      setRcfeProgressOverridesBySignature(progressBySignatureNext);
+      const rawRegistryById = (data?.rcfeRegistryByRegisteredId || {}) as Record<string, any>;
+      const registryByIdNext: Record<string, RcfeRegistryRecord> = {};
+      Object.entries(rawRegistryById).forEach(([key, value]) => {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) return;
+        registryByIdNext[normalizedKey] = {
+          rcfeRegisteredId: normalizedKey,
+          rcfeName: String(value?.rcfeName || '').trim(),
+          numberOfBeds: String(value?.numberOfBeds || '').trim() || null,
+          county: String(value?.county || '').trim() || null,
+        };
+      });
+      setRcfeRegistryById(registryByIdNext);
+      const rawRegistryByName = (data?.rcfeRegistryByName || {}) as Record<string, any>;
+      const registryByNameNext: Record<string, RcfeRegistryRecord> = {};
+      Object.entries(rawRegistryByName).forEach(([key, value]) => {
+        const normalizedKey = normalizeKey(key);
+        if (!normalizedKey) return;
+        registryByNameNext[normalizedKey] = {
+          rcfeRegisteredId: String(value?.rcfeRegisteredId || '').trim(),
+          rcfeName: String(value?.rcfeName || '').trim(),
+          numberOfBeds: String(value?.numberOfBeds || '').trim() || null,
+          county: String(value?.county || '').trim() || null,
+        };
+      });
+      setRcfeRegistryByName(registryByNameNext);
     } catch {
       // best effort only
     }
@@ -490,21 +588,34 @@ export default function RcfeDataToolsPage() {
   const getProgressOverrideForRow = (row: RCFEDirectoryRow): RcfeProgressOverride | null => {
     const key = normalizeKey(row.key);
     if (key && rcfeProgressOverridesByKey[key]) return rcfeProgressOverridesByKey[key];
-    const byNameKey = normalizeKey(row.RCFE_Name);
+    const signature = buildRcfeSignature(row.RCFE_Name, row.RCFE_Street, row.RCFE_City, row.RCFE_Zip);
+    if (!signature) return null;
+    return rcfeProgressOverridesBySignature[signature] || null;
+  };
+
+  const getRegistryRecordForRow = (row: RCFEDirectoryRow): RcfeRegistryRecord | null => {
+    for (const rid of row.rcfeRegisteredIds) {
+      const key = String(rid || '').trim();
+      if (!key) continue;
+      const rec = rcfeRegistryById[key];
+      if (rec) return rec;
+    }
+    const byNameKey = normalizeRcfeLookupToken(row.RCFE_Name);
     if (!byNameKey) return null;
-    return rcfeProgressOverridesByName[byNameKey] || null;
+    return rcfeRegistryByName[byNameKey] || null;
   };
 
   const getBaseDraft = (row: RCFEDirectoryRow): RcfeDraftFields => {
     const persisted = getPersistedStatusForRow(row);
     const history = getHistoricalFallbackForRow(row);
     const progress = getProgressOverrideForRow(row);
+    const registry = getRegistryRecordForRow(row);
     return {
-    RCFE_County: row.RCFE_County || String(persisted?.lastCounty || history?.lastCounty || progress?.RCFE_County || '').trim(),
+    RCFE_County: row.RCFE_County || String(registry?.county || persisted?.lastCounty || history?.lastCounty || progress?.RCFE_County || '').trim(),
     RCFE_Administrator: row.RCFE_Administrator,
     RCFE_Administrator_Email: row.RCFE_Administrator_Email,
     RCFE_Administrator_Phone: row.RCFE_Administrator_Phone,
-    Number_of_Beds: row.Number_of_Beds || String(persisted?.lastNumberOfBeds || history?.lastNumberOfBeds || progress?.Number_of_Beds || '').trim(),
+    Number_of_Beds: row.Number_of_Beds || String(registry?.numberOfBeds || persisted?.lastNumberOfBeds || history?.lastNumberOfBeds || progress?.Number_of_Beds || '').trim(),
   };
   };
 
@@ -512,12 +623,30 @@ export default function RcfeDataToolsPage() {
     const base = getBaseDraft(row);
     const persisted = rcfeFieldOverrides[row.key];
     const inSession = rcfeDrafts[row.key];
+    const pickValue = (sessionValue: unknown, persistedValue: unknown, baseValue: unknown) => {
+      if (sessionValue !== undefined) return String(sessionValue ?? '');
+      const persistedText = String(persistedValue ?? '').trim();
+      if (persistedText) return persistedText;
+      return String(baseValue ?? '');
+    };
     return {
-      RCFE_County: normalizeCountyInput(inSession?.RCFE_County ?? persisted?.RCFE_County ?? base.RCFE_County),
-      RCFE_Administrator: normalizeAdminName(inSession?.RCFE_Administrator ?? persisted?.RCFE_Administrator ?? base.RCFE_Administrator),
-      RCFE_Administrator_Email: inSession?.RCFE_Administrator_Email ?? persisted?.RCFE_Administrator_Email ?? base.RCFE_Administrator_Email,
-      RCFE_Administrator_Phone: inSession?.RCFE_Administrator_Phone ?? persisted?.RCFE_Administrator_Phone ?? base.RCFE_Administrator_Phone,
-      Number_of_Beds: inSession?.Number_of_Beds ?? persisted?.Number_of_Beds ?? base.Number_of_Beds,
+      RCFE_County: normalizeCountyInput(
+        pickValue(inSession?.RCFE_County, persisted?.RCFE_County, base.RCFE_County)
+      ),
+      RCFE_Administrator: normalizeAdminName(
+        pickValue(inSession?.RCFE_Administrator, persisted?.RCFE_Administrator, base.RCFE_Administrator)
+      ),
+      RCFE_Administrator_Email: pickValue(
+        inSession?.RCFE_Administrator_Email,
+        persisted?.RCFE_Administrator_Email,
+        base.RCFE_Administrator_Email
+      ),
+      RCFE_Administrator_Phone: pickValue(
+        inSession?.RCFE_Administrator_Phone,
+        persisted?.RCFE_Administrator_Phone,
+        base.RCFE_Administrator_Phone
+      ),
+      Number_of_Beds: pickValue(inSession?.Number_of_Beds, persisted?.Number_of_Beds, base.Number_of_Beds),
     };
   };
 
@@ -563,7 +692,10 @@ export default function RcfeDataToolsPage() {
       const confirmedThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'there').length;
       const toldNotThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'not_there').length;
       const unresolvedCount = Math.max(0, row.members.length - confirmedThereCount - toldNotThereCount);
+      const rcfeVerified = row.members.length > 0 && unresolvedCount === 0;
 
+      if (confirmationFilter === 'rcfe_verified' && !rcfeVerified) return false;
+      if (confirmationFilter === 'rcfe_not_verified' && rcfeVerified) return false;
       if (confirmationFilter === 'confirmed_there' && confirmedThereCount === 0) return false;
       if (confirmationFilter === 'told_not_there' && toldNotThereCount === 0) return false;
       if (confirmationFilter === 'not_confirmed' && unresolvedCount === 0) return false;
@@ -590,11 +722,11 @@ export default function RcfeDataToolsPage() {
       const bv = String((b as any)[sortField] || '').toLowerCase();
       return av.localeCompare(bv) * dir;
     });
-  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesByName]);
+  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesBySignature, rcfeRegistryById, rcfeRegistryByName]);
 
   const editedRows = useMemo(
     () => rcfeRows.filter((row) => hasDraftChanges(row)),
-    [rcfeRows, rcfeDrafts, rcfeFieldOverrides, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesByName]
+    [rcfeRows, rcfeDrafts, rcfeFieldOverrides, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesBySignature, rcfeRegistryById, rcfeRegistryByName]
   );
   const countyBackfillRows = useMemo(
     () =>
@@ -609,7 +741,7 @@ export default function RcfeDataToolsPage() {
         if (persistedCounty && persistedCounty.toLowerCase() === county.toLowerCase()) return false;
         return true;
       }),
-    [rcfeRows, rcfeDrafts, rcfeFieldOverrides, updatedRowTimestamps, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesByName]
+    [rcfeRows, rcfeDrafts, rcfeFieldOverrides, updatedRowTimestamps, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesBySignature, rcfeRegistryById, rcfeRegistryByName]
   );
   const rowsPendingPush = useMemo(() => {
     const byKey = new Map<string, RCFEDirectoryRow>();
@@ -628,13 +760,15 @@ export default function RcfeDataToolsPage() {
       rcfeRows.filter((row) => {
         if (String(row.Number_of_Beds || '').trim()) return true;
         const persisted = getPersistedStatusForRow(row);
+        const registry = getRegistryRecordForRow(row);
+        if (String(registry?.numberOfBeds || '').trim()) return true;
         if (String(persisted?.lastNumberOfBeds || '').trim()) return true;
         const history = getHistoricalFallbackForRow(row);
         if (String(history?.lastNumberOfBeds || '').trim()) return true;
         const progress = getProgressOverrideForRow(row);
         return Boolean(String(progress?.Number_of_Beds || '').trim());
       }).length,
-    [rcfeRows, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesByName]
+    [rcfeRows, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesBySignature, rcfeRegistryById, rcfeRegistryByName]
   );
   const memberVerificationSummary = useMemo(() => {
     const uniqueMemberIds = new Set<string>();
@@ -667,6 +801,39 @@ export default function RcfeDataToolsPage() {
       unverified,
     };
   }, [rcfeRows, memberPresenceStatus]);
+  const notAtRcfeMembers = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: Array<{
+      memberId: string;
+      memberName: string;
+      rcfeName: string;
+      rcfeLocation: string;
+      rcfeBeds: string;
+      verifiedAt: string;
+      details: string;
+    }> = [];
+
+    rcfeRows.forEach((row) => {
+      row.members.forEach((member) => {
+        const memberId = String(member.id || '').trim();
+        if (!memberId) return;
+        if (memberPresenceStatus[memberId] !== 'not_there') return;
+        if (seen.has(memberId)) return;
+        seen.add(memberId);
+        rows.push({
+          memberId,
+          memberName: String(member.name || memberId).trim(),
+          rcfeName: String(row.RCFE_Name || 'Unknown RCFE').trim(),
+          rcfeLocation: [String(row.RCFE_Street || '').trim(), String(row.RCFE_City_RCFE_Zip || '').trim()].filter(Boolean).join(', '),
+          rcfeBeds: String(getDraft(row).Number_of_Beds || '').trim() || 'unknown',
+          verifiedAt: formatDateTimeSafe(memberVerifiedAt[memberId]),
+          details: String(memberExtraDetails[memberId] || '').trim(),
+        });
+      });
+    });
+
+    return rows.sort((a, b) => a.memberName.localeCompare(b.memberName));
+  }, [rcfeRows, memberPresenceStatus, memberVerifiedAt, memberExtraDetails]);
 
   const handleSort = (field: RCFESortField) => {
     if (sortField === field) {
@@ -698,6 +865,24 @@ export default function RcfeDataToolsPage() {
         .join(', ');
 
       const idToken = await auth.currentUser.getIdToken();
+      const updatesPayload: Record<string, string> = {
+        RCFE_Name: normalizedRcfeName,
+        RCFE_Administrator: draft.RCFE_Administrator,
+        RCFE_Administrator_Email: draft.RCFE_Administrator_Email,
+        RCFE_Administrator_Phone: draft.RCFE_Administrator_Phone,
+        RCFE_Street: normalizedStreet,
+        RCFE_City: normalizedCity,
+        RCFE_Zip: normalizedZip,
+        RCFE_Address: normalizedAddress,
+      };
+      // Safety: never send empty bed counts (prevents accidental Caspio clearing).
+      if (String(draft.Number_of_Beds || '').trim()) {
+        updatesPayload.Number_of_Beds = String(draft.Number_of_Beds || '').trim();
+      }
+      if (String(draft.RCFE_County || '').trim()) {
+        updatesPayload.RCFE_County = String(draft.RCFE_County || '').trim();
+      }
+
       const res = await fetch('/api/admin/rcfe-directory/upsert', {
         method: 'POST',
         headers: {
@@ -707,14 +892,7 @@ export default function RcfeDataToolsPage() {
         body: JSON.stringify({
           memberIds: row.memberIds,
           rcfeRegisteredIds: row.rcfeRegisteredIds,
-          updates: {
-            RCFE_Name: normalizedRcfeName,
-            ...draft,
-            RCFE_Street: normalizedStreet,
-            RCFE_City: normalizedCity,
-            RCFE_Zip: normalizedZip,
-            RCFE_Address: normalizedAddress,
-          },
+          updates: updatesPayload,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -733,7 +911,7 @@ export default function RcfeDataToolsPage() {
                 RCFE_Administrator_Email: draft.RCFE_Administrator_Email,
                 RCFE_Admin_Email: draft.RCFE_Administrator_Email,
                 RCFE_Administrator_Phone: draft.RCFE_Administrator_Phone,
-                Number_of_Beds: draft.Number_of_Beds,
+                Number_of_Beds: draft.Number_of_Beds || member.Number_of_Beds,
                 RCFE_Street: normalizedStreet || member.RCFE_Street,
                 RCFE_City: normalizedCity || member.RCFE_City,
                 RCFE_Zip: normalizedZip || member.RCFE_Zip,
@@ -757,11 +935,16 @@ export default function RcfeDataToolsPage() {
     }
 
     setIsSavingAll(true);
+    stopSyncRequestedRef.current = false;
+    setIsStopRequested(false);
 
     const attempted = rows.length;
     let success = 0;
     let failed = 0;
     for (const row of rows) {
+      if (stopSyncRequestedRef.current) {
+        break;
+      }
       try {
         await saveRow(row);
         success += 1;
@@ -773,6 +956,9 @@ export default function RcfeDataToolsPage() {
     }
 
     setIsSavingAll(false);
+    const cancelled = stopSyncRequestedRef.current;
+    stopSyncRequestedRef.current = false;
+    setIsStopRequested(false);
     setLastPushResult({
       attempted,
       success,
@@ -780,7 +966,13 @@ export default function RcfeDataToolsPage() {
       at: new Date().toISOString(),
     });
 
-    if (failed === 0) {
+    if (cancelled) {
+      toast({
+        title: 'Sync stopped',
+        description: `Processed ${success + failed}/${attempted} rows before stopping.`,
+        variant: failed > 0 ? 'destructive' : 'default',
+      });
+    } else if (failed === 0) {
       toast({ title: 'All edits synced', description: `Successfully pushed ${success} RCFE row(s).` });
     } else {
       toast({
@@ -796,6 +988,12 @@ export default function RcfeDataToolsPage() {
   const pushAllEdited = useCallback(async () => {
     await syncEditedRows(rowsPendingPush);
   }, [rowsPendingPush, syncEditedRows]);
+
+  const stopSync = useCallback(() => {
+    if (!isSavingAll) return;
+    stopSyncRequestedRef.current = true;
+    setIsStopRequested(true);
+  }, [isSavingAll]);
 
   const setMemberPresence = useCallback((memberId: string, status: 'there' | 'not_there', checked: boolean) => {
     const key = String(memberId || '').trim();
@@ -1051,7 +1249,9 @@ export default function RcfeDataToolsPage() {
               <Select
                 value={confirmationFilter}
                 onValueChange={(value) =>
-                  setConfirmationFilter(value as 'all' | 'confirmed_there' | 'told_not_there' | 'not_confirmed')
+                  setConfirmationFilter(
+                    value as 'all' | 'rcfe_verified' | 'rcfe_not_verified' | 'confirmed_there' | 'told_not_there' | 'not_confirmed'
+                  )
                 }
               >
                 <SelectTrigger className="w-[220px]">
@@ -1059,9 +1259,11 @@ export default function RcfeDataToolsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All RCFEs</SelectItem>
-                  <SelectItem value="confirmed_there">Has Confirmed There Members</SelectItem>
-                  <SelectItem value="told_not_there">Has Told Not There Members</SelectItem>
-                  <SelectItem value="not_confirmed">Has Unconfirmed Members</SelectItem>
+                  <SelectItem value="rcfe_verified">RCFE Verified (all members resolved)</SelectItem>
+                  <SelectItem value="rcfe_not_verified">RCFE Not Verified (has unverified members)</SelectItem>
+                  <SelectItem value="confirmed_there">Members Verified There</SelectItem>
+                  <SelectItem value="told_not_there">Members Verified Not There</SelectItem>
+                  <SelectItem value="not_confirmed">Members Unverified</SelectItem>
                 </SelectContent>
               </Select>
               <Badge variant="outline">{visibleRows.length} RCFEs</Badge>
@@ -1103,8 +1305,37 @@ export default function RcfeDataToolsPage() {
               <Button onClick={pushAllEdited} disabled={isSavingAll || rowsPendingPush.length === 0}>
                 {isSavingAll ? 'Syncing rows...' : `Push All Edited (${rowsPendingPush.length})`}
               </Button>
+              {isSavingAll ? (
+                <Button type="button" variant="destructive" onClick={stopSync}>
+                  {isStopRequested ? 'Stopping…' : 'Stop Sync'}
+                </Button>
+              ) : null}
             </div>
           </div>
+
+          {confirmationFilter === 'told_not_there' && notAtRcfeMembers.length > 0 ? (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3">
+              <div className="text-sm font-semibold text-red-800">
+                Not at RCFE follow-up list ({notAtRcfeMembers.length})
+              </div>
+              <div className="mt-2 max-h-48 overflow-y-auto space-y-2 pr-1">
+                {notAtRcfeMembers.map((entry) => (
+                  <div key={entry.memberId} className="rounded border border-red-100 bg-white p-2 text-xs">
+                    <div className="font-medium text-red-900">{entry.memberName}</div>
+                    <div className="text-red-800">RCFE: {entry.rcfeName}</div>
+                    <div className="text-red-700">
+                      {entry.rcfeLocation || 'RCFE location unavailable'}
+                    </div>
+                    <div className="text-red-700">RCFE Beds: {entry.rcfeBeds}</div>
+                    <div className="text-red-700">
+                      Last Verified: {entry.verifiedAt || 'Not recorded'}
+                    </div>
+                    {entry.details ? <div className="text-red-700">Notes: {entry.details}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="w-full overflow-x-auto pb-2">
               <Table className="min-w-[1240px]">
