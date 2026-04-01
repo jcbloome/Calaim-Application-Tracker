@@ -340,6 +340,12 @@ function StaffAssignmentDropdown({
             'MMM d, yyyy h:mm a'
         )
         : 'Date unavailable';
+    const caspioSentByLabel = String(
+      (application as any)?.caspioSentByName ||
+      (application as any)?.caspioSentBy ||
+      (application as any)?.caspioSentByEmail ||
+      ''
+    ).trim();
 
     return (
       <div className="space-y-1">
@@ -729,6 +735,7 @@ function PushToCaspioDialog({
     buttonClassName?: string;
 }) {
     const firestore = useFirestore();
+    const { user } = useUser();
     const { toast } = useToast();
     const [isOpen, setIsOpen] = useState(false);
     const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
@@ -819,6 +826,9 @@ function PushToCaspioDialog({
             ).catch(() => undefined);
         }
         try {
+            const pushedByName = String(user?.displayName || user?.email || 'Admin').trim();
+            const pushedByEmail = String(user?.email || '').trim();
+            const pushedByUid = String(user?.uid || '').trim();
             const response = await fetch('/api/admin/caspio/push-cs-summary', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -851,6 +861,9 @@ function PushToCaspioDialog({
                         {
                             caspioSent: true,
                             caspioSentDate: serverTimestamp(),
+                            caspioSentByName: pushedByName || null,
+                            caspioSentByEmail: pushedByEmail || null,
+                            caspioSentByUid: pushedByUid || null,
                             caspioPushLastStatus: 'success',
                             caspioPushLastError: null,
                             caspioPushLastErrorCode: null,
@@ -944,6 +957,9 @@ function PushToCaspioDialog({
                 {
                     caspioSent: false,
                     caspioSentDate: null,
+                    caspioSentByName: null,
+                    caspioSentByEmail: null,
+                    caspioSentByUid: null,
                     caspioPushLastStatus: 'reset',
                     caspioPushLastError: null,
                     caspioPushLastErrorCode: null,
@@ -1340,7 +1356,9 @@ function AdminActions({ application }: { application: Application }) {
                         <div className="flex items-center justify-center gap-2 text-xs text-green-700">
                             <CheckCircle2 className="h-4 w-4" />
                             <span>Verified sent to Caspio</span>
-                            <span className="text-muted-foreground">• {caspioSentLabel}</span>
+                            <span className="text-muted-foreground">
+                              • {caspioSentByLabel ? `${caspioSentByLabel} • ` : ''}{caspioSentLabel}
+                            </span>
                         </div>
                     )}
                     
@@ -3170,6 +3188,17 @@ function ApplicationDetailPageContent() {
   const buildStorageFileName = (standardFileName: string) =>
     standardFileName.replace(/[^\w.-]/g, '_');
 
+  const normalizeLooseFormName = (value: unknown) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+
+  const isWaiverFormName = (value: unknown) => {
+    const normalized = normalizeLooseFormName(value);
+    return normalized.includes('waiver') && normalized.includes('authoriz');
+  };
+
   const getComponentStatus = (componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
     const equivalentNames = (() => {
       const names = new Set<string>([componentKey]);
@@ -3186,7 +3215,11 @@ function ApplicationDetailPageContent() {
 
     const matchingForms = (application?.forms || []).filter((f) => {
       const name = String(f?.name || '').trim();
-      return equivalentNames.has(name);
+      if (equivalentNames.has(name)) return true;
+      if (componentKey === 'Waivers & Authorizations' || componentKey === 'Waivers') {
+        return isWaiverFormName(name);
+      }
+      return false;
     });
 
     if (componentKey === 'Eligibility Check') {
@@ -3208,6 +3241,16 @@ function ApplicationDetailPageContent() {
     }
 
     const statuses = matchingForms.map((f) => String(f?.status || '').trim().toLowerCase());
+    const hasRevisionRequest = matchingForms.some((form: any) => {
+      const status = String(form?.status || '').trim().toLowerCase();
+      if (status === 'pending' || status === 'requires revision' || status === 'rejected') return true;
+      const revisionRequestedAt = String(form?.revisionRequestedAt || '').trim();
+      const revisionRequestedReason = String(form?.revisionRequestedReason || '').trim();
+      return Boolean(revisionRequestedAt || revisionRequestedReason);
+    });
+    if (hasRevisionRequest) {
+      return 'Pending';
+    }
     const hasPendingLikeStatus = statuses.some((status) =>
       status === 'pending' || status === 'requires revision' || status === 'rejected'
     );
@@ -3497,15 +3540,21 @@ function ApplicationDetailPageContent() {
     formStatusMap.set('Waivers', formStatusMap.get('Waivers & Authorizations') as any);
   }
   const waiverAliasNames = new Set(['Waivers & Authorizations', 'Waivers']);
-  const waiverAliasForms = (application.forms || []).filter((form: any) =>
-    waiverAliasNames.has(String(form?.name || '').trim())
-  ) as any[];
+  const waiverAliasForms = (application.forms || []).filter((form: any) => {
+    const formName = String(form?.name || '').trim();
+    return waiverAliasNames.has(formName) || isWaiverFormName(formName);
+  }) as any[];
   const waiverAliasStatuses = waiverAliasForms.map((form) => String(form?.status || '').trim().toLowerCase());
   const waiverHasPendingLikeStatus = waiverAliasStatuses.some(
     (status) => status === 'pending' || status === 'requires revision' || status === 'rejected'
   );
   const waiverHasCompletedStatus = waiverAliasStatuses.some((status) => status === 'completed');
-  const waiverIsCompleted = waiverHasCompletedStatus && !waiverHasPendingLikeStatus;
+  const waiverHasRevisionRequest = waiverAliasForms.some((form: any) => {
+    const status = String(form?.status || '').trim().toLowerCase();
+    if (status === 'pending' || status === 'requires revision' || status === 'rejected') return true;
+    return Boolean(String(form?.revisionRequestedAt || '').trim() || String(form?.revisionRequestedReason || '').trim());
+  });
+  const waiverIsCompleted = waiverHasCompletedStatus && !waiverHasPendingLikeStatus && !waiverHasRevisionRequest;
   const waiverSourceForm = (() => {
     if (waiverIsCompleted) {
       return waiverAliasForms.find((form) => String(form?.status || '').trim().toLowerCase() === 'completed') || null;
@@ -3569,6 +3618,59 @@ function ApplicationDetailPageContent() {
         'MMM d, yyyy h:mm a'
       )
     : '';
+  const caspioSentByName = String(
+    (application as any)?.caspioSentByName ||
+    (application as any)?.caspioSentBy ||
+    (application as any)?.caspioSentByEmail ||
+    ''
+  ).trim();
+  const memberFirstNameDisplay = String(
+    (application as any)?.memberFirstName ||
+    (application as any)?.Member_First_Name ||
+    ''
+  ).trim();
+  const memberLastNameDisplay = String(
+    (application as any)?.memberLastName ||
+    (application as any)?.Member_Last_Name ||
+    ''
+  ).trim();
+  const memberNameDisplay =
+    `${memberFirstNameDisplay} ${memberLastNameDisplay}`.trim() ||
+    String((application as any)?.memberName || '').trim() ||
+    '—';
+  const memberMrnDisplay =
+    String(
+      (application as any)?.memberMrn ||
+      (application as any)?.medicalRecordNumber ||
+      (application as any)?.mrn ||
+      (application as any)?.Member_MRN ||
+      ''
+    ).trim() || '—';
+  const healthPlanDisplay =
+    String(
+      (application as any)?.healthPlan ||
+      (application as any)?.Health_Plan ||
+      (application as any)?.health_plan ||
+      ''
+    ).trim() || '—';
+  const pathwayDisplay =
+    String(
+      (application as any)?.pathway ||
+      (application as any)?.Pathway ||
+      ''
+    ).trim() || '—';
+  const memberDobDisplay = (() => {
+    const rawDob = String(
+      (application as any)?.memberDob ||
+      (application as any)?.memberDOB ||
+      (application as any)?.dob ||
+      (application as any)?.Date_of_Birth ||
+      ''
+    ).trim();
+    if (!rawDob) return '—';
+    const parsedDob = new Date(rawDob);
+    return Number.isNaN(parsedDob.getTime()) ? rawDob : format(parsedDob, 'PPP');
+  })();
   
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
@@ -3838,12 +3940,14 @@ function ApplicationDetailPageContent() {
       let found = false;
       const updatedForms = (application.forms || []).map((form: any) => {
         const currentName = String(form?.name || '').trim();
+        const requestedName = String(formName || '').trim();
         const isWaiversAlias =
-          (currentName === 'Waivers' && String(formName || '').trim() === 'Waivers & Authorizations') ||
-          (currentName === 'Waivers & Authorizations' && String(formName || '').trim() === 'Waivers');
-        if (currentName !== formName && !isWaiversAlias) return form;
+          (currentName === 'Waivers' && requestedName === 'Waivers & Authorizations') ||
+          (currentName === 'Waivers & Authorizations' && requestedName === 'Waivers') ||
+          (isWaiverFormName(currentName) && isWaiverFormName(requestedName));
+        if (currentName !== requestedName && !isWaiversAlias) return form;
         found = true;
-        const isWaiversForm = String(formName || '').trim() === 'Waivers & Authorizations';
+        const isWaiversForm = isWaiverFormName(requestedName);
         const existingHistory = Array.isArray((form as any)?.revisionHistory)
           ? ((form as any).revisionHistory as any[])
           : [];
@@ -3915,7 +4019,7 @@ function ApplicationDetailPageContent() {
         pendingDocReviewUpdatedAt: serverTimestamp(),
       };
 
-      if (formName === 'Waivers & Authorizations') {
+      if (isWaiverFormName(formName)) {
         patch.choice = null;
         patch.ackHipaa = false;
         patch.ackLiability = false;
@@ -5376,8 +5480,14 @@ function ApplicationDetailPageContent() {
                     )}
                     <span>{staffAssigned ? `Staff Assigned: ${assignedStaffName || 'Assigned'}` : 'Staff Assigned: Pending assignment'}</span>
                   </div>
-                  {caspioPushed && caspioSentDateLabel ? (
-                    <div className="text-xs text-muted-foreground pl-7">{caspioSentDateLabel}</div>
+                  {caspioPushed ? (
+                    <div className="text-xs text-muted-foreground pl-7">
+                      {caspioSentByName && caspioSentDateLabel
+                        ? `${caspioSentByName} • ${caspioSentDateLabel}`
+                        : caspioSentByName
+                          ? caspioSentByName
+                          : caspioSentDateLabel || 'Date unavailable'}
+                    </div>
                   ) : null}
                   <div
                     className={cn(
@@ -5857,28 +5967,23 @@ function ApplicationDetailPageContent() {
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <div>
                         <span className="font-medium">Member:</span>{' '}
-                        {`${String(application?.memberFirstName || '').trim()} ${String(application?.memberLastName || '').trim()}`.trim() || '—'}
+                        {memberNameDisplay}
                       </div>
                       <div>
                         <span className="font-medium">MRN:</span>{' '}
-                        {String((application as any)?.memberMrn || '').trim() || '—'}
+                        {memberMrnDisplay}
                       </div>
                       <div>
                         <span className="font-medium">Health Plan:</span>{' '}
-                        {String(application?.healthPlan || '').trim() || '—'}
+                        {healthPlanDisplay}
                       </div>
                       <div>
                         <span className="font-medium">Pathway:</span>{' '}
-                        {String(application?.pathway || '').trim() || '—'}
+                        {pathwayDisplay}
                       </div>
                       <div>
                         <span className="font-medium">DOB:</span>{' '}
-                        {(() => {
-                          const rawDob = String((application as any)?.memberDob || '').trim();
-                          if (!rawDob) return '—';
-                          const parsedDob = new Date(rawDob);
-                          return Number.isNaN(parsedDob.getTime()) ? rawDob : format(parsedDob, 'PPP');
-                        })()}
+                        {memberDobDisplay}
                       </div>
                     </div>
                   </div>
@@ -5904,85 +6009,88 @@ function ApplicationDetailPageContent() {
                       </SelectContent>
                     </Select>
 
-                    {(application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && (
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium">Reason</Label>
-                        <Select
-                          value={(application as any)?.calaimNotEligibleReason || ''}
-                          onValueChange={(value) => {
-                            const nextReason = value || '';
-                            const nextFlags = {
-                              calaimNotEligibleSwitchingProviders: nextReason === 'Switching Providers by end of Month',
-                              calaimNotEligibleHasSoc: nextReason === 'Has SOC',
-                              calaimNotEligibleOutOfCounty: nextReason === 'Not in our contracted CalAIM County',
-                              calaimNotEligibleOther: nextReason === 'Other',
-                              calaimNotEligibleReason: nextReason,
-                              calaimNotEligibleOtherReason:
-                                nextReason === 'Other' ? (application as any)?.calaimNotEligibleOtherReason || '' : '',
-                            };
-                            setApplication((prev) => (prev ? { ...prev, ...nextFlags } : null));
-                            updateNotEligibleFlags(nextFlags);
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Reason</Label>
+                      <Select
+                        value={(application as any)?.calaimNotEligibleReason || ''}
+                        onValueChange={(value) => {
+                          const nextReason = value || '';
+                          const nextFlags = {
+                            calaimNotEligibleSwitchingProviders: nextReason === 'Switching Providers by end of Month',
+                            calaimNotEligibleHasSoc: nextReason === 'Has SOC',
+                            calaimNotEligibleOutOfCounty: nextReason === 'Not in our contracted CalAIM County',
+                            calaimNotEligibleOther: nextReason === 'Other',
+                            calaimNotEligibleReason: nextReason,
+                            calaimNotEligibleOtherReason:
+                              nextReason === 'Other' ? (application as any)?.calaimNotEligibleOtherReason || '' : '',
+                          };
+                          setApplication((prev) => (prev ? { ...prev, ...nextFlags } : null));
+                          updateNotEligibleFlags(nextFlags);
+                        }}
+                        disabled={isUpdatingTracking || (application as any)?.calaimTrackingStatus !== 'Not CalAIM Eligible'}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select a reason" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {notEligibleReasonOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {(application as any)?.calaimTrackingStatus !== 'Not CalAIM Eligible' ? (
+                        <p className="text-xs text-muted-foreground">
+                          Reason fields are available when CalAIM Status is set to Not CalAIM Eligible.
+                        </p>
+                      ) : null}
+                      {(application as any)?.calaimNotEligibleReason === 'Other' && (
+                        <Textarea
+                          id="not-eligible-other-reason"
+                          rows={2}
+                          placeholder="Describe the reason..."
+                          value={(application as any)?.calaimNotEligibleOtherReason || ''}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setApplication((prev) => (prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null));
                           }}
+                          onBlur={(event) =>
+                            updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
+                          }
+                          disabled={isUpdatingTracking || (application as any)?.calaimTrackingStatus !== 'Not CalAIM Eligible'}
+                        />
+                      )}
+                      <div className="space-y-2 pt-2">
+                        <Label className="text-sm font-medium">Note to Member (optional)</Label>
+                        <Textarea
+                          rows={3}
+                          placeholder="Add a message that explains the eligibility outcome..."
+                          value={(application as any)?.calaimTrackingReason || ''}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setApplication((prev) => (prev ? { ...prev, calaimTrackingReason: nextValue } : null));
+                          }}
+                          onBlur={(event) => updateTrackingReason(event.target.value)}
                           disabled={isUpdatingTracking}
+                        />
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={sendEligibilityNote}
+                          disabled={isSendingEligibilityNote}
                         >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select a reason" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {notEligibleReasonOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {(application as any)?.calaimNotEligibleReason === 'Other' && (
-                          <Textarea
-                            id="not-eligible-other-reason"
-                            rows={2}
-                            placeholder="Describe the reason..."
-                            value={(application as any)?.calaimNotEligibleOtherReason || ''}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setApplication((prev) => (prev ? { ...prev, calaimNotEligibleOtherReason: nextValue } : null));
-                            }}
-                            onBlur={(event) =>
-                              updateNotEligibleFlags({ calaimNotEligibleOtherReason: event.target.value })
-                            }
-                            disabled={isUpdatingTracking}
-                          />
-                        )}
-                        <div className="space-y-2 pt-2">
-                          <Label className="text-sm font-medium">Note to Member (optional)</Label>
-                          <Textarea
-                            rows={3}
-                            placeholder="Add a message that explains the eligibility outcome..."
-                            value={(application as any)?.calaimTrackingReason || ''}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setApplication((prev) => (prev ? { ...prev, calaimTrackingReason: nextValue } : null));
-                            }}
-                            onBlur={(event) => updateTrackingReason(event.target.value)}
-                            disabled={isUpdatingTracking}
-                          />
-                          <Button
-                            variant="outline"
-                            className="w-full"
-                            onClick={sendEligibilityNote}
-                            disabled={isSendingEligibilityNote}
-                          >
-                            {isSendingEligibilityNote ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Sending Note...
-                              </>
-                            ) : (
-                              'Send Note to Referrer'
-                            )}
-                          </Button>
-                        </div>
+                          {isSendingEligibilityNote ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Sending Note...
+                            </>
+                          ) : (
+                            'Send Note to Referrer'
+                          )}
+                        </Button>
                       </div>
-                    )}
+                    </div>
                   </div>
 
                   {eligibilityRequirements.length > 0 && (
