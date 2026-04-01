@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, useUser } from '@/firebase';
@@ -13,7 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-export default function ContinueInvitePage() {
+function ContinueInvitePageContent() {
   const auth = useAuth();
   const { user, isUserLoading } = useUser();
   const router = useRouter();
@@ -156,5 +156,29 @@ export default function ContinueInvitePage() {
         </Card>
       </main>
     </>
+  );
+}
+
+export default function ContinueInvitePage() {
+  return (
+    <Suspense
+      fallback={
+        <>
+          <Header />
+          <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+            <Card className="w-full max-w-md shadow-xl">
+              <CardContent className="py-8">
+                <div className="flex items-center justify-center text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading invite details...
+                </div>
+              </CardContent>
+            </Card>
+          </main>
+        </>
+      }
+    >
+      <ContinueInvitePageContent />
+    </Suspense>
   );
 }

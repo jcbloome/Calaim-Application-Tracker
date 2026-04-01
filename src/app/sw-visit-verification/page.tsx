@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -37,7 +37,8 @@ import {
   Shield,
   Users,
   LogOut,
-  Download
+  Download,
+  Loader2
 } from 'lucide-react';
 
 interface MemberVisitQuestionnaire {
@@ -191,7 +192,7 @@ const StarRating: React.FC<{
   );
 };
 
-export default function SWVisitVerification() {
+function SWVisitVerificationContent() {
   const { user, socialWorkerData, isSocialWorker } = useSocialWorker();
   const { toast } = useToast();
   const auth = useAuth();
@@ -3607,5 +3608,19 @@ export default function SWVisitVerification() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function SWVisitVerification() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      }
+    >
+      <SWVisitVerificationContent />
+    </Suspense>
   );
 }

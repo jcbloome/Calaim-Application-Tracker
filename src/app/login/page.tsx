@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { useAuth, useFirestore } from '@/firebase';
 import {
   signInWithEmailAndPassword,
@@ -29,7 +29,7 @@ import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
 
-export default function LoginPage() {
+function LoginPageContent() {
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
@@ -300,5 +300,20 @@ export default function LoginPage() {
         </Card>
       </main>
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-screen">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <p className="ml-2">Loading session...</p>
+        </div>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }

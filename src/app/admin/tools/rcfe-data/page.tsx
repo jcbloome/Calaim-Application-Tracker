@@ -104,6 +104,8 @@ type RcfeDraftFields = {
   Number_of_Beds: string;
 };
 
+type PresenceStatus = 'there' | 'not_there' | 'temporarily_not_there';
+
 const normalizeAdminName = (value: unknown) =>
   String(value || '')
     .trim()
@@ -173,6 +175,31 @@ const normalizeKey = (value: unknown) =>
     .trim()
     .toLowerCase();
 
+const getPresenceStatusUi = (status: PresenceStatus | '') => {
+  if (status === 'there') {
+    return {
+      label: 'Confirmed There',
+      className: 'bg-green-100 text-green-800 border-green-200',
+    };
+  }
+  if (status === 'not_there') {
+    return {
+      label: 'Told Not There',
+      className: 'bg-red-100 text-red-800 border-red-200',
+    };
+  }
+  if (status === 'temporarily_not_there') {
+    return {
+      label: 'Temporarily Not There',
+      className: 'bg-amber-100 text-amber-900 border-amber-200',
+    };
+  }
+  return {
+    label: 'Unverified',
+    className: 'bg-muted text-muted-foreground border-border',
+  };
+};
+
 export default function RcfeDataToolsPage() {
   const { isAdmin, isLoading } = useAdmin();
   const auth = useAuth();
@@ -190,7 +217,7 @@ export default function RcfeDataToolsPage() {
   const [rcfeRegistryByName, setRcfeRegistryByName] = useState<Record<string, RcfeRegistryRecord>>({});
   const [search, setSearch] = useState('');
   const [confirmationFilter, setConfirmationFilter] = useState<
-    'all' | 'rcfe_verified' | 'rcfe_not_verified' | 'confirmed_there' | 'told_not_there' | 'not_confirmed'
+    'all' | 'rcfe_verified' | 'rcfe_not_verified' | 'confirmed_there' | 'told_not_there' | 'temporarily_not_there' | 'not_confirmed'
   >('all');
   const [sortField, setSortField] = useState<RCFESortField>('RCFE_Name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -205,7 +232,7 @@ export default function RcfeDataToolsPage() {
     failed: number;
     at: string;
   } | null>(null);
-  const [memberPresenceStatus, setMemberPresenceStatus] = useState<Record<string, 'there' | 'not_there'>>({});
+  const [memberPresenceStatus, setMemberPresenceStatus] = useState<Record<string, 'there' | 'not_there' | 'temporarily_not_there'>>({});
   const confirmedStorageKey = 'rcfe-member-presence-status';
   const [memberExtraDetails, setMemberExtraDetails] = useState<Record<string, string>>({});
   const commentsStorageKey = 'rcfe-member-extra-details';
@@ -781,13 +808,15 @@ export default function RcfeDataToolsPage() {
     const filtered = rcfeRows.filter((row) => {
       const confirmedThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'there').length;
       const toldNotThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'not_there').length;
-      const unresolvedCount = Math.max(0, row.members.length - confirmedThereCount - toldNotThereCount);
+      const temporarilyNotThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'temporarily_not_there').length;
+      const unresolvedCount = Math.max(0, row.members.length - confirmedThereCount - toldNotThereCount - temporarilyNotThereCount);
       const rcfeVerified = row.members.length > 0 && unresolvedCount === 0;
 
       if (confirmationFilter === 'rcfe_verified' && !rcfeVerified) return false;
       if (confirmationFilter === 'rcfe_not_verified' && rcfeVerified) return false;
       if (confirmationFilter === 'confirmed_there' && confirmedThereCount === 0) return false;
       if (confirmationFilter === 'told_not_there' && toldNotThereCount === 0) return false;
+      if (confirmationFilter === 'temporarily_not_there' && temporarilyNotThereCount === 0) return false;
       if (confirmationFilter === 'not_confirmed' && unresolvedCount === 0) return false;
 
       if (!needle) return true;
@@ -874,6 +903,7 @@ export default function RcfeDataToolsPage() {
 
     let verifiedThere = 0;
     let notAtRcfe = 0;
+    let temporarilyNotThere = 0;
     let unverified = 0;
 
     uniqueMemberIds.forEach((id) => {
@@ -882,6 +912,8 @@ export default function RcfeDataToolsPage() {
         verifiedThere += 1;
       } else if (status === 'not_there') {
         notAtRcfe += 1;
+      } else if (status === 'temporarily_not_there') {
+        temporarilyNotThere += 1;
       } else {
         unverified += 1;
       }
@@ -891,6 +923,7 @@ export default function RcfeDataToolsPage() {
       total: uniqueMemberIds.size,
       verifiedThere,
       notAtRcfe,
+      temporarilyNotThere,
       unverified,
     };
   }, [rcfeRows, memberPresenceStatus]);
@@ -902,6 +935,7 @@ export default function RcfeDataToolsPage() {
       rcfeName: string;
       rcfeLocation: string;
       rcfeBeds: string;
+      status: PresenceStatus;
       verifiedAt: string;
       verifiedBy: string;
       details: string;
@@ -911,18 +945,22 @@ export default function RcfeDataToolsPage() {
       row.members.forEach((member) => {
         const memberId = String(member.id || '').trim();
         if (!memberId) return;
-        if (memberPresenceStatus[memberId] !== 'not_there') return;
+        if (memberPresenceStatus[memberId] !== 'not_there' && memberPresenceStatus[memberId] !== 'temporarily_not_there') return;
         if (seen.has(memberId)) return;
         seen.add(memberId);
+        const status = memberPresenceStatus[memberId] as PresenceStatus;
         rows.push({
           memberId,
           memberName: String(member.name || memberId).trim(),
           rcfeName: String(row.RCFE_Name || 'Unknown RCFE').trim(),
           rcfeLocation: [String(row.RCFE_Street || '').trim(), String(row.RCFE_City_RCFE_Zip || '').trim()].filter(Boolean).join(', '),
           rcfeBeds: String(getDraft(row).Number_of_Beds || '').trim() || 'unknown',
+          status,
           verifiedAt: formatDateTimeSafe(memberVerifiedAt[memberId]),
           verifiedBy: String(memberVerifiedBy[memberId] || '').trim(),
-          details: String(memberExtraDetails[memberId] || '').trim(),
+          details:
+            String(memberExtraDetails[memberId] || '').trim() ||
+            (status === 'temporarily_not_there' ? 'Temporarily away (add note: hospital, etc.)' : ''),
         });
       });
     });
@@ -1206,11 +1244,13 @@ export default function RcfeDataToolsPage() {
     const statusLabel = (value: string) => {
       if (value === 'there') return 'Confirmed There';
       if (value === 'not_there') return 'Told Not There';
+      if (value === 'temporarily_not_there') return 'Temporarily Not There';
       return 'Unverified';
     };
     const there = pendingRcfeEmail.members.filter((m) => m.status === 'there');
     const notThere = pendingRcfeEmail.members.filter((m) => m.status === 'not_there');
-    const unknown = pendingRcfeEmail.members.filter((m) => m.status !== 'there' && m.status !== 'not_there');
+    const temporarilyNotThere = pendingRcfeEmail.members.filter((m) => m.status === 'temporarily_not_there');
+    const unknown = pendingRcfeEmail.members.filter((m) => m.status !== 'there' && m.status !== 'not_there' && m.status !== 'temporarily_not_there');
     const renderMembers = (title: string, list: typeof pendingRcfeEmail.members) =>
       `${title} (${list.length})\n${
         list.length
@@ -1236,16 +1276,18 @@ export default function RcfeDataToolsPage() {
       '',
       renderMembers('Residents Not at RCFE (Told Not There)', notThere),
       '',
+      renderMembers('Temporarily Not There (hospital, etc.)', temporarilyNotThere),
+      '',
       renderMembers('Members Pending Verification', unknown),
     ].join('\n');
   }, [pendingRcfeEmail]);
 
   
 
-  const setMemberPresence = useCallback((memberId: string, status: 'there' | 'not_there', checked: boolean) => {
+  const setMemberPresence = useCallback((memberId: string, status: 'there' | 'not_there' | 'temporarily_not_there', checked: boolean) => {
     const key = String(memberId || '').trim();
     if (!key) return;
-    let previousStatus: 'there' | 'not_there' | undefined;
+    let previousStatus: 'there' | 'not_there' | 'temporarily_not_there' | undefined;
     setMemberPresenceStatus((prev) => {
       previousStatus = prev[key];
       const next = { ...prev };
@@ -1256,7 +1298,7 @@ export default function RcfeDataToolsPage() {
       next[key] = status;
       return next;
     });
-    if (checked && status === 'there' && previousStatus === 'not_there') {
+    if (checked && status === 'there' && (previousStatus === 'not_there' || previousStatus === 'temporarily_not_there')) {
       const stamp = new Date().toLocaleString();
       const note = `Member verified by admin (${stamp})`;
       setMemberExtraDetails((prev) => {
@@ -1275,7 +1317,7 @@ export default function RcfeDataToolsPage() {
     }
   }, [getCurrentVerifierName]);
 
-  const toggleAllRowMembers = useCallback((row: RCFEDirectoryRow, status: 'there' | 'not_there', checked: boolean) => {
+  const toggleAllRowMembers = useCallback((row: RCFEDirectoryRow, status: 'there' | 'not_there' | 'temporarily_not_there', checked: boolean) => {
     setMemberPresenceStatus((prev) => {
       const next = { ...prev };
       row.members.forEach((member) => {
@@ -1312,7 +1354,7 @@ export default function RcfeDataToolsPage() {
     try {
       const raw = window.localStorage.getItem(confirmedStorageKey);
       if (!raw) return;
-      const parsed = JSON.parse(raw) as Record<string, 'there' | 'not_there'>;
+      const parsed = JSON.parse(raw) as Record<string, 'there' | 'not_there' | 'temporarily_not_there'>;
       if (parsed && typeof parsed === 'object') {
         setMemberPresenceStatus(parsed);
       }
@@ -1599,7 +1641,7 @@ export default function RcfeDataToolsPage() {
                 value={confirmationFilter}
                 onValueChange={(value) =>
                   setConfirmationFilter(
-                    value as 'all' | 'rcfe_verified' | 'rcfe_not_verified' | 'confirmed_there' | 'told_not_there' | 'not_confirmed'
+                    value as 'all' | 'rcfe_verified' | 'rcfe_not_verified' | 'confirmed_there' | 'told_not_there' | 'temporarily_not_there' | 'not_confirmed'
                   )
                 }
               >
@@ -1612,6 +1654,7 @@ export default function RcfeDataToolsPage() {
                   <SelectItem value="rcfe_not_verified">RCFE Not Verified (has unverified members)</SelectItem>
                   <SelectItem value="confirmed_there">Members Verified There</SelectItem>
                   <SelectItem value="told_not_there">Members Verified Not There</SelectItem>
+                  <SelectItem value="temporarily_not_there">Members Temporarily Not There</SelectItem>
                   <SelectItem value="not_confirmed">Members Unverified</SelectItem>
                 </SelectContent>
               </Select>
@@ -1631,6 +1674,14 @@ export default function RcfeDataToolsPage() {
                 onClick={() => setConfirmationFilter('told_not_there')}
               >
                 Not at RCFE: {memberVerificationSummary.notAtRcfe}
+              </Button>
+              <Button
+                type="button"
+                variant={confirmationFilter === 'temporarily_not_there' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setConfirmationFilter('temporarily_not_there')}
+              >
+                Temporarily Not There: {memberVerificationSummary.temporarilyNotThere}
               </Button>
               <Button
                 type="button"
@@ -1662,7 +1713,7 @@ export default function RcfeDataToolsPage() {
             </div>
           </div>
 
-          {confirmationFilter === 'told_not_there' && notAtRcfeMembers.length > 0 ? (
+          {(confirmationFilter === 'told_not_there' || confirmationFilter === 'temporarily_not_there') && notAtRcfeMembers.length > 0 ? (
             <div className="rounded-md border border-red-200 bg-red-50 p-3">
               <div className="text-sm font-semibold text-red-800">
                 Not at RCFE follow-up list ({notAtRcfeMembers.length})
@@ -1670,7 +1721,12 @@ export default function RcfeDataToolsPage() {
               <div className="mt-2 max-h-48 overflow-y-auto space-y-2 pr-1">
                 {notAtRcfeMembers.map((entry) => (
                   <div key={entry.memberId} className="rounded border border-red-100 bg-white p-2 text-xs">
-                    <div className="font-medium text-red-900">{entry.memberName}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium text-red-900">{entry.memberName}</div>
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${getPresenceStatusUi(entry.status).className}`}>
+                        {getPresenceStatusUi(entry.status).label}
+                      </span>
+                    </div>
                     <div className="text-red-800">RCFE: {entry.rcfeName}</div>
                     <div className="text-red-700">
                       {entry.rcfeLocation || 'RCFE location unavailable'}
@@ -1761,7 +1817,10 @@ export default function RcfeDataToolsPage() {
                       const rowVerifiedAt = latestVerifierEntry?.verifiedAtRaw || '';
                       const emailListSentAt = String(emailListSentAtByRcfeKey[row.key] || '').trim();
                       const verifiedCount = row.members.filter(
-                        (m) => memberPresenceStatus[m.id] === 'there' || memberPresenceStatus[m.id] === 'not_there'
+                        (m) =>
+                          memberPresenceStatus[m.id] === 'there' ||
+                          memberPresenceStatus[m.id] === 'not_there' ||
+                          memberPresenceStatus[m.id] === 'temporarily_not_there'
                       ).length;
                       const allVerified = row.members.length > 0 && verifiedCount === row.members.length;
                       return (
@@ -1821,6 +1880,16 @@ export default function RcfeDataToolsPage() {
                                     />
                                     <span className="text-xs">Mark all Told Not There</span>
                                   </div>
+                                  <div className="mb-2 flex items-center gap-2">
+                                    <Checkbox
+                                      checked={
+                                        row.members.length > 0 &&
+                                        row.members.every((m) => memberPresenceStatus[m.id] === 'temporarily_not_there')
+                                      }
+                                      onCheckedChange={(checked) => toggleAllRowMembers(row, 'temporarily_not_there', Boolean(checked))}
+                                    />
+                                    <span className="text-xs">Mark all Temporarily Not There</span>
+                                  </div>
                                   <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
                                     {row.members.length > 0 ? (
                                       row.members
@@ -1828,7 +1897,16 @@ export default function RcfeDataToolsPage() {
                                         .sort((a, b) => a.name.localeCompare(b.name))
                                         .map((member) => (
                                           <div key={`${row.key}-${member.id}`} className="space-y-1 rounded-sm border p-2">
-                                            <div className="text-xs leading-tight">{member.name}</div>
+                                            <div className="flex items-center gap-2">
+                                              <div className="text-xs leading-tight">{member.name}</div>
+                                              <span
+                                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                                                  getPresenceStatusUi((memberPresenceStatus[member.id] || '') as PresenceStatus | '').className
+                                                }`}
+                                              >
+                                                {getPresenceStatusUi((memberPresenceStatus[member.id] || '') as PresenceStatus | '').label}
+                                              </span>
+                                            </div>
                                             <div className="text-[11px] text-muted-foreground">
                                               Last Verified: {formatDateTimeSafe(memberVerifiedAt[member.id]) || 'Not yet'}
                                             </div>
@@ -1850,6 +1928,15 @@ export default function RcfeDataToolsPage() {
                                                 />
                                                 <span>Told Not There</span>
                                               </label>
+                                              <label className="flex items-center gap-2 text-[11px]">
+                                                <Checkbox
+                                                  checked={memberPresenceStatus[member.id] === 'temporarily_not_there'}
+                                                  onCheckedChange={(checked) =>
+                                                    setMemberPresence(member.id, 'temporarily_not_there', Boolean(checked))
+                                                  }
+                                                />
+                                                <span>Temporarily Not There</span>
+                                              </label>
                                             </div>
                                             <div className="pt-1">
                                               <Input
@@ -1863,6 +1950,9 @@ export default function RcfeDataToolsPage() {
                                                 placeholder="Extra details from admin..."
                                                 className="h-7 text-[11px]"
                                               />
+                                              <div className="mt-1 text-[10px] text-muted-foreground">
+                                                Add note for temporary status (e.g., hospital, rehab, family leave).
+                                              </div>
                                             </div>
                                           </div>
                                         ))
@@ -1878,6 +1968,8 @@ export default function RcfeDataToolsPage() {
                                 Confirmed There: {row.members.filter((m) => memberPresenceStatus[m.id] === 'there').length}/{row.members.length}
                                 {' | '}
                                 Told Not There: {row.members.filter((m) => memberPresenceStatus[m.id] === 'not_there').length}
+                                {' | '}
+                                Temporarily Not There: {row.members.filter((m) => memberPresenceStatus[m.id] === 'temporarily_not_there').length}
                                 {persistedBeds ? ` | Historical Beds: ${persistedBeds}` : ''}
                                 {!hasPendingChanges && updatedAt ? ` | Updated: ${formatDateTimeSafe(updatedAt)}` : ''}
                               </div>

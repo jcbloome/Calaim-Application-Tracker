@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,7 +19,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
 
 
-export default function SWLoginPage() {
+function SWLoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -355,5 +355,19 @@ export default function SWLoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SWLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      }
+    >
+      <SWLoginPageContent />
+    </Suspense>
   );
 }

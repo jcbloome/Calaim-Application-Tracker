@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { useAuth, useUser, useFirestore } from '@/firebase';
 import { createUserWithEmailAndPassword, updateProfile, type User } from 'firebase/auth';
 import { doc, setDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -53,7 +53,7 @@ async function claimAdminStartedApplications(user: User, firstName?: string, las
   }
 }
 
-export default function SignUpPage() {
+function SignUpPageContent() {
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
@@ -232,6 +232,20 @@ export default function SignUpPage() {
         </Card>
       </main>
     </>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-screen">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      }
+    >
+      <SignUpPageContent />
+    </Suspense>
   );
 }
 
