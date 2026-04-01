@@ -4,12 +4,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider, FieldPath, FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Loader2, AlertCircle, Languages, CheckCircle2, Save } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, Languages, CheckCircle2, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, errorEmitter, FirestorePermissionError, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, getDoc, serverTimestamp, collection, collectionGroup, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, collectionGroup, query, where, getDocs } from 'firebase/firestore';
 import Link from 'next/link';
 
 import Step1 from './Step1';
@@ -72,6 +72,7 @@ function CsSummaryFormComponent() {
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [lastEditedAt, setLastEditedAt] = useState(0);
+  const [isDeletingDraft, setIsDeletingDraft] = useState(false);
   const initialWatchCompleteRef = useRef(false);
   const lastSnapshotRef = useRef('');
 
@@ -631,6 +632,62 @@ function CsSummaryFormComponent() {
     }
   };
 
+  const handleDeleteDraft = async () => {
+    if (isAdminView) return;
+    if (!firestore || !docRef || !internalApplicationId) {
+      toast({
+        variant: 'destructive',
+        title: 'No saved draft',
+        description: 'Save a draft first, then you can delete it.',
+      });
+      return;
+    }
+    const confirmed =
+      typeof window !== 'undefined'
+        ? window.confirm('Delete this draft application? This cannot be undone.')
+        : false;
+    if (!confirmed) return;
+
+    setIsDeletingDraft(true);
+    try {
+      await deleteDoc(docRef);
+      const displayName = user?.displayName || '';
+      const nameParts = displayName.split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      const freshValues: Partial<FormValues> = {
+        referrerFirstName: firstName,
+        referrerLastName: lastName,
+        referrerEmail: user?.email || '',
+      };
+
+      reset(freshValues as FormValues);
+      setInternalApplicationId(null);
+      setShowSkipOption(false);
+      setLastSavedAt(null);
+      setAutoSaveError(null);
+      setHasInteracted(false);
+      setLastEditedAt(0);
+      initialWatchCompleteRef.current = false;
+      lastSnapshotRef.current = JSON.stringify(freshValues);
+      setCurrentStep(1);
+      router.replace('/forms/cs-summary-form');
+
+      toast({
+        title: 'Draft deleted',
+        description: 'Your saved draft was removed.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Delete failed',
+        description: error?.message || 'Could not delete this draft.',
+      });
+    } finally {
+      setIsDeletingDraft(false);
+    }
+  };
+
   if (isUserLoading || (!targetUserId && !isUserLoading && !isAdminView)) {
     return (
       <div className="flex-grow flex items-center justify-center">
@@ -728,6 +785,23 @@ function CsSummaryFormComponent() {
                    >
                      <Save className="mr-2 h-4 w-4" /> Save Draft
                    </Button>
+                   {!isAdminView && internalApplicationId ? (
+                     <Button
+                       type="button"
+                       variant="destructive"
+                       size="sm"
+                       className="sm:w-auto"
+                       onClick={() => void handleDeleteDraft()}
+                       disabled={isDeletingDraft}
+                     >
+                       {isDeletingDraft ? (
+                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                       ) : (
+                         <Trash2 className="mr-2 h-4 w-4" />
+                       )}
+                       Delete Draft
+                     </Button>
+                   ) : null}
               </div>
               <Progress value={progress} className="w-full" />
             </div>

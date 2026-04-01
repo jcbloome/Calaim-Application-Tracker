@@ -89,63 +89,121 @@ function AdminApplicationsPageContent() {
       ]);
 
       // Combine both user and admin applications with unique keys
-      const userApps = userAppsSnapshot.docs.map((doc, index) => ({ 
+      const userApps = userAppsSnapshot.docs.map((doc, index) => ({
         ...doc.data(), 
         id: doc.id,
         uniqueKey: `user-${doc.id}-${index}`,
         source: 'user'
       })) as WithId<Application & FormValues>[];
-      const adminApps = adminAppsSnapshot.docs.map((doc, index) => ({ 
+      const adminApps = adminAppsSnapshot.docs.map((doc, index) => ({
         ...doc.data(), 
         id: doc.id,
         uniqueKey: `admin-${doc.id}-${index}`,
         source: 'admin'
       })) as WithId<Application & FormValues>[];
-      
-      // Remove duplicates by ID and member name, preferring admin source over user source
-      const appsMap = new Map<string, WithId<Application & FormValues>>();
-      const memberNameMap = new Map<string, WithId<Application & FormValues>>();
-      
-      // Add user apps first
-      userApps.forEach(app => {
-        appsMap.set(app.id, app);
-        
-        // Also track by member name to catch duplicates with different IDs
-        const memberName = `${app.memberFirstName || ''} ${app.memberLastName || ''}`.trim().toLowerCase();
-        if (memberName && !memberNameMap.has(memberName)) {
-          memberNameMap.set(memberName, app);
-        }
-      });
-      
-      // Add admin apps (will overwrite user apps with same ID or member name)
-      adminApps.forEach(app => {
-        appsMap.set(app.id, app);
-        
-        const memberName = `${app.memberFirstName || ''} ${app.memberLastName || ''}`.trim().toLowerCase();
-        if (memberName) {
-          // If we already have this member name, prefer the admin version if it's newer
-          const existing = memberNameMap.get(memberName);
-          if (!existing || (app.lastUpdated && existing.lastUpdated && 
-              (app.lastUpdated as Timestamp).toMillis() > (existing.lastUpdated as Timestamp).toMillis())) {
-            memberNameMap.set(memberName, app);
+
+      const normalize = (value: unknown) =>
+        String(value ?? '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+
+      const toMillis = (value: unknown): number => {
+        try {
+          if (value && typeof (value as any).toDate === 'function') {
+            return (value as any).toDate().getTime();
           }
+          if (value && typeof (value as any).toMillis === 'function') {
+            return Number((value as any).toMillis()) || 0;
+          }
+          const ms = new Date(String(value || '')).getTime();
+          return Number.isFinite(ms) ? ms : 0;
+        } catch {
+          return 0;
         }
-      });
-      
-      // Use member name map to get unique applications by member
-      const uniqueApps = Array.from(memberNameMap.values());
-      
-      // Add back any applications that don't have member names
-      appsMap.forEach(app => {
-        const memberName = `${app.memberFirstName || ''} ${app.memberLastName || ''}`.trim().toLowerCase();
-        if (!memberName || memberName === '') {
-          uniqueApps.push(app);
+      };
+
+      const getPriority = (app: any) => {
+        const sourceBoost = app?.source === 'admin' || String(app?.id || '').startsWith('admin_app_') ? 1 : 0;
+        return sourceBoost;
+      };
+
+      const allApps = [...userApps, ...adminApps];
+      const byId = new Map<string, WithId<Application & FormValues>>();
+      const aliasToCanonical = new Map<string, string>();
+
+      const pickBetter = (
+        current: WithId<Application & FormValues>,
+        incoming: WithId<Application & FormValues>
+      ) => {
+        const currentMs = toMillis((current as any)?.lastUpdated || (current as any)?.submissionDate);
+        const incomingMs = toMillis((incoming as any)?.lastUpdated || (incoming as any)?.submissionDate);
+        if (incomingMs !== currentMs) return incomingMs > currentMs ? incoming : current;
+        const currentPriority = getPriority(current);
+        const incomingPriority = getPriority(incoming);
+        if (incomingPriority !== currentPriority) return incomingPriority > currentPriority ? incoming : current;
+        return current;
+      };
+
+      const getAliases = (app: any): string[] => {
+        const first = normalize(app?.memberFirstName);
+        const last = normalize(app?.memberLastName);
+        const fullName = normalize(`${first} ${last}`);
+        const dob = normalize(app?.memberDob);
+        const plan = normalize(app?.healthPlan);
+        const pathway = normalize(app?.pathway);
+        const mrn = normalize(app?.memberMrn);
+        const mediCal = normalize(app?.memberMediCalNum);
+        const clientId2 = normalize((app as any)?.client_ID2 || (app as any)?.clientId2);
+        const aliases = new Set<string>();
+        if (mrn) aliases.add(`mrn:${mrn}`);
+        if (clientId2) aliases.add(`client:${clientId2}`);
+        if (mediCal) aliases.add(`medi:${mediCal}`);
+        if (fullName && dob) aliases.add(`name_dob:${fullName}|${dob}`);
+        if (fullName && (plan || pathway)) aliases.add(`name_plan_path:${fullName}|${plan}|${pathway}`);
+        if (fullName && !mrn && !clientId2 && !mediCal) aliases.add(`name:${fullName}`);
+        return Array.from(aliases);
+      };
+
+      allApps.forEach((app) => {
+        const aliases = getAliases(app);
+        if (aliases.length === 0) {
+          byId.set(app.id, pickBetter(byId.get(app.id) || app, app));
+          return;
         }
+
+        const linkedCanonicalIds = Array.from(
+          new Set(
+            aliases
+              .map((alias) => aliasToCanonical.get(alias))
+              .filter((id): id is string => Boolean(id))
+          )
+        );
+
+        let canonicalId = linkedCanonicalIds[0] || app.id;
+        const existingCanonical = byId.get(canonicalId);
+        if (!existingCanonical) {
+          byId.set(canonicalId, app);
+        } else {
+          byId.set(canonicalId, pickBetter(existingCanonical, app));
+        }
+
+        // If aliases pointed at multiple canonical ids, collapse them into one.
+        if (linkedCanonicalIds.length > 1) {
+          linkedCanonicalIds.slice(1).forEach((otherId) => {
+            const currentBest = byId.get(canonicalId);
+            const otherApp = byId.get(otherId);
+            if (currentBest && otherApp) {
+              byId.set(canonicalId, pickBetter(currentBest, otherApp));
+            }
+            byId.delete(otherId);
+          });
+        }
+
+        aliases.forEach((alias) => aliasToCanonical.set(alias, canonicalId));
       });
-      
-      const apps = uniqueApps;
-      
-      setAllApplications(apps);
+
+      setAllApplications(Array.from(byId.values()));
       
     } catch (err: any) {
       setError(err);

@@ -155,19 +155,115 @@ function ProgressTrackerPageClient() {
         ]);
 
         // Combine both user and admin applications with unique keys
-        const userApps = userAppsSnap.docs.map(doc => ({ 
+        const userApps = userAppsSnap.docs.map(doc => ({
             ...doc.data(), 
             id: doc.id,
             uniqueKey: `user-${doc.id}`,
             source: 'user'
         })) as Application[];
-        const adminApps = adminAppsSnap.docs.map(doc => ({ 
+        const adminApps = adminAppsSnap.docs.map(doc => ({
             ...doc.data(), 
             id: doc.id,
             uniqueKey: `admin-${doc.id}`,
             source: 'admin'
         })) as Application[];
-        const apps = [...userApps, ...adminApps];
+
+        const normalize = (value: unknown) =>
+          String(value ?? '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
+
+        const toMillis = (value: unknown): number => {
+          try {
+            if (value && typeof (value as any).toDate === 'function') {
+              return (value as any).toDate().getTime();
+            }
+            if (value && typeof (value as any).toMillis === 'function') {
+              return Number((value as any).toMillis()) || 0;
+            }
+            const ms = new Date(String(value || '')).getTime();
+            return Number.isFinite(ms) ? ms : 0;
+          } catch {
+            return 0;
+          }
+        };
+
+        const getPriority = (app: any) =>
+          app?.source === 'admin' || String(app?.id || '').startsWith('admin_app_') ? 1 : 0;
+
+        const pickBetter = (current: Application, incoming: Application) => {
+          const currentMs = toMillis((current as any)?.lastUpdated || (current as any)?.submissionDate);
+          const incomingMs = toMillis((incoming as any)?.lastUpdated || (incoming as any)?.submissionDate);
+          if (incomingMs !== currentMs) return incomingMs > currentMs ? incoming : current;
+          const currentPriority = getPriority(current);
+          const incomingPriority = getPriority(incoming);
+          if (incomingPriority !== currentPriority) return incomingPriority > currentPriority ? incoming : current;
+          return current;
+        };
+
+        const getAliases = (app: any): string[] => {
+          const first = normalize(app?.memberFirstName);
+          const last = normalize(app?.memberLastName);
+          const fullName = normalize(`${first} ${last}`);
+          const dob = normalize(app?.memberDob);
+          const plan = normalize(app?.healthPlan);
+          const pathway = normalize(app?.pathway);
+          const mrn = normalize(app?.memberMrn);
+          const mediCal = normalize(app?.memberMediCalNum);
+          const clientId2 = normalize((app as any)?.client_ID2 || (app as any)?.clientId2);
+          const aliases = new Set<string>();
+          if (mrn) aliases.add(`mrn:${mrn}`);
+          if (clientId2) aliases.add(`client:${clientId2}`);
+          if (mediCal) aliases.add(`medi:${mediCal}`);
+          if (fullName && dob) aliases.add(`name_dob:${fullName}|${dob}`);
+          if (fullName && (plan || pathway)) aliases.add(`name_plan_path:${fullName}|${plan}|${pathway}`);
+          if (fullName && !mrn && !clientId2 && !mediCal) aliases.add(`name:${fullName}`);
+          return Array.from(aliases);
+        };
+
+        const allApps = [...userApps, ...adminApps];
+        const byId = new Map<string, Application>();
+        const aliasToCanonical = new Map<string, string>();
+
+        allApps.forEach((app) => {
+          const aliases = getAliases(app);
+          if (aliases.length === 0) {
+            byId.set(app.id, pickBetter(byId.get(app.id) || app, app));
+            return;
+          }
+
+          const linkedCanonicalIds = Array.from(
+            new Set(
+              aliases
+                .map((alias) => aliasToCanonical.get(alias))
+                .filter((id): id is string => Boolean(id))
+            )
+          );
+
+          const canonicalId = linkedCanonicalIds[0] || app.id;
+          const existingCanonical = byId.get(canonicalId);
+          if (!existingCanonical) {
+            byId.set(canonicalId, app);
+          } else {
+            byId.set(canonicalId, pickBetter(existingCanonical, app));
+          }
+
+          if (linkedCanonicalIds.length > 1) {
+            linkedCanonicalIds.slice(1).forEach((otherId) => {
+              const currentBest = byId.get(canonicalId);
+              const otherApp = byId.get(otherId);
+              if (currentBest && otherApp) {
+                byId.set(canonicalId, pickBetter(currentBest, otherApp));
+              }
+              byId.delete(otherId);
+            });
+          }
+
+          aliases.forEach((alias) => aliasToCanonical.set(alias, canonicalId));
+        });
+
+        const apps = Array.from(byId.values());
         const trackersMap = new Map(trackersSnap.docs.map(doc => [doc.data().applicationId, doc.data() as StaffTracker]));
         
         const adminIds = new Set(adminRolesSnap.docs.map(d => d.id));
