@@ -34,6 +34,7 @@ type NavLink = { href: string; label: string; icon: React.ComponentType<{ classN
 const primaryLinks: readonly NavLink[] = [
   { href: '/sw-portal/queue', label: 'Queue', icon: ListTodo },
   { href: '/sw-portal/roster', label: 'Roster', icon: Users },
+  { href: '/sw-portal/alft-upload', label: 'ALFT Upload', icon: UploadCloud },
 ] as const;
 
 const tasksLinks: readonly NavLink[] = [
@@ -46,7 +47,6 @@ const tasksLinks: readonly NavLink[] = [
 const moreLinks: readonly NavLink[] = [
   { href: '/sw-portal/end-of-day', label: 'End of day', icon: ClipboardList },
   { href: '/sw-portal/status-log', label: 'Status Log', icon: CheckCircle2 },
-  { href: '/sw-portal/alft-upload', label: 'ALFT Upload', icon: UploadCloud },
   { href: '/sw-portal/instructions', label: 'Primer', icon: BookOpenText },
 ] as const;
 

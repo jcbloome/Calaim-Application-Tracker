@@ -24,6 +24,7 @@ import {
   FileText, 
   Trash2,
   CheckCircle,
+  RefreshCw,
   Loader2,
   Download,
   MessageSquare
@@ -103,6 +104,8 @@ type PendingStatusChange = {
   updatedAt: string;
 };
 
+const PENDING_NOTE_STATUS_SYNC_KEY = 'member-notes-pending-status-sync-v1';
+
 function normalizeNoteStatus(value: unknown): NoteStatus {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return 'Open';
@@ -147,6 +150,40 @@ function MemberNotesPageContent() {
   const [isBulkClosing, setIsBulkClosing] = useState(false);
   const [pendingStatusChanges, setPendingStatusChanges] = useState<Record<string, PendingStatusChange>>({});
   const [isSyncingPendingStatuses, setIsSyncingPendingStatuses] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PENDING_NOTE_STATUS_SYNC_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, PendingStatusChange>;
+      if (!parsed || typeof parsed !== 'object') return;
+      const sanitized = Object.fromEntries(
+        Object.entries(parsed).filter(([key, value]) => {
+          if (!key || !value) return false;
+          const noteId = String((value as any)?.noteId || '').trim();
+          const clientId2 = String((value as any)?.clientId2 || '').trim();
+          const fromStatus = normalizeNoteStatus((value as any)?.fromStatus);
+          const toStatus = normalizeNoteStatus((value as any)?.toStatus);
+          return Boolean(noteId && clientId2 && fromStatus && toStatus);
+        })
+      ) as Record<string, PendingStatusChange>;
+      setPendingStatusChanges(sanitized);
+    } catch {
+      // ignore malformed local data
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (Object.keys(pendingStatusChanges).length === 0) {
+        localStorage.removeItem(PENDING_NOTE_STATUS_SYNC_KEY);
+        return;
+      }
+      localStorage.setItem(PENDING_NOTE_STATUS_SYNC_KEY, JSON.stringify(pendingStatusChanges));
+    } catch {
+      // ignore storage write errors
+    }
+  }, [pendingStatusChanges]);
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
@@ -1043,20 +1080,29 @@ function MemberNotesPageContent() {
                       )}
                       Sync Notes
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => void syncPendingStatusChanges('selected')}
-                      disabled={isSyncingPendingStatuses || selectedMemberPendingChanges.length === 0}
-                    >
-                      {isSyncingPendingStatuses ? (
-                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                      ) : (
-                        <CheckCircle className="mr-2 h-3 w-3" />
-                      )}
-                      Sync Pending ({selectedMemberPendingChanges.length})
-                    </Button>
                   </div>
                 </div>
+                {selectedMemberPendingChanges.length > 0 ? (
+                  <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                    <div className="font-medium">
+                      This member has {selectedMemberPendingChanges.length} revised note status change(s) pending sync.
+                    </div>
+                    <div className="mt-2">
+                      <Button
+                        size="sm"
+                        onClick={() => void syncPendingStatusChanges('selected')}
+                        disabled={isSyncingPendingStatuses}
+                      >
+                        {isSyncingPendingStatuses ? (
+                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        ) : (
+                          <CheckCircle className="mr-2 h-3 w-3" />
+                        )}
+                        Sync This Member Pending ({selectedMemberPendingChanges.length})
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
                 {pendingChangeList.length > 0 ? (
                   <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                     <div className="font-medium">Pending Caspio sync: {pendingChangeList.length} change(s)</div>
@@ -1155,8 +1201,8 @@ function MemberNotesPageContent() {
                           <Badge variant="outline">{noteStatusLabel(note.status)}</Badge>
                           {pendingChange ? (
                             <Badge variant="secondary" className="bg-amber-100 text-amber-900 border border-amber-200">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Status changed (pending sync)
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                              Revised (pending sync)
                             </Badge>
                           ) : null}
                         </div>
