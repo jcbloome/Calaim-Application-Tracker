@@ -4934,27 +4934,6 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  useEffect(() => {
-    if (!hasUnsavedDrafts) return;
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [hasUnsavedDrafts]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const isSaveShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's';
-      if (!isSaveShortcut) return;
-      event.preventDefault();
-      void handleQuickSave();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleQuickSave]);
-
   return (
     <div className="grid w-full min-w-0 grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-3 sticky top-2 z-30 rounded-lg border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">
