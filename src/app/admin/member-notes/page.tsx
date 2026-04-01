@@ -1263,10 +1263,18 @@ function MemberNotesPageContent() {
                         {note.followUpDate ? ` • Follow-up: ${format(new Date(note.followUpDate), 'MMM d, yyyy')}` : ''}
                       </div>
                       {hasStatusAudit ? (
-                        <div className="mt-1 text-[11px] text-blue-700">
-                          Status changed: {noteStatusLabel(note.status)} by {statusActor || 'Unknown'} on{' '}
-                          {formatDateTimeSafe(statusChangedAt)}
-                          {pendingChange ? ' (pending Caspio push)' : ''}
+                        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-700">
+                          <span className="font-medium">Status changed</span>
+                          <Badge variant="outline" className="h-5 px-2">
+                            {noteStatusLabel(note.status)}
+                          </Badge>
+                          <span>by {statusActor || 'Unknown'}</span>
+                          <span>on {formatDateTimeSafe(statusChangedAt)}</span>
+                          {pendingChange ? (
+                            <Badge variant="secondary" className="bg-amber-100 text-amber-900 border border-amber-200 h-5 px-2">
+                              Pending Caspio push
+                            </Badge>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
