@@ -109,21 +109,7 @@ type PresenceStatus = 'there' | 'not_there' | 'temporarily_not_there';
 const normalizeAdminName = (value: unknown) =>
   String(value || '')
     .trim()
-    .replace(/\s+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((token) =>
-      token
-        .split('-')
-        .map((part) =>
-          part
-            .split("'")
-            .map((seg) => (seg ? `${seg.charAt(0).toUpperCase()}${seg.slice(1).toLowerCase()}` : seg))
-            .join("'")
-        )
-        .join('-')
-    )
-    .join(' ');
+    .replace(/\s+/g, ' ');
 
 const normalizeBedsInput = (value: unknown) => String(value || '').replace(/[^\d]/g, '');
 
