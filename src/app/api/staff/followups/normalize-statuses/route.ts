@@ -64,14 +64,30 @@ export async function POST(request: NextRequest) {
     const accessToken = await getCaspioToken(credentials);
     const baseUrl = credentials.baseUrl;
 
-    // One-time migration target: legacy plain "Close" values.
-    const legacyRows = await fetchPagedRows(
+    const isClosedLike = (value: unknown) => {
+      const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      return normalized === 'close' || normalized === 'closed' || normalized.includes('closed');
+    };
+    const isCanonicalFollowUpClosed = (value: unknown) => {
+      const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      return normalized === '🔴 closed';
+    };
+
+    // One-time migration target: legacy close/closed variants.
+    const candidateRows = await fetchPagedRows(
       baseUrl,
       accessToken,
-      `Follow_Up_Status='Close' OR Note_Status='Close'`,
+      `Follow_Up_Status='Close' OR Follow_Up_Status='Closed' OR Follow_Up_Status='🔴Closed' OR Note_Status='Close'`,
       500,
       50
     );
+    const legacyRows = candidateRows.filter((row) => {
+      const noteStatus = String(row?.Note_Status || '').trim();
+      const followUpStatus = String(row?.Follow_Up_Status || '').trim();
+      const noteNeedsFix = isClosedLike(noteStatus) && String(noteStatus).toLowerCase() !== 'closed';
+      const followUpNeedsFix = isClosedLike(followUpStatus) && !isCanonicalFollowUpClosed(followUpStatus);
+      return noteNeedsFix || followUpNeedsFix;
+    });
 
     let updated = 0;
     const firestore = admin.firestore();
@@ -123,9 +139,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      scanned: legacyRows.length,
+      scanned: candidateRows.length,
       updated,
-      message: `Normalized ${updated} legacy "Close" statuses to 🔴 Closed.`,
+      message: `Normalized ${updated} legacy close/closed status value(s) to 🔴 Closed.`,
     });
   } catch (error: any) {
     return NextResponse.json(

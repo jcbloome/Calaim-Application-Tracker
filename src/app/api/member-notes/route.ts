@@ -1449,10 +1449,20 @@ export async function PUT(request: NextRequest) {
         maxPages: 20,
       });
 
+      const isClosedLike = (value: unknown) => {
+        const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        return normalized === 'close' || normalized === 'closed' || normalized.includes('closed');
+      };
+      const isCanonicalFollowUpClosed = (value: unknown) => {
+        const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        return normalized === '🔴 closed';
+      };
       const legacyRows = caspioRows.filter((row) => {
-        const noteStatus = String(row?.Note_Status || '').trim().toLowerCase();
-        const followUpStatus = String(row?.Follow_Up_Status || '').trim().toLowerCase();
-        return noteStatus === 'close' || followUpStatus === 'close';
+        const noteStatus = String(row?.Note_Status || '').trim();
+        const followUpStatus = String(row?.Follow_Up_Status || '').trim();
+        const noteNeedsFix = isClosedLike(noteStatus) && String(noteStatus).toLowerCase() !== 'closed';
+        const followUpNeedsFix = isClosedLike(followUpStatus) && !isCanonicalFollowUpClosed(followUpStatus);
+        return noteNeedsFix || followUpNeedsFix;
       });
 
       let updatedCount = 0;
@@ -1481,7 +1491,7 @@ export async function PUT(request: NextRequest) {
       await syncAllNotesFromCaspio(clientId2);
 
       await logSystemNoteAction({
-        action: 'Normalized legacy note statuses (Close -> Closed)',
+        action: 'Normalized legacy note statuses to canonical closed labels',
         clientId2,
         status: 'Closed',
         actorName,
