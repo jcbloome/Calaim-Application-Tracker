@@ -23,12 +23,16 @@ export async function GET(req: NextRequest) {
     const rcfeId = String(searchParams.get('rcfeId') || '').trim();
     const rcfeNameQ = String(searchParams.get('rcfeName') || '').trim();
     const claimDay = String(searchParams.get('claimDay') || '').trim().slice(0, 10);
+    const month = String(searchParams.get('month') || '').trim();
 
     if (!rcfeId) {
       return NextResponse.json({ success: false, error: 'rcfeId is required' }, { status: 400 });
     }
-    if (!claimDay || !/^\d{4}-\d{2}-\d{2}$/.test(claimDay)) {
-      return NextResponse.json({ success: false, error: 'claimDay (YYYY-MM-DD) is required' }, { status: 400 });
+    if (claimDay && !/^\d{4}-\d{2}-\d{2}$/.test(claimDay)) {
+      return NextResponse.json({ success: false, error: 'claimDay must be YYYY-MM-DD when provided' }, { status: 400 });
+    }
+    if (month && !/^\d{4}-\d{2}$/.test(month)) {
+      return NextResponse.json({ success: false, error: 'month must be YYYY-MM when provided' }, { status: 400 });
     }
 
     const authHeader = req.headers.get('authorization') || '';
@@ -84,7 +88,10 @@ export async function GET(req: NextRequest) {
         const status = String(v?.status || '').trim().toLowerCase();
         if (status !== 'draft') return false;
         const day = toDayKey(v?.claimDay || v?.visitDate || v?.completedAt || v?.submittedAt);
-        return day === claimDay;
+        if (!day) return false;
+        if (month && day.slice(0, 7) !== month) return false;
+        if (claimDay && day !== claimDay) return false;
+        return true;
       })
       .map((v: any) => ({
         visitId: String(v?.visitId || v?.id || '').trim(),
@@ -124,6 +131,7 @@ export async function GET(req: NextRequest) {
       success: true,
       rcfeId,
       claimDay,
+      month: month || null,
       rcfeName,
       rcfeAddress,
       visits: deduped,

@@ -51,8 +51,15 @@ export async function GET(req: NextRequest) {
         rcfeName: clean(data?.rcfeName, 200),
         month: clean(data?.month, 10) || month,
         latestReportDate: clean(data?.latestReportDate, 10),
-        typeAViolations: Number(data?.typeAViolations ?? 0) || 0,
-        typeBViolations: Number(data?.typeBViolations ?? 0) || 0,
+        noNewViolationReportSinceLastQuestionnaire: Boolean(data?.noNewViolationReportSinceLastQuestionnaire),
+        typeAViolations:
+          data?.typeAViolations === null || data?.typeAViolations === undefined
+            ? null
+            : Number(data?.typeAViolations ?? 0) || 0,
+        typeBViolations:
+          data?.typeBViolations === null || data?.typeBViolations === undefined
+            ? null
+            : Number(data?.typeBViolations ?? 0) || 0,
         seriousViolationComments: clean(data?.seriousViolationComments, 4000),
         acknowledged: Boolean(data?.acknowledged),
         checkedAt: data?.checkedAt?.toDate?.()?.toISOString?.() || clean(data?.checkedAt, 50) || '',
@@ -91,6 +98,7 @@ export async function POST(req: NextRequest) {
     const rcfeName = clean(body?.rcfeName, 200);
     const month = clean(body?.month, 10);
     const latestReportDate = clean(body?.latestReportDate, 10);
+    const noNewViolationReportSinceLastQuestionnaire = body?.noNewViolationReportSinceLastQuestionnaire === true;
     const typeA = Number(body?.typeAViolations ?? NaN);
     const typeB = Number(body?.typeBViolations ?? NaN);
     const seriousViolationComments = clean(body?.seriousViolationComments, 4000);
@@ -103,7 +111,7 @@ export async function POST(req: NextRequest) {
     if (!latestReportDate || !/^\d{4}-\d{2}-\d{2}$/.test(latestReportDate)) {
       return NextResponse.json({ success: false, error: 'latestReportDate (YYYY-MM-DD) is required' }, { status: 400 });
     }
-    if (!Number.isFinite(typeA) || typeA < 0 || !Number.isFinite(typeB) || typeB < 0) {
+    if (!noNewViolationReportSinceLastQuestionnaire && (!Number.isFinite(typeA) || typeA < 0 || !Number.isFinite(typeB) || typeB < 0)) {
       return NextResponse.json({ success: false, error: 'typeAViolations/typeBViolations must be 0 or greater' }, { status: 400 });
     }
     if (!acknowledged) {
@@ -122,8 +130,9 @@ export async function POST(req: NextRequest) {
         rcfeName,
         month,
         latestReportDate,
-        typeAViolations: Math.floor(typeA),
-        typeBViolations: Math.floor(typeB),
+        noNewViolationReportSinceLastQuestionnaire,
+        typeAViolations: noNewViolationReportSinceLastQuestionnaire ? null : Math.floor(typeA),
+        typeBViolations: noNewViolationReportSinceLastQuestionnaire ? null : Math.floor(typeB),
         seriousViolationComments,
         facilitySearchUrl: 'https://www.ccld.dss.ca.gov/carefacilitysearch/',
         acknowledged: true,

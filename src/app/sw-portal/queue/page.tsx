@@ -182,8 +182,8 @@ export default function SWQueuePage() {
       const map: Record<string, MonthVisitStatus> = {};
       rows.forEach((r) => {
         const memberId = String(r?.memberId || '').trim();
-        if (!memberId) return;
-        map[memberId] = {
+        const memberNameKey = normalize(r?.memberName);
+        const statusRow: MonthVisitStatus = {
           visitId: String(r?.visitId || '').trim(),
           visitDay: String(r?.date || '').trim() || undefined,
           signedOff: Boolean(r?.signedOff),
@@ -193,6 +193,8 @@ export default function SWQueuePage() {
           claimId: String(r?.claimId || '').trim() || undefined,
           claimNumber: String(r?.claimNumber || '').trim() || undefined,
         };
+        if (memberId) map[memberId] = statusRow;
+        if (memberNameKey) map[`name:${memberNameKey}`] = statusRow;
       });
       setMonthStatuses(map);
     } catch (e: any) {
@@ -213,8 +215,8 @@ export default function SWQueuePage() {
     setLoadingDrafts(true);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const claimDay = todayLocalKey();
-      const res = await fetch(`/api/sw-visits/drafts?claimDay=${encodeURIComponent(claimDay)}`, {
+      const month = String(statusMonth || '').trim();
+      const res = await fetch(`/api/sw-visits/drafts?month=${encodeURIComponent(month)}`, {
         headers: { authorization: `Bearer ${idToken}` },
       });
       const data = await res.json().catch(() => ({} as any));
@@ -225,7 +227,7 @@ export default function SWQueuePage() {
     } finally {
       setLoadingDrafts(false);
     }
-  }, [auth]);
+  }, [auth, statusMonth]);
 
   const refreshClaims = useCallback(async () => {
     if (!auth?.currentUser) return;
@@ -289,8 +291,8 @@ export default function SWQueuePage() {
     filteredFacilities.forEach((f) => {
       (f.members || []).forEach((m) => {
         const memberId = String(m.id || '').trim();
-        if (!memberId) return;
-        const s = monthStatuses[memberId] || null;
+        const memberNameKey = normalize(m.name);
+        const s = (memberId ? monthStatuses[memberId] : null) || (memberNameKey ? monthStatuses[`name:${memberNameKey}`] : null);
         const flags = computeSwVisitStatusFlags(s);
         const base = {
           memberId,
@@ -312,7 +314,32 @@ export default function SWQueuePage() {
     needsSignoff.sort(byName);
     needsClaim.sort(byName);
 
-    return { needsQuestionnaire, needsSignoff, needsClaim };
+    const needsQuestionnaireByRcfe = Array.from(
+      needsQuestionnaire.reduce((acc, member) => {
+        const key = String(member.rcfeId || '').trim();
+        if (!key) return acc;
+        const existing = acc.get(key);
+        if (existing) {
+          existing.members.push(member);
+        } else {
+          acc.set(key, {
+            rcfeId: member.rcfeId,
+            rcfeName: member.rcfeName,
+            rcfeAddress: member.rcfeAddress,
+            members: [member],
+          });
+        }
+        return acc;
+      }, new Map<string, { rcfeId: string; rcfeName: string; rcfeAddress: string; members: typeof needsQuestionnaire }>())
+        .values()
+    )
+      .map((group) => ({
+        ...group,
+        members: group.members.slice().sort(byName),
+      }))
+      .sort((a, b) => String(a.rcfeName || '').localeCompare(String(b.rcfeName || '')));
+
+    return { needsQuestionnaire, needsQuestionnaireByRcfe, needsSignoff, needsClaim };
   }, [filteredFacilities, monthStatuses]);
 
   const needsCorrectionClaims = useMemo(() => {
@@ -400,14 +427,14 @@ export default function SWQueuePage() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Resume draft questionnaires (today)</CardTitle>
+            <CardTitle className="text-base">Resume draft questionnaires</CardTitle>
             <CardDescription>
-              {loadingDrafts ? 'Loading…' : `${draftsToday.length} draft${draftsToday.length === 1 ? '' : 's'} found`}
+              {loadingDrafts ? 'Loading…' : `${draftsToday.length} draft${draftsToday.length === 1 ? '' : 's'} found for ${statusMonth}`}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {draftsToday.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No drafts saved today.</div>
+              <div className="text-sm text-muted-foreground">No drafts saved for this month.</div>
             ) : (
               draftsToday.slice(0, 10).map((v) => (
                 <div key={v.visitId} className="flex items-center justify-between gap-3 rounded border p-2">
@@ -459,23 +486,37 @@ export default function SWQueuePage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Members needing questionnaire</CardTitle>
-            <CardDescription>{needsLists.needsQuestionnaire.length} member(s)</CardDescription>
+            <CardDescription>
+              {needsLists.needsQuestionnaire.length} member(s) across {needsLists.needsQuestionnaireByRcfe.length} RCFE(s)
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {needsLists.needsQuestionnaire.length === 0 ? (
+            {needsLists.needsQuestionnaireByRcfe.length === 0 ? (
               <div className="text-sm text-muted-foreground">All caught up.</div>
             ) : (
-              needsLists.needsQuestionnaire.slice(0, 12).map((m) => (
-                <div key={m.memberId} className="flex items-center justify-between gap-3 rounded border p-2">
-                  <div className="min-w-0">
-                    <div className="font-medium truncate">{m.memberName}</div>
-                    <div className="text-xs text-muted-foreground truncate">{m.rcfeName}</div>
+              needsLists.needsQuestionnaireByRcfe.slice(0, 12).map((group) => (
+                <div key={group.rcfeId} className="rounded border p-2 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{group.rcfeName}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {group.members.length} member{group.members.length === 1 ? '' : 's'} need questionnaire
+                      </div>
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        href={`/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(group.rcfeId)}&month=${encodeURIComponent(
+                          statusMonth
+                        )}&returnTo=${encodeURIComponent(`/sw-visit-verification?rcfeId=${encodeURIComponent(group.rcfeId)}`)}`}
+                      >
+                        Open RCFE <ExternalLink className="h-3.5 w-3.5 ml-2" />
+                      </Link>
+                    </Button>
                   </div>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/sw-visit-verification?rcfeId=${encodeURIComponent(m.rcfeId)}&memberId=${encodeURIComponent(m.memberId)}`}>
-                      Open <ExternalLink className="h-3.5 w-3.5 ml-2" />
-                    </Link>
-                  </Button>
+                  <div className="text-xs text-muted-foreground">
+                    {group.members.slice(0, 4).map((m) => m.memberName).join(' • ')}
+                    {group.members.length > 4 ? ` • +${group.members.length - 4} more` : ''}
+                  </div>
                 </div>
               ))
             )}
@@ -501,7 +542,15 @@ export default function SWQueuePage() {
                     </div>
                   </div>
                   <Button asChild size="sm" variant="outline">
-                    <Link href={`/sw-portal/sign-off?rcfeId=${encodeURIComponent(m.rcfeId)}`}>
+                    <Link
+                      href={`/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(m.rcfeId)}&month=${encodeURIComponent(
+                        statusMonth
+                      )}&returnTo=${encodeURIComponent(
+                        `/sw-portal/sign-off?rcfeId=${encodeURIComponent(m.rcfeId)}${
+                          m.visitDay ? `&claimDay=${encodeURIComponent(m.visitDay)}` : ''
+                        }`
+                      )}`}
+                    >
                       Sign off <ExternalLink className="h-3.5 w-3.5 ml-2" />
                     </Link>
                   </Button>

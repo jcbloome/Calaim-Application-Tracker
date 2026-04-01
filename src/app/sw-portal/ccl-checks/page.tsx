@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
@@ -39,6 +39,7 @@ type DueItem = {
 };
 
 export default function CclChecksPage() {
+  const router = useRouter();
   const auth = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -46,6 +47,7 @@ export default function CclChecksPage() {
   const searchParams = useSearchParams();
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
+  const returnTo = String(searchParams?.get('returnTo') || '').trim();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,8 +60,9 @@ export default function CclChecksPage() {
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [form, setForm] = useState({
     latestReportDate: '',
-    typeAViolations: 0,
-    typeBViolations: 0,
+    noNewViolationReportSinceLastQuestionnaire: false,
+    typeAViolations: '',
+    typeBViolations: '',
     seriousViolationComments: '',
   });
 
@@ -146,8 +149,15 @@ export default function CclChecksPage() {
         if (!check) return;
         setForm({
           latestReportDate: String(check?.latestReportDate || '').slice(0, 10),
-          typeAViolations: Number(check?.typeAViolations ?? 0) || 0,
-          typeBViolations: Number(check?.typeBViolations ?? 0) || 0,
+          noNewViolationReportSinceLastQuestionnaire: Boolean(check?.noNewViolationReportSinceLastQuestionnaire),
+          typeAViolations:
+            check?.typeAViolations === null || check?.typeAViolations === undefined
+              ? ''
+              : String(Number(check?.typeAViolations ?? 0) || 0),
+          typeBViolations:
+            check?.typeBViolations === null || check?.typeBViolations === undefined
+              ? ''
+              : String(Number(check?.typeBViolations ?? 0) || 0),
           seriousViolationComments: String(check?.seriousViolationComments || ''),
         });
         setAcknowledged(Boolean(check?.acknowledged));
@@ -163,8 +173,9 @@ export default function CclChecksPage() {
     setAcknowledged(false);
     setForm({
       latestReportDate: '',
-      typeAViolations: 0,
-      typeBViolations: 0,
+      noNewViolationReportSinceLastQuestionnaire: false,
+      typeAViolations: '',
+      typeBViolations: '',
       seriousViolationComments: '',
     });
     setOpen(true);
@@ -196,8 +207,9 @@ export default function CclChecksPage() {
           rcfeName: active.rcfeName,
           month: active.month,
           latestReportDate: form.latestReportDate,
-          typeAViolations: Number(form.typeAViolations || 0),
-          typeBViolations: Number(form.typeBViolations || 0),
+          noNewViolationReportSinceLastQuestionnaire: Boolean(form.noNewViolationReportSinceLastQuestionnaire),
+          typeAViolations: Number(form.typeAViolations),
+          typeBViolations: Number(form.typeBViolations),
           seriousViolationComments: form.seriousViolationComments,
           acknowledged: Boolean(acknowledged),
           checkedByName: String((user as any)?.displayName || swEmail || 'Social Worker').trim(),
@@ -212,6 +224,9 @@ export default function CclChecksPage() {
       setOpen(false);
       setActive(null);
       await loadDue();
+      if (returnTo.startsWith('/')) {
+        router.push(returnTo);
+      }
     } catch (e: any) {
       toast({ title: 'Save failed', description: e?.message || 'Could not save check.', variant: 'destructive' });
     } finally {
@@ -251,7 +266,7 @@ export default function CclChecksPage() {
             CCL Checks
           </h1>
           <p className="text-muted-foreground">
-            Monthly Community Care Licensing check per RCFE. Complete this after sign-off; it will auto-submit pending claims.
+            Monthly Community Care Licensing check per RCFE. Complete this before questionnaire/sign-off for the RCFE.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -331,6 +346,29 @@ export default function CclChecksPage() {
               <div className="text-sm font-medium">Latest violation report date</div>
               <Input type="date" value={form.latestReportDate} onChange={(e) => setForm((p) => ({ ...p, latestReportDate: e.target.value }))} />
             </div>
+            <div className="rounded-md border bg-muted/30 p-3">
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="no-new-violations-report"
+                  checked={form.noNewViolationReportSinceLastQuestionnaire}
+                  onCheckedChange={(v) =>
+                    setForm((p) => ({
+                      ...p,
+                      noNewViolationReportSinceLastQuestionnaire: Boolean(v),
+                      ...(Boolean(v)
+                        ? {
+                            typeAViolations: '',
+                            typeBViolations: '',
+                          }
+                        : {}),
+                    }))
+                  }
+                />
+                <label htmlFor="no-new-violations-report" className="text-sm leading-snug">
+                  No new violation report since the last questionnaire (skip Type A / Type B counts).
+                </label>
+              </div>
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <div className="text-sm font-medium">Type A violations</div>
@@ -340,8 +378,14 @@ export default function CclChecksPage() {
                 <Input
                   type="number"
                   min={0}
-                  value={String(form.typeAViolations)}
-                  onChange={(e) => setForm((p) => ({ ...p, typeAViolations: Math.max(0, Number(e.target.value || 0)) }))}
+                  value={form.typeAViolations}
+                  disabled={form.noNewViolationReportSinceLastQuestionnaire}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      typeAViolations: String(e.target.value || '').replace(/[^\d]/g, ''),
+                    }))
+                  }
                 />
               </div>
               <div className="space-y-1.5">
@@ -352,8 +396,14 @@ export default function CclChecksPage() {
                 <Input
                   type="number"
                   min={0}
-                  value={String(form.typeBViolations)}
-                  onChange={(e) => setForm((p) => ({ ...p, typeBViolations: Math.max(0, Number(e.target.value || 0)) }))}
+                  value={form.typeBViolations}
+                  disabled={form.noNewViolationReportSinceLastQuestionnaire}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      typeBViolations: String(e.target.value || '').replace(/[^\d]/g, ''),
+                    }))
+                  }
                 />
               </div>
             </div>
@@ -388,7 +438,14 @@ export default function CclChecksPage() {
               <Button
                 type="button"
                 onClick={() => void save()}
-                disabled={saving || prefillLoading || !form.latestReportDate || !acknowledged}
+                disabled={
+                  saving ||
+                  prefillLoading ||
+                  !form.latestReportDate ||
+                  !acknowledged ||
+                  (!form.noNewViolationReportSinceLastQuestionnaire &&
+                    (String(form.typeAViolations).trim() === '' || String(form.typeBViolations).trim() === ''))
+                }
               >
                 {saving ? (
                   <>

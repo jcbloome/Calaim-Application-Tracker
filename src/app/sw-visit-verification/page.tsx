@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useSocialWorker } from '@/hooks/use-social-worker';
@@ -348,6 +349,13 @@ export default function SWVisitVerification() {
     return composite;
   }, []);
 
+  const getMemberNameKey = useCallback((value: unknown) => {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+  }, []);
+
   const membersAtSelectedRcfe = useMemo(() => {
     const members = Array.isArray(selectedRCFE?.members) ? selectedRCFE.members : [];
     const seen = new Set<string>();
@@ -416,12 +424,23 @@ export default function SWVisitVerification() {
     Record<string, { visitId: string; flagged: boolean }>
   >({});
   const [loadingDraftVisits, setLoadingDraftVisits] = useState(false);
+  const [cclCheckExists, setCclCheckExists] = useState(false);
+  const [loadingCclCheck, setLoadingCclCheck] = useState(false);
 
   const claimDayKey = useMemo(() => {
     const d = String(questionnaire.visitDate || '').trim().slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     return new Date().toISOString().slice(0, 10);
   }, [questionnaire.visitDate]);
+  const cclMonthKey = useMemo(() => String(claimDayKey || '').slice(0, 7), [claimDayKey]);
+  const cclGateHref = useMemo(() => {
+    if (!selectedRCFE?.id) return '/sw-portal/ccl-checks';
+    return `/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(String(selectedRCFE.id || ''))}&month=${encodeURIComponent(
+      cclMonthKey
+    )}&returnTo=${encodeURIComponent(
+      `/sw-visit-verification?rcfeId=${encodeURIComponent(String(selectedRCFE.id || '').trim())}`
+    )}`;
+  }, [cclMonthKey, selectedRCFE?.id]);
 
   const getIdToken = useCallback(async () => {
     try {
@@ -451,8 +470,8 @@ export default function SWVisitVerification() {
       const idToken = await getIdToken();
       if (!idToken) throw new Error('Not signed in');
       const res = await fetch(
-        `/api/sw-visits/draft-candidates?rcfeId=${encodeURIComponent(String(selectedRCFE.id))}&claimDay=${encodeURIComponent(
-          claimDayKey
+        `/api/sw-visits/draft-candidates?rcfeId=${encodeURIComponent(String(selectedRCFE.id))}&month=${encodeURIComponent(
+          cclMonthKey
         )}&rcfeName=${encodeURIComponent(String(selectedRCFE.name || ''))}`,
         { headers: { authorization: `Bearer ${idToken}` } }
       );
@@ -465,9 +484,12 @@ export default function SWVisitVerification() {
       const map: Record<string, { visitId: string; flagged: boolean }> = {};
       rows.forEach((r) => {
         const memberId = String(r?.memberId || '').trim();
+        const memberNameKey = getMemberNameKey(r?.memberName);
         const visitId = String(r?.visitId || '').trim();
-        if (!memberId || !visitId) return;
-        map[memberId] = { visitId, flagged: Boolean(r?.flagged) };
+        if (!visitId) return;
+        const next = { visitId, flagged: Boolean(r?.flagged) };
+        if (memberId) map[memberId] = next;
+        if (memberNameKey) map[`name:${memberNameKey}`] = next;
       });
       setDraftVisitsByMemberId(map);
     } catch (e) {
@@ -476,7 +498,39 @@ export default function SWVisitVerification() {
     } finally {
       setLoadingDraftVisits(false);
     }
-  }, [claimDayKey, isSocialWorker, selectedRCFE?.id, user]);
+  }, [cclMonthKey, claimDayKey, getMemberNameKey, getIdToken, isSocialWorker, selectedRCFE?.id, selectedRCFE?.name, user]);
+
+  const refreshCclCheck = useCallback(async () => {
+    if (!selectedRCFE?.id || !isSocialWorker) {
+      setCclCheckExists(false);
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(cclMonthKey)) {
+      setCclCheckExists(false);
+      return;
+    }
+    setLoadingCclCheck(true);
+    try {
+      const idToken = await getIdToken();
+      if (!idToken) {
+        setCclCheckExists(false);
+        return;
+      }
+      const qs = new URLSearchParams({
+        rcfeId: String(selectedRCFE.id || '').trim(),
+        month: cclMonthKey,
+      });
+      const res = await fetch(`/api/sw-visits/rcfe-ccl-check?${qs.toString()}`, {
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => null);
+      setCclCheckExists(Boolean(res.ok && data?.success && data?.check));
+    } catch {
+      setCclCheckExists(false);
+    } finally {
+      setLoadingCclCheck(false);
+    }
+  }, [cclMonthKey, getIdToken, isSocialWorker, selectedRCFE?.id]);
 
   const downloadMonthlyVisitsCsv = useCallback(async () => {
     if (!user) return;
@@ -697,16 +751,38 @@ export default function SWVisitVerification() {
     const rawMax = nonResponsive ? 25 : 75;
     // Normalize to 0–100 for easier interpretation.
     const totalScore = rawMax > 0 ? Math.max(0, Math.min(100, Math.round((rawTotal / rawMax) * 100))) : 0;
-    const lowScoreThreshold = 40; // 40%
-    
-    // Auto-flag conditions
-    const flagged = totalScore < lowScoreThreshold ||
-                   questionnaire.memberConcerns.urgencyLevel === 'critical' ||
-                   questionnaire.memberConcerns.concernTypes.safety ||
-                   questionnaire.rcfeAssessment.overallRating <= 2 ||
-                   (!nonResponsive &&
-                     questionnaire.careSatisfaction.overallSatisfaction > 0 &&
-                     questionnaire.careSatisfaction.overallSatisfaction <= 2);
+    const hasCompleteScoringInputs =
+      questionnaire.rcfeAssessment.facilityCondition > 0 &&
+      questionnaire.rcfeAssessment.staffProfessionalism > 0 &&
+      questionnaire.rcfeAssessment.safetyCompliance > 0 &&
+      questionnaire.rcfeAssessment.careQuality > 0 &&
+      questionnaire.rcfeAssessment.overallRating > 0 &&
+      (nonResponsive
+        ? true
+        : questionnaire.memberWellbeing.physicalHealth > 0 &&
+          questionnaire.memberWellbeing.mentalHealth > 0 &&
+          questionnaire.memberWellbeing.socialEngagement > 0 &&
+          questionnaire.memberWellbeing.overallMood > 0 &&
+          questionnaire.careSatisfaction.staffAttentiveness > 0 &&
+          questionnaire.careSatisfaction.mealQuality > 0 &&
+          questionnaire.careSatisfaction.cleanlinessOfRoom > 0 &&
+          questionnaire.careSatisfaction.activitiesPrograms > 0 &&
+          questionnaire.careSatisfaction.overallSatisfaction > 0 &&
+          questionnaire.memberConcerns.hasConcerns !== null);
+
+    // Keep auto-flagging conservative to reduce false positives.
+    const hasManualFlag = Boolean(questionnaire.rcfeAssessment.flagForReview);
+    const hasCriticalUrgency = questionnaire.memberConcerns.urgencyLevel === 'critical';
+    const hasSafetyConcernWithUrgency =
+      Boolean(questionnaire.memberConcerns.concernTypes.safety) &&
+      (questionnaire.memberConcerns.urgencyLevel === 'high' || questionnaire.memberConcerns.urgencyLevel === 'critical');
+    const hasSevereScoringPattern =
+      hasCompleteScoringInputs &&
+      totalScore < 30 &&
+      (questionnaire.rcfeAssessment.overallRating <= 1 ||
+        (!nonResponsive && questionnaire.careSatisfaction.overallSatisfaction <= 1));
+
+    const flagged = hasManualFlag || hasCriticalUrgency || hasSafetyConcernWithUrgency || hasSevereScoringPattern;
     
     setQuestionnaire(prev => ({
       ...prev,
@@ -721,6 +797,26 @@ export default function SWVisitVerification() {
   useEffect(() => {
     calculateScore();
   }, [questionnaire.memberWellbeing, questionnaire.careSatisfaction, questionnaire.rcfeAssessment, questionnaire.memberConcerns]);
+
+  const getStatusForMember = useCallback(
+    (member: Member | null | undefined) => {
+      if (!member) return undefined;
+      const memberId = String(member?.id || '').trim();
+      const memberNameKey = getMemberNameKey(member?.name);
+      return (memberId ? monthStatuses[memberId] : undefined) || (memberNameKey ? monthStatuses[`name:${memberNameKey}`] : undefined);
+    },
+    [getMemberNameKey, monthStatuses]
+  );
+
+  const getDraftForMember = useCallback(
+    (member: Member | null | undefined) => {
+      if (!member) return undefined;
+      const memberId = String(member?.id || '').trim();
+      const memberNameKey = getMemberNameKey(member?.name);
+      return (memberId ? draftVisitsByMemberId[memberId] : undefined) || (memberNameKey ? draftVisitsByMemberId[`name:${memberNameKey}`] : undefined);
+    },
+    [draftVisitsByMemberId, getMemberNameKey]
+  );
 
   const handleRCFESelect = (rcfe: RCFE) => {
     setSelectedRCFE(rcfe);
@@ -760,6 +856,15 @@ export default function SWVisitVerification() {
   );
 
   const handleMemberSelect = (member: Member) => {
+    if (!cclCheckExists) {
+      toast({
+        title: 'Licensing check required first',
+        description: 'Complete the RCFE monthly CCL check before starting questionnaires at this home.',
+        variant: 'destructive',
+      });
+      router.push(cclGateHref);
+      return;
+    }
     setSelectedMember(member);
     const socialWorkerId = user?.email || user?.displayName || user?.uid || 'Billy Buckhalter';
     const memberKey = member.id || member.name;
@@ -771,7 +876,7 @@ export default function SWVisitVerification() {
       memberName: member.name 
     });
     
-    const status = memberId ? monthStatuses[memberId] : undefined;
+    const status = getStatusForMember(member);
     const statusClaim = String(status?.claimStatus || '').trim().toLowerCase();
     const alreadySubmitted = Boolean(status?.claimSubmitted) || ['submitted', 'approved', 'paid', 'rejected'].includes(statusClaim);
     if (status?.visitId) {
@@ -788,7 +893,7 @@ export default function SWVisitVerification() {
       return;
     }
 
-    const draft = memberId ? draftVisitsByMemberId[memberId] : undefined;
+    const draft = getDraftForMember(member);
     if (draft?.visitId) {
       void openExistingVisitForEdit(draft.visitId);
       return;
@@ -946,8 +1051,8 @@ export default function SWVisitVerification() {
       const map: Record<string, MonthVisitStatus> = {};
       rows.forEach((r) => {
         const memberId = String(r?.memberId || '').trim();
-        if (!memberId) return;
-        map[memberId] = {
+        const memberNameKey = getMemberNameKey(r?.memberName);
+        const statusRow: MonthVisitStatus = {
           visitId: String(r?.visitId || '').trim(),
           memberId,
           memberName: String(r?.memberName || '').trim(),
@@ -959,6 +1064,8 @@ export default function SWVisitVerification() {
           claimPaid: Boolean(r?.claimPaid),
           claimId: String(r?.claimId || '').trim() || undefined,
         };
+        if (memberId) map[memberId] = statusRow;
+        if (memberNameKey) map[`name:${memberNameKey}`] = statusRow;
       });
       setMonthStatuses(map);
     } catch (e: any) {
@@ -966,7 +1073,7 @@ export default function SWVisitVerification() {
     } finally {
       setLoadingMonthStatuses(false);
     }
-  }, [currentMonthKey, getIdToken, user]);
+  }, [currentMonthKey, getIdToken, getMemberNameKey, user]);
 
   useEffect(() => {
     if (!isSocialWorker) return;
@@ -979,6 +1086,15 @@ export default function SWVisitVerification() {
     if (!selectedRCFE?.id) return;
     void refreshDraftVisits();
   }, [isSocialWorker, refreshDraftVisits, selectedRCFE?.id]);
+
+  useEffect(() => {
+    if (!isSocialWorker) return;
+    if (!selectedRCFE?.id) {
+      setCclCheckExists(false);
+      return;
+    }
+    void refreshCclCheck();
+  }, [cclMonthKey, isSocialWorker, refreshCclCheck, selectedRCFE?.id]);
 
   // Auto-load assignments on mount.
   useEffect(() => {
@@ -1694,13 +1810,7 @@ export default function SWVisitVerification() {
                 </Button>
                 {completedVisitsForSelectedRcfe.length > 0 && (
                   <Button
-                    onClick={() =>
-                      router.push(
-                        `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
-                          claimDayKey
-                        )}`
-                      )
-                    }
+                    onClick={() => router.push(cclCheckExists ? `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(claimDayKey)}` : cclGateHref)}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     <CheckCircle className="h-4 w-4 mr-2" />
@@ -1726,6 +1836,20 @@ export default function SWVisitVerification() {
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
+              {!cclCheckExists ? (
+                <Alert className="border-amber-200 bg-amber-50">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span>
+                      Complete RCFE licensing check first for <span className="font-mono">{cclMonthKey}</span> before questionnaires/sign-off.
+                    </span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => router.push(cclGateHref)}>
+                      {loadingCclCheck ? 'Checking…' : 'Open licensing check'}
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
               {completedVisitsForSelectedRcfe.length > 0 && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -1739,13 +1863,7 @@ export default function SWVisitVerification() {
                       type="button"
                       size="sm"
                       className="bg-green-600 hover:bg-green-700"
-                      onClick={() =>
-                        router.push(
-                          `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(
-                            claimDayKey
-                          )}`
-                        )
-                      }
+                      onClick={() => router.push(cclCheckExists ? `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(claimDayKey)}` : cclGateHref)}
                     >
                       <CheckCircle className="h-4 w-4 mr-2" />
                       Go to sign-off
@@ -1814,13 +1932,13 @@ export default function SWVisitVerification() {
                 const memberKeyNorm = getMemberKey(member);
                 const visited = memberKeyNorm ? Boolean(visitedByRcfeId[selectedRCFE.id]?.includes(memberKeyNorm)) : false;
                 const signed = memberKeyNorm ? Boolean(signedOffByRcfeId[selectedRCFE.id]?.memberIds?.includes(memberKeyNorm)) : false;
-                const monthStatus = memberKeyNorm ? monthStatuses[memberKeyNorm] : undefined;
+                const monthStatus = getStatusForMember(member);
                 const claimStatus = String(monthStatus?.claimStatus || '').trim().toLowerCase();
                 const isPaid = Boolean(monthStatus?.claimPaid) || claimStatus === 'paid';
                 const isSubmitted = Boolean(monthStatus?.claimSubmitted) || ['submitted', 'approved', 'rejected'].includes(claimStatus);
                 const hasVisitThisMonth = Boolean(monthStatus?.visitId);
                 const needsSignOff = hasVisitThisMonth && !Boolean(monthStatus?.signedOff) && !isSubmitted && !isPaid;
-                const draftStatus = memberKeyNorm ? draftVisitsByMemberId[memberKeyNorm] : undefined;
+                const draftStatus = getDraftForMember(member);
                 const hasDraftToday = Boolean(draftStatus?.visitId) && !hasVisitThisMonth;
                 return (
                   <div
@@ -1888,6 +2006,37 @@ export default function SWVisitVerification() {
         {/* Step 3: Questionnaire */}
         {currentStep === 'questionnaire' && selectedMember && (
           <div className="space-y-6">
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="space-y-2">
+                <div className="font-semibold text-amber-900">
+                  Required: allow geotracking before sign-off and claim submission.
+                </div>
+                <div className="text-xs text-amber-900/90">
+                  This is required on iPhone, Android, and desktop. Tap <span className="font-semibold">Allow location tracking</span> now so staff sign-off can submit without delays.
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void requestLocationTracking()}
+                    disabled={isRequestingLocation}
+                  >
+                    <MapPin className="h-4 w-4 mr-2" />
+                    {isRequestingLocation ? 'Requesting location...' : 'Allow location tracking'}
+                  </Button>
+                  {capturedGeolocation ? (
+                    <Badge className="bg-emerald-600 hover:bg-emerald-600">Location captured</Badge>
+                  ) : null}
+                  {!capturedGeolocation && locationPermissionStatus === 'denied' ? (
+                    <Badge variant="destructive">Permission denied</Badge>
+                  ) : null}
+                </div>
+                {locationMessage ? <div className="text-xs text-amber-900/80">{locationMessage}</div> : null}
+              </AlertDescription>
+            </Alert>
+
             {/* Progress Header */}
             <Card>
               <CardContent className="p-4">
@@ -2498,7 +2647,7 @@ export default function SWVisitVerification() {
                   <div className="rounded-lg border bg-white p-4 space-y-2">
                     <div className="text-sm font-semibold text-slate-900">Community Care Licensing (monthly RCFE check)</div>
                     <div className="text-xs text-slate-600">
-                      This check is completed after sign-off (desktop-friendly) on the CCL Checks page.
+                      Complete this before questionnaires/sign-off on the CCL Checks page.
                     </div>
                   </div>
 
@@ -3062,6 +3211,8 @@ export default function SWVisitVerification() {
                                 geolocation: null,
                                 locationVerified: false
                               });
+                              await refreshMonthStatuses();
+                              await refreshDraftVisits();
                               setCurrentStep('select-member');
                             } else {
                               throw new Error(result?.error || 'Sign-off submission failed');
