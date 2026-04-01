@@ -52,6 +52,7 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'ILS_Connected',
   'Kaiser_ID_Status',
   'Kaiser_User_Assignment',
+  'ALFT_Assigned',
   'Kaiser_Next_Step_Date',
   'T2038_Auth_Email_Kaiser',
   'Social_Worker_Assigned',
@@ -92,6 +93,12 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   'Birth_Date',
   'Member_Phone',
   'Member_Email',
+  // ISP-driven ALFT contact/location fields (names can vary by Caspio schema).
+  'ISP_Current_Location',
+  'ISP_Current_Address',
+  'ISP_Contact_Phone',
+  'ISP_Contact_Email',
+  'ISP_Contact_Confirm_Field',
   'MCP_CIN',
   'MediCal_Number',
   'Date_Modified',
@@ -248,6 +255,7 @@ function buildSwSearchKeys(member: Record<string, any>): string[] {
   };
 
   addTokens(member?.Social_Worker_Assigned ?? member?.social_worker_assigned);
+  addTokens(member?.ALFT_Assigned ?? member?.alft_assigned);
   addTokens(member?.Staff_Assigned ?? member?.staff_assigned ?? member?.Kaiser_User_Assignment ?? member?.kaiser_user_assignment);
   addTokens(member?.SW_ID ?? member?.sw_id);
   addEmailLocalTokens(member?.Staff_Assigned ?? member?.staff_assigned ?? member?.Kaiser_User_Assignment ?? member?.kaiser_user_assignment);

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useAuth, useStorage } from '@/firebase';
+import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,10 +12,37 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, UploadCloud, Info } from 'lucide-react';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { ExactAlftQuestionnaire, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
 
 type UploadedFile = { fileName: string; downloadURL: string; storagePath: string; uploadedAtIso: string };
+type SwAssignedAlftMember = {
+  id: string;
+  memberName: string;
+  memberFirstName: string;
+  memberLastName: string;
+  memberMrn: string;
+  kaiserStatus: string;
+  alftAssigned: string;
+  ispCurrentLocation: string;
+  ispContactPhone: string;
+  ispContactEmail: string;
+  ispContactConfirmDate: string;
+};
+type TrackerDocs = Partial<
+  Record<
+    '602' | 'med_list' | 'snf_facesheet',
+    {
+      fileName: string;
+      downloadURL: string;
+    }
+  >
+>;
+type TrackerRow = {
+  memberId: string;
+  docs?: TrackerDocs;
+};
 type AssessmentPurpose = 'Initial' | 'Change of Condition' | 'Review';
 type LocationType = 'Private Residence' | 'Assisted Living Facility (ALF)' | 'Nursing Facility' | 'Hospital' | 'Adult Day Care' | 'Other';
 type AssessmentSite = 'Home' | 'Nursing Facility' | 'Hospital' | 'ALF' | 'Adult Day Care' | 'Other';
@@ -46,6 +73,7 @@ export default function SwAlftUploadPage() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const auth = useAuth();
+  const firestore = useFirestore();
   const storage = useStorage();
   const { user, socialWorkerData, isSocialWorker, isLoading } = useSocialWorker();
 
@@ -57,6 +85,10 @@ export default function SwAlftUploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [files, setFiles] = useState<FileList | null>(null);
+  const [assignedAlftMembers, setAssignedAlftMembers] = useState<SwAssignedAlftMember[]>([]);
+  const [assignedLoading, setAssignedLoading] = useState(false);
+  const [assignedSearch, setAssignedSearch] = useState('');
+  const [trackerRowsByMemberId, setTrackerRowsByMemberId] = useState<Record<string, TrackerRow>>({});
 
   const [memberFirstName, setMemberFirstName] = useState('');
   const [memberLastName, setMemberLastName] = useState('');
@@ -184,11 +216,108 @@ export default function SwAlftUploadPage() {
     [searchParams]
   );
 
+  const assignedFilter = String(assignedSearch || '').trim().toLowerCase();
+  const visibleAssignedMembers = useMemo(
+    () =>
+      assignedAlftMembers.filter((m) =>
+        !assignedFilter
+          ? true
+          : m.memberName.toLowerCase().includes(assignedFilter) ||
+            m.memberMrn.toLowerCase().includes(assignedFilter) ||
+            m.alftAssigned.toLowerCase().includes(assignedFilter)
+      ),
+    [assignedAlftMembers, assignedFilter]
+  );
+
   // If the SW profile name loads after first render, auto-populate the field.
   useEffect(() => {
     if (!swRealName) return;
     setSocialWorkerName((prev) => (prev && !prev.includes('@') ? prev : swRealName));
   }, [swRealName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!isSocialWorker) return;
+      setAssignedLoading(true);
+      try {
+        const res = await fetch('/api/kaiser-members');
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok || !data?.success) {
+          throw new Error(String(data?.error || `Load failed (HTTP ${res.status})`));
+        }
+        const raw = Array.isArray(data?.members) ? (data.members as any[]) : [];
+        const emailNeedle = swEmail.toLowerCase();
+        const nameNeedle = swDisplayName.toLowerCase();
+        const members = raw
+          .filter((m) => String(m?.Kaiser_Status || '').trim().toLowerCase() === 'rn visit needed')
+          .map((m) => {
+            const first = String(m?.memberFirstName || m?.Senior_First || '').trim();
+            const last = String(m?.memberLastName || m?.Senior_Last || '').trim();
+            const assigned = String(m?.ALFT_Assigned || '').trim();
+            return {
+              id: String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim(),
+              memberName:
+                String(m?.memberName || '').trim() || [first, last].filter(Boolean).join(' ').trim() || 'Member',
+              memberFirstName: first,
+              memberLastName: last,
+              memberMrn: String(m?.memberMrn || m?.MCP_CIN || '').trim(),
+              kaiserStatus: String(m?.Kaiser_Status || '').trim(),
+              alftAssigned: assigned,
+              ispCurrentLocation: String(m?.ISP_Current_Location || '').trim(),
+              ispContactPhone: String(m?.ISP_Contact_Phone || '').trim(),
+              ispContactEmail: String(m?.ISP_Contact_Email || '').trim(),
+              ispContactConfirmDate: String(m?.ISP_Contact_Confirm_Field || '').trim(),
+            } as SwAssignedAlftMember;
+          })
+          .filter((m) => Boolean(m.id))
+          .filter((m) => {
+            const assigned = m.alftAssigned.toLowerCase();
+            if (!assigned) return false;
+            return (
+              (emailNeedle && assigned.includes(emailNeedle)) ||
+              (nameNeedle && !nameNeedle.includes('@') && assigned.includes(nameNeedle))
+            );
+          })
+          .sort((a, b) => a.memberName.localeCompare(b.memberName));
+        if (!cancelled) setAssignedAlftMembers(members);
+      } catch (e: any) {
+        if (!cancelled) {
+          setAssignedAlftMembers([]);
+          toast({
+            title: 'Could not load assigned ALFT members',
+            description: e?.message || 'Please try refreshing this page.',
+            variant: 'destructive',
+          });
+        }
+      } finally {
+        if (!cancelled) setAssignedLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSocialWorker, swDisplayName, swEmail, toast]);
+
+  useEffect(() => {
+    if (!firestore || !isSocialWorker) return;
+    const unsub = onSnapshot(
+      collection(firestore, 'alft_member_tracker'),
+      (snap) => {
+        const next: Record<string, TrackerRow> = {};
+        snap.docs.forEach((d) => {
+          const row = (d.data() || {}) as any;
+          const memberId = String(row?.memberId || d.id || '').trim();
+          if (!memberId) return;
+          next[memberId] = { memberId, ...(row as any) };
+        });
+        setTrackerRowsByMemberId(next);
+      },
+      () => setTrackerRowsByMemberId({})
+    );
+    return () => unsub();
+  }, [firestore, isSocialWorker]);
 
   useEffect(() => {
     if (prefillAppliedRef.current) return;
@@ -658,6 +787,83 @@ export default function SwAlftUploadPage() {
               {swEmail ? <span className="text-muted-foreground"> • {swEmail}</span> : null}
             </AlertDescription>
           </Alert>
+
+          <div className="rounded-md border p-3 space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold">My ALFT-assigned members</div>
+                <div className="text-xs text-muted-foreground">
+                  Kaiser members with `RN Visit Needed` assigned to you via `ALFT_Assigned`.
+                </div>
+              </div>
+              <Input
+                value={assignedSearch}
+                onChange={(e) => setAssignedSearch(e.target.value)}
+                placeholder="Search member / MRN"
+                className="sm:w-[260px]"
+              />
+            </div>
+            {assignedLoading ? (
+              <div className="text-sm text-muted-foreground">Loading assigned ALFT members…</div>
+            ) : visibleAssignedMembers.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No ALFT-assigned members found for your login.</div>
+            ) : (
+              <div className="space-y-2">
+                {visibleAssignedMembers.map((m) => {
+                  const tracker = trackerRowsByMemberId[m.id];
+                  const contactAddress = String(m.ispCurrentLocation || '').trim();
+                  const contactPhone = String(m.ispContactPhone || '').trim();
+                  const contactEmail = String(m.ispContactEmail || '').trim();
+                  const params = new URLSearchParams({
+                    memberFirstName: m.memberFirstName || '',
+                    memberLastName: m.memberLastName || '',
+                    memberMrn: m.memberMrn || '',
+                    currentAddress: contactAddress,
+                    memberPhone: contactPhone,
+                  });
+                  return (
+                    <div key={m.id} className="rounded border p-2 space-y-1">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{m.memberName}</div>
+                          <div className="text-xs text-muted-foreground font-mono">MRN: {m.memberMrn || '—'}</div>
+                        </div>
+                        <a className="text-xs underline text-blue-700" href={`/sw-portal/alft-upload?${params.toString()}`}>
+                          Use this member in ALFT form
+                        </a>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        ISP current location: {contactAddress || '—'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        ISP contact phone: {contactPhone || '—'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        ISP contact email: {contactEmail || '—'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        ISP contact confirmed date: {m.ispContactConfirmDate || '—'}
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-xs">
+                        {(['602', 'med_list', 'snf_facesheet'] as const).map((docKey) => {
+                          const doc = tracker?.docs?.[docKey];
+                          return doc?.downloadURL ? (
+                            <a key={docKey} className="underline text-blue-700" href={doc.downloadURL} target="_blank" rel="noreferrer">
+                              {docKey === '602' ? '602' : docKey === 'med_list' ? 'Med list' : 'SNF facesheet'}
+                            </a>
+                          ) : (
+                            <span key={docKey} className="text-muted-foreground">
+                              {docKey === '602' ? '602' : docKey === 'med_list' ? 'Med list' : 'SNF facesheet'}: none
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           <form onSubmit={handleUpload} className="space-y-4 alft-print-form">
             <div className="rounded-md border p-3 space-y-3">

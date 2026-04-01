@@ -56,9 +56,10 @@ export async function GET(request: NextRequest) {
     }
 
     const cache = adminDb.collection('caspio_members_cache');
-    const [swSnap, kaiserSnap] = await Promise.all([
+    const [swSnap, kaiserSnap, alftSnap] = await Promise.all([
       cache.where('Social_Worker_Assigned', '==', requestedEmail).limit(5000).get().catch(() => null as any),
       cache.where('Kaiser_User_Assignment', '==', requestedEmail).limit(5000).get().catch(() => null as any),
+      cache.where('ALFT_Assigned', '==', requestedEmail).limit(5000).get().catch(() => null as any),
     ]);
 
     const byId = new Map<string, any>();
@@ -71,6 +72,7 @@ export async function GET(request: NextRequest) {
     };
     addSnap(swSnap);
     addSnap(kaiserSnap);
+    addSnap(alftSnap);
 
     const members = Array.from(byId.entries()).map(([id, data]) => ({ id, ...(data || {}) }));
     console.log(`✅ [SW-ASSIGNMENTS] Found ${members.length} assigned members (cache)`);
@@ -109,6 +111,7 @@ export async function GET(request: NextRequest) {
         nextVisit: member.Next_Visit_Date || undefined,
         status: member.CalAIM_Status === 'Authorized' ? 'Active' : 'Inactive',
         notes: member.Visit_Notes || undefined,
+        alftAssigned: member.ALFT_Assigned || undefined,
         isNewAssignment: isNewAssignmentForEmail(member, requestedEmail),
         assignmentChangedAt: member?.assignmentChangedAt || null,
       });

@@ -1246,9 +1246,11 @@ async function syncExistingNoteStatusToCaspio(params: {
       `?q.where=${encodeURIComponent(whereClause)}`;
 
     const nextStatus = params.status === 'Closed' ? 'Closed' : 'Open';
+    const caspioClosedLabel = '🔴 Closed';
+    const caspioOpenLabel = '🟢 Open';
     const payload: Record<string, unknown> = {
       Note_Status: nextStatus,
-      Follow_Up_Status: nextStatus === 'Closed' ? 'Closed' : '🟢 Open',
+      Follow_Up_Status: nextStatus === 'Closed' ? caspioClosedLabel : caspioOpenLabel,
     };
     if (nextStatus === 'Closed') {
       payload.Follow_Up_Date = null;

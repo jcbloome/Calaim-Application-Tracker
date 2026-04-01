@@ -34,6 +34,14 @@ const toCanonicalCalaimStatus = (value: unknown) => {
   return CALAIM_STATUS_ALIASES[normalizeCalaimStatus(raw)] || raw;
 };
 
+const pickFirstPopulated = (row: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    const value = String(row?.[key] ?? '').trim();
+    if (value) return value;
+  }
+  return '';
+};
+
 export async function GET(request: NextRequest) {
   try {
     const preferCaspio = request.nextUrl.searchParams.get('refresh') === '1' || request.nextUrl.searchParams.get('source') === 'caspio';
@@ -63,6 +71,11 @@ export async function GET(request: NextRequest) {
       }
 
       const transformedMembers = cached.map((member: any) => ({
+        // Prefer ISP-specific fields for ALFT location/contact context.
+        ISP_Current_Location: pickFirstPopulated(member, ['ISP_Current_Location', 'ISP_Current_Address']),
+        ISP_Contact_Phone: pickFirstPopulated(member, ['ISP_Contact_Phone', 'Member_Phone']),
+        ISP_Contact_Email: pickFirstPopulated(member, ['ISP_Contact_Email', 'Member_Email']),
+        ISP_Contact_Confirm_Field: pickFirstPopulated(member, ['ISP_Contact_Confirm_Field']),
         id: member.Client_ID2 || member.client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
         Client_ID2: member.Client_ID2 || member.client_ID2,
         client_ID2: member.Client_ID2 || member.client_ID2,
@@ -99,6 +112,7 @@ export async function GET(request: NextRequest) {
         Kaiser_ID_Status: member.Kaiser_ID_Status,
         SW_ID: member.SW_ID,
         Kaiser_User_Assignment: member.Kaiser_User_Assignment,
+        ALFT_Assigned: member.ALFT_Assigned || '',
         Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
         T2038_Auth_Email_Kaiser: member.T2038_Auth_Email_Kaiser || '',
         Social_Worker_Assigned: member.Social_Worker_Assigned || '',
@@ -467,6 +481,11 @@ export async function GET(request: NextRequest) {
 
     // Transform the data to match expected format
       const transformedMembers = (membersData.Result || []).map((member: any) => ({
+      // Prefer ISP-specific fields for ALFT location/contact context.
+      ISP_Current_Location: pickFirstPopulated(member, ['ISP_Current_Location', 'ISP_Current_Address']),
+      ISP_Contact_Phone: pickFirstPopulated(member, ['ISP_Contact_Phone', 'Member_Phone']),
+      ISP_Contact_Email: pickFirstPopulated(member, ['ISP_Contact_Email', 'Member_Email']),
+      ISP_Contact_Confirm_Field: pickFirstPopulated(member, ['ISP_Contact_Confirm_Field']),
       id: member.Client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
       Client_ID2: member.Client_ID2,
       client_ID2: member.Client_ID2, // Duplicate for compatibility
@@ -495,6 +514,7 @@ export async function GET(request: NextRequest) {
       Kaiser_ID_Status: member.Kaiser_ID_Status,
       SW_ID: member.SW_ID,
       Kaiser_User_Assignment: member.Kaiser_User_Assignment,
+      ALFT_Assigned: member.ALFT_Assigned || '',
       Kaiser_Next_Step_Date: member.Kaiser_Next_Step_Date,
       // Kaiser authorization-only email flag (used for summary categorization)
       T2038_Auth_Email_Kaiser: member.T2038_Auth_Email_Kaiser || '',
