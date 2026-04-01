@@ -1,25 +1,12 @@
 'use client';
 
 import React from 'react';
-import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
-
-const FirebaseClientProvider = dynamic(
-  () => import('@/firebase/client-provider').then((m) => m.FirebaseClientProvider),
-  { ssr: false }
-);
-const NotificationProvider = dynamic(
-  () => import('@/components/NotificationProvider').then((m) => m.NotificationProvider),
-  { ssr: false }
-);
-const SessionIsolationGate = dynamic(
-  () => import('@/components/SessionIsolationGate').then((m) => m.SessionIsolationGate),
-  { ssr: false }
-);
-const PWAServiceWorker = dynamic(() => import('@/components/PWAServiceWorker').then((m) => m.default), {
-  ssr: false,
-});
-const Toaster = dynamic(() => import('@/components/ui/toaster').then((m) => m.Toaster), { ssr: false });
+import { FirebaseClientProvider } from '@/firebase/client-provider';
+import { NotificationProvider } from '@/components/NotificationProvider';
+import { SessionIsolationGate } from '@/components/SessionIsolationGate';
+import PWAServiceWorker from '@/components/PWAServiceWorker';
+import { Toaster } from '@/components/ui/toaster';
 
 function isPublicPathname(pathname: string) {
   if (!pathname) return true;
