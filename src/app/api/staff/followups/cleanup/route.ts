@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
       const where =
         `Follow_Up_Assignment='${escapeQuotes(candidate)}'` +
         ` AND Follow_Up_Status<>'Closed'` +
+        ` AND Follow_Up_Status<>'🔴Closed'` +
         ` AND Follow_Up_Status<>'🔴 Closed'` +
         ` AND (Follow_Up_Date IS NULL OR Follow_Up_Date='')`;
       const rows = await fetchCaspioRecords(credentials, accessToken, table, where, limit).catch(() => []);
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ Follow_Up_Status: '🔴 Closed' }),
+        body: JSON.stringify({ Follow_Up_Status: '🔴Closed' }),
       });
 
       if (!res.ok) {
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
         batch.set(
           ref,
           {
-            followUpStatus: '🔴 Closed',
+            followUpStatus: '🔴Closed',
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true }

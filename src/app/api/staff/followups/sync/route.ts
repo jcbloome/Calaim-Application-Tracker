@@ -107,8 +107,8 @@ export async function POST(request: NextRequest) {
     const allNotes: any[] = [];
     for (const candidate of assignmentCandidates) {
       const whereClauses = [
-        `Follow_Up_Assignment='${escapeQuotes(candidate)}' AND Follow_Up_Status<>'Closed' AND Follow_Up_Date IS NOT NULL`,
-        `Assigned_To='${escapeQuotes(candidate)}' AND Follow_Up_Status<>'Closed' AND Follow_Up_Date IS NOT NULL`,
+        `Follow_Up_Assignment='${escapeQuotes(candidate)}' AND Follow_Up_Status<>'Closed' AND Follow_Up_Status<>'🔴Closed' AND Follow_Up_Status<>'🔴 Closed' AND Follow_Up_Date IS NOT NULL`,
+        `Assigned_To='${escapeQuotes(candidate)}' AND Follow_Up_Status<>'Closed' AND Follow_Up_Status<>'🔴Closed' AND Follow_Up_Status<>'🔴 Closed' AND Follow_Up_Date IS NOT NULL`,
       ];
       for (const baseWhere of whereClauses) {
         const where = sinceIso

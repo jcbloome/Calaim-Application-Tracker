@@ -1189,7 +1189,7 @@ async function syncNoteToCaspio(note: MemberNote): Promise<{ success: boolean; e
       Time_Stamp: note.createdAt,
       Follow_Up_Date: toCaspioDate(note.followUpDate),
       Note_Status: note.status || 'Open',
-      Follow_Up_Status: note.priority === 'Urgent' ? '🔴 Urgent' : note.priority === 'Priority' ? '🟡 Priority' : '🟢 Open',
+      Follow_Up_Status: note.priority === 'Urgent' ? '🔴 Urgent' : note.priority === 'Priority' ? '🟡 Priority' : '🟢Open',
       User_Full_Name: note.createdByName,
       Follow_Up_Assignment: note.assignedTo || null,
       Assigned_First: note.assignedToName || null
@@ -1250,8 +1250,8 @@ async function syncExistingNoteStatusToCaspio(params: {
       `?q.where=${encodeURIComponent(whereClause)}`;
 
     const nextStatus = params.status === 'Closed' ? 'Closed' : 'Open';
-    const caspioClosedLabel = '🔴 Closed';
-    const caspioOpenLabel = '🟢 Open';
+    const caspioClosedLabel = '🔴Closed';
+    const caspioOpenLabel = '🟢Open';
     const payload: Record<string, unknown> = {
       Note_Status: nextStatus,
       Follow_Up_Status: nextStatus === 'Closed' ? caspioClosedLabel : caspioOpenLabel,
@@ -1454,8 +1454,8 @@ export async function PUT(request: NextRequest) {
         return normalized === 'close' || normalized === 'closed' || normalized.includes('closed');
       };
       const isCanonicalFollowUpClosed = (value: unknown) => {
-        const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-        return normalized === '🔴 closed';
+        const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+        return normalized === '🔴closed';
       };
       const legacyRows = caspioRows.filter((row) => {
         const noteStatus = String(row?.Note_Status || '').trim();
@@ -1480,7 +1480,7 @@ export async function PUT(request: NextRequest) {
           },
           body: JSON.stringify({
             Note_Status: 'Closed',
-            Follow_Up_Status: '🔴 Closed',
+            Follow_Up_Status: '🔴Closed',
           }),
         });
         if (!response.ok) continue;

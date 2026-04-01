@@ -69,8 +69,8 @@ export async function POST(request: NextRequest) {
       return normalized === 'close' || normalized === 'closed' || normalized.includes('closed');
     };
     const isCanonicalFollowUpClosed = (value: unknown) => {
-      const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-      return normalized === '🔴 closed';
+      const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+      return normalized === '🔴closed';
     };
 
     // One-time migration target: legacy close/closed variants.
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            Follow_Up_Status: '🔴 Closed',
+            Follow_Up_Status: '🔴Closed',
             Note_Status: 'Closed',
           }),
         });
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
         writeBatch.set(
           ref,
           {
-            followUpStatus: '🔴 Closed',
+            followUpStatus: '🔴Closed',
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             normalizedBy: actorName,
             normalizedByEmail: actorEmail || null,
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
       success: true,
       scanned: candidateRows.length,
       updated,
-      message: `Normalized ${updated} legacy close/closed status value(s) to 🔴 Closed.`,
+      message: `Normalized ${updated} legacy close/closed status value(s) to 🔴Closed.`,
     });
   } catch (error: any) {
     return NextResponse.json(

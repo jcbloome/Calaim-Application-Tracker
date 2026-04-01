@@ -119,7 +119,7 @@ function normalizeNoteStatus(value: unknown): NoteStatus {
 }
 
 function noteStatusLabel(value: unknown): string {
-  return normalizeNoteStatus(value) === 'Closed' ? '🔴 Closed' : '🟢 Open';
+  return normalizeNoteStatus(value) === 'Closed' ? '🔴Closed' : '🟢Open';
 }
 
 function formatDateTimeSafe(value: unknown): string {
@@ -1160,14 +1160,14 @@ function MemberNotesPageContent() {
                     variant={noteFilter.status === 'Open' ? 'default' : 'outline'}
                     onClick={() => setNoteFilter(prev => ({ ...prev, status: 'Open' }))}
                   >
-                    🟢 Open
+                    🟢Open
                   </Button>
                   <Button
                     size="sm"
                     variant={noteFilter.status === 'Closed' ? 'default' : 'outline'}
                     onClick={() => setNoteFilter(prev => ({ ...prev, status: 'Closed' }))}
                   >
-                    🔴 Closed
+                    🔴Closed
                   </Button>
                 </div>
 

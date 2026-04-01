@@ -53,7 +53,7 @@ const normalizeFollowUpStatus = (value: unknown): CanonicalFollowUpStatus => {
 };
 
 const followUpStatusLabel = (value: unknown) =>
-  normalizeFollowUpStatus(value) === 'Closed' ? '🔴 Closed' : '🟢 Open';
+  normalizeFollowUpStatus(value) === 'Closed' ? '🔴Closed' : '🟢Open';
 
 export default function FollowUpNotesPage() {
   const { user, isAdmin, isLoading: adminLoading } = useAdmin();
@@ -761,8 +761,8 @@ export default function FollowUpNotesPage() {
                                   }))
                                 }
                               >
-                                <option value="Open">🟢 Open</option>
-                                <option value="Closed">🔴 Closed</option>
+                                <option value="Open">🟢Open</option>
+                                <option value="Closed">🔴Closed</option>
                               </select>
                             </div>
                             <div className="whitespace-pre-wrap break-words text-sm text-slate-900">
@@ -928,8 +928,8 @@ export default function FollowUpNotesPage() {
                                   }))
                                 }
                               >
-                                <option value="Open">🟢 Open</option>
-                                <option value="Closed">🔴 Closed</option>
+                                <option value="Open">🟢Open</option>
+                                <option value="Closed">🔴Closed</option>
                               </select>
                               <Badge variant={statusLower === 'closed' ? 'outline' : 'secondary'}>{followUpStatusLabel(status)}</Badge>
                               {dirty ? <Badge variant="secondary">Edited</Badge> : null}
