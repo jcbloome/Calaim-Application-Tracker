@@ -97,6 +97,7 @@ export default function AdminAlftAssignmentPage() {
 
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [members, setMembers] = useState<KaiserAlftMember[]>([]);
   const [search, setSearch] = useState('');
   const [trackerRecords, setTrackerRecords] = useState<Record<string, TrackerRecord>>({});
@@ -126,18 +127,15 @@ export default function AdminAlftAssignmentPage() {
         .filter((m: KaiserAlftMember) => Boolean(m.id))
         .sort((a: KaiserAlftMember, b: KaiserAlftMember) => a.memberName.localeCompare(b.memberName));
       setMembers(next);
+      setHasLoadedOnce(true);
     } catch (e: any) {
       setMembers([]);
+      setHasLoadedOnce(true);
       toast({ title: 'Could not load members', description: e?.message || 'Try again.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   }, [toast]);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    void loadMembers();
-  }, [isAdmin, loadMembers]);
 
   useEffect(() => {
     if (!firestore || !isAdmin) return;
@@ -309,13 +307,21 @@ export default function AdminAlftAssignmentPage() {
         <CardContent className="space-y-3 overflow-x-auto">
           <div className="flex gap-2">
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search member / MRN / assigned..." />
-            <Button variant="outline" onClick={() => void syncFromCaspio()} disabled={syncing}>
+            <Button variant="outline" onClick={() => void loadMembers()} disabled={loading || syncing}>
+              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+              Load from Cache
+            </Button>
+            <Button variant="outline" onClick={() => void syncFromCaspio()} disabled={syncing || loading}>
               {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-              Sync from Caspio
+              Sync from Caspio + Load
             </Button>
             <Badge variant="secondary">{filtered.length} member(s)</Badge>
           </div>
-          {loading ? (
+          {!hasLoadedOnce ? (
+            <div className="text-sm text-muted-foreground">
+              Manual mode: this page does not auto-sync or auto-load. Click `Load from Cache` or `Sync from Caspio + Load`.
+            </div>
+          ) : loading ? (
             <div className="text-sm text-muted-foreground">Loading members...</div>
           ) : (
             <Table>
