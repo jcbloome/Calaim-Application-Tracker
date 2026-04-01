@@ -1434,15 +1434,7 @@ function MyTasksPageContent() {
                       disabled={isSyncingFollowUps || isLoadingFollowUpCalendar}
                     >
                       <RefreshCw className={`mr-2 h-4 w-4 ${isSyncingFollowUps ? 'animate-spin' : ''}`} />
-                      Sync assigned follow-ups
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => fetchFollowUpCalendar(followUpMonth)}
-                      disabled={isLoadingFollowUpCalendar}
-                    >
-                      <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingFollowUpCalendar ? 'animate-spin' : ''}`} />
-                      Refresh month
+                      Manual sync + load month
                     </Button>
                   </div>
                 </div>

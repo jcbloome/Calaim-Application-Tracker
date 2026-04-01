@@ -89,6 +89,36 @@ function normalizeAssignmentValue(value: unknown): string {
   return String(value || '').trim();
 }
 
+type NoteStatus = 'Open' | 'Closed';
+type PendingSyncScope = 'selected' | 'all';
+
+type PendingStatusChange = {
+  key: string;
+  noteId: string;
+  clientId2: string;
+  memberName: string;
+  fromStatus: NoteStatus;
+  toStatus: NoteStatus;
+  resolvedAt: string | null;
+  updatedAt: string;
+};
+
+function normalizeNoteStatus(value: unknown): NoteStatus {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'Open';
+  if (raw === 'close' || raw === 'closed' || raw.includes('closed')) return 'Closed';
+  if (raw.includes('open')) return 'Open';
+  return 'Open';
+}
+
+function noteStatusLabel(value: unknown): string {
+  return normalizeNoteStatus(value) === 'Closed' ? '🔴 Closed' : '🟢 Open';
+}
+
+function pendingStatusKey(noteId: string, clientId2: string): string {
+  return `${String(clientId2 || '').trim()}::${String(noteId || '').trim()}`;
+}
+
 function MemberNotesPageContent() {
   const { toast } = useToast();
   const { user } = useAdmin();
@@ -115,6 +145,8 @@ function MemberNotesPageContent() {
   const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [isBulkClosing, setIsBulkClosing] = useState(false);
+  const [pendingStatusChanges, setPendingStatusChanges] = useState<Record<string, PendingStatusChange>>({});
+  const [isSyncingPendingStatuses, setIsSyncingPendingStatuses] = useState(false);
 
   // Fetch members from Caspio API with search
   const fetchMembers = useCallback(async (search: string = '') => {
@@ -276,6 +308,22 @@ function MemberNotesPageContent() {
   }, [members, memberScope, kaiserAssignmentFilter]);
 
   const handleMemberSelect = (member: Member) => {
+    const currentMemberId = String(selectedMember?.clientId2 || '').trim();
+    const nextMemberId = String(member?.clientId2 || '').trim();
+    if (currentMemberId && nextMemberId && currentMemberId !== nextMemberId) {
+      const pendingForCurrent = Object.values(pendingStatusChanges).filter(
+        (change) => change.clientId2 === currentMemberId
+      ).length;
+      if (pendingForCurrent > 0) {
+        const proceed =
+          typeof window !== 'undefined'
+            ? window.confirm(
+                `You have ${pendingForCurrent} unsynced status change(s) for this member.\n\nSwitch members without syncing?`
+              )
+            : false;
+        if (!proceed) return;
+      }
+    }
     setSelectedMember(member);
     setMemberNotes([]); // Clear notes when selecting a new member
     setSelectedNoteIds([]);
@@ -308,7 +356,20 @@ function MemberNotesPageContent() {
       const data = await response.json();
 
       if (data.success) {
-        setMemberNotes(data.notes);
+        const pendingForMember = new Map(
+          Object.values(pendingStatusChanges)
+            .filter((change) => change.clientId2 === member.clientId2)
+            .map((change) => [change.noteId, change])
+        );
+        const normalizedNotes = Array.isArray(data?.notes)
+          ? data.notes.map((note: MemberNote) => ({
+              ...note,
+              status:
+                pendingForMember.get(String(note?.id || '').trim())?.toStatus ||
+                normalizeNoteStatus((note as any)?.status),
+            }))
+          : [];
+        setMemberNotes(normalizedNotes);
 
         const syncType = data.isFirstSync ? 'imported from Caspio' : 
                         data.newNotesCount > 0 ? `synced ${data.newNotesCount} new notes` : 
@@ -332,7 +393,7 @@ function MemberNotesPageContent() {
     } finally {
       setIsNotesLoading(false);
     }
-  }, [toast]);
+  }, [toast, pendingStatusChanges]);
 
   useEffect(() => {
     if (!preselectId || autoSelectRef.current || filteredMembers.length === 0) return;
@@ -362,7 +423,7 @@ function MemberNotesPageContent() {
 
   const filteredNotes = memberNotes.filter(note => {
     if (noteFilter.status !== 'all') {
-      const currentStatus = note.status || 'Open';
+      const currentStatus = normalizeNoteStatus(note.status);
       if (noteFilter.status !== currentStatus) return false;
     }
     return true;
@@ -374,45 +435,99 @@ function MemberNotesPageContent() {
     return bTime - aTime;
   });
 
+  const pendingChangeList = useMemo(
+    () =>
+      Object.values(pendingStatusChanges).sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      ),
+    [pendingStatusChanges]
+  );
+
+  const pendingByMember = useMemo(() => {
+    const grouped = new Map<
+      string,
+      { clientId2: string; memberName: string; total: number; closing: number; reopening: number }
+    >();
+    for (const change of pendingChangeList) {
+      const key = `${change.clientId2}::${change.memberName}`;
+      const existing = grouped.get(key) || {
+        clientId2: change.clientId2,
+        memberName: change.memberName,
+        total: 0,
+        closing: 0,
+        reopening: 0,
+      };
+      existing.total += 1;
+      if (change.toStatus === 'Closed') {
+        existing.closing += 1;
+      } else {
+        existing.reopening += 1;
+      }
+      grouped.set(key, existing);
+    }
+    return Array.from(grouped.values());
+  }, [pendingChangeList]);
+
+  const selectedMemberPendingChanges = useMemo(() => {
+    if (!selectedMember?.clientId2) return [];
+    return pendingChangeList.filter((change) => change.clientId2 === selectedMember.clientId2);
+  }, [pendingChangeList, selectedMember?.clientId2]);
+
+  const stageStatusChange = useCallback((note: MemberNote, nextStatus: NoteStatus) => {
+    const noteId = String(note?.id || '').trim();
+    const clientId2 = String(note?.clientId2 || '').trim();
+    if (!noteId || !clientId2) return;
+
+    const key = pendingStatusKey(noteId, clientId2);
+    const currentStatus = normalizeNoteStatus(note.status);
+    const nowIso = new Date().toISOString();
+
+    setMemberNotes((prev) =>
+      prev.map((existing) =>
+        existing.id === noteId
+          ? { ...existing, status: nextStatus, resolvedAt: nextStatus === 'Closed' ? nowIso : undefined }
+          : existing
+      )
+    );
+
+    setPendingStatusChanges((prev) => {
+      const existing = prev[key];
+      const baseStatus = existing?.fromStatus || currentStatus;
+      if (nextStatus === baseStatus) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return {
+        ...prev,
+        [key]: {
+          key,
+          noteId,
+          clientId2,
+          memberName: String(note.memberName || selectedMember?.firstName || 'Member').trim(),
+          fromStatus: baseStatus,
+          toStatus: nextStatus,
+          resolvedAt: nextStatus === 'Closed' ? nowIso : null,
+          updatedAt: nowIso,
+        },
+      };
+    });
+  }, [selectedMember?.firstName]);
+
   const handleToggleStatus = async (note: MemberNote) => {
     try {
-      const nextStatus = (note.status || 'Open') === 'Closed' ? 'Open' : 'Closed';
-      const response = await fetch('/api/member-notes', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: note.id,
-          clientId2: note.clientId2,
-          status: nextStatus,
-          resolvedAt: nextStatus === 'Closed' ? new Date().toISOString() : null,
-          actorName: user?.displayName || user?.email || 'Admin',
-          actorEmail: user?.email || '',
-          pushToCaspio: true,
-        })
-      });
-
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to resolve note');
-      }
-
-      setMemberNotes(prev => prev.map(existing => (
-        existing.id === note.id ? { ...existing, status: nextStatus } : existing
-      )));
-
-      if (nextStatus === 'Closed' && selectedMember?.clientId2) {
-        await clearMemberFollowUpTasks(selectedMember.clientId2);
-      }
+      const nextStatus: NoteStatus = normalizeNoteStatus(note.status) === 'Closed' ? 'Open' : 'Closed';
+      stageStatusChange(note, nextStatus);
 
       toast({
-        title: `Note ${nextStatus === 'Closed' ? 'Closed' : 'Reopened'}`,
-        description: `This note has been marked as ${nextStatus.toLowerCase()}.`
+        title: 'Status staged',
+        description: `${note.memberName}: ${noteStatusLabel(nextStatus)} queued for sync.`,
       });
     } catch (error: unknown) {
       console.error('Error resolving note:', error);
       toast({
         title: 'Error',
-        description: getErrorMessage(error, 'Failed to resolve note'),
+        description: getErrorMessage(error, 'Failed to stage note status'),
         variant: 'destructive'
       });
     }
@@ -449,7 +564,7 @@ function MemberNotesPageContent() {
   }, []);
 
   const selectableOpenNoteIds = useMemo(
-    () => sortedNotes.filter((note) => (note.status || 'Open') !== 'Closed').map((note) => note.id),
+    () => sortedNotes.filter((note) => normalizeNoteStatus(note.status) !== 'Closed').map((note) => note.id),
     [sortedNotes]
   );
 
@@ -473,7 +588,7 @@ function MemberNotesPageContent() {
 
     const openNoteIds = targetIds.filter((id) => {
       const note = memberNotes.find((n) => n.id === id);
-      return note && (note.status || 'Open') !== 'Closed';
+      return note && normalizeNoteStatus(note.status) !== 'Closed';
     });
     if (openNoteIds.length === 0) {
       toast({
@@ -485,17 +600,48 @@ function MemberNotesPageContent() {
 
     setIsBulkClosing(true);
     try {
-      let closedCount = 0;
-      let failedCount = 0;
-      for (const noteId of openNoteIds) {
+      const toClose = memberNotes.filter((note) => openNoteIds.includes(note.id));
+      for (const note of toClose) {
+        stageStatusChange(note, 'Closed');
+      }
+      setSelectedNoteIds([]);
+      toast({
+        title: 'Bulk close staged',
+        description: `Queued ${toClose.length} note(s). Use Sync Pending Changes to push to Caspio.`,
+      });
+    } finally {
+      setIsBulkClosing(false);
+    }
+  }, [selectedMember?.clientId2, selectedNoteIds, memberNotes, toast, stageStatusChange]);
+
+  const syncPendingStatusChanges = useCallback(async (scope: PendingSyncScope = 'selected') => {
+    const targetChanges =
+      scope === 'all'
+        ? pendingChangeList
+        : selectedMemberPendingChanges;
+    if (targetChanges.length === 0) {
+      toast({
+        title: 'Nothing to sync',
+        description: scope === 'all' ? 'No pending status changes.' : 'No pending changes for this member.',
+      });
+      return;
+    }
+
+    setIsSyncingPendingStatuses(true);
+    try {
+      let synced = 0;
+      let failed = 0;
+      const successfulKeys = new Set<string>();
+      const closedMemberIds = new Set<string>();
+      for (const change of targetChanges) {
         const response = await fetch('/api/member-notes', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            id: noteId,
-            clientId2: selectedMember.clientId2,
-            status: 'Closed',
-            resolvedAt: new Date().toISOString(),
+            id: change.noteId,
+            clientId2: change.clientId2,
+            status: change.toStatus,
+            resolvedAt: change.toStatus === 'Closed' ? change.resolvedAt || new Date().toISOString() : null,
             actorName: user?.displayName || user?.email || 'Admin',
             actorEmail: user?.email || '',
             pushToCaspio: true,
@@ -503,30 +649,50 @@ function MemberNotesPageContent() {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data?.success) {
-          failedCount += 1;
+          failed += 1;
           continue;
         }
-        closedCount += 1;
+        synced += 1;
+        successfulKeys.add(change.key);
+        if (change.toStatus === 'Closed') {
+          closedMemberIds.add(change.clientId2);
+        }
       }
 
-      if (closedCount > 0) {
-        setMemberNotes((prev) =>
-          prev.map((note) =>
-            openNoteIds.includes(note.id) ? { ...note, status: 'Closed' } : note
-          )
-        );
+      let removedTasks = 0;
+      for (const memberId of closedMemberIds) {
+        removedTasks += await clearMemberFollowUpTasks(memberId);
       }
-      const removedTasks = await clearMemberFollowUpTasks(selectedMember.clientId2);
 
-      setSelectedNoteIds([]);
+      if (successfulKeys.size > 0) {
+        setPendingStatusChanges((prev) => {
+          const next = { ...prev };
+          for (const key of successfulKeys) delete next[key];
+          return next;
+        });
+      }
+
+      if (selectedMember) {
+        await handleRequestNotes(selectedMember);
+      }
+
       toast({
-        title: 'Bulk close completed',
-        description: `${closedCount} closed${failedCount ? `, ${failedCount} failed` : ''}. Cleared ${removedTasks} daily task follow-up entries.`,
+        title: 'Pending changes synced',
+        description: `${synced} synced${failed ? `, ${failed} failed` : ''}. Cleared ${removedTasks} follow-up task entries.`,
       });
     } finally {
-      setIsBulkClosing(false);
+      setIsSyncingPendingStatuses(false);
     }
-  }, [selectedMember?.clientId2, selectedNoteIds, memberNotes, toast, user?.displayName, user?.email, clearMemberFollowUpTasks]);
+  }, [
+    clearMemberFollowUpTasks,
+    handleRequestNotes,
+    pendingChangeList,
+    selectedMember,
+    selectedMemberPendingChanges,
+    toast,
+    user?.displayName,
+    user?.email,
+  ]);
 
   useEffect(() => {
     setSelectedNoteIds((prev) => prev.filter((id) => memberNotes.some((note) => note.id === id)));
@@ -734,8 +900,10 @@ function MemberNotesPageContent() {
                 </CardDescription>
               </div>
               {selectedMember && (
-                <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-                  Notes are read-only here. Use the sync button to pull latest from Caspio.
+                <div className="flex items-center gap-2">
+                  <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                    Notes are read-only here. Use the sync button to pull latest from Caspio.
+                  </div>
                 </div>
               )}
             </div>
@@ -770,6 +938,38 @@ function MemberNotesPageContent() {
                   <Download className="mr-2 h-3 w-3" />
                   Sync Notes
                 </Button>
+                {pendingChangeList.length > 0 ? (
+                  <div className="mx-auto mt-4 max-w-2xl rounded-md border border-amber-200 bg-amber-50 p-3 text-left">
+                    <div className="text-sm font-medium text-amber-900">
+                      Pending status changes: {pendingChangeList.length}
+                    </div>
+                    <div className="mt-1 text-xs text-amber-900">
+                      {pendingByMember.map((row) => (
+                        <div key={`${row.clientId2}-${row.memberName}`}>
+                          {row.memberName} ({row.clientId2}): {row.total} change(s)
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => void syncPendingStatusChanges('selected')}
+                        disabled={isSyncingPendingStatuses || selectedMemberPendingChanges.length === 0}
+                      >
+                        {isSyncingPendingStatuses ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                        Sync this member ({selectedMemberPendingChanges.length})
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void syncPendingStatusChanges('all')}
+                        disabled={isSyncingPendingStatuses || pendingChangeList.length === 0}
+                      >
+                        Sync all ({pendingChangeList.length})
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="space-y-4">
@@ -803,20 +1003,56 @@ function MemberNotesPageContent() {
                   <div className="text-sm text-muted-foreground">
                     Showing {memberNotes.length} notes for {selectedMember.firstName} {selectedMember.lastName}
                   </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => handleRequestNotes(selectedMember)}
-                    disabled={isNotesLoading}
-                  >
-                    {isNotesLoading ? (
-                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                    ) : (
-                      <Download className="mr-2 h-3 w-3" />
-                    )}
-                    Sync Notes
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleRequestNotes(selectedMember)}
+                      disabled={isNotesLoading}
+                    >
+                      {isNotesLoading ? (
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      ) : (
+                        <Download className="mr-2 h-3 w-3" />
+                      )}
+                      Sync Notes
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => void syncPendingStatusChanges('selected')}
+                      disabled={isSyncingPendingStatuses || selectedMemberPendingChanges.length === 0}
+                    >
+                      {isSyncingPendingStatuses ? (
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      ) : (
+                        <CheckCircle className="mr-2 h-3 w-3" />
+                      )}
+                      Sync Pending ({selectedMemberPendingChanges.length})
+                    </Button>
+                  </div>
                 </div>
+                {pendingChangeList.length > 0 ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <div className="font-medium">Pending Caspio sync: {pendingChangeList.length} change(s)</div>
+                    <div className="mt-1 space-y-0.5">
+                      {pendingByMember.map((row) => (
+                        <div key={`${row.clientId2}-${row.memberName}`}>
+                          {row.memberName} ({row.clientId2}): {row.total} ({row.closing} close, {row.reopening} reopen)
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void syncPendingStatusChanges('all')}
+                        disabled={isSyncingPendingStatuses}
+                      >
+                        Sync all pending ({pendingChangeList.length})
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2">
                   <div className="text-xs text-muted-foreground">
                     Selected notes: <span className="font-medium text-foreground">{selectedNoteIds.length}</span>
@@ -874,14 +1110,14 @@ function MemberNotesPageContent() {
                     variant={noteFilter.status === 'Open' ? 'default' : 'outline'}
                     onClick={() => setNoteFilter(prev => ({ ...prev, status: 'Open' }))}
                   >
-                    Open
+                    🟢 Open
                   </Button>
                   <Button
                     size="sm"
                     variant={noteFilter.status === 'Closed' ? 'default' : 'outline'}
                     onClick={() => setNoteFilter(prev => ({ ...prev, status: 'Closed' }))}
                   >
-                    Closed
+                    🔴 Closed
                   </Button>
                 </div>
 
@@ -895,7 +1131,7 @@ function MemberNotesPageContent() {
                             onCheckedChange={(checked) => toggleSelectedNote(note.id, Boolean(checked))}
                             aria-label={`Select note ${note.id}`}
                           />
-                          <Badge variant="outline">{note.status || 'Open'}</Badge>
+                          <Badge variant="outline">{noteStatusLabel(note.status)}</Badge>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="text-[11px] text-muted-foreground">
@@ -906,10 +1142,10 @@ function MemberNotesPageContent() {
                             variant="outline"
                             className="h-6 px-2 text-[10px]"
                             onClick={() => void handleToggleStatus(note)}
-                            title={(note.status || 'Open') === 'Closed' ? 'Reopen note' : 'Close note'}
+                            title={normalizeNoteStatus(note.status) === 'Closed' ? 'Reopen note' : 'Close note'}
                           >
                             <CheckCircle className="h-3 w-3 mr-1" />
-                            {(note.status || 'Open') === 'Closed' ? 'Reopen' : 'Close'}
+                            {normalizeNoteStatus(note.status) === 'Closed' ? 'Reopen' : 'Close'}
                           </Button>
                           <AlertDialog
                             open={deleteTarget?.id === note.id}

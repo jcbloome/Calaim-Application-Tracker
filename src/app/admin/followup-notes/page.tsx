@@ -42,6 +42,19 @@ type ClientNote = {
   userRole?: string;
 };
 
+type CanonicalFollowUpStatus = 'Open' | 'Closed';
+
+const normalizeFollowUpStatus = (value: unknown): CanonicalFollowUpStatus => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'Open';
+  if (raw === 'close' || raw === 'closed' || raw.includes('closed')) return 'Closed';
+  if (raw.includes('open')) return 'Open';
+  return 'Open';
+};
+
+const followUpStatusLabel = (value: unknown) =>
+  normalizeFollowUpStatus(value) === 'Closed' ? '🔴 Closed' : '🟢 Open';
+
 export default function FollowUpNotesPage() {
   const { user, isAdmin, isLoading: adminLoading } = useAdmin();
   const { toast } = useToast();
@@ -88,7 +101,7 @@ export default function FollowUpNotesPage() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   const [draftById, setDraftById] = useState<
-    Record<string, { followUpDate: string; followUpStatus: 'Open' | 'Closed' | string }>
+    Record<string, { followUpDate: string; followUpStatus: CanonicalFollowUpStatus | string }>
   >({});
   const [syncingChanges, setSyncingChanges] = useState(false);
   const [bulkFollowUpDate, setBulkFollowUpDate] = useState('');
@@ -131,9 +144,9 @@ export default function FollowUpNotesPage() {
     for (const [id, d] of Object.entries(draftById)) {
       const n = noteById.get(id);
       if (!n) continue;
-      const origStatus = String(n.followUpStatus || 'Open').trim() || 'Open';
+      const origStatus = normalizeFollowUpStatus(n.followUpStatus);
       const origDate = String(n.followUpDate || '').slice(0, 10);
-      const nextStatus = String(d.followUpStatus || '').trim() || origStatus;
+      const nextStatus = normalizeFollowUpStatus(String(d.followUpStatus || '').trim() || origStatus);
       const nextDate = String(d.followUpDate || '');
 
       const statusChanged = nextStatus !== origStatus;
@@ -167,13 +180,13 @@ export default function FollowUpNotesPage() {
         const list: FollowUpNote[] = Array.isArray(data?.notes) ? data.notes : [];
         const normalized = list.map((n) => ({
           ...n,
-          followUpStatus: String((n as any)?.followUpStatus || 'Open').trim() || 'Open',
+          followUpStatus: normalizeFollowUpStatus((n as any)?.followUpStatus),
         }));
         const filtered =
           statusFilter === 'open'
-            ? normalized.filter((n) => String(n?.followUpStatus || '').trim().toLowerCase() !== 'closed')
+            ? normalized.filter((n) => normalizeFollowUpStatus(n?.followUpStatus) !== 'Closed')
             : statusFilter === 'closed'
-              ? normalized.filter((n) => String(n?.followUpStatus || '').trim().toLowerCase() === 'closed')
+              ? normalized.filter((n) => normalizeFollowUpStatus(n?.followUpStatus) === 'Closed')
               : normalized;
 
         setNotes(filtered);
@@ -279,7 +292,7 @@ export default function FollowUpNotesPage() {
         const next = { ...prev };
         selectedIds.forEach((id) => {
           const n = noteById.get(id);
-          const origStatus = String(n?.followUpStatus || 'Open').trim() || 'Open';
+          const origStatus = normalizeFollowUpStatus(n?.followUpStatus);
           const origDate = String(n?.followUpDate || '').slice(0, 10);
           const existing = next[id];
           next[id] = {
@@ -305,7 +318,7 @@ export default function FollowUpNotesPage() {
       const next = { ...prev };
       selectedIds.forEach((id) => {
         const n = noteById.get(id);
-        const origStatus = String(n?.followUpStatus || 'Open').trim() || 'Open';
+        const origStatus = normalizeFollowUpStatus(n?.followUpStatus);
         const existing = next[id];
         next[id] = {
           followUpStatus: existing?.followUpStatus ?? origStatus,
@@ -676,14 +689,14 @@ export default function FollowUpNotesPage() {
                 {filteredNotes.map((n) => {
                   const id = String(n.noteId || n.id);
                   const checked = Boolean(selected[id]);
-                  const status = String(n.followUpStatus || 'Open').trim() || 'Open';
+                  const status = normalizeFollowUpStatus(n.followUpStatus);
                   const statusLower = status.toLowerCase();
                   const followUpDateValue = String(n.followUpDate || '').slice(0, 10);
                   const createdValue = formatCreatedDate(n.timeStamp);
                   const senderName = String(n.senderName || '').trim();
                   const kaiserStatus = String(n.kaiserStatus || '').trim();
                   const draft = draftById[id];
-                  const draftStatus = draft?.followUpStatus ?? status;
+                  const draftStatus = normalizeFollowUpStatus(draft?.followUpStatus ?? status);
                   const draftDate = draft?.followUpDate ?? followUpDateValue;
                   const dirty = Boolean(draft) && (draftStatus !== status || draftDate !== followUpDateValue);
 
@@ -721,7 +734,7 @@ export default function FollowUpNotesPage() {
                               </div>
                             </div>
                             <Badge variant={statusLower === 'closed' ? 'outline' : 'secondary'} className="shrink-0">
-                              {status}
+                              {followUpStatusLabel(status)}
                             </Badge>
                           </div>
 
@@ -740,7 +753,7 @@ export default function FollowUpNotesPage() {
                               />
                               <select
                                 className="h-9 rounded-md border bg-background px-3 text-sm"
-                                value={String(draftStatus)}
+                                value={normalizeFollowUpStatus(draftStatus)}
                                 onChange={(e) =>
                                   setDraftById((prev) => ({
                                     ...prev,
@@ -748,8 +761,8 @@ export default function FollowUpNotesPage() {
                                   }))
                                 }
                               >
-                                <option value="Open">Open</option>
-                                <option value="Closed">Closed</option>
+                                <option value="Open">🟢 Open</option>
+                                <option value="Closed">🔴 Closed</option>
                               </select>
                             </div>
                             <div className="whitespace-pre-wrap break-words text-sm text-slate-900">
@@ -841,14 +854,14 @@ export default function FollowUpNotesPage() {
                     {filteredNotes.map((n) => {
                       const id = String(n.noteId || n.id);
                       const checked = Boolean(selected[id]);
-                      const status = String(n.followUpStatus || 'Open').trim() || 'Open';
+                      const status = normalizeFollowUpStatus(n.followUpStatus);
                       const statusLower = status.toLowerCase();
                       const followUpDateValue = String(n.followUpDate || '').slice(0, 10);
                       const createdValue = formatCreatedDate(n.timeStamp);
                       const senderName = String(n.senderName || '').trim();
                       const kaiserStatus = String(n.kaiserStatus || '').trim();
                       const draft = draftById[id];
-                      const draftStatus = draft?.followUpStatus ?? status;
+                      const draftStatus = normalizeFollowUpStatus(draft?.followUpStatus ?? status);
                       const draftDate = draft?.followUpDate ?? followUpDateValue;
                       const dirty = Boolean(draft) && (draftStatus !== status || draftDate !== followUpDateValue);
                       return (
@@ -907,7 +920,7 @@ export default function FollowUpNotesPage() {
                             <div className="flex items-center gap-2">
                               <select
                                 className="h-9 rounded-md border bg-background px-3 text-sm"
-                                value={String(draftStatus)}
+                                value={normalizeFollowUpStatus(draftStatus)}
                                 onChange={(e) =>
                                   setDraftById((prev) => ({
                                     ...prev,
@@ -915,10 +928,10 @@ export default function FollowUpNotesPage() {
                                   }))
                                 }
                               >
-                                <option value="Open">Open</option>
-                                <option value="Closed">Closed</option>
+                                <option value="Open">🟢 Open</option>
+                                <option value="Closed">🔴 Closed</option>
                               </select>
-                              <Badge variant={statusLower === 'closed' ? 'outline' : 'secondary'}>{status}</Badge>
+                              <Badge variant={statusLower === 'closed' ? 'outline' : 'secondary'}>{followUpStatusLabel(status)}</Badge>
                               {dirty ? <Badge variant="secondary">Edited</Badge> : null}
                             </div>
                           </td>
@@ -1081,15 +1094,15 @@ export default function FollowUpNotesPage() {
                 {allNotes.map((n) => {
                   const created = formatCreatedDate(n.timeStamp);
                   const writer = String(n.userFirst || '').trim() || String(n.userFullName || '').trim() || '—';
-                  const followUpStatus = String(n.followUpStatus || '').trim();
-                  const isClosed = followUpStatus.toLowerCase() === 'closed';
+                  const followUpStatus = normalizeFollowUpStatus(n.followUpStatus);
+                  const isClosed = followUpStatus === 'Closed';
                   return (
                     <div key={String(n.noteId || n.id)} className="p-4 space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-sm font-medium">{created}</div>
                         <div className="flex flex-wrap items-center gap-2">
                           {followUpStatus ? (
-                            <Badge variant={isClosed ? 'outline' : 'secondary'}>{followUpStatus}</Badge>
+                            <Badge variant={isClosed ? 'outline' : 'secondary'}>{followUpStatusLabel(followUpStatus)}</Badge>
                           ) : null}
                           {String(n.followUpDate || '').slice(0, 10) ? (
                             <Badge variant="outline">Follow-up: {String(n.followUpDate || '').slice(0, 10)}</Badge>

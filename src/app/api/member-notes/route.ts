@@ -1398,6 +1398,7 @@ async function logSystemNoteAction(payload: {
 export async function PUT(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as any;
+    const action = String(body?.action || '').trim().toLowerCase();
     const id = String(body?.id || '').trim();
     const clientId2 = String(body?.clientId2 || '').trim();
     const statusRaw = String(body?.status || '').trim().toLowerCase();
@@ -1415,6 +1416,73 @@ export async function PUT(request: NextRequest) {
     const actorEmail = String(body?.actorEmail || '').trim();
     const pushToCaspio = Boolean(body?.pushToCaspio);
     const nowIso = new Date().toISOString();
+
+    if (action === 'normalize_legacy_statuses') {
+      if (!clientId2) {
+        return NextResponse.json({ success: false, error: 'clientId2 is required for normalization' }, { status: 400 });
+      }
+
+      const { credentials, baseUrl } = getCaspioConfig();
+      const token = await getCaspioToken(credentials);
+      const whereClause = `Client_ID2='${clientId2}'`;
+      const caspioRows = await fetchAllRowsForMemberFromCaspio<CaspioNote>({
+        baseUrl,
+        token,
+        table: 'connect_tbl_clientnotes',
+        whereClause,
+        orderBy: 'PK_ID DESC',
+        idField: 'PK_ID',
+        pageSize: 1000,
+        maxPages: 20,
+      });
+
+      const legacyRows = caspioRows.filter((row) => {
+        const noteStatus = String(row?.Note_Status || '').trim().toLowerCase();
+        const followUpStatus = String(row?.Follow_Up_Status || '').trim().toLowerCase();
+        return noteStatus === 'close' || followUpStatus === 'close';
+      });
+
+      let updatedCount = 0;
+      for (const row of legacyRows) {
+        const pkId = Number(row?.PK_ID || 0);
+        if (!Number.isFinite(pkId) || pkId <= 0) continue;
+        const updateUrl =
+          `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records` +
+          `?q.where=${encodeURIComponent(`PK_ID=${pkId}`)}`;
+        const response = await fetch(updateUrl, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            Note_Status: 'Closed',
+            Follow_Up_Status: 'Closed',
+          }),
+        });
+        if (!response.ok) continue;
+        updatedCount += 1;
+      }
+
+      // Refresh cached/Firestore statuses for this member from Caspio after cleanup.
+      await syncAllNotesFromCaspio(clientId2);
+
+      await logSystemNoteAction({
+        action: 'Normalized legacy note statuses (Close -> Closed)',
+        clientId2,
+        status: 'Closed',
+        actorName,
+        actorEmail,
+        source: 'MemberNotesUI',
+      });
+
+      return NextResponse.json({
+        success: true,
+        clientId2,
+        scanned: caspioRows.length,
+        normalized: updatedCount,
+      });
+    }
 
     let caspioSync: { success: boolean; skipped?: boolean; reason?: string; error?: string } | null = null;
     if (pushToCaspio) {
