@@ -781,6 +781,11 @@ export async function GET(request: NextRequest) {
         const dayKey = toEtDayKey(String(note.createdAt));
         return dayKey && dayKey === todayEt ? acc + 1 : acc;
       }, 0);
+      const closedCount = notes.reduce((acc, note) => {
+        const status = String(note?.status || '').trim().toLowerCase();
+        return status === 'closed' ? acc + 1 : acc;
+      }, 0);
+      const openCount = Math.max(0, notes.length - closedCount);
 
       return NextResponse.json({
         success: true,
@@ -790,6 +795,8 @@ export async function GET(request: NextRequest) {
         didSync: false,
         notes: [],
         count: notes.length,
+        openCount,
+        closedCount,
         newNotesCount: 0,
         existingNotesCount: notes.length,
         notesTodayCount,

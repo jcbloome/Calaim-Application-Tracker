@@ -347,11 +347,15 @@ function MemberNotesPageContent() {
     }
   }, []);
 
-  const handleRequestNotes = useCallback(async (member: Member) => {
+  const handleRequestNotes = useCallback(async (
+    member: Member,
+    options?: { syncFromCaspio?: boolean }
+  ) => {
+    const syncFromCaspio = Boolean(options?.syncFromCaspio);
     setIsNotesLoading(true);
     try {
       const response = await fetch(
-        `/api/member-notes?clientId2=${member.clientId2}&forceSync=false&skipSync=false&repairIfEmpty=true`
+        `/api/member-notes?clientId2=${member.clientId2}&forceSync=${syncFromCaspio ? 'true' : 'false'}&skipSync=${syncFromCaspio ? 'false' : 'true'}&repairIfEmpty=true`
       );
       const data = await response.json();
 
@@ -371,9 +375,13 @@ function MemberNotesPageContent() {
           : [];
         setMemberNotes(normalizedNotes);
 
-        const syncType = data.isFirstSync ? 'imported from Caspio' : 
-                        data.newNotesCount > 0 ? `synced ${data.newNotesCount} new notes` : 
-                        'already up to date';
+        const syncType = syncFromCaspio
+          ? data.isFirstSync
+            ? 'imported from Caspio'
+            : data.newNotesCount > 0
+              ? `synced ${data.newNotesCount} new notes`
+              : 'already up to date'
+          : 'loaded from saved notes';
         
         toast({
           title: "Notes Loaded",
@@ -416,8 +424,12 @@ function MemberNotesPageContent() {
   }, [selectedMember, loadFollowUpTasksForMember]);
 
   useEffect(() => {
-    if (!selectedMember) return;
-    void handleRequestNotes(selectedMember);
+    if (!selectedMember) {
+      setMemberNotes([]);
+      return;
+    }
+    // Intentionally do not auto-load notes on select.
+    // Staff should explicitly use Sync Notes to pull the full set from Caspio.
   }, [selectedMember, handleRequestNotes]);
 
 
@@ -472,6 +484,14 @@ function MemberNotesPageContent() {
     if (!selectedMember?.clientId2) return [];
     return pendingChangeList.filter((change) => change.clientId2 === selectedMember.clientId2);
   }, [pendingChangeList, selectedMember?.clientId2]);
+
+  const pendingStatusByNoteKey = useMemo(() => {
+    const map = new Map<string, PendingStatusChange>();
+    for (const change of selectedMemberPendingChanges) {
+      map.set(pendingStatusKey(change.noteId, change.clientId2), change);
+    }
+    return map;
+  }, [selectedMemberPendingChanges]);
 
   const stageStatusChange = useCallback((note: MemberNote, nextStatus: NoteStatus) => {
     const noteId = String(note?.id || '').trim();
@@ -673,7 +693,7 @@ function MemberNotesPageContent() {
       }
 
       if (selectedMember) {
-        await handleRequestNotes(selectedMember);
+        await handleRequestNotes(selectedMember, { syncFromCaspio: false });
       }
 
       toast({
@@ -904,6 +924,18 @@ function MemberNotesPageContent() {
                   <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
                     Notes are read-only here. Use the sync button to pull latest from Caspio.
                   </div>
+                  <Button
+                    size="sm"
+                    onClick={() => void syncPendingStatusChanges('all')}
+                    disabled={isSyncingPendingStatuses || pendingChangeList.length === 0}
+                  >
+                    {isSyncingPendingStatuses ? (
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    ) : (
+                      <CheckCircle className="mr-2 h-3 w-3" />
+                    )}
+                    Sync All Pending ({pendingChangeList.length})
+                  </Button>
                 </div>
               )}
             </div>
@@ -925,19 +957,21 @@ function MemberNotesPageContent() {
             ) : memberNotes.length === 0 ? (
               <div className="text-center py-12">
                 <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">No Notes Found</h3>
+                <h3 className="text-lg font-medium mb-2">Notes Not Loaded Yet</h3>
                 <p className="text-muted-foreground mb-4">
-                  No notes are currently available for {selectedMember.firstName} {selectedMember.lastName}.
+                  Click Sync Notes to pull all Caspio notes for {selectedMember.firstName} {selectedMember.lastName}.
                 </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleRequestNotes(selectedMember)}
-                  disabled={isNotesLoading}
-                >
-                  <Download className="mr-2 h-3 w-3" />
-                  Sync Notes
-                </Button>
+                <div className="flex items-center justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRequestNotes(selectedMember, { syncFromCaspio: true })}
+                    disabled={isNotesLoading}
+                  >
+                    <Download className="mr-2 h-3 w-3" />
+                    Sync Notes
+                  </Button>
+                </div>
                 {pendingChangeList.length > 0 ? (
                   <div className="mx-auto mt-4 max-w-2xl rounded-md border border-amber-200 bg-amber-50 p-3 text-left">
                     <div className="text-sm font-medium text-amber-900">
@@ -958,14 +992,6 @@ function MemberNotesPageContent() {
                       >
                         {isSyncingPendingStatuses ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
                         Sync this member ({selectedMemberPendingChanges.length})
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void syncPendingStatusChanges('all')}
-                        disabled={isSyncingPendingStatuses || pendingChangeList.length === 0}
-                      >
-                        Sync all ({pendingChangeList.length})
                       </Button>
                     </div>
                   </div>
@@ -1007,7 +1033,7 @@ function MemberNotesPageContent() {
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => handleRequestNotes(selectedMember)}
+                      onClick={() => handleRequestNotes(selectedMember, { syncFromCaspio: true })}
                       disabled={isNotesLoading}
                     >
                       {isNotesLoading ? (
@@ -1040,16 +1066,6 @@ function MemberNotesPageContent() {
                           {row.memberName} ({row.clientId2}): {row.total} ({row.closing} close, {row.reopening} reopen)
                         </div>
                       ))}
-                    </div>
-                    <div className="mt-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void syncPendingStatusChanges('all')}
-                        disabled={isSyncingPendingStatuses}
-                      >
-                        Sync all pending ({pendingChangeList.length})
-                      </Button>
                     </div>
                   </div>
                 ) : null}
@@ -1122,7 +1138,12 @@ function MemberNotesPageContent() {
                 </div>
 
                 <div className="rounded-md border divide-y max-h-[70vh] overflow-y-auto">
-                  {sortedNotes.map((note) => (
+                  {sortedNotes.map((note) => {
+                    const pendingChange = pendingStatusByNoteKey.get(
+                      pendingStatusKey(String(note.id || ''), String(note.clientId2 || ''))
+                    );
+                    const followUpAssignedTo = String(note.assignedToName || note.assignedTo || '').trim();
+                    return (
                     <div key={note.id} className={`p-3 ${!note.isRead ? 'bg-blue-50' : ''}`}>
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <div className="flex items-center gap-2">
@@ -1132,6 +1153,12 @@ function MemberNotesPageContent() {
                             aria-label={`Select note ${note.id}`}
                           />
                           <Badge variant="outline">{noteStatusLabel(note.status)}</Badge>
+                          {pendingChange ? (
+                            <Badge variant="secondary" className="bg-amber-100 text-amber-900 border border-amber-200">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Status changed (pending sync)
+                            </Badge>
+                          ) : null}
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="text-[11px] text-muted-foreground">
@@ -1193,11 +1220,12 @@ function MemberNotesPageContent() {
                       <div className="text-sm whitespace-pre-wrap break-words">{note.noteText}</div>
                       <div className="mt-1 text-[11px] text-muted-foreground">
                         By: {note.createdByName}
-                        {note.assignedToName ? ` • Assigned to: ${note.assignedToName}` : ''}
+                        {followUpAssignedTo ? ` • Follow-up staff assigned: ${followUpAssignedTo}` : ''}
                         {note.followUpDate ? ` • Follow-up: ${format(new Date(note.followUpDate), 'MMM d, yyyy')}` : ''}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
 
                   {sortedNotes.length === 0 && (
                     <div className="text-center py-8">
