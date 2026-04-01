@@ -3496,6 +3496,38 @@ function ApplicationDetailPageContent() {
   } else if (!formStatusMap.get('Waivers') && formStatusMap.get('Waivers & Authorizations')) {
     formStatusMap.set('Waivers', formStatusMap.get('Waivers & Authorizations') as any);
   }
+  const waiverAliasNames = new Set(['Waivers & Authorizations', 'Waivers']);
+  const waiverAliasForms = (application.forms || []).filter((form: any) =>
+    waiverAliasNames.has(String(form?.name || '').trim())
+  ) as any[];
+  const waiverAliasStatuses = waiverAliasForms.map((form) => String(form?.status || '').trim().toLowerCase());
+  const waiverHasPendingLikeStatus = waiverAliasStatuses.some(
+    (status) => status === 'pending' || status === 'requires revision' || status === 'rejected'
+  );
+  const waiverHasCompletedStatus = waiverAliasStatuses.some((status) => status === 'completed');
+  const waiverIsCompleted = waiverHasCompletedStatus && !waiverHasPendingLikeStatus;
+  const waiverSourceForm = (() => {
+    if (waiverIsCompleted) {
+      return waiverAliasForms.find((form) => String(form?.status || '').trim().toLowerCase() === 'completed') || null;
+    }
+    return waiverAliasForms.find((form) =>
+      ['pending', 'requires revision', 'rejected'].includes(String(form?.status || '').trim().toLowerCase())
+    ) || waiverAliasForms[0] || null;
+  })();
+  if (waiverSourceForm) {
+    const waiverEffectiveForm = {
+      ...waiverSourceForm,
+      status: waiverIsCompleted ? 'Completed' : 'Pending',
+      // Keep waiver boxes empty whenever the form is pending/rejected.
+      ackHipaa: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackHipaa) : false,
+      ackLiability: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackLiability) : false,
+      ackFoc: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackFoc) : false,
+      ackRoomAndBoard: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackRoomAndBoard) : false,
+      ackSocDetermination: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackSocDetermination) : false,
+    } as any;
+    formStatusMap.set('Waivers & Authorizations', waiverEffectiveForm);
+    formStatusMap.set('Waivers', waiverEffectiveForm);
+  }
   const getCanonicalFormName = (raw: unknown) => {
     const name = String(raw || '').trim();
     if (name === 'Waivers') return 'Waivers & Authorizations';
@@ -3933,10 +3965,10 @@ function ApplicationDetailPageContent() {
   };
 
   const waiverSubTasks = [
-      { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
-      { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
-      { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
-      { id: 'rb', label: 'Room & Board Commitment', completed: !!(waiverFormStatus as any)?.ackRoomAndBoard || !!(application as any)?.ackRoomAndBoard }
+      { id: 'hipaa', label: 'HIPAA Authorization', completed: waiverIsCompleted && !!waiverFormStatus?.ackHipaa },
+      { id: 'liability', label: 'Liability Waiver', completed: waiverIsCompleted && !!waiverFormStatus?.ackLiability },
+      { id: 'foc', label: 'Freedom of Choice', completed: waiverIsCompleted && !!waiverFormStatus?.ackFoc },
+      { id: 'rb', label: 'Room & Board Commitment', completed: waiverIsCompleted && !!(waiverFormStatus as any)?.ackRoomAndBoard }
   ];
   
     const consolidatedMedicalDocuments = [
@@ -4473,7 +4505,7 @@ function ApplicationDetailPageContent() {
   
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
-    const isCompleted = formInfo?.status === 'Completed';
+    const isCompleted = getComponentStatus(req.title) === 'Completed';
     const isCsSummaryReq = req.id === 'cs-summary';
 
     let baseQueryParams = `?applicationId=${applicationId}&userId=${appUserId}`;
@@ -5439,7 +5471,7 @@ function ApplicationDetailPageContent() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {displayedPathwayRequirements.map((req) => {
                 const formInfo = formStatusMap.get(req.title);
-                const status = formInfo?.status || 'Pending';
+                const status = getComponentStatus(req.title);
                 const isSummary = req.title === 'CS Member Summary' || req.title === 'CS Summary';
                 const isReviewed = isSummary
                   ? Boolean((application as any)?.applicationChecked)
@@ -5821,6 +5853,35 @@ function ApplicationDetailPageContent() {
                   <DialogDescription>Track CalAIM eligibility status and supporting uploads.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
+                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div>
+                        <span className="font-medium">Member:</span>{' '}
+                        {`${String(application?.memberFirstName || '').trim()} ${String(application?.memberLastName || '').trim()}`.trim() || '—'}
+                      </div>
+                      <div>
+                        <span className="font-medium">MRN:</span>{' '}
+                        {String((application as any)?.memberMrn || '').trim() || '—'}
+                      </div>
+                      <div>
+                        <span className="font-medium">Health Plan:</span>{' '}
+                        {String(application?.healthPlan || '').trim() || '—'}
+                      </div>
+                      <div>
+                        <span className="font-medium">Pathway:</span>{' '}
+                        {String(application?.pathway || '').trim() || '—'}
+                      </div>
+                      <div>
+                        <span className="font-medium">DOB:</span>{' '}
+                        {(() => {
+                          const rawDob = String((application as any)?.memberDob || '').trim();
+                          if (!rawDob) return '—';
+                          const parsedDob = new Date(rawDob);
+                          return Number.isNaN(parsedDob.getTime()) ? rawDob : format(parsedDob, 'PPP');
+                        })()}
+                      </div>
+                    </div>
+                  </div>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium">CalAIM Status</label>

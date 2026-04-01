@@ -41,6 +41,14 @@ export default function Step5() {
     return value;
   };
 
+  useEffect(() => {
+    const rawRcfeName = String(getValues('rcfeName') || '');
+    const normalizedRcfeName = formatName(rawRcfeName);
+    if (normalizedRcfeName !== rawRcfeName) {
+      setValue('rcfeName', normalizedRcfeName, { shouldDirty: false, shouldValidate: false });
+    }
+  }, [getValues, setValue]);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="mb-3">
