@@ -23,6 +23,19 @@ const toDayKey = (value: unknown): string => {
   }
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const toDayDate = (value: unknown): Date | null => {
+  const day = toDayKey(value);
+  const m = day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  return new Date(y, mo - 1, d, 0, 0, 0, 0);
+};
+
 const shortHash = (value: string): string => {
   return crypto.createHash('sha1').update(String(value || ''), 'utf8').digest('hex').slice(0, 10);
 };
@@ -218,7 +231,7 @@ export async function POST(req: NextRequest) {
       flagged: Boolean(v?.flagged || v?.raw?.visitSummary?.flagged),
     }));
 
-    // Hard-block duplicate submissions for same member/month (e.g., duplicate draft questionnaires).
+    // Hard-block duplicate questionnaires for the same member in this submission payload.
     const memberIds = completedVisits.map((v) => String(v.memberId || '').trim()).filter(Boolean);
     if (memberIds.length > 0) {
       const unique = new Set(memberIds);
@@ -231,7 +244,69 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: `Duplicate questionnaires for the same member/month cannot be submitted.${line}`,
+            error: `Duplicate questionnaires for the same member cannot be submitted together.${line}`,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Enforce rolling 30-day protection per member (not calendar-month based).
+    const claimDayDate = toDayDate(claimDay);
+    if (claimDayDate) {
+      const selectedVisitIdSet = new Set(selectedVisitIds.map((v) => String(v).trim()).filter(Boolean));
+      const membersToCheck = Array.from(
+        new Set(
+          completedVisits
+            .map((v) => String(v.memberId || '').trim())
+            .filter(Boolean)
+        )
+      );
+      const conflictRows: Array<{ memberId: string; memberName: string; priorDay: string }> = [];
+      await Promise.all(
+        membersToCheck.map(async (memberId) => {
+          const snap = await adminDb
+            .collection('sw_visit_records')
+            .where('memberId', '==', memberId)
+            .limit(5000)
+            .get()
+            .catch(() => null as any);
+          const docs = snap?.docs || [];
+          const matchingName = String(
+            completedVisits.find((v) => String(v.memberId || '').trim() === memberId)?.memberName || memberId
+          ).trim();
+          for (const doc of docs) {
+            const row = (doc.data() as any) || {};
+            const visitId = String(row?.visitId || row?.id || '').trim();
+            if (selectedVisitIdSet.has(visitId)) continue;
+            const status = String(row?.status || '').trim().toLowerCase();
+            const finalized = status !== 'draft' || Boolean(row?.signedOff) || Boolean(row?.claimSubmitted) || Boolean(row?.claimPaid);
+            if (!finalized) continue;
+            const priorDay = toDayKey(row?.visitDate || row?.claimDay || row?.completedAt || row?.submittedAt || '');
+            const priorDate = toDayDate(priorDay);
+            if (!priorDate) continue;
+            const daysApart = Math.floor((claimDayDate.getTime() - priorDate.getTime()) / DAY_MS);
+            if (Number.isFinite(daysApart) && daysApart >= 0 && daysApart < 30) {
+              conflictRows.push({ memberId, memberName: matchingName, priorDay });
+              break;
+            }
+          }
+        })
+      );
+
+      if (conflictRows.length > 0) {
+        const first = conflictRows[0];
+        const priorDate = toDayDate(first.priorDay);
+        const nextAllowed = priorDate ? new Date(priorDate.getTime() + 30 * DAY_MS) : null;
+        const nextAllowedLabel = nextAllowed
+          ? `${nextAllowed.getFullYear()}-${String(nextAllowed.getMonth() + 1).padStart(2, '0')}-${String(nextAllowed.getDate()).padStart(2, '0')}`
+          : 'after 30 days';
+        const names = conflictRows.map((r) => r.memberName).filter(Boolean);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `A visit was already submitted for one or more members within the last 30 days. Next allowed date starts ${nextAllowedLabel}.`,
+            conflicts: names,
           },
           { status: 409 }
         );
@@ -263,34 +338,8 @@ export async function POST(req: NextRequest) {
         const claimNumber = `SW-${visitMonth.replace('-', '')}-${String(seq).padStart(6, '0')}`;
         createdClaimNumber = claimNumber;
 
-        // Enforce monthly lock for each member.
-        const lockRefs = visits.map((v) =>
-          adminDb.collection('sw_member_monthly_visits').doc(`${String(v.memberId)}_${visitMonth}`)
-        );
-        const lockSnaps = await Promise.all(lockRefs.map((r) => tx.get(r)));
-
-        const conflicts: { memberId: string; memberName: string; existingVisitId: string }[] = [];
-        lockSnaps.forEach((s, idx) => {
-          if (!s.exists) return;
-          const existing = s.data() as any;
-          const existingVisitId = String(existing?.visitId || '').trim();
-          const thisVisitId = String(visits[idx]?.visitId || visits[idx]?.id || '').trim();
-          if (existingVisitId && thisVisitId && existingVisitId !== thisVisitId) {
-            conflicts.push({
-              memberId: String(visits[idx]?.memberId || '').trim(),
-              memberName: String(visits[idx]?.memberName || '').trim(),
-              existingVisitId,
-            });
-          }
-        });
-        if (conflicts.length > 0) {
-          const err: any = new Error('MONTHLY_MEMBER_VISIT_ALREADY_COMPLETED');
-          err.conflicts = conflicts;
-          throw err;
-        }
-
         // All transaction reads must occur before any writes.
-        // Now that we've read claim + counter + lock docs, we can safely write.
+        // Now that we've read claim + counter docs, we can safely write.
         tx.set(
           counterRef,
           {
@@ -300,29 +349,6 @@ export async function POST(req: NextRequest) {
           },
           { merge: true }
         );
-
-        // Write/refresh locks
-        lockRefs.forEach((ref, idx) => {
-          const v = visits[idx] || {};
-          tx.set(
-            ref,
-            {
-              memberId: String(v?.memberId || '').trim(),
-              visitMonth,
-              visitId: String(v?.visitId || v?.id || '').trim(),
-              socialWorkerUid: uid,
-              socialWorkerEmail: email,
-              socialWorkerName,
-              claimId,
-              rcfeId,
-              rcfeName,
-              claimDay,
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true }
-          );
-        });
 
         const signoffSummary = {
           signOffId,
@@ -498,15 +524,6 @@ export async function POST(req: NextRequest) {
       const msg = String(e?.message || '');
       if (msg.startsWith('CLAIM_ALREADY_EXISTS:')) {
         return NextResponse.json({ success: false, error: 'A submitted claim already exists for this RCFE/day.' }, { status: 409 });
-      }
-      if (msg.includes('MONTHLY_MEMBER_VISIT_ALREADY_COMPLETED')) {
-        const conflicts = Array.isArray(e?.conflicts) ? e.conflicts : [];
-        const names = conflicts.map((c: any) => String(c?.memberName || c?.memberId || '').trim()).filter(Boolean);
-        const line = names.length > 0 ? ` Conflicts: ${names.join(', ')}` : '';
-        return NextResponse.json(
-          { success: false, error: `Only one member visit per month is allowed for the same member.${line}`, conflicts },
-          { status: 409 }
-        );
       }
       throw e;
     }

@@ -1,5 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const toDayKey = (value: unknown): string => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  try {
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return '';
+  }
+};
+
+const toDayDate = (value: unknown): Date | null => {
+  const day = toDayKey(value);
+  const m = day.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  return new Date(y, mo - 1, d, 0, 0, 0, 0);
+};
+
 async function attachSignoffToClaims(params: {
   adminDb: any;
   admin: any;
@@ -121,6 +148,63 @@ export async function POST(request: NextRequest) {
       : [];
     if (visitIds.length === 0) {
       return NextResponse.json({ success: false, error: 'No valid visit IDs to sign off' }, { status: 400 });
+    }
+
+    // Enforce rolling 30-day protection per member before finalizing sign-off.
+    const claimDayDate = toDayDate(claimDay);
+    if (claimDayDate) {
+      const visitRefs = visitIds.slice(0, 500).map((id) => adminDb.collection('sw_visit_records').doc(String(id)));
+      const visitSnaps = await adminDb.getAll(...visitRefs);
+      const selectedVisits = visitSnaps
+        .filter((s: any) => s?.exists)
+        .map((s: any) => (s.data() as any) || {});
+      const selectedVisitIdSet = new Set(
+        selectedVisits.map((v: any) => String(v?.visitId || v?.id || '').trim()).filter(Boolean)
+      );
+      const membersToCheck = Array.from(
+        new Set(selectedVisits.map((v: any) => String(v?.memberId || '').trim()).filter(Boolean))
+      );
+      const conflictNames: string[] = [];
+      await Promise.all(
+        membersToCheck.map(async (memberId) => {
+          const rows = await adminDb
+            .collection('sw_visit_records')
+            .where('memberId', '==', memberId)
+            .limit(5000)
+            .get()
+            .catch(() => null as any);
+          const docs = rows?.docs || [];
+          const memberName = String(
+            selectedVisits.find((v: any) => String(v?.memberId || '').trim() === memberId)?.memberName || memberId
+          ).trim();
+          for (const d of docs) {
+            const row = (d.data() as any) || {};
+            const rowVisitId = String(row?.visitId || row?.id || '').trim();
+            if (selectedVisitIdSet.has(rowVisitId)) continue;
+            const status = String(row?.status || '').trim().toLowerCase();
+            const finalized = status !== 'draft' || Boolean(row?.signedOff) || Boolean(row?.claimSubmitted) || Boolean(row?.claimPaid);
+            if (!finalized) continue;
+            const priorDate = toDayDate(row?.visitDate || row?.claimDay || row?.completedAt || row?.submittedAt || '');
+            if (!priorDate) continue;
+            const daysApart = Math.floor((claimDayDate.getTime() - priorDate.getTime()) / DAY_MS);
+            if (Number.isFinite(daysApart) && daysApart >= 0 && daysApart < 30) {
+              conflictNames.push(memberName);
+              break;
+            }
+          }
+        })
+      );
+      if (conflictNames.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `One or more members already had a submitted visit within the last 30 days: ${Array.from(
+              new Set(conflictNames)
+            ).join(', ')}.`,
+          },
+          { status: 409 }
+        );
+      }
     }
 
     const recordRef = adminDb.collection('sw_signoff_records').doc();

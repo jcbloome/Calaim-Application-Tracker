@@ -328,6 +328,28 @@ const monthStartFromYyyyMm = (yyyyMm: string): Date => {
   return new Date(y, m - 1, 1, 0, 0, 0, 0);
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const toDayKey = (value: unknown): string => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const parsed = parseCaspioDateToLocalDate(raw);
+  if (!parsed) return '';
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const diffDays = (fromDay: string, toDay: string): number => {
+  const from = parseCaspioDateToLocalDate(fromDay);
+  const to = parseCaspioDateToLocalDate(toDay);
+  if (!from || !to) return Number.NaN;
+  return Math.floor((to.getTime() - from.getTime()) / DAY_MS);
+};
+
 // GET: Fetch SW's assigned members by RCFE
 export async function GET(req: NextRequest) {
   try {
@@ -964,48 +986,56 @@ export async function POST(req: NextRequest) {
     const claimId = `swClaim_${claimSwKey}_${claimKey}`;
     const visitMonth = claimMonth;
 
-    // Enforce one visit per member per month (even if visits aren't exactly 1 month apart).
-    // Uses a lock doc to avoid composite-index queries and ensure concurrency safety.
+    // Enforce rolling 30-day protection per member.
     try {
-      const lockKey = `${String(visitData.memberId)}_${visitMonth}`;
-      const lockRef = adminDb.collection('sw_member_monthly_visits').doc(lockKey);
-      await adminDb.runTransaction(async (tx) => {
-        const lockSnap = await tx.get(lockRef);
-        if (lockSnap.exists) {
-          const existing = lockSnap.data() as any;
-          const existingVisitId = String(existing?.visitId || '').trim();
-          if (existingVisitId && existingVisitId !== String(visitData.visitId || '').trim()) {
-            throw new Error('MONTHLY_MEMBER_VISIT_ALREADY_COMPLETED');
-          }
-          return;
+      const targetMemberId = String(visitData.memberId || '').trim();
+      const targetVisitId = String(visitData.visitId || '').trim();
+      const targetDay = toDayKey(claimDay);
+      if (targetMemberId && targetDay) {
+        const snap = await adminDb
+          .collection('sw_visit_records')
+          .where('memberId', '==', targetMemberId)
+          .limit(5000)
+          .get();
+
+        const recentConflict = snap.docs
+          .map((d) => (d.data() as any) || {})
+          .filter((v) => String(v?.visitId || v?.id || '').trim() !== targetVisitId)
+          .filter((v) => {
+            const status = String(v?.status || '').trim().toLowerCase();
+            const finalized = status !== 'draft' || Boolean(v?.signedOff) || Boolean(v?.claimSubmitted) || Boolean(v?.claimPaid);
+            if (!finalized) return false;
+            const priorDay = toDayKey(v?.visitDate || v?.claimDay || v?.completedAt || v?.submittedAt || '');
+            if (!priorDay) return false;
+            const daysApart = diffDays(priorDay, targetDay);
+            return Number.isFinite(daysApart) && daysApart >= 0 && daysApart < 30;
+          })
+          .sort((a, b) => {
+            const ad = toDayKey(a?.visitDate || a?.claimDay || a?.completedAt || a?.submittedAt || '');
+            const bd = toDayKey(b?.visitDate || b?.claimDay || b?.completedAt || b?.submittedAt || '');
+            return String(bd).localeCompare(String(ad));
+          })[0];
+
+        if (recentConflict) {
+          const priorDay = toDayKey(
+            recentConflict?.visitDate || recentConflict?.claimDay || recentConflict?.completedAt || recentConflict?.submittedAt || ''
+          );
+          const prior = parseCaspioDateToLocalDate(priorDay);
+          const nextAllowed = prior ? new Date(prior.getTime() + 30 * DAY_MS) : null;
+          const nextAllowedLabel = nextAllowed
+            ? `${nextAllowed.getFullYear()}-${String(nextAllowed.getMonth() + 1).padStart(2, '0')}-${String(nextAllowed.getDate()).padStart(2, '0')}`
+            : 'after 30 days';
+          return NextResponse.json(
+            {
+              success: false,
+              error: `A visit for this member was already submitted within the last 30 days. Next allowed date: ${nextAllowedLabel}.`,
+            },
+            { status: 409 }
+          );
         }
-        tx.set(
-          lockRef,
-          {
-            memberId: String(visitData.memberId),
-            visitMonth,
-            visitId: String(visitData.visitId),
-            socialWorkerUid,
-            socialWorkerEmail,
-            socialWorkerName,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-      });
-    } catch (e: any) {
-      const msg = String(e?.message || '');
-      if (msg.includes('MONTHLY_MEMBER_VISIT_ALREADY_COMPLETED')) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Only one member visit per month is allowed for the same member. This member already has a completed visit for this month.',
-          },
-          { status: 409 }
-        );
       }
-      // For transient transaction errors, fall through (best-effort); admin can review duplicates.
+    } catch {
+      // Best-effort only; proceed on transient read failures.
     }
 
     // Check if visit should trigger notifications
