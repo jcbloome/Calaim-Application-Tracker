@@ -234,6 +234,7 @@ export default function RcfeDataToolsPage() {
       planType: 'health_net' | 'kaiser' | 'other';
       status: string;
       lastVerifiedAt: string;
+      verifiedBy: string;
       extraDetails: string;
     }>;
   } | null>(null);
@@ -902,6 +903,7 @@ export default function RcfeDataToolsPage() {
       rcfeLocation: string;
       rcfeBeds: string;
       verifiedAt: string;
+      verifiedBy: string;
       details: string;
     }> = [];
 
@@ -919,13 +921,14 @@ export default function RcfeDataToolsPage() {
           rcfeLocation: [String(row.RCFE_Street || '').trim(), String(row.RCFE_City_RCFE_Zip || '').trim()].filter(Boolean).join(', '),
           rcfeBeds: String(getDraft(row).Number_of_Beds || '').trim() || 'unknown',
           verifiedAt: formatDateTimeSafe(memberVerifiedAt[memberId]),
+          verifiedBy: String(memberVerifiedBy[memberId] || '').trim(),
           details: String(memberExtraDetails[memberId] || '').trim(),
         });
       });
     });
 
     return rows.sort((a, b) => a.memberName.localeCompare(b.memberName));
-  }, [rcfeRows, memberPresenceStatus, memberVerifiedAt, memberExtraDetails]);
+  }, [rcfeRows, memberPresenceStatus, memberVerifiedAt, memberVerifiedBy, memberExtraDetails]);
 
   const handleSort = (field: RCFESortField) => {
     if (sortField === field) {
@@ -1118,6 +1121,7 @@ export default function RcfeDataToolsPage() {
           status: memberPresenceStatus[member.id] || 'unknown',
           lastVerifiedAt: String(memberVerifiedAt[member.id] || '').trim(),
           extraDetails: String(memberExtraDetails[member.id] || '').trim(),
+          verifiedBy: String(memberVerifiedBy[member.id] || '').trim(),
         };
       });
       if (!membersPayload.length) {
@@ -1208,7 +1212,18 @@ export default function RcfeDataToolsPage() {
     const notThere = pendingRcfeEmail.members.filter((m) => m.status === 'not_there');
     const unknown = pendingRcfeEmail.members.filter((m) => m.status !== 'there' && m.status !== 'not_there');
     const renderMembers = (title: string, list: typeof pendingRcfeEmail.members) =>
-      `${title} (${list.length})\n${list.length ? list.map((m) => `- ${m.name} (${m.id}) | ${statusLabel(m.status)}`).join('\n') : '- None listed'}`;
+      `${title} (${list.length})\n${
+        list.length
+          ? list
+              .map(
+                (m) =>
+                  `- ${m.name} (${m.id}) | ${statusLabel(m.status)} | Verified by: ${m.verifiedBy || 'Not recorded'}${
+                    m.lastVerifiedAt ? ` | ${formatDateTimeSafe(m.lastVerifiedAt)}` : ''
+                  }`
+              )
+              .join('\n')
+          : '- None listed'
+      }`;
     return [
       `To: ${pendingRcfeEmail.adminEmail}`,
       `Admin: ${pendingRcfeEmail.adminName || 'Unknown'}`,
@@ -1664,6 +1679,9 @@ export default function RcfeDataToolsPage() {
                     <div className="text-red-700">
                       Last Verified: {entry.verifiedAt || 'Not recorded'}
                     </div>
+                    <div className="text-red-700">
+                      Verified by: {entry.verifiedBy || 'Not recorded'}
+                    </div>
                     {entry.details ? <div className="text-red-700">Notes: {entry.details}</div> : null}
                   </div>
                 ))}
@@ -1769,11 +1787,9 @@ export default function RcfeDataToolsPage() {
                                 .filter(Boolean)
                                 .join(', ') || '-'}
                             </div>
-                            {rowVerifiedBy ? (
-                              <div className="text-[11px] text-muted-foreground mt-1">
-                                Verified by: {rowVerifiedBy}
-                              </div>
-                            ) : null}
+                            <div className="text-[11px] text-muted-foreground mt-1">
+                              Verified by: {rowVerifiedBy || 'Not recorded'}
+                            </div>
                             <div className="text-[11px] text-muted-foreground mt-1">
                               Last Verified: {formatDateTimeSafe(rowVerifiedAt) || 'Not yet'}
                             </div>
@@ -1817,7 +1833,7 @@ export default function RcfeDataToolsPage() {
                                               Last Verified: {formatDateTimeSafe(memberVerifiedAt[member.id]) || 'Not yet'}
                                             </div>
                                             <div className="text-[11px] text-muted-foreground">
-                                              Verified by: {String(memberVerifiedBy[member.id] || '').trim() || 'Not recorded'}
+                                              Verified by staff: {String(memberVerifiedBy[member.id] || '').trim() || 'Not recorded'}
                                             </div>
                                             <div className="flex items-center gap-4">
                                               <label className="flex items-center gap-2 text-[11px]">
