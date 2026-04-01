@@ -33,6 +33,15 @@ type CandidateVisit = {
   flagged?: boolean;
 };
 
+type MemberEligibility = {
+  memberId: string;
+  eligible: boolean;
+  blockedReason: 'within_30_days' | null;
+  lastSubmittedDate: string | null;
+  nextEligibleDate: string | null;
+  daysRemaining: number;
+};
+
 const todayKeyUtc = () => new Date().toISOString().slice(0, 10);
 
 export default function SWSignOffPage() {
@@ -77,12 +86,22 @@ export default function SWSignOffPage() {
   const [overrideSubmitting, setOverrideSubmitting] = useState(false);
   const [cclCheckExists, setCclCheckExists] = useState(false);
   const [loadingCclCheck, setLoadingCclCheck] = useState(false);
+  const [eligibilityByMemberId, setEligibilityByMemberId] = useState<Record<string, MemberEligibility>>({});
+  const [loadingEligibility, setLoadingEligibility] = useState(false);
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
   const swUid = String((user as any)?.uid || '').trim();
   const swName = String((socialWorkerData as any)?.displayName || (user as any)?.displayName || swEmail || 'Social Worker').trim();
 
   const selectedVisits = useMemo(() => visits.filter((v) => selectedVisitIds[String(v.visitId || '').trim()]), [selectedVisitIds, visits]);
+  const blockedVisits = useMemo(() => {
+    return selectedVisits.filter((v) => {
+      const memberId = String(v?.memberId || '').trim();
+      if (!memberId) return false;
+      const row = eligibilityByMemberId[memberId];
+      return Boolean(row && !row.eligible && row.blockedReason === 'within_30_days');
+    });
+  }, [eligibilityByMemberId, selectedVisits]);
   // Kept as derived data placeholder for future UI (e.g. flagged warnings).
   const cclMonth = String(claimDay || '').slice(0, 7);
   const cclGateHref = `/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(rcfeId)}&month=${encodeURIComponent(
@@ -142,6 +161,37 @@ export default function SWSignOffPage() {
     }
   }, [auth?.currentUser, auth, claimDay, rcfeId, selectedRcfe?.name]);
 
+  const refreshEligibility = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    const memberIds = Array.from(
+      new Set(
+        selectedVisits
+          .map((v) => String(v?.memberId || '').trim())
+          .filter(Boolean)
+      )
+    );
+    if (memberIds.length === 0) {
+      setEligibilityByMemberId({});
+      return;
+    }
+    setLoadingEligibility(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/sw-visits/member-eligibility', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ memberIds, targetDate: claimDay }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to check eligibility (${res.status})`);
+      setEligibilityByMemberId((data?.byMemberId || {}) as Record<string, MemberEligibility>);
+    } catch {
+      setEligibilityByMemberId({});
+    } finally {
+      setLoadingEligibility(false);
+    }
+  }, [auth?.currentUser, claimDay, selectedVisits]);
+
   useEffect(() => {
     if (swLoading) return;
     if (!isSocialWorker) return;
@@ -154,6 +204,30 @@ export default function SWSignOffPage() {
     if (!rcfeId) return;
     void loadCandidates();
   }, [claimDay, isSocialWorker, loadCandidates, rcfeId, swLoading]);
+
+  useEffect(() => {
+    if (swLoading) return;
+    if (!isSocialWorker) return;
+    void refreshEligibility();
+  }, [isSocialWorker, refreshEligibility, swLoading]);
+
+  useEffect(() => {
+    if (blockedVisits.length === 0) return;
+    const blockedSet = new Set(
+      blockedVisits
+        .map((v) => String(v?.visitId || '').trim())
+        .filter(Boolean)
+    );
+    setSelectedVisitIds((prev) => {
+      const next: Record<string, boolean> = {};
+      Object.entries(prev).forEach(([visitId, selected]) => {
+        if (!selected) return;
+        if (blockedSet.has(String(visitId || '').trim())) return;
+        next[visitId] = true;
+      });
+      return next;
+    });
+  }, [blockedVisits]);
 
   useEffect(() => {
     const checkCcl = async () => {
@@ -285,6 +359,7 @@ export default function SWSignOffPage() {
     staffTitle.trim() &&
     signature.trim() &&
     cclCheckExists &&
+    blockedVisits.length === 0 &&
     (Boolean(geolocation) || geoOverrideEnabled) &&
     !submitting;
 
@@ -294,6 +369,15 @@ export default function SWSignOffPage() {
       return;
     }
     if (!canSubmit) return;
+    if (blockedVisits.length > 0) {
+      const names = blockedVisits.map((v) => String(v.memberName || '').trim()).filter(Boolean);
+      toast({
+        title: 'Member blocked by 30-day protection',
+        description: `Please remove blocked members before submitting: ${Array.from(new Set(names)).join(', ')}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!geolocation) {
       if (!geoOverrideEnabled) {
         toast({
@@ -555,7 +639,10 @@ export default function SWSignOffPage() {
                     const next: Record<string, boolean> = {};
                     visits.forEach((v) => {
                       const id = String(v.visitId || '').trim();
-                      if (id) next[id] = true;
+                      const memberId = String(v?.memberId || '').trim();
+                      const row = memberId ? eligibilityByMemberId[memberId] : null;
+                      const blocked = Boolean(row && !row.eligible && row.blockedReason === 'within_30_days');
+                      if (id && !blocked) next[id] = true;
                     });
                     setSelectedVisitIds(next);
                   }}
@@ -568,6 +655,11 @@ export default function SWSignOffPage() {
                 {visits.map((v) => {
                   const id = String(v.visitId || '').trim();
                   const checked = Boolean(selectedVisitIds[id]);
+                  const memberId = String(v?.memberId || '').trim();
+                  const eligibility = memberId ? eligibilityByMemberId[memberId] : null;
+                  const isBlocked = Boolean(eligibility && !eligibility.eligible && eligibility.blockedReason === 'within_30_days');
+                  const nextEligible = String(eligibility?.nextEligibleDate || '').trim();
+                  const nextLabel = nextEligible ? new Date(`${nextEligible}T00:00:00`).toLocaleDateString() : 'after 30 days';
                   return (
                     <label
                       key={id}
@@ -575,7 +667,11 @@ export default function SWSignOffPage() {
                     >
                       <Checkbox
                         checked={checked}
-                        onCheckedChange={(next) => setSelectedVisitIds((prev) => ({ ...prev, [id]: Boolean(next) }))}
+                        disabled={isBlocked}
+                        onCheckedChange={(next) => {
+                          if (isBlocked) return;
+                          setSelectedVisitIds((prev) => ({ ...prev, [id]: Boolean(next) }));
+                        }}
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -589,6 +685,7 @@ export default function SWSignOffPage() {
                               flagged
                             </Badge>
                           ) : null}
+                          {isBlocked ? <Badge className="bg-amber-600 hover:bg-amber-600">Blocked until {nextLabel}</Badge> : null}
                         </div>
                         <div className="text-xs text-muted-foreground">Draft saved</div>
                       </div>
@@ -596,6 +693,28 @@ export default function SWSignOffPage() {
                   );
                 })}
               </div>
+
+              {loadingEligibility ? (
+                <div className="text-xs text-muted-foreground">Checking 30-day protection…</div>
+              ) : blockedVisits.length > 0 ? (
+                <Alert className="border-amber-200 bg-amber-50">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription className="space-y-1">
+                    <div className="font-medium text-amber-900">Pre-submit conflicts</div>
+                    <div className="text-xs text-amber-900/90">
+                      {blockedVisits
+                        .map((v) => {
+                          const memberId = String(v?.memberId || '').trim();
+                          const row = memberId ? eligibilityByMemberId[memberId] : null;
+                          const next = String(row?.nextEligibleDate || '').trim();
+                          const nextLabel = next ? new Date(`${next}T00:00:00`).toLocaleDateString() : 'after 30 days';
+                          return `${String(v.memberName || 'Member')} (next eligible ${nextLabel})`;
+                        })
+                        .join(' • ')}
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
             </div>
           )}
         </CardContent>

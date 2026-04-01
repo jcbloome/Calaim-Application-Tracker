@@ -1195,6 +1195,27 @@ export async function POST(req: NextRequest) {
       }, { merge: true });
     });
 
+    // Keep a simple per-member last-submitted index for fast 30-day eligibility checks.
+    try {
+      const memberId = String(visitData.memberId || '').trim();
+      const submittedDay = String(claimDay || '').slice(0, 10);
+      if (memberId && /^\d{4}-\d{2}-\d{2}$/.test(submittedDay)) {
+        await adminDb.collection('sw_member_last_submitted_visit').doc(memberId).set(
+          {
+            memberId,
+            lastSubmittedDate: submittedDay,
+            lastVisitId: String(visitData.visitId || '').trim() || null,
+            lastSocialWorkerUid: socialWorkerUid,
+            lastSocialWorkerEmail: socialWorkerEmail,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    } catch {
+      // best-effort only
+    }
+
     console.log('💾 Visit saved to Firestore:', visitData.visitId);
 
     return NextResponse.json({

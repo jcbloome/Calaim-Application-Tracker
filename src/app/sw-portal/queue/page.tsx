@@ -348,6 +348,18 @@ export default function SWQueuePage() {
       .slice()
       .sort((a, b) => (b.updatedAtMs || b.submittedAtMs || 0) - (a.updatedAtMs || a.submittedAtMs || 0));
   }, [claims]);
+  const assignedMembersCount = useMemo(
+    () => facilities.reduce((acc, f) => acc + (Array.isArray(f.members) ? f.members.length : 0), 0),
+    [facilities]
+  );
+  const membersRequiringVisitsCount = useMemo(
+    () => needsLists.needsQuestionnaire.length + needsLists.needsSignoff.length + needsLists.needsClaim.length,
+    [needsLists.needsClaim.length, needsLists.needsQuestionnaire.length, needsLists.needsSignoff.length]
+  );
+  const membersStillNeedVisitedCount = useMemo(
+    () => needsLists.needsQuestionnaire.length,
+    [needsLists.needsQuestionnaire.length]
+  );
 
   if (isLoading) {
     return (
@@ -379,6 +391,11 @@ export default function SWQueuePage() {
         <div>
           <h1 className="text-3xl font-bold">Queue</h1>
           <p className="text-muted-foreground">Your next actions for {statusMonth}.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Badge variant="secondary">{assignedMembersCount} assigned members</Badge>
+            <Badge variant="secondary">{membersRequiringVisitsCount} members require visits</Badge>
+            <Badge variant="secondary">{membersStillNeedVisitedCount} still need to be visited</Badge>
+          </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
           <div className="flex items-center gap-2">
@@ -598,7 +615,7 @@ export default function SWQueuePage() {
           <CardDescription>Quick totals for {statusMonth}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Badge variant="secondary">{facilities.reduce((acc, f) => acc + (f.members?.length || 0), 0)} assigned</Badge>
+          <Badge variant="secondary">{assignedMembersCount} assigned</Badge>
           <Badge variant="secondary">{needsLists.needsQuestionnaire.length} need questionnaire</Badge>
           <Badge variant="secondary">{needsLists.needsSignoff.length} need sign-off</Badge>
           <Badge variant="secondary">{needsLists.needsClaim.length} need claim</Badge>

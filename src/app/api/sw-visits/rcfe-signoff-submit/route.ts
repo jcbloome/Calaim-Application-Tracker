@@ -566,6 +566,34 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Keep a simple per-member last-submitted index for fast 30-day eligibility checks.
+    try {
+      const indexBatch = adminDb.batch();
+      let indexWrites = 0;
+      completedVisits.forEach((visit) => {
+        const memberId = String(visit?.memberId || '').trim();
+        if (!memberId) return;
+        const ref = adminDb.collection('sw_member_last_submitted_visit').doc(memberId);
+        indexBatch.set(
+          ref,
+          {
+            memberId,
+            memberName: String(visit?.memberName || '').trim() || null,
+            lastSubmittedDate: claimDay,
+            lastVisitId: String(visit?.visitId || '').trim() || null,
+            lastSocialWorkerUid: uid,
+            lastSocialWorkerEmail: email,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+        indexWrites += 1;
+      });
+      if (indexWrites > 0) await indexBatch.commit();
+    } catch {
+      // best-effort only
+    }
+
     return NextResponse.json({
       success: true,
       claimId,

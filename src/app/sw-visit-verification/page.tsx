@@ -145,6 +145,15 @@ type MonthVisitStatus = {
   claimId?: string;
 };
 
+type MemberEligibility = {
+  memberId: string;
+  eligible: boolean;
+  blockedReason: 'within_30_days' | null;
+  lastSubmittedDate: string | null;
+  nextEligibleDate: string | null;
+  daysRemaining: number;
+};
+
 // Star Rating Component
 const StarRating: React.FC<{
   value: number;
@@ -193,6 +202,7 @@ export default function SWVisitVerification() {
   useAutoTrackPortalAccess('visit-verification');
 
   const deepLinkMemberAppliedRef = useRef(false);
+  const restoredSelectionAppliedRef = useRef(false);
   const deepLinkRcfeId = useMemo(() => String(searchParams?.get('rcfeId') || '').trim(), [searchParams]);
   const deepLinkMemberId = useMemo(() => String(searchParams?.get('memberId') || '').trim(), [searchParams]);
   
@@ -426,6 +436,8 @@ export default function SWVisitVerification() {
   const [loadingDraftVisits, setLoadingDraftVisits] = useState(false);
   const [cclCheckExists, setCclCheckExists] = useState(false);
   const [loadingCclCheck, setLoadingCclCheck] = useState(false);
+  const [memberEligibilityById, setMemberEligibilityById] = useState<Record<string, MemberEligibility>>({});
+  const [loadingMemberEligibility, setLoadingMemberEligibility] = useState(false);
 
   const claimDayKey = useMemo(() => {
     const d = String(questionnaire.visitDate || '').trim().slice(0, 10);
@@ -458,6 +470,33 @@ export default function SWVisitVerification() {
     }
     return '';
   }, [auth, user]);
+
+  const lastSelectionKey = useMemo(() => {
+    const swKey = String((user as any)?.uid || (user as any)?.email || '').trim().toLowerCase();
+    return swKey ? `sw-visit-last-selection:${swKey}` : '';
+  }, [user]);
+
+  const persistLastSelection = useCallback(
+    (value: { rcfeId?: string; memberId?: string }) => {
+      if (typeof window === 'undefined') return;
+      if (!lastSelectionKey) return;
+      try {
+        const rcfeId = String(value?.rcfeId || '').trim();
+        const memberId = String(value?.memberId || '').trim();
+        window.localStorage.setItem(
+          lastSelectionKey,
+          JSON.stringify({
+            rcfeId: rcfeId || null,
+            memberId: memberId || null,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+      } catch {
+        // ignore
+      }
+    },
+    [lastSelectionKey]
+  );
 
 
   const refreshDraftVisits = useCallback(async () => {
@@ -499,6 +538,46 @@ export default function SWVisitVerification() {
       setLoadingDraftVisits(false);
     }
   }, [cclMonthKey, claimDayKey, getMemberNameKey, getIdToken, isSocialWorker, selectedRCFE?.id, selectedRCFE?.name, user]);
+
+  const refreshMemberEligibility = useCallback(async () => {
+    if (!isSocialWorker || !selectedRCFE?.id) {
+      setMemberEligibilityById({});
+      return;
+    }
+    const memberIds = (Array.isArray(selectedRCFE.members) ? selectedRCFE.members : [])
+      .map((m) => String((m as any)?.id || '').trim())
+      .filter(Boolean);
+    if (memberIds.length === 0) {
+      setMemberEligibilityById({});
+      return;
+    }
+    setLoadingMemberEligibility(true);
+    try {
+      const idToken = await getIdToken();
+      if (!idToken) {
+        setMemberEligibilityById({});
+        return;
+      }
+      const res = await fetch('/api/sw-visits/member-eligibility', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          memberIds,
+          targetDate: String(claimDayKey || '').slice(0, 10),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        setMemberEligibilityById({});
+        return;
+      }
+      setMemberEligibilityById((data?.byMemberId || {}) as Record<string, MemberEligibility>);
+    } catch {
+      setMemberEligibilityById({});
+    } finally {
+      setLoadingMemberEligibility(false);
+    }
+  }, [claimDayKey, getIdToken, isSocialWorker, selectedRCFE?.id, selectedRCFE?.members]);
 
   const refreshCclCheck = useCallback(async () => {
     if (!selectedRCFE?.id || !isSocialWorker) {
@@ -821,6 +900,7 @@ export default function SWVisitVerification() {
   const handleRCFESelect = (rcfe: RCFE) => {
     setSelectedRCFE(rcfe);
     setCurrentStep('select-member');
+    persistLastSelection({ rcfeId: String(rcfe?.id || '').trim() });
   };
 
   const openExistingVisitForEdit = useCallback(
@@ -866,6 +946,10 @@ export default function SWVisitVerification() {
       return;
     }
     setSelectedMember(member);
+    persistLastSelection({
+      rcfeId: String(member?.rcfeId || '').trim(),
+      memberId: String(member?.id || '').trim(),
+    });
     const socialWorkerId = user?.email || user?.displayName || user?.uid || 'Billy Buckhalter';
     const memberKey = member.id || member.name;
 
@@ -877,6 +961,19 @@ export default function SWVisitVerification() {
     });
     
     const status = getStatusForMember(member);
+    const memberEligibility = member?.id ? memberEligibilityById[String(member.id || '').trim()] : undefined;
+    if (memberEligibility && !memberEligibility.eligible && memberEligibility.blockedReason === 'within_30_days') {
+      const nextEligible = String(memberEligibility.nextEligibleDate || '').trim();
+      const nextLabel = nextEligible
+        ? new Date(`${nextEligible}T00:00:00`).toLocaleDateString()
+        : 'after 30 days';
+      toast({
+        title: 'Member temporarily blocked',
+        description: `${String(member.name || 'This member')} can be visited again on ${nextLabel}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     const statusClaim = String(status?.claimStatus || '').trim().toLowerCase();
     const alreadySubmitted = Boolean(status?.claimSubmitted) || ['submitted', 'approved', 'paid', 'rejected'].includes(statusClaim);
     if (status?.visitId) {
@@ -944,6 +1041,48 @@ export default function SWVisitVerification() {
       }
     }
   }, [deepLinkMemberId, deepLinkRcfeId, rcfeList, selectedRCFE]);
+
+  useEffect(() => {
+    if (restoredSelectionAppliedRef.current) return;
+    if (typeof window === 'undefined') return;
+    if (!lastSelectionKey) return;
+    if (deepLinkRcfeId || deepLinkMemberId) return;
+    if (!Array.isArray(rcfeList) || rcfeList.length === 0) return;
+    if (selectedRCFE) return;
+    try {
+      const raw = window.localStorage.getItem(lastSelectionKey);
+      if (!raw) {
+        restoredSelectionAppliedRef.current = true;
+        return;
+      }
+      const parsed = JSON.parse(raw) as { rcfeId?: string | null; memberId?: string | null };
+      const restoredRcfeId = String(parsed?.rcfeId || '').trim();
+      if (!restoredRcfeId) {
+        restoredSelectionAppliedRef.current = true;
+        return;
+      }
+      const matchedRcfe = rcfeList.find((r) => String(r?.id || '').trim() === restoredRcfeId) || null;
+      if (!matchedRcfe) {
+        restoredSelectionAppliedRef.current = true;
+        return;
+      }
+      restoredSelectionAppliedRef.current = true;
+      handleRCFESelect(matchedRcfe as any);
+      const restoredMemberId = String(parsed?.memberId || '').trim();
+      if (restoredMemberId) {
+        const member = (Array.isArray(matchedRcfe.members) ? matchedRcfe.members : []).find(
+          (m: any) => String(m?.id || '').trim() === restoredMemberId
+        );
+        if (member) {
+          setTimeout(() => {
+            handleMemberSelect(member as any);
+          }, 0);
+        }
+      }
+    } catch {
+      restoredSelectionAppliedRef.current = true;
+    }
+  }, [deepLinkMemberId, deepLinkRcfeId, handleMemberSelect, handleRCFESelect, lastSelectionKey, rcfeList, selectedRCFE]);
 
   const restartQuestionnaire = async () => {
     if (!selectedMember) return;
@@ -1086,6 +1225,15 @@ export default function SWVisitVerification() {
     if (!selectedRCFE?.id) return;
     void refreshDraftVisits();
   }, [isSocialWorker, refreshDraftVisits, selectedRCFE?.id]);
+
+  useEffect(() => {
+    if (!isSocialWorker) return;
+    if (!selectedRCFE?.id) {
+      setMemberEligibilityById({});
+      return;
+    }
+    void refreshMemberEligibility();
+  }, [claimDayKey, isSocialWorker, refreshMemberEligibility, selectedRCFE?.id]);
 
   useEffect(() => {
     if (!isSocialWorker) return;
@@ -1928,11 +2076,23 @@ export default function SWVisitVerification() {
                 </div>
               )}
 
+              <div className="text-xs text-muted-foreground">
+                {loadingMemberEligibility ? 'Checking 30-day eligibility…' : 'Members blocked by the 30-day rule show a blocked-until date.'}
+              </div>
+
               {membersAtSelectedRcfe.map((member, memberIndex) => {
                 const memberKeyNorm = getMemberKey(member);
                 const visited = memberKeyNorm ? Boolean(visitedByRcfeId[selectedRCFE.id]?.includes(memberKeyNorm)) : false;
                 const signed = memberKeyNorm ? Boolean(signedOffByRcfeId[selectedRCFE.id]?.memberIds?.includes(memberKeyNorm)) : false;
                 const monthStatus = getStatusForMember(member);
+                const memberEligibility = member?.id ? memberEligibilityById[String(member.id || '').trim()] : undefined;
+                const isBlocked30Days =
+                  Boolean(memberEligibility) &&
+                  !memberEligibility?.eligible &&
+                  memberEligibility?.blockedReason === 'within_30_days';
+                const blockedUntilLabel = memberEligibility?.nextEligibleDate
+                  ? new Date(`${String(memberEligibility.nextEligibleDate).trim()}T00:00:00`).toLocaleDateString()
+                  : 'after 30 days';
                 const claimStatus = String(monthStatus?.claimStatus || '').trim().toLowerCase();
                 const isPaid = Boolean(monthStatus?.claimPaid) || claimStatus === 'paid';
                 const isSubmitted = Boolean(monthStatus?.claimSubmitted) || ['submitted', 'approved', 'rejected'].includes(claimStatus);
@@ -1965,6 +2125,7 @@ export default function SWVisitVerification() {
                               Draft saved
                             </Badge>
                           ) : null}
+                          {isBlocked30Days ? <Badge className="bg-amber-600 hover:bg-amber-600">Blocked until {blockedUntilLabel}</Badge> : null}
                           {signed ? (
                             <Badge className="bg-green-600 hover:bg-green-600">
                               <CheckCircle className="h-3 w-3 mr-1" />
@@ -1989,6 +2150,10 @@ export default function SWVisitVerification() {
                         ) : hasDraftToday ? (
                           <p className="text-xs text-muted-foreground mt-1">
                             Draft saved for this home/day. Tap to edit, or go to Sign Off & Submit when you’re ready.
+                          </p>
+                        ) : isBlocked30Days ? (
+                          <p className="text-xs text-amber-700 mt-1">
+                            30-day protection: this member can be visited again on {blockedUntilLabel}.
                           </p>
                         ) : null}
                       </div>
@@ -2036,6 +2201,20 @@ export default function SWVisitVerification() {
                 {locationMessage ? <div className="text-xs text-amber-900/80">{locationMessage}</div> : null}
               </AlertDescription>
             </Alert>
+
+            {nextMemberAtSelectedRcfe ? (
+              <div className="sticky top-[74px] z-30 rounded-lg border bg-white/95 p-2 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-muted-foreground truncate">
+                    Quick jump: next pending member at {selectedRCFE?.name}
+                  </div>
+                  <Button type="button" size="sm" variant="outline" onClick={() => handleMemberSelect(nextMemberAtSelectedRcfe as any)}>
+                    <ArrowRight className="h-4 w-4 mr-2" />
+                    Open next member
+                  </Button>
+                </div>
+              </div>
+            ) : null}
 
             {/* Progress Header */}
             <Card>

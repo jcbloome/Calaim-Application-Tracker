@@ -96,6 +96,15 @@ type MembersCacheStatus = {
   lastManualSyncAt?: string | null;
 };
 
+type MemberEligibility = {
+  memberId: string;
+  eligible: boolean;
+  blockedReason: 'within_30_days' | null;
+  lastSubmittedDate: string | null;
+  nextEligibleDate: string | null;
+  daysRemaining: number;
+};
+
 const LS_PINNED_RCFES = 'swRosterPinnedRcfeIds_v1';
 const LS_RECENT_MEMBERS = 'swRosterRecentMembers_v1';
 
@@ -153,8 +162,15 @@ export default function SWRosterPage() {
   const [draftsLastRefreshOk, setDraftsLastRefreshOk] = useState<boolean | null>(null);
   const [newAssignmentsSinceLastMonthCount, setNewAssignmentsSinceLastMonthCount] = useState(0);
   const [noAssignmentsSinceLastMonth, setNoAssignmentsSinceLastMonth] = useState(false);
-  const [requestingQuickSync, setRequestingQuickSync] = useState(false);
+  const [memberEligibilityById, setMemberEligibilityById] = useState<Record<string, MemberEligibility>>({});
+  const [loadingMemberEligibility, setLoadingMemberEligibility] = useState(false);
+  const [showAssignedRcfeList, setShowAssignedRcfeList] = useState(false);
+  const [showAssignedMemberList, setShowAssignedMemberList] = useState(false);
   const currentRosterMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const portalSwName = useMemo(
+    () => String((user as any)?.displayName || (user as any)?.email || 'Social Worker').trim(),
+    [user]
+  );
 
   const refreshRoster = useCallback(async (opts?: { silent?: boolean }) => {
     const socialWorkerEmail = String((user as any)?.email || auth?.currentUser?.email || '').trim();
@@ -217,36 +233,6 @@ export default function SWRosterPage() {
     }
   }, [auth?.currentUser?.email, currentRosterMonth, toast, user]);
 
-  const requestQuickSync = useCallback(async () => {
-    if (!auth?.currentUser) return;
-    setRequestingQuickSync(true);
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/sw-visits/request-refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({
-          message:
-            'Please run a quick Sync from Caspio for social worker assignment updates. SW roster appears out of date.',
-        }),
-      });
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) throw new Error(data?.error || `Failed (${res.status})`);
-      toast({
-        title: 'Quick sync request sent',
-        description: `Notified ${Number(data?.notified || 0)} admin account(s).`,
-      });
-    } catch (e: any) {
-      toast({
-        title: 'Could not request quick sync',
-        description: e?.message || 'Please contact an admin to run Sync from Caspio.',
-        variant: 'destructive',
-      });
-    } finally {
-      setRequestingQuickSync(false);
-    }
-  }, [auth, toast]);
-
   const [statusMonth, setStatusMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [facilitySort, setFacilitySort] = useState<'assigned' | 'rcfe-az' | 'rcfe-za'>('assigned');
 
@@ -295,8 +281,8 @@ export default function SWRosterPage() {
       const map: Record<string, MonthVisitStatus> = {};
       rows.forEach((r) => {
         const memberId = String(r?.memberId || '').trim();
-        if (!memberId) return;
-        map[memberId] = {
+        const memberNameKey = String(r?.memberName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const rowStatus: MonthVisitStatus = {
           visitId: String(r?.visitId || '').trim(),
           visitDay: String(r?.date || '').trim() || undefined,
           signedOff: Boolean(r?.signedOff),
@@ -305,6 +291,8 @@ export default function SWRosterPage() {
           claimPaid: Boolean(r?.claimPaid),
           claimId: String(r?.claimId || '').trim() || undefined,
         };
+        if (memberId) map[memberId] = rowStatus;
+        if (memberNameKey) map[`name:${memberNameKey}`] = rowStatus;
       });
       setMonthStatuses(map);
       setMonthStatusesLoaded(true);
@@ -530,18 +518,69 @@ export default function SWRosterPage() {
     }
   }, [auth]);
 
+  const refreshMemberEligibility = useCallback(
+    async (memberIds: string[], targetDate: string) => {
+      if (!auth?.currentUser) return;
+      const unique = Array.from(new Set((memberIds || []).map((x) => String(x || '').trim()).filter(Boolean)));
+      if (unique.length === 0) {
+        setMemberEligibilityById({});
+        return;
+      }
+      setLoadingMemberEligibility(true);
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch('/api/sw-visits/member-eligibility', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ memberIds: unique, targetDate }),
+        });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.success) throw new Error(data?.error || `Failed to load eligibility (HTTP ${res.status})`);
+        setMemberEligibilityById((data?.byMemberId || {}) as Record<string, MemberEligibility>);
+      } catch {
+        setMemberEligibilityById({});
+      } finally {
+        setLoadingMemberEligibility(false);
+      }
+    },
+    [auth]
+  );
+
   useEffect(() => {
     if (isLoading) return;
     if (!isSocialWorker) return;
     void refreshDraftsToday();
   }, [isLoading, isSocialWorker, refreshDraftsToday]);
 
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isSocialWorker) return;
+    const ids = facilities
+      .flatMap((f) => (Array.isArray(f.members) ? f.members : []))
+      .map((m) => String(m?.id || '').trim())
+      .filter(Boolean);
+    void refreshMemberEligibility(ids, todayLocalKey());
+  }, [facilities, isLoading, isSocialWorker, refreshMemberEligibility]);
+
+  const getMemberNameKey = useCallback((value: unknown) => String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' '), []);
+
+  const getStatusForMember = useCallback(
+    (member: { id?: string; name?: string } | null | undefined) => {
+      const memberId = String(member?.id || '').trim();
+      const byId = memberId ? monthStatuses[memberId] : undefined;
+      if (byId) return byId;
+      const nameKey = getMemberNameKey(member?.name);
+      return nameKey ? monthStatuses[`name:${nameKey}`] : undefined;
+    },
+    [getMemberNameKey, monthStatuses]
+  );
+
   const needsQuestionnaire = useMemo(() => {
     if (!monthStatusesLoaded) return [];
     const rows: Array<{ memberId: string; memberName: string; rcfeId: string; rcfeName: string }> = [];
     for (const f of facilities) {
       for (const m of f.members || []) {
-        const s = monthStatuses[String(m.id || '').trim()];
+        const s = getStatusForMember(m);
         const flags = computeSwVisitStatusFlags(s);
         if (flags.nextAction === 'questionnaire') {
           rows.push({
@@ -555,7 +594,7 @@ export default function SWRosterPage() {
     }
     rows.sort((a, b) => (a.rcfeName || '').localeCompare(b.rcfeName || '') || (a.memberName || '').localeCompare(b.memberName || ''));
     return rows;
-  }, [facilities, monthStatuses, monthStatusesLoaded]);
+  }, [facilities, getStatusForMember, monthStatusesLoaded]);
 
   const nextQuestionnaire = useMemo(() => {
     if (!needsQuestionnaire || needsQuestionnaire.length === 0) return null;
@@ -583,7 +622,7 @@ export default function SWRosterPage() {
     for (const f of facilities) {
       for (const m of f.members || []) {
         totalAssigned += 1;
-        const s = monthStatuses[String(m.id || '').trim()];
+        const s = getStatusForMember(m);
         const flags = computeSwVisitStatusFlags(s);
         if (flags.nextAction === 'questionnaire') notStarted += 1;
         else if (flags.nextAction === 'signoff' || flags.nextAction === 'submit-claim') inProgress += 1;
@@ -592,7 +631,33 @@ export default function SWRosterPage() {
     }
 
     return { totalAssigned, notStarted, inProgress, completed };
-  }, [facilities, monthStatuses, statusIconsReady, totals.memberCount]);
+  }, [facilities, getStatusForMember, statusIconsReady, totals.memberCount]);
+  const membersRequiringVisits = useMemo(
+    () => Number(monthlyQueueStats.notStarted || 0) + Number(monthlyQueueStats.inProgress || 0),
+    [monthlyQueueStats.inProgress, monthlyQueueStats.notStarted]
+  );
+  const membersStillNeedVisit = useMemo(() => Number(monthlyQueueStats.notStarted || 0), [monthlyQueueStats.notStarted]);
+  const assignedRcfeNames = useMemo(
+    () =>
+      facilities
+        .map((f) => String(f?.name || '').trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    [facilities]
+  );
+  const assignedMembersList = useMemo(
+    () =>
+      facilities
+        .flatMap((f) =>
+          (Array.isArray(f?.members) ? f.members : []).map((m) => ({
+            memberName: String(m?.name || '').trim(),
+            rcfeName: String(f?.name || '').trim(),
+          }))
+        )
+        .filter((x) => x.memberName)
+        .sort((a, b) => a.memberName.localeCompare(b.memberName)),
+    [facilities]
+  );
 
   const monthPacing = useMemo(() => {
     const [yRaw, mRaw] = String(statusMonth || '').split('-');
@@ -815,16 +880,31 @@ export default function SWRosterPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between print:hidden">
         <div>
           <h1 className="text-3xl font-bold">Social Worker Roster</h1>
+          <p className="text-sm text-muted-foreground">Signed in: {portalSwName}</p>
           <p className="text-muted-foreground">Attractive monthly work view with quick questionnaire access.</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant="secondary" className="gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1"
+              onClick={() => setShowAssignedRcfeList((prev) => !prev)}
+            >
               <Building2 className="h-3.5 w-3.5" />
               {totals.facilityCount} RCFE{totals.facilityCount === 1 ? '' : 's'}
-            </Badge>
-            <Badge variant="secondary" className="gap-1">
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1"
+              onClick={() => setShowAssignedMemberList((prev) => !prev)}
+            >
               <Users className="h-3.5 w-3.5" />
               {totals.memberCount} member{totals.memberCount === 1 ? '' : 's'}
-            </Badge>
+            </Button>
+            <Badge variant="secondary">{membersRequiringVisits} require visits</Badge>
+            <Badge variant="secondary">{membersStillNeedVisit} still need to be visited</Badge>
             <Badge variant="outline">
               {noAssignmentsSinceLastMonth ? 'No assignments since last month' : `New since last month: ${newAssignmentsSinceLastMonthCount}`}
             </Badge>
@@ -834,14 +914,28 @@ export default function SWRosterPage() {
                 : 'Status refresh pending'}
             </span>
           </div>
+          {showAssignedRcfeList ? (
+            <div className="mt-2 rounded-md border bg-white p-2 text-xs text-slate-700">
+              <div className="font-semibold mb-1">Assigned RCFEs</div>
+              {assignedRcfeNames.length === 0 ? 'No RCFEs found.' : assignedRcfeNames.join(' • ')}
+            </div>
+          ) : null}
+          {showAssignedMemberList ? (
+            <div className="mt-2 rounded-md border bg-white p-2 text-xs text-slate-700 max-h-44 overflow-auto">
+              <div className="font-semibold mb-1">Assigned Members</div>
+              {assignedMembersList.length === 0
+                ? 'No members found.'
+                : assignedMembersList.map((row) => `${row.memberName} (${row.rcfeName || 'RCFE'})`).join(' • ')}
+            </div>
+          ) : null}
           <div className="mt-1 text-xs text-muted-foreground">
-            You are viewing the admin-synced members cache. Last auto sync:{' '}
-            {formatDateTime(membersCacheStatus?.lastAutoSyncAt) || 'not recorded'}
-            {' • '}Last manual sync:{' '}
-            {formatDateTime(membersCacheStatus?.lastManualSyncAt) || 'not recorded'}
-            {' • '}Latest sync run:{' '}
-            {formatDateTime(membersCacheStatus?.lastRunAt || membersCacheStatus?.lastSyncAt) || 'not recorded'}
-            {membersCacheStatus?.lastRunTrigger ? ` (${membersCacheStatus.lastRunTrigger})` : ''}
+            Last sync:{' '}
+            {formatDateTime(
+              membersCacheStatus?.lastRunAt ||
+                membersCacheStatus?.lastSyncAt ||
+                membersCacheStatus?.lastManualSyncAt ||
+                membersCacheStatus?.lastAutoSyncAt
+            ) || 'not recorded'}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline" className="gap-1">Q questionnaire</Badge>
@@ -865,22 +959,10 @@ export default function SWRosterPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh roster view
           </Button>
-          <Button
-            className="w-full sm:w-auto"
-            variant="outline"
-            onClick={() => void requestQuickSync()}
-            disabled={requestingQuickSync}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${requestingQuickSync ? 'animate-spin' : ''}`} />
-            Request quick sync (admin)
-          </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => window.print()}>
             <Printer className="h-4 w-4 mr-2" />
             Print / Save PDF
           </Button>
-          <span className="text-xs text-muted-foreground">
-            SW refresh uses admin-synced cache only.
-          </span>
         </div>
       </div>
 
@@ -1151,8 +1233,9 @@ export default function SWRosterPage() {
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">{needsQuestionnaire.length} member(s)</Badge>
+            <Badge variant="secondary">{needsQuestionnaire.length} member(s)</Badge>
                 <span className="text-xs text-muted-foreground">Month: {statusMonth}</span>
+            {loadingMemberEligibility ? <span className="text-xs text-muted-foreground">Checking 30-day eligibility…</span> : null}
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {needsQuestionnaire.slice(0, 50).map((r) => (
@@ -1268,7 +1351,7 @@ export default function SWRosterPage() {
             <CardHeader>
               <CardTitle className="text-base">No assignments found</CardTitle>
               <CardDescription>
-                If this seems wrong, assignments may be pending sync. Use “Request quick sync (admin)” above.
+                If this seems wrong, assignments may still be waiting for the next automatic daily sync.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -1353,14 +1436,46 @@ export default function SWRosterPage() {
                                   </span>
                                 ) : null}
                               </div>
+                              {statusIconsReady ? (
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                                  {(() => {
+                                    const members = Array.isArray(f.members) ? f.members : [];
+                                    const total = members.length;
+                                    const drafted = members.filter((row) => {
+                                      const rowDraft = draftsByMemberId.get(String(row.id || '').trim());
+                                      const rowStatus = getStatusForMember(row);
+                                      return Boolean(rowDraft?.visitId) || Boolean(rowStatus?.visitId);
+                                    }).length;
+                                    const signedOff = members.filter((row) => Boolean(getStatusForMember(row)?.signedOff)).length;
+                                    const submitted = members.filter((row) => {
+                                      const rowStatus = getStatusForMember(row);
+                                      const claimStatus = String(rowStatus?.claimStatus || '').trim().toLowerCase();
+                                      return Boolean(rowStatus?.claimSubmitted) || ['submitted', 'approved', 'paid', 'rejected'].includes(claimStatus);
+                                    }).length;
+                                    return (
+                                      <>
+                                        <Badge variant="outline">Total {total}</Badge>
+                                        <Badge variant="outline">Drafted {drafted}</Badge>
+                                        <Badge variant="outline">Signed-off {signedOff}</Badge>
+                                        <Badge variant="outline">Submitted {submitted}</Badge>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </TableCell>
                       </TableRow>
                       {(f.members || []).map((m) => {
                         const draft = draftsByMemberId.get(String(m.id || '').trim());
-                        const s = statusIconsReady ? monthStatuses[String(m.id || '').trim()] : undefined;
+                        const s = statusIconsReady ? getStatusForMember(m) : undefined;
                         const flags = computeSwVisitStatusFlags(s);
+                        const eligibility = memberEligibilityById[String(m.id || '').trim()];
+                        const isBlocked30Days = Boolean(eligibility && !eligibility.eligible && eligibility.blockedReason === 'within_30_days');
+                        const blockLabel = eligibility?.nextEligibleDate
+                          ? `Blocked until ${new Date(`${eligibility.nextEligibleDate}T00:00:00`).toLocaleDateString()}`
+                          : 'Blocked within 30 days';
                         return (
                           <TableRow key={`${f.id}-${m.id}`}>
                             <TableCell className="min-w-0">
@@ -1405,6 +1520,11 @@ export default function SWRosterPage() {
                                 {draft ? (
                                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
                                     Draft
+                                  </span>
+                                ) : null}
+                                {isBlocked30Days ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                                    {blockLabel}
                                   </span>
                                 ) : null}
                                 <span className="ml-1 inline-flex shrink-0 items-center gap-2">
@@ -1455,19 +1575,23 @@ export default function SWRosterPage() {
                                   </Button>
                                 ) : flags.nextAction === 'questionnaire' ? (
                                   <Button asChild size="sm" variant="outline" className="ml-2 shrink-0">
-                                    <Link
-                                      href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id || '').trim())}&memberId=${encodeURIComponent(String(m.id || '').trim())}`}
-                                      onClick={() =>
-                                        trackRecentMember({
-                                          memberId: String(m.id || '').trim(),
-                                          memberName: String(m.name || '').trim(),
-                                          rcfeId: String(f.id || '').trim(),
-                                          rcfeName: String(f.name || '').trim(),
-                                        })
-                                      }
-                                    >
-                                      Questionnaire
-                                    </Link>
+                                    {isBlocked30Days ? (
+                                      <span className="text-xs">{blockLabel}</span>
+                                    ) : (
+                                      <Link
+                                        href={`/sw-visit-verification?rcfeId=${encodeURIComponent(String(f.id || '').trim())}&memberId=${encodeURIComponent(String(m.id || '').trim())}`}
+                                        onClick={() =>
+                                          trackRecentMember({
+                                            memberId: String(m.id || '').trim(),
+                                            memberName: String(m.name || '').trim(),
+                                            rcfeId: String(f.id || '').trim(),
+                                            rcfeName: String(f.name || '').trim(),
+                                          })
+                                        }
+                                      >
+                                        Questionnaire
+                                      </Link>
+                                    )}
                                   </Button>
                                 ) : null}
                               </div>

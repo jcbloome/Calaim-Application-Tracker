@@ -259,6 +259,43 @@ export async function POST(request: NextRequest) {
     }
     await batch.commit();
 
+    // Keep a simple per-member last-submitted index for fast 30-day eligibility checks.
+    try {
+      const memberByVisitId = new Map<string, { memberId: string; memberName: string }>();
+      const selected = Array.isArray(signOffData?.completedVisits) ? signOffData.completedVisits : [];
+      selected.forEach((row: any) => {
+        const visitId = String(row?.visitId || row?.id || '').trim();
+        const memberId = String(row?.memberId || '').trim();
+        const memberName = String(row?.memberName || '').trim();
+        if (!visitId || !memberId) return;
+        memberByVisitId.set(visitId, { memberId, memberName });
+      });
+      const indexBatch = adminDb.batch();
+      let indexWrites = 0;
+      visitIds.forEach((visitId) => {
+        const mapped = memberByVisitId.get(String(visitId || '').trim());
+        if (!mapped?.memberId) return;
+        const ref = adminDb.collection('sw_member_last_submitted_visit').doc(mapped.memberId);
+        indexBatch.set(
+          ref,
+          {
+            memberId: mapped.memberId,
+            memberName: mapped.memberName || null,
+            lastSubmittedDate: claimDay,
+            lastVisitId: String(visitId || '').trim() || null,
+            lastSocialWorkerUid: uid,
+            lastSocialWorkerEmail: email,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+        indexWrites += 1;
+      });
+      if (indexWrites > 0) await indexBatch.commit();
+    } catch {
+      // best-effort only
+    }
+
     // Keep a log on the claim(s) so SWs can review sign-offs before manually submitting.
     try {
       await attachSignoffToClaims({
