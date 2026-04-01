@@ -24,7 +24,6 @@ import {
   getDocs,
   onSnapshot,
   query,
-  setDoc,
   serverTimestamp,
   updateDoc,
   where,
@@ -115,40 +114,6 @@ type StandaloneUpload = {
 };
 
 type StaffOption = { uid: string; label: string; email: string; role: 'Admin' | 'Super Admin' | 'Staff' };
-type LegacyDocType = '602' | 'med_list' | 'snf_facesheet';
-
-type KaiserAlftMember = {
-  id: string;
-  memberName: string;
-  memberFirstName: string;
-  memberLastName: string;
-  memberMrn: string;
-  kaiserStatus: string;
-  alftAssigned: string;
-  ispCurrentLocation: string;
-  ispContactPhone: string;
-  ispContactEmail: string;
-  ispContactConfirmDate: string;
-};
-
-type AlftTrackerRecord = {
-  memberId: string;
-  memberName?: string;
-  memberMrn?: string;
-  docs?: Partial<
-    Record<
-      LegacyDocType,
-      {
-        fileName: string;
-        downloadURL: string;
-        storagePath?: string;
-        uploadedAtIso?: string;
-        uploadedByName?: string | null;
-        uploadedByEmail?: string | null;
-      }
-    >
-  >;
-};
 
 const toLabel = (value: any) => String(value ?? '').trim();
 
@@ -295,19 +260,6 @@ const toIsoToday = () => {
   return `${y}-${m}-${day}`;
 };
 
-const LEGACY_DOC_OPTIONS: Array<{ key: LegacyDocType; label: string }> = [
-  { key: '602', label: '602' },
-  { key: 'med_list', label: 'Med list' },
-  { key: 'snf_facesheet', label: 'SNF facesheet' },
-];
-
-const sanitizePathSegment = (value: string) =>
-  String(value || '')
-    .trim()
-    .replace(/[^\w.\- ]+/g, '_')
-    .replace(/\s+/g, '_')
-    .slice(0, 160);
-
 export default function AdminAlftTrackerPage() {
   const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
   const firestore = useFirestore();
@@ -363,12 +315,6 @@ export default function AdminAlftTrackerPage() {
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
-  const [legacyMembersLoading, setLegacyMembersLoading] = useState(false);
-  const [legacyMembers, setLegacyMembers] = useState<KaiserAlftMember[]>([]);
-  const [legacySearch, setLegacySearch] = useState('');
-  const [trackerRecords, setTrackerRecords] = useState<Record<string, AlftTrackerRecord>>({});
-  const [uploadingLegacyKey, setUploadingLegacyKey] = useState('');
-  const [pendingDocFiles, setPendingDocFiles] = useState<Record<string, File | null>>({});
 
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
@@ -444,83 +390,6 @@ export default function AdminAlftTrackerPage() {
   }, [firestore, isAdmin]);
 
   useEffect(() => {
-    if (!firestore || !isAdmin) return;
-    const unsub = onSnapshot(
-      collection(firestore, 'alft_member_tracker'),
-      (snap) => {
-        const next: Record<string, AlftTrackerRecord> = {};
-        snap.docs.forEach((d) => {
-          const data = (d.data() || {}) as any;
-          const memberId = String(data?.memberId || d.id || '').trim();
-          if (!memberId) return;
-          next[memberId] = { memberId, ...(data as any) } as AlftTrackerRecord;
-        });
-        setTrackerRecords(next);
-      },
-      () => setTrackerRecords({})
-    );
-    return () => unsub();
-  }, [firestore, isAdmin]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      if (!isAdmin) return;
-      setLegacyMembersLoading(true);
-      try {
-        const res = await fetch('/api/kaiser-members');
-        const data = (await res.json().catch(() => ({}))) as any;
-        if (!res.ok || !data?.success) {
-          throw new Error(String(data?.error || `Load failed (HTTP ${res.status})`));
-        }
-        const raw = Array.isArray(data?.members) ? (data.members as any[]) : [];
-        const filtered = raw
-          .filter((m) => String(m?.Kaiser_Status || '').trim().toLowerCase() === 'rn visit needed')
-          .map((m) => {
-            const first = String(m?.memberFirstName || m?.Senior_First || '').trim();
-            const last = String(m?.memberLastName || m?.Senior_Last || '').trim();
-            const id = String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim();
-            const memberName =
-              String(m?.memberName || '').trim() ||
-              [first, last].filter(Boolean).join(' ').trim() ||
-              'Member';
-            return {
-              id,
-              memberName,
-              memberFirstName: first,
-              memberLastName: last,
-              memberMrn: String(m?.memberMrn || m?.MCP_CIN || '').trim(),
-              kaiserStatus: String(m?.Kaiser_Status || '').trim(),
-              alftAssigned: String(m?.ALFT_Assigned || '').trim(),
-              ispCurrentLocation: String(m?.ISP_Current_Location || '').trim(),
-              ispContactPhone: String(m?.ISP_Contact_Phone || '').trim(),
-              ispContactEmail: String(m?.ISP_Contact_Email || '').trim(),
-              ispContactConfirmDate: String(m?.ISP_Contact_Confirm_Field || '').trim(),
-            } as KaiserAlftMember;
-          })
-          .filter((m) => Boolean(m.id))
-          .sort((a, b) => a.memberName.localeCompare(b.memberName));
-        if (!cancelled) setLegacyMembers(filtered);
-      } catch (e: any) {
-        if (!cancelled) {
-          setLegacyMembers([]);
-          toast({
-            title: 'Could not load ALFT members',
-            description: e?.message || 'Kaiser members could not be loaded.',
-            variant: 'destructive',
-          });
-        }
-      } finally {
-        if (!cancelled) setLegacyMembersLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAdmin, toast]);
-
-  useEffect(() => {
     let cancelled = false;
     const load = async () => {
       if (!firestore || !isAdmin) return;
@@ -578,73 +447,6 @@ export default function AdminAlftTrackerPage() {
         return bMs - aMs;
       });
   }, [rows, search]);
-
-  const filteredLegacyMembers = useMemo(() => {
-    const q = String(legacySearch || '').trim().toLowerCase();
-    return legacyMembers.filter((m) => {
-      if (!q) return true;
-      return (
-        m.memberName.toLowerCase().includes(q) ||
-        m.memberMrn.toLowerCase().includes(q) ||
-        m.alftAssigned.toLowerCase().includes(q)
-      );
-    });
-  }, [legacyMembers, legacySearch]);
-
-  const uploadLegacyDocument = useCallback(
-    async (member: KaiserAlftMember, docType: LegacyDocType) => {
-      if (!storage || !firestore || !user?.uid) return;
-      const key = `${member.id}:${docType}`;
-      const file = pendingDocFiles[key];
-      if (!file) {
-        toast({ title: 'Choose a file first', description: `Select a ${docType} file to upload.`, variant: 'destructive' });
-        return;
-      }
-      setUploadingLegacyKey(key);
-      try {
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const safeFile = sanitizePathSegment(file.name);
-        const path = `admin_uploads/alft-legacy/${member.id}/${docType}_${ts}_${safeFile}`;
-        const storageRef = ref(storage, path);
-        const task = uploadBytesResumable(storageRef, file);
-        const done = await new Promise<{ downloadURL: string }>((resolve, reject) => {
-          task.on(
-            'state_changed',
-            () => {},
-            (err) => reject(err),
-            async () => resolve({ downloadURL: await getDownloadURL(task.snapshot.ref) })
-          );
-        });
-        await setDoc(
-          doc(firestore, 'alft_member_tracker', member.id),
-          {
-            memberId: member.id,
-            memberName: member.memberName,
-            memberMrn: member.memberMrn || null,
-            docs: {
-              [docType]: {
-                fileName: file.name,
-                downloadURL: done.downloadURL,
-                storagePath: path,
-                uploadedAtIso: new Date().toISOString(),
-                uploadedByName: String((user as any)?.displayName || '').trim() || null,
-                uploadedByEmail: String((user as any)?.email || '').trim() || null,
-              },
-            },
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-        setPendingDocFiles((prev) => ({ ...prev, [key]: null }));
-        toast({ title: 'Legacy file uploaded', description: `${member.memberName}: ${docType} uploaded.` });
-      } catch (e: any) {
-        toast({ title: 'Upload failed', description: e?.message || 'Could not upload file.', variant: 'destructive' });
-      } finally {
-        setUploadingLegacyKey('');
-      }
-    },
-    [firestore, pendingDocFiles, storage, toast, user]
-  );
 
   const openAssign = useCallback((row: StandaloneUpload, kind: 'rn' | 'staff') => {
     setAssignRow(row);
@@ -1106,7 +908,7 @@ export default function AdminAlftTrackerPage() {
     <div className="container mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold">ALFT Tracker</h1>
+          <h1 className="text-2xl font-bold">ALFT Workflow Intake</h1>
           <p className="text-muted-foreground">
             Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, Kaiser manager does final review, then completed packet is sent to Jocelyn.
           </p>
@@ -1116,6 +918,11 @@ export default function AdminAlftTrackerPage() {
           <Button variant="outline" asChild>
             <Link href="/admin/alft-tracker/dummy-preview">
               View dummy ALFT (ILS PDF preview)
+            </Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/admin/alft-assignment">
+              Open ALFT Assignment Queue
             </Link>
           </Button>
           <Button variant="outline" onClick={() => setSearch('')} disabled={!search}>
@@ -1138,113 +945,6 @@ export default function AdminAlftTrackerPage() {
           />
         </div>
       </div>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Kaiser RN Visit Needed (ALFT queue)</CardTitle>
-          <CardDescription>
-            Dual-use tracker for legacy ALFT prep: upload `602`, `Med list`, and `SNF facesheet` docs. Contact/location comes from Caspio ISP fields.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 overflow-x-auto">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Input
-              value={legacySearch}
-              onChange={(e) => setLegacySearch(e.target.value)}
-              placeholder="Search member / MRN / ALFT assigned…"
-            />
-            <Badge variant={filteredLegacyMembers.length > 0 ? 'secondary' : 'outline'}>
-              {filteredLegacyMembers.length} member(s)
-            </Badge>
-          </div>
-          {legacyMembersLoading ? (
-            <div className="text-sm text-muted-foreground py-3">Loading Kaiser ALFT members…</div>
-          ) : filteredLegacyMembers.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-3">No Kaiser members with `RN Visit Needed` found.</div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead>ALFT assigned</TableHead>
-                  <TableHead>Contact + confirm</TableHead>
-                  <TableHead>Legacy docs</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredLegacyMembers.map((m) => {
-                  const tracker = trackerRecords[m.id];
-                  return (
-                    <TableRow key={m.id}>
-                      <TableCell className="min-w-[220px]">
-                        <div className="font-medium">{m.memberName}</div>
-                        <div className="text-xs text-muted-foreground font-mono">{m.memberMrn || 'No MRN'}</div>
-                        <div className="text-xs text-muted-foreground">Status: {m.kaiserStatus || '—'}</div>
-                      </TableCell>
-                      <TableCell className="min-w-[180px]">
-                        <div className="text-sm">{m.alftAssigned || 'Unassigned'}</div>
-                      </TableCell>
-                      <TableCell className="min-w-[360px]">
-                        <div className="space-y-2">
-                          <div className="text-xs text-muted-foreground">
-                            ISP current location: <span className="text-foreground">{m.ispCurrentLocation || '—'}</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            ISP contact phone: <span className="text-foreground">{m.ispContactPhone || '—'}</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            ISP contact email: <span className="text-foreground">{m.ispContactEmail || '—'}</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            ISP contact confirmed date:{' '}
-                            <span className="text-foreground">{m.ispContactConfirmDate || '—'}</span>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="min-w-[340px]">
-                        <div className="space-y-3">
-                          {LEGACY_DOC_OPTIONS.map((option) => {
-                            const key = `${m.id}:${option.key}`;
-                            const docRow = tracker?.docs?.[option.key];
-                            return (
-                              <div key={option.key} className="rounded border p-2 space-y-2">
-                                <div className="text-xs font-semibold">{option.label}</div>
-                                {docRow?.downloadURL ? (
-                                  <a className="text-xs underline text-blue-700 block truncate" href={docRow.downloadURL} target="_blank" rel="noreferrer">
-                                    {docRow.fileName || `Open ${option.label}`}
-                                  </a>
-                                ) : (
-                                  <div className="text-xs text-muted-foreground">No file uploaded yet</div>
-                                )}
-                                <Input
-                                  type="file"
-                                  onChange={(e) =>
-                                    setPendingDocFiles((prev) => ({
-                                      ...prev,
-                                      [key]: e.target.files?.[0] || null,
-                                    }))
-                                  }
-                                />
-                                <Button
-                                  size="sm"
-                                  onClick={() => void uploadLegacyDocument(m, option.key)}
-                                  disabled={uploadingLegacyKey === key}
-                                >
-                                  {uploadingLegacyKey === key ? 'Uploading…' : `Upload ${option.label}`}
-                                </Button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader className="pb-3">
