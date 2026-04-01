@@ -134,6 +134,8 @@ interface MemberNote {
   priority: 'General' | 'Priority' | 'Urgent';
   status?: 'Open' | 'Closed';
   resolvedAt?: string;
+  updatedByName?: string;
+  updatedByEmail?: string;
   followUpDate?: string;
   tags?: string[];
   isLegacy?: boolean; // Tag for notes imported from Caspio
@@ -689,6 +691,8 @@ function validateAndCleanNote(rawNote: any): MemberNote {
     priority: validatePriority(rawNote.priority || rawNote.Follow_Up_Status),
     status: normalizeNoteStatus(rawNote.status || rawNote.Note_Status || rawNote.Follow_Up_Status),
     resolvedAt: isValidDate(rawNote.resolvedAt) ? new Date(rawNote.resolvedAt).toISOString() : undefined,
+    updatedByName: sanitizeText(rawNote.updatedByName || rawNote.updated_by_name) || undefined,
+    updatedByEmail: sanitizeText(rawNote.updatedByEmail || rawNote.updated_by_email) || undefined,
     followUpDate: isValidDate(rawNote.followUpDate || rawNote.Follow_Up_Date) 
       ? new Date(rawNote.followUpDate || rawNote.Follow_Up_Date).toISOString() 
       : undefined,
@@ -1466,7 +1470,7 @@ export async function PUT(request: NextRequest) {
           },
           body: JSON.stringify({
             Note_Status: 'Closed',
-            Follow_Up_Status: 'Closed',
+            Follow_Up_Status: '🔴 Closed',
           }),
         });
         if (!response.ok) continue;

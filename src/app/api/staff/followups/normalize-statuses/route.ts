@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            Follow_Up_Status: '🔴Closed',
+            Follow_Up_Status: '🔴 Closed',
             Note_Status: 'Closed',
           }),
         });
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         writeBatch.set(
           ref,
           {
-            followUpStatus: '🔴Closed',
+            followUpStatus: '🔴 Closed',
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             normalizedBy: actorName,
             normalizedByEmail: actorEmail || null,
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
       success: true,
       scanned: legacyRows.length,
       updated,
-      message: `Normalized ${updated} legacy "Close" statuses to 🔴Closed.`,
+      message: `Normalized ${updated} legacy "Close" statuses to 🔴 Closed.`,
     });
   } catch (error: any) {
     return NextResponse.json(
