@@ -81,6 +81,53 @@ const AMOUNT_RE = /(?<!\d)(-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}|\((?:\d{1,3}(?:,\
 const PROC_RE = /\b(H2022|T2038)(?:\b|(?=[A-Z0-9]))/i;
 const ERA_CACHE_COLLECTION = 'era_parser_cache';
 const ERA_CACHE_CHUNK_SIZE = 250;
+const ERA_HISTORY_LOOKUP_DEFAULT_LIMIT = 25;
+const ERA_HISTORY_LOOKUP_MAX_LIMIT = 100;
+
+const normalizeLookupToken = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+
+const normalizeNameForLookup = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9,\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const rowMatchesLookup = (row: EraRow, rawQuery: string) => {
+  const qText = String(rawQuery || '').trim().toLowerCase();
+  if (!qText) return false;
+  const qToken = normalizeLookupToken(qText);
+  const qName = normalizeNameForLookup(qText);
+  const qNameTokens = qName
+    .split(/[,\s]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const member = String(row.member_name || '').toLowerCase().trim();
+  const memberNormalized = normalizeNameForLookup(member);
+  const memberToken = normalizeLookupToken(member);
+  const mediCal = String(row.medi_cal_number || '').toLowerCase().trim();
+  const mediCalToken = normalizeLookupToken(mediCal);
+  const clientId2 = String(row.acnt || '').toLowerCase().trim();
+  const clientId2Token = normalizeLookupToken(clientId2);
+  const icn = String(row.icn || '').toLowerCase().trim();
+  const icnToken = normalizeLookupToken(icn);
+
+  const nameMatchDirect = member.includes(qText) || (qName ? memberNormalized.includes(qName) : false);
+  const nameMatchByTokens =
+    qNameTokens.length > 0 &&
+    qNameTokens.every((tok) => memberNormalized.includes(tok) || memberToken.includes(normalizeLookupToken(tok)));
+  const idTextMatch = mediCal.includes(qText) || clientId2.includes(qText) || icn.includes(qText);
+  const idTokenMatch = qToken
+    ? mediCalToken.includes(qToken) || clientId2Token.includes(qToken) || icnToken.includes(qToken)
+    : false;
+
+  return nameMatchDirect || nameMatchByTokens || idTextMatch || idTokenMatch;
+};
 
 const normalizeCacheKey = (raw: unknown) => {
   const token = String(raw || '')
@@ -591,6 +638,7 @@ export async function GET(req: NextRequest) {
     const adminModule = await import('@/firebase-admin');
     const adminDb = adminModule.adminDb;
     const { searchParams } = new URL(req.url);
+    const lookup = String(searchParams.get('lookup') || '').trim();
     const cacheKey = normalizeCacheKey(searchParams.get('cacheKey'));
     if (cacheKey) {
       const cached = await readCachedEra(adminDb, cacheKey);
@@ -600,6 +648,68 @@ export async function GET(req: NextRequest) {
 
     const limitRaw = Number(searchParams.get('limit') || 20);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.floor(limitRaw))) : 20;
+
+    if (lookup) {
+      const lookupLimit = Number.isFinite(limitRaw)
+        ? Math.max(1, Math.min(ERA_HISTORY_LOOKUP_MAX_LIMIT, Math.floor(limitRaw)))
+        : ERA_HISTORY_LOOKUP_DEFAULT_LIMIT;
+      const snap = await adminDb.collection(ERA_CACHE_COLLECTION).orderBy('updatedAt', 'desc').limit(lookupLimit).get();
+      const batches: Array<{
+        cacheKey: string;
+        fileName: string;
+        sourceMode: string;
+        payer: string;
+        totalRows: number;
+        updatedAt: any;
+        matchedRows: number;
+        matchedMembers: number;
+        totalPaid: number;
+        sampleRows: EraRow[];
+      }> = [];
+
+      for (const d of snap.docs) {
+        const x = d.data() || {};
+        const chunksSnap = await adminDb
+          .collection(ERA_CACHE_COLLECTION)
+          .doc(d.id)
+          .collection('chunks')
+          .orderBy('index', 'asc')
+          .get();
+
+        const matched: EraRow[] = [];
+        chunksSnap.forEach((chunkDoc: any) => {
+          const chunkRows = sanitizeRows(chunkDoc.data()?.rows || []);
+          for (const row of chunkRows) {
+            if (rowMatchesLookup(row, lookup)) matched.push(row);
+          }
+        });
+        if (!matched.length) continue;
+
+        const memberKeys = new Set<string>();
+        let totalPaid = 0;
+        for (const row of matched) {
+          const memberKey = String(row.acnt || '').trim() || String(row.member_name || '').trim();
+          if (memberKey) memberKeys.add(memberKey);
+          if (typeof row.paid === 'number' && Number.isFinite(row.paid)) totalPaid += row.paid;
+        }
+
+        batches.push({
+          cacheKey: d.id,
+          fileName: String(x?.fileName || 'ERA PDF'),
+          sourceMode: String(x?.sourceMode || 'unknown'),
+          payer: String(x?.payer || 'Health Net'),
+          totalRows: Number(x?.totalRows || 0),
+          updatedAt: x?.updatedAt || null,
+          matchedRows: matched.length,
+          matchedMembers: memberKeys.size,
+          totalPaid: Number(totalPaid.toFixed(2)),
+          sampleRows: matched.slice(0, 5),
+        });
+      }
+
+      return NextResponse.json({ success: true, lookup, searchedBatches: snap.size, matchedBatches: batches.length, batches }, { status: 200 });
+    }
+
     const snap = await adminDb.collection(ERA_CACHE_COLLECTION).orderBy('updatedAt', 'desc').limit(limit).get();
     const history = snap.docs.map((d: any) => {
       const x = d.data() || {};

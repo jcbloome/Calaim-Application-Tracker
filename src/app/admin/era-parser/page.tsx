@@ -59,12 +59,38 @@ type EraCacheHistoryItem = {
   updatedAt?: { _seconds?: number; seconds?: number } | string | null;
 };
 
+type EraHistoryLookupBatch = {
+  cacheKey: string;
+  fileName: string;
+  sourceMode: string;
+  payer: string;
+  totalRows: number;
+  updatedAt?: { _seconds?: number; seconds?: number } | string | null;
+  matchedRows: number;
+  matchedMembers: number;
+  totalPaid: number;
+  sampleRows: EraRow[];
+};
+
 type ParsePhase = 'idle' | 'loading_pdfjs' | 'opening_pdf' | 'extracting' | 'uploading' | 'parsing' | 'done';
 type ExtractProgress = { currentPage: number; totalPages: number; startedAtMs: number; avgMsPerPage: number };
 type OpenProgress = { loaded: number; total: number; startedAtMs: number };
 type UploadProgress = { transferred: number; total: number };
 
 const getErrCode = (e: any) => String(e?.code || e?.details?.code || e?.cause?.code || '').toLowerCase();
+
+const normalizeLookupToken = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+
+const normalizeNameForLookup = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9,\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 let _pdfJsPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -318,6 +344,11 @@ export default function EraParserPage() {
   const [summary, setSummary] = useState<EraSummary | null>(null);
   const [payer, setPayer] = useState<string>('Health Net');
   const [resultsSearch, setResultsSearch] = useState('');
+  const [batchLookupQuery, setBatchLookupQuery] = useState('');
+  const [historyLookupQuery, setHistoryLookupQuery] = useState('');
+  const [historyLookupLoading, setHistoryLookupLoading] = useState(false);
+  const [historyLookupResults, setHistoryLookupResults] = useState<EraHistoryLookupBatch[]>([]);
+  const [historyLookupSearchedBatches, setHistoryLookupSearchedBatches] = useState(0);
   const [phase, setPhase] = useState<ParsePhase>('idle');
   const [extractProgress, setExtractProgress] = useState<ExtractProgress | null>(null);
   const [openProgress, setOpenProgress] = useState<OpenProgress | null>(null);
@@ -355,12 +386,99 @@ export default function EraParserPage() {
   const filteredRows = useMemo(() => {
     const q = String(resultsSearch || '').trim().toLowerCase();
     if (!q) return rows;
+    const qToken = normalizeLookupToken(q);
+    const qName = normalizeNameForLookup(q);
+    const qNameTokens = qName.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
     return rows.filter((r) => {
-      const member = String(r.member_name || '').toLowerCase();
-      const acnt = String(r.acnt || '').toLowerCase();
-      return member.includes(q) || acnt.includes(q);
+      const member = String(r.member_name || '').toLowerCase().trim();
+      const memberNormalized = normalizeNameForLookup(member);
+      const memberToken = normalizeLookupToken(member);
+      const acnt = String(r.acnt || '').toLowerCase().trim();
+      const acntToken = normalizeLookupToken(acnt);
+      const mediCal = String(r.medi_cal_number || '').toLowerCase().trim();
+      const mediCalToken = normalizeLookupToken(mediCal);
+      const clientId2 = String(r.icn || '').toLowerCase().trim();
+      const clientId2Token = normalizeLookupToken(clientId2);
+      const nameMatchesByTokens =
+        qNameTokens.length > 0 &&
+        qNameTokens.every((tok) => memberNormalized.includes(tok) || memberToken.includes(normalizeLookupToken(tok)));
+
+      return (
+        member.includes(q) ||
+        acnt.includes(q) ||
+        mediCal.includes(q) ||
+        clientId2.includes(q) ||
+        (qToken ? memberToken.includes(qToken) || acntToken.includes(qToken) || mediCalToken.includes(qToken) || clientId2Token.includes(qToken) : false) ||
+        nameMatchesByTokens
+      );
     });
   }, [rows, resultsSearch]);
+
+  const batchLookup = useMemo(() => {
+    const rawQuery = String(batchLookupQuery || '').trim();
+    const qText = rawQuery.toLowerCase();
+    const qToken = normalizeLookupToken(rawQuery);
+    const qName = normalizeNameForLookup(rawQuery);
+    const qNameTokens = qName.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
+    if (!rawQuery) {
+      return {
+        query: rawQuery,
+        matchedRows: [] as EraRow[],
+        matchedMembers: 0,
+        totalPaid: 0,
+        hasPositivePayment: false,
+      };
+    }
+
+    const matchedRows = rows.filter((r) => {
+      const member = String(r.member_name || '').toLowerCase().trim();
+      const memberNormalized = normalizeNameForLookup(member);
+      const memberToken = normalizeLookupToken(member);
+      const mediCal = String(r.medi_cal_number || '').toLowerCase().trim();
+      const mediCalToken = normalizeLookupToken(mediCal);
+      const clientId2 = String(r.acnt || '').toLowerCase().trim();
+      const clientId2Token = normalizeLookupToken(clientId2);
+      const icn = String(r.icn || '').toLowerCase().trim();
+      const icnToken = normalizeLookupToken(icn);
+
+      const nameMatchDirect = member.includes(qText) || memberNormalized.includes(qName);
+      const nameMatchByTokens =
+        qNameTokens.length > 0 &&
+        qNameTokens.every((tok) => memberNormalized.includes(tok) || memberToken.includes(normalizeLookupToken(tok)));
+      const idMatch = qToken
+        ? mediCalToken.includes(qToken) || clientId2Token.includes(qToken) || icnToken.includes(qToken)
+        : false;
+      const textMatch = mediCal.includes(qText) || clientId2.includes(qText) || icn.includes(qText);
+      return nameMatchDirect || nameMatchByTokens || idMatch || textMatch;
+    });
+
+    const matchedMemberKeys = new Set<string>();
+    let totalPaid = 0;
+    let hasPositivePayment = false;
+    for (const row of matchedRows) {
+      const key = String(row.acnt || '').trim() || String(row.member_name || '').trim();
+      if (key) matchedMemberKeys.add(key);
+      if (typeof row.paid === 'number' && Number.isFinite(row.paid)) {
+        totalPaid += row.paid;
+        if (row.paid > 0) hasPositivePayment = true;
+      }
+    }
+
+    return {
+      query: rawQuery,
+      matchedRows,
+      matchedMembers: matchedMemberKeys.size,
+      totalPaid: Number(totalPaid.toFixed(2)),
+      hasPositivePayment,
+    };
+  }, [batchLookupQuery, rows]);
+
+  const historyLookupPaidAnywhere = useMemo(() => {
+    if (!historyLookupQuery.trim()) return null;
+    if (historyLookupLoading) return null;
+    if (historyLookupResults.length === 0) return false;
+    return historyLookupResults.some((b) => Number(b.totalPaid || 0) > 0);
+  }, [historyLookupLoading, historyLookupQuery, historyLookupResults]);
 
   const uploadPdfToTempStorage = async (pdfFile: File) => {
     if (!auth?.currentUser?.uid) throw new Error('Not signed in.');
@@ -589,6 +707,17 @@ export default function EraParserPage() {
   }, [isLoading, isSuperAdmin, router]);
 
   const parsedAtLabel = useMemo(() => new Date().toLocaleString(), []);
+
+  const formatCacheTimestamp = (value: EraCacheHistoryItem['updatedAt']) => {
+    if (!value) return 'Unknown date';
+    if (typeof value === 'string') {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? 'Unknown date' : d.toLocaleString();
+    }
+    const seconds = Number((value as any)?._seconds ?? (value as any)?.seconds ?? NaN);
+    if (!Number.isFinite(seconds) || seconds <= 0) return 'Unknown date';
+    return new Date(seconds * 1000).toLocaleString();
+  };
 
   const toCacheKeyFromFile = (f: File | null) => {
     if (!f) return null;
@@ -945,6 +1074,37 @@ export default function EraParserPage() {
     }
   };
 
+  const runHistoryLookup = async () => {
+    const q = String(historyLookupQuery || '').trim();
+    if (!q || !auth?.currentUser) {
+      setHistoryLookupResults([]);
+      setHistoryLookupSearchedBatches(0);
+      return;
+    }
+    setHistoryLookupLoading(true);
+    setError(null);
+    setErrorDetails(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch(`/api/admin/era/parse?lookup=${encodeURIComponent(q)}&limit=50`, {
+        method: 'GET',
+        headers: { authorization: `Bearer ${idToken}` },
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Lookup failed (HTTP ${res.status})`);
+      }
+      setHistoryLookupResults(Array.isArray(data?.batches) ? (data.batches as EraHistoryLookupBatch[]) : []);
+      setHistoryLookupSearchedBatches(Number(data?.searchedBatches || 0));
+    } catch (e: any) {
+      setHistoryLookupResults([]);
+      setHistoryLookupSearchedBatches(0);
+      setError(e?.message || 'Failed to search saved ERA batches.');
+    } finally {
+      setHistoryLookupLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1200,7 +1360,7 @@ export default function EraParserPage() {
               <Input
                 value={resultsSearch}
                 onChange={(e) => setResultsSearch(e.target.value)}
-                placeholder="Search by member name or account number..."
+                placeholder="Search by member name, Medi-Cal number, Client_ID2, or account..."
                 className="w-full sm:max-w-md"
               />
               <Button variant="outline" onClick={downloadCsv}>
@@ -1210,12 +1370,48 @@ export default function EraParserPage() {
             </div>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 rounded-md border p-3 space-y-2">
+              <div className="text-sm font-medium">Batch payment lookup</div>
+              <div className="text-xs text-muted-foreground">
+                Check if a member was paid in this parsed ERA batch by last/first name, Medi-Cal number, or Client_ID2.
+              </div>
+              <Input
+                value={batchLookupQuery}
+                onChange={(e) => setBatchLookupQuery(e.target.value)}
+                placeholder="Example: Smith, John • A123456789 • 20001234"
+                className="w-full sm:max-w-xl"
+              />
+              {batchLookup.query ? (
+                <div
+                  className={`rounded-md border px-3 py-2 text-sm ${
+                    batchLookup.matchedRows.length === 0
+                      ? 'bg-muted/40'
+                      : batchLookup.hasPositivePayment
+                        ? 'bg-green-50'
+                        : 'bg-amber-50'
+                  }`}
+                >
+                  {batchLookup.matchedRows.length === 0 ? (
+                    <span>No matching payment lines found in this batch.</span>
+                  ) : (
+                    <span>
+                      {batchLookup.hasPositivePayment ? 'Paid in this batch: Yes' : 'Paid in this batch: No positive payment found'} •{' '}
+                      {batchLookup.matchedRows.length} line{batchLookup.matchedRows.length === 1 ? '' : 's'} •{' '}
+                      {batchLookup.matchedMembers} member{batchLookup.matchedMembers === 1 ? '' : 's'} • Total paid $
+                      {Number(batchLookup.totalPaid || 0).toFixed(2)}
+                    </span>
+                  )}
+                </div>
+              ) : null}
+            </div>
             <div className="overflow-auto rounded-md border">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
                   <tr className="text-left">
                     <th className="px-3 py-2 whitespace-nowrap">Member</th>
+                    <th className="px-3 py-2 whitespace-nowrap">Medi-Cal</th>
                     <th className="px-3 py-2 whitespace-nowrap">ACNT</th>
+                    <th className="px-3 py-2 whitespace-nowrap">Client_ID2</th>
                     <th className="px-3 py-2 whitespace-nowrap">HIC</th>
                     <th className="px-3 py-2 whitespace-nowrap">PROC</th>
                     <th className="px-3 py-2 whitespace-nowrap">Svc from</th>
@@ -1227,7 +1423,9 @@ export default function EraParserPage() {
                   {filteredRows.slice(0, 200).map((r, idx) => (
                     <tr key={`${idx}-${r.member_name}-${r.proc}`} className="border-t">
                       <td className="px-3 py-2 max-w-[360px] truncate">{r.member_name || '—'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{r.medi_cal_number || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.acnt || '—'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{r.icn || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.hic || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap font-medium">{r.proc || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.service_from || '—'}</td>
@@ -1250,6 +1448,69 @@ export default function EraParserPage() {
           <CardDescription>Saved in Firestore so repeated files can be opened quickly.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
+          <div className="rounded-md border p-3 space-y-2">
+            <div className="text-sm font-medium">Search across saved ERA batches</div>
+            <div className="text-xs text-muted-foreground">
+              Find whether a member was paid in prior parsed batches using name, Medi-Cal number, or Client_ID2.
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                value={historyLookupQuery}
+                onChange={(e) => setHistoryLookupQuery(e.target.value)}
+                placeholder="Example: Smith, John • A123456789 • 20001234"
+                className="w-full sm:max-w-xl"
+              />
+              <Button variant="outline" onClick={runHistoryLookup} disabled={historyLookupLoading || uploading || !historyLookupQuery.trim()}>
+                {historyLookupLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Search History
+              </Button>
+            </div>
+            {historyLookupPaidAnywhere !== null ? (
+              <div
+                className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-medium ${
+                  historyLookupPaidAnywhere ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                Paid anywhere: {historyLookupPaidAnywhere ? 'Yes' : 'No'}
+              </div>
+            ) : null}
+            {historyLookupQuery.trim() ? (
+              <div className="text-xs text-muted-foreground">
+                {historyLookupLoading
+                  ? 'Searching saved batches...'
+                  : `Searched ${historyLookupSearchedBatches} batch(es) • ${historyLookupResults.length} matched batch(es)`}
+              </div>
+            ) : null}
+            {!historyLookupLoading && historyLookupQuery.trim() && historyLookupResults.length === 0 ? (
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">No saved batches matched this lookup.</div>
+            ) : null}
+            {historyLookupResults.length > 0 ? (
+              <div className="space-y-2">
+                {historyLookupResults.map((b) => (
+                  <div key={b.cacheKey} className="rounded-md border p-3 space-y-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="font-medium">{b.fileName || 'ERA PDF'}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {b.matchedRows} matching line{b.matchedRows === 1 ? '' : 's'} • {b.matchedMembers} member
+                          {b.matchedMembers === 1 ? '' : 's'} • Total paid ${Number(b.totalPaid || 0).toFixed(2)}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {formatCacheTimestamp(b.updatedAt)} • {b.sourceMode || 'unknown'} • {b.payer || 'Health Net'}
+                        </div>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => loadFromHistory(b.cacheKey)} disabled={uploading}>
+                        Open Batch
+                      </Button>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Sample matches: {b.sampleRows.map((row) => `${row.member_name || 'Member'} (${row.proc || '—'}: $${Number(row.paid || 0).toFixed(2)})`).join(' • ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <div className="flex justify-end">
             <Button variant="outline" size="sm" onClick={fetchCacheHistory} disabled={historyLoading || uploading}>
               {historyLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
