@@ -5790,6 +5790,7 @@ function ApplicationDetailPageContent() {
                 const formInfo = formStatusMap.get(req.title);
                 const status = getComponentStatus(req.title);
                 const isSummary = req.title === 'CS Member Summary' || req.title === 'CS Summary';
+                const isWaiversCard = req.title === 'Waivers & Authorizations';
                 const isReviewed = isSummary
                   ? Boolean((application as any)?.applicationChecked)
                   : Boolean(formInfo?.acknowledged);
@@ -5816,7 +5817,7 @@ function ApplicationDetailPageContent() {
                                     </Badge>
                                   ) : null}
                                 </CardTitle>
-                                {status === 'Completed' && (
+                                {(status === 'Completed' || isWaiversCard) && (
                                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                                     <div className="flex flex-wrap items-center justify-end gap-2 max-w-[260px]">
                                       {isReviewed ? (
