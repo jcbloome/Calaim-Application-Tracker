@@ -428,6 +428,12 @@ function WaiversFormComponent() {
                                   CalAIM applicants must have a zero Medi-Cal Share of Cost (SOC) before enrollment can proceed. Monthly income helps determine if there may be a Medi-Cal Share of Cost (SOC). Generally, a monthly income of more than $1,801 (single)/$2,433 (couple) will have a Medi-Cal SOC.
                                 </p>
                                 <p>
+                                  If the member&apos;s monthly income is over $1,801, the family should confirm there is no Medi-Cal SOC. For example, a Medicare Part B deduction (about $200) can reduce countable income and SOC.
+                                </p>
+                                <p>
+                                  Families can go to benefitscal.com to see if there is Medi-Cal SOC.
+                                </p>
+                                <p>
                                   Members who receive less than $1,626.08 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC) payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
                                 </p>
                                 <p>
@@ -437,7 +443,7 @@ function WaiversFormComponent() {
                                   <AlertCircle className="h-4 w-4" />
                                   <AlertTitle>Monthly income is required to submit</AlertTitle>
                                   <AlertDescription>
-                                    Families often miss this step. Please enter monthly income below so we can determine SOC and complete waiver submission.
+                                    Please enter monthly income below so we can determine SOC and complete waiver submission.
                                   </AlertDescription>
                                 </Alert>
                                 <div className="space-y-2 mt-4">
@@ -508,6 +514,9 @@ function WaiversFormComponent() {
 
                             <div className="mt-8 pt-6 border-t">
                                 <h3 className="text-base font-semibold text-gray-800">Electronic Signature</h3>
+                                <p className="mt-2 text-sm font-semibold text-amber-900">
+                                  Under penalty of perjury, the person signing must be either the member or the authorized representative (POA) for the member.
+                                </p>
                                 <div className="space-y-4 mt-4">
                                     <RadioGroup onValueChange={(v) => setSignerType(v as any)} value={signerType ?? ''} disabled={isReadOnly}>
                                         <Label>I am the: <span className="text-destructive">*</span></Label>

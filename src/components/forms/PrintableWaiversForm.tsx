@@ -253,6 +253,13 @@ export function PrintableWaiversForm({
             than $1,801 (single)/$2,433 (couple) will have a Medi-Cal SOC.
           </p>
           <p className="text-xs text-gray-700 print:text-black">
+            If the member&apos;s monthly income is over $1,801, the family should confirm there is no Medi-Cal SOC. For
+            example, a Medicare Part B deduction (about $200) can reduce countable income and SOC.
+          </p>
+          <p className="text-xs text-gray-700 print:text-black">
+            Families can go to benefitscal.com to see if there is Medi-Cal SOC.
+          </p>
+          <p className="text-xs text-gray-700 print:text-black">
             Members who receive less than $1,626.08 in 2026 may be eligible for the Non-Medical Out-of-Home Care (NMOHC)
             payment. The member generally pays the RCFE $1,444 and receives back $182 for personal-needs expenses.
           </p>

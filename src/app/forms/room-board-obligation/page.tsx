@@ -265,6 +265,9 @@ function RoomBoardObligationContent() {
 
               <div className="mt-8 pt-6 border-t">
                 <h3 className="text-base font-semibold text-gray-800">Electronic Signature</h3>
+                <p className="mt-2 text-sm font-semibold text-amber-900">
+                  Under penalty of perjury, the person signing must be either the member or the authorized representative (POA) for the member.
+                </p>
                 <div className="space-y-4 mt-4">
                   <RadioGroup onValueChange={(v) => setSignerType(v as any)} value={signerType ?? ''} disabled={isReadOnly}>
                     <Label>I am the: <span className="text-destructive">*</span></Label>

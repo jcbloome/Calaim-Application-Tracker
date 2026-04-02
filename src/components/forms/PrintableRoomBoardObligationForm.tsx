@@ -57,6 +57,9 @@ export function PrintableRoomBoardObligationForm({
 
         <div className="pt-2">
           <p className="font-semibold">Member or Authorized Representative:</p>
+          <p className="text-xs italic mt-1">
+            Under penalty of perjury, the person signing must be either the member or the authorized representative (POA) for the member.
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 mt-2">
             <div>Signature: <span className="inline-block min-w-[250px] border-b border-black align-baseline">&nbsp;</span></div>
             <div>Print Name: <span className="inline-block min-w-[250px] border-b border-black align-baseline">&nbsp;</span></div>
