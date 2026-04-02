@@ -14,6 +14,21 @@ const normalizeStatusText = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+const FIRST_CONTACT_STATUS_TOKENS = new Set([
+  normalizeStatusText('T2038 received, Need First Contact'),
+  normalizeStatusText('T2038 received, Needs First Contact'),
+]);
+const isTargetFirstContactStatus = (value: string) => FIRST_CONTACT_STATUS_TOKENS.has(normalizeStatusText(value));
+const wasAddedSinceYesterday = (value: unknown): boolean => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const since = new Date();
+  since.setHours(0, 0, 0, 0);
+  since.setDate(since.getDate() - 1);
+  return parsed.getTime() >= since.getTime();
+};
 
 export interface StaffAssignmentData {
   count: number;
@@ -130,6 +145,11 @@ export function KaiserStaffAssignments({
           const assignment = staffAssignments[staffName];
           const isUnassigned = staffName === 'Unassigned';
           const isCaseClosed = staffName === 'Case Closed';
+          const newFirstContactMembers = assignment.members.filter((member) => {
+            if (!isTargetFirstContactStatus(getEffectiveKaiserStatus(member))) return false;
+            return wasAddedSinceYesterday((member as any)?.created_at || (member as any)?.last_updated);
+          });
+          const newFirstContactCount = newFirstContactMembers.length;
           return (
             <Card
               key={`staff-status-${staffName}`}
@@ -143,6 +163,23 @@ export function KaiserStaffAssignments({
                     <CheckCircle className={`h-4 w-4 ${isUnassigned ? 'text-gray-500' : isCaseClosed ? 'text-slate-600' : 'text-orange-600'}`} />
                     {staffName} - Status
                   </CardTitle>
+                  {newFirstContactCount > 0 ? (
+                    <button
+                      type="button"
+                      className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+                      onClick={() =>
+                        openMemberModal(
+                          newFirstContactMembers,
+                          `${staffName} - New First Contact (since yesterday)`,
+                          `${newFirstContactCount} new member${newFirstContactCount === 1 ? '' : 's'} in T2038 received, Need(s) First Contact since yesterday`,
+                          'kaiser_status',
+                          't2038_need_first_contact_new_since_yesterday'
+                        )
+                      }
+                    >
+                      New since yesterday: {newFirstContactCount}
+                    </button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="outline"

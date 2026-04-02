@@ -5,6 +5,7 @@ import { FieldPath } from 'firebase-admin/firestore';
 
 const H2022_VISIT_ALERT_EMAIL = 'john@carehomefinders.com';
 const H2022_VISIT_ALERT_WINDOW_DAYS = 30;
+const FIRST_CONTACT_STATUS_TOKENS = new Set(['t2038 received need first contact', 't2038 received needs first contact']);
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,6 +47,31 @@ export async function GET(request: NextRequest) {
       if (!raw) return false;
       return raw === 'closed' || raw.includes('closed') || raw === 'resolved' || raw === 'done';
     };
+    const normalizeStatus = (value: any) =>
+      String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+    const isTargetFirstContactStatus = (value: any) =>
+      FIRST_CONTACT_STATUS_TOKENS.has(normalizeStatus(value));
+    const parseIso = (value: any): string => {
+      if (!value) return '';
+      try {
+        const d = value?.toDate?.() || new Date(String(value));
+        const ms = d?.getTime?.();
+        if (!ms || Number.isNaN(ms)) return '';
+        return new Date(ms).toISOString();
+      } catch {
+        return '';
+      }
+    };
+    const startOfYesterdayIso = (() => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - 1);
+      return d.toISOString();
+    })();
     const startMs = parseMs(start);
     const endMs = parseMs(end);
     const isWithinRange = (iso: string) => {
@@ -233,6 +259,48 @@ export async function GET(request: NextRequest) {
             currentKaiserStatus: member.Kaiser_Status
           };
         });
+
+        // Daily tracker notification: newly added members (since yesterday) in
+        // "T2038 received, Need(s) First Contact" for assigned Kaiser staff.
+        const todayIso = new Date().toISOString();
+        const firstContactAlerts = assignedMembers
+          .filter((member: any) => {
+            const status = member?.Kaiser_Status || member?.Kaiser_ID_Status || '';
+            if (!isTargetFirstContactStatus(status)) return false;
+            const createdIso = parseIso(member?.created_at || member?.Date_Created || member?.last_updated || member?.Date_Modified);
+            return Boolean(createdIso) && createdIso >= startOfYesterdayIso;
+          })
+          .map((member: any) => {
+            const memberName = `${member.memberFirstName || ''} ${member.memberLastName || ''}`.trim() || 'Kaiser member';
+            const memberClientId = String(member?.client_ID2 || '').trim();
+            const createdIso = parseIso(member?.created_at || member?.Date_Created || member?.last_updated || member?.Date_Modified) || todayIso;
+            return {
+              id: `kaiser-new-first-contact-${memberClientId || member.id || memberName}-${startOfYesterdayIso.slice(0, 10)}`,
+              title: `New Kaiser first-contact member: ${memberName}`,
+              description: 'New since yesterday in T2038 received, Need(s) First Contact. Add to morning daily tracker follow-up.',
+              memberName,
+              memberClientId: memberClientId || undefined,
+              healthPlan: 'Kaiser',
+              taskType: 'follow_up',
+              priority: 'Priority',
+              status: 'pending',
+              dueDate: todayIso,
+              assignedBy: 'system',
+              assignedByName: 'System',
+              assignedTo: userId,
+              assignedToName: staffName,
+              createdAt: createdIso,
+              updatedAt: todayIso,
+              notes: 'Auto-flagged because member entered T2038 received, Need(s) First Contact since yesterday.',
+              source: 'applications',
+              actionUrl: memberClientId
+                ? `/admin/kaiser-tracker?clientId2=${encodeURIComponent(memberClientId)}`
+                : '/admin/kaiser-tracker',
+              kaiserStatus: member?.Kaiser_Status || member?.Kaiser_ID_Status || '',
+              currentKaiserStatus: member?.Kaiser_Status || member?.Kaiser_ID_Status || '',
+            };
+          });
+        tasks = [...tasks, ...firstContactAlerts];
       } catch (kaiserError) {
         console.warn('Failed to load Kaiser tasks:', kaiserError);
         tasks = [];
