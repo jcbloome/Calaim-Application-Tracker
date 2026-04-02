@@ -1534,6 +1534,7 @@ function ApplicationDetailPageContent() {
 
   const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
+  const [isSendingProofIncomeSocWarning, setIsSendingProofIncomeSocWarning] = useState(false);
   const [isUpdatingKaiserTierLevel, setIsUpdatingKaiserTierLevel] = useState(false);
   const [isGeneratingRoomBoardPreview, setIsGeneratingRoomBoardPreview] = useState(false);
   const [roomBoardPreview, setRoomBoardPreview] = useState<{
@@ -3679,6 +3680,16 @@ function ApplicationDetailPageContent() {
     const parsedDob = new Date(rawDob);
     return Number.isNaN(parsedDob.getTime()) ? rawDob : format(parsedDob, 'PPP');
   })();
+  const parseCurrencyAmount = (value: unknown): number | null => {
+    if (value == null) return null;
+    const normalized = String(value).replace(/[^0-9.]/g, '').trim();
+    if (!normalized) return null;
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const proofIncomeActualAmountRaw = String((application as any)?.proofIncomeActualAmount || '').trim();
+  const proofIncomeActualAmount = parseCurrencyAmount(proofIncomeActualAmountRaw);
+  const proofIncomeSocFlag = proofIncomeActualAmount != null && proofIncomeActualAmount > 1800;
   
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
@@ -4544,6 +4555,90 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const updateProofIncomeDetails = async (patch: { proofIncomeActualAmount?: string; proofIncomeSocFlag?: boolean }) => {
+    if (!docRef || !application) return;
+    try {
+      await setDoc(
+        docRef,
+        {
+          ...patch,
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setApplication((prev) => (prev ? ({ ...(prev as any), ...patch } as any) : prev));
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not save proof of income',
+        description: error?.message || 'Please retry.',
+      });
+    }
+  };
+
+  const sendProofIncomeSocWarning = async () => {
+    if (!application) return;
+    const to = String((application as any)?.referrerEmail || '').trim();
+    if (!to) {
+      toast({
+        variant: 'destructive',
+        title: 'Family email not available',
+        description: 'Please add referrer/family email before sending SOC warning.',
+      });
+      return;
+    }
+    const amountLabel = proofIncomeActualAmountRaw || 'the reviewed amount';
+    const memberName = `${String(application.memberFirstName || '').trim()} ${String(application.memberLastName || '').trim()}`.trim() || 'the member';
+    setIsSendingProofIncomeSocWarning(true);
+    try {
+      const response = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to,
+          includeBcc: false,
+          subject: `Proof of income SOC warning for ${memberName}`,
+          memberName: String(application.referrerName || 'there'),
+          staffName: String(user?.displayName || user?.email || 'The Connections Team'),
+          status: String(application.status || 'In Progress'),
+          message: [
+            `We reviewed proof of income for ${memberName}.`,
+            '',
+            `The amount we reviewed is ${amountLabel}, which may trigger a Medi-Cal Share of Cost (SOC).`,
+            'Please confirm with Medi-Cal that SOC is $0 and reply with confirmation.',
+            '',
+            'If SOC is not $0, please share next steps so we can continue processing this application.',
+          ].join('\n'),
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Failed to send SOC warning email.');
+      }
+      await setDoc(
+        docRef!,
+        {
+          proofIncomeSocWarningSentAt: serverTimestamp(),
+          proofIncomeSocWarningSentBy: String(user?.displayName || user?.email || 'Staff'),
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      toast({
+        title: 'SOC warning sent',
+        description: `Warning email sent to ${to}.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not send warning',
+        description: error?.message || 'Failed to send SOC warning email.',
+      });
+    } finally {
+      setIsSendingProofIncomeSocWarning(false);
+    }
+  };
+
   // Handle staff assignment - TEMPORARILY DISABLED
   const handleStaffAssignment = async () => {
     console.log('🚫 Staff assignment is temporarily disabled to prevent looping');
@@ -4631,6 +4726,66 @@ function ApplicationDetailPageContent() {
     const isUploading = uploading[req.title];
     const currentProgress = uploadProgress[req.title];
     const isMultiple = req.title === 'Proof of Income' || req.title === 'Eligibility Screenshot';
+    const proofIncomeControls =
+      req.id === 'proof-of-income' ? (
+        <div className="space-y-2 rounded-md border p-3">
+          <div className="space-y-1">
+            <Label htmlFor="proof-income-actual-amount-admin">Actual proof of income amount</Label>
+            <Input
+              id="proof-income-actual-amount-admin"
+              value={proofIncomeActualAmountRaw}
+              placeholder="Enter amount from proof of income document"
+              onChange={(event) =>
+                setApplication((prev) =>
+                  prev
+                    ? ({ ...(prev as any), proofIncomeActualAmount: event.target.value } as any)
+                    : prev
+                )
+              }
+              onBlur={(event) => {
+                const nextRaw = String(event.target.value || '').trim();
+                const nextAmount = parseCurrencyAmount(nextRaw);
+                void updateProofIncomeDetails({
+                  proofIncomeActualAmount: nextRaw,
+                  proofIncomeSocFlag: nextAmount != null && nextAmount > 1800,
+                });
+              }}
+            />
+          </div>
+          <div className="text-xs">
+            {proofIncomeSocFlag ? (
+              <span className="font-medium text-amber-700">
+                SOC flag: Amount is over $1,800 and may trigger Medi-Cal SOC.
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                SOC flag: Not triggered (enter amount above $1,800 to trigger).
+              </span>
+            )}
+          </div>
+          {proofIncomeSocFlag ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => void sendProofIncomeSocWarning()}
+              disabled={isSendingProofIncomeSocWarning}
+            >
+              {isSendingProofIncomeSocWarning ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending SOC warning...
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  Send SOC warning to family
+                </>
+              )}
+            </Button>
+          ) : null}
+        </div>
+      ) : null;
 
     const recommendedFileName = buildStandardFileName(req.title, 'document.pdf');
 
@@ -4858,6 +5013,7 @@ function ApplicationDetailPageContent() {
                  const hasViewableFile = Boolean(formInfo.downloadURL);
                  return (
                     <div className="space-y-2">
+                      {proofIncomeControls}
                       <div className={cn(
                         'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
                         hasViewableFile ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
@@ -4929,6 +5085,7 @@ function ApplicationDetailPageContent() {
              }
              return (
                 <div className="space-y-2">
+                    {proofIncomeControls}
                     {isUploading && (
                         <Progress value={currentProgress} className="h-1 w-full" />
                     )}

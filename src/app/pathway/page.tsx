@@ -57,8 +57,7 @@ const getPathwayRequirements = (
 ) => {
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
-    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
-    { id: 'room-board-soc', title: 'Room & Board Commitment & SOC Determination', description: 'Confirm Room & Board/SOC acknowledgement and record SOC income mismatch details when proof of income differs from stated income.', type: 'online-form', href: '/forms/waivers', icon: FileText },
+    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, Freedom of Choice, and Room & Board Commitment waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
@@ -239,6 +238,7 @@ function PathwayPageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [isSendingProofIncomeSocWarning, setIsSendingProofIncomeSocWarning] = useState(false);
 
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -841,19 +841,9 @@ function PathwayPageContent() {
   })();
   const formStatusMap = new Map(getSafeForms(application.forms).map(f => [f.name, f]));
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
-  const socIncomeMismatch = Boolean((application as any)?.socIncomeMismatch);
-  const socActualIncome = String((application as any)?.socActualIncome || '').trim();
-  const roomBoardSocComplete =
-    Boolean((waiverFormStatus as any)?.ackRoomAndBoard || (application as any)?.ackRoomAndBoard) &&
-    Boolean((waiverFormStatus as any)?.ackSocDetermination || (application as any)?.ackSocDetermination) &&
-    (!socIncomeMismatch || socActualIncome.length > 0) &&
-    !hasOpenRevisionRequest(waiverFormStatus);
-  formStatusMap.set('Room & Board Commitment & SOC Determination', {
-    name: 'Room & Board Commitment & SOC Determination',
-    status: roomBoardSocComplete ? 'Completed' : 'Pending',
-    type: 'online-form',
-    href: '/forms/waivers',
-  } as FormStatusType);
+  const proofIncomeActualAmountRaw = String((application as any)?.proofIncomeActualAmount || '').trim();
+  const proofIncomeActualAmount = parseCurrencyAmount(proofIncomeActualAmountRaw);
+  const proofIncomeSocFlag = proofIncomeActualAmount != null && proofIncomeActualAmount > 1800;
   const completedCount = pathwayRequirements.reduce((acc, req) => {
     const form = formStatusMap.get(req.title);
     if (form?.status === 'Completed' && !hasOpenRevisionRequest(form)) return acc + 1;
@@ -889,6 +879,8 @@ function PathwayPageContent() {
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
       { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
+      { id: 'rb', label: 'Room & Board Commitment', completed: !!(waiverFormStatus as any)?.ackRoomAndBoard || !!(application as any)?.ackRoomAndBoard },
+      { id: 'soc', label: 'Medi-Cal SOC Determination', completed: !!(waiverFormStatus as any)?.ackSocDetermination || !!(application as any)?.ackSocDetermination }
   ];
   const feedbackFormStatus = formStatusMap.get('Customer Feedback Survey') as FormStatusType | undefined;
   const feedbackCompleted = feedbackFormStatus?.status === 'Completed';
@@ -900,7 +892,7 @@ function PathwayPageContent() {
       { id: 'facesheet-check', name: 'SNF Facesheet' },
   ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
 
-  const updateSocIncomeDetails = async (patch: { socIncomeMismatch?: boolean; socActualIncome?: string }) => {
+  const updateProofIncomeDetails = async (patch: { proofIncomeActualAmount?: string; proofIncomeSocFlag?: boolean }) => {
     if (!docRef) return;
     try {
       await setDoc(
@@ -915,9 +907,79 @@ function PathwayPageContent() {
     } catch (e) {
       toast({
         variant: 'destructive',
-        title: 'Could not save SOC details',
+        title: 'Could not save proof of income details',
         description: 'Please retry. Your changes were not saved.',
       });
+    }
+  };
+
+  const sendProofIncomeSocWarning = async () => {
+    const to = String((application as any)?.referrerEmail || '').trim();
+    if (!to) {
+      toast({
+        variant: 'destructive',
+        title: 'Family email not available',
+        description: 'Add a referrer/family email before sending an SOC warning.',
+      });
+      return;
+    }
+    const amountLabel = proofIncomeActualAmountRaw || 'the submitted amount';
+    const memberName = `${String(application.memberFirstName || '').trim()} ${String(application.memberLastName || '').trim()}`.trim() || 'the member';
+    setIsSendingProofIncomeSocWarning(true);
+    try {
+      const response = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to,
+          includeBcc: false,
+          subject: `Proof of income SOC warning for ${memberName}`,
+          memberName: String(application.referrerName || 'there'),
+          staffName: String(user?.displayName || user?.email || 'The Connections Team'),
+          status: String(application.status || 'In Progress'),
+          message: [
+            `We reviewed proof of income for ${memberName}.`,
+            '',
+            `The amount we reviewed is ${amountLabel}, which may trigger a Medi-Cal Share of Cost (SOC).`,
+            'Please confirm with Medi-Cal that SOC is $0 and reply with confirmation.',
+            '',
+            'If SOC is not $0, please share the next steps you are taking so we can continue processing.',
+          ].join('\n'),
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Failed to send SOC warning email.');
+      }
+      await setDoc(
+        docRef!,
+        {
+          proofIncomeSocWarningSentAt: serverTimestamp(),
+          proofIncomeSocWarningSentBy: String(user?.displayName || user?.email || 'Staff'),
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setApplication((prev) =>
+        prev
+          ? ({
+              ...(prev as any),
+              proofIncomeSocWarningSentBy: String(user?.displayName || user?.email || 'Staff'),
+            } as Application)
+          : prev
+      );
+      toast({
+        title: 'SOC warning sent',
+        description: `Warning email sent to ${to}.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not send warning',
+        description: error?.message || 'Failed to send SOC warning email.',
+      });
+    } finally {
+      setIsSendingProofIncomeSocWarning(false);
     }
   };
 
@@ -1066,67 +1128,6 @@ function PathwayPageContent() {
                     </div>
                 );
             }
-            if (req.id === 'room-board-soc') {
-              const ackRoomBoard = Boolean((waiverFormStatus as any)?.ackRoomAndBoard || (application as any)?.ackRoomAndBoard);
-              const ackSoc = Boolean((waiverFormStatus as any)?.ackSocDetermination || (application as any)?.ackSocDetermination);
-              return (
-                <div className="space-y-3">
-                  <div className="space-y-2 rounded-md border p-3">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="room-board-ack" checked={ackRoomBoard} disabled />
-                      <label htmlFor="room-board-ack" className="text-sm font-medium leading-none">
-                        Room & Board commitment acknowledged
-                      </label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="soc-ack" checked={ackSoc} disabled />
-                      <label htmlFor="soc-ack" className="text-sm font-medium leading-none">
-                        Medi-Cal SOC determination acknowledged
-                      </label>
-                    </div>
-                  </div>
-                  <div className="space-y-2 rounded-md border p-3">
-                    <div className="flex items-start space-x-2">
-                      <Checkbox
-                        id="soc-income-mismatch"
-                        checked={socIncomeMismatch}
-                        disabled={isReadOnly}
-                        onCheckedChange={(checked) => {
-                          const nextChecked = Boolean(checked);
-                          void updateSocIncomeDetails({
-                            socIncomeMismatch: nextChecked,
-                            socActualIncome: nextChecked ? socActualIncome : '',
-                          });
-                        }}
-                      />
-                      <label htmlFor="soc-income-mismatch" className="text-sm font-medium leading-none">
-                        Stated income does not match proof of income (SOC review)
-                      </label>
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor="soc-actual-income">Actual monthly income</Label>
-                      <Input
-                        id="soc-actual-income"
-                        value={socActualIncome}
-                        disabled={isReadOnly || !socIncomeMismatch}
-                        placeholder="Enter actual income used for SOC"
-                        onChange={(event) =>
-                          setApplication((prev) =>
-                            prev ? ({ ...(prev as any), socActualIncome: event.target.value } as Application) : prev
-                          )
-                        }
-                        onBlur={(event) => void updateSocIncomeDetails({ socActualIncome: event.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
-                    <Link href={href}>
-                      {isCompleted ? 'View/Edit Room & Board + SOC' : 'Complete Room & Board + SOC'} &rarr;
-                    </Link>
-                  </Button>
-                </div>
-              );
-            }
             if (req.id === 'cs-summary') {
                 return (
                     <div className="flex gap-2">
@@ -1213,6 +1214,119 @@ function PathwayPageContent() {
                 </Button>
             );
         case 'Upload':
+             if (req.id === 'proof-of-income') {
+                const proofIncomeControl = (
+                  <div className="space-y-2 rounded-md border p-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="proof-income-actual-amount">Actual proof of income amount</Label>
+                      <Input
+                        id="proof-income-actual-amount"
+                        value={proofIncomeActualAmountRaw}
+                        disabled={isReadOnly}
+                        placeholder="Enter amount from proof of income"
+                        onChange={(event) =>
+                          setApplication((prev) =>
+                            prev
+                              ? ({ ...(prev as any), proofIncomeActualAmount: event.target.value } as Application)
+                              : prev
+                          )
+                        }
+                        onBlur={(event) => {
+                          const nextRaw = String(event.target.value || '').trim();
+                          const nextAmount = parseCurrencyAmount(nextRaw);
+                          void updateProofIncomeDetails({
+                            proofIncomeActualAmount: nextRaw,
+                            proofIncomeSocFlag: nextAmount != null && nextAmount > 1800,
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="text-xs">
+                      {proofIncomeSocFlag ? (
+                        <span className="font-medium text-amber-700">
+                          SOC flag: Actual proof income is over $1,800 and may trigger Medi-Cal SOC.
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          SOC flag: Not triggered (enter amount above $1,800 to trigger).
+                        </span>
+                      )}
+                    </div>
+                    {proofIncomeSocFlag ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => void sendProofIncomeSocWarning()}
+                        disabled={isSendingProofIncomeSocWarning}
+                      >
+                        {isSendingProofIncomeSocWarning ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Sending SOC warning...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="mr-2 h-4 w-4" />
+                            Send SOC warning to family
+                          </>
+                        )}
+                      </Button>
+                    ) : null}
+                  </div>
+                );
+                if (isCompleted) {
+                  return (
+                    <div className="space-y-2">
+                      {proofIncomeControl}
+                      <div className="flex min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
+                        {formInfo?.downloadURL && (isAdmin || isSuperAdmin) ? (
+                          <a
+                            href={formInfo.downloadURL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
+                          >
+                            {formInfo?.fileName || 'Completed'}
+                          </a>
+                        ) : (
+                          <span className="min-w-0 flex-1 truncate text-green-800 font-medium">
+                            {formInfo?.fileName || 'Completed'}
+                            {!isAdmin && !isSuperAdmin && formInfo?.downloadURL && (
+                              <span className="block text-xs text-gray-500 mt-1">Document submitted - accessible by staff only</span>
+                            )}
+                          </span>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                          onClick={() => handleFileRemove(formInfo!)}
+                        >
+                          <X className="h-4 w-4" />
+                          <span className="sr-only">Remove file</span>
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-2">
+                    {proofIncomeControl}
+                    {isUploading && (
+                      <Progress value={currentProgress} className="h-1 w-full" />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Accepted: PDF, Word, JPG, PNG (max 10MB). You can replace files anytime before submit.
+                    </p>
+                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
+                      {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                      <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
+                    </Label>
+                    <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isReadOnly} multiple={isMultiple} />
+                  </div>
+                );
+             }
              if (isCompleted) {
                  return (
                     <div className="flex min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
