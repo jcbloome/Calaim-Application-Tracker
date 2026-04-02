@@ -127,7 +127,7 @@ export function PrintableWaiversContent() {
               
               <div>
                 <SectionTitle>Signature for All Sections</SectionTitle>
-                <p className="text-xs italic text-gray-600 my-2">By signing below, I acknowledge that under penalty of perjury, I am the member or an authorized representative (POA) legally empowered to sign on behalf of the member, and that I agree to all sections above.</p>
+                <p className="text-xs italic text-gray-600 my-2">Under penalty of perjury, the person signing must be either the member or the authorized representative (POA) for the member.</p>
                 <p className="text-xs font-medium text-gray-700 mt-2">I am the:</p>
                 <div className="flex gap-6">
                     <CheckboxField label="Member" />

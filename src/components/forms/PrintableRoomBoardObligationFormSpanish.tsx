@@ -107,6 +107,9 @@ export function PrintableRoomBoardObligationFormSpanish({
           </h3>
           <div className="space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <p>
+              Bajo pena de perjurio, la persona que firma debe ser el miembro o un representante autorizado (POA) del miembro.
+            </p>
+            <p>
               Al firmar abajo, reconozco que soy el miembro o un representante autorizado (POA) legalmente facultado para
               firmar en nombre del miembro.
             </p>

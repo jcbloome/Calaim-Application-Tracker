@@ -297,8 +297,7 @@ export function PrintableWaiversForm({
       <div className="mt-12 print:mt-16">
         <h3 className="text-lg font-semibold mb-4">Signature for All Sections</h3>
         <p className="text-sm print:text-xs italic text-gray-600 print:text-black mb-4">
-          By signing below, I acknowledge that under penalty of perjury, I am the member or an authorized 
-          representative (POA) legally empowered to sign on behalf of the member, and that I agree to all sections above.
+          Under penalty of perjury, the person signing must be either the member or the authorized representative (POA) for the member.
         </p>
 
         <PrintableField
