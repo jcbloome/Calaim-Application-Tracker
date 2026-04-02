@@ -3398,6 +3398,137 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  type EligibilityScreenshotUpload = {
+    id: string;
+    fileName: string;
+    filePath: string | null;
+    downloadURL: string | null;
+    uploadedAtIso: string;
+    uploadedByUid: string | null;
+    uploadedByName: string | null;
+  };
+
+  const getEligibilityScreenshotUploads = (): EligibilityScreenshotUpload[] => {
+    const raw = (application as any)?.eligibilityScreenshotUploads;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((r: any) => ({
+        id: String(r?.id || '').trim() || `elig-${Math.random().toString(16).slice(2)}`,
+        fileName: String(r?.fileName || '').trim() || 'Uploaded file',
+        filePath: String(r?.filePath || '').trim() || null,
+        downloadURL: String(r?.downloadURL || '').trim() || null,
+        uploadedAtIso: String(r?.uploadedAtIso || '').trim(),
+        uploadedByUid: String(r?.uploadedByUid || '').trim() || null,
+        uploadedByName: String(r?.uploadedByName || '').trim() || null,
+      }))
+      .filter((r: EligibilityScreenshotUpload) => Boolean(r.fileName));
+  };
+
+  const upsertEligibilityScreenshotUploads = async (next: EligibilityScreenshotUpload[]) => {
+    if (!docRef) return;
+    await setDoc(
+      docRef,
+      {
+        eligibilityScreenshotUploads: next,
+        lastUpdated: serverTimestamp(),
+      } as any,
+      { merge: true }
+    );
+    setApplication((prev) => (prev ? ({ ...(prev as any), eligibilityScreenshotUploads: next } as any) : prev));
+
+    if (next.length > 0) {
+      await handleFormStatusUpdate([
+        {
+          name: 'Eligibility Screenshot',
+          status: 'Completed',
+          type: 'Upload',
+          fileName: `${next.length} file${next.length === 1 ? '' : 's'} uploaded`,
+          filePath: null,
+          downloadURL: null,
+          dateCompleted: Timestamp.now(),
+          acknowledged: true,
+        } as any,
+      ]);
+    } else {
+      await handleFormStatusUpdate([
+        {
+          name: 'Eligibility Screenshot',
+          status: 'Pending',
+          type: 'Upload',
+          fileName: null,
+          filePath: null,
+          downloadURL: null,
+          dateCompleted: null,
+          acknowledged: false,
+        } as any,
+      ]);
+    }
+  };
+
+  const handleEligibilityScreenshotUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files?.length) return;
+    const requirementTitle = 'Eligibility Screenshot';
+    const files = Array.from(event.target.files);
+    if (files.length === 0) return;
+
+    setUploading((prev) => ({ ...prev, [requirementTitle]: true }));
+    setUploadProgress((prev) => ({ ...prev, [requirementTitle]: 0 }));
+    try {
+      const existing = getEligibilityScreenshotUploads();
+      const nowIso = new Date().toISOString();
+      const uploadedByUid = String(user?.uid || '').trim() || null;
+      const uploadedByName = String(user?.displayName || user?.email || '').trim() || null;
+
+      const results: EligibilityScreenshotUpload[] = [];
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        const uploadResult = await doUpload([file], requirementTitle);
+        results.push({
+          id: `elig-${Date.now()}-${i}-${Math.random().toString(16).slice(2)}`,
+          fileName: uploadResult.fileName,
+          filePath: uploadResult.path,
+          downloadURL: uploadResult.downloadURL,
+          uploadedAtIso: nowIso,
+          uploadedByUid,
+          uploadedByName,
+        });
+      }
+
+      const next = [...existing, ...results];
+      await upsertEligibilityScreenshotUploads(next);
+      toast({
+        title: 'Upload Successful',
+        description: `${results.length} eligibility screenshot${results.length === 1 ? '' : 's'} uploaded.`,
+      });
+    } catch (e) {
+      console.error('Eligibility screenshot upload failed:', e);
+      toast({
+        variant: 'destructive',
+        title: 'Upload Failed',
+        description: 'Could not upload eligibility screenshots.',
+      });
+    } finally {
+      setUploading((prev) => ({ ...prev, [requirementTitle]: false }));
+      setUploadProgress((prev) => ({ ...prev, [requirementTitle]: 0 }));
+      event.target.value = '';
+    }
+  };
+
+  const removeEligibilityScreenshotUpload = async (upload: EligibilityScreenshotUpload) => {
+    if (!storage) return;
+    const current = getEligibilityScreenshotUploads();
+    const next = current.filter((u) => u.id !== upload.id);
+    try {
+      if (upload.filePath) {
+        await deleteObject(ref(storage, upload.filePath));
+      }
+    } catch (e) {
+      console.warn('Failed to delete eligibility screenshot from storage (continuing):', e);
+    }
+    await upsertEligibilityScreenshotUploads(next);
+    toast({ title: 'Removed', description: 'Eligibility screenshot removed.' });
+  };
+
   const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files?.length || !appUserId) return;
     const files = Array.from(event.target.files);
@@ -3654,6 +3785,72 @@ function ApplicationDetailPageContent() {
       (application as any)?.health_plan ||
       ''
     ).trim() || '—';
+  const kaiserRegionDisplay = (() => {
+    const planLower = String(healthPlanDisplay || '').trim().toLowerCase();
+    if (!planLower.includes('kaiser')) return '';
+    const mrn = String(memberMrnDisplay || '').trim();
+    if (!mrn || mrn === '—') return '—';
+    const first = mrn[0];
+    if (first === '1' || first === '2') return 'Kaiser North';
+    if (first === '0') return 'Kaiser South';
+    return '—';
+  })();
+
+  const [mrnEditValue, setMrnEditValue] = useState('');
+  const [mrnEditSaving, setMrnEditSaving] = useState(false);
+  const [mrnEditError, setMrnEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Keep editor in sync when application changes.
+    const raw = String((application as any)?.memberMrn || '').trim();
+    setMrnEditValue(raw);
+  }, [application?.id, (application as any)?.memberMrn]);
+
+  const saveMrnOverride = async () => {
+    if (!user || !application?.id) return;
+    const next = String(mrnEditValue || '').trim();
+    setMrnEditError(null);
+    if (!next) {
+      setMrnEditError('MRN is required.');
+      return;
+    }
+
+    setMrnEditSaving(true);
+    try {
+      await ensureAdminClaim();
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/admin/applications/update-mrn', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          applicationId: application.id,
+          userId: appUserId || '',
+          clientId2: String((application as any)?.client_ID2 || (application as any)?.Client_ID2 || '').trim(),
+          memberMrn: next,
+          reason: 'Manual MRN update (admin)',
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || 'Failed to update MRN'));
+      }
+
+      setApplication((prev) => (prev ? ({ ...(prev as any), memberMrn: next } as any) : prev));
+      toast({ title: 'MRN updated', description: 'Saved manual MRN override.' });
+    } catch (e: any) {
+      setMrnEditError(String(e?.message || 'Failed to update MRN'));
+      toast({
+        variant: 'destructive',
+        title: 'Could not update MRN',
+        description: String(e?.message || 'Please retry.'),
+      });
+    } finally {
+      setMrnEditSaving(false);
+    }
+  };
   const pathwayDisplay =
     String(
       (application as any)?.pathway ||
@@ -5008,6 +5205,106 @@ function ApplicationDetailPageContent() {
                 </div>
             );
         case 'Upload':
+             if (req.id === 'eligibility-screenshot') {
+               const uploads = getEligibilityScreenshotUploads();
+               const canViewAny = uploads.some((u) => Boolean(u.downloadURL));
+
+               return (
+                 <div className="space-y-2">
+                   {req.id === 'eligibility-screenshot' && 'links' in req && req.links ? (
+                     <div className="flex flex-col space-y-1">
+                       {(req.links as { name: string; url: string }[]).map((link) => (
+                         <Button
+                           key={link.name}
+                           asChild
+                           variant="link"
+                           size="sm"
+                           className="h-auto justify-start p-0 text-xs"
+                         >
+                           <Link href={link.url} target="_blank" rel="noopener noreferrer">
+                             <LinkIcon className="mr-1 h-3 w-3" /> {link.name}
+                           </Link>
+                         </Button>
+                       ))}
+                     </div>
+                   ) : null}
+
+                   {uploads.length > 0 ? (
+                     <div className="space-y-2 rounded-md border p-2">
+                       <div className="text-xs font-medium text-muted-foreground">
+                         Uploaded screenshot{uploads.length === 1 ? '' : 's'} ({uploads.length})
+                       </div>
+                       <div className="space-y-1">
+                         {uploads.map((u) => (
+                           <div
+                             key={u.id}
+                             className={cn(
+                               'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
+                               u.downloadURL ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
+                             )}
+                           >
+                             {u.downloadURL ? (
+                               <a
+                                 href={u.downloadURL}
+                                 target="_blank"
+                                 rel="noopener noreferrer"
+                                 className="truncate flex-1 text-green-800 font-medium hover:underline"
+                                 title={u.fileName}
+                               >
+                                 {u.fileName}
+                               </a>
+                             ) : (
+                               <span className="truncate flex-1 text-amber-800 font-medium" title={u.fileName}>
+                                 {u.fileName}
+                               </span>
+                             )}
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                               onClick={() => void removeEligibilityScreenshotUpload(u)}
+                             >
+                               <X className="h-4 w-4" />
+                               <span className="sr-only">Remove file</span>
+                             </Button>
+                           </div>
+                         ))}
+                       </div>
+                       {!canViewAny ? (
+                         <div className="text-xs text-muted-foreground">
+                           Some items were saved without a viewable URL.
+                         </div>
+                       ) : null}
+                     </div>
+                   ) : null}
+
+                   {isUploading && <Progress value={currentProgress} className="h-1 w-full" />}
+                   <Label
+                     htmlFor={req.id}
+                     className={cn(
+                       'flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                       isUploading && 'opacity-50 pointer-events-none'
+                     )}
+                   >
+                     {isUploading ? (
+                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                     ) : (
+                       <UploadCloud className="mr-2 h-4 w-4" />
+                     )}
+                     <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload Screenshot(s)'}</span>
+                   </Label>
+                   <Input
+                     id={req.id}
+                     type="file"
+                     className="sr-only"
+                     onChange={handleEligibilityScreenshotUpload}
+                     disabled={isUploading}
+                     multiple
+                   />
+                 </div>
+               );
+             }
+
              const isRoomBoardAgreementReq = req.id === 'room-board-obligation';
              if (formInfo?.status === 'Completed') {
                  const hasViewableFile = Boolean(formInfo.downloadURL);
@@ -6181,6 +6478,41 @@ function ApplicationDetailPageContent() {
                         <span className="font-medium">MRN:</span>{' '}
                         {memberMrnDisplay}
                       </div>
+                      <div className="sm:col-span-2">
+                        <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <div className="sm:flex-1 min-w-0">
+                            <Input
+                              value={mrnEditValue}
+                              onChange={(e) => setMrnEditValue(e.target.value)}
+                              placeholder="Enter MRN"
+                              disabled={mrnEditSaving}
+                              aria-label="Edit MRN"
+                            />
+                            {mrnEditError ? (
+                              <div className="mt-1 text-xs text-destructive">{mrnEditError}</div>
+                            ) : null}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={saveMrnOverride}
+                            disabled={mrnEditSaving || !String(mrnEditValue || '').trim()}
+                            className="shrink-0"
+                          >
+                            {mrnEditSaving ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Saving…
+                              </>
+                            ) : (
+                              'Save MRN'
+                            )}
+                          </Button>
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Manual override for this application. Used for Kaiser region (MRN starts with 1/2 = North, 0 = South).
+                        </div>
+                      </div>
                       <div>
                         <span className="font-medium">Health Plan:</span>{' '}
                         {healthPlanDisplay}
@@ -6193,6 +6525,12 @@ function ApplicationDetailPageContent() {
                         <span className="font-medium">County:</span>{' '}
                         {memberCountyDisplay}
                       </div>
+                      {kaiserRegionDisplay ? (
+                        <div>
+                          <span className="font-medium">Kaiser Region:</span>{' '}
+                          {kaiserRegionDisplay}
+                        </div>
+                      ) : null}
                       <div>
                         <span className="font-medium">DOB:</span>{' '}
                         {memberDobDisplay}
