@@ -3659,6 +3659,14 @@ function ApplicationDetailPageContent() {
       (application as any)?.Pathway ||
       ''
     ).trim() || '—';
+  const memberCountyDisplay =
+    String(
+      (application as any)?.currentCounty ||
+      (application as any)?.memberCounty ||
+      (application as any)?.Member_County ||
+      (application as any)?.customaryCounty ||
+      ''
+    ).trim() || '—';
   const memberDobDisplay = (() => {
     const rawDob = String(
       (application as any)?.memberDob ||
@@ -5980,6 +5988,10 @@ function ApplicationDetailPageContent() {
                       <div>
                         <span className="font-medium">Pathway:</span>{' '}
                         {pathwayDisplay}
+                      </div>
+                      <div>
+                        <span className="font-medium">County:</span>{' '}
+                        {memberCountyDisplay}
                       </div>
                       <div>
                         <span className="font-medium">DOB:</span>{' '}

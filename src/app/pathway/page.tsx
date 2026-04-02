@@ -57,7 +57,8 @@ const getPathwayRequirements = (
 ) => {
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
-    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, Freedom of Choice, and Room & Board Commitment waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
+    { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, and Freedom of Choice waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
+    { id: 'room-board-soc', title: 'Room & Board Commitment & SOC Determination', description: 'Confirm Room & Board/SOC acknowledgement and record SOC income mismatch details when proof of income differs from stated income.', type: 'online-form', href: '/forms/waivers', icon: FileText },
     { id: 'proof-of-income', title: 'Proof of Income', description: "Upload the most recent Social Security annual award letter or 3 months of recent bank statements.", type: 'Upload', icon: UploadCloud, href: '#' },
     { id: 'lic-602a', title: "LIC 602A - Physician's Report", description: "Download, complete, and upload the signed physician's report.", type: 'Upload', icon: Printer, href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
     { id: 'medicine-list', title: 'Medicine List', description: "Upload a current list of all prescribed medications.", type: 'Upload', icon: UploadCloud, href: '#' },
@@ -195,6 +196,33 @@ function formatBirthDate(value: unknown): string {
   }
 
   return raw;
+}
+
+function normalizeCountyName(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/ county$/i, '')
+    .replace(/[^a-z]/g, '');
+}
+
+function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser South' | '' {
+  const normalized = normalizeCountyName(county);
+  if (!normalized) return '';
+
+  const kaiserNorthCounties = new Set([
+    // Bay Area
+    'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
+    // Sacramento region
+    'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',
+    // Central Valley (down through Fresno/Kings)
+    'sanjoaquin', 'stanislaus', 'merced', 'madera', 'fresno', 'kings',
+    // Northern California
+    'butte', 'shasta', 'tehama', 'glenn', 'colusa', 'humboldt', 'delnorte', 'siskiyou', 'trinity',
+    'mendocino', 'lake', 'lassen', 'modoc', 'plumas',
+  ]);
+
+  return kaiserNorthCounties.has(normalized) ? 'Kaiser North' : 'Kaiser South';
 }
 
 function PathwayPageContent() {
@@ -784,6 +812,19 @@ function PathwayPageContent() {
   }
   
   const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
+  const memberCounty = String(
+    application.currentCounty ||
+    application.customaryCounty ||
+    (application as any)?.memberCounty ||
+    (application as any)?.Member_County ||
+    ''
+  ).trim();
+  const kaiserRegion = String(application.healthPlan || '').trim().toLowerCase().includes('kaiser')
+    ? getKaiserRegionFromCounty(memberCounty)
+    : '';
+  const healthPlanWithRegion = kaiserRegion
+    ? `${application.healthPlan} (${kaiserRegion})`
+    : application.healthPlan;
 
   const pathwayRequirements = getPathwayRequirements(
     application.pathway as 'SNF Transition' | 'SNF Diversion',
@@ -799,6 +840,20 @@ function PathwayPageContent() {
     return items;
   })();
   const formStatusMap = new Map(getSafeForms(application.forms).map(f => [f.name, f]));
+  const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
+  const socIncomeMismatch = Boolean((application as any)?.socIncomeMismatch);
+  const socActualIncome = String((application as any)?.socActualIncome || '').trim();
+  const roomBoardSocComplete =
+    Boolean((waiverFormStatus as any)?.ackRoomAndBoard || (application as any)?.ackRoomAndBoard) &&
+    Boolean((waiverFormStatus as any)?.ackSocDetermination || (application as any)?.ackSocDetermination) &&
+    (!socIncomeMismatch || socActualIncome.length > 0) &&
+    !hasOpenRevisionRequest(waiverFormStatus);
+  formStatusMap.set('Room & Board Commitment & SOC Determination', {
+    name: 'Room & Board Commitment & SOC Determination',
+    status: roomBoardSocComplete ? 'Completed' : 'Pending',
+    type: 'online-form',
+    href: '/forms/waivers',
+  } as FormStatusType);
   const completedCount = pathwayRequirements.reduce((acc, req) => {
     const form = formStatusMap.get(req.title);
     if (form?.status === 'Completed' && !hasOpenRevisionRequest(form)) return acc + 1;
@@ -824,7 +879,6 @@ function PathwayPageContent() {
     })
     .filter((item): item is { title: string; reason: string } => Boolean(item));
 
-  const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
   const waiverMonthlyIncomeAmount =
     parseCurrencyAmount((waiverFormStatus as any)?.monthlyIncome) ??
@@ -835,8 +889,6 @@ function PathwayPageContent() {
       { id: 'hipaa', label: 'HIPAA Authorization', completed: !!waiverFormStatus?.ackHipaa },
       { id: 'liability', label: 'Liability Waiver', completed: !!waiverFormStatus?.ackLiability },
       { id: 'foc', label: 'Freedom of Choice', completed: !!waiverFormStatus?.ackFoc },
-      { id: 'rb', label: 'Room & Board Commitment', completed: !!(waiverFormStatus as any)?.ackRoomAndBoard || !!(application as any)?.ackRoomAndBoard },
-      { id: 'soc', label: 'Medi-Cal SOC Determination', completed: !!(waiverFormStatus as any)?.ackSocDetermination || !!(application as any)?.ackSocDetermination }
   ];
   const feedbackFormStatus = formStatusMap.get('Customer Feedback Survey') as FormStatusType | undefined;
   const feedbackCompleted = feedbackFormStatus?.status === 'Completed';
@@ -847,6 +899,27 @@ function PathwayPageContent() {
       { id: 'med-list-check', name: 'Medicine List' },
       { id: 'facesheet-check', name: 'SNF Facesheet' },
   ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
+
+  const updateSocIncomeDetails = async (patch: { socIncomeMismatch?: boolean; socActualIncome?: string }) => {
+    if (!docRef) return;
+    try {
+      await setDoc(
+        docRef,
+        {
+          ...patch,
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setApplication((prev) => (prev ? ({ ...(prev as any), ...patch } as Application) : prev));
+    } catch (e) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not save SOC details',
+        description: 'Please retry. Your changes were not saved.',
+      });
+    }
+  };
 
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
@@ -891,7 +964,8 @@ function PathwayPageContent() {
                    </Section>
 
                    <Section title="Health Plan & Pathway">
-                     <QuickViewField label="Health Plan" value={application.healthPlan} />
+                    <QuickViewField label="Health Plan" value={healthPlanWithRegion} />
+                    {kaiserRegion ? <QuickViewField label="Kaiser Region" value={kaiserRegion} /> : null}
                      <QuickViewField label="Pathway" value={application.pathway} />
                      <QuickViewField label="Current Location Type" value={application.currentLocation} />
                      <QuickViewField label="Customary Location Type" value={application.customaryLocationType} />
@@ -992,6 +1066,67 @@ function PathwayPageContent() {
                     </div>
                 );
             }
+            if (req.id === 'room-board-soc') {
+              const ackRoomBoard = Boolean((waiverFormStatus as any)?.ackRoomAndBoard || (application as any)?.ackRoomAndBoard);
+              const ackSoc = Boolean((waiverFormStatus as any)?.ackSocDetermination || (application as any)?.ackSocDetermination);
+              return (
+                <div className="space-y-3">
+                  <div className="space-y-2 rounded-md border p-3">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="room-board-ack" checked={ackRoomBoard} disabled />
+                      <label htmlFor="room-board-ack" className="text-sm font-medium leading-none">
+                        Room & Board commitment acknowledged
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="soc-ack" checked={ackSoc} disabled />
+                      <label htmlFor="soc-ack" className="text-sm font-medium leading-none">
+                        Medi-Cal SOC determination acknowledged
+                      </label>
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-md border p-3">
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="soc-income-mismatch"
+                        checked={socIncomeMismatch}
+                        disabled={isReadOnly}
+                        onCheckedChange={(checked) => {
+                          const nextChecked = Boolean(checked);
+                          void updateSocIncomeDetails({
+                            socIncomeMismatch: nextChecked,
+                            socActualIncome: nextChecked ? socActualIncome : '',
+                          });
+                        }}
+                      />
+                      <label htmlFor="soc-income-mismatch" className="text-sm font-medium leading-none">
+                        Stated income does not match proof of income (SOC review)
+                      </label>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="soc-actual-income">Actual monthly income</Label>
+                      <Input
+                        id="soc-actual-income"
+                        value={socActualIncome}
+                        disabled={isReadOnly || !socIncomeMismatch}
+                        placeholder="Enter actual income used for SOC"
+                        onChange={(event) =>
+                          setApplication((prev) =>
+                            prev ? ({ ...(prev as any), socActualIncome: event.target.value } as Application) : prev
+                          )
+                        }
+                        onBlur={(event) => void updateSocIncomeDetails({ socActualIncome: event.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
+                    <Link href={href}>
+                      {isCompleted ? 'View/Edit Room & Board + SOC' : 'Complete Room & Board + SOC'} &rarr;
+                    </Link>
+                  </Button>
+                </div>
+              );
+            }
             if (req.id === 'cs-summary') {
                 return (
                     <div className="flex gap-2">
@@ -1027,7 +1162,8 @@ function PathwayPageContent() {
                               </Section>
 
                               <Section title="Health Plan & Pathway">
-                                <QuickViewField label="Health Plan" value={application.healthPlan} />
+                                <QuickViewField label="Health Plan" value={healthPlanWithRegion} />
+                                {kaiserRegion ? <QuickViewField label="Kaiser Region" value={kaiserRegion} /> : null}
                                 <QuickViewField label="Pathway" value={application.pathway} />
                                 <QuickViewField label="Current Location Type" value={application.currentLocation} />
                                 <QuickViewField label="Customary Location Type" value={application.customaryLocationType} />
@@ -1165,7 +1301,7 @@ function PathwayPageContent() {
                 </CardTitle>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <CardDescription>
-                    Submitted by {application.referrerName || user?.displayName} | {application.pathway} ({application.healthPlan})
+                    Submitted by {application.referrerName || user?.displayName} | {application.pathway} ({healthPlanWithRegion})
                     </CardDescription>
                 </div>
                 </CardHeader>
