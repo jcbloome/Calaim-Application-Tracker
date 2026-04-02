@@ -228,6 +228,7 @@ function AdminHeader() {
   const [eligibilityPendingCount, setEligibilityPendingCount] = useState(0);
   const [standalonePendingCount, setStandalonePendingCount] = useState(0);
   const [priorityNotesCount, setPriorityNotesCount] = useState(0);
+  const [assignmentAlertCount, setAssignmentAlertCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [alftPendingCount, setAlftPendingCount] = useState(0);
   const [kTierCount, setKTierCount] = useState(0);
@@ -458,6 +459,7 @@ function AdminHeader() {
       (snap) => {
         let nextPriority = 0;
         let nextChat = 0;
+        let nextAssignments = 0;
         snap.forEach((docSnap) => {
           const data = docSnap.data() as any;
           const isRead = Boolean(data?.isRead);
@@ -471,16 +473,28 @@ function AdminHeader() {
             if (!isRead) nextChat += 1;
             return;
           }
+          const type = String(data?.type || '').trim().toLowerCase();
+          const source = String(data?.source || '').trim().toLowerCase();
+          const plan = String(data?.healthPlan || '').trim().toLowerCase();
+          const isKaiserOrHealthNet = plan.includes('kaiser') || plan.includes('health net') || plan.includes('healthnet');
+          const isAssignmentAlert =
+            type.includes('assignment') ||
+            (Boolean(data?.requiresStaffAction) && source === 'application-pathway' && isKaiserOrHealthNet);
+          if (!isRead && !hiddenFromInbox && isAssignmentAlert) {
+            nextAssignments += 1;
+          }
           // Keep Action Item count aligned with what Electron can actually alert on.
           if (!isRead && !hiddenFromInbox && isDesktopNotifiable(data)) {
             nextPriority += 1;
           }
         });
         setPriorityNotesCount(nextPriority);
+        setAssignmentAlertCount(nextAssignments);
         setChatUnreadCount(nextChat);
       },
       () => {
         setPriorityNotesCount(0);
+        setAssignmentAlertCount(0);
         setChatUnreadCount(0);
       }
     );
@@ -1328,6 +1342,7 @@ function AdminHeader() {
     const dLabel = showDocs ? `D(${newUploadCount})` : null;
     const sLabel = showStandalone ? `S(${standalonePendingCount})` : null;
     const notesLabel = priorityNotesCount > 0 ? `Notes(${priorityNotesCount})` : null;
+    const assignmentsLabel = assignmentAlertCount > 0 ? `My Tasks(${assignmentAlertCount})` : null;
     const items: Array<{ key: string; label: string; href: string; dot: string; dim?: boolean; title?: string; isNew?: boolean }> = [];
     if (csLabel) {
       items.push({
@@ -1364,6 +1379,16 @@ function AdminHeader() {
         dot: 'bg-blue-600',
         isNew: true,
         title: 'New interoffice notes received',
+      });
+    }
+    if (assignmentsLabel) {
+      items.push({
+        key: 'assignments',
+        label: assignmentsLabel,
+        href: '/admin/tasks',
+        dot: 'bg-amber-600',
+        isNew: true,
+        title: 'New Kaiser/Health Net staff assignments',
       });
     }
 
