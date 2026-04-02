@@ -99,11 +99,15 @@ function WaiversFormComponent() {
     useEffect(() => {
         if (application) {
             const form = application.forms?.find(f => f.name === 'Waivers & Authorizations');
-            const isRejectedForRedo = Boolean(
-              form &&
-              (String((form as any)?.revisionRequestedAt || '').trim() ||
-                (Array.isArray((form as any)?.revisionHistory) && (form as any).revisionHistory.length > 0))
-            );
+            const isRejectedForRedo = (() => {
+              if (!form) return false;
+              const status = String((form as any)?.status || '').trim().toLowerCase();
+              if (status === 'pending' || status === 'requires revision' || status === 'rejected') return true;
+              return Boolean(
+                String((form as any)?.revisionRequestedAt || '').trim() ||
+                  String((form as any)?.revisionRequestedReason || '').trim()
+              );
+            })();
 
             if (form?.status === 'Completed' && !isRejectedForRedo) {
                 setSignerType(form.signerType || null);

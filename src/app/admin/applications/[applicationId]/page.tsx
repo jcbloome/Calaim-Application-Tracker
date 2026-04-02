@@ -50,7 +50,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
-import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit, deleteField } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -1451,6 +1451,9 @@ function ApplicationDetailPageContent() {
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [mrnEditValue, setMrnEditValue] = useState('');
+  const [mrnEditSaving, setMrnEditSaving] = useState(false);
+  const [mrnEditError, setMrnEditError] = useState<string | null>(null);
   const [intakeImportOpen, setIntakeImportOpen] = useState(false);
   const [intakeRequirementTitle, setIntakeRequirementTitle] = useState<string>('');
   const [intakeLoading, setIntakeLoading] = useState(false);
@@ -1494,6 +1497,8 @@ function ApplicationDetailPageContent() {
   });
   const [ispUploading, setIspUploading] = useState(false);
   const [ispUploadProgress, setIspUploadProgress] = useState(0);
+  const [waiverResetOpen, setWaiverResetOpen] = useState(false);
+  const [waiverResetting, setWaiverResetting] = useState(false);
   const [memberNotifications, setMemberNotifications] = useState<Array<{
     id: string;
     title: string;
@@ -1524,6 +1529,221 @@ function ApplicationDetailPageContent() {
       }
     ];
   };
+
+  useEffect(() => {
+    // Keep MRN editor in sync when application changes.
+    const raw = String((application as any)?.memberMrn || '').trim();
+    setMrnEditValue(raw);
+  }, [application?.id, (application as any)?.memberMrn]);
+
+  const resetWaiversStatus = async () => {
+    if (!docRef || !application) return;
+    setWaiverResetting(true);
+    try {
+      const updatedForms = (application.forms || []).map((form: any) => {
+        const formName = String(form?.name || '').trim();
+        const isWaiverAlias = waiverAliasNames.has(formName) || isWaiverFormName(formName);
+        if (!isWaiverAlias) return form;
+        return {
+          ...form,
+          status: 'Pending',
+          dateCompleted: null,
+          acknowledged: false,
+          acknowledgedBy: null,
+          acknowledgedByUid: null,
+          acknowledgedDate: null,
+          // Waiver-specific fields
+          signerType: null,
+          signerName: '',
+          signerRelationship: '',
+          choice: null,
+          ackHipaa: false,
+          ackLiability: false,
+          ackFoc: false,
+          ackRoomAndBoard: false,
+          ackSocDetermination: false,
+          monthlyIncome: '',
+          incomeSource: [],
+          // Clear revision request metadata (this is a staff reset, not a rejection request)
+          revisionRequestedReason: null,
+          revisionRequestedAt: null,
+          revisionRequestedBy: null,
+          revisionRequestedByUid: null,
+          revisionEmailTo: null,
+          revisionEmailSentAt: null,
+        };
+      });
+
+      const pendingDocReviewCount = updatedForms.filter((form: any) => {
+        const isCompleted = form?.status === 'Completed';
+        const name = String(form?.name || '').trim();
+        const summary = name === 'CS Member Summary' || name === 'CS Summary';
+        const acknowledged = Boolean(form?.acknowledged);
+        return isCompleted && !summary && !acknowledged;
+      }).length;
+
+      const patch: Record<string, any> = {
+        forms: updatedForms,
+        lastUpdated: serverTimestamp(),
+        pendingDocReviewCount,
+        pendingDocReviewUpdatedAt: serverTimestamp(),
+        // Best-effort clear any mirrored waiver fields on the application root.
+        choice: null,
+        ackHipaa: false,
+        ackLiability: false,
+        ackFoc: false,
+        ackRoomAndBoard: false,
+        ackSocDetermination: false,
+        monthlyIncome: '',
+        incomeSource: [],
+      };
+
+      await setDoc(docRef, patch, { merge: true });
+      setApplication((prev: any) =>
+        prev
+          ? ({
+              ...prev,
+              ...patch,
+              forms: updatedForms,
+            } as any)
+          : prev
+      );
+
+      toast({
+        title: 'Waivers reset',
+        description: 'Waivers & Authorizations set back to Pending so it can be re-completed.',
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not reset waivers',
+        description: String(e?.message || 'Please retry.'),
+      });
+    } finally {
+      setWaiverResetting(false);
+      setWaiverResetOpen(false);
+    }
+  };
+
+  // Autosave drafts for admin tools (interoffice note + upload wizards).
+  const hydratedToolDraftsForAppId = useRef<string>('');
+  useEffect(() => {
+    if (!application?.id) return;
+    if (hydratedToolDraftsForAppId.current === application.id) return;
+    hydratedToolDraftsForAppId.current = application.id;
+
+    const drafts = (application as any)?.toolDrafts || {};
+    const io = drafts?.interoffice || {};
+    const auth = drafts?.authorization || {};
+    const isp = drafts?.isp || {};
+
+    setInterofficeNote((prev) => ({
+      ...prev,
+      recipientIds: Array.isArray(io?.recipientIds) ? io.recipientIds.map(String) : prev.recipientIds,
+      priority: (io?.priority as any) || prev.priority,
+      message: typeof io?.message === 'string' ? io.message : prev.message,
+      followUpDate: typeof io?.followUpDate === 'string' ? io.followUpDate : prev.followUpDate,
+    }));
+    setAuthorizationUpload((prev) => ({
+      ...prev,
+      type: typeof auth?.type === 'string' ? auth.type : prev.type,
+      startDate: typeof auth?.startDate === 'string' ? auth.startDate : prev.startDate,
+      endDate: typeof auth?.endDate === 'string' ? auth.endDate : prev.endDate,
+      // Cannot hydrate File objects; user must reselect file after refresh.
+      file: null,
+    }));
+    setIspUpload((prev) => ({
+      ...prev,
+      planDate: typeof isp?.planDate === 'string' ? isp.planDate : prev.planDate,
+      file: null,
+    }));
+  }, [application?.id]);
+
+  // NOTE: `docRef` is initialized later via `useMemoFirebase`. We declare it here to
+  // avoid temporal-dead-zone errors in hooks that reference it.
+  let docRef: any = null;
+
+  const toolDraftWriteRef = useRef<string>('');
+  useEffect(() => {
+    if (!docRef || !firestore) return;
+    if (!user?.uid) return;
+
+    const hasInterofficeDraft = Boolean(
+      interofficeNote.message.trim() ||
+        interofficeNote.recipientIds.length > 0 ||
+        String(interofficeNote.followUpDate || '').trim()
+    );
+    const hasAuthorizationDraft = Boolean(
+      String(authorizationUpload.type || '').trim() ||
+        String(authorizationUpload.startDate || '').trim() ||
+        String(authorizationUpload.endDate || '').trim()
+    );
+    const hasIspDraft = Boolean(String(ispUpload.planDate || '').trim());
+
+    const nextDrafts = {
+      interoffice: hasInterofficeDraft
+        ? {
+            recipientIds: interofficeNote.recipientIds,
+            priority: interofficeNote.priority,
+            message: interofficeNote.message,
+            followUpDate: interofficeNote.followUpDate || '',
+          }
+        : null,
+      authorization: hasAuthorizationDraft
+        ? {
+            type: authorizationUpload.type,
+            startDate: authorizationUpload.startDate,
+            endDate: authorizationUpload.endDate,
+          }
+        : null,
+      isp: hasIspDraft
+        ? {
+            planDate: ispUpload.planDate,
+          }
+        : null,
+    };
+
+    const snapshot = JSON.stringify(nextDrafts);
+    if (snapshot === toolDraftWriteRef.current) return;
+
+    const timer = window.setTimeout(async () => {
+      try {
+        toolDraftWriteRef.current = snapshot;
+        const patch: any = {
+          toolDraftsUpdatedAt: serverTimestamp(),
+          toolDraftsUpdatedByUid: String(user?.uid || '').trim() || null,
+          toolDraftsUpdatedByName: String(user?.displayName || user?.email || '').trim() || null,
+        };
+
+        // Set or delete sub-drafts explicitly to keep the doc small and avoid stale data.
+        patch.toolDrafts = {
+          interoffice: nextDrafts.interoffice ?? deleteField(),
+          authorization: nextDrafts.authorization ?? deleteField(),
+          isp: nextDrafts.isp ?? deleteField(),
+        };
+
+        await setDoc(docRef, patch, { merge: true });
+      } catch (e) {
+        console.warn('Tool draft autosave failed:', e);
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    docRef,
+    firestore,
+    user?.uid,
+    user?.displayName,
+    user?.email,
+    interofficeNote.message,
+    interofficeNote.priority,
+    interofficeNote.followUpDate,
+    interofficeNote.recipientIds,
+    authorizationUpload.type,
+    authorizationUpload.startDate,
+    authorizationUpload.endDate,
+    ispUpload.planDate,
+  ]);
   
   const [consolidatedUploadChecks, setConsolidatedUploadChecks] = useState<Record<string, boolean>>({
     'LIC 602A - Physician\'s Report': false,
@@ -2000,7 +2220,7 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  const docRef = useMemoFirebase(() => {
+  docRef = useMemoFirebase(() => {
     if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
     return doc(firestore, `users/${appUserId}/applications`, applicationId);
   }, [firestore, applicationId, appUserId, isUserLoading]);
@@ -3200,6 +3420,39 @@ function ApplicationDetailPageContent() {
     return normalized.includes('waiver') && normalized.includes('authoriz');
   };
 
+  const isWaiverFormActuallyComplete = (form: any, app: any) => {
+    if (!form || !app) return false;
+    const signerType = (form as any)?.signerType ?? null;
+    const signerName = String((form as any)?.signerName ?? '').trim();
+    const signerRelationship = String((form as any)?.signerRelationship ?? '').trim();
+    const choice = String((form as any)?.choice ?? '').trim();
+    const ackHipaa = Boolean((form as any)?.ackHipaa);
+    const ackLiability = Boolean((form as any)?.ackLiability);
+    const ackFoc = Boolean((form as any)?.ackFoc);
+    const ackRoomAndBoard = Boolean(
+      (form as any)?.ackRoomAndBoard ??
+        (app as any)?.ackRoomAndBoard ??
+        (form as any)?.ackSocDetermination ??
+        (app as any)?.ackSocDetermination
+    );
+    const monthlyIncome = String((form as any)?.monthlyIncome ?? (app as any)?.monthlyIncome ?? '').trim();
+    const rawIncomeSource = (form as any)?.incomeSource ?? (app as any)?.incomeSource;
+    const incomeSourceCount = Array.isArray(rawIncomeSource)
+      ? rawIncomeSource.filter((v: unknown) => String(v ?? '').trim()).length
+      : String(rawIncomeSource ?? '').trim()
+        ? 1
+        : 0;
+
+    if (!signerType) return false;
+    if (!signerName) return false;
+    if (!choice) return false;
+    if (!ackHipaa || !ackLiability || !ackFoc || !ackRoomAndBoard) return false;
+    if (!monthlyIncome) return false;
+    if (incomeSourceCount <= 0) return false;
+    if (signerType === 'representative' && !signerRelationship) return false;
+    return true;
+  };
+
   const getComponentStatus = (componentKey: string): 'Completed' | 'Pending' | 'Not Applicable' => {
     const equivalentNames = (() => {
       const names = new Set<string>([componentKey]);
@@ -3239,6 +3492,21 @@ function ApplicationDetailPageContent() {
     }
     if (componentKey === 'SNF Facesheet' && application?.pathway !== 'SNF Transition') {
       return 'Not Applicable';
+    }
+
+    if (componentKey === 'Waivers & Authorizations' || componentKey === 'Waivers') {
+      const hasActiveRedo = matchingForms.some((form: any) => {
+        const status = String(form?.status || '').trim().toLowerCase();
+        if (status === 'pending' || status === 'requires revision' || status === 'rejected') return true;
+        return Boolean(String(form?.revisionRequestedAt || '').trim() || String(form?.revisionRequestedReason || '').trim());
+      });
+      if (hasActiveRedo) return 'Pending';
+
+      const completedCandidate =
+        matchingForms.find((form: any) => String(form?.status || '').trim().toLowerCase() === 'completed') ||
+        matchingForms[0] ||
+        null;
+      return completedCandidate && isWaiverFormActuallyComplete(completedCandidate, application) ? 'Completed' : 'Pending';
     }
 
     const statuses = matchingForms.map((f) => String(f?.status || '').trim().toLowerCase());
@@ -3686,25 +3954,31 @@ function ApplicationDetailPageContent() {
     if (status === 'pending' || status === 'requires revision' || status === 'rejected') return true;
     return Boolean(String(form?.revisionRequestedAt || '').trim() || String(form?.revisionRequestedReason || '').trim());
   });
-  const waiverIsCompleted = waiverHasCompletedStatus && !waiverHasPendingLikeStatus && !waiverHasRevisionRequest;
+  const waiverIsCompleted = getComponentStatus('Waivers & Authorizations') === 'Completed';
   const waiverSourceForm = (() => {
-    if (waiverIsCompleted) {
-      return waiverAliasForms.find((form) => String(form?.status || '').trim().toLowerCase() === 'completed') || null;
-    }
-    return waiverAliasForms.find((form) =>
-      ['pending', 'requires revision', 'rejected'].includes(String(form?.status || '').trim().toLowerCase())
-    ) || waiverAliasForms[0] || null;
+    return (
+      waiverAliasForms.find((form) => String(form?.status || '').trim().toLowerCase() === 'completed') ||
+      waiverAliasForms.find((form) =>
+        ['pending', 'requires revision', 'rejected'].includes(String(form?.status || '').trim().toLowerCase())
+      ) ||
+      waiverAliasForms[0] ||
+      null
+    );
   })();
   if (waiverSourceForm) {
     const waiverEffectiveForm = {
       ...waiverSourceForm,
       status: waiverIsCompleted ? 'Completed' : 'Pending',
-      // Keep waiver boxes empty whenever the form is pending/rejected.
-      ackHipaa: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackHipaa) : false,
-      ackLiability: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackLiability) : false,
-      ackFoc: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackFoc) : false,
-      ackRoomAndBoard: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackRoomAndBoard) : false,
-      ackSocDetermination: waiverIsCompleted ? Boolean((waiverSourceForm as any)?.ackSocDetermination) : false,
+      ackHipaa: Boolean((waiverSourceForm as any)?.ackHipaa),
+      ackLiability: Boolean((waiverSourceForm as any)?.ackLiability),
+      ackFoc: Boolean((waiverSourceForm as any)?.ackFoc),
+      ackRoomAndBoard: Boolean(
+        (waiverSourceForm as any)?.ackRoomAndBoard ??
+          (application as any)?.ackRoomAndBoard ??
+          (waiverSourceForm as any)?.ackSocDetermination ??
+          (application as any)?.ackSocDetermination
+      ),
+      ackSocDetermination: Boolean((waiverSourceForm as any)?.ackSocDetermination),
     } as any;
     formStatusMap.set('Waivers & Authorizations', waiverEffectiveForm);
     formStatusMap.set('Waivers', waiverEffectiveForm);
@@ -3795,16 +4069,6 @@ function ApplicationDetailPageContent() {
     if (first === '0') return 'Kaiser South';
     return '—';
   })();
-
-  const [mrnEditValue, setMrnEditValue] = useState('');
-  const [mrnEditSaving, setMrnEditSaving] = useState(false);
-  const [mrnEditError, setMrnEditError] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Keep editor in sync when application changes.
-    const raw = String((application as any)?.memberMrn || '').trim();
-    setMrnEditValue(raw);
-  }, [application?.id, (application as any)?.memberMrn]);
 
   const saveMrnOverride = async () => {
     if (!user || !application?.id) return;
@@ -4285,10 +4549,10 @@ function ApplicationDetailPageContent() {
   };
 
   const waiverSubTasks = [
-      { id: 'hipaa', label: 'HIPAA Authorization', completed: waiverIsCompleted && !!waiverFormStatus?.ackHipaa },
-      { id: 'liability', label: 'Liability Waiver', completed: waiverIsCompleted && !!waiverFormStatus?.ackLiability },
-      { id: 'foc', label: 'Freedom of Choice', completed: waiverIsCompleted && !!waiverFormStatus?.ackFoc },
-      { id: 'rb', label: 'Room & Board Commitment', completed: waiverIsCompleted && !!(waiverFormStatus as any)?.ackRoomAndBoard }
+      { id: 'hipaa', label: 'HIPAA Authorization', completed: Boolean(waiverFormStatus?.ackHipaa) },
+      { id: 'liability', label: 'Liability Waiver', completed: Boolean(waiverFormStatus?.ackLiability) },
+      { id: 'foc', label: 'Freedom of Choice', completed: Boolean(waiverFormStatus?.ackFoc) },
+      { id: 'rb', label: 'Room & Board Commitment', completed: Boolean((waiverFormStatus as any)?.ackRoomAndBoard) }
   ];
   
     const consolidatedMedicalDocuments = [
@@ -4989,6 +5253,7 @@ function ApplicationDetailPageContent() {
     switch (req.type) {
         case 'online-form':
              if (req.id === 'waivers') {
+                const waiverShowReset = getComponentStatus('Waivers & Authorizations') === 'Completed';
                 return (
                     <div className="space-y-3">
                         <div className="space-y-2 rounded-md border p-3">
@@ -5001,9 +5266,48 @@ function ApplicationDetailPageContent() {
                                 </div>
                             ))}
                         </div>
-                        <Button asChild variant="secondary" className="w-full">
-                          <Link href={viewHref}>View/Edit Waivers</Link>
-                      </Button>
+                        <div className={cn('grid gap-2', waiverShowReset ? 'sm:grid-cols-2' : '')}>
+                          <Button asChild variant="secondary" className="w-full">
+                            <Link href={viewHref}>View/Edit Waivers</Link>
+                          </Button>
+                          {waiverShowReset ? (
+                            <AlertDialog open={waiverResetOpen} onOpenChange={setWaiverResetOpen}>
+                              <AlertDialogTrigger asChild>
+                                <Button type="button" variant="outline" className="w-full" disabled={waiverResetting}>
+                                  {waiverResetting ? (
+                                    <>
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      Resetting...
+                                    </>
+                                  ) : (
+                                    'Reset status'
+                                  )}
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Reset Waivers status?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will set <strong>Waivers &amp; Authorizations</strong> back to <strong>Pending</strong> and clear waiver acknowledgements
+                                    so it can be re-completed.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel disabled={waiverResetting}>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      void resetWaiversStatus();
+                                    }}
+                                    disabled={waiverResetting}
+                                  >
+                                    Reset
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          ) : null}
+                        </div>
                     </div>
                 );
             }
@@ -5508,36 +5812,12 @@ function ApplicationDetailPageContent() {
     missingQuickFixes.push({ label: 'Pathway', href: `/admin/applications/${applicationId}?userId=${encodeURIComponent(String(appUserId || ''))}` });
   }
 
-  const handleQuickSave = async () => {
-    if (isSubmitting || authorizationUploading || ispUploading) return;
-    try {
-      if (hasInterofficeDraft) {
-        await handleSendInterofficeNote();
-        return;
-      }
-      if (hasAuthorizationDraft) {
-        await handleAuthorizationUpload();
-        return;
-      }
-      if (hasIspDraft) {
-        await handleIspUpload();
-        return;
-      }
-      toast({
-        title: 'Nothing to save',
-        description: 'No interoffice, authorization, or ISP draft is currently in progress.',
-      });
-    } catch (error) {
-      console.warn('Quick save failed:', error);
-    }
-  };
-
   return (
     <div className="grid w-full min-w-0 grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-3 sticky top-2 z-30 rounded-lg border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="text-xs text-muted-foreground">
-            Admin quick actions {hasUnsavedDrafts ? '• Draft changes in progress' : '• No unsaved drafts'}
+            Admin quick actions {hasUnsavedDrafts ? '• Draft changes in progress (autosaved)' : '• No draft changes'}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => router.push('/admin/applications')}>
@@ -5552,14 +5832,6 @@ function ApplicationDetailPageContent() {
               }}
             >
               Open Quick Actions
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => void handleQuickSave()}
-              disabled={isSubmitting || authorizationUploading || ispUploading}
-            >
-              Save Active Draft (Ctrl/Cmd+S)
             </Button>
           </div>
         </div>
