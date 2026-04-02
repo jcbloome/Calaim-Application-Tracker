@@ -5688,6 +5688,48 @@ function ApplicationDetailPageContent() {
                         : 'Off'}
                     </span>
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-7">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-muted-foreground">Email reminders</Label>
+                      <RadioGroup
+                        value={Boolean((application as any)?.emailRemindersEnabled) ? 'on' : 'off'}
+                        onValueChange={(value) =>
+                          updateReminderSettings({ emailRemindersEnabled: value === 'on' })
+                        }
+                        disabled={isUpdatingReminderControls}
+                        className="flex items-center gap-4"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem id="main-email-reminders-on" value="on" />
+                          <Label htmlFor="main-email-reminders-on" className="text-sm">On</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem id="main-email-reminders-off" value="off" />
+                          <Label htmlFor="main-email-reminders-off" className="text-sm">Off</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-muted-foreground">Status updates</Label>
+                      <RadioGroup
+                        value={Boolean((application as any)?.statusRemindersEnabled) ? 'on' : 'off'}
+                        onValueChange={(value) =>
+                          updateReminderSettings({ statusRemindersEnabled: value === 'on' })
+                        }
+                        disabled={isUpdatingReminderControls}
+                        className="flex items-center gap-4"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem id="main-status-reminders-on" value="on" />
+                          <Label htmlFor="main-status-reminders-on" className="text-sm">On</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem id="main-status-reminders-off" value="off" />
+                          <Label htmlFor="main-status-reminders-off" className="text-sm">Off</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+                  </div>
                   {familyStatusLastSentLabel ? (
                     <div className="text-xs text-muted-foreground pl-7">
                       Last family status email: {familyStatusLastSentLabel}
