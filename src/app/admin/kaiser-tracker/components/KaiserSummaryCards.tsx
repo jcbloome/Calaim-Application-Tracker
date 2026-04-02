@@ -97,6 +97,18 @@ export function KaiserSummaryCards({
       normalized === 'final at rcfe'
     );
   };
+  const isCalaimH2022 = (value: unknown) => normalize(String(value || '')) === 'h2022';
+  const isFinalAtRcfeSummaryStatus = (status: string) => {
+    const normalized = normalize(status);
+    return normalized === 'final member at rcfe' || normalized === 'final at rcfe';
+  };
+  const matchesKaiserSummaryStatus = (member: KaiserMember, status: string) => {
+    const effectiveStatus = getEffectiveKaiserStatus(member);
+    if (effectiveStatus === status) return true;
+    // Treat CalAIM H2022 as Final at RCFE in Kaiser summary counts.
+    if (isFinalAtRcfeSummaryStatus(status) && isCalaimH2022((member as any)?.CalAIM_Status)) return true;
+    return false;
+  };
 
   const needsMoreContactInfoMembers = members.filter((m) => isTruthyLike((m as any)?.Need_More_Contact_Info_ILS));
   const missingH2022DateMembers = members.filter((m) => {
@@ -277,7 +289,7 @@ export function KaiserSummaryCards({
         <CardContent className="pt-0">
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {allKaiserStatuses.map((status, index) => {
-              const count = members.filter((m) => getEffectiveKaiserStatus(m) === status).length;
+              const count = members.filter((m) => matchesKaiserSummaryStatus(m, status)).length;
               const percentage = members.length > 0 ? ((count / members.length) * 100).toFixed(1) : '0';
               return (
                 <div
@@ -285,7 +297,7 @@ export function KaiserSummaryCards({
                   className="flex items-center justify-between py-0.5 px-1 hover:bg-gray-50 rounded cursor-pointer text-xs"
                   onClick={() => {
                     if (members.length > 0) {
-                      const filteredMembers = members.filter((m) => getEffectiveKaiserStatus(m) === status);
+                      const filteredMembers = members.filter((m) => matchesKaiserSummaryStatus(m, status));
                       openMemberModal(
                         filteredMembers,
                         `${status} Members`,
