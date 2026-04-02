@@ -1235,7 +1235,7 @@ function KaiserTrackerPageContent() {
             Overview of {members.length} Kaiser members | Members cache sync (ET): {formatEtDateTime(membersCacheLastSyncAt)}
           </p>
           <p className="text-muted-foreground text-xs mt-1">
-            Sync (All) updates member data from Caspio. Use each staff card&apos;s "Sync Notes" button to pull historical + incremental notes only for members assigned to that staff.
+            Sync (All) updates member data from Caspio. To sync notes for a specific group, open a staff/status card and use the member list modal&apos;s sync button.
           </p>
           <p className="text-muted-foreground text-xs mt-1">
             {statusListLoading ? 'Loading Kaiser status list…' : (kaiserStatusListUpdatedAtLabel || ' ')}
@@ -1334,9 +1334,6 @@ function KaiserTrackerPageContent() {
         allStaff={allStaff}
         staffAssignments={staffAssignments as any}
         openStaffMemberModal={openStaffMemberModal}
-        onSyncStaffNotes={(staffName, staffMembers) => void syncStaffAssignedNotes(staffName, staffMembers)}
-        activeSyncStaffName={notesGlobalProgress?.scopeLabel?.replace(/^Staff:\s*/, '') || null}
-        notesSyncing={notesGlobalSyncing}
         openMemberModal={openMemberModal}
       />
 
