@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MessageSquare, User, X } from 'lucide-react';
+import { AlertTriangle, MessageSquare, RefreshCw, User, X } from 'lucide-react';
 import type { KaiserMember } from './shared';
 import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor } from './shared';
 
@@ -16,6 +16,8 @@ export interface MemberListModalProps {
   title: string;
   description: string;
   onMemberClick: (member: KaiserMember) => void;
+  onSyncAllMemberNotes: (members: KaiserMember[]) => void;
+  isSyncingAllNotes: boolean;
   filters: any;
   onFilterChange: (filterType: string, value: string) => void;
   onClearFilters: () => void;
@@ -32,6 +34,8 @@ export function MemberListModal({
   title,
   description,
   onMemberClick,
+  onSyncAllMemberNotes,
+  isSyncingAllNotes,
   filters,
   onFilterChange,
   onClearFilters,
@@ -41,8 +45,9 @@ export function MemberListModal({
   staffMembers,
 }: MemberListModalProps) {
   const [notesMetaByClientId, setNotesMetaByClientId] = React.useState<
-    Record<string, { lastSyncAt: string; notesTodayCount: number }>
+    Record<string, { lastSyncAt: string; notesTodayCount: number; newNotesCount: number }>
   >({});
+  const [showNoActionOnly, setShowNoActionOnly] = React.useState(false);
 
   const formatEtDateTime = (value: string) => {
     if (!value) return 'Never';
@@ -59,6 +64,16 @@ export function MemberListModal({
       hour12: true,
       timeZoneName: 'short',
     }).format(parsed);
+  };
+
+  const isNoActionForWeek = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return true;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return true;
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    return now - parsed.getTime() >= sevenDaysMs;
   };
 
   React.useEffect(() => {
@@ -94,6 +109,7 @@ export function MemberListModal({
             [clientId2]: {
               lastSyncAt: String(data?.syncLastAt || ''),
               notesTodayCount: Number(data?.notesTodayCount || 0),
+              newNotesCount: Number(data?.newNotesCount || 0),
             },
           }));
           await delay(40);
@@ -104,6 +120,7 @@ export function MemberListModal({
             [clientId2]: {
               lastSyncAt: '',
               notesTodayCount: 0,
+              newNotesCount: 0,
             },
           }));
         }
@@ -117,7 +134,21 @@ export function MemberListModal({
     };
   }, [isOpen, members]);
 
+  React.useEffect(() => {
+    if (!isOpen) {
+      setShowNoActionOnly(false);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  const getMemberMeta = (member: KaiserMember) => {
+    const memberClientId = String(member.client_ID2 || '').trim();
+    return notesMetaByClientId[memberClientId];
+  };
+  const memberHasNoActionForWeek = (member: KaiserMember) => isNoActionForWeek(getMemberMeta(member)?.lastSyncAt || '');
+  const displayedMembers = showNoActionOnly ? members.filter(memberHasNoActionForWeek) : members;
+  const noActionCount = members.filter(memberHasNoActionForWeek).length;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -128,9 +159,23 @@ export function MemberListModal({
               <h2 className="text-xl font-semibold">{title}</h2>
               <p className="text-muted-foreground mt-1">{description}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onSyncAllMemberNotes(members)}
+                disabled={isSyncingAllNotes || members.length === 0}
+              >
+                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${isSyncingAllNotes ? 'animate-spin' : ''}`} />
+                {isSyncingAllNotes
+                  ? 'Syncing notes...'
+                  : `Sync notes for all ${members.length} member${members.length === 1 ? '' : 's'}`}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onClose}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -198,21 +243,37 @@ export function MemberListModal({
             <Button variant="ghost" size="sm" onClick={onClearFilters} className="h-7 px-2 text-xs">
               Clear
             </Button>
+            <Button
+              type="button"
+              variant={showNoActionOnly ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setShowNoActionOnly((prev) => !prev)}
+            >
+              {showNoActionOnly ? 'Showing: No action 7+ days' : `No action 7+ days (${noActionCount})`}
+            </Button>
           </div>
         </div>
 
         <div className="p-6 overflow-y-auto max-h-[70vh]">
-          {members.length === 0 ? (
+          {displayedMembers.length === 0 ? (
             <div className="text-center py-12">
               <User className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-2 text-sm font-medium text-gray-900">No members found</h3>
-              <p className="mt-1 text-sm text-gray-500">Try adjusting your filters or sync data from Caspio.</p>
+              <p className="mt-1 text-sm text-gray-500">
+                {showNoActionOnly
+                  ? 'No members match the no-action (7+ days) filter.'
+                  : 'Try adjusting your filters or sync data from Caspio.'}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {members.map((member, index) => {
+              {displayedMembers.map((member, index) => {
                 const assigned = String(member.Staff_Assigned || member.Kaiser_User_Assignment || '').trim();
                 const effectiveKaiserStatus = getEffectiveKaiserStatus(member);
+                const memberClientId = String(member.client_ID2 || '').trim();
+                const memberMeta = getMemberMeta(member);
+                const noActionForWeek = isNoActionForWeek(memberMeta?.lastSyncAt || '');
 
                 return (
                   <Card
@@ -229,12 +290,18 @@ export function MemberListModal({
                             </h3>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
-                            Latest notes sync (ET):{' '}
+                            Last notes sync (ET):{' '}
                             {formatEtDateTime(
-                              notesMetaByClientId[String(member.client_ID2 || '').trim()]?.lastSyncAt || ''
+                              memberMeta?.lastSyncAt || ''
                             )}{' '}
-                            | Notes today: {notesMetaByClientId[String(member.client_ID2 || '').trim()]?.notesTodayCount ?? 0}
+                            | New notes: {memberMeta?.newNotesCount ?? 0}
                           </p>
+                          {noActionForWeek ? (
+                            <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                              <AlertTriangle className="h-3 w-3" />
+                              No action in 7+ days
+                            </div>
+                          ) : null}
                           <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700">
                             <MessageSquare className="h-3 w-3" />
                             Click card to open member notes

@@ -563,6 +563,45 @@ function KaiserTrackerPageContent() {
     }
   };
 
+  const syncNotesForModalCategory = async (categoryMembers: KaiserMember[]) => {
+    if (notesGlobalSyncing) return;
+    stopAllSyncRef.current = false;
+    const scope = Array.isArray(categoryMembers)
+      ? categoryMembers.filter((m) => String(m?.client_ID2 || '').trim())
+      : [];
+    if (scope.length === 0) {
+      toast({
+        title: 'No members in scope',
+        description: 'No members are available in this category to sync.',
+      });
+      return;
+    }
+    try {
+      await syncGlobalLatestNotes(scope, {
+        quiet: true,
+        scopeLabel: modalTitle || 'Kaiser status category',
+        includeAllMembers: true,
+      });
+      if (stopAllSyncRef.current) {
+        toast({
+          title: 'Notes sync stopped',
+          description: `Stopped sync for ${modalTitle || 'selected category'}.`,
+        });
+        return;
+      }
+      toast({
+        title: 'Category notes synced',
+        description: `Processed ${scope.length} member${scope.length === 1 ? '' : 's'} in ${modalTitle || 'selected category'}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Category notes sync failed',
+        description: error?.message || 'Could not sync notes for this category.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   useEffect(() => {
     if (deepLinkHandledRef.current) return;
     if (!members.length) return;
@@ -819,17 +858,21 @@ function KaiserTrackerPageContent() {
 
   const syncGlobalLatestNotes = async (
     scopeOverride?: KaiserMember[],
-    opts?: { quiet?: boolean; scopeLabel?: string }
+    opts?: { quiet?: boolean; scopeLabel?: string; includeAllMembers?: boolean }
   ) => {
     if (notesGlobalSyncing) return;
 
     const base = Array.isArray(scopeOverride) && scopeOverride.length > 0 ? scopeOverride : members;
-    const scope = base.filter((member) => isAuthorizedOrPendingCalaim(member?.CalAIM_Status));
+    const scope = opts?.includeAllMembers
+      ? base
+      : base.filter((member) => isAuthorizedOrPendingCalaim(member?.CalAIM_Status));
     if (scope.length === 0) {
       if (!opts?.quiet) {
         toast({
           title: 'No members in scope',
-          description: 'No Authorized/Pending Kaiser members available for global notes sync.',
+          description: opts?.includeAllMembers
+            ? 'No members available for notes sync.'
+            : 'No Authorized/Pending Kaiser members available for global notes sync.',
         });
       }
       return;
@@ -1305,6 +1348,8 @@ function KaiserTrackerPageContent() {
         title={modalTitle}
         description={modalDescription}
         onMemberClick={handleMemberClick}
+        onSyncAllMemberNotes={(rows) => void syncNotesForModalCategory(rows)}
+        isSyncingAllNotes={notesGlobalSyncing}
         filters={filters}
         onFilterChange={handleFilterChange}
         onClearFilters={handleClearFilters}

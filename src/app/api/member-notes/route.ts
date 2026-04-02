@@ -801,7 +801,7 @@ export async function GET(request: NextRequest) {
         count: notes.length,
         openCount,
         closedCount,
-        newNotesCount: 0,
+        newNotesCount: Number(prevStatus?.lastNewNotesCount || 0),
         existingNotesCount: notes.length,
         notesTodayCount,
       });
@@ -967,6 +967,7 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
       totalLegacyNotes: importedCount,
       regularNotes: transformedRegularNotes.length,
       ilsNotes: transformedILSNotes.length,
+      lastNewNotesCount: importedCount,
       firstSyncCompleted: true,
       updatedAt: syncTime
     };
@@ -1103,6 +1104,7 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
     // Update sync status
     if (syncStatusCache[clientId2]) {
       syncStatusCache[clientId2].lastSyncAt = syncTime;
+      syncStatusCache[clientId2].lastNewNotesCount = importedCount;
       syncStatusCache[clientId2].updatedAt = syncTime;
       await saveSyncStatusToFirestore(clientId2, syncStatusCache[clientId2]);
     }
