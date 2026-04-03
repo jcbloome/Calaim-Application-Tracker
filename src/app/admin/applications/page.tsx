@@ -45,6 +45,31 @@ const getAssignedStaffLabel = (app: any): string => {
   return label || 'Staff unassigned';
 };
 
+type IntakeFilterValue =
+  | 'all'
+  | 'family_call'
+  | 'ils_single_authorization_sheet'
+  | 'ils_spreadsheet_batch'
+  | 'standard'
+  | 'kaiser_auth_received_via_ils';
+
+const normalizeIntakeSource = (app: any): 'family_call' | 'ils_single_authorization_sheet' | 'ils_spreadsheet_batch' => {
+  const intakeSource = String(app?.intakeSource || '').trim().toLowerCase();
+  if (intakeSource === 'family_call') return 'family_call';
+  if (intakeSource === 'ils_spreadsheet_batch') return 'ils_spreadsheet_batch';
+  if (intakeSource === 'ils_single_authorization_sheet') return 'ils_single_authorization_sheet';
+
+  const intakeType = String(app?.intakeType || '').trim().toLowerCase();
+  if (intakeType === 'kaiser_auth_received_via_ils') return 'ils_single_authorization_sheet';
+
+  const status = String(app?.status || '').trim().toLowerCase();
+  if (status === 'authorization received (doc collection)' || Boolean(app?.kaiserAuthReceivedViaIls)) {
+    return 'ils_single_authorization_sheet';
+  }
+
+  return 'family_call';
+};
+
 function AdminApplicationsPageContent() {
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -59,7 +84,7 @@ function AdminApplicationsPageContent() {
   const [pathwayFilter, setPathwayFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
-  const [intakeFilter, setIntakeFilter] = useState('all');
+  const [intakeFilter, setIntakeFilter] = useState<IntakeFilterValue>('all');
   const [memberFilter, setMemberFilter] = useState('');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'cs' | 'docs'>('all');
   const searchParams = useSearchParams();
@@ -221,6 +246,7 @@ function AdminApplicationsPageContent() {
     const review = (searchParams.get('review') || '').toLowerCase();
     const member = String(searchParams.get('member') || '').trim();
     const staff = String(searchParams.get('staff') || '').trim();
+    const intakeSource = String(searchParams.get('intakeSource') || '').trim().toLowerCase();
 
     if (plan) {
       if (plan.includes('kaiser')) setHealthPlanFilter('Kaiser');
@@ -231,6 +257,13 @@ function AdminApplicationsPageContent() {
     if (review === 'docs') setReviewFilter('docs');
     if (member) setMemberFilter(member);
     if (staff) setStaffFilter(staff);
+    if (
+      intakeSource === 'family_call' ||
+      intakeSource === 'ils_single_authorization_sheet' ||
+      intakeSource === 'ils_spreadsheet_batch'
+    ) {
+      setIntakeFilter(intakeSource);
+    }
   }, [searchParams]);
 
   const staffFilterOptions = useMemo(() => {
@@ -259,15 +292,12 @@ function AdminApplicationsPageContent() {
         String((app as any)?.Authorization_Number_T038 || '').toLowerCase().includes(query) ||
         String((app as any)?.Diagnostic_Code || '').toLowerCase().includes(query) ||
         String((app as any)?.id || '').toLowerCase().includes(query);
-      const isAuthReceivedIntake = Boolean(
-        (app as any)?.kaiserAuthReceivedViaIls ||
-        String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
-        String((app as any)?.status || '').trim() === 'Authorization Received (Doc Collection)'
-      );
+      const intakeSource = normalizeIntakeSource(app as any);
       const intakeMatch =
         intakeFilter === 'all' ||
-        (intakeFilter === 'kaiser_auth_received_via_ils' && isAuthReceivedIntake) ||
-        (intakeFilter === 'standard' && !isAuthReceivedIntake);
+        intakeFilter === intakeSource ||
+        (intakeFilter === 'kaiser_auth_received_via_ils' && intakeSource !== 'family_call') ||
+        (intakeFilter === 'standard' && intakeSource === 'family_call');
 
       const forms = app.forms || [];
       const hasCompletedSummary = forms.some((form: any) =>
@@ -455,6 +485,12 @@ function AdminApplicationsPageContent() {
             <p className="text-muted-foreground">Browse and manage all applications submitted to the platform.</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button asChild variant="outline">
+              <Link href="/admin/applications/intake-processing">
+                <Database className="mr-2 h-4 w-4" />
+                Intake Processing
+              </Link>
+            </Button>
             <Button asChild>
               <Link href="/admin/applications/create">
                 <Plus className="mr-2 h-4 w-4" />
@@ -561,10 +597,13 @@ function AdminApplicationsPageContent() {
                           </Select>
                         </div>
                         <div className="flex-1 min-w-[180px]">
-                          <Select value={intakeFilter} onValueChange={setIntakeFilter}>
+                          <Select value={intakeFilter} onValueChange={(value) => setIntakeFilter(value as IntakeFilterValue)}>
                             <SelectTrigger><SelectValue placeholder="Filter by Intake Type" /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="all">All Intake Types</SelectItem>
+                              <SelectItem value="family_call">Families call us (manual assisted)</SelectItem>
+                              <SelectItem value="ils_single_authorization_sheet">ILS single authorization sheet</SelectItem>
+                              <SelectItem value="ils_spreadsheet_batch">ILS spreadsheet batch (multi-member)</SelectItem>
                               <SelectItem value="kaiser_auth_received_via_ils">Kaiser Auth Received (via ILS)</SelectItem>
                               <SelectItem value="standard">Standard Intake</SelectItem>
                             </SelectContent>

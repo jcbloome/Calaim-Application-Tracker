@@ -107,6 +107,7 @@ const adminNavLinks = [
     submenuItems: [
       { href: '/admin', label: 'Activity Dashboard', icon: Activity },
       { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
+      { href: '/admin/applications/intake-processing', label: 'Application Intake Processing', icon: FolderSync },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
       { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
       { href: '/admin/standalone-uploads', label: 'Standalone Upload Intake', icon: UploadCloud },

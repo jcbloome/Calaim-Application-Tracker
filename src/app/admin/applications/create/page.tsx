@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ import { addDoc, collection, doc, getDocs, query, serverTimestamp, setDoc, where
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -459,8 +460,80 @@ const normalizeMemberPatch = (patch: Record<string, unknown>) => {
   return normalized;
 };
 
+type KaiserIlsImportRow = {
+  rowId: string;
+  memberFirstName: string;
+  memberLastName: string;
+  memberMrn: string;
+  clientId2: string;
+  memberAddress: string;
+  memberCounty: string;
+  memberDob: string;
+  memberPhone: string;
+  authorizationNumberT2038: string;
+  authorizationStartT2038: string;
+  authorizationEndT2038: string;
+  cptCode: string;
+  diagnosticCode: string;
+  assignedStaffId: string;
+  assignedStaffName: string;
+  createStatus: 'idle' | 'created' | 'failed';
+  pushStatus: 'idle' | 'pushed' | 'failed';
+  deleteStatus: 'idle' | 'deleted' | 'failed';
+  statusNote: string;
+  applicationId: string;
+  pushedClientId2: string;
+};
+
+const normalizeSheetHeader = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const toSpreadsheetDate = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 20000 && value < 90000) {
+    const ms = Math.round((value - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) return toMmDdYyyy(d.toISOString().slice(0, 10));
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return toMmDdYyyy(value.toISOString().slice(0, 10));
+  }
+  return toMmDdYyyy(String(value || '').trim());
+};
+
+const getSpreadsheetValue = (row: Record<string, unknown>, aliases: string[]) => {
+  const normalizedAlias = aliases.map((x) => normalizeSheetHeader(x));
+  for (const [key, value] of Object.entries(row || {})) {
+    const nk = normalizeSheetHeader(key);
+    if (normalizedAlias.includes(nk)) return String(value ?? '').trim();
+  }
+  return '';
+};
+
+const CASPIO_PUSH_MAPPING: Record<string, string> = {
+  memberFirstName: 'Senior_First',
+  memberLastName: 'Senior_Last',
+  clientId2: 'client_ID2',
+  memberMrn: 'MCP_CIN',
+  memberAddress: 'ISP_Current_Address',
+  memberCounty: 'Member_County',
+  memberDob: 'Birth_Date',
+  memberPhone: 'Member_Phone',
+  Authorization_Number_T038: 'Authorization_Number_T038',
+  Authorization_Start_T2038: 'Authorization_Start_T2038',
+  Authorization_End_T2038: 'Authorization_End_T2038',
+  cptCode: 'CPT_Code',
+  Diagnostic_Code: 'Diagnostic_Code',
+  kaiserStatus: 'Kaiser_Status',
+  workflowStep: 'workflow_step',
+  assignedStaffName: 'Kaiser_User_Assignment',
+  healthPlan: 'CalAIM_MCO',
+};
+
 export default function CreateApplicationPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const firestore = useFirestore();
   const storage = useStorage();
@@ -480,10 +553,28 @@ export default function CreateApplicationPage() {
   const [serviceRequestWarnings, setServiceRequestWarnings] = useState<string[]>([]);
   const [, setServiceRequestParseMode] = useState<'none' | 'text' | 'vision'>('none');
   const [serviceRequestTextPreview, setServiceRequestTextPreview] = useState('');
+  const [ilsImportRows, setIlsImportRows] = useState<KaiserIlsImportRow[]>([]);
+  const [ilsImportSelected, setIlsImportSelected] = useState<Record<string, boolean>>({});
+  const [isParsingIlsSpreadsheet, setIsParsingIlsSpreadsheet] = useState(false);
+  const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
+  const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
+  const ilsSpreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
   const parseAbortControllerRef = useRef<AbortController | null>(null);
   const createApplicationRef = useRef<() => Promise<void> | void>(() => {});
   const [memberData, setMemberData] = useState(getEmptyMemberData);
+
+  useEffect(() => {
+    const intakeSource = String(searchParams.get('intakeSource') || '').trim().toLowerCase();
+    if (!intakeSource) return;
+    if (intakeSource === 'family_call') {
+      setIntakeType('standard');
+      return;
+    }
+    if (intakeSource === 'ils_single_authorization_sheet' || intakeSource === 'ils_spreadsheet_batch') {
+      setIntakeType('kaiser_auth_received_via_ils');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const loadKaiserStaff = async () => {
@@ -558,6 +649,336 @@ export default function CreateApplicationPage() {
       });
     });
     return Promise.all(uploads);
+  };
+
+  const selectedIlsRows = useMemo(
+    () => ilsImportRows.filter((row) => Boolean(ilsImportSelected[row.rowId])),
+    [ilsImportRows, ilsImportSelected]
+  );
+  const caspioFieldPreview = useMemo(() => {
+    const sample = selectedIlsRows[0] || null;
+    if (!sample) return [] as Array<{ source: string; caspioField: string; value: string }>;
+    const sourceValueMap: Record<string, string> = {
+      memberFirstName: sample.memberFirstName,
+      memberLastName: sample.memberLastName,
+      clientId2: sample.clientId2,
+      memberMrn: sample.memberMrn,
+      memberAddress: sample.memberAddress,
+      memberCounty: sample.memberCounty,
+      memberDob: sample.memberDob,
+      memberPhone: sample.memberPhone,
+      Authorization_Number_T038: sample.authorizationNumberT2038,
+      Authorization_Start_T2038: sample.authorizationStartT2038,
+      Authorization_End_T2038: sample.authorizationEndT2038,
+      cptCode: sample.cptCode,
+      Diagnostic_Code: sample.diagnosticCode,
+      kaiserStatus: 'T2038 Received, Needs First Contact',
+      workflowStep: 'Needs First Contact',
+      assignedStaffName: sample.assignedStaffName,
+      healthPlan: 'Kaiser',
+    };
+    return Object.entries(CASPIO_PUSH_MAPPING).map(([source, caspioField]) => ({
+      source,
+      caspioField,
+      value: String(sourceValueMap[source] || '').trim() || '—',
+    }));
+  }, [selectedIlsRows]);
+
+  const parseIlsSpreadsheetFile = async (file: File) => {
+    setIsParsingIlsSpreadsheet(true);
+    try {
+      const XLSX = await import('xlsx');
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const sheetName = wb.SheetNames[0];
+      if (!sheetName) throw new Error('No worksheet found in spreadsheet.');
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+      if (!rows.length) throw new Error('Spreadsheet has no data rows.');
+
+      const parsed: KaiserIlsImportRow[] = rows
+        .map((raw, idx) => {
+          const memberFirstNameRaw = getSpreadsheetValue(raw, ['Member First Name', 'First Name', 'Senior_First']);
+          const memberLastNameRaw = getSpreadsheetValue(raw, ['Member Last Name', 'Last Name', 'Senior_Last']);
+          const fullNameRaw = getSpreadsheetValue(raw, ['Member Name', 'Senior_Last_First_ID', 'Name']);
+          const parsedName = parseMemberName(fullNameRaw);
+          const memberFirstName = toNameCase(memberFirstNameRaw || parsedName.firstName);
+          const memberLastName = toNameCase(memberLastNameRaw || parsedName.lastName);
+          const memberMrn = getSpreadsheetValue(raw, ['Member MRN', 'MCP_CIN', 'MRN', 'CIN']);
+          const clientId2 = getSpreadsheetValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
+          const memberAddress = getSpreadsheetValue(raw, ['Member Address', 'Address', 'ISP_Current_Address']);
+          const memberCounty = getSpreadsheetValue(raw, ['County', 'Member County', 'RCFE County', 'Member_County']);
+          const memberDob = toSpreadsheetDate(
+            getSpreadsheetValue(raw, ['Date of Birth', 'DOB', 'Birth_Date', 'Member DOB'])
+          );
+          const memberPhone = getSpreadsheetValue(raw, ['Member Phone Number', 'Member Phone', 'Phone', 'Member_Phone']);
+          const authorizationNumberT2038 = getSpreadsheetValue(raw, ['ILS Auth Number', 'Authorization_Number_T038', 'Authorization Number', 'Auth Number', 'T2038 Authorization Number']);
+          const authorizationStartT2038 = toSpreadsheetDate(
+            getSpreadsheetValue(raw, ['Auth Start Date', 'Authorization_Start_T2038', 'Authorization Start', 'Auth Start', 'Start Date'])
+          );
+          const authorizationEndT2038 = toSpreadsheetDate(
+            getSpreadsheetValue(raw, ['Auth End Date', 'Authorization_End_T2038', 'Authorization End', 'Auth End', 'End Date'])
+          );
+          const cptCode = getSpreadsheetValue(raw, ['CPT Code', 'CPT', 'Procedure Code']);
+          const diagnosticCode = getSpreadsheetValue(raw, ['Diagnostic_Code', 'Diagnostic Code', 'Dx Code']);
+          const ready = Boolean(memberFirstName && memberLastName);
+          return {
+            rowId: `ils-${Date.now()}-${idx}`,
+            memberFirstName,
+            memberLastName,
+            memberMrn,
+            clientId2,
+            memberAddress,
+            memberCounty,
+            memberDob,
+            memberPhone,
+            authorizationNumberT2038,
+            authorizationStartT2038,
+            authorizationEndT2038,
+            cptCode,
+            diagnosticCode,
+            assignedStaffId: selectedAssignedStaffId,
+            assignedStaffName: selectedAssignedStaffName,
+            createStatus: 'idle',
+            pushStatus: 'idle',
+            deleteStatus: 'idle',
+            statusNote: ready ? '' : 'Missing member name',
+            applicationId: '',
+            pushedClientId2: '',
+          } as KaiserIlsImportRow;
+        })
+        .filter((row) => Boolean(row.memberFirstName && row.memberLastName));
+
+      if (!parsed.length) {
+        throw new Error('No usable rows found. Make sure spreadsheet has member first/last name columns.');
+      }
+      const nextSelected: Record<string, boolean> = {};
+      parsed.forEach((row) => {
+        nextSelected[row.rowId] = true;
+      });
+      setIlsImportRows(parsed);
+      setIlsImportSelected(nextSelected);
+      toast({
+        title: 'Spreadsheet parsed',
+        description: `Loaded ${parsed.length} Kaiser ILS row(s).`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Spreadsheet parse failed',
+        description: String(error?.message || 'Unable to parse this spreadsheet.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsParsingIlsSpreadsheet(false);
+    }
+  };
+
+  const applyStaffToSelectedIlsRows = () => {
+    if (!selectedAssignedStaffId || !selectedAssignedStaffName) {
+      toast({ title: 'Select Kaiser staff first', description: 'Choose a staff member above to assign selected rows.' });
+      return;
+    }
+    setIlsImportRows((prev) =>
+      prev.map((row) =>
+        ilsImportSelected[row.rowId]
+          ? { ...row, assignedStaffId: selectedAssignedStaffId, assignedStaffName: selectedAssignedStaffName }
+          : row
+      )
+    );
+    toast({
+      title: 'Assignment applied',
+      description: `Assigned ${selectedIlsRows.length} selected row(s) to ${selectedAssignedStaffName}.`,
+    });
+  };
+
+  const createIlsSkeletonApplications = async () => {
+    if (!firestore) return;
+    if (!selectedIlsRows.length) {
+      toast({ title: 'No selected rows', description: 'Select one or more imported rows first.' });
+      return;
+    }
+    setIsCreatingIlsRecords(true);
+    try {
+      const authReceivedForms = [
+        { name: 'CS Member Summary', status: 'Pending', type: 'online-form', href: '/admin/forms/edit' },
+        { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
+        { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
+        { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
+        { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
+        { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
+        { name: 'Room and Board/Tier Level Agreement', status: 'Pending', type: 'Upload', href: '/forms/room-board-obligation/printable' },
+      ];
+
+      for (const row of selectedIlsRows) {
+        try {
+          const applicationId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+          const applicationRef = doc(firestore, 'applications', applicationId);
+          await setDoc(applicationRef, {
+            memberFirstName: row.memberFirstName,
+            memberLastName: row.memberLastName,
+            memberMrn: row.memberMrn || '',
+            memberDob: row.memberDob || '',
+            memberPhone: row.memberPhone || '',
+            Authorization_Number_T038: row.authorizationNumberT2038 || '',
+            Authorization_Start_T2038: row.authorizationStartT2038 || '',
+            Authorization_End_T2038: row.authorizationEndT2038 || '',
+            CPT_Code: row.cptCode || '',
+            Diagnostic_Code: row.diagnosticCode || '',
+            memberCustomaryAddress: row.memberAddress || '',
+            memberCustomaryCounty: row.memberCounty || '',
+            referrerFirstName: '',
+            referrerLastName: '',
+            referrerPhone: '',
+            bestContactFirstName: '',
+            bestContactLastName: '',
+            bestContactPhone: '',
+            bestContactRelationship: '',
+            bestContactEmail: '',
+            intakeType: 'kaiser_auth_received_via_ils',
+            intakeSource: 'ils_spreadsheet_batch',
+            kaiserAuthReceivedViaIls: true,
+            kaiserAuthReceivedDate: serverTimestamp(),
+            createdAt: serverTimestamp(),
+            createdByAdmin: true,
+            status: 'T2038 Received, Needs First Contact',
+            currentStep: 1,
+            isComplete: false,
+            healthPlan: 'Kaiser',
+            pathway: 'SNF Transition',
+            kaiserStatus: 'T2038 Received, Needs First Contact',
+            forms: authReceivedForms,
+            assignedStaffId: row.assignedStaffId || '',
+            assignedStaffName: row.assignedStaffName || '',
+            assignedDate: row.assignedStaffId ? new Date().toISOString() : '',
+          });
+          if (row.assignedStaffId) {
+            try {
+              const memberName = `${row.memberFirstName || ''} ${row.memberLastName || ''}`.trim() || 'Member';
+              const assignedByName = String(user?.displayName || user?.email || 'Manager').trim();
+              const dueDate = new Date();
+              dueDate.setHours(17, 0, 0, 0);
+              await addDoc(collection(firestore, 'staff_notifications'), {
+                userId: row.assignedStaffId,
+                title: `Kaiser assignment: ${memberName}`,
+                message:
+                  `You were assigned ${memberName} from Kaiser ILS spreadsheet intake.\n` +
+                  `MRN: ${row.memberMrn || '—'} • DOB: ${row.memberDob || '—'} • County: ${row.memberCounty || '—'}\n` +
+                  `Status: T2038 Received, Needs First Contact`,
+                memberName,
+                memberMrn: row.memberMrn || null,
+                memberDob: row.memberDob || null,
+                county: row.memberCounty || null,
+                mcpName: 'Kaiser',
+                pathway: 'SNF Transition',
+                healthPlan: 'Kaiser',
+                type: 'assignment',
+                priority: 'Priority',
+                status: 'Open',
+                isRead: false,
+                requiresStaffAction: true,
+                followUpRequired: true,
+                followUpDate: dueDate.toISOString(),
+                senderName: assignedByName,
+                assignedByUid: String(user?.uid || '').trim() || null,
+                assignedByName,
+                actionUrl: `/admin/applications/${applicationId}`,
+                applicationId,
+                source: 'kaiser-ils-spreadsheet',
+                timestamp: serverTimestamp(),
+              });
+            } catch (notifyError) {
+              console.warn('Failed to create staff notification for spreadsheet row:', notifyError);
+            }
+          }
+          setIlsImportRows((prev) =>
+            prev.map((r) =>
+              r.rowId === row.rowId
+                ? { ...r, createStatus: 'created', applicationId, statusNote: `Created app ${applicationId}` }
+                : r
+            )
+          );
+        } catch (err: any) {
+          setIlsImportRows((prev) =>
+            prev.map((r) =>
+              r.rowId === row.rowId ? { ...r, createStatus: 'failed', statusNote: String(err?.message || 'Create failed') } : r
+            )
+          );
+        }
+      }
+      toast({ title: 'Batch create finished', description: `Processed ${selectedIlsRows.length} selected row(s).` });
+    } finally {
+      setIsCreatingIlsRecords(false);
+    }
+  };
+
+  const pushSelectedIlsRowsToCaspio = async () => {
+    if (!selectedIlsRows.length) {
+      toast({ title: 'No selected rows', description: 'Select one or more imported rows first.' });
+      return;
+    }
+    setIsPushingIlsRows(true);
+    try {
+      for (const row of selectedIlsRows) {
+        try {
+          if (!row.assignedStaffName && !row.assignedStaffId) {
+            throw new Error('Assign staff before pushing.');
+          }
+          const applicationData = {
+            memberFirstName: row.memberFirstName,
+            memberLastName: row.memberLastName,
+            clientId2: row.clientId2,
+            memberMrn: row.memberMrn,
+            memberAddress: row.memberAddress,
+            memberCounty: row.memberCounty,
+            memberDob: row.memberDob,
+            memberPhone: row.memberPhone,
+            Authorization_Number_T038: row.authorizationNumberT2038,
+            Authorization_Start_T2038: row.authorizationStartT2038,
+            Authorization_End_T2038: row.authorizationEndT2038,
+            cptCode: row.cptCode,
+            Diagnostic_Code: row.diagnosticCode,
+            kaiserStatus: 'T2038 Received, Needs First Contact',
+            workflowStep: 'Needs First Contact',
+            assignedStaffId: row.assignedStaffId,
+            assignedStaffName: row.assignedStaffName,
+            healthPlan: 'Kaiser',
+          };
+          const res = await fetch('/api/admin/caspio/push-cs-summary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              applicationData,
+              mapping: CASPIO_PUSH_MAPPING,
+            }),
+          });
+          const data = (await res.json().catch(() => ({}))) as any;
+          if (!res.ok || !data?.success) {
+            throw new Error(data?.message || data?.details?.rawError || `Push failed (HTTP ${res.status})`);
+          }
+          setIlsImportRows((prev) =>
+            prev.map((r) =>
+              r.rowId === row.rowId
+                ? {
+                    ...r,
+                    pushStatus: 'pushed',
+                    pushedClientId2: String(data?.clientId2 || row.clientId2 || '').trim(),
+                    statusNote: data?.message || 'Pushed to Caspio',
+                  }
+                : r
+            )
+          );
+        } catch (err: any) {
+          setIlsImportRows((prev) =>
+            prev.map((r) =>
+              r.rowId === row.rowId ? { ...r, pushStatus: 'failed', statusNote: String(err?.message || 'Push failed') } : r
+            )
+          );
+        }
+      }
+      toast({ title: 'Caspio push finished', description: `Processed ${selectedIlsRows.length} selected row(s).` });
+    } finally {
+      setIsPushingIlsRows(false);
+    }
   };
 
   // Phone number formatting function
@@ -806,8 +1227,13 @@ export default function CreateApplicationPage() {
     setServiceRequestParsedFields([]);
     setServiceRequestWarnings([]);
     setServiceRequestTextPreview('');
+    setIlsImportRows([]);
+    setIlsImportSelected({});
     if (serviceRequestFileInputRef.current) {
       serviceRequestFileInputRef.current.value = '';
+    }
+    if (ilsSpreadsheetInputRef.current) {
+      ilsSpreadsheetInputRef.current.value = '';
     }
     toast({
       title: 'Form reset',
@@ -884,6 +1310,7 @@ export default function CreateApplicationPage() {
         bestContactEmail: memberData.contactEmail || '',
 
         intakeType,
+        intakeSource: isKaiserAuthReceived ? 'ils_single_authorization_sheet' : 'family_call',
         kaiserAuthReceivedViaIls: isKaiserAuthReceived,
         kaiserAuthReceivedDate: isKaiserAuthReceived ? serverTimestamp() : null,
 
@@ -1035,38 +1462,6 @@ export default function CreateApplicationPage() {
                            )
                      );
 
-  const missingRequiredFields = useMemo(() => {
-    const missing: Array<{ id: string; label: string }> = [];
-    if (!String(memberData.memberFirstName || '').trim()) {
-      missing.push({ id: 'memberFirstName', label: 'Member First Name' });
-    }
-    if (!String(memberData.memberLastName || '').trim()) {
-      missing.push({ id: 'memberLastName', label: 'Member Last Name' });
-    }
-    if (intakeType === 'standard') {
-      if (!String(memberData.contactFirstName || '').trim()) {
-        missing.push({ id: 'contactFirstName', label: 'Contact First Name' });
-      }
-      if (!String(memberData.contactLastName || '').trim()) {
-        missing.push({ id: 'contactLastName', label: 'Contact Last Name' });
-      }
-      const contactPhoneDigits = String(memberData.contactPhone || '').replace(/\D/g, '');
-      if (!contactPhoneDigits) {
-        missing.push({ id: 'contactPhone', label: 'Contact Phone' });
-      } else if (contactPhoneDigits.length < 10) {
-        missing.push({ id: 'contactPhone', label: 'Contact Phone (10 digits)' });
-      }
-    }
-    return missing;
-  }, [
-    intakeType,
-    memberData.memberFirstName,
-    memberData.memberLastName,
-    memberData.contactFirstName,
-    memberData.contactLastName,
-    memberData.contactPhone,
-  ]);
-
   const hasUnsavedChanges = useMemo(() => {
     const memberDefaults = getEmptyMemberData();
     const normalizedMemberData = Object.keys(memberDefaults).reduce<Record<string, string>>((acc, key) => {
@@ -1165,37 +1560,6 @@ export default function CreateApplicationPage() {
           You&apos;ll provide basic member and contact information, then complete the full CS Summary form on their behalf.
         </AlertDescription>
       </Alert>
-
-      {missingRequiredFields.length > 0 && (
-        <Alert className="mb-6 border-amber-200 bg-amber-50">
-          <AlertDescription className="text-amber-900">
-            <div className="font-medium">Quick fixes needed ({missingRequiredFields.length})</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {missingRequiredFields.map((field) => (
-                <Button
-                  key={`${field.id}-${field.label}`}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 border-amber-300 bg-white"
-                  onClick={() => {
-                    const el = document.getElementById(field.id) as HTMLInputElement | HTMLTextAreaElement | null;
-                    if (!el) return;
-                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    try {
-                      el.focus();
-                    } catch {
-                      // no-op
-                    }
-                  }}
-                >
-                  {field.label}
-                </Button>
-              ))}
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* Member & Contact Information */}
       <Card>
@@ -1298,6 +1662,136 @@ export default function CreateApplicationPage() {
                   <div className="text-xs text-muted-foreground">
                     If selected on create, this assignment is added to the staff member&apos;s Action Items (bell) and daily task calendar. You can also assign staff later.
                   </div>
+                </div>
+                <div className="md:col-span-2 p-3 border rounded-md bg-indigo-50/40 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="font-medium">Kaiser (ILS) Spreadsheet Parser</div>
+                      <div className="text-xs text-muted-foreground">
+                        Upload an Excel file from Kaiser ILS to parse authorization dates/fields, create application records, assign staff, and push to Caspio.
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        ref={ilsSpreadsheetInputRef}
+                        type="file"
+                        accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                        className="hidden"
+                        onChange={(e) => {
+                          const picked = e.target.files?.[0];
+                          if (picked) void parseIlsSpreadsheetFile(picked);
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => ilsSpreadsheetInputRef.current?.click()}
+                        disabled={isParsingIlsSpreadsheet}
+                      >
+                        {isParsingIlsSpreadsheet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                        {isParsingIlsSpreadsheet ? 'Parsing spreadsheet...' : 'Upload ILS Spreadsheet'}
+                      </Button>
+                      <Button type="button" variant="outline" onClick={applyStaffToSelectedIlsRows} disabled={selectedIlsRows.length === 0}>
+                        Assign Staff to Selected
+                      </Button>
+                      <Button type="button" variant="outline" onClick={createIlsSkeletonApplications} disabled={isCreatingIlsRecords || selectedIlsRows.length === 0}>
+                        {isCreatingIlsRecords ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Create Selected Records
+                      </Button>
+                      <Button type="button" onClick={pushSelectedIlsRowsToCaspio} disabled={isPushingIlsRows || selectedIlsRows.length === 0}>
+                        {isPushingIlsRows ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Push Selected to Caspio
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Selected rows: {selectedIlsRows.length} / {ilsImportRows.length}
+                  </div>
+                  {caspioFieldPreview.length > 0 ? (
+                    <div className="rounded border bg-white p-2">
+                      <div className="text-xs font-medium mb-1">
+                        Caspio field match preview (first selected row)
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-xs">
+                        {caspioFieldPreview.map((item) => (
+                          <div key={`${item.source}-${item.caspioField}`} className="flex items-start gap-2 rounded border px-2 py-1">
+                            <div className="min-w-[130px] font-medium">{item.caspioField}</div>
+                            <div className="text-muted-foreground">{item.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {ilsImportRows.length > 0 ? (
+                    <div className="overflow-auto rounded border bg-white">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50">
+                          <tr className="text-left">
+                            <th className="px-2 py-1.5">Pick</th>
+                            <th className="px-2 py-1.5">Member</th>
+                            <th className="px-2 py-1.5">Auth #</th>
+                            <th className="px-2 py-1.5">Start</th>
+                            <th className="px-2 py-1.5">End</th>
+                            <th className="px-2 py-1.5">Assigned Staff</th>
+                            <th className="px-2 py-1.5">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ilsImportRows.map((row) => (
+                            <tr key={row.rowId} className="border-t">
+                              <td className="px-2 py-1.5">
+                                <Checkbox
+                                  checked={Boolean(ilsImportSelected[row.rowId])}
+                                  onCheckedChange={(checked) =>
+                                    setIlsImportSelected((prev) => ({ ...prev, [row.rowId]: Boolean(checked) }))
+                                  }
+                                />
+                              </td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{`${row.memberLastName}, ${row.memberFirstName}`}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationNumberT2038 || '—'}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationStartT2038 || '—'}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationEndT2038 || '—'}</td>
+                              <td className="px-2 py-1.5 min-w-[220px]">
+                                <Select
+                                  value={row.assignedStaffId || 'unassigned'}
+                                  onValueChange={(value) => {
+                                    const nextId = value === 'unassigned' ? '' : value;
+                                    const staff = kaiserStaffList.find((s) => s.uid === nextId);
+                                    setIlsImportRows((prev) =>
+                                      prev.map((r) =>
+                                        r.rowId === row.rowId
+                                          ? { ...r, assignedStaffId: nextId, assignedStaffName: staff?.displayName || '' }
+                                          : r
+                                      )
+                                    );
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8">
+                                    <SelectValue placeholder="Assign Kaiser staff" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                                    {kaiserStaffList.length === 0 ? (
+                                      <SelectItem value="none" disabled>No Kaiser staff found</SelectItem>
+                                    ) : (
+                                      kaiserStaffList.map((staff) => (
+                                        <SelectItem key={`${row.rowId}-${staff.uid}`} value={staff.uid}>
+                                          {staff.displayName}
+                                        </SelectItem>
+                                      ))
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                              </td>
+                              <td className="px-2 py-1.5">
+                                {row.statusNote || [row.createStatus, row.pushStatus, row.deleteStatus].filter((x) => x !== 'idle').join(' • ') || 'Ready'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
                 </div>
                 <div>
                   <Label htmlFor="memberMrn">Member MRN</Label>
