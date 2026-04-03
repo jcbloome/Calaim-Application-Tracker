@@ -12,7 +12,7 @@ type VerificationMember = {
   id: string;
   name: string;
   planType?: 'health_net' | 'kaiser' | 'other';
-  status?: 'there' | 'not_there' | 'unknown';
+  status?: 'there' | 'not_there' | 'temporarily_not_there' | 'unknown';
   lastVerifiedAt?: string;
   extraDetails?: string;
 };
@@ -68,6 +68,7 @@ async function requireAdminFromToken(idToken: string) {
 const toStatusLabel = (status?: string) => {
   if (status === 'there') return 'Confirmed There';
   if (status === 'not_there') return 'Told Not There';
+  if (status === 'temporarily_not_there') return 'Temporarily Not There';
   return 'Unverified';
 };
 
@@ -318,13 +319,20 @@ export async function POST(req: NextRequest) {
     const replyToEmails = replyToContacts.healthNetEmails;
     const replyToLabels = replyToContacts.healthNetLabels;
     const replyToDisplay = replyToLabels.join(', ') || replyToEmails.join(', ');
+    const rcfeEmailListReplyTo = 'monica@carehomefinders.com';
 
     const results: Array<{ to: string; rcfeName: string; id?: string; error?: string }> = [];
 
     for (const row of sendRows) {
       const verifiedThere = row.members.filter((m) => m.status === 'there');
       const notAtRcfe = row.members.filter((m) => m.status === 'not_there');
-      const unverified = row.members.filter((m) => m.status !== 'there' && m.status !== 'not_there');
+      const temporarilyNotThere = row.members.filter((m) => m.status === 'temporarily_not_there');
+      const unverified = row.members.filter((m) => m.status !== 'there' && m.status !== 'not_there' && m.status !== 'temporarily_not_there');
+      const effectiveReplyToEmails = emailMode === 'email_list_only' ? [rcfeEmailListReplyTo] : replyToEmails;
+      const effectiveReplyToDisplay =
+        emailMode === 'email_list_only'
+          ? rcfeEmailListReplyTo
+          : replyToDisplay || 'Assigned Health Net verification staff (not configured yet)';
 
       const buildRowsHtml = (members: VerificationMember[]) =>
         members
@@ -381,22 +389,19 @@ export async function POST(req: NextRequest) {
               : ''
           }
           ${row.customNote ? `<p style="margin-top:4px;color:#374151;"><strong>RCFE note:</strong> ${escapeHtml(row.customNote)}</p>` : ''}
-          <p style="margin-top:4px;color:#6b7280;"><strong>Reply to assigned staff:</strong> ${escapeHtml(
-            replyToDisplay || 'Assigned Health Net verification staff (not configured yet)'
-          )}</p>
+          <p style="margin-top:4px;color:#6b7280;"><strong>Reply to:</strong> ${escapeHtml(effectiveReplyToDisplay)}</p>
           <p><strong>RCFE:</strong> ${escapeHtml(row.rcfeName)}</p>
           <p style="margin-top:6px;"><strong>Please reply to confirm this roster for your RCFE.</strong></p>
           <p style="margin-top:4px;color:#374151;">
             Please reply and confirm:
-            <br/>1) Who is still living at your RCFE.
-            <br/>2) Who is not currently at your RCFE.
-            <br/>3) Any corrections we should make.
-            <br/>4) How many licensed beds your RCFE currently has${
+            <br/>1) For each listed member, confirm whether they are still there, not there, or temporarily not there.
+            <br/>2) How many licensed beds your RCFE currently has${
               licensedBedsOnFile ? ` (we currently have ${escapeHtml(licensedBedsOnFile)} on file)` : ''
             }.
           </p>
           ${buildSection('Members Verified at RCFE (Confirmed There)', verifiedThere)}
           ${buildSection('Residents Not at RCFE (Told Not There)', notAtRcfe)}
+          ${buildSection('Temporarily Not There (hospital, etc.)', temporarilyNotThere)}
           ${buildSection('Members Pending Verification', unverified)}
           <p style="margin-top:12px;">Thank you for confirming by email reply.</p>
         </div>
@@ -405,7 +410,7 @@ export async function POST(req: NextRequest) {
       const { data, error } = await resend.emails.send({
         from: 'Connections CalAIM <noreply@carehomefinders.com>',
         to: [row.adminEmail],
-        ...(replyToEmails.length ? { replyTo: replyToEmails } : {}),
+        ...(effectiveReplyToEmails.length ? { replyTo: effectiveReplyToEmails } : {}),
         subject: effectiveSubject,
         html,
       });
@@ -422,7 +427,7 @@ export async function POST(req: NextRequest) {
           isTest,
           success: false,
           error: error.message,
-          replyToEmails,
+          replyToEmails: effectiveReplyToEmails,
           sentBy: authz.email || null,
           sentAt: admin.firestore.FieldValue.serverTimestamp(),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -439,7 +444,7 @@ export async function POST(req: NextRequest) {
           isTest,
           success: true,
           providerMessageId: data?.id || null,
-          replyToEmails,
+          replyToEmails: effectiveReplyToEmails,
           sentBy: authz.email || null,
           sentAt: admin.firestore.FieldValue.serverTimestamp(),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
