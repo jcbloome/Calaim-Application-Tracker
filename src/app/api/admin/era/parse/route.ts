@@ -113,6 +113,8 @@ type ClaimMatchResult = {
   matchedPaidTotal: number;
   paidDelta: number | null;
   sampleRows: EraRow[];
+  isConnectionsPaidRcfe: boolean;
+  potentialDuplicatePayment: boolean;
   canPush: boolean;
   proposedMatchFields: Record<string, string>;
 };
@@ -393,8 +395,6 @@ async function fetchSubmittedClaimsForTable(params: {
     const pageRows = Array.isArray(data?.Result) ? data.Result : [];
     for (const row of pageRows) {
       const claim = normalizeSubmittedClaim(row, params.tableName, params.proc);
-      const statusToken = normalizeLookupToken(claim.claimStatus);
-      if (statusToken === normalizeLookupToken('Connections Paid RCFE')) continue;
       claims.push(claim);
     }
     if (pageRows.length < pageSize) break;
@@ -506,6 +506,7 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
   const matchedUniquePaidByRow = new Map<string, number>();
   const matchedEraRowKeys = new Set<string>();
   const results: ClaimMatchResult[] = relevantClaims.map((claim) => {
+    const isConnectionsPaidRcfe = normalizeLookupToken(claim.claimStatus) === normalizeLookupToken('Connections Paid RCFE');
     const claimClientId2 = normalizeLookupToken(claim.clientId2);
     const claimMcpCin = normalizeLookupToken(claim.mcpCin);
     const byProc = cleanRows.filter((row) => row.proc === claim.proc);
@@ -538,6 +539,7 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
     const hasIdMatch = idMatched.length > 0;
     const hasDateMatch = withDateOverlap.length > 0 || claim.serviceWindows.length === 0;
     const matched = matchedRows.length > 0;
+    const potentialDuplicatePayment = isConnectionsPaidRcfe && matched;
     const confidence: ClaimMatchResult['confidence'] = !matched
       ? 'none'
       : exactAmount && hasDateMatch
@@ -545,15 +547,23 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
         : hasDateMatch
           ? 'medium'
           : 'low';
-    const reason = !hasIdMatch
-      ? 'No ACNT/Client_ID2 or ICN/MCP_CIN match in parsed ERA rows.'
-      : !hasDateMatch
-        ? 'ID matched, but no service-date overlap was found.'
-        : exactAmount
-          ? 'ID, date window, and amount align.'
-          : 'ID and dates align; amount differs.';
+    const reason = potentialDuplicatePayment
+      ? exactAmount
+        ? 'Claim was already marked Connections Paid RCFE and matches a current ERA payment (amount/date aligned): potential duplicate MCP payment.'
+        : 'Claim was already marked Connections Paid RCFE and matches current ERA lines: potential duplicate MCP payment.'
+      : !hasIdMatch
+        ? 'No ACNT/Client_ID2 or ICN/MCP_CIN match in parsed ERA rows.'
+        : !hasDateMatch
+          ? 'ID matched, but no service-date overlap was found.'
+          : exactAmount
+            ? 'ID, date window, and amount align.'
+            : 'ID and dates align; amount differs.';
     const proposedMatchFields = buildProposedMatchFields(claim, matchedRows, matchedPaidTotal);
-    const canPush = matched && claim.sourceTable === 'CalAIM_Claim_Submit_RCFE_H2022' && Boolean(claim.recordKeyField && claim.recordKeyValue);
+    const canPush =
+      matched &&
+      !isConnectionsPaidRcfe &&
+      claim.sourceTable === 'CalAIM_Claim_Submit_RCFE_H2022' &&
+      Boolean(claim.recordKeyField && claim.recordKeyValue);
     return {
       sourceTable: claim.sourceTable,
       proc: claim.proc,
@@ -573,6 +583,8 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
       matchedPaidTotal,
       paidDelta,
       sampleRows: matchedRows.slice(0, 5),
+      isConnectionsPaidRcfe,
+      potentialDuplicatePayment,
       canPush,
       proposedMatchFields,
     };
@@ -584,6 +596,7 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
   const mediumConfidence = results.filter((r) => r.confidence === 'medium').length;
   const lowConfidence = results.filter((r) => r.confidence === 'low').length;
   const unmatchedClaims = totalClaims - matchedClaims;
+  const potentialDuplicatePayments = results.filter((r) => r.potentialDuplicatePayment).length;
   const submittedChargesTotal = Number(
     results
       .map((r) => r.totalCharges)
@@ -605,6 +618,7 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
       highConfidence,
       mediumConfidence,
       lowConfidence,
+      potentialDuplicatePayments,
       submittedChargesTotal,
       matchedPaidTotal,
       variance: Number((matchedPaidTotal - submittedChargesTotal).toFixed(2)),

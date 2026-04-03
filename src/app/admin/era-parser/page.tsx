@@ -80,6 +80,7 @@ type EraClaimMatchSummary = {
   highConfidence: number;
   mediumConfidence: number;
   lowConfidence: number;
+  potentialDuplicatePayments: number;
   submittedChargesTotal: number;
   matchedPaidTotal: number;
   variance: number;
@@ -104,6 +105,8 @@ type EraClaimMatchResult = {
   matchedPaidTotal: number;
   paidDelta: number | null;
   sampleRows: EraRow[];
+  isConnectionsPaidRcfe: boolean;
+  potentialDuplicatePayment: boolean;
   canPush: boolean;
   proposedMatchFields: Record<string, string>;
 };
@@ -404,6 +407,7 @@ const toClaimMatchCsv = (rows: EraClaimMatchResult[], summary: EraClaimMatchSumm
     'high_confidence',
     'medium_confidence',
     'low_confidence',
+    'potential_duplicate_payments',
     'submitted_charges_total',
     'matched_paid_total',
     'variance',
@@ -419,6 +423,8 @@ const toClaimMatchCsv = (rows: EraClaimMatchResult[], summary: EraClaimMatchSumm
     'matched',
     'confidence',
     'reason',
+    'is_connections_paid_rcfe',
+    'potential_duplicate_payment',
     'matched_rows',
     'matched_paid_total_claim',
     'paid_delta',
@@ -437,6 +443,7 @@ const toClaimMatchCsv = (rows: EraClaimMatchResult[], summary: EraClaimMatchSumm
     high_confidence: summary?.highConfidence ?? '',
     medium_confidence: summary?.mediumConfidence ?? '',
     low_confidence: summary?.lowConfidence ?? '',
+    potential_duplicate_payments: summary?.potentialDuplicatePayments ?? '',
     submitted_charges_total:
       typeof summary?.submittedChargesTotal === 'number' ? Number(summary.submittedChargesTotal).toFixed(2) : '',
     matched_paid_total: typeof summary?.matchedPaidTotal === 'number' ? Number(summary.matchedPaidTotal).toFixed(2) : '',
@@ -462,6 +469,7 @@ const toClaimMatchCsv = (rows: EraClaimMatchResult[], summary: EraClaimMatchSumm
       summaryBase.high_confidence,
       summaryBase.medium_confidence,
       summaryBase.low_confidence,
+      summaryBase.potential_duplicate_payments,
       summaryBase.submitted_charges_total,
       summaryBase.matched_paid_total,
       summaryBase.variance,
@@ -477,6 +485,8 @@ const toClaimMatchCsv = (rows: EraClaimMatchResult[], summary: EraClaimMatchSumm
       row.matched ? 'yes' : 'no',
       row.confidence,
       row.reason,
+      row.isConnectionsPaidRcfe ? 'yes' : 'no',
+      row.potentialDuplicatePayment ? 'yes' : 'no',
       row.matchedRows,
       Number(row.matchedPaidTotal || 0).toFixed(2),
       typeof row.paidDelta === 'number' ? Number(row.paidDelta).toFixed(2) : '',
@@ -1821,8 +1831,9 @@ export default function EraParserPage() {
                 <div>
                   <div className="text-sm font-medium">Match submitted claims (Caspio)</div>
                   <div className="text-xs text-muted-foreground">
-                    Pulls H2022/T2038 submitted claims from Caspio (excluding Claim_Status &quot;Connections Paid RCFE&quot;), matches
-                    Client_ID2 to ACNT and MCP_CIN to ICN, then compares service dates and amount.
+                    Pulls H2022/T2038 submitted claims from Caspio, matches Client_ID2 to ACNT and MCP_CIN to ICN, then compares
+                    service dates and amount. Claims already marked Claim_Status &quot;Connections Paid RCFE&quot; are checked and flagged as
+                    potential duplicate MCP payments when they match current ERA lines.
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1845,7 +1856,8 @@ export default function EraParserPage() {
               {claimMatchSummary ? (
                 <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
                   {claimMatchSummary.matchedClaims}/{claimMatchSummary.totalClaims} matched • High {claimMatchSummary.highConfidence} • Medium{' '}
-                  {claimMatchSummary.mediumConfidence} • Low {claimMatchSummary.lowConfidence} • Unmatched {claimMatchSummary.unmatchedClaims}
+                  {claimMatchSummary.mediumConfidence} • Low {claimMatchSummary.lowConfidence} • Unmatched {claimMatchSummary.unmatchedClaims} •
+                  Potential duplicates {claimMatchSummary.potentialDuplicatePayments}
                   <br />
                   Submitted ${Number(claimMatchSummary.submittedChargesTotal || 0).toFixed(2)} • Matched paid $
                   {Number(claimMatchSummary.matchedPaidTotal || 0).toFixed(2)} • Variance $
@@ -1912,6 +1924,7 @@ export default function EraParserPage() {
                     <div key={`${match.sourceTable}-${match.primaryKey}`} className="rounded-md border p-2 text-xs space-y-1">
                       <div className="font-medium">
                         {match.proc} • {match.sourceTable} • Claim {match.primaryKey}
+                        {match.potentialDuplicatePayment ? ' • Potential duplicate MCP payment' : ''}
                       </div>
                       <div className="text-muted-foreground">
                         Status: {match.claimStatus || '—'} • Client_ID2: {match.clientId2 || '—'} • MCP_CIN: {match.mcpCin || '—'} • Charges $
