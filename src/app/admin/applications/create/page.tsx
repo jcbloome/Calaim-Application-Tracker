@@ -11,7 +11,7 @@ import { ArrowLeft, Bell, FileText, Loader2, RotateCcw, Upload, Users } from 'lu
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
-import { addDoc, collection, doc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -553,10 +553,13 @@ export default function CreateApplicationPage() {
   const [serviceRequestWarnings, setServiceRequestWarnings] = useState<string[]>([]);
   const [, setServiceRequestParseMode] = useState<'none' | 'text' | 'vision'>('none');
   const [serviceRequestTextPreview, setServiceRequestTextPreview] = useState('');
+  const [ilsSpreadsheetFileName, setIlsSpreadsheetFileName] = useState('');
   const [ilsImportRows, setIlsImportRows] = useState<KaiserIlsImportRow[]>([]);
   const [ilsImportSelected, setIlsImportSelected] = useState<Record<string, boolean>>({});
+  const [quickViewIlsRowId, setQuickViewIlsRowId] = useState('');
   const [isParsingIlsSpreadsheet, setIsParsingIlsSpreadsheet] = useState(false);
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
+  const [isDeletingCreatedIlsRecords, setIsDeletingCreatedIlsRecords] = useState(false);
   const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
   const ilsSpreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -655,8 +658,16 @@ export default function CreateApplicationPage() {
     () => ilsImportRows.filter((row) => Boolean(ilsImportSelected[row.rowId])),
     [ilsImportRows, ilsImportSelected]
   );
+  const selectedCreatedIlsRows = useMemo(
+    () => selectedIlsRows.filter((row) => Boolean(String(row.applicationId || '').trim())),
+    [selectedIlsRows]
+  );
+  const quickViewIlsRow = useMemo(
+    () => ilsImportRows.find((row) => row.rowId === quickViewIlsRowId) || null,
+    [ilsImportRows, quickViewIlsRowId]
+  );
   const caspioFieldPreview = useMemo(() => {
-    const sample = selectedIlsRows[0] || null;
+    const sample = quickViewIlsRow;
     if (!sample) return [] as Array<{ source: string; caspioField: string; value: string }>;
     const sourceValueMap: Record<string, string> = {
       memberFirstName: sample.memberFirstName,
@@ -682,10 +693,11 @@ export default function CreateApplicationPage() {
       caspioField,
       value: String(sourceValueMap[source] || '').trim() || '—',
     }));
-  }, [selectedIlsRows]);
+  }, [quickViewIlsRow]);
 
   const parseIlsSpreadsheetFile = async (file: File) => {
     setIsParsingIlsSpreadsheet(true);
+    setIlsSpreadsheetFileName(String(file?.name || '').trim());
     try {
       const XLSX = await import('xlsx');
       const buffer = await file.arrayBuffer();
@@ -758,6 +770,7 @@ export default function CreateApplicationPage() {
       });
       setIlsImportRows(parsed);
       setIlsImportSelected(nextSelected);
+      setQuickViewIlsRowId(parsed[0]?.rowId || '');
       toast({
         title: 'Spreadsheet parsed',
         description: `Loaded ${parsed.length} Kaiser ILS row(s).`,
@@ -771,6 +784,20 @@ export default function CreateApplicationPage() {
     } finally {
       setIsParsingIlsSpreadsheet(false);
     }
+  };
+
+  const clearIlsSpreadsheetImport = () => {
+    setIlsImportRows([]);
+    setIlsImportSelected({});
+    setQuickViewIlsRowId('');
+    setIlsSpreadsheetFileName('');
+    if (ilsSpreadsheetInputRef.current) {
+      ilsSpreadsheetInputRef.current.value = '';
+    }
+    toast({
+      title: 'Spreadsheet upload removed',
+      description: 'Spreadsheet rows were cleared. You can upload again and start over.',
+    });
   };
 
   const applyStaffToSelectedIlsRows = () => {
@@ -908,6 +935,63 @@ export default function CreateApplicationPage() {
       toast({ title: 'Batch create finished', description: `Processed ${selectedIlsRows.length} selected row(s).` });
     } finally {
       setIsCreatingIlsRecords(false);
+    }
+  };
+
+  const deleteCreatedIlsRecords = async () => {
+    if (!firestore) return;
+    if (!selectedCreatedIlsRows.length) {
+      toast({
+        title: 'No created records selected',
+        description: 'Select one or more rows that already created application records.',
+      });
+      return;
+    }
+    setIsDeletingCreatedIlsRecords(true);
+    let deletedCount = 0;
+    try {
+      for (const row of selectedCreatedIlsRows) {
+        const applicationId = String(row.applicationId || '').trim();
+        if (!applicationId) continue;
+        try {
+          await deleteDoc(doc(firestore, 'applications', applicationId));
+          const notifSnap = await getDocs(
+            query(collection(firestore, 'staff_notifications'), where('applicationId', '==', applicationId))
+          );
+          if (!notifSnap.empty) {
+            const batch = writeBatch(firestore);
+            notifSnap.docs.forEach((d) => batch.delete(d.ref));
+            await batch.commit();
+          }
+          deletedCount += 1;
+          setIlsImportRows((prev) =>
+            prev.map((r) =>
+              r.rowId === row.rowId
+                ? {
+                    ...r,
+                    createStatus: 'idle',
+                    applicationId: '',
+                    statusNote: 'Created application deleted (ready to recreate)',
+                  }
+                : r
+            )
+          );
+        } catch (err: any) {
+          setIlsImportRows((prev) =>
+            prev.map((r) =>
+              r.rowId === row.rowId
+                ? { ...r, statusNote: `Delete created app failed: ${String(err?.message || 'Unknown error')}` }
+                : r
+            )
+          );
+        }
+      }
+      toast({
+        title: 'Delete created records complete',
+        description: `Deleted ${deletedCount} of ${selectedCreatedIlsRows.length} selected created application record(s).`,
+      });
+    } finally {
+      setIsDeletingCreatedIlsRecords(false);
     }
   };
 
@@ -1227,6 +1311,7 @@ export default function CreateApplicationPage() {
     setServiceRequestParsedFields([]);
     setServiceRequestWarnings([]);
     setServiceRequestTextPreview('');
+    setIlsSpreadsheetFileName('');
     setIlsImportRows([]);
     setIlsImportSelected({});
     if (serviceRequestFileInputRef.current) {
@@ -1668,7 +1753,7 @@ export default function CreateApplicationPage() {
                     <div>
                       <div className="font-medium">Kaiser (ILS) Spreadsheet Parser</div>
                       <div className="text-xs text-muted-foreground">
-                        Upload an Excel file from Kaiser ILS to parse authorization dates/fields, create application records, assign staff, and push to Caspio.
+                        Upload an Excel file from Kaiser ILS or a single authorization-sheet PDF to parse fields, create application records, assign staff, and push to Caspio.
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1694,9 +1779,26 @@ export default function CreateApplicationPage() {
                       <Button type="button" variant="outline" onClick={applyStaffToSelectedIlsRows} disabled={selectedIlsRows.length === 0}>
                         Assign Staff to Selected
                       </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={clearIlsSpreadsheetImport}
+                        disabled={isParsingIlsSpreadsheet || (ilsImportRows.length === 0 && !ilsSpreadsheetFileName)}
+                      >
+                        Delete Spreadsheet Upload
+                      </Button>
                       <Button type="button" variant="outline" onClick={createIlsSkeletonApplications} disabled={isCreatingIlsRecords || selectedIlsRows.length === 0}>
                         {isCreatingIlsRecords ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         Create Selected Records
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={deleteCreatedIlsRecords}
+                        disabled={isDeletingCreatedIlsRecords || selectedCreatedIlsRows.length === 0}
+                      >
+                        {isDeletingCreatedIlsRecords ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Delete Created Records
                       </Button>
                       <Button type="button" onClick={pushSelectedIlsRowsToCaspio} disabled={isPushingIlsRows || selectedIlsRows.length === 0}>
                         {isPushingIlsRows ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -1704,13 +1806,81 @@ export default function CreateApplicationPage() {
                       </Button>
                     </div>
                   </div>
+                  <div className="rounded-md border bg-white/80 p-2 space-y-2">
+                    <div className="text-xs font-medium">Single authorization sheet PDF parser</div>
+                    <input
+                      ref={serviceRequestFileInputRef}
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const selected = e.target.files?.[0] || null;
+                        setServiceRequestFile(selected);
+                        setServiceRequestParsedFields([]);
+                        setServiceRequestWarnings([]);
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => serviceRequestFileInputRef.current?.click()}
+                        disabled={isParsingServiceRequest}
+                      >
+                        Upload Single Auth PDF
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={parseServiceRequestPdfAndApply}
+                        disabled={!serviceRequestFile || isParsingServiceRequest}
+                      >
+                        {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Parse Single Auth PDF
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={clearServiceRequestFile}
+                        disabled={!serviceRequestFile || isParsingServiceRequest}
+                      >
+                        Delete Single Auth PDF
+                      </Button>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Spreadsheet file: {ilsSpreadsheetFileName || 'None'} • Single auth PDF: {serviceRequestFile?.name || 'None'}
+                    </div>
+                    {serviceRequestParsedFields.length > 0 ? (
+                      <div className="text-xs text-green-700">
+                        Parsed via PDF: {serviceRequestParsedFields.join(', ')}
+                      </div>
+                    ) : null}
+                    {serviceRequestWarnings.length > 0 ? (
+                      <div className="text-xs text-amber-700">
+                        {serviceRequestWarnings.join(' ')}
+                      </div>
+                    ) : null}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     Selected rows: {selectedIlsRows.length} / {ilsImportRows.length}
                   </div>
+                  <div className="text-xs text-muted-foreground">
+                    Created records in selection: {selectedCreatedIlsRows.length}
+                  </div>
+                  {ilsImportRows.length > 0 && !quickViewIlsRow ? (
+                    <div className="text-xs text-muted-foreground">
+                      Click <span className="font-medium">Quick View</span> on any row to preview its full Caspio field mapping.
+                    </div>
+                  ) : null}
                   {caspioFieldPreview.length > 0 ? (
                     <div className="rounded border bg-white p-2">
                       <div className="text-xs font-medium mb-1">
-                        Caspio field match preview (first selected row)
+                        Caspio field match preview (quick view)
+                      </div>
+                      <div className="text-xs text-muted-foreground mb-2">
+                        {quickViewIlsRow
+                          ? `${quickViewIlsRow.memberLastName}, ${quickViewIlsRow.memberFirstName} • Auth ${quickViewIlsRow.authorizationNumberT2038 || '—'}`
+                          : 'No row selected'}
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-xs">
                         {caspioFieldPreview.map((item) => (
@@ -1727,7 +1897,7 @@ export default function CreateApplicationPage() {
                       <table className="w-full text-xs">
                         <thead className="bg-slate-50">
                           <tr className="text-left">
-                            <th className="px-2 py-1.5">Pick</th>
+                            <th className="px-2 py-1.5">Pick / Quick View</th>
                             <th className="px-2 py-1.5">Member</th>
                             <th className="px-2 py-1.5">Auth #</th>
                             <th className="px-2 py-1.5">Start</th>
@@ -1740,12 +1910,23 @@ export default function CreateApplicationPage() {
                           {ilsImportRows.map((row) => (
                             <tr key={row.rowId} className="border-t">
                               <td className="px-2 py-1.5">
-                                <Checkbox
-                                  checked={Boolean(ilsImportSelected[row.rowId])}
-                                  onCheckedChange={(checked) =>
-                                    setIlsImportSelected((prev) => ({ ...prev, [row.rowId]: Boolean(checked) }))
-                                  }
-                                />
+                                <div className="flex items-center gap-2">
+                                  <Checkbox
+                                    checked={Boolean(ilsImportSelected[row.rowId])}
+                                    onCheckedChange={(checked) =>
+                                      setIlsImportSelected((prev) => ({ ...prev, [row.rowId]: Boolean(checked) }))
+                                    }
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant={quickViewIlsRowId === row.rowId ? 'default' : 'outline'}
+                                    size="sm"
+                                    className="h-7 px-2 text-[11px]"
+                                    onClick={() => setQuickViewIlsRowId(row.rowId)}
+                                  >
+                                    Quick View
+                                  </Button>
+                                </div>
                               </td>
                               <td className="px-2 py-1.5 whitespace-nowrap">{`${row.memberLastName}, ${row.memberFirstName}`}</td>
                               <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationNumberT2038 || '—'}</td>
@@ -1924,87 +2105,6 @@ export default function CreateApplicationPage() {
                       ? `${eligibilityScreenshotFiles.length} file(s) selected`
                       : 'Upload one or more screenshot pages.'}
                   </div>
-                </div>
-                <div className="md:col-span-2 p-3 border rounded-md bg-blue-50/60">
-                  <Label htmlFor="serviceRequestPdf">Service Request Form (Kaiser PDF)</Label>
-                  <Input
-                    id="serviceRequestPdf"
-                    ref={serviceRequestFileInputRef}
-                    type="file"
-                    accept=".pdf,application/pdf"
-                    className="mt-2"
-                    onChange={(e) => {
-                      const selected = e.target.files?.[0] || null;
-                      setServiceRequestFile(selected);
-                      setServiceRequestParsedFields([]);
-                      setServiceRequestWarnings([]);
-                    }}
-                  />
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={parseServiceRequestPdfAndApply}
-                        disabled={!serviceRequestFile || isParsingServiceRequest}
-                      >
-                        {isParsingServiceRequest ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Parsing PDF...
-                          </>
-                        ) : (
-                          <>
-                            <FileText className="mr-2 h-4 w-4" />
-                            Parse PDF & Autofill
-                          </>
-                        )}
-                      </Button>
-                      {isParsingServiceRequest && (
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          onClick={cancelParsing}
-                        >
-                          Stop
-                        </Button>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {serviceRequestFile ? `Selected: ${serviceRequestFile.name}` : 'Upload Kaiser Service Request Form PDF'}
-                    </div>
-                    {serviceRequestFile && !isParsingServiceRequest && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={clearServiceRequestFile}
-                      >
-                        Remove file
-                      </Button>
-                    )}
-                  </div>
-                  {serviceRequestParsedFields.length > 0 && (
-                    <div className="text-xs text-green-700 mt-2">
-                      Parsed via text: {serviceRequestParsedFields.join(', ')}
-                    </div>
-                  )}
-                  {serviceRequestWarnings.length > 0 && (
-                    <div className="text-xs text-amber-700 mt-2">
-                      {serviceRequestWarnings.join(' ')}
-                    </div>
-                  )}
-                  {serviceRequestTextPreview && (
-                    <div className="mt-3 rounded-md border bg-muted/20 p-3">
-                      <div className="text-xs font-medium mb-2">
-                        Extracted Text Preview (troubleshooting, first ~8k chars)
-                      </div>
-                      <pre className="text-xs whitespace-pre-wrap break-words max-h-56 overflow-auto">
-                        {serviceRequestTextPreview}
-                      </pre>
-                    </div>
-                  )}
                 </div>
               </div>
             )}

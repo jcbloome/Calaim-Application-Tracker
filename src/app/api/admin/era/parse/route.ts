@@ -562,7 +562,6 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
     const canPush =
       matched &&
       !isConnectionsPaidRcfe &&
-      claim.sourceTable === 'CalAIM_Claim_Submit_RCFE_H2022' &&
       Boolean(claim.recordKeyField && claim.recordKeyValue);
     return {
       sourceTable: claim.sourceTable,
@@ -1035,6 +1034,8 @@ export async function POST(req: NextRequest) {
       const selectedClaimKeys = Array.isArray(body?.selectedClaimKeys)
         ? body.selectedClaimKeys.map((v: any) => String(v || '').trim()).filter(Boolean)
         : [];
+      const pushProcRaw = String(body?.pushProc || '').trim().toUpperCase();
+      const pushProc: ClaimProc | null = pushProcRaw === 'H2022' || pushProcRaw === 'T2038' ? (pushProcRaw as ClaimProc) : null;
       let matchRows = requestRows;
       if (!matchRows.length) {
         const cached = await readCachedEra(adminDb, body?.cacheKey);
@@ -1064,6 +1065,7 @@ export async function POST(req: NextRequest) {
       const keySet = new Set(selectedClaimKeys);
       const candidates = matched.claims.filter((claim) => {
         if (!claim.canPush) return false;
+        if (pushProc && claim.proc !== pushProc) return false;
         const claimKey = `${claim.sourceTable}::${claim.primaryKey}`;
         if (keySet.size > 0 && !keySet.has(claimKey)) return false;
         return true;
@@ -1095,6 +1097,7 @@ export async function POST(req: NextRequest) {
         {
           success: true,
           action: 'push_claim_match_fields',
+          pushProc: pushProc || 'ALL',
           matchQuery,
           candidates: candidates.length,
           pushed: pushed.length,

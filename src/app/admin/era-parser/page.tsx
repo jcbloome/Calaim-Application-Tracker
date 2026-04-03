@@ -115,6 +115,15 @@ type ParsePhase = 'idle' | 'loading_pdfjs' | 'opening_pdf' | 'extracting' | 'upl
 type ExtractProgress = { currentPage: number; totalPages: number; startedAtMs: number; avgMsPerPage: number };
 type OpenProgress = { loaded: number; total: number; startedAtMs: number };
 type UploadProgress = { transferred: number; total: number };
+type ClaimResultViewFilter =
+  | 'all'
+  | 'matched'
+  | 'unmatched'
+  | 'high'
+  | 'medium'
+  | 'low'
+  | 'potential_duplicates'
+  | 'variance';
 
 const getErrCode = (e: any) => String(e?.code || e?.details?.code || e?.cause?.code || '').toLowerCase();
 
@@ -536,9 +545,13 @@ export default function EraParserPage() {
   const [claimMatchFilter, setClaimMatchFilter] = useState('');
   const [claimMatchSummary, setClaimMatchSummary] = useState<EraClaimMatchSummary | null>(null);
   const [claimMatchResults, setClaimMatchResults] = useState<EraClaimMatchResult[]>([]);
+  const [claimResultViewFilter, setClaimResultViewFilter] = useState<ClaimResultViewFilter>('all');
   const [claimMatchedRowKeys, setClaimMatchedRowKeys] = useState<string[]>([]);
   const [claimMatchEvaluated, setClaimMatchEvaluated] = useState(false);
   const [pushMatchLoading, setPushMatchLoading] = useState(false);
+  const [pushSingleMatchLoading, setPushSingleMatchLoading] = useState(false);
+  const [pushTestClaimKey, setPushTestClaimKey] = useState('');
+  const [pushAuthorizationType, setPushAuthorizationType] = useState<'H2022' | 'T2038'>('H2022');
   const [pushMatchResult, setPushMatchResult] = useState<{ candidates: number; pushed: number; failed: number } | null>(null);
   const [matchSortMode, setMatchSortMode] = useState<'none' | 'matched_first' | 'unmatched_first'>('none');
   const [phase, setPhase] = useState<ParsePhase>('idle');
@@ -696,19 +709,119 @@ export default function EraParserPage() {
     return historyLookupResults.some((b) => Number(b.totalPaid || 0) > 0);
   }, [historyLookupLoading, historyLookupQuery, historyLookupResults]);
 
-  const pushReadyClaimMatches = useMemo(
-    () => claimMatchResults.filter((r) => r.canPush && r.matched && r.sourceTable === 'CalAIM_Claim_Submit_RCFE_H2022'),
-    [claimMatchResults]
+  const pushReadyClaimMatches = useMemo(() => {
+    const targetTable =
+      pushAuthorizationType === 'H2022' ? 'CalAIM_Claim_Submit_RCFE_H2022' : 'CalAIM_Claim_Submit_T2038';
+    return claimMatchResults.filter((r) => r.canPush && r.matched && r.proc === pushAuthorizationType && r.sourceTable === targetTable);
+  }, [claimMatchResults, pushAuthorizationType]);
+  const selectedPushTestClaim = useMemo(
+    () => pushReadyClaimMatches.find((m) => `${m.sourceTable}::${m.primaryKey}` === pushTestClaimKey) || null,
+    [pushReadyClaimMatches, pushTestClaimKey]
   );
+  const pushTestFieldPreview = useMemo(() => {
+    if (!selectedPushTestClaim) return [] as Array<{ appField: string; appValue: string; caspioField: string; pushValue: string }>;
+    const p = selectedPushTestClaim.proposedMatchFields || {};
+    return [
+      {
+        appField: 'matched',
+        appValue: selectedPushTestClaim.matched ? 'true' : 'false',
+        caspioField: 'Match',
+        pushValue: String(p.Match || 'Matched'),
+      },
+      {
+        appField: 'matchedPaidTotal',
+        appValue: Number(selectedPushTestClaim.matchedPaidTotal || 0).toFixed(2),
+        caspioField: 'Match_Payment_Amount',
+        pushValue: String(p.Match_Payment_Amount || ''),
+      },
+      {
+        appField: 'clientId2',
+        appValue: String(selectedPushTestClaim.clientId2 || ''),
+        caspioField: 'Match_Client_ID2_Confirm',
+        pushValue: String(p.Match_Client_ID2_Confirm || ''),
+      },
+      {
+        appField: 'sampleRows.memberFirst',
+        appValue: String(p.Match_Client_First || ''),
+        caspioField: 'Match_Client_First',
+        pushValue: String(p.Match_Client_First || ''),
+      },
+      {
+        appField: 'sampleRows.memberLast',
+        appValue: String(p.Match_Client_Last || ''),
+        caspioField: 'Match_Client_Last',
+        pushValue: String(p.Match_Client_Last || ''),
+      },
+    ];
+  }, [selectedPushTestClaim]);
+  const claimResultCounts = useMemo(() => {
+    const counts = {
+      all: claimMatchResults.length,
+      matched: 0,
+      unmatched: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      potential_duplicates: 0,
+      variance: 0,
+    };
+    for (const r of claimMatchResults) {
+      if (r.matched) counts.matched += 1;
+      else counts.unmatched += 1;
+      if (r.confidence === 'high') counts.high += 1;
+      if (r.confidence === 'medium') counts.medium += 1;
+      if (r.confidence === 'low') counts.low += 1;
+      if (r.potentialDuplicatePayment) counts.potential_duplicates += 1;
+      if (typeof r.paidDelta === 'number' && Number.isFinite(r.paidDelta) && Math.abs(r.paidDelta) > 0.01) counts.variance += 1;
+    }
+    return counts;
+  }, [claimMatchResults]);
+  const filteredClaimMatchResults = useMemo(() => {
+    switch (claimResultViewFilter) {
+      case 'matched':
+        return claimMatchResults.filter((r) => r.matched);
+      case 'unmatched':
+        return claimMatchResults.filter((r) => !r.matched);
+      case 'high':
+        return claimMatchResults.filter((r) => r.confidence === 'high');
+      case 'medium':
+        return claimMatchResults.filter((r) => r.confidence === 'medium');
+      case 'low':
+        return claimMatchResults.filter((r) => r.confidence === 'low');
+      case 'potential_duplicates':
+        return claimMatchResults.filter((r) => r.potentialDuplicatePayment);
+      case 'variance':
+        return claimMatchResults.filter(
+          (r) => typeof r.paidDelta === 'number' && Number.isFinite(r.paidDelta) && Math.abs(r.paidDelta) > 0.01
+        );
+      default:
+        return claimMatchResults;
+    }
+  }, [claimMatchResults, claimResultViewFilter]);
 
   useEffect(() => {
     setClaimMatchSummary(null);
     setClaimMatchResults([]);
+    setClaimResultViewFilter('all');
     setClaimMatchedRowKeys([]);
     setClaimMatchEvaluated(false);
+    setPushAuthorizationType('H2022');
+    setPushTestClaimKey('');
     setPushMatchResult(null);
     setMatchSortMode('none');
   }, [rows]);
+
+  useEffect(() => {
+    if (!pushReadyClaimMatches.length) {
+      setPushTestClaimKey('');
+      return;
+    }
+    const exists = pushReadyClaimMatches.some((m) => `${m.sourceTable}::${m.primaryKey}` === pushTestClaimKey);
+    if (!exists) {
+      const firstKey = `${pushReadyClaimMatches[0].sourceTable}::${pushReadyClaimMatches[0].primaryKey}`;
+      setPushTestClaimKey(firstKey);
+    }
+  }, [pushReadyClaimMatches, pushTestClaimKey]);
 
   const uploadPdfToTempStorage = async (pdfFile: File) => {
     if (!auth?.currentUser?.uid) throw new Error('Not signed in.');
@@ -1417,6 +1530,7 @@ export default function EraParserPage() {
       }
       setClaimMatchSummary((data?.summary || null) as EraClaimMatchSummary | null);
       setClaimMatchResults(Array.isArray(data?.claims) ? (data.claims as EraClaimMatchResult[]) : []);
+      setClaimResultViewFilter('all');
       setClaimMatchedRowKeys(Array.isArray(data?.matchedEraRowKeys) ? data.matchedEraRowKeys.map((v: any) => String(v)) : []);
       setClaimMatchEvaluated(true);
     } catch (e: any) {
@@ -1448,6 +1562,7 @@ export default function EraParserPage() {
           action: 'push_claim_match_fields',
           rows,
           matchQuery: claimMatchFilter,
+          pushProc: pushAuthorizationType,
           selectedClaimKeys,
         }),
       });
@@ -1471,6 +1586,50 @@ export default function EraParserPage() {
       setError(e?.message || 'Failed to push matched fields to Caspio.');
     } finally {
       setPushMatchLoading(false);
+    }
+  };
+
+  const pushSingleMatchedClaimField = async () => {
+    if (!auth?.currentUser || rows.length === 0 || !selectedPushTestClaim) return;
+    setPushSingleMatchLoading(true);
+    setError(null);
+    setErrorDetails(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const selectedClaimKeys = [`${selectedPushTestClaim.sourceTable}::${selectedPushTestClaim.primaryKey}`];
+      const res = await fetch('/api/admin/era/parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          action: 'push_claim_match_fields',
+          rows,
+          matchQuery: claimMatchFilter,
+          pushProc: pushAuthorizationType,
+          selectedClaimKeys,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Single-record push to Caspio failed (HTTP ${res.status})`);
+      }
+      setPushMatchResult({
+        candidates: Number(data?.candidates || 0),
+        pushed: Number(data?.pushed || 0),
+        failed: Number(data?.failed || 0),
+      });
+      if (Number(data?.failed || 0) > 0) {
+        const failedLines = Array.isArray(data?.failedRows)
+          ? data.failedRows.slice(0, 5).map((f: any) => `${String(f?.claimKey || 'claim')}: ${String(f?.error || 'Failed')}`)
+          : [];
+        if (failedLines.length) setErrorDetails(failedLines.join('\n'));
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to test-push selected claim to Caspio.');
+    } finally {
+      setPushSingleMatchLoading(false);
     }
   };
 
@@ -1864,23 +2023,124 @@ export default function EraParserPage() {
                   {Number(claimMatchSummary.variance || 0).toFixed(2)}
                 </div>
               ) : null}
+              {claimMatchResults.length > 0 ? (
+                <div className="rounded-md border p-2 space-y-2">
+                  <div className="text-xs font-medium">Matcher result filters (click to view list)</div>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { id: 'all', label: 'All', count: claimResultCounts.all },
+                      { id: 'matched', label: 'Matched', count: claimResultCounts.matched },
+                      { id: 'unmatched', label: 'Unmatched', count: claimResultCounts.unmatched },
+                      { id: 'high', label: 'High', count: claimResultCounts.high },
+                      { id: 'medium', label: 'Medium', count: claimResultCounts.medium },
+                      { id: 'low', label: 'Low', count: claimResultCounts.low },
+                      { id: 'potential_duplicates', label: 'Potential duplicates', count: claimResultCounts.potential_duplicates },
+                      { id: 'variance', label: 'Variance', count: claimResultCounts.variance },
+                    ] as Array<{ id: ClaimResultViewFilter; label: string; count: number }>).map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setClaimResultViewFilter(item.id)}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs ${
+                          claimResultViewFilter === item.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>{item.label}</span>
+                        <span className={claimResultViewFilter === item.id ? 'text-slate-200' : 'text-muted-foreground'}>{item.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Variance means payment amount mismatch: `paidDelta = matched ERA paid - submitted claim charges`. Overall summary variance is
+                    `matched paid total - submitted total`.
+                  </div>
+                </div>
+              ) : null}
               {claimMatchSummary ? (
                 <div className="rounded-md border p-3 space-y-2">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="text-sm font-medium">
-                      Preview Caspio Match-field updates (H2022 only): {pushReadyClaimMatches.length}
+                      Preview Caspio Match-field updates ({pushAuthorizationType}): {pushReadyClaimMatches.length}
                     </div>
-                    <Button
-                      variant="outline"
-                      onClick={pushMatchedClaimFields}
-                      disabled={pushMatchLoading || claimMatchLoading || pushReadyClaimMatches.length === 0}
-                    >
-                      {pushMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Push Match Fields to Caspio
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant={pushAuthorizationType === 'H2022' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setPushAuthorizationType('H2022')}
+                        disabled={pushMatchLoading || pushSingleMatchLoading || claimMatchLoading}
+                      >
+                        H2022
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={pushAuthorizationType === 'T2038' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setPushAuthorizationType('T2038')}
+                        disabled={pushMatchLoading || pushSingleMatchLoading || claimMatchLoading}
+                      >
+                        T2038
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={pushMatchedClaimFields}
+                        disabled={pushMatchLoading || claimMatchLoading || pushReadyClaimMatches.length === 0}
+                      >
+                        {pushMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Push {pushAuthorizationType} Match Fields
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 rounded-md border bg-slate-50/70 p-2">
+                    <div className="text-xs font-medium">Test one-record push</div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>Selected test claim:</span>
+                      <span className="font-medium text-foreground">
+                        {selectedPushTestClaim
+                          ? `${selectedPushTestClaim.primaryKey} (${selectedPushTestClaim.sourceTable})`
+                          : 'None selected'}
+                      </span>
+                    </div>
+                    <div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={pushSingleMatchedClaimField}
+                        disabled={pushSingleMatchLoading || pushMatchLoading || claimMatchLoading || !selectedPushTestClaim}
+                      >
+                        {pushSingleMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Test Push Selected Record
+                      </Button>
+                    </div>
+                    {pushTestFieldPreview.length > 0 ? (
+                      <div className="overflow-auto rounded-md border bg-white">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50">
+                            <tr className="text-left">
+                              <th className="px-2 py-1.5 whitespace-nowrap">App field</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap">App value</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap">Caspio field</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap">Value to push</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pushTestFieldPreview.map((item) => (
+                              <tr key={`${item.appField}-${item.caspioField}`} className="border-t">
+                                <td className="px-2 py-1.5 whitespace-nowrap">{item.appField}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{item.appValue || '—'}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{item.caspioField}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{item.pushValue || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">Choose a claim row below via "Set test" to preview field mapping.</div>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    This writes only `Match*` fields on `CalAIM_Claim_Submit_RCFE_H2022` and does not modify original claim fields.
+                    This writes only `Match*` fields on the selected Caspio authorization table and does not modify original claim fields.
                   </div>
                   {pushMatchResult ? (
                     <div className="rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs">
@@ -1899,6 +2159,7 @@ export default function EraParserPage() {
                             <th className="px-2 py-1.5 whitespace-nowrap">Match_Client_ID2_Confirm</th>
                             <th className="px-2 py-1.5 whitespace-nowrap">Match_Client_First</th>
                             <th className="px-2 py-1.5 whitespace-nowrap">Match_Client_Last</th>
+                            <th className="px-2 py-1.5 whitespace-nowrap">Action</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1910,6 +2171,17 @@ export default function EraParserPage() {
                               <td className="px-2 py-1.5 whitespace-nowrap">{m.proposedMatchFields?.Match_Client_ID2_Confirm || ''}</td>
                               <td className="px-2 py-1.5 whitespace-nowrap">{m.proposedMatchFields?.Match_Client_First || ''}</td>
                               <td className="px-2 py-1.5 whitespace-nowrap">{m.proposedMatchFields?.Match_Client_Last || ''}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">
+                                <Button
+                                  type="button"
+                                  variant={pushTestClaimKey === `${m.sourceTable}::${m.primaryKey}` ? 'default' : 'outline'}
+                                  size="sm"
+                                  className="h-7 px-2 text-[11px]"
+                                  onClick={() => setPushTestClaimKey(`${m.sourceTable}::${m.primaryKey}`)}
+                                >
+                                  Set test
+                                </Button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -1920,9 +2192,17 @@ export default function EraParserPage() {
               ) : null}
               {claimMatchResults.length > 0 ? (
                 <div className="space-y-2 max-h-72 overflow-auto pr-1">
-                  {claimMatchResults.slice(0, 40).map((match) => (
+                  {filteredClaimMatchResults.slice(0, 80).map((match) => (
                     <div key={`${match.sourceTable}-${match.primaryKey}`} className="rounded-md border p-2 text-xs space-y-1">
-                      <div className="font-medium">
+                      <div className="font-medium flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${
+                            match.matched ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${match.matched ? 'bg-green-600' : 'bg-red-600'}`} />
+                          {match.matched ? 'Matched' : 'Unmatched'}
+                        </span>
                         {match.proc} • {match.sourceTable} • Claim {match.primaryKey}
                         {match.potentialDuplicatePayment ? ' • Potential duplicate MCP payment' : ''}
                       </div>
@@ -1930,12 +2210,15 @@ export default function EraParserPage() {
                         Status: {match.claimStatus || '—'} • Client_ID2: {match.clientId2 || '—'} • MCP_CIN: {match.mcpCin || '—'} • Charges $
                         {typeof match.totalCharges === 'number' ? Number(match.totalCharges).toFixed(2) : '—'} • Matched paid $
                         {Number(match.matchedPaidTotal || 0).toFixed(2)} • Confidence {match.confidence}
+                        {typeof match.paidDelta === 'number' && Number.isFinite(match.paidDelta) ? ` • Delta $${Number(match.paidDelta).toFixed(2)}` : ''}
                       </div>
                       <div className="text-muted-foreground">{match.reason}</div>
                     </div>
                   ))}
-                  {claimMatchResults.length > 40 ? (
-                    <div className="text-xs text-muted-foreground">Showing first 40 of {claimMatchResults.length} matched/unmatched claims.</div>
+                  {filteredClaimMatchResults.length > 80 ? (
+                    <div className="text-xs text-muted-foreground">
+                      Showing first 80 of {filteredClaimMatchResults.length} claim(s) for filter "{claimResultViewFilter}".
+                    </div>
                   ) : null}
                 </div>
               ) : null}
@@ -1968,9 +2251,15 @@ export default function EraParserPage() {
                           if (!claimMatchEvaluated) return <span className="text-xs text-muted-foreground">Not checked</span>;
                           const matched = matchedRowKeySet.has(eraRowMatchKey(r));
                           return matched ? (
-                            <span className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">Matched</span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                              <span className="h-1.5 w-1.5 rounded-full bg-green-600" />
+                              Matched
+                            </span>
                           ) : (
-                            <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">Unmatched</span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                              <span className="h-1.5 w-1.5 rounded-full bg-red-600" />
+                              Unmatched
+                            </span>
                           );
                         })()}
                       </td>
