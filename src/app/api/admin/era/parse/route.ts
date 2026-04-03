@@ -83,6 +83,8 @@ type SubmittedClaim = {
   sourceTable: string;
   proc: ClaimProc;
   primaryKey: string;
+  recordKeyField: string | null;
+  recordKeyValue: string | null;
   claimStatus: string | null;
   clientId2: string | null;
   mcpCin: string | null;
@@ -96,6 +98,8 @@ type ClaimMatchResult = {
   sourceTable: string;
   proc: ClaimProc;
   primaryKey: string;
+  recordKeyField: string | null;
+  recordKeyValue: string | null;
   claimStatus: string | null;
   clientId2: string | null;
   mcpCin: string | null;
@@ -109,6 +113,8 @@ type ClaimMatchResult = {
   matchedPaidTotal: number;
   paidDelta: number | null;
   sampleRows: EraRow[];
+  canPush: boolean;
+  proposedMatchFields: Record<string, string>;
 };
 
 const AMOUNT_RE = /(?<!\d)(-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}|\((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\))(?!\d)/g;
@@ -204,6 +210,16 @@ const parseClaimStatus = (row: Record<string, any>) => {
   return out || null;
 };
 
+const pickClaimRecordLocator = (row: Record<string, any>) => {
+  const candidates = ['PK_ID', 'Record_ID', 'ID', 'Claim_ID', 'claim_id'];
+  for (const field of candidates) {
+    const raw = row?.[field];
+    const value = String(raw ?? '').trim();
+    if (value) return { field, value };
+  }
+  return null;
+};
+
 const parseClaimChargeFromDiscontinuousWindows = (row: Record<string, any>): number | null => {
   const parts: number[] = [];
   for (let idx = 1; idx <= 4; idx += 1) {
@@ -221,16 +237,46 @@ const parseClaimChargeFromDiscontinuousWindows = (row: Record<string, any>): num
   return Number(parts.reduce((a, b) => a + b, 0).toFixed(2));
 };
 
+const parseMemberFirstLastFromEraName = (value: unknown) => {
+  const raw = String(value || '').trim();
+  if (!raw) return { first: '', last: '' };
+  if (raw.includes(',')) {
+    const [lastRaw, firstRaw] = raw.split(',', 2);
+    return { first: String(firstRaw || '').trim(), last: String(lastRaw || '').trim() };
+  }
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { first: parts[0] || '', last: '' };
+  return { first: parts.slice(0, -1).join(' ').trim(), last: parts[parts.length - 1] || '' };
+};
+
+const buildProposedMatchFields = (claim: SubmittedClaim, matchedRows: EraRow[], matchedPaidTotal: number) => {
+  const windows = Array.isArray(claim.serviceWindows) ? claim.serviceWindows.slice(0, 4) : [];
+  const primaryRow = matchedRows[0] || null;
+  const name = parseMemberFirstLastFromEraName(primaryRow?.member_name || '');
+  const fields: Record<string, string> = {
+    Match: matchedRows.length > 0 ? 'Matched' : 'Unmatched',
+    Match_Payment_Amount: Number(matchedPaidTotal || 0).toFixed(2),
+    Match_Client_ID2_Confirm: String(claim.clientId2 || '').trim(),
+    Match_Client_First: name.first,
+    Match_Client_Last: name.last,
+  };
+  for (let idx = 0; idx < 4; idx += 1) {
+    const w = windows[idx] || { from: null, to: null };
+    fields[`Match_Days_of_Service_First${idx + 1}`] = String(w.from || '').trim();
+    fields[`Match_Days_of_Service_Last${idx + 1}`] = String(w.to || '').trim();
+  }
+  return fields;
+};
+
 const normalizeSubmittedClaim = (row: any, sourceTable: string, proc: ClaimProc): SubmittedClaim => {
   const rowObj = (row || {}) as Record<string, any>;
+  const locator = pickClaimRecordLocator(rowObj);
   const serviceWindows = CLAIM_DATE_FIELD_PAIRS.map(([firstField, lastField]) => {
     const from = parseDateLoose(rowObj?.[firstField]);
     const to = parseDateLoose(rowObj?.[lastField]);
     return { from, to };
   }).filter((w) => w.from || w.to);
-  const primaryKey =
-    String(rowObj?.PK_ID ?? rowObj?.Record_ID ?? rowObj?.ID ?? rowObj?.Claim_ID ?? rowObj?.claim_id ?? '').trim() ||
-    `${sourceTable}-${Math.random().toString(36).slice(2, 10)}`;
+  const primaryKey = String(locator?.value || '').trim() || `${sourceTable}-${Math.random().toString(36).slice(2, 10)}`;
   const totalChargesFromWindows = parseClaimChargeFromDiscontinuousWindows(rowObj);
   const totalChargesFromField = parseNumberLoose(rowObj?.Total_Charges);
   const totalCharges =
@@ -241,6 +287,8 @@ const normalizeSubmittedClaim = (row: any, sourceTable: string, proc: ClaimProc)
     sourceTable,
     proc,
     primaryKey,
+    recordKeyField: locator?.field || null,
+    recordKeyValue: locator?.value || null,
     claimStatus: parseClaimStatus(rowObj),
     clientId2: String(rowObj?.Client_ID2 ?? '').trim() || null,
     mcpCin: String(rowObj?.MCP_CIN ?? rowObj?.MediCal_Number ?? rowObj?.Medi_Cal_Number ?? '').trim() || null,
@@ -352,6 +400,39 @@ async function fetchSubmittedClaimsForTable(params: {
     if (pageRows.length < pageSize) break;
   }
   return claims;
+}
+
+async function pushMatchFieldsToCaspio(params: {
+  accessToken: string;
+  restBaseUrl: string;
+  tableName: string;
+  keyField: string;
+  keyValue: string;
+  matchFields: Record<string, string>;
+}) {
+  const allowedKeyFields = new Set(['PK_ID', 'Record_ID', 'ID', 'Claim_ID', 'claim_id']);
+  if (!allowedKeyFields.has(params.keyField)) {
+    throw new Error(`Unsupported key field for Caspio update: ${params.keyField}`);
+  }
+  const valueRaw = String(params.keyValue || '').trim();
+  if (!valueRaw) throw new Error('Missing record key value for Caspio update');
+  const whereValue = /^-?\d+(?:\.\d+)?$/.test(valueRaw) ? valueRaw : `'${valueRaw.replace(/'/g, "''")}'`;
+  const whereClause = `${params.keyField}=${whereValue}`;
+  const url = `${params.restBaseUrl}/tables/${encodeURIComponent(params.tableName)}/records?q.where=${encodeURIComponent(whereClause)}`;
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params.matchFields),
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Caspio update failed (${response.status}) for ${params.tableName} ${whereClause}: ${text || response.statusText}`);
+  }
+  return true;
 }
 
 const claimLikelyBelongsToEra = (claim: SubmittedClaim, rows: EraRow[]) => {
@@ -471,10 +552,14 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
         : exactAmount
           ? 'ID, date window, and amount align.'
           : 'ID and dates align; amount differs.';
+    const proposedMatchFields = buildProposedMatchFields(claim, matchedRows, matchedPaidTotal);
+    const canPush = matched && claim.sourceTable === 'CalAIM_Claim_Submit_RCFE_H2022' && Boolean(claim.recordKeyField && claim.recordKeyValue);
     return {
       sourceTable: claim.sourceTable,
       proc: claim.proc,
       primaryKey: claim.primaryKey,
+      recordKeyField: claim.recordKeyField,
+      recordKeyValue: claim.recordKeyValue,
       claimStatus: claim.claimStatus,
       clientId2: claim.clientId2,
       mcpCin: claim.mcpCin,
@@ -488,6 +573,8 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
       matchedPaidTotal,
       paidDelta,
       sampleRows: matchedRows.slice(0, 5),
+      canPush,
+      proposedMatchFields,
     };
   });
 
@@ -927,6 +1014,83 @@ export async function POST(req: NextRequest) {
     const decoded = await adminModule.adminAuth.verifyIdToken(idToken);
     const parsedByUid = String(decoded?.uid || '').trim();
     const action = String(body?.action || '').trim();
+
+    if (action === 'push_claim_match_fields') {
+      const requestRows = sanitizeRows(body?.rows);
+      const matchQuery = String(body?.matchQuery || '').trim();
+      const selectedClaimKeys = Array.isArray(body?.selectedClaimKeys)
+        ? body.selectedClaimKeys.map((v: any) => String(v || '').trim()).filter(Boolean)
+        : [];
+      let matchRows = requestRows;
+      if (!matchRows.length) {
+        const cached = await readCachedEra(adminDb, body?.cacheKey);
+        matchRows = cached?.rows || [];
+      }
+      if (!matchRows.length) {
+        return NextResponse.json(
+          { success: false, error: 'No ERA rows provided. Parse/open an ERA first, then retry pushing match fields.' },
+          { status: 400 }
+        );
+      }
+      const caspioConfig = getCaspioServerConfig();
+      const accessToken = await getCaspioServerAccessToken(caspioConfig);
+      const allClaims: SubmittedClaim[] = [];
+      for (const cfg of CLAIM_TABLES) {
+        const claims = await fetchSubmittedClaimsForTable({
+          accessToken,
+          restBaseUrl: caspioConfig.restBaseUrl,
+          tableName: cfg.table,
+          proc: cfg.proc,
+          pageSize: 500,
+          maxPages: 50,
+        });
+        allClaims.push(...claims);
+      }
+      const matched = matchSubmittedClaimsToEraRows(allClaims, matchRows, matchQuery);
+      const keySet = new Set(selectedClaimKeys);
+      const candidates = matched.claims.filter((claim) => {
+        if (!claim.canPush) return false;
+        const claimKey = `${claim.sourceTable}::${claim.primaryKey}`;
+        if (keySet.size > 0 && !keySet.has(claimKey)) return false;
+        return true;
+      });
+      const pushed: Array<{ claimKey: string; sourceTable: string; primaryKey: string }> = [];
+      const failed: Array<{ claimKey: string; sourceTable: string; primaryKey: string; error: string }> = [];
+      for (const claim of candidates) {
+        const claimKey = `${claim.sourceTable}::${claim.primaryKey}`;
+        try {
+          await pushMatchFieldsToCaspio({
+            accessToken,
+            restBaseUrl: caspioConfig.restBaseUrl,
+            tableName: claim.sourceTable,
+            keyField: String(claim.recordKeyField || ''),
+            keyValue: String(claim.recordKeyValue || ''),
+            matchFields: claim.proposedMatchFields || {},
+          });
+          pushed.push({ claimKey, sourceTable: claim.sourceTable, primaryKey: claim.primaryKey });
+        } catch (err: any) {
+          failed.push({
+            claimKey,
+            sourceTable: claim.sourceTable,
+            primaryKey: claim.primaryKey,
+            error: String(err?.message || err || 'Unknown error'),
+          });
+        }
+      }
+      return NextResponse.json(
+        {
+          success: true,
+          action: 'push_claim_match_fields',
+          matchQuery,
+          candidates: candidates.length,
+          pushed: pushed.length,
+          failed: failed.length,
+          pushedRows: pushed,
+          failedRows: failed,
+        },
+        { status: 200 }
+      );
+    }
 
     if (action === 'match_submitted_claims') {
       const requestRows = sanitizeRows(body?.rows);

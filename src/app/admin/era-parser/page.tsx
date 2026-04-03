@@ -89,6 +89,8 @@ type EraClaimMatchResult = {
   sourceTable: string;
   proc: 'H2022' | 'T2038';
   primaryKey: string;
+  recordKeyField: string | null;
+  recordKeyValue: string | null;
   claimStatus: string | null;
   clientId2: string | null;
   mcpCin: string | null;
@@ -102,6 +104,8 @@ type EraClaimMatchResult = {
   matchedPaidTotal: number;
   paidDelta: number | null;
   sampleRows: EraRow[];
+  canPush: boolean;
+  proposedMatchFields: Record<string, string>;
 };
 
 type ParsePhase = 'idle' | 'loading_pdfjs' | 'opening_pdf' | 'extracting' | 'uploading' | 'parsing' | 'done';
@@ -524,6 +528,8 @@ export default function EraParserPage() {
   const [claimMatchResults, setClaimMatchResults] = useState<EraClaimMatchResult[]>([]);
   const [claimMatchedRowKeys, setClaimMatchedRowKeys] = useState<string[]>([]);
   const [claimMatchEvaluated, setClaimMatchEvaluated] = useState(false);
+  const [pushMatchLoading, setPushMatchLoading] = useState(false);
+  const [pushMatchResult, setPushMatchResult] = useState<{ candidates: number; pushed: number; failed: number } | null>(null);
   const [matchSortMode, setMatchSortMode] = useState<'none' | 'matched_first' | 'unmatched_first'>('none');
   const [phase, setPhase] = useState<ParsePhase>('idle');
   const [extractProgress, setExtractProgress] = useState<ExtractProgress | null>(null);
@@ -680,11 +686,17 @@ export default function EraParserPage() {
     return historyLookupResults.some((b) => Number(b.totalPaid || 0) > 0);
   }, [historyLookupLoading, historyLookupQuery, historyLookupResults]);
 
+  const pushReadyClaimMatches = useMemo(
+    () => claimMatchResults.filter((r) => r.canPush && r.matched && r.sourceTable === 'CalAIM_Claim_Submit_RCFE_H2022'),
+    [claimMatchResults]
+  );
+
   useEffect(() => {
     setClaimMatchSummary(null);
     setClaimMatchResults([]);
     setClaimMatchedRowKeys([]);
     setClaimMatchEvaluated(false);
+    setPushMatchResult(null);
     setMatchSortMode('none');
   }, [rows]);
 
@@ -1372,6 +1384,7 @@ export default function EraParserPage() {
       return;
     }
     setClaimMatchLoading(true);
+    setPushMatchResult(null);
     setError(null);
     setErrorDetails(null);
     try {
@@ -1404,6 +1417,50 @@ export default function EraParserPage() {
       setError(e?.message || 'Failed to match submitted claims.');
     } finally {
       setClaimMatchLoading(false);
+    }
+  };
+
+  const pushMatchedClaimFields = async () => {
+    if (!auth?.currentUser || rows.length === 0 || pushReadyClaimMatches.length === 0) return;
+    setPushMatchLoading(true);
+    setError(null);
+    setErrorDetails(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const selectedClaimKeys = pushReadyClaimMatches.map((m) => `${m.sourceTable}::${m.primaryKey}`);
+      const res = await fetch('/api/admin/era/parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          action: 'push_claim_match_fields',
+          rows,
+          matchQuery: claimMatchFilter,
+          selectedClaimKeys,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Push to Caspio failed (HTTP ${res.status})`);
+      }
+      setPushMatchResult({
+        candidates: Number(data?.candidates || 0),
+        pushed: Number(data?.pushed || 0),
+        failed: Number(data?.failed || 0),
+      });
+      if (Number(data?.failed || 0) > 0) {
+        const failedLines = Array.isArray(data?.failedRows)
+          ? data.failedRows.slice(0, 5).map((f: any) => `${String(f?.claimKey || 'claim')}: ${String(f?.error || 'Failed')}`)
+          : [];
+        if (failedLines.length) setErrorDetails(failedLines.join('\n'));
+      }
+    } catch (e: any) {
+      setPushMatchResult(null);
+      setError(e?.message || 'Failed to push matched fields to Caspio.');
+    } finally {
+      setPushMatchLoading(false);
     }
   };
 
@@ -1793,6 +1850,60 @@ export default function EraParserPage() {
                   Submitted ${Number(claimMatchSummary.submittedChargesTotal || 0).toFixed(2)} • Matched paid $
                   {Number(claimMatchSummary.matchedPaidTotal || 0).toFixed(2)} • Variance $
                   {Number(claimMatchSummary.variance || 0).toFixed(2)}
+                </div>
+              ) : null}
+              {claimMatchSummary ? (
+                <div className="rounded-md border p-3 space-y-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-sm font-medium">
+                      Preview Caspio Match-field updates (H2022 only): {pushReadyClaimMatches.length}
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={pushMatchedClaimFields}
+                      disabled={pushMatchLoading || claimMatchLoading || pushReadyClaimMatches.length === 0}
+                    >
+                      {pushMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Push Match Fields to Caspio
+                    </Button>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    This writes only `Match*` fields on `CalAIM_Claim_Submit_RCFE_H2022` and does not modify original claim fields.
+                  </div>
+                  {pushMatchResult ? (
+                    <div className="rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs">
+                      Push result: {pushMatchResult.pushed}/{pushMatchResult.candidates} pushed
+                      {pushMatchResult.failed > 0 ? ` • ${pushMatchResult.failed} failed` : ''}
+                    </div>
+                  ) : null}
+                  {pushReadyClaimMatches.length > 0 ? (
+                    <div className="overflow-auto rounded-md border">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50">
+                          <tr className="text-left">
+                            <th className="px-2 py-1.5 whitespace-nowrap">Claim</th>
+                            <th className="px-2 py-1.5 whitespace-nowrap">Match</th>
+                            <th className="px-2 py-1.5 whitespace-nowrap">Match_Payment_Amount</th>
+                            <th className="px-2 py-1.5 whitespace-nowrap">Match_Client_ID2_Confirm</th>
+                            <th className="px-2 py-1.5 whitespace-nowrap">Match_Client_First</th>
+                            <th className="px-2 py-1.5 whitespace-nowrap">Match_Client_Last</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pushReadyClaimMatches.slice(0, 100).map((m) => (
+                            <tr key={`push-preview-${m.sourceTable}-${m.primaryKey}`} className="border-t">
+                              <td className="px-2 py-1.5 whitespace-nowrap">{m.primaryKey}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{m.proposedMatchFields?.Match || 'Matched'}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{m.proposedMatchFields?.Match_Payment_Amount || ''}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{m.proposedMatchFields?.Match_Client_ID2_Confirm || ''}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{m.proposedMatchFields?.Match_Client_First || ''}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{m.proposedMatchFields?.Match_Client_Last || ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {claimMatchResults.length > 0 ? (
