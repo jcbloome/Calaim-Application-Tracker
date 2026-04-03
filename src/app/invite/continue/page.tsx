@@ -20,21 +20,22 @@ function ContinueInvitePageContent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
 
-  const applicationId = String(searchParams.get('applicationId') || '').trim();
-  const returnTo = applicationId ? `/invite/continue?applicationId=${encodeURIComponent(applicationId)}` : '/invite/continue';
+  const invitedApplicationId = String(searchParams.get('applicationId') || '').trim();
+  const [applicationIdInput, setApplicationIdInput] = useState(invitedApplicationId);
+  const returnTo = invitedApplicationId ? `/invite/continue?applicationId=${encodeURIComponent(invitedApplicationId)}` : '/invite/continue';
   const [memberLastName, setMemberLastName] = useState('');
   const [memberDob, setMemberDob] = useState('');
   const [isLinking, setIsLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const canSubmit = useMemo(
-    () => Boolean(applicationId && memberLastName.trim() && memberDob.trim() && user),
-    [applicationId, memberLastName, memberDob, user]
+    () => Boolean(applicationIdInput.trim() && memberLastName.trim() && memberDob.trim() && user),
+    [applicationIdInput, memberLastName, memberDob, user]
   );
 
   const onLink = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!auth?.currentUser || !applicationId) return;
+    if (!auth?.currentUser || !applicationIdInput.trim()) return;
     setError(null);
     setIsLinking(true);
     try {
@@ -46,7 +47,7 @@ function ContinueInvitePageContent() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          applicationId,
+          applicationId: applicationIdInput.trim(),
           memberLastName: memberLastName.trim(),
           memberDob,
         }),
@@ -55,14 +56,14 @@ function ContinueInvitePageContent() {
       const result = await response.json().catch(() => null);
       const claimedCount = Number(result?.claimedCount || 0);
       if (!response.ok || claimedCount < 1) {
-        throw new Error('Could not verify invite details. Please confirm member last name and date of birth.');
+        throw new Error('Could not verify invite details. Please confirm Application ID, member last name, and DOB.');
       }
 
       toast({
         title: 'Application linked',
         description: 'You can now continue this application.',
       });
-      router.push(`/forms/cs-summary-form?applicationId=${encodeURIComponent(applicationId)}`);
+      router.push(`/forms/cs-summary-form?applicationId=${encodeURIComponent(applicationIdInput.trim())}`);
     } catch (linkError: any) {
       const message = String(linkError?.message || 'Unable to link application from invite.');
       setError(message);
@@ -84,14 +85,14 @@ function ContinueInvitePageContent() {
           <CardHeader className="text-center">
             <CardTitle>Continue Application Invite</CardTitle>
             <CardDescription>
-              Verify member details to continue the CS Summary application.
+              Verify Application ID, member last name, and DOB to continue the CS Summary application.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!applicationId && (
+            {!invitedApplicationId && (
               <Alert variant="destructive">
                 <AlertTitle>Invalid invite link</AlertTitle>
-                <AlertDescription>This link is missing an application reference.</AlertDescription>
+                <AlertDescription>No application ID detected in this link. Enter Application ID below to continue.</AlertDescription>
               </Alert>
             )}
 
@@ -119,8 +120,18 @@ function ContinueInvitePageContent() {
               </div>
             )}
 
-            {!isUserLoading && user && applicationId && (
+            {!isUserLoading && user && (
               <form onSubmit={onLink} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="invite-application-id">Application ID</Label>
+                  <Input
+                    id="invite-application-id"
+                    value={applicationIdInput}
+                    onChange={(e) => setApplicationIdInput(e.target.value)}
+                    placeholder="Enter application ID"
+                    required
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="invite-last-name">Member last name</Label>
                   <Input

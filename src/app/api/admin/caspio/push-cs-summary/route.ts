@@ -7,6 +7,7 @@ const esc = (value: unknown) => clean(value).replace(/'/g, "''");
 const looksLikeClientId2 = (fieldName: string) => /client[_\s-]*id2/i.test(clean(fieldName));
 const hasValue = (value: unknown) => clean(value).length > 0;
 const looksLikePkField = (fieldName: string) => /^pk_id$/i.test(clean(fieldName));
+const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(value));
 
 const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<string, string> | null) => {
   const memberData: Record<string, any> = {};
@@ -121,26 +122,45 @@ export async function POST(request: NextRequest) {
     const firstNameField = clean(mapping?.memberFirstName) || 'Senior_First';
     const lastNameField = clean(mapping?.memberLastName) || 'Senior_Last';
 
-    const where = `${firstNameField}='${esc(firstName)}' AND ${lastNameField}='${esc(lastName)}'`;
-    const searchUrl =
-      `${baseUrl}/tables/${membersTable}/records` +
-      `?q.where=${encodeURIComponent(where)}` +
-      `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2')}` +
-      `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
-      `&q.limit=1`;
-    const searchResponse = await fetch(searchUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    let existingRow: Record<string, any> | null = null;
-    if (searchResponse.ok) {
-      const searchJson = await searchResponse.json().catch(() => ({} as any));
-      if (Array.isArray(searchJson?.Result) && searchJson.Result.length > 0) {
-        existingRow = searchJson.Result[0] as Record<string, any>;
+    const trySearchMember = async (whereClause: string) => {
+      const searchUrl =
+        `${baseUrl}/tables/${membersTable}/records` +
+        `?q.where=${encodeURIComponent(whereClause)}` +
+        `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2')}` +
+        `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
+        `&q.limit=1`;
+      const response = await fetch(searchUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return null;
+      const json = await response.json().catch(() => ({} as any));
+      if (Array.isArray(json?.Result) && json.Result.length > 0) {
+        return json.Result[0] as Record<string, any>;
       }
+      return null;
+    };
+
+    const hintedClientId2 = clean(
+      applicationData?.clientId2 ||
+        applicationData?.client_ID2 ||
+        applicationData?.Client_ID2 ||
+        applicationData?.caspioClientId2
+    );
+
+    let existingRow: Record<string, any> | null = null;
+    if (hintedClientId2) {
+      const whereByClientId = looksLikeNumericId(hintedClientId2)
+        ? `client_ID2=${hintedClientId2}`
+        : `client_ID2='${esc(hintedClientId2)}'`;
+      existingRow = await trySearchMember(whereByClientId);
+    }
+    if (!existingRow) {
+      const where = `${firstNameField}='${esc(firstName)}' AND ${lastNameField}='${esc(lastName)}'`;
+      existingRow = await trySearchMember(where);
     }
 
     const mappedFields = buildMemberDataFromMapping(applicationData, mapping);

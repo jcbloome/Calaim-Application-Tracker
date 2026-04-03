@@ -561,10 +561,13 @@ export default function CreateApplicationPage() {
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
   const [isDeletingCreatedIlsRecords, setIsDeletingCreatedIlsRecords] = useState(false);
   const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
+  const [isPushingSingleAuthToCaspio, setIsPushingSingleAuthToCaspio] = useState(false);
+  const [isSendingFamilyInviteEmail, setIsSendingFamilyInviteEmail] = useState(false);
+  const [lastCreatedSkeleton, setLastCreatedSkeleton] = useState<{ applicationId: string; memberName: string } | null>(null);
   const ilsSpreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
   const parseAbortControllerRef = useRef<AbortController | null>(null);
-  const createApplicationRef = useRef<() => Promise<void> | void>(() => {});
+  const createApplicationRef = useRef<() => Promise<string | null> | string | null>(() => null);
   const [memberData, setMemberData] = useState(getEmptyMemberData);
 
   useEffect(() => {
@@ -1039,13 +1042,29 @@ export default function CreateApplicationPage() {
           if (!res.ok || !data?.success) {
             throw new Error(data?.message || data?.details?.rawError || `Push failed (HTTP ${res.status})`);
           }
+          const pushedClientId2 = String(data?.clientId2 || row.clientId2 || '').trim();
+          const linkedApplicationId = String(row.applicationId || '').trim();
+          if (firestore && linkedApplicationId && pushedClientId2) {
+            await setDoc(
+              doc(firestore, 'applications', linkedApplicationId),
+              {
+                clientId2: pushedClientId2,
+                client_ID2: pushedClientId2,
+                caspioClientId2: pushedClientId2,
+                caspioSent: true,
+                caspioSentDate: serverTimestamp(),
+                lastUpdated: serverTimestamp(),
+              },
+              { merge: true }
+            );
+          }
           setIlsImportRows((prev) =>
             prev.map((r) =>
               r.rowId === row.rowId
                 ? {
                     ...r,
                     pushStatus: 'pushed',
-                    pushedClientId2: String(data?.clientId2 || row.clientId2 || '').trim(),
+                    pushedClientId2,
                     statusNote: data?.message || 'Pushed to Caspio',
                   }
                 : r
@@ -1314,6 +1333,7 @@ export default function CreateApplicationPage() {
     setIlsSpreadsheetFileName('');
     setIlsImportRows([]);
     setIlsImportSelected({});
+    setLastCreatedSkeleton(null);
     if (serviceRequestFileInputRef.current) {
       serviceRequestFileInputRef.current.value = '';
     }
@@ -1326,7 +1346,7 @@ export default function CreateApplicationPage() {
     });
   };
 
-  const createApplicationForMember = async () => {
+  const createApplicationForMember = async (options?: { skipNavigate?: boolean; suppressSuccessToast?: boolean }) => {
     const isKaiserAuthReceived = intakeType === 'kaiser_auth_received_via_ils';
     const hasStandardRequired = memberData.contactPhone && memberData.contactFirstName && memberData.contactLastName;
     const hasKaiserRequired = true;
@@ -1343,7 +1363,7 @@ export default function CreateApplicationPage() {
         description: "Please fill in all required fields for this intake type.",
         variant: "destructive",
       });
-      return;
+      return null;
     }
 
     setIsCreating(true);
@@ -1509,19 +1529,26 @@ export default function CreateApplicationPage() {
         }
       }
 
-      toast({
-        title: "Application Created",
-        description: isKaiserAuthReceived
-          ? `Kaiser auth-received intake created for ${memberData.memberFirstName} ${memberData.memberLastName}.`
-          : `Application created for ${memberData.memberFirstName} ${memberData.memberLastName}. Redirecting to CS Summary form.`,
-      });
-
-      if (isKaiserAuthReceived) {
-        router.push(`/admin/applications/${applicationId}`);
-      } else {
-        // Redirect to CS Summary form with the application ID
-        router.push(`/admin/applications/create/cs-summary?applicationId=${applicationId}`);
+      if (!options?.suppressSuccessToast) {
+        toast({
+          title: "Application Created",
+          description: isKaiserAuthReceived
+            ? `Kaiser auth-received intake created for ${memberData.memberFirstName} ${memberData.memberLastName}.`
+            : `Application created for ${memberData.memberFirstName} ${memberData.memberLastName}. Redirecting to CS Summary form.`,
+        });
       }
+      const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
+      setLastCreatedSkeleton({ applicationId, memberName });
+      const shouldSkipNavigate = options?.skipNavigate ?? isKaiserAuthReceived;
+      if (!shouldSkipNavigate) {
+        if (isKaiserAuthReceived) {
+          router.push(`/admin/applications/${applicationId}`);
+        } else {
+          // Redirect to CS Summary form with the application ID
+          router.push(`/admin/applications/create/cs-summary?applicationId=${applicationId}`);
+        }
+      }
+      return applicationId;
       
     } catch (error) {
       console.error('Error creating application:', error);
@@ -1530,8 +1557,172 @@ export default function CreateApplicationPage() {
         description: "Failed to create application. Please try again.",
         variant: "destructive",
       });
+      return null;
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const familyPortalContinueLink = useMemo(() => {
+    if (!lastCreatedSkeleton?.applicationId) return '';
+    return `https://connectcalaim.com/pathway?applicationId=${encodeURIComponent(lastCreatedSkeleton.applicationId)}`;
+  }, [lastCreatedSkeleton?.applicationId]);
+
+  const familyPortalSignInLink = useMemo(() => {
+    if (!lastCreatedSkeleton?.applicationId) return '';
+    return `https://connectcalaim.com/invite/continue?applicationId=${encodeURIComponent(lastCreatedSkeleton.applicationId)}`;
+  }, [lastCreatedSkeleton?.applicationId]);
+
+  const copyToClipboard = async (label: string, value: string) => {
+    const text = String(value || '').trim();
+    if (!text) {
+      toast({ title: `${label} unavailable`, description: 'Create a skeleton application first.' });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: `${label} copied`, description: text });
+    } catch {
+      toast({ title: `Copy failed`, description: `Please copy manually: ${text}`, variant: 'destructive' });
+    }
+  };
+
+  const sendFamilyInviteEmail = async () => {
+    const applicationId = String(lastCreatedSkeleton?.applicationId || '').trim();
+    if (!applicationId) {
+      toast({ title: 'No skeleton application', description: 'Create a skeleton application first.' });
+      return;
+    }
+    const fallbackEmail = String(memberData.contactEmail || '').trim();
+    setIsSendingFamilyInviteEmail(true);
+    try {
+      const res = await fetch('/api/admin/send-cs-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId,
+          reminderType: 'email',
+          overrideEmail: fallbackEmail || undefined,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to send invite email.');
+      }
+      toast({
+        title: 'Invite email sent',
+        description: `Family invite sent for application ${applicationId}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Invite email failed',
+        description: String(error?.message || 'Unable to send family invite email.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingFamilyInviteEmail(false);
+    }
+  };
+
+  const pushSingleAuthToCaspio = async (options?: { createSkeletonFirst?: boolean }) => {
+    if (intakeType !== 'kaiser_auth_received_via_ils') {
+      toast({
+        title: 'Wrong intake type',
+        description: 'Switch to Kaiser Auth Received (via ILS) to use single-auth push.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!memberData.memberFirstName || !memberData.memberLastName) {
+      toast({
+        title: 'Missing member name',
+        description: 'Parse the single auth PDF (or enter member first/last name) before pushing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!selectedAssignedStaffName && !selectedAssignedStaffId) {
+      toast({
+        title: 'Assign staff first',
+        description: 'Select Kaiser staff before pushing this record to Caspio.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsPushingSingleAuthToCaspio(true);
+    try {
+      let createdApplicationId: string | null = null;
+      if (options?.createSkeletonFirst) {
+        createdApplicationId = await createApplicationForMember({ skipNavigate: true, suppressSuccessToast: true });
+        if (!createdApplicationId) {
+          throw new Error('Could not create skeleton application before Caspio push.');
+        }
+      }
+      const applicationData = {
+        memberFirstName: memberData.memberFirstName || '',
+        memberLastName: memberData.memberLastName || '',
+        clientId2: '',
+        memberMrn: memberData.memberMrn || '',
+        memberAddress: memberData.memberCustomaryAddress || '',
+        memberCounty: memberData.memberCustomaryCounty || '',
+        memberDob: memberData.memberDob || '',
+        memberPhone: memberData.memberPhone || '',
+        Authorization_Number_T038: memberData.Authorization_Number_T038 || '',
+        Authorization_Start_T2038: memberData.Authorization_Start_T2038 || '',
+        Authorization_End_T2038: memberData.Authorization_End_T2038 || '',
+        cptCode: '',
+        Diagnostic_Code: memberData.Diagnostic_Code || '',
+        kaiserStatus: 'Authorization Received (Doc Collection)',
+        workflowStep: 'Needs First Contact',
+        assignedStaffId: selectedAssignedStaffId || '',
+        assignedStaffName: selectedAssignedStaffName || '',
+        healthPlan: 'Kaiser',
+      };
+      const res = await fetch('/api/admin/caspio/push-cs-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationData,
+          mapping: CASPIO_PUSH_MAPPING,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.message || data?.details?.rawError || `Push failed (HTTP ${res.status})`);
+      }
+      const pushedClientId2 = String(data?.clientId2 || '').trim();
+      if (firestore && createdApplicationId && pushedClientId2) {
+        await setDoc(
+          doc(firestore, 'applications', createdApplicationId),
+          {
+            clientId2: pushedClientId2,
+            client_ID2: pushedClientId2,
+            caspioClientId2: pushedClientId2,
+            caspioSent: true,
+            caspioSentDate: serverTimestamp(),
+            lastUpdated: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+      toast({
+        title: 'Single auth pushed to Caspio',
+        description: createdApplicationId
+          ? `Created skeleton ${createdApplicationId} and pushed this member to Caspio.`
+          : 'Successfully pushed this single-auth intake to Caspio.',
+      });
+      if (createdApplicationId) {
+        router.push(`/admin/applications/${createdApplicationId}`);
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Single auth push failed',
+        description: String(error?.message || 'Unable to push single-auth intake to Caspio.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsPushingSingleAuthToCaspio(false);
     }
   };
 
@@ -1835,8 +2026,25 @@ export default function CreateApplicationPage() {
                         onClick={parseServiceRequestPdfAndApply}
                         disabled={!serviceRequestFile || isParsingServiceRequest}
                       >
-                        {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Parse Single Auth PDF
+                        {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                        {isParsingServiceRequest ? 'Parsing...' : 'Parse Single Auth PDF'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void createApplicationForMember()}
+                        disabled={isCreating || !isFormValid}
+                      >
+                        {isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Create Single Auth Skeleton
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => void pushSingleAuthToCaspio({ createSkeletonFirst: true })}
+                        disabled={isPushingSingleAuthToCaspio || isCreating}
+                      >
+                        {isPushingSingleAuthToCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Create + Push Single Auth
                       </Button>
                       <Button
                         type="button"
@@ -1850,6 +2058,9 @@ export default function CreateApplicationPage() {
                     <div className="text-xs text-muted-foreground">
                       Spreadsheet file: {ilsSpreadsheetFileName || 'None'} • Single auth PDF: {serviceRequestFile?.name || 'None'}
                     </div>
+                    <div className="text-xs text-muted-foreground">
+                      Single-auth flow: Parse PDF -> Create skeleton -> Create + Push to Caspio.
+                    </div>
                     {serviceRequestParsedFields.length > 0 ? (
                       <div className="text-xs text-green-700">
                         Parsed via PDF: {serviceRequestParsedFields.join(', ')}
@@ -1858,6 +2069,51 @@ export default function CreateApplicationPage() {
                     {serviceRequestWarnings.length > 0 ? (
                       <div className="text-xs text-amber-700">
                         {serviceRequestWarnings.join(' ')}
+                      </div>
+                    ) : null}
+                    {lastCreatedSkeleton ? (
+                      <div className="rounded-md border bg-emerald-50/60 p-2 space-y-2">
+                        <div className="text-xs font-medium">
+                          Skeleton created: <span className="font-semibold">{lastCreatedSkeleton.applicationId}</span> ({lastCreatedSkeleton.memberName})
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Share these links with family so they can sign in, continue the application, and upload required documents.
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Primary contact email: {memberData.contactEmail || 'Not entered yet'}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void copyToClipboard('Portal sign-in link', familyPortalSignInLink)}
+                          >
+                            Copy Sign-in Link
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void copyToClipboard('Portal continue link', familyPortalContinueLink)}
+                          >
+                            Copy Continue Link
+                          </Button>
+                          <Button type="button" size="sm" asChild>
+                            <Link href={`/admin/applications/${lastCreatedSkeleton.applicationId}`}>
+                              Open Created Skeleton
+                            </Link>
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => void sendFamilyInviteEmail()}
+                            disabled={isSendingFamilyInviteEmail}
+                          >
+                            {isSendingFamilyInviteEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Send Family Invite Email
+                          </Button>
+                        </div>
                       </div>
                     ) : null}
                   </div>

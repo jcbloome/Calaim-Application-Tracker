@@ -76,9 +76,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if application is in the right status
-    if (appData?.status !== 'In Progress') {
+    const statusText = String(appData?.status || '').trim();
+    const allowedStatuses = new Set([
+      'In Progress',
+      'Authorization Received (Doc Collection)',
+      'T2038 Received, Needs First Contact',
+    ]);
+    if (!allowedStatuses.has(statusText)) {
       return NextResponse.json(
-        { success: false, error: 'Application must be in "In Progress" status to send reminder' },
+        { success: false, error: 'Application status does not allow CS Summary invite reminders yet' },
         { status: 400 }
       );
     }

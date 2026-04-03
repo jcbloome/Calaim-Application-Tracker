@@ -42,7 +42,7 @@ export function CsSummaryReminderEmail({
             ⚠️ Action Required
           </h3>
           <p style={{ color: '#92400e', margin: '0', fontSize: '14px' }}>
-            To continue this application, sign in (or create an account with this invited email), then verify the member&apos;s last name and date of birth.
+            To continue this application, sign in (or create an account with this invited email), then verify Application ID, member&apos;s last name, and date of birth.
           </p>
         </div>
 
@@ -52,8 +52,8 @@ export function CsSummaryReminderEmail({
         <ol style={{ color: '#4b5563', lineHeight: '1.6', paddingLeft: '20px' }}>
           <li>Click the "Continue Application" button below</li>
           <li>Sign in or create an account with this invited email address</li>
-          <li>Enter the member&apos;s last name and date of birth to verify access</li>
-          <li>Continue the CS Summary form</li>
+          <li>Enter Application ID, member&apos;s last name, and date of birth to verify access</li>
+          <li>Continue the CS Summary form and upload required documents through the portal</li>
         </ol>
 
         <div style={{ textAlign: 'center', margin: '30px 0' }}>
@@ -86,8 +86,8 @@ export function CsSummaryReminderEmail({
           📋 Important Notice
         </h3>
         <p style={{ color: '#dc2626', margin: '0', fontSize: '14px' }}>
-          Your application cannot proceed to the next steps until the CS Member Summary is confirmed. 
-          Please complete this step as soon as possible to avoid delays in processing.
+          Your application cannot proceed to the next steps until the CS Member Summary is confirmed and required documents are uploaded in the portal.
+          Documents sent outside the portal are not part of the standard upload workflow.
         </p>
       </div>
 
@@ -133,20 +133,20 @@ Hello ${userName},
 You are invited to continue the CalAIM CS Summary application for ${memberName}.
 
 ACTION REQUIRED:
-To continue this application, sign in (or create an account with this invited email), then verify the member's last name and date of birth.
+To continue this application, sign in (or create an account with this invited email), then verify Application ID, member last name, and date of birth.
 
 What you need to do:
 1. Visit: ${confirmationUrl}
 2. Sign in or create an account with this invited email
-3. Enter the member's last name and date of birth
-4. Continue the CS Summary form
+3. Enter Application ID, member last name, and date of birth
+4. Continue the CS Summary form and upload required documents in the portal
 
 Application Details:
 Member: ${memberName}
 Application ID: ${applicationId}
 
 IMPORTANT NOTICE:
-Your application cannot proceed to the next steps until the CS Member Summary is confirmed. Please complete this step as soon as possible to avoid delays in processing.
+Your application cannot proceed to the next steps until the CS Member Summary is confirmed and required documents are uploaded in the portal. Documents sent outside the portal are not part of the standard upload workflow.
 
 Need Help?
 If you have any questions or need assistance, please contact our support team:
