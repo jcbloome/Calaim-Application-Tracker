@@ -1303,6 +1303,11 @@ export default function RcfeDataToolsPage() {
       if (value === 'temporarily_not_there') return 'Temporarily Not There';
       return 'Unverified';
     };
+    const planLabel = (value: string) => {
+      if (value === 'health_net') return 'Health Net';
+      if (value === 'kaiser') return 'Kaiser';
+      return 'Other';
+    };
     const there = pendingRcfeEmail.members.filter((m) => m.status === 'there');
     const notThere = pendingRcfeEmail.members.filter((m) => m.status === 'not_there');
     const temporarilyNotThere = pendingRcfeEmail.members.filter((m) => m.status === 'temporarily_not_there');
@@ -1313,7 +1318,7 @@ export default function RcfeDataToolsPage() {
           ? list
               .map(
                 (m) =>
-                  `- ${m.name} (${m.id}) | ${statusLabel(m.status)} | Verified by: ${m.verifiedBy || 'Not recorded'}${
+                  `- ${m.name} (${m.id}) | ${planLabel(m.planType)} | ${statusLabel(m.status)} | Verified by: ${m.verifiedBy || 'Not recorded'}${
                     m.lastVerifiedAt ? ` | ${formatDateTimeSafe(m.lastVerifiedAt)}` : ''
                   }`
               )
@@ -1326,13 +1331,15 @@ export default function RcfeDataToolsPage() {
       `RCFE: ${pendingRcfeEmail.rcfeName}`,
       `Subject: ${pendingRcfeEmail.subject}`,
       `Licensed beds on file: ${pendingRcfeEmail.licensedBedsOnFile || 'Not recorded'}`,
-      'Replies routed to: monica@carehomefinders.com',
+      'Replies routed to: john@carehomefinders.com',
       '',
       pendingRcfeEmail.intro,
       '',
-      'Please reply and confirm:',
-      '1) For each listed member, confirm whether they are still there, not there, or temporarily not there.',
-      `2) How many licensed beds your RCFE currently has${pendingRcfeEmail.licensedBedsOnFile ? ` (we currently have ${pendingRcfeEmail.licensedBedsOnFile} on file)` : ''}.`,
+      'If this roster is correct, no reply is needed.',
+      'If this roster is not correct, please reply with updates:',
+      '1) For each listed member, indicate whether they are still there, not there, or temporarily not there.',
+      '2) Any member changes/corrections we should make.',
+      `3) How many licensed beds your RCFE currently has${pendingRcfeEmail.licensedBedsOnFile ? ` (we currently have ${pendingRcfeEmail.licensedBedsOnFile} on file)` : ''}.`,
       '',
       renderMembers('Members Verified at RCFE (Confirmed There)', there),
       '',

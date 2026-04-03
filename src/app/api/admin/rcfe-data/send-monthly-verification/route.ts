@@ -72,6 +72,13 @@ const toStatusLabel = (status?: string) => {
   return 'Unverified';
 };
 
+const toPlanLabel = (planType?: string) => {
+  const normalized = String(planType || '').trim().toLowerCase();
+  if (normalized === 'health_net') return 'Health Net';
+  if (normalized === 'kaiser') return 'Kaiser';
+  return 'Other';
+};
+
 const escapeHtml = (value: unknown) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -280,7 +287,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'subject and intro are required' }, { status: 400 });
     }
 
-    const includeAllPlans = emailMode === 'email_list_only';
+    // For bulk + individual RCFE list sends, include both Health Net and Kaiser members.
+    const includeAllPlans = emailMode === 'email_list_only' || emailMode === 'bulk';
     const usableRows = rows
       .map((row) => ({
         rcfeKey: String(row?.rcfeKey || '').trim(),
@@ -319,7 +327,7 @@ export async function POST(req: NextRequest) {
     const replyToEmails = replyToContacts.healthNetEmails;
     const replyToLabels = replyToContacts.healthNetLabels;
     const replyToDisplay = replyToLabels.join(', ') || replyToEmails.join(', ');
-    const rcfeEmailListReplyTo = 'monica@carehomefinders.com';
+    const socialWorkManagerReplyTo = 'john@carehomefinders.com';
 
     const results: Array<{ to: string; rcfeName: string; id?: string; error?: string }> = [];
 
@@ -328,10 +336,11 @@ export async function POST(req: NextRequest) {
       const notAtRcfe = row.members.filter((m) => m.status === 'not_there');
       const temporarilyNotThere = row.members.filter((m) => m.status === 'temporarily_not_there');
       const unverified = row.members.filter((m) => m.status !== 'there' && m.status !== 'not_there' && m.status !== 'temporarily_not_there');
-      const effectiveReplyToEmails = emailMode === 'email_list_only' ? [rcfeEmailListReplyTo] : replyToEmails;
+      const forceManagerReplyTo = emailMode === 'email_list_only' || emailMode === 'bulk';
+      const effectiveReplyToEmails = forceManagerReplyTo ? [socialWorkManagerReplyTo] : replyToEmails;
       const effectiveReplyToDisplay =
-        emailMode === 'email_list_only'
-          ? rcfeEmailListReplyTo
+        forceManagerReplyTo
+          ? socialWorkManagerReplyTo
           : replyToDisplay || 'Assigned Health Net verification staff (not configured yet)';
 
       const buildRowsHtml = (members: VerificationMember[]) =>
@@ -342,6 +351,7 @@ export async function POST(req: NextRequest) {
               <tr>
                 <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(member.name)}</td>
                 <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(member.id)}</td>
+                <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(toPlanLabel(member.planType))}</td>
                 <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(status)}</td>
               </tr>
             `;
@@ -359,6 +369,7 @@ export async function POST(req: NextRequest) {
               <tr>
                 <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Member Name</th>
                 <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Client ID</th>
+                <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Plan</th>
                 <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f9fafb;">Current Status</th>
               </tr>
             </thead>
@@ -391,11 +402,12 @@ export async function POST(req: NextRequest) {
           ${row.customNote ? `<p style="margin-top:4px;color:#374151;"><strong>RCFE note:</strong> ${escapeHtml(row.customNote)}</p>` : ''}
           <p style="margin-top:4px;color:#6b7280;"><strong>Reply to:</strong> ${escapeHtml(effectiveReplyToDisplay)}</p>
           <p><strong>RCFE:</strong> ${escapeHtml(row.rcfeName)}</p>
-          <p style="margin-top:6px;"><strong>Please reply to confirm this roster for your RCFE.</strong></p>
+          <p style="margin-top:6px;"><strong>If this roster is correct, no reply is needed.</strong></p>
           <p style="margin-top:4px;color:#374151;">
-            Please reply and confirm:
-            <br/>1) For each listed member, confirm whether they are still there, not there, or temporarily not there.
-            <br/>2) How many licensed beds your RCFE currently has${
+            If this roster is not correct, please reply with updates:
+            <br/>1) For each listed member, indicate whether they are still there, not there, or temporarily not there.
+            <br/>2) Any member changes/corrections we should make.
+            <br/>3) How many licensed beds your RCFE currently has${
               licensedBedsOnFile ? ` (we currently have ${escapeHtml(licensedBedsOnFile)} on file)` : ''
             }.
           </p>
