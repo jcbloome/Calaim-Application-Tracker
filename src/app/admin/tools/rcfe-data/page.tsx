@@ -1794,7 +1794,6 @@ export default function RcfeDataToolsPage() {
               ) : (
                 <Badge variant="outline">Ready to resync from Caspio</Badge>
               )}
-              <Badge variant="outline">County Backfill Pending: {countyBackfillRows.length}</Badge>
               <Badge variant="outline">Beds Known (Historical): {historicalBedsKnownCount}</Badge>
               <Badge variant="outline">Already Updated: {updatedRowsCount}</Badge>
               {lastPushResult ? (
@@ -1940,7 +1939,7 @@ export default function RcfeDataToolsPage() {
                                   New RCFE
                                 </span>
                               ) : null}
-                              {allVerified && !isNewlyRegistered && (
+                              {allVerified && (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700">
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   Verified
