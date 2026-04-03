@@ -22,6 +22,7 @@ type VerificationRow = {
   rcfeName: string;
   adminName?: string;
   adminEmail: string;
+  licensedBedsOnFile?: string;
   customNote?: string;
   members: VerificationMember[];
 };
@@ -285,6 +286,7 @@ export async function POST(req: NextRequest) {
         rcfeName: String(row?.rcfeName || '').trim(),
         adminName: String(row?.adminName || '').trim(),
         adminEmail: normalizeEmail(row?.adminEmail),
+        licensedBedsOnFile: String(row?.licensedBedsOnFile || '').trim(),
         customNote: String(row?.customNote || '').trim(),
         members: Array.isArray(row?.members)
           ? row.members.map((m) => ({
@@ -364,6 +366,7 @@ export async function POST(req: NextRequest) {
           : emailMode === 'email_list_only'
             ? `[RCFE Email List ${timestamp}] ${subject}`
           : subject;
+      const licensedBedsOnFile = String(row?.licensedBedsOnFile || '').trim();
 
       const html = `
         <div style="font-family:Arial,sans-serif;max-width:760px;margin:0 auto;line-height:1.5;color:#111827;">
@@ -372,6 +375,11 @@ export async function POST(req: NextRequest) {
           <p style="margin-top:4px;color:#6b7280;"><strong>Plan scope:</strong> ${
             includeAllPlans ? 'All members included' : 'Health Net members only'
           }</p>
+          ${
+            licensedBedsOnFile
+              ? `<p style="margin-top:4px;color:#6b7280;"><strong>Licensed beds on file:</strong> ${escapeHtml(licensedBedsOnFile)}</p>`
+              : ''
+          }
           ${row.customNote ? `<p style="margin-top:4px;color:#374151;"><strong>RCFE note:</strong> ${escapeHtml(row.customNote)}</p>` : ''}
           <p style="margin-top:4px;color:#6b7280;"><strong>Reply to assigned staff:</strong> ${escapeHtml(
             replyToDisplay || 'Assigned Health Net verification staff (not configured yet)'
@@ -383,6 +391,9 @@ export async function POST(req: NextRequest) {
             <br/>1) Who is still living at your RCFE.
             <br/>2) Who is not currently at your RCFE.
             <br/>3) Any corrections we should make.
+            <br/>4) How many licensed beds your RCFE currently has${
+              licensedBedsOnFile ? ` (we currently have ${escapeHtml(licensedBedsOnFile)} on file)` : ''
+            }.
           </p>
           ${buildSection('Members Verified at RCFE (Confirmed There)', verifiedThere)}
           ${buildSection('Residents Not at RCFE (Told Not There)', notAtRcfe)}

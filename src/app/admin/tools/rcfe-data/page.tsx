@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ArrowUpDown, Building2, CheckCircle2, Mail, RefreshCw } from 'lucide-react';
+import { ArrowUpDown, Building2, CheckCircle2, Mail, RefreshCw, Sparkles } from 'lucide-react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 interface Member {
@@ -86,6 +86,7 @@ interface RcfeRegistryRecord {
   rcfeName: string;
   numberOfBeds?: string | null;
   county?: string | null;
+  registrationTimestamp?: string | null;
 }
 
 type RCFESortField =
@@ -160,6 +161,8 @@ const normalizeKey = (value: unknown) =>
   String(value || '')
     .trim()
     .toLowerCase();
+
+const NEW_RCFE_VERIFICATION_GRACE_DAYS = 45;
 
 const getPresenceStatusUi = (status: PresenceStatus | '') => {
   if (status === 'there') {
@@ -238,6 +241,7 @@ export default function RcfeDataToolsPage() {
     rcfeName: string;
     adminName: string;
     adminEmail: string;
+    licensedBedsOnFile: string;
     subject: string;
     intro: string;
     customNote: string;
@@ -476,6 +480,7 @@ export default function RcfeDataToolsPage() {
           rcfeName: String(value?.rcfeName || '').trim(),
           numberOfBeds: String(value?.numberOfBeds || '').trim() || null,
           county: String(value?.county || '').trim() || null,
+          registrationTimestamp: String(value?.registrationTimestamp || value?.Timestamp || '').trim() || null,
         };
       });
       setRcfeRegistryById(registryByIdNext);
@@ -489,6 +494,7 @@ export default function RcfeDataToolsPage() {
           rcfeName: String(value?.rcfeName || '').trim(),
           numberOfBeds: String(value?.numberOfBeds || '').trim() || null,
           county: String(value?.county || '').trim() || null,
+          registrationTimestamp: String(value?.registrationTimestamp || value?.Timestamp || '').trim() || null,
         };
       });
       setRcfeRegistryByName(registryByNameNext);
@@ -534,6 +540,7 @@ export default function RcfeDataToolsPage() {
   const loadMembers = useCallback(async () => {
     setIsLoadingMembers(true);
     let syncErrorMessage = '';
+    let syncSucceeded = false;
     try {
       if (!auth?.currentUser) throw new Error('You must be signed in to sync.');
       const idToken = await auth.currentUser.getIdToken();
@@ -547,6 +554,7 @@ export default function RcfeDataToolsPage() {
       if (!syncRes.ok || !syncData?.success) {
         throw new Error(syncData?.error || syncData?.details || `Sync failed (HTTP ${syncRes.status})`);
       }
+      syncSucceeded = true;
     } catch (syncError: any) {
       syncErrorMessage = String(syncError?.message || 'Sync failed.');
     }
@@ -554,6 +562,26 @@ export default function RcfeDataToolsPage() {
     try {
       const count = await fetchCachedMembers(!syncErrorMessage);
       await loadRcfePersistentStatus();
+      if (syncSucceeded) {
+        // Manual Caspio pulls become the new baseline for this tool view.
+        // Keep verification/notes state, but clear field overrides/drafts so pulled values show.
+        setRcfeDrafts({});
+        setRcfeFieldOverrides({});
+        setUpdatedRowTimestamps({});
+        if (progressDocRef && auth?.currentUser) {
+          await setDoc(
+            progressDocRef,
+            {
+              rcfeFieldOverrides: {},
+              lastManualCaspioPullAt: serverTimestamp(),
+              lastManualCaspioPullByUid: auth.currentUser.uid || null,
+              lastManualCaspioPullByEmail: auth.currentUser.email || null,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+      }
       if (syncErrorMessage) {
         toast({
           title: 'Sync failed, loaded cached data',
@@ -571,7 +599,7 @@ export default function RcfeDataToolsPage() {
     } finally {
       setIsLoadingMembers(false);
     }
-  }, [auth?.currentUser, fetchCachedMembers, loadRcfePersistentStatus, toast]);
+  }, [auth?.currentUser, fetchCachedMembers, loadRcfePersistentStatus, progressDocRef, toast]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -708,6 +736,17 @@ export default function RcfeDataToolsPage() {
     return rcfeRegistryByName[byNameKey] || null;
   };
 
+  const isNewlyRegisteredRcfe = useCallback((row: RCFEDirectoryRow) => {
+    const registry = getRegistryRecordForRow(row);
+    const ts = String(registry?.registrationTimestamp || '').trim();
+    if (!ts) return false;
+    const ms = new Date(ts).getTime();
+    if (!Number.isFinite(ms)) return false;
+    const ageMs = Date.now() - ms;
+    if (ageMs < 0) return true;
+    return ageMs <= NEW_RCFE_VERIFICATION_GRACE_DAYS * 24 * 60 * 60 * 1000;
+  }, [rcfeRegistryById, rcfeRegistryByName]);
+
   const getBaseDraft = (row: RCFEDirectoryRow): RcfeDraftFields => {
     const persisted = getPersistedStatusForRow(row);
     const history = getHistoricalFallbackForRow(row);
@@ -796,7 +835,7 @@ export default function RcfeDataToolsPage() {
       const toldNotThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'not_there').length;
       const temporarilyNotThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'temporarily_not_there').length;
       const unresolvedCount = Math.max(0, row.members.length - confirmedThereCount - toldNotThereCount - temporarilyNotThereCount);
-      const rcfeVerified = row.members.length > 0 && unresolvedCount === 0;
+      const rcfeVerified = isNewlyRegisteredRcfe(row) || (row.members.length > 0 && unresolvedCount === 0);
 
       if (confirmationFilter === 'rcfe_verified' && !rcfeVerified) return false;
       if (confirmationFilter === 'rcfe_not_verified' && rcfeVerified) return false;
@@ -830,7 +869,7 @@ export default function RcfeDataToolsPage() {
       const bv = String((b as any)[sortField] || '').toLowerCase();
       return av.localeCompare(bv) * dir;
     });
-  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails, rcfeVerificationNotes, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesBySignature, rcfeRegistryById, rcfeRegistryByName]);
+  }, [rcfeRows, search, sortField, sortDirection, confirmationFilter, memberPresenceStatus, memberExtraDetails, rcfeVerificationNotes, isNewlyRegisteredRcfe, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesBySignature, rcfeRegistryById, rcfeRegistryByName]);
 
   const editedRows = useMemo(
     () => rcfeRows.filter((row) => hasDraftChanges(row)),
@@ -859,6 +898,17 @@ export default function RcfeDataToolsPage() {
     });
     return Array.from(byKey.values());
   }, [editedRows, countyBackfillRows]);
+  const handleManualPullFromCaspio = useCallback(async () => {
+    if (rowsPendingPush.length > 0) {
+      toast({
+        title: 'Push changes before resync',
+        description: `You have ${rowsPendingPush.length} pending RCFE update(s). Push to Caspio first, then run manual pull.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    await loadMembers();
+  }, [rowsPendingPush.length, loadMembers, toast]);
   const updatedRowsCount = useMemo(
     () => rcfeRows.filter((row) => Boolean(updatedRowTimestamps[row.key])).length,
     [rcfeRows, updatedRowTimestamps]
@@ -913,6 +963,24 @@ export default function RcfeDataToolsPage() {
       unverified,
     };
   }, [rcfeRows, memberPresenceStatus]);
+  const rcfeVerificationSummary = useMemo(() => {
+    let verified = 0;
+    let notVerified = 0;
+    rcfeRows.forEach((row) => {
+      const confirmedThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'there').length;
+      const toldNotThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'not_there').length;
+      const temporarilyNotThereCount = row.members.filter((m) => memberPresenceStatus[m.id] === 'temporarily_not_there').length;
+      const unresolvedCount = Math.max(0, row.members.length - confirmedThereCount - toldNotThereCount - temporarilyNotThereCount);
+      const isVerified = isNewlyRegisteredRcfe(row) || (row.members.length > 0 && unresolvedCount === 0);
+      if (isVerified) verified += 1;
+      else notVerified += 1;
+    });
+    return {
+      total: rcfeRows.length,
+      verified,
+      notVerified,
+    };
+  }, [rcfeRows, memberPresenceStatus, isNewlyRegisteredRcfe]);
   const notAtRcfeMembers = useMemo(() => {
     const seen = new Set<string>();
     const rows: Array<{
@@ -1157,6 +1225,7 @@ export default function RcfeDataToolsPage() {
         rcfeName: row.RCFE_Name,
         adminName: String(getDraft(row).RCFE_Administrator || row.RCFE_Administrator || '').trim(),
         adminEmail,
+        licensedBedsOnFile: String(getDraft(row).Number_of_Beds || '').trim(),
         subject: `Verification list requested - ${row.RCFE_Name}`,
         intro: note
           ? `Per your request, we are sending your current verification list below.\n\nNote from admin team: ${note}`
@@ -1198,6 +1267,7 @@ export default function RcfeDataToolsPage() {
               rcfeName: pendingRcfeEmail.rcfeName,
               adminName: pendingRcfeEmail.adminName,
               adminEmail: pendingRcfeEmail.adminEmail,
+              licensedBedsOnFile: pendingRcfeEmail.licensedBedsOnFile,
               customNote: pendingRcfeEmail.customNote,
               members: pendingRcfeEmail.members,
             },
@@ -1255,8 +1325,15 @@ export default function RcfeDataToolsPage() {
       `Admin: ${pendingRcfeEmail.adminName || 'Unknown'}`,
       `RCFE: ${pendingRcfeEmail.rcfeName}`,
       `Subject: ${pendingRcfeEmail.subject}`,
+      `Licensed beds on file: ${pendingRcfeEmail.licensedBedsOnFile || 'Not recorded'}`,
       '',
       pendingRcfeEmail.intro,
+      '',
+      'Please reply and confirm:',
+      '1) Who is still living at your RCFE.',
+      '2) Who is not currently at your RCFE.',
+      '3) Any corrections we should make.',
+      `4) How many licensed beds your RCFE currently has${pendingRcfeEmail.licensedBedsOnFile ? ` (we currently have ${pendingRcfeEmail.licensedBedsOnFile} on file)` : ''}.`,
       '',
       renderMembers('Members Verified at RCFE (Confirmed There)', there),
       '',
@@ -1601,9 +1678,9 @@ export default function RcfeDataToolsPage() {
             Update RCFE administrator contact details and number of beds. Draft edits persist in Firestore; Caspio updates are push-only on demand.
           </p>
         </div>
-        <Button onClick={loadMembers} disabled={isLoadingMembers}>
+        <Button onClick={handleManualPullFromCaspio} disabled={isLoadingMembers}>
           <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingMembers ? 'animate-spin' : ''}`} />
-          Sync from Caspio
+          Manual Pull from Caspio
         </Button>
         <Button asChild variant="outline">
           <Link href="/admin/tools/rcfe-data/monthly-verification">
@@ -1614,6 +1691,34 @@ export default function RcfeDataToolsPage() {
 
       <Card>
         <CardContent className="pt-6 space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setConfirmationFilter('rcfe_verified')}
+              className={`rounded-md border p-3 text-left transition-colors hover:bg-muted/40 ${
+                confirmationFilter === 'rcfe_verified' ? 'border-primary bg-primary/5' : ''
+              }`}
+            >
+              <div className="text-xs text-muted-foreground">Verified RCFEs</div>
+              <div className="text-2xl font-semibold">{rcfeVerificationSummary.verified}</div>
+              <div className="text-xs text-muted-foreground">
+                {rcfeVerificationSummary.total.toLocaleString()} total RCFEs
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmationFilter('rcfe_not_verified')}
+              className={`rounded-md border p-3 text-left transition-colors hover:bg-muted/40 ${
+                confirmationFilter === 'rcfe_not_verified' ? 'border-primary bg-primary/5' : ''
+              }`}
+            >
+              <div className="text-xs text-muted-foreground">Non-Verified RCFEs</div>
+              <div className="text-2xl font-semibold">{rcfeVerificationSummary.notVerified}</div>
+              <div className="text-xs text-muted-foreground">
+                Click to filter non-verified list
+              </div>
+            </button>
+          </div>
           <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
             <div className="flex-1 max-w-lg">
               <Input
@@ -1678,6 +1783,11 @@ export default function RcfeDataToolsPage() {
                 Unverified: {memberVerificationSummary.unverified}
               </Button>
               <Badge variant="secondary">Needs Update: {editedRows.length}</Badge>
+              {rowsPendingPush.length > 0 ? (
+                <Badge variant="destructive">Push to Caspio required before resync: {rowsPendingPush.length}</Badge>
+              ) : (
+                <Badge variant="outline">Ready to resync from Caspio</Badge>
+              )}
               <Badge variant="outline">County Backfill Pending: {countyBackfillRows.length}</Badge>
               <Badge variant="outline">Beds Known (Historical): {historicalBedsKnownCount}</Badge>
               <Badge variant="outline">Already Updated: {updatedRowsCount}</Badge>
@@ -1808,13 +1918,20 @@ export default function RcfeDataToolsPage() {
                           memberPresenceStatus[m.id] === 'not_there' ||
                           memberPresenceStatus[m.id] === 'temporarily_not_there'
                       ).length;
-                      const allVerified = row.members.length > 0 && verifiedCount === row.members.length;
+                      const isNewlyRegistered = isNewlyRegisteredRcfe(row);
+                      const allVerified = isNewlyRegistered || (row.members.length > 0 && verifiedCount === row.members.length);
                       return (
                         <TableRow key={row.key}>
                           <TableCell className="max-w-[320px]">
                             <div className="flex items-center gap-2">
                               <div className="font-medium">{row.RCFE_Name || '-'}</div>
-                              {allVerified && (
+                              {isNewlyRegistered ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700">
+                                  <Sparkles className="h-3.5 w-3.5" />
+                                  New RCFE
+                                </span>
+                              ) : null}
+                              {allVerified && !isNewlyRegistered && (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700">
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   Verified
@@ -2002,7 +2119,7 @@ export default function RcfeDataToolsPage() {
                                           ) : (
                                             <Mail className="mr-2 h-3.5 w-3.5" />
                                           )}
-                                          {sendingEmailByRcfe[row.key] ? 'Sending...' : 'Send Email List'}
+                                          {sendingEmailByRcfe[row.key] ? 'Sending...' : 'Preview + Send Email List'}
                                         </Button>
                                       </div>
                                     </div>
@@ -2079,7 +2196,7 @@ export default function RcfeDataToolsPage() {
           <DialogHeader>
             <DialogTitle>Confirm RCFE Email List Send</DialogTitle>
             <DialogDescription>
-              Review the recipient and preview before sending this individual RCFE email.
+              Review the recipient and email preview. Nothing is sent until you click Send to RCFE.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -2093,6 +2210,9 @@ export default function RcfeDataToolsPage() {
               <div>
                 <span className="font-medium">Members:</span> {pendingRcfeEmail?.members.length || 0}
               </div>
+              <div>
+                <span className="font-medium">Licensed beds on file:</span> {pendingRcfeEmail?.licensedBedsOnFile || 'Not recorded'}
+              </div>
             </div>
             <div className="rounded border p-3">
               <div className="text-sm font-medium mb-2">Email preview</div>
@@ -2105,7 +2225,7 @@ export default function RcfeDataToolsPage() {
             <Button variant="outline" onClick={() => setIsRcfeEmailConfirmOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={sendPendingRcfeEmail}>Confirm + Send</Button>
+            <Button onClick={sendPendingRcfeEmail}>Send to RCFE</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

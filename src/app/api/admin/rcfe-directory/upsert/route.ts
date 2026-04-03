@@ -70,12 +70,6 @@ const getDateMs = (value: any) => {
   return Number.isFinite(d.getTime()) ? d.getTime() : 0;
 };
 
-const normalizeLooseKey = (value: unknown) =>
-  String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
-
 const normalizeCompositeKey = (value: unknown) =>
   String(value || '')
     .trim()
@@ -89,6 +83,7 @@ type RcfeRegistryRow = {
   rcfeName: string;
   numberOfBeds: string | null;
   county: string | null;
+  registrationTimestamp: string | null;
 };
 
 async function fetchRcfeRegistryBedMaps() {
@@ -99,12 +94,17 @@ async function fetchRcfeRegistryBedMaps() {
 
   const pageSize = 1000;
   const maxPages = 20;
+  let includeRegistrationTimestamp = true;
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-    const selectFields = ['RCFE_Registered_ID', 'RCFE_Name', 'Number_of_Beds', 'RCFE_County'].join(',');
-    const url = `${credentials.baseUrl}/rest/v2/tables/${encodeURIComponent(
-      'CalAIM_tbl_New_RCFE_Registration'
-    )}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}&q.select=${encodeURIComponent(selectFields)}`;
-    const res = await fetch(url, {
+    const selectFields = includeRegistrationTimestamp
+      ? ['RCFE_Registered_ID', 'RCFE_Name', 'Number_of_Beds', 'RCFE_County', 'Timestamp'].join(',')
+      : ['RCFE_Registered_ID', 'RCFE_Name', 'Number_of_Beds', 'RCFE_County'].join(',');
+    const buildUrl = (fields: string) =>
+      `${credentials.baseUrl}/rest/v2/tables/${encodeURIComponent(
+        'CalAIM_tbl_New_RCFE_Registration'
+      )}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}&q.select=${encodeURIComponent(fields)}`;
+
+    let res = await fetch(buildUrl(selectFields), {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -112,6 +112,21 @@ async function fetchRcfeRegistryBedMaps() {
       },
       cache: 'no-store',
     });
+    if (!res.ok && includeRegistrationTimestamp) {
+      const errText = await res.text().catch(() => '');
+      if (/invalid column name/i.test(errText) && /timestamp/i.test(errText)) {
+        includeRegistrationTimestamp = false;
+        const fallbackFields = ['RCFE_Registered_ID', 'RCFE_Name', 'Number_of_Beds', 'RCFE_County'].join(',');
+        res = await fetch(buildUrl(fallbackFields), {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+        });
+      }
+    }
     if (!res.ok) break;
     const data = (await res.json().catch(() => ({}))) as any;
     const rows = Array.isArray(data?.Result) ? data.Result : [];
@@ -122,7 +137,8 @@ async function fetchRcfeRegistryBedMaps() {
       const rcfeName = String(r?.RCFE_Name || '').trim();
       const numberOfBeds = String(r?.Number_of_Beds || '').trim() || null;
       const county = String(r?.RCFE_County || '').trim() || null;
-      const payload: RcfeRegistryRow = { rcfeRegisteredId, rcfeName, numberOfBeds, county };
+      const registrationTimestamp = String(r?.Timestamp || '').trim() || null;
+      const payload: RcfeRegistryRow = { rcfeRegisteredId, rcfeName, numberOfBeds, county, registrationTimestamp };
       if (rcfeRegisteredId && !byRegisteredId[rcfeRegisteredId]) {
         byRegisteredId[rcfeRegisteredId] = payload;
       }
@@ -175,7 +191,7 @@ export async function GET(req: NextRequest) {
     const historyBySignature: Record<string, { lastNumberOfBeds: string | null; lastCounty: string | null; lastUpdatedAt: string | null; lastUpdatedByEmail: string | null }> = {};
     const historyByName: Record<string, { lastNumberOfBeds: string | null; lastCounty: string | null; lastUpdatedAt: string | null; lastUpdatedByEmail: string | null }> = {};
     let progressOverrides: Record<string, { Number_of_Beds?: string | null; RCFE_County?: string | null }> = {};
-    let progressBySignature: Record<string, { Number_of_Beds?: string | null; RCFE_County?: string | null }> = {};
+    const progressBySignature: Record<string, { Number_of_Beds?: string | null; RCFE_County?: string | null }> = {};
     let rcfeRegistryByRegisteredId: Record<string, RcfeRegistryRow> = {};
     let rcfeRegistryByName: Record<string, RcfeRegistryRow> = {};
     try {
@@ -354,7 +370,7 @@ export async function POST(req: NextRequest) {
     const failed = results.filter((r) => !r.ok);
     const countyUpdateValue = String(updates.RCFE_County || '').trim();
     const uniqueRcfeRegisteredIds = Array.from(new Set(rcfeRegisteredIds));
-    let rcfeTableCountyUpdate = { attempted: 0, updated: 0, failed: 0 };
+    const rcfeTableCountyUpdate = { attempted: 0, updated: 0, failed: 0 };
     if (countyUpdateValue && uniqueRcfeRegisteredIds.length > 0) {
       rcfeTableCountyUpdate.attempted = uniqueRcfeRegisteredIds.length;
       for (const rcfeRegisteredId of uniqueRcfeRegisteredIds) {
