@@ -1932,7 +1932,10 @@ export default function RcfeDataToolsPage() {
                             <div className="flex items-center gap-2">
                               <div className="font-medium">{row.RCFE_Name || '-'}</div>
                               {isNewlyRegistered ? (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700">
+                                <span
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-700"
+                                  title="New RCFEs do not need manual verification and are automatically marked Verified."
+                                >
                                   <Sparkles className="h-3.5 w-3.5" />
                                   New RCFE
                                 </span>

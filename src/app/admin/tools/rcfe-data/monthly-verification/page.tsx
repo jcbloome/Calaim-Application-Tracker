@@ -148,7 +148,7 @@ export default function RcfeMonthlyVerificationPage() {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
-  const [memberPresenceStatus, setMemberPresenceStatus] = useState<Record<string, 'there' | 'not_there'>>({});
+  const [memberPresenceStatus, setMemberPresenceStatus] = useState<Record<string, 'there' | 'not_there' | 'temporarily_not_there'>>({});
   const [memberExtraDetails, setMemberExtraDetails] = useState<Record<string, string>>({});
   const [memberVerifiedAt, setMemberVerifiedAt] = useState<Record<string, string>>({});
   const [rcfeFieldOverrides, setRcfeFieldOverrides] = useState<Record<string, RcfeDraftFields>>({});
@@ -444,9 +444,28 @@ export default function RcfeMonthlyVerificationPage() {
     () => emailRows.filter((row) => row.members.some((member: any) => member.planType === 'kaiser')).length,
     [emailRows]
   );
+  const rcfeVerificationSummary = useMemo(() => {
+    let verified = 0;
+    let notVerified = 0;
+    healthNetEmailRows.forEach((row) => {
+      const resolvedCount = row.members.filter(
+        (member: any) =>
+          member.status === 'there' || member.status === 'not_there' || member.status === 'temporarily_not_there'
+      ).length;
+      const isVerified = row.members.length > 0 && resolvedCount === row.members.length;
+      if (isVerified) verified += 1;
+      else notVerified += 1;
+    });
+    return {
+      total: healthNetEmailRows.length,
+      verified,
+      notVerified,
+    };
+  }, [healthNetEmailRows]);
   const formatPreviewStatus = (status: string) => {
     if (status === 'there') return 'Confirmed There';
     if (status === 'not_there') return 'Told Not There';
+    if (status === 'temporarily_not_there') return 'Temporarily Not There';
     return 'Unverified';
   };
   const buildCompletePreview = useCallback(
@@ -480,8 +499,9 @@ export default function RcfeMonthlyVerificationPage() {
         args.respondToLabels.join(', ') || args.respondToEmails.join(', ') || 'Not configured';
       const verifiedThere = row.members.filter((member) => member.status === 'there');
       const notThere = row.members.filter((member) => member.status === 'not_there');
+      const temporarilyNotThere = row.members.filter((member) => member.status === 'temporarily_not_there');
       const unverified = row.members.filter(
-        (member) => member.status !== 'there' && member.status !== 'not_there'
+        (member) => member.status !== 'there' && member.status !== 'not_there' && member.status !== 'temporarily_not_there'
       );
       const listMembers = (title: string, items: typeof row.members) =>
         `${title} (${items.length})\n${
@@ -507,6 +527,8 @@ export default function RcfeMonthlyVerificationPage() {
         listMembers('Members Verified at RCFE (Confirmed There)', verifiedThere),
         '',
         listMembers('Residents Not at RCFE (Told Not There)', notThere),
+        '',
+        listMembers('Temporarily Not There (hospital, etc.)', temporarilyNotThere),
         '',
         listMembers('Members Pending Verification', unverified),
         '',
@@ -734,6 +756,8 @@ export default function RcfeMonthlyVerificationPage() {
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">{emailRows.length} RCFEs with valid recipient emails</Badge>
             <Badge variant="outline">{healthNetEmailRows.length} Health Net RCFEs ready for email</Badge>
+            <Badge variant="outline">Verified indicator: {rcfeVerificationSummary.verified}</Badge>
+            <Badge variant="secondary">Non-verified yet: {rcfeVerificationSummary.notVerified}</Badge>
             <Badge variant="outline">{dailyFollowupRows.length} Health Net RCFEs with &quot;not there&quot; members</Badge>
             <Badge variant="outline">Previous daily set: {previousDailySetRows.length}</Badge>
             <Badge variant="secondary">Kaiser RCFEs pending separate workflow: {kaiserEligibleRowsCount}</Badge>
