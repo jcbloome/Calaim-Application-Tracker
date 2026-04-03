@@ -112,6 +112,8 @@ const rowMatchesLookup = (row: EraRow, rawQuery: string) => {
   const memberToken = normalizeLookupToken(member);
   const mediCal = String(row.medi_cal_number || '').toLowerCase().trim();
   const mediCalToken = normalizeLookupToken(mediCal);
+  const hic = String(row.hic || '').toLowerCase().trim();
+  const hicToken = normalizeLookupToken(hic);
   const clientId2 = String(row.acnt || '').toLowerCase().trim();
   const clientId2Token = normalizeLookupToken(clientId2);
   const icn = String(row.icn || '').toLowerCase().trim();
@@ -121,9 +123,9 @@ const rowMatchesLookup = (row: EraRow, rawQuery: string) => {
   const nameMatchByTokens =
     qNameTokens.length > 0 &&
     qNameTokens.every((tok) => memberNormalized.includes(tok) || memberToken.includes(normalizeLookupToken(tok)));
-  const idTextMatch = mediCal.includes(qText) || clientId2.includes(qText) || icn.includes(qText);
+  const idTextMatch = hic.includes(qText) || mediCal.includes(qText) || clientId2.includes(qText) || icn.includes(qText);
   const idTokenMatch = qToken
-    ? mediCalToken.includes(qToken) || clientId2Token.includes(qToken) || icnToken.includes(qToken)
+    ? hicToken.includes(qToken) || mediCalToken.includes(qToken) || clientId2Token.includes(qToken) || icnToken.includes(qToken)
     : false;
 
   return nameMatchDirect || nameMatchByTokens || idTextMatch || idTokenMatch;

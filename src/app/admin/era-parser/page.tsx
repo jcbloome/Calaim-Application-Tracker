@@ -305,7 +305,6 @@ const toCsv = (rows: EraRow[]) => {
     'page',
     'member_name',
     'hic',
-    'medi_cal_number',
     'acnt',
     'icn',
     'proc',
@@ -344,6 +343,7 @@ export default function EraParserPage() {
   const [summary, setSummary] = useState<EraSummary | null>(null);
   const [payer, setPayer] = useState<string>('Health Net');
   const [resultsSearch, setResultsSearch] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'zero' | 'negative'>('all');
   const [batchLookupQuery, setBatchLookupQuery] = useState('');
   const [historyLookupQuery, setHistoryLookupQuery] = useState('');
   const [historyLookupLoading, setHistoryLookupLoading] = useState(false);
@@ -385,20 +385,29 @@ export default function EraParserPage() {
 
   const filteredRows = useMemo(() => {
     const q = String(resultsSearch || '').trim().toLowerCase();
-    if (!q) return rows;
+    const applyPaymentFilter = (list: EraRow[]) => {
+      if (paymentFilter === 'all') return list;
+      return list.filter((r) => {
+        const paid = typeof r.paid === 'number' && Number.isFinite(r.paid) ? r.paid : null;
+        if (paymentFilter === 'zero') return paid === 0;
+        if (paymentFilter === 'negative') return typeof paid === 'number' && paid < 0;
+        return true;
+      });
+    };
+    if (!q) return applyPaymentFilter(rows);
     const qToken = normalizeLookupToken(q);
     const qName = normalizeNameForLookup(q);
     const qNameTokens = qName.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
-    return rows.filter((r) => {
+    const base = rows.filter((r) => {
       const member = String(r.member_name || '').toLowerCase().trim();
       const memberNormalized = normalizeNameForLookup(member);
       const memberToken = normalizeLookupToken(member);
       const acnt = String(r.acnt || '').toLowerCase().trim();
       const acntToken = normalizeLookupToken(acnt);
-      const mediCal = String(r.medi_cal_number || '').toLowerCase().trim();
-      const mediCalToken = normalizeLookupToken(mediCal);
-      const clientId2 = String(r.icn || '').toLowerCase().trim();
-      const clientId2Token = normalizeLookupToken(clientId2);
+      const icn = String(r.icn || '').toLowerCase().trim();
+      const icnToken = normalizeLookupToken(icn);
+      const hic = String(r.hic || '').toLowerCase().trim();
+      const hicToken = normalizeLookupToken(hic);
       const nameMatchesByTokens =
         qNameTokens.length > 0 &&
         qNameTokens.every((tok) => memberNormalized.includes(tok) || memberToken.includes(normalizeLookupToken(tok)));
@@ -406,13 +415,16 @@ export default function EraParserPage() {
       return (
         member.includes(q) ||
         acnt.includes(q) ||
-        mediCal.includes(q) ||
-        clientId2.includes(q) ||
-        (qToken ? memberToken.includes(qToken) || acntToken.includes(qToken) || mediCalToken.includes(qToken) || clientId2Token.includes(qToken) : false) ||
+        hic.includes(q) ||
+        icn.includes(q) ||
+        (qToken
+          ? memberToken.includes(qToken) || acntToken.includes(qToken) || hicToken.includes(qToken) || icnToken.includes(qToken)
+          : false) ||
         nameMatchesByTokens
       );
     });
-  }, [rows, resultsSearch]);
+    return applyPaymentFilter(base);
+  }, [rows, resultsSearch, paymentFilter]);
 
   const batchLookup = useMemo(() => {
     const rawQuery = String(batchLookupQuery || '').trim();
@@ -434,21 +446,21 @@ export default function EraParserPage() {
       const member = String(r.member_name || '').toLowerCase().trim();
       const memberNormalized = normalizeNameForLookup(member);
       const memberToken = normalizeLookupToken(member);
-      const mediCal = String(r.medi_cal_number || '').toLowerCase().trim();
-      const mediCalToken = normalizeLookupToken(mediCal);
       const clientId2 = String(r.acnt || '').toLowerCase().trim();
       const clientId2Token = normalizeLookupToken(clientId2);
       const icn = String(r.icn || '').toLowerCase().trim();
       const icnToken = normalizeLookupToken(icn);
+      const hic = String(r.hic || '').toLowerCase().trim();
+      const hicToken = normalizeLookupToken(hic);
 
       const nameMatchDirect = member.includes(qText) || memberNormalized.includes(qName);
       const nameMatchByTokens =
         qNameTokens.length > 0 &&
         qNameTokens.every((tok) => memberNormalized.includes(tok) || memberToken.includes(normalizeLookupToken(tok)));
       const idMatch = qToken
-        ? mediCalToken.includes(qToken) || clientId2Token.includes(qToken) || icnToken.includes(qToken)
+        ? hicToken.includes(qToken) || clientId2Token.includes(qToken) || icnToken.includes(qToken)
         : false;
-      const textMatch = mediCal.includes(qText) || clientId2.includes(qText) || icn.includes(qText);
+      const textMatch = hic.includes(qText) || clientId2.includes(qText) || icn.includes(qText);
       return nameMatchDirect || nameMatchByTokens || idMatch || textMatch;
     });
 
@@ -1360,20 +1372,46 @@ export default function EraParserPage() {
               <Input
                 value={resultsSearch}
                 onChange={(e) => setResultsSearch(e.target.value)}
-                placeholder="Search by member name, Medi-Cal number, Client_ID2, or account..."
+                placeholder="Search by member name, HIC, ICN, or ACNT..."
                 className="w-full sm:max-w-md"
               />
-              <Button variant="outline" onClick={downloadCsv}>
-                <Download className="mr-2 h-4 w-4" />
-                Download CSV
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={paymentFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setPaymentFilter('all')}
+                >
+                  All payments
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={paymentFilter === 'zero' ? 'default' : 'outline'}
+                  onClick={() => setPaymentFilter('zero')}
+                >
+                  $0 only
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={paymentFilter === 'negative' ? 'default' : 'outline'}
+                  onClick={() => setPaymentFilter('negative')}
+                >
+                  Negative only
+                </Button>
+                <Button variant="outline" onClick={downloadCsv}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download CSV
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
             <div className="mb-4 rounded-md border p-3 space-y-2">
               <div className="text-sm font-medium">Batch payment lookup</div>
               <div className="text-xs text-muted-foreground">
-                Check if a member was paid in this parsed ERA batch by last/first name, Medi-Cal number, or Client_ID2.
+                Check if a member was paid in this parsed ERA batch by last/first name, HIC, ICN, or ACNT.
               </div>
               <Input
                 value={batchLookupQuery}
@@ -1409,9 +1447,8 @@ export default function EraParserPage() {
                 <thead className="bg-slate-50">
                   <tr className="text-left">
                     <th className="px-3 py-2 whitespace-nowrap">Member</th>
-                    <th className="px-3 py-2 whitespace-nowrap">Medi-Cal</th>
                     <th className="px-3 py-2 whitespace-nowrap">ACNT</th>
-                    <th className="px-3 py-2 whitespace-nowrap">Client_ID2</th>
+                    <th className="px-3 py-2 whitespace-nowrap">ICN</th>
                     <th className="px-3 py-2 whitespace-nowrap">HIC</th>
                     <th className="px-3 py-2 whitespace-nowrap">PROC</th>
                     <th className="px-3 py-2 whitespace-nowrap">Svc from</th>
@@ -1423,7 +1460,6 @@ export default function EraParserPage() {
                   {filteredRows.slice(0, 200).map((r, idx) => (
                     <tr key={`${idx}-${r.member_name}-${r.proc}`} className="border-t">
                       <td className="px-3 py-2 max-w-[360px] truncate">{r.member_name || '—'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{r.medi_cal_number || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.acnt || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.icn || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.hic || '—'}</td>
@@ -1451,7 +1487,7 @@ export default function EraParserPage() {
           <div className="rounded-md border p-3 space-y-2">
             <div className="text-sm font-medium">Search across saved ERA batches</div>
             <div className="text-xs text-muted-foreground">
-              Find whether a member was paid in prior parsed batches using name, Medi-Cal number, or Client_ID2.
+              Find whether a member was paid in prior parsed batches using name, HIC, ICN, or ACNT.
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input
