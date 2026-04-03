@@ -70,6 +70,7 @@ type EraHistoryLookupBatch = {
   matchedMembers: number;
   totalPaid: number;
   sampleRows: EraRow[];
+  matchedRowsPreview?: EraRow[];
 };
 
 type EraClaimMatchSummary = {
@@ -88,6 +89,7 @@ type EraClaimMatchResult = {
   sourceTable: string;
   proc: 'H2022' | 'T2038';
   primaryKey: string;
+  claimStatus: string | null;
   clientId2: string | null;
   mcpCin: string | null;
   totalCharges: number | null;
@@ -121,6 +123,38 @@ const normalizeNameForLookup = (value: unknown) =>
     .replace(/[^a-z0-9,\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+const rowMatchesHistoryLookup = (row: EraRow, rawQuery: string) => {
+  const qText = String(rawQuery || '').trim().toLowerCase();
+  if (!qText) return false;
+  const qToken = normalizeLookupToken(qText);
+  const qName = normalizeNameForLookup(qText);
+  const qNameTokens = qName
+    .split(/[,\s]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const member = String(row.member_name || '').toLowerCase().trim();
+  const memberNormalized = normalizeNameForLookup(member);
+  const memberToken = normalizeLookupToken(member);
+  const acnt = String(row.acnt || '').toLowerCase().trim();
+  const acntToken = normalizeLookupToken(acnt);
+  const icn = String(row.icn || '').toLowerCase().trim();
+  const icnToken = normalizeLookupToken(icn);
+  const hic = String(row.hic || '').toLowerCase().trim();
+  const hicToken = normalizeLookupToken(hic);
+
+  const nameMatchDirect = member.includes(qText) || (qName ? memberNormalized.includes(qName) : false);
+  const nameMatchByTokens =
+    qNameTokens.length > 0 &&
+    qNameTokens.every((tok) => memberNormalized.includes(tok) || memberToken.includes(normalizeLookupToken(tok)));
+  const idTextMatch = hic.includes(qText) || acnt.includes(qText) || icn.includes(qText);
+  const idTokenMatch = qToken
+    ? hicToken.includes(qToken) || acntToken.includes(qToken) || icnToken.includes(qToken)
+    : false;
+
+  return nameMatchDirect || nameMatchByTokens || idTextMatch || idTokenMatch;
+};
 
 let _pdfJsPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -372,6 +406,7 @@ const toClaimMatchCsv = (rows: EraClaimMatchResult[], summary: EraClaimMatchSumm
     'source_table',
     'proc',
     'claim_primary_key',
+    'claim_status',
     'client_id2',
     'mcp_cin',
     'total_charges',
@@ -429,6 +464,7 @@ const toClaimMatchCsv = (rows: EraClaimMatchResult[], summary: EraClaimMatchSumm
       row.sourceTable,
       row.proc,
       row.primaryKey,
+      row.claimStatus || '',
       row.clientId2 || '',
       row.mcpCin || '',
       typeof row.totalCharges === 'number' ? Number(row.totalCharges).toFixed(2) : '',
@@ -446,6 +482,19 @@ const toClaimMatchCsv = (rows: EraClaimMatchResult[], summary: EraClaimMatchSumm
   }
   return lines.join('\n');
 };
+
+const eraRowMatchKey = (row: EraRow) =>
+  [
+    String(row.proc || ''),
+    String(row.page || ''),
+    String(row.acnt || ''),
+    String(row.icn || ''),
+    String(row.hic || ''),
+    String(row.service_from || ''),
+    String(row.service_to || ''),
+    String(row.paid ?? ''),
+    String(row.source_line || ''),
+  ].join('|');
 
 export default function EraParserPage() {
   const router = useRouter();
@@ -470,8 +519,12 @@ export default function EraParserPage() {
   const [historyLookupResults, setHistoryLookupResults] = useState<EraHistoryLookupBatch[]>([]);
   const [historyLookupSearchedBatches, setHistoryLookupSearchedBatches] = useState(0);
   const [claimMatchLoading, setClaimMatchLoading] = useState(false);
+  const [claimMatchFilter, setClaimMatchFilter] = useState('');
   const [claimMatchSummary, setClaimMatchSummary] = useState<EraClaimMatchSummary | null>(null);
   const [claimMatchResults, setClaimMatchResults] = useState<EraClaimMatchResult[]>([]);
+  const [claimMatchedRowKeys, setClaimMatchedRowKeys] = useState<string[]>([]);
+  const [claimMatchEvaluated, setClaimMatchEvaluated] = useState(false);
+  const [matchSortMode, setMatchSortMode] = useState<'none' | 'matched_first' | 'unmatched_first'>('none');
   const [phase, setPhase] = useState<ParsePhase>('idle');
   const [extractProgress, setExtractProgress] = useState<ExtractProgress | null>(null);
   const [openProgress, setOpenProgress] = useState<OpenProgress | null>(null);
@@ -481,6 +534,7 @@ export default function EraParserPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [progressTick, setProgressTick] = useState(0);
   const localPathPickerRef = useRef<HTMLInputElement | null>(null);
+  const matchedRowKeySet = useMemo(() => new Set(claimMatchedRowKeys), [claimMatchedRowKeys]);
 
   // Used to re-render elapsed time during long "Opening PDF..." work where pdf.js provides no byte progress.
   void progressTick;
@@ -517,7 +571,18 @@ export default function EraParserPage() {
         return true;
       });
     };
-    if (!q) return applyPaymentFilter(rows);
+    const applyMatchSort = (list: EraRow[]) => {
+      if (!claimMatchEvaluated || matchSortMode === 'none') return list;
+      const copy = [...list];
+      copy.sort((a, b) => {
+        const aMatched = matchedRowKeySet.has(eraRowMatchKey(a)) ? 1 : 0;
+        const bMatched = matchedRowKeySet.has(eraRowMatchKey(b)) ? 1 : 0;
+        if (matchSortMode === 'matched_first') return bMatched - aMatched;
+        return aMatched - bMatched;
+      });
+      return copy;
+    };
+    if (!q) return applyMatchSort(applyPaymentFilter(rows));
     const qToken = normalizeLookupToken(q);
     const qName = normalizeNameForLookup(q);
     const qNameTokens = qName.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
@@ -546,8 +611,8 @@ export default function EraParserPage() {
         nameMatchesByTokens
       );
     });
-    return applyPaymentFilter(base);
-  }, [rows, resultsSearch, paymentFilter]);
+    return applyMatchSort(applyPaymentFilter(base));
+  }, [rows, resultsSearch, paymentFilter, matchedRowKeySet, claimMatchEvaluated, matchSortMode]);
 
   const batchLookup = useMemo(() => {
     const rawQuery = String(batchLookupQuery || '').trim();
@@ -618,6 +683,9 @@ export default function EraParserPage() {
   useEffect(() => {
     setClaimMatchSummary(null);
     setClaimMatchResults([]);
+    setClaimMatchedRowKeys([]);
+    setClaimMatchEvaluated(false);
+    setMatchSortMode('none');
   }, [rows]);
 
   const uploadPdfToTempStorage = async (pdfFile: File) => {
@@ -1245,8 +1313,49 @@ export default function EraParserPage() {
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || `Lookup failed (HTTP ${res.status})`);
       }
-      setHistoryLookupResults(Array.isArray(data?.batches) ? (data.batches as EraHistoryLookupBatch[]) : []);
-      setHistoryLookupSearchedBatches(Number(data?.searchedBatches || 0));
+      const apiBatches = Array.isArray(data?.batches) ? (data.batches as EraHistoryLookupBatch[]) : [];
+      const apiSearched = Number(data?.searchedBatches || 0);
+      if (apiSearched > 0 || cacheHistory.length === 0) {
+        setHistoryLookupResults(apiBatches);
+        setHistoryLookupSearchedBatches(apiSearched);
+        return;
+      }
+
+      // Fallback: search currently listed parsed ERA caches directly by cacheKey.
+      const fallbackMatches: EraHistoryLookupBatch[] = [];
+      for (const item of cacheHistory.slice(0, 50)) {
+        const batchRes = await fetch(`/api/admin/era/parse?cacheKey=${encodeURIComponent(item.cacheKey)}`, {
+          method: 'GET',
+          headers: { authorization: `Bearer ${idToken}` },
+        });
+        const batchData = (await batchRes.json().catch(() => ({}))) as any;
+        if (!batchRes.ok || !batchData?.success) continue;
+        const batchRows = Array.isArray(batchData?.rows) ? (batchData.rows as EraRow[]) : [];
+        const matchedRows = batchRows.filter((row) => rowMatchesHistoryLookup(row, q));
+        if (!matchedRows.length) continue;
+        const memberKeys = new Set<string>();
+        let totalPaid = 0;
+        for (const row of matchedRows) {
+          const key = String(row.acnt || '').trim() || String(row.member_name || '').trim();
+          if (key) memberKeys.add(key);
+          if (typeof row.paid === 'number' && Number.isFinite(row.paid)) totalPaid += row.paid;
+        }
+        fallbackMatches.push({
+          cacheKey: item.cacheKey,
+          fileName: String(batchData?.fileName || item.fileName || 'ERA PDF'),
+          sourceMode: String(batchData?.sourceMode || item.sourceMode || 'unknown'),
+          payer: String(batchData?.payer || item.payer || 'Health Net'),
+          totalRows: Number(batchData?.rows?.length || item.totalRows || 0),
+          updatedAt: batchData?.updatedAt || item.updatedAt || null,
+          matchedRows: matchedRows.length,
+          matchedMembers: memberKeys.size,
+          totalPaid: Number(totalPaid.toFixed(2)),
+          sampleRows: matchedRows.slice(0, 5),
+          matchedRowsPreview: matchedRows.slice(0, 50),
+        });
+      }
+      setHistoryLookupResults(fallbackMatches);
+      setHistoryLookupSearchedBatches(Math.min(cacheHistory.length, 50));
     } catch (e: any) {
       setHistoryLookupResults([]);
       setHistoryLookupSearchedBatches(0);
@@ -1276,6 +1385,7 @@ export default function EraParserPage() {
         body: JSON.stringify({
           action: 'match_submitted_claims',
           rows,
+          matchQuery: claimMatchFilter,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -1284,9 +1394,13 @@ export default function EraParserPage() {
       }
       setClaimMatchSummary((data?.summary || null) as EraClaimMatchSummary | null);
       setClaimMatchResults(Array.isArray(data?.claims) ? (data.claims as EraClaimMatchResult[]) : []);
+      setClaimMatchedRowKeys(Array.isArray(data?.matchedEraRowKeys) ? data.matchedEraRowKeys.map((v: any) => String(v)) : []);
+      setClaimMatchEvaluated(true);
     } catch (e: any) {
       setClaimMatchSummary(null);
       setClaimMatchResults([]);
+      setClaimMatchedRowKeys([]);
+      setClaimMatchEvaluated(false);
       setError(e?.message || 'Failed to match submitted claims.');
     } finally {
       setClaimMatchLoading(false);
@@ -1580,6 +1694,33 @@ export default function EraParserPage() {
                   <Download className="mr-2 h-4 w-4" />
                   Download CSV
                 </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={matchSortMode === 'none' ? 'default' : 'outline'}
+                  onClick={() => setMatchSortMode('none')}
+                  disabled={!claimMatchEvaluated}
+                >
+                  No match sort
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={matchSortMode === 'matched_first' ? 'default' : 'outline'}
+                  onClick={() => setMatchSortMode('matched_first')}
+                  disabled={!claimMatchEvaluated}
+                >
+                  Matched first
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={matchSortMode === 'unmatched_first' ? 'default' : 'outline'}
+                  onClick={() => setMatchSortMode('unmatched_first')}
+                  disabled={!claimMatchEvaluated}
+                >
+                  Unmatched first
+                </Button>
               </div>
             </div>
           </CardHeader>
@@ -1623,7 +1764,8 @@ export default function EraParserPage() {
                 <div>
                   <div className="text-sm font-medium">Match submitted claims (Caspio)</div>
                   <div className="text-xs text-muted-foreground">
-                    Pulls H2022/T2038 submitted claims from Caspio and matches by Client_ID2/MCP_CIN, service dates, and amount.
+                    Pulls H2022/T2038 submitted claims from Caspio (excluding Claim_Status &quot;Connections Paid RCFE&quot;), matches
+                    Client_ID2 to ACNT and MCP_CIN to ICN, then compares service dates and amount.
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1637,6 +1779,12 @@ export default function EraParserPage() {
                   </Button>
                 </div>
               </div>
+              <Input
+                value={claimMatchFilter}
+                onChange={(e) => setClaimMatchFilter(e.target.value)}
+                placeholder="Optional test filter: Carrington, Bradley • 7846 • 93898979E"
+                className="w-full sm:max-w-xl"
+              />
               {claimMatchSummary ? (
                 <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
                   {claimMatchSummary.matchedClaims}/{claimMatchSummary.totalClaims} matched • High {claimMatchSummary.highConfidence} • Medium{' '}
@@ -1655,7 +1803,7 @@ export default function EraParserPage() {
                         {match.proc} • {match.sourceTable} • Claim {match.primaryKey}
                       </div>
                       <div className="text-muted-foreground">
-                        Client_ID2: {match.clientId2 || '—'} • MCP_CIN: {match.mcpCin || '—'} • Charges $
+                        Status: {match.claimStatus || '—'} • Client_ID2: {match.clientId2 || '—'} • MCP_CIN: {match.mcpCin || '—'} • Charges $
                         {typeof match.totalCharges === 'number' ? Number(match.totalCharges).toFixed(2) : '—'} • Matched paid $
                         {Number(match.matchedPaidTotal || 0).toFixed(2)} • Confidence {match.confidence}
                       </div>
@@ -1677,6 +1825,7 @@ export default function EraParserPage() {
                     <th className="px-3 py-2 whitespace-nowrap">ICN</th>
                     <th className="px-3 py-2 whitespace-nowrap">HIC</th>
                     <th className="px-3 py-2 whitespace-nowrap">PROC</th>
+                    <th className="px-3 py-2 whitespace-nowrap">Match</th>
                     <th className="px-3 py-2 whitespace-nowrap">Svc from</th>
                     <th className="px-3 py-2 whitespace-nowrap">Svc to</th>
                     <th className="px-3 py-2 whitespace-nowrap text-right">Paid</th>
@@ -1690,6 +1839,17 @@ export default function EraParserPage() {
                       <td className="px-3 py-2 whitespace-nowrap">{r.icn || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.hic || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap font-medium">{r.proc || '—'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {(() => {
+                          if (!claimMatchEvaluated) return <span className="text-xs text-muted-foreground">Not checked</span>;
+                          const matched = matchedRowKeySet.has(eraRowMatchKey(r));
+                          return matched ? (
+                            <span className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">Matched</span>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">Unmatched</span>
+                          );
+                        })()}
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.service_from || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{r.service_to || '—'}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-right">
@@ -1768,6 +1928,45 @@ export default function EraParserPage() {
                     <div className="text-xs text-muted-foreground">
                       Sample matches: {b.sampleRows.map((row) => `${row.member_name || 'Member'} (${row.proc || '—'}: $${Number(row.paid || 0).toFixed(2)})`).join(' • ')}
                     </div>
+                    {Array.isArray(b.matchedRowsPreview) && b.matchedRowsPreview.length > 0 ? (
+                      <div className="overflow-auto rounded-md border">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50">
+                            <tr className="text-left">
+                              <th className="px-2 py-1.5 whitespace-nowrap">Member</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap">ACNT</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap">ICN</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap">HIC</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap">PROC</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap">Svc from</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap">Svc to</th>
+                              <th className="px-2 py-1.5 whitespace-nowrap text-right">Paid</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {b.matchedRowsPreview.map((row, idx) => (
+                              <tr key={`${b.cacheKey}-preview-${idx}`} className="border-t">
+                                <td className="px-2 py-1.5 max-w-[240px] truncate">{row.member_name || '—'}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{row.acnt || '—'}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{row.icn || '—'}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{row.hic || '—'}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{row.proc || '—'}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{row.service_from || '—'}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{row.service_to || '—'}</td>
+                                <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                  {row.paid === null || row.paid === undefined ? '—' : `$${Number(row.paid).toFixed(2)}`}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                    {b.matchedRows > (b.matchedRowsPreview?.length || 0) ? (
+                      <div className="text-[11px] text-muted-foreground">
+                        Showing {(b.matchedRowsPreview?.length || 0).toLocaleString()} of {b.matchedRows.toLocaleString()} matched rows.
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>

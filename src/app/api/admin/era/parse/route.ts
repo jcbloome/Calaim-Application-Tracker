@@ -83,6 +83,7 @@ type SubmittedClaim = {
   sourceTable: string;
   proc: ClaimProc;
   primaryKey: string;
+  claimStatus: string | null;
   clientId2: string | null;
   mcpCin: string | null;
   totalCharges: number | null;
@@ -95,6 +96,7 @@ type ClaimMatchResult = {
   sourceTable: string;
   proc: ClaimProc;
   primaryKey: string;
+  claimStatus: string | null;
   clientId2: string | null;
   mcpCin: string | null;
   totalCharges: number | null;
@@ -182,25 +184,70 @@ const parseDateLoose = (value: unknown): string | null => {
   return null;
 };
 
+const normalizeFieldName = (value: unknown) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+
+const getFieldValueByNormalizedKey = (row: Record<string, any>, normalizedKeys: string[]) => {
+  const wanted = new Set(normalizedKeys.map((k) => normalizeFieldName(k)));
+  for (const [k, v] of Object.entries(row || {})) {
+    if (wanted.has(normalizeFieldName(k))) return v;
+  }
+  return undefined;
+};
+
+const parseClaimStatus = (row: Record<string, any>) => {
+  const raw = getFieldValueByNormalizedKey(row, ['Claim_Status', 'claim_status', 'ClaimStatus']);
+  const out = String(raw ?? '').trim();
+  return out || null;
+};
+
+const parseClaimChargeFromDiscontinuousWindows = (row: Record<string, any>): number | null => {
+  const parts: number[] = [];
+  for (let idx = 1; idx <= 4; idx += 1) {
+    const raw = getFieldValueByNormalizedKey(row, [
+      `Total_Charges_Days_Service${idx}`,
+      `Total_Charges_Days_of_Service${idx}`,
+      `Total_Charges_DaysOfService${idx}`,
+      `Total_Charge_Days_Service${idx}`,
+      `Total Charges Days Service${idx}`,
+    ]);
+    const n = parseNumberLoose(raw);
+    if (typeof n === 'number' && Number.isFinite(n) && n !== 0) parts.push(n);
+  }
+  if (!parts.length) return null;
+  return Number(parts.reduce((a, b) => a + b, 0).toFixed(2));
+};
+
 const normalizeSubmittedClaim = (row: any, sourceTable: string, proc: ClaimProc): SubmittedClaim => {
+  const rowObj = (row || {}) as Record<string, any>;
   const serviceWindows = CLAIM_DATE_FIELD_PAIRS.map(([firstField, lastField]) => {
-    const from = parseDateLoose(row?.[firstField]);
-    const to = parseDateLoose(row?.[lastField]);
+    const from = parseDateLoose(rowObj?.[firstField]);
+    const to = parseDateLoose(rowObj?.[lastField]);
     return { from, to };
   }).filter((w) => w.from || w.to);
   const primaryKey =
-    String(row?.PK_ID ?? row?.Record_ID ?? row?.ID ?? row?.Claim_ID ?? row?.claim_id ?? '').trim() ||
+    String(rowObj?.PK_ID ?? rowObj?.Record_ID ?? rowObj?.ID ?? rowObj?.Claim_ID ?? rowObj?.claim_id ?? '').trim() ||
     `${sourceTable}-${Math.random().toString(36).slice(2, 10)}`;
+  const totalChargesFromWindows = parseClaimChargeFromDiscontinuousWindows(rowObj);
+  const totalChargesFromField = parseNumberLoose(rowObj?.Total_Charges);
+  const totalCharges =
+    typeof totalChargesFromWindows === 'number' && Number.isFinite(totalChargesFromWindows)
+      ? totalChargesFromWindows
+      : totalChargesFromField;
   return {
     sourceTable,
     proc,
     primaryKey,
-    clientId2: String(row?.Client_ID2 ?? '').trim() || null,
-    mcpCin: String(row?.MCP_CIN ?? row?.MediCal_Number ?? row?.Medi_Cal_Number ?? '').trim() || null,
-    totalCharges: parseNumberLoose(row?.Total_Charges),
-    totalDaysOfService: parseIntegerLoose(row?.Total_Days_of_Service),
+    claimStatus: parseClaimStatus(rowObj),
+    clientId2: String(rowObj?.Client_ID2 ?? '').trim() || null,
+    mcpCin: String(rowObj?.MCP_CIN ?? rowObj?.MediCal_Number ?? rowObj?.Medi_Cal_Number ?? '').trim() || null,
+    totalCharges,
+    totalDaysOfService: parseIntegerLoose(rowObj?.Total_Days_of_Service),
     serviceWindows,
-    raw: row || {},
+    raw: rowObj,
   };
 };
 
@@ -245,64 +292,162 @@ async function fetchSubmittedClaimsForTable(params: {
   const selectFields = [
     'PK_ID',
     'Record_ID',
+    'Claim_Status',
     'Client_ID2',
     'MCP_CIN',
     'Total_Charges',
     'Total_Days_of_Service',
+    'Total_Charges_Days_Service1',
+    'Total_Charges_Days_Service2',
+    'Total_Charges_Days_Service3',
+    'Total_Charges_Days_Service4',
     ...CLAIM_DATE_FIELD_PAIRS.flat(),
   ];
   const claims: SubmittedClaim[] = [];
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-    const sp = new URLSearchParams();
-    sp.set('q.pageSize', String(pageSize));
-    sp.set('q.pageNumber', String(pageNumber));
-    sp.set('q.select', selectFields.join(','));
-    const url = `${params.restBaseUrl}/tables/${encodeURIComponent(params.tableName)}/records?${sp.toString()}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${params.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      cache: 'no-store',
-    });
+    const attempt = async (includeSelect: boolean) => {
+      const sp = new URLSearchParams();
+      sp.set('q.pageSize', String(pageSize));
+      sp.set('q.pageNumber', String(pageNumber));
+      if (includeSelect) sp.set('q.select', selectFields.join(','));
+      const url = `${params.restBaseUrl}/tables/${encodeURIComponent(params.tableName)}/records?${sp.toString()}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${params.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return { ok: false as const, status: res.status, statusText: res.statusText, text, url };
+      }
+      const data = (await res.json().catch(() => ({}))) as any;
+      return { ok: true as const, data, url };
+    };
+
+    // Prefer explicit column selection for performance, but gracefully fall back
+    // when table schemas differ (common across Caspio environments).
+    let res = await attempt(true);
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Caspio fetch failed for ${params.tableName} (${res.status}): ${text || res.statusText}`);
+      const textLower = String(res.text || '').toLowerCase();
+      const invalidColumn = textLower.includes('invalid column name');
+      if (invalidColumn) {
+        res = await attempt(false);
+      }
     }
-    const data = (await res.json().catch(() => ({}))) as any;
+    if (!res.ok) {
+      throw new Error(`Caspio fetch failed for ${params.tableName} (${res.status}): ${res.text || res.statusText}`);
+    }
+
+    const data = res.data;
     const pageRows = Array.isArray(data?.Result) ? data.Result : [];
     for (const row of pageRows) {
-      claims.push(normalizeSubmittedClaim(row, params.tableName, params.proc));
+      const claim = normalizeSubmittedClaim(row, params.tableName, params.proc);
+      const statusToken = normalizeLookupToken(claim.claimStatus);
+      if (statusToken === normalizeLookupToken('Connections Paid RCFE')) continue;
+      claims.push(claim);
     }
     if (pageRows.length < pageSize) break;
   }
   return claims;
 }
 
-const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow[]) => {
-  const cleanRows = sanitizeRows(eraRows);
-  const results: ClaimMatchResult[] = claims.map((claim) => {
+const claimLikelyBelongsToEra = (claim: SubmittedClaim, rows: EraRow[]) => {
+  const claimClientId2 = normalizeLookupToken(claim.clientId2);
+  const claimMcpCin = normalizeLookupToken(claim.mcpCin);
+  if (!claimClientId2 && !claimMcpCin) return false;
+  const idMatchedRows = rows.filter((row) => {
+    if (row.proc !== claim.proc) return false;
+    const rowAcnt = normalizeLookupToken(row.acnt);
+    const rowIcn = normalizeLookupToken(row.icn);
+    return Boolean(
+      (claimClientId2 && rowAcnt && rowAcnt === claimClientId2) ||
+        (claimMcpCin && rowIcn && rowIcn === claimMcpCin)
+    );
+  });
+  if (!idMatchedRows.length) return false;
+  if (!claim.serviceWindows.length) return true;
+  // Narrow to likely current-batch claims: require at least one service-date overlap.
+  return idMatchedRows.some((row) => windowsOverlap(claim.serviceWindows, row.service_from || null, row.service_to || null));
+};
+
+const eraRowKey = (row: EraRow) =>
+  [
+    String(row.proc || ''),
+    String(row.page || ''),
+    String(row.acnt || ''),
+    String(row.icn || ''),
+    String(row.hic || ''),
+    String(row.service_from || ''),
+    String(row.service_to || ''),
+    String(row.paid ?? ''),
+    String(row.source_line || ''),
+  ].join('|');
+
+const filterEraRowsForClaimMatch = (rows: EraRow[], matchQueryRaw?: string) => {
+  const q = String(matchQueryRaw || '').trim().toLowerCase();
+  if (!q) return rows;
+  const qToken = normalizeLookupToken(q);
+  const qName = normalizeNameForLookup(q);
+  const qNameTokens = qName
+    .split(/[,\s]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return rows.filter((row) => {
+    const member = String(row.member_name || '').toLowerCase().trim();
+    const memberNormalized = normalizeNameForLookup(member);
+    const memberToken = normalizeLookupToken(member);
+    const acnt = String(row.acnt || '').toLowerCase().trim();
+    const acntToken = normalizeLookupToken(acnt);
+    const icn = String(row.icn || '').toLowerCase().trim();
+    const icnToken = normalizeLookupToken(icn);
+    const hic = String(row.hic || '').toLowerCase().trim();
+    const hicToken = normalizeLookupToken(hic);
+    const nameMatchesByTokens =
+      qNameTokens.length > 0 &&
+      qNameTokens.every((tok) => memberNormalized.includes(tok) || memberToken.includes(normalizeLookupToken(tok)));
+    return (
+      member.includes(q) ||
+      acnt.includes(q) ||
+      icn.includes(q) ||
+      hic.includes(q) ||
+      (qToken ? memberToken.includes(qToken) || acntToken.includes(qToken) || icnToken.includes(qToken) || hicToken.includes(qToken) : false) ||
+      nameMatchesByTokens
+    );
+  });
+};
+
+const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow[], matchQueryRaw?: string) => {
+  const cleanRows = filterEraRowsForClaimMatch(sanitizeRows(eraRows), matchQueryRaw);
+  const relevantClaims = claims.filter((claim) => claimLikelyBelongsToEra(claim, cleanRows));
+  const matchedUniquePaidByRow = new Map<string, number>();
+  const matchedEraRowKeys = new Set<string>();
+  const results: ClaimMatchResult[] = relevantClaims.map((claim) => {
     const claimClientId2 = normalizeLookupToken(claim.clientId2);
     const claimMcpCin = normalizeLookupToken(claim.mcpCin);
     const byProc = cleanRows.filter((row) => row.proc === claim.proc);
     const idMatched = byProc.filter((row) => {
       const rowAcnt = normalizeLookupToken(row.acnt);
-      const rowMedi = normalizeLookupToken(row.medi_cal_number);
+      const rowIcn = normalizeLookupToken(row.icn);
       return Boolean(
         (claimClientId2 && rowAcnt && rowAcnt === claimClientId2) ||
-          (claimMcpCin && rowMedi && rowMedi === claimMcpCin)
+          (claimMcpCin && rowIcn && rowIcn === claimMcpCin)
       );
     });
     const withDateOverlap =
       claim.serviceWindows.length > 0
         ? idMatched.filter((row) => windowsOverlap(claim.serviceWindows, row.service_from || null, row.service_to || null))
         : idMatched;
-    const matchedRows = (withDateOverlap.length > 0 ? withDateOverlap : idMatched).slice(0, 200);
+    const matchedRows = withDateOverlap.slice(0, 200);
     let matchedPaidTotal = 0;
     for (const row of matchedRows) {
       if (typeof row.paid === 'number' && Number.isFinite(row.paid)) {
         matchedPaidTotal += row.paid;
+        const key = eraRowKey(row);
+        matchedUniquePaidByRow.set(key, row.paid);
+        matchedEraRowKeys.add(key);
       }
     }
     matchedPaidTotal = Number(matchedPaidTotal.toFixed(2));
@@ -311,7 +456,8 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
     const exactAmount = isAmountClose(matchedPaidTotal, charges);
     const hasIdMatch = idMatched.length > 0;
     const hasDateMatch = withDateOverlap.length > 0 || claim.serviceWindows.length === 0;
-    const confidence: ClaimMatchResult['confidence'] = !hasIdMatch
+    const matched = matchedRows.length > 0;
+    const confidence: ClaimMatchResult['confidence'] = !matched
       ? 'none'
       : exactAmount && hasDateMatch
         ? 'high'
@@ -319,22 +465,23 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
           ? 'medium'
           : 'low';
     const reason = !hasIdMatch
-      ? 'No ACNT/Client_ID2 or Medi-Cal/CIN match in parsed ERA rows.'
-      : exactAmount && hasDateMatch
-        ? 'ID, date window, and amount align.'
-        : hasDateMatch
-          ? 'ID matches and date appears compatible, but amount differs.'
-          : 'ID matches, but no service-date overlap was found.';
+      ? 'No ACNT/Client_ID2 or ICN/MCP_CIN match in parsed ERA rows.'
+      : !hasDateMatch
+        ? 'ID matched, but no service-date overlap was found.'
+        : exactAmount
+          ? 'ID, date window, and amount align.'
+          : 'ID and dates align; amount differs.';
     return {
       sourceTable: claim.sourceTable,
       proc: claim.proc,
       primaryKey: claim.primaryKey,
+      claimStatus: claim.claimStatus,
       clientId2: claim.clientId2,
       mcpCin: claim.mcpCin,
       totalCharges: claim.totalCharges,
       totalDaysOfService: claim.totalDaysOfService,
       serviceWindows: claim.serviceWindows,
-      matched: hasIdMatch,
+      matched,
       confidence,
       reason,
       matchedRows: matchedRows.length,
@@ -350,7 +497,7 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
   const mediumConfidence = results.filter((r) => r.confidence === 'medium').length;
   const lowConfidence = results.filter((r) => r.confidence === 'low').length;
   const unmatchedClaims = totalClaims - matchedClaims;
-  const matchedChargeTotal = Number(
+  const submittedChargesTotal = Number(
     results
       .map((r) => r.totalCharges)
       .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
@@ -358,10 +505,8 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
       .toFixed(2)
   );
   const matchedPaidTotal = Number(
-    results
-      .filter((r) => r.matched)
-      .map((r) => r.matchedPaidTotal)
-      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+    Array.from(matchedUniquePaidByRow.values())
+      .filter((v) => Number.isFinite(v))
       .reduce((a, b) => a + b, 0)
       .toFixed(2)
   );
@@ -373,11 +518,12 @@ const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow
       highConfidence,
       mediumConfidence,
       lowConfidence,
-      submittedChargesTotal: matchedChargeTotal,
+      submittedChargesTotal,
       matchedPaidTotal,
-      variance: Number((matchedPaidTotal - matchedChargeTotal).toFixed(2)),
+      variance: Number((matchedPaidTotal - submittedChargesTotal).toFixed(2)),
     },
     claims: results,
+    matchedEraRowKeys: Array.from(matchedEraRowKeys),
   };
 };
 
@@ -476,6 +622,14 @@ async function readCachedEra(adminDb: any, cacheKeyRaw: unknown) {
     fileLastModified: typeof meta?.fileLastModified === 'number' ? meta.fileLastModified : null,
     updatedAt: meta?.updatedAt || null,
   };
+}
+
+async function fetchEraCacheMetaDocs(adminDb: any, limit: number) {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 25;
+  const ordered = await adminDb.collection(ERA_CACHE_COLLECTION).orderBy('updatedAt', 'desc').limit(safeLimit).get();
+  if (!ordered.empty) return ordered.docs;
+  const fallback = await adminDb.collection(ERA_CACHE_COLLECTION).limit(safeLimit).get();
+  return fallback.docs || [];
 }
 
 async function writeCachedEra(
@@ -776,6 +930,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'match_submitted_claims') {
       const requestRows = sanitizeRows(body?.rows);
+      const matchQuery = String(body?.matchQuery || '').trim();
       let matchRows = requestRows;
       if (!matchRows.length) {
         const cached = await readCachedEra(adminDb, body?.cacheKey);
@@ -801,13 +956,15 @@ export async function POST(req: NextRequest) {
         });
         allClaims.push(...claims);
       }
-      const matched = matchSubmittedClaimsToEraRows(allClaims, matchRows);
+      const matched = matchSubmittedClaimsToEraRows(allClaims, matchRows, matchQuery);
       return NextResponse.json(
         {
           success: true,
           action: 'match_submitted_claims',
+          matchQuery,
           eraRows: matchRows.length,
           claimsFetched: allClaims.length,
+          claimsConsidered: matched.summary.totalClaims,
           ...matched,
         },
         { status: 200 }
@@ -980,7 +1137,7 @@ export async function GET(req: NextRequest) {
       const lookupLimit = Number.isFinite(limitRaw)
         ? Math.max(1, Math.min(ERA_HISTORY_LOOKUP_MAX_LIMIT, Math.floor(limitRaw)))
         : ERA_HISTORY_LOOKUP_DEFAULT_LIMIT;
-      const snap = await adminDb.collection(ERA_CACHE_COLLECTION).orderBy('updatedAt', 'desc').limit(lookupLimit).get();
+      const docs = await fetchEraCacheMetaDocs(adminDb, lookupLimit);
       const batches: Array<{
         cacheKey: string;
         fileName: string;
@@ -992,9 +1149,10 @@ export async function GET(req: NextRequest) {
         matchedMembers: number;
         totalPaid: number;
         sampleRows: EraRow[];
+        matchedRowsPreview: EraRow[];
       }> = [];
 
-      for (const d of snap.docs) {
+      for (const d of docs) {
         const x = d.data() || {};
         const chunksSnap = await adminDb
           .collection(ERA_CACHE_COLLECTION)
@@ -1031,14 +1189,15 @@ export async function GET(req: NextRequest) {
           matchedMembers: memberKeys.size,
           totalPaid: Number(totalPaid.toFixed(2)),
           sampleRows: matched.slice(0, 5),
+          matchedRowsPreview: matched.slice(0, 50),
         });
       }
 
-      return NextResponse.json({ success: true, lookup, searchedBatches: snap.size, matchedBatches: batches.length, batches }, { status: 200 });
+      return NextResponse.json({ success: true, lookup, searchedBatches: docs.length, matchedBatches: batches.length, batches }, { status: 200 });
     }
 
-    const snap = await adminDb.collection(ERA_CACHE_COLLECTION).orderBy('updatedAt', 'desc').limit(limit).get();
-    const history = snap.docs.map((d: any) => {
+    const docs = await fetchEraCacheMetaDocs(adminDb, limit);
+    const history = docs.map((d: any) => {
       const x = d.data() || {};
       return {
         cacheKey: d.id,
