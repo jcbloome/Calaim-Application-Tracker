@@ -72,6 +72,36 @@ type EraHistoryLookupBatch = {
   sampleRows: EraRow[];
 };
 
+type EraClaimMatchSummary = {
+  totalClaims: number;
+  matchedClaims: number;
+  unmatchedClaims: number;
+  highConfidence: number;
+  mediumConfidence: number;
+  lowConfidence: number;
+  submittedChargesTotal: number;
+  matchedPaidTotal: number;
+  variance: number;
+};
+
+type EraClaimMatchResult = {
+  sourceTable: string;
+  proc: 'H2022' | 'T2038';
+  primaryKey: string;
+  clientId2: string | null;
+  mcpCin: string | null;
+  totalCharges: number | null;
+  totalDaysOfService: number | null;
+  serviceWindows: Array<{ from: string | null; to: string | null }>;
+  matched: boolean;
+  confidence: 'none' | 'low' | 'medium' | 'high';
+  reason: string;
+  matchedRows: number;
+  matchedPaidTotal: number;
+  paidDelta: number | null;
+  sampleRows: EraRow[];
+};
+
 type ParsePhase = 'idle' | 'loading_pdfjs' | 'opening_pdf' | 'extracting' | 'uploading' | 'parsing' | 'done';
 type ExtractProgress = { currentPage: number; totalPages: number; startedAtMs: number; avgMsPerPage: number };
 type OpenProgress = { loaded: number; total: number; startedAtMs: number };
@@ -327,6 +357,96 @@ const toCsv = (rows: EraRow[]) => {
   return lines.join('\n');
 };
 
+const toClaimMatchCsv = (rows: EraClaimMatchResult[], summary: EraClaimMatchSummary | null) => {
+  const header = [
+    'generated_at',
+    'total_claims',
+    'matched_claims',
+    'unmatched_claims',
+    'high_confidence',
+    'medium_confidence',
+    'low_confidence',
+    'submitted_charges_total',
+    'matched_paid_total',
+    'variance',
+    'source_table',
+    'proc',
+    'claim_primary_key',
+    'client_id2',
+    'mcp_cin',
+    'total_charges',
+    'total_days_of_service',
+    'service_windows',
+    'matched',
+    'confidence',
+    'reason',
+    'matched_rows',
+    'matched_paid_total_claim',
+    'paid_delta',
+    'sample_rows',
+  ];
+  const esc = (v: any) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    if (s.includes('"') || s.includes(',') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+  const generatedAt = new Date().toISOString();
+  const summaryBase = {
+    total_claims: summary?.totalClaims ?? '',
+    matched_claims: summary?.matchedClaims ?? '',
+    unmatched_claims: summary?.unmatchedClaims ?? '',
+    high_confidence: summary?.highConfidence ?? '',
+    medium_confidence: summary?.mediumConfidence ?? '',
+    low_confidence: summary?.lowConfidence ?? '',
+    submitted_charges_total:
+      typeof summary?.submittedChargesTotal === 'number' ? Number(summary.submittedChargesTotal).toFixed(2) : '',
+    matched_paid_total: typeof summary?.matchedPaidTotal === 'number' ? Number(summary.matchedPaidTotal).toFixed(2) : '',
+    variance: typeof summary?.variance === 'number' ? Number(summary.variance).toFixed(2) : '',
+  };
+  const lines = [header.join(',')];
+  for (const row of rows) {
+    const serviceWindows = Array.isArray(row.serviceWindows)
+      ? row.serviceWindows
+          .map((w) => `${String(w.from || '').trim() || '—'}..${String(w.to || '').trim() || '—'}`)
+          .join(' | ')
+      : '';
+    const sampleRows = Array.isArray(row.sampleRows)
+      ? row.sampleRows
+          .map((r) => `${r.proc || '—'}:${r.service_from || '—'}..${r.service_to || '—'}:$${Number(r.paid || 0).toFixed(2)}`)
+          .join(' | ')
+      : '';
+    const values = [
+      generatedAt,
+      summaryBase.total_claims,
+      summaryBase.matched_claims,
+      summaryBase.unmatched_claims,
+      summaryBase.high_confidence,
+      summaryBase.medium_confidence,
+      summaryBase.low_confidence,
+      summaryBase.submitted_charges_total,
+      summaryBase.matched_paid_total,
+      summaryBase.variance,
+      row.sourceTable,
+      row.proc,
+      row.primaryKey,
+      row.clientId2 || '',
+      row.mcpCin || '',
+      typeof row.totalCharges === 'number' ? Number(row.totalCharges).toFixed(2) : '',
+      typeof row.totalDaysOfService === 'number' ? row.totalDaysOfService : '',
+      serviceWindows,
+      row.matched ? 'yes' : 'no',
+      row.confidence,
+      row.reason,
+      row.matchedRows,
+      Number(row.matchedPaidTotal || 0).toFixed(2),
+      typeof row.paidDelta === 'number' ? Number(row.paidDelta).toFixed(2) : '',
+      sampleRows,
+    ];
+    lines.push(values.map((v) => esc(v)).join(','));
+  }
+  return lines.join('\n');
+};
+
 export default function EraParserPage() {
   const router = useRouter();
   const { isSuperAdmin, isLoading } = useAdmin();
@@ -349,6 +469,9 @@ export default function EraParserPage() {
   const [historyLookupLoading, setHistoryLookupLoading] = useState(false);
   const [historyLookupResults, setHistoryLookupResults] = useState<EraHistoryLookupBatch[]>([]);
   const [historyLookupSearchedBatches, setHistoryLookupSearchedBatches] = useState(0);
+  const [claimMatchLoading, setClaimMatchLoading] = useState(false);
+  const [claimMatchSummary, setClaimMatchSummary] = useState<EraClaimMatchSummary | null>(null);
+  const [claimMatchResults, setClaimMatchResults] = useState<EraClaimMatchResult[]>([]);
   const [phase, setPhase] = useState<ParsePhase>('idle');
   const [extractProgress, setExtractProgress] = useState<ExtractProgress | null>(null);
   const [openProgress, setOpenProgress] = useState<OpenProgress | null>(null);
@@ -491,6 +614,11 @@ export default function EraParserPage() {
     if (historyLookupResults.length === 0) return false;
     return historyLookupResults.some((b) => Number(b.totalPaid || 0) > 0);
   }, [historyLookupLoading, historyLookupQuery, historyLookupResults]);
+
+  useEffect(() => {
+    setClaimMatchSummary(null);
+    setClaimMatchResults([]);
+  }, [rows]);
 
   const uploadPdfToTempStorage = async (pdfFile: File) => {
     if (!auth?.currentUser?.uid) throw new Error('Not signed in.');
@@ -823,6 +951,17 @@ export default function EraParserPage() {
     URL.revokeObjectURL(url);
   };
 
+  const downloadClaimMatchCsv = () => {
+    const csv = toClaimMatchCsv(claimMatchResults, claimMatchSummary);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `era_claim_reconciliation_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleParseLocal = async () => {
     if (!file) return;
     if (!auth?.currentUser) return;
@@ -1114,6 +1253,43 @@ export default function EraParserPage() {
       setError(e?.message || 'Failed to search saved ERA batches.');
     } finally {
       setHistoryLookupLoading(false);
+    }
+  };
+
+  const runSubmittedClaimMatch = async () => {
+    if (!auth?.currentUser || rows.length === 0) {
+      setClaimMatchSummary(null);
+      setClaimMatchResults([]);
+      return;
+    }
+    setClaimMatchLoading(true);
+    setError(null);
+    setErrorDetails(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/era/parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          action: 'match_submitted_claims',
+          rows,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Submitted claim matching failed (HTTP ${res.status})`);
+      }
+      setClaimMatchSummary((data?.summary || null) as EraClaimMatchSummary | null);
+      setClaimMatchResults(Array.isArray(data?.claims) ? (data.claims as EraClaimMatchResult[]) : []);
+    } catch (e: any) {
+      setClaimMatchSummary(null);
+      setClaimMatchResults([]);
+      setError(e?.message || 'Failed to match submitted claims.');
+    } finally {
+      setClaimMatchLoading(false);
     }
   };
 
@@ -1439,6 +1615,56 @@ export default function EraParserPage() {
                       {Number(batchLookup.totalPaid || 0).toFixed(2)}
                     </span>
                   )}
+                </div>
+              ) : null}
+            </div>
+            <div className="mb-4 rounded-md border p-3 space-y-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-medium">Match submitted claims (Caspio)</div>
+                  <div className="text-xs text-muted-foreground">
+                    Pulls H2022/T2038 submitted claims from Caspio and matches by Client_ID2/MCP_CIN, service dates, and amount.
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" onClick={runSubmittedClaimMatch} disabled={claimMatchLoading || uploading || rows.length === 0}>
+                    {claimMatchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Match Submitted Claims
+                  </Button>
+                  <Button variant="outline" onClick={downloadClaimMatchCsv} disabled={claimMatchLoading || claimMatchResults.length === 0}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download Reconciliation CSV
+                  </Button>
+                </div>
+              </div>
+              {claimMatchSummary ? (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                  {claimMatchSummary.matchedClaims}/{claimMatchSummary.totalClaims} matched • High {claimMatchSummary.highConfidence} • Medium{' '}
+                  {claimMatchSummary.mediumConfidence} • Low {claimMatchSummary.lowConfidence} • Unmatched {claimMatchSummary.unmatchedClaims}
+                  <br />
+                  Submitted ${Number(claimMatchSummary.submittedChargesTotal || 0).toFixed(2)} • Matched paid $
+                  {Number(claimMatchSummary.matchedPaidTotal || 0).toFixed(2)} • Variance $
+                  {Number(claimMatchSummary.variance || 0).toFixed(2)}
+                </div>
+              ) : null}
+              {claimMatchResults.length > 0 ? (
+                <div className="space-y-2 max-h-72 overflow-auto pr-1">
+                  {claimMatchResults.slice(0, 40).map((match) => (
+                    <div key={`${match.sourceTable}-${match.primaryKey}`} className="rounded-md border p-2 text-xs space-y-1">
+                      <div className="font-medium">
+                        {match.proc} • {match.sourceTable} • Claim {match.primaryKey}
+                      </div>
+                      <div className="text-muted-foreground">
+                        Client_ID2: {match.clientId2 || '—'} • MCP_CIN: {match.mcpCin || '—'} • Charges $
+                        {typeof match.totalCharges === 'number' ? Number(match.totalCharges).toFixed(2) : '—'} • Matched paid $
+                        {Number(match.matchedPaidTotal || 0).toFixed(2)} • Confidence {match.confidence}
+                      </div>
+                      <div className="text-muted-foreground">{match.reason}</div>
+                    </div>
+                  ))}
+                  {claimMatchResults.length > 40 ? (
+                    <div className="text-xs text-muted-foreground">Showing first 40 of {claimMatchResults.length} matched/unmatched claims.</div>
+                  ) : null}
                 </div>
               ) : null}
             </div>

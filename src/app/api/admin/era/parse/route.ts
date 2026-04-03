@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 import path from 'path';
 import { readFile } from 'fs/promises';
 
@@ -76,6 +77,38 @@ type EraCacheMeta = {
   updatedAt?: any;
 };
 
+type ClaimProc = 'H2022' | 'T2038';
+
+type SubmittedClaim = {
+  sourceTable: string;
+  proc: ClaimProc;
+  primaryKey: string;
+  clientId2: string | null;
+  mcpCin: string | null;
+  totalCharges: number | null;
+  totalDaysOfService: number | null;
+  serviceWindows: Array<{ from: string | null; to: string | null }>;
+  raw: Record<string, any>;
+};
+
+type ClaimMatchResult = {
+  sourceTable: string;
+  proc: ClaimProc;
+  primaryKey: string;
+  clientId2: string | null;
+  mcpCin: string | null;
+  totalCharges: number | null;
+  totalDaysOfService: number | null;
+  serviceWindows: Array<{ from: string | null; to: string | null }>;
+  matched: boolean;
+  confidence: 'none' | 'low' | 'medium' | 'high';
+  reason: string;
+  matchedRows: number;
+  matchedPaidTotal: number;
+  paidDelta: number | null;
+  sampleRows: EraRow[];
+};
+
 const AMOUNT_RE = /(?<!\d)(-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}|\((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\))(?!\d)/g;
 // Support PROC values with or without separator before modifiers (e.g. "T2038 U5" or "T2038U5")
 const PROC_RE = /\b(H2022|T2038)(?:\b|(?=[A-Z0-9]))/i;
@@ -96,6 +129,257 @@ const normalizeNameForLookup = (value: unknown) =>
     .replace(/[^a-z0-9,\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+const CLAIM_TABLES: Array<{ table: string; proc: ClaimProc }> = [
+  { table: 'CalAIM_Claim_Submit_RCFE_H2022', proc: 'H2022' },
+  { table: 'CalAIM_Claim_Submit_T2038', proc: 'T2038' },
+];
+
+const CLAIM_DATE_FIELD_PAIRS = [
+  ['Days_of_Service_First1', 'Days_of_Service_Last1'],
+  ['Days_of_Service_First2', 'Days_of_Service_Last2'],
+  ['Days_of_Service_First3', 'Days_of_Service_Last3'],
+  ['Days_of_Service_First4', 'Days_of_Service_Last4'],
+] as const;
+
+const parseNumberLoose = (value: unknown): number | null => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const isParen = raw.startsWith('(') && raw.endsWith(')');
+  const cleaned = raw.replace(/[,$()\s]/g, '');
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  return isParen ? -Math.abs(n) : n;
+};
+
+const parseIntegerLoose = (value: unknown): number | null => {
+  const n = parseNumberLoose(value);
+  if (n === null) return null;
+  const rounded = Math.round(n);
+  return Number.isFinite(rounded) ? rounded : null;
+};
+
+const parseDateLoose = (value: unknown): string | null => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const mmddyyyy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (mmddyyyy) {
+    const mm = String(Number(mmddyyyy[1])).padStart(2, '0');
+    const dd = String(Number(mmddyyyy[2])).padStart(2, '0');
+    const yyyy = mmddyyyy[3];
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  const mmddyy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2})$/);
+  if (mmddyy) {
+    const mm = String(Number(mmddyy[1])).padStart(2, '0');
+    const dd = String(Number(mmddyy[2])).padStart(2, '0');
+    const yyyy = 2000 + Number(mmddyy[3]);
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return null;
+};
+
+const normalizeSubmittedClaim = (row: any, sourceTable: string, proc: ClaimProc): SubmittedClaim => {
+  const serviceWindows = CLAIM_DATE_FIELD_PAIRS.map(([firstField, lastField]) => {
+    const from = parseDateLoose(row?.[firstField]);
+    const to = parseDateLoose(row?.[lastField]);
+    return { from, to };
+  }).filter((w) => w.from || w.to);
+  const primaryKey =
+    String(row?.PK_ID ?? row?.Record_ID ?? row?.ID ?? row?.Claim_ID ?? row?.claim_id ?? '').trim() ||
+    `${sourceTable}-${Math.random().toString(36).slice(2, 10)}`;
+  return {
+    sourceTable,
+    proc,
+    primaryKey,
+    clientId2: String(row?.Client_ID2 ?? '').trim() || null,
+    mcpCin: String(row?.MCP_CIN ?? row?.MediCal_Number ?? row?.Medi_Cal_Number ?? '').trim() || null,
+    totalCharges: parseNumberLoose(row?.Total_Charges),
+    totalDaysOfService: parseIntegerLoose(row?.Total_Days_of_Service),
+    serviceWindows,
+    raw: row || {},
+  };
+};
+
+const windowsOverlap = (
+  claimWindows: Array<{ from: string | null; to: string | null }>,
+  eraFrom: string | null,
+  eraTo: string | null
+) => {
+  const rowFrom = parseDateLoose(eraFrom);
+  const rowTo = parseDateLoose(eraTo) || rowFrom;
+  if (!rowFrom || !rowTo) return false;
+  const rowFromMs = Date.parse(rowFrom);
+  const rowToMs = Date.parse(rowTo);
+  if (!Number.isFinite(rowFromMs) || !Number.isFinite(rowToMs)) return false;
+  for (const w of claimWindows) {
+    const from = parseDateLoose(w.from);
+    const to = parseDateLoose(w.to) || from;
+    if (!from || !to) continue;
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) continue;
+    if (Math.max(fromMs, rowFromMs) <= Math.min(toMs, rowToMs)) return true;
+  }
+  return false;
+};
+
+const isAmountClose = (a: number | null, b: number | null) => {
+  if (typeof a !== 'number' || typeof b !== 'number') return false;
+  return Math.abs(a - b) <= 0.01;
+};
+
+async function fetchSubmittedClaimsForTable(params: {
+  accessToken: string;
+  restBaseUrl: string;
+  tableName: string;
+  proc: ClaimProc;
+  pageSize?: number;
+  maxPages?: number;
+}) {
+  const pageSize = Number.isFinite(params.pageSize) ? Math.max(50, Math.min(2000, Number(params.pageSize))) : 500;
+  const maxPages = Number.isFinite(params.maxPages) ? Math.max(1, Math.min(100, Number(params.maxPages))) : 25;
+  const selectFields = [
+    'PK_ID',
+    'Record_ID',
+    'Client_ID2',
+    'MCP_CIN',
+    'Total_Charges',
+    'Total_Days_of_Service',
+    ...CLAIM_DATE_FIELD_PAIRS.flat(),
+  ];
+  const claims: SubmittedClaim[] = [];
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const sp = new URLSearchParams();
+    sp.set('q.pageSize', String(pageSize));
+    sp.set('q.pageNumber', String(pageNumber));
+    sp.set('q.select', selectFields.join(','));
+    const url = `${params.restBaseUrl}/tables/${encodeURIComponent(params.tableName)}/records?${sp.toString()}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${params.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Caspio fetch failed for ${params.tableName} (${res.status}): ${text || res.statusText}`);
+    }
+    const data = (await res.json().catch(() => ({}))) as any;
+    const pageRows = Array.isArray(data?.Result) ? data.Result : [];
+    for (const row of pageRows) {
+      claims.push(normalizeSubmittedClaim(row, params.tableName, params.proc));
+    }
+    if (pageRows.length < pageSize) break;
+  }
+  return claims;
+}
+
+const matchSubmittedClaimsToEraRows = (claims: SubmittedClaim[], eraRows: EraRow[]) => {
+  const cleanRows = sanitizeRows(eraRows);
+  const results: ClaimMatchResult[] = claims.map((claim) => {
+    const claimClientId2 = normalizeLookupToken(claim.clientId2);
+    const claimMcpCin = normalizeLookupToken(claim.mcpCin);
+    const byProc = cleanRows.filter((row) => row.proc === claim.proc);
+    const idMatched = byProc.filter((row) => {
+      const rowAcnt = normalizeLookupToken(row.acnt);
+      const rowMedi = normalizeLookupToken(row.medi_cal_number);
+      return Boolean(
+        (claimClientId2 && rowAcnt && rowAcnt === claimClientId2) ||
+          (claimMcpCin && rowMedi && rowMedi === claimMcpCin)
+      );
+    });
+    const withDateOverlap =
+      claim.serviceWindows.length > 0
+        ? idMatched.filter((row) => windowsOverlap(claim.serviceWindows, row.service_from || null, row.service_to || null))
+        : idMatched;
+    const matchedRows = (withDateOverlap.length > 0 ? withDateOverlap : idMatched).slice(0, 200);
+    let matchedPaidTotal = 0;
+    for (const row of matchedRows) {
+      if (typeof row.paid === 'number' && Number.isFinite(row.paid)) {
+        matchedPaidTotal += row.paid;
+      }
+    }
+    matchedPaidTotal = Number(matchedPaidTotal.toFixed(2));
+    const charges = claim.totalCharges;
+    const paidDelta = typeof charges === 'number' ? Number((matchedPaidTotal - charges).toFixed(2)) : null;
+    const exactAmount = isAmountClose(matchedPaidTotal, charges);
+    const hasIdMatch = idMatched.length > 0;
+    const hasDateMatch = withDateOverlap.length > 0 || claim.serviceWindows.length === 0;
+    const confidence: ClaimMatchResult['confidence'] = !hasIdMatch
+      ? 'none'
+      : exactAmount && hasDateMatch
+        ? 'high'
+        : hasDateMatch
+          ? 'medium'
+          : 'low';
+    const reason = !hasIdMatch
+      ? 'No ACNT/Client_ID2 or Medi-Cal/CIN match in parsed ERA rows.'
+      : exactAmount && hasDateMatch
+        ? 'ID, date window, and amount align.'
+        : hasDateMatch
+          ? 'ID matches and date appears compatible, but amount differs.'
+          : 'ID matches, but no service-date overlap was found.';
+    return {
+      sourceTable: claim.sourceTable,
+      proc: claim.proc,
+      primaryKey: claim.primaryKey,
+      clientId2: claim.clientId2,
+      mcpCin: claim.mcpCin,
+      totalCharges: claim.totalCharges,
+      totalDaysOfService: claim.totalDaysOfService,
+      serviceWindows: claim.serviceWindows,
+      matched: hasIdMatch,
+      confidence,
+      reason,
+      matchedRows: matchedRows.length,
+      matchedPaidTotal,
+      paidDelta,
+      sampleRows: matchedRows.slice(0, 5),
+    };
+  });
+
+  const totalClaims = results.length;
+  const matchedClaims = results.filter((r) => r.matched).length;
+  const highConfidence = results.filter((r) => r.confidence === 'high').length;
+  const mediumConfidence = results.filter((r) => r.confidence === 'medium').length;
+  const lowConfidence = results.filter((r) => r.confidence === 'low').length;
+  const unmatchedClaims = totalClaims - matchedClaims;
+  const matchedChargeTotal = Number(
+    results
+      .map((r) => r.totalCharges)
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+      .reduce((a, b) => a + b, 0)
+      .toFixed(2)
+  );
+  const matchedPaidTotal = Number(
+    results
+      .filter((r) => r.matched)
+      .map((r) => r.matchedPaidTotal)
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+      .reduce((a, b) => a + b, 0)
+      .toFixed(2)
+  );
+  return {
+    summary: {
+      totalClaims,
+      matchedClaims,
+      unmatchedClaims,
+      highConfidence,
+      mediumConfidence,
+      lowConfidence,
+      submittedChargesTotal: matchedChargeTotal,
+      matchedPaidTotal,
+      variance: Number((matchedPaidTotal - matchedChargeTotal).toFixed(2)),
+    },
+    claims: results,
+  };
+};
 
 const rowMatchesLookup = (row: EraRow, rawQuery: string) => {
   const qText = String(rawQuery || '').trim().toLowerCase();
@@ -488,8 +772,49 @@ export async function POST(req: NextRequest) {
     const adminDb = adminModule.adminDb;
     const decoded = await adminModule.adminAuth.verifyIdToken(idToken);
     const parsedByUid = String(decoded?.uid || '').trim();
+    const action = String(body?.action || '').trim();
 
-    if (String(body?.action || '') === 'save_cache') {
+    if (action === 'match_submitted_claims') {
+      const requestRows = sanitizeRows(body?.rows);
+      let matchRows = requestRows;
+      if (!matchRows.length) {
+        const cached = await readCachedEra(adminDb, body?.cacheKey);
+        matchRows = cached?.rows || [];
+      }
+      if (!matchRows.length) {
+        return NextResponse.json(
+          { success: false, error: 'No ERA rows provided. Parse/open an ERA first, then retry claim matching.' },
+          { status: 400 }
+        );
+      }
+      const caspioConfig = getCaspioServerConfig();
+      const accessToken = await getCaspioServerAccessToken(caspioConfig);
+      const allClaims: SubmittedClaim[] = [];
+      for (const cfg of CLAIM_TABLES) {
+        const claims = await fetchSubmittedClaimsForTable({
+          accessToken,
+          restBaseUrl: caspioConfig.restBaseUrl,
+          tableName: cfg.table,
+          proc: cfg.proc,
+          pageSize: 500,
+          maxPages: 50,
+        });
+        allClaims.push(...claims);
+      }
+      const matched = matchSubmittedClaimsToEraRows(allClaims, matchRows);
+      return NextResponse.json(
+        {
+          success: true,
+          action: 'match_submitted_claims',
+          eraRows: matchRows.length,
+          claimsFetched: allClaims.length,
+          ...matched,
+        },
+        { status: 200 }
+      );
+    }
+
+    if (action === 'save_cache') {
       if (!parsedByUid) {
         return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 401 });
       }
