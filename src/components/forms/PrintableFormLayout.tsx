@@ -30,6 +30,35 @@ export function PrintableFormLayout({
   const printableRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
+  const waitForPrintableAssets = async (root: HTMLElement) => {
+    try {
+      await (document as any)?.fonts?.ready;
+    } catch {
+      // Ignore
+    }
+
+    const imgs = Array.from(root.querySelectorAll('img')) as HTMLImageElement[];
+    await Promise.all(
+      imgs.map(async (img) => {
+        try {
+          if (img.complete && img.naturalWidth > 0) {
+            if (typeof (img as any).decode === 'function') {
+              await (img as any).decode();
+            }
+            return;
+          }
+          await new Promise<void>((resolve) => {
+            const done = () => resolve();
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+          });
+        } catch {
+          // Ignore
+        }
+      })
+    );
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -41,7 +70,13 @@ export function PrintableFormLayout({
     
     try {
       // Dynamically import html2pdf to avoid SSR issues
-      const html2pdf = (await import('html2pdf.js')).default;
+      const mod: any = await import('html2pdf.js');
+      const html2pdf = mod?.default ?? mod;
+      if (typeof html2pdf !== 'function') {
+        throw new Error('PDF generator failed to load.');
+      }
+
+      await waitForPrintableAssets(printableRef.current);
       
       // Configure PDF options
       const options = {
@@ -52,7 +87,8 @@ export function PrintableFormLayout({
           scale: 2,
           useCORS: true,
           letterRendering: true,
-          allowTaint: false
+          allowTaint: false,
+          backgroundColor: '#ffffff'
         },
         jsPDF: { 
           unit: 'in', 

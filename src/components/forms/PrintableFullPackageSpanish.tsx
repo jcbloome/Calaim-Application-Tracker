@@ -9,6 +9,7 @@ import { PrintableDeclarationFormSpanish } from './PrintableDeclarationFormSpani
 import { PrintableGlossaryFormSpanish } from './PrintableGlossaryFormSpanish';
 import { PrintableProgramInfoFormSpanish } from './PrintableProgramInfoFormSpanish';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
+import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
 
 interface PrintableFullPackageSpanishProps {
   applicationData?: Partial<FormValues>;
@@ -32,35 +33,25 @@ export function PrintableFullPackageSpanish({
     setIsGeneratingPDF(true);
     
     try {
-      // Dynamically import html2pdf to avoid SSR issues
-      const html2pdf = (await import('html2pdf.js')).default;
-      
-      // Configure PDF options for full package
-      const options = {
-        margin: 0.5,
-        filename: `CalAIM_Paquete_Completo_${applicationId || 'formulario'}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2,
-          useCORS: true,
-          letterRendering: true,
-          allowTaint: false,
-          height: window.innerHeight,
-          width: window.innerWidth
-        },
-        jsPDF: { 
-          unit: 'in', 
-          format: 'letter', 
-          orientation: 'portrait' 
-        },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-      };
+      const sections = Array.from(
+        printableRef.current.querySelectorAll('.printable-package-section')
+      ) as HTMLElement[];
+      const bytes = await generatePdfFromHtmlSections(sections, {
+        stampPageNumbers: true,
+        headerText: 'Solicitud de Apoyo Comunitario CalAIM',
+        options: { marginIn: 0.5, scale: 2, format: 'letter', orientation: 'portrait' },
+      });
 
-      // Generate and download PDF
-      await html2pdf()
-        .set(options)
-        .from(printableRef.current)
-        .save();
+      const fileName = `CalAIM_Paquete_Completo_${applicationId || 'formulario'}.pdf`;
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
         
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -101,97 +92,89 @@ export function PrintableFullPackageSpanish({
         </div>
       )}
       
-      <div ref={printableRef} className="space-y-12 print:space-y-16">
+      <div ref={printableRef} className="space-y-12 print:space-y-0 printable-package">
+        <div className="printable-package-section">
+          <PrintableGlossaryFormSpanish applicationId={applicationId} showPrintButton={false} />
+        </div>
 
-      {/* Acronym Glossary - First */}
-      <PrintableGlossaryFormSpanish 
-        applicationId={applicationId}
-        showPrintButton={false}
-      />
+        <div className="printable-package-section">
+          <PrintableProgramInfoFormSpanish applicationId={applicationId} showPrintButton={false} />
+        </div>
 
-      {/* Page Break */}
-      <div className="page-break print:page-break-before"></div>
+        <div className="printable-package-section">
+          <PrintableCsSummaryFormSpanish data={applicationData} applicationId={applicationId} showPrintButton={false} />
+        </div>
 
-      {/* Program Information */}
-      <PrintableProgramInfoFormSpanish 
-        applicationId={applicationId}
-        showPrintButton={false}
-      />
-
-      {/* Page Break */}
-      <div className="page-break print:page-break-before"></div>
-
-      {/* CS Summary Form */}
-      <PrintableCsSummaryFormSpanish 
-        data={applicationData}
-        applicationId={applicationId}
-        showPrintButton={false}
-      />
-
-      {/* Page Break */}
-      <div className="page-break print:page-break-before"></div>
-
-      {/* Waivers & Authorizations */}
-      <PrintableWaiversFormSpanish 
-        memberName={applicationData.memberFirstName && applicationData.memberLastName 
-          ? `${applicationData.memberFirstName} ${applicationData.memberLastName}` 
-          : ''}
-        memberMrn={applicationData.memberMrn || ''}
-        applicationId={applicationId}
-        showPrintButton={false}
-      />
-
-      {/* Declaration of Eligibility (only for SNF Diversion) */}
-      {(pathway === 'SNF Diversion' || applicationData.pathway === 'SNF Diversion') && (
-        <>
-          <div className="page-break print:page-break-before"></div>
-          <PrintableDeclarationFormSpanish 
-            memberName={applicationData.memberFirstName && applicationData.memberLastName 
-              ? `${applicationData.memberFirstName} ${applicationData.memberLastName}` 
-              : ''}
+        <div className="printable-package-section">
+          <PrintableWaiversFormSpanish
+            memberName={
+              applicationData.memberFirstName && applicationData.memberLastName
+                ? `${applicationData.memberFirstName} ${applicationData.memberLastName}`
+                : ''
+            }
             memberMrn={applicationData.memberMrn || ''}
             applicationId={applicationId}
             showPrintButton={false}
           />
-        </>
-      )}
+        </div>
 
-      {/* Package Footer */}
-      <div className="mt-12 print:mt-16 p-4 print:p-6 bg-gray-50 print:bg-white border print:border-black">
-        <p className="text-sm print:text-xs text-gray-600 print:text-black mb-4 text-center">
-          <strong>Fin del Paquete de Solicitud CalAIM</strong>
-        </p>
-        
-        <div className="space-y-4 text-xs print:text-xs text-gray-500 print:text-black">
-          <div className="p-3 bg-yellow-50 print:bg-gray-100 border border-yellow-200 print:border-gray-400 rounded print:rounded-none">
-            <p className="font-bold mb-2">¿Necesita Ayuda?</p>
-            <p className="font-semibold">Contacte a Connections Care Home Consultants:</p>
-            <p className="font-semibold">Teléfono: 800-330-5593</p>
-            <p className="font-semibold">Correo electrónico: calaim@carehomefinders.com</p>
-            <p className="text-xs mt-2 font-medium">
-              <strong>Importante:</strong> Este correo electrónico es solo para información sobre el programa. 
-              Por favor no envíe ningún formulario de solicitud aquí y en su lugar use nuestro 
-              portal seguro de carga de documentos en línea en: <strong>connectcalaim.com/forms/printable-package</strong>
+        {(pathway === 'SNF Diversion' || applicationData.pathway === 'SNF Diversion') ? (
+          <div className="printable-package-section">
+            <PrintableDeclarationFormSpanish
+              memberName={
+                applicationData.memberFirstName && applicationData.memberLastName
+                  ? `${applicationData.memberFirstName} ${applicationData.memberLastName}`
+                  : ''
+              }
+              memberMrn={applicationData.memberMrn || ''}
+              applicationId={applicationId}
+              showPrintButton={false}
+            />
+          </div>
+        ) : null}
+
+        <div className="printable-package-section">
+          <div className="mt-12 print:mt-0 p-4 print:p-6 bg-gray-50 print:bg-white border print:border-black">
+            <p className="text-sm print:text-xs text-gray-600 print:text-black mb-4 text-center">
+              <strong>Fin del Paquete de Solicitud CalAIM</strong>
             </p>
-          </div>
 
-          <div>
-            <p className="font-semibold mb-2">Referencia Rápida:</p>
-            <ul className="space-y-1">
-              <li><strong>Servicios para Miembros de Health Net:</strong> 800-675-6110</li>
-              <li><strong>Opciones de Atención Médica de California:</strong> 800-430-4263</li>
-              <li><strong>Servicios para Miembros de Kaiser:</strong> 1-800-464-4000</li>
-            </ul>
+            <div className="space-y-4 text-xs print:text-xs text-gray-500 print:text-black">
+              <div className="p-3 bg-yellow-50 print:bg-gray-100 border border-yellow-200 print:border-gray-400 rounded print:rounded-none">
+                <p className="font-bold mb-2">¿Necesita Ayuda?</p>
+                <p className="font-semibold">Contacte a Connections Care Home Consultants:</p>
+                <p className="font-semibold">Teléfono: 800-330-5593</p>
+                <p className="font-semibold">Correo electrónico: calaim@carehomefinders.com</p>
+                <p className="text-xs mt-2 font-medium">
+                  <strong>Importante:</strong> Este correo electrónico es solo para información sobre el programa. Por favor no envíe ningún
+                  formulario de solicitud aquí y en su lugar use nuestro portal seguro de carga de documentos en línea en:{' '}
+                  <strong>connectcalaim.com/forms/printable-package</strong>
+                </p>
+              </div>
+
+              <div>
+                <p className="font-semibold mb-2">Referencia Rápida:</p>
+                <ul className="space-y-1">
+                  <li>
+                    <strong>Servicios para Miembros de Health Net:</strong> 800-675-6110
+                  </li>
+                  <li>
+                    <strong>Opciones de Atención Médica de California:</strong> 800-430-4263
+                  </li>
+                  <li>
+                    <strong>Servicios para Miembros de Kaiser:</strong> 1-800-464-4000
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t print:border-t print:border-gray-300 text-center">
+              <p className="text-xs print:text-xs text-gray-500 print:text-black">
+                Paquete generado el {new Date().toLocaleDateString('es-ES')} • ID de Solicitud: {applicationId || 'N/A'}
+              </p>
+            </div>
           </div>
         </div>
-
-        <div className="mt-4 pt-4 border-t print:border-t print:border-gray-300 text-center">
-          <p className="text-xs print:text-xs text-gray-500 print:text-black">
-            Paquete generado el {new Date().toLocaleDateString('es-ES')} • ID de Solicitud: {applicationId || 'N/A'}
-          </p>
-        </div>
-      </div>
-
       </div>
     </div>
   );

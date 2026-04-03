@@ -162,14 +162,6 @@
     margin: 0;
   }
 
-  .grid {
-    display: block;
-  }
-
-  .flex {
-    display: block;
-  }
-
   /* Form sections */
   .form-section {
     margin-bottom: 16pt;
@@ -217,6 +209,42 @@
   /* Page breaks */
   .page-break {
     page-break-before: always;
+    break-before: page;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  /* Printable package helpers */
+  .printable-package .printable-package-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .printable-package .printable-package-section + .printable-package-section {
+    page-break-before: always;
+    break-before: page;
+  }
+
+  /* Keep table headers on every page and avoid splitting rows */
+  .printable-monochrome table {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+  .printable-monochrome thead {
+    display: table-header-group;
+  }
+  .printable-monochrome tfoot {
+    display: table-footer-group;
+  }
+  .printable-monochrome tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Avoid clipping content across printed page breaks */
+  .printable-monochrome .overflow-hidden,
+  .printable-monochrome .overflow-x-hidden,
+  .printable-monochrome .overflow-y-hidden {
+    overflow: visible !important;
   }
 
   .page-break-avoid {
