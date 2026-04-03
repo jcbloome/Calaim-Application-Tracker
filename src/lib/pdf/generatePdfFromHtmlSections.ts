@@ -147,8 +147,11 @@ export async function generatePdfFromHtmlSections(
   const pageSize = letterPageSizePts(orientation);
   const marginPts = marginIn * 72;
   const headerBlockPts = params.headerText ? 24 : 0;
+  // Extra breathing room above the captured content to prevent any "top clipped" look
+  // caused by renderer rounding or tight fit-to-page scaling.
+  const topBufferPts = 30;
   const contentWidthPts = pageSize.width - marginPts * 2;
-  const contentHeightPts = pageSize.height - marginPts * 2 - headerBlockPts;
+  const contentHeightPts = pageSize.height - marginPts * 2 - headerBlockPts - topBufferPts;
 
   const finalDoc = await PDFDocument.create();
   const MAX_CANVAS_HEIGHT = 24000;

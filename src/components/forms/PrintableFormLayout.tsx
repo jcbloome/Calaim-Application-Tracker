@@ -80,7 +80,8 @@ export function PrintableFormLayout({
       
       // Configure PDF options
       const options = {
-        margin: 0.5,
+        // Slightly larger top margin to prevent first-line clipping in PDFs
+        margin: [0.75, 0.5, 0.5, 0.5],
         filename: `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { 
