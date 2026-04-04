@@ -756,24 +756,48 @@ function PushToCaspioDialog({
     }, [firestore, application.id, application.userId]);
 
     useEffect(() => {
-        if (!isOpen || typeof window === 'undefined') return;
-        try {
-            const stored = localStorage.getItem('calaim_cs_caspio_mapping');
-            if (!stored) {
-                setCaspioMappingPreview(null);
-                return;
+        if (!isOpen) return;
+        let cancelled = false;
+        const loadMappingPreview = async () => {
+            if (firestore && user?.uid) {
+                try {
+                    const cloudRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
+                    const cloudSnap = await getDoc(cloudRef);
+                    if (cloudSnap.exists()) {
+                        const cloudData = (cloudSnap.data() || {}) as Record<string, any>;
+                        const locked = cloudData?.lockedMappings;
+                        if (locked && typeof locked === 'object' && Object.keys(locked).length > 0) {
+                            if (!cancelled) setCaspioMappingPreview(locked as Record<string, string>);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Failed to load cloud Caspio mapping preview:', error);
+                }
             }
-            const parsed = JSON.parse(stored);
-            if (parsed && typeof parsed === 'object') {
-                setCaspioMappingPreview(parsed);
-                return;
+            if (typeof window !== 'undefined') {
+                try {
+                    const stored = localStorage.getItem('calaim_cs_caspio_mapping');
+                    if (!stored) {
+                        if (!cancelled) setCaspioMappingPreview(null);
+                        return;
+                    }
+                    const parsed = JSON.parse(stored);
+                    if (parsed && typeof parsed === 'object') {
+                        if (!cancelled) setCaspioMappingPreview(parsed);
+                        return;
+                    }
+                } catch (error) {
+                    console.warn('Failed to load local Caspio mapping preview:', error);
+                }
             }
-            setCaspioMappingPreview(null);
-        } catch (error) {
-            console.warn('Failed to load Caspio mapping preview:', error);
-            setCaspioMappingPreview(null);
-        }
-    }, [isOpen]);
+            if (!cancelled) setCaspioMappingPreview(null);
+        };
+        void loadMappingPreview();
+        return () => {
+            cancelled = true;
+        };
+    }, [firestore, isOpen, user?.uid]);
 
     const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
     const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
@@ -4065,6 +4089,7 @@ function ApplicationDetailPageContent() {
       return Boolean(formInfo?.fileName || formInfo?.filePath || formInfo?.downloadURL);
     });
   })();
+  const hasEligibilityUploadEvidence = hasEligibilityUploadsToReset;
   if (!formStatusMap.get('Room and Board/Tier Level Agreement') && formStatusMap.get('Room and Board/Tier Level Commitment')) {
     formStatusMap.set('Room and Board/Tier Level Agreement', formStatusMap.get('Room and Board/Tier Level Commitment') as any);
   } else if (!formStatusMap.get('Room and Board/Tier Level Agreement') && formStatusMap.get('Room and Board Commitment')) {
@@ -6897,22 +6922,40 @@ function ApplicationDetailPageContent() {
                       <label className="text-sm font-medium">CalAIM Status</label>
                       {isUpdatingTracking && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                     </div>
-                    <Select
+                    <RadioGroup
                       value={(application as any)?.calaimTrackingStatus || ''}
                       onValueChange={updateTrackingStatus}
-                      disabled={isUpdatingTracking}
+                      disabled={isUpdatingTracking || !hasEligibilityUploadEvidence}
+                      className="grid grid-cols-1 gap-2 sm:grid-cols-2"
                     >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select CalAIM status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {calaimTrackingOptions.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      <label
+                        htmlFor="calaim-status-eligible"
+                        className={cn(
+                          'flex cursor-pointer items-center gap-3 rounded-md border p-3',
+                          (application as any)?.calaimTrackingStatus === 'CalAIM Eligible' && 'border-emerald-400 bg-emerald-50',
+                          (isUpdatingTracking || !hasEligibilityUploadEvidence) && 'cursor-not-allowed opacity-60'
+                        )}
+                      >
+                        <RadioGroupItem id="calaim-status-eligible" value="CalAIM Eligible" />
+                        <span className="text-sm font-medium">CalAIM Eligible</span>
+                      </label>
+                      <label
+                        htmlFor="calaim-status-not-eligible"
+                        className={cn(
+                          'flex cursor-pointer items-center gap-3 rounded-md border p-3',
+                          (application as any)?.calaimTrackingStatus === 'Not CalAIM Eligible' && 'border-amber-400 bg-amber-50',
+                          (isUpdatingTracking || !hasEligibilityUploadEvidence) && 'cursor-not-allowed opacity-60'
+                        )}
+                      >
+                        <RadioGroupItem id="calaim-status-not-eligible" value="Not CalAIM Eligible" />
+                        <span className="text-sm font-medium">Not CalAIM Eligible</span>
+                      </label>
+                    </RadioGroup>
+                    {!hasEligibilityUploadEvidence ? (
+                      <p className="text-xs text-muted-foreground">
+                        Upload eligibility evidence first, then check off Eligible or Not Eligible.
+                      </p>
+                    ) : null}
 
                     <div className="space-y-2">
                       <Label className="text-sm font-medium">Reason</Label>

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Loader2, Database, CheckCircle2, AlertTriangle, Users, ArrowRight, Map, Copy, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -31,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useCaspioSync } from '@/modules/caspio-integration';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore, useUser } from '@/firebase';
 
 interface TestResult {
   member: string;
@@ -251,6 +252,8 @@ const caspioMembersFields = {
 
 export default function CaspioTestPage() {
   const auth = useAuth();
+  const firestore = useFirestore();
+  const { user } = useUser();
   const [isRunning, setIsRunning] = useState(false);
   const [testResults, setTestResults] = useState<TestResponse | null>(null);
   const [isSingleTestRunning, setIsSingleTestRunning] = useState(false);
@@ -279,6 +282,8 @@ export default function CaspioTestPage() {
   const [selectedDraftName, setSelectedDraftName] = useState('');
   const [lastDraftName, setLastDraftName] = useState('');
   const [currentDraftMappings, setCurrentDraftMappings] = useState<{[key: string]: string} | null>(null);
+  const [hasLoadedCloudDrafts, setHasLoadedCloudDrafts] = useState(false);
+  const [isApplyingCloudDrafts, setIsApplyingCloudDrafts] = useState(false);
   const draftKey = 'calaim_cs_caspio_mapping_draft';
   const lockedKey = 'calaim_cs_caspio_mapping';
   const caspioFieldsKey = 'calaim_caspio_fields_cache';
@@ -340,6 +345,138 @@ export default function CaspioTestPage() {
       console.error('Failed to load saved field mappings:', error);
     }
   }, []);
+
+  useEffect(() => {
+    if (!firestore || !user?.uid) return;
+    const draftsRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
+    const readCloudDrafts = async () => {
+      setIsApplyingCloudDrafts(true);
+      try {
+        const snap = await getDoc(draftsRef);
+        if (!snap.exists()) {
+          // One-time migration: if local drafts exist, seed Firestore with them.
+          if (typeof window !== 'undefined') {
+            const localLocked = (() => {
+              try {
+                return JSON.parse(localStorage.getItem(lockedKey) || 'null');
+              } catch {
+                return null;
+              }
+            })();
+            const localCurrent = (() => {
+              try {
+                return JSON.parse(localStorage.getItem(draftKey) || 'null');
+              } catch {
+                return null;
+              }
+            })();
+            const localNamed = (() => {
+              try {
+                return JSON.parse(localStorage.getItem(namedDraftsKey) || '{}');
+              } catch {
+                return {};
+              }
+            })();
+            const localLastName = (() => {
+              try {
+                return String(localStorage.getItem(lastDraftNameKey) || '').trim();
+              } catch {
+                return '';
+              }
+            })();
+            const hasLocalData =
+              (localLocked && typeof localLocked === 'object' && Object.keys(localLocked).length > 0) ||
+              (localCurrent && typeof localCurrent === 'object' && Object.keys(localCurrent).length > 0) ||
+              (localNamed && typeof localNamed === 'object' && Object.keys(localNamed).length > 0);
+            if (hasLocalData) {
+              await setDoc(
+                draftsRef,
+                {
+                  lockedMappings: localLocked && typeof localLocked === 'object' ? localLocked : null,
+                  currentDraftMappings: localCurrent && typeof localCurrent === 'object' ? localCurrent : null,
+                  namedDrafts: localNamed && typeof localNamed === 'object' ? localNamed : {},
+                  lastDraftName: localLastName || null,
+                  migratedFromLocalStorageAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                },
+                { merge: true }
+              );
+            }
+          }
+          return;
+        }
+
+        const data = (snap.data() || {}) as Record<string, any>;
+        const cloudLocked = data.lockedMappings && typeof data.lockedMappings === 'object' ? data.lockedMappings : null;
+        const cloudCurrent = data.currentDraftMappings && typeof data.currentDraftMappings === 'object' ? data.currentDraftMappings : null;
+        const cloudNamed = data.namedDrafts && typeof data.namedDrafts === 'object' ? data.namedDrafts : {};
+        const cloudLastName = String(data.lastDraftName || '').trim();
+
+        if (cloudLocked && Object.keys(cloudLocked).length > 0) {
+          setLockedMappings(cloudLocked);
+          setFieldMappings(cloudLocked);
+          const count = Object.keys(cloudLocked).length;
+          setLockedMappingCount(count);
+          setHasLockedMappings(count > 0);
+          setCurrentDraftMappings(null);
+          setHasDraftMappings(false);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(lockedKey, JSON.stringify(cloudLocked));
+            localStorage.removeItem(draftKey);
+          }
+        } else if (cloudCurrent && Object.keys(cloudCurrent).length > 0) {
+          setFieldMappings(cloudCurrent);
+          setCurrentDraftMappings(cloudCurrent);
+          setHasDraftMappings(true);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(draftKey, JSON.stringify(cloudCurrent));
+          }
+        }
+
+        setNamedDrafts(cloudNamed);
+        setLastDraftName(cloudLastName);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(namedDraftsKey, JSON.stringify(cloudNamed));
+          if (cloudLastName) localStorage.setItem(lastDraftNameKey, cloudLastName);
+        }
+      } catch (error) {
+        console.warn('Failed to load cloud mapping drafts:', error);
+      } finally {
+        setIsApplyingCloudDrafts(false);
+        setHasLoadedCloudDrafts(true);
+      }
+    };
+    readCloudDrafts();
+  }, [draftKey, firestore, lastDraftNameKey, lockedKey, namedDraftsKey, user?.uid]);
+
+  useEffect(() => {
+    if (!firestore || !user?.uid) return;
+    if (!hasLoadedCloudDrafts || isApplyingCloudDrafts) return;
+    const draftsRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
+    const payload = {
+      lockedMappings: lockedMappings || null,
+      currentDraftMappings: lockedMappings
+        ? null
+        : currentDraftMappings || (Object.keys(fieldMappings).length > 0 ? fieldMappings : null),
+      namedDrafts,
+      lastDraftName: lastDraftName || null,
+      updatedByUid: user.uid,
+      updatedAt: serverTimestamp(),
+    };
+    void setDoc(draftsRef, payload, { merge: true }).catch((error) => {
+      console.warn('Failed to save cloud mapping drafts:', error);
+    });
+  }, [
+    currentDraftMappings,
+    fieldMappings,
+    firestore,
+    hasLoadedCloudDrafts,
+    isApplyingCloudDrafts,
+    lastDraftName,
+    lockedMappings,
+    namedDrafts,
+    user?.uid,
+  ]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -977,6 +1114,7 @@ export default function CaspioTestPage() {
     ? Object.entries(lockedMappings).sort(([a], [b]) => a.localeCompare(b))
     : [];
   const autoSaveLabel = lastDraftName || 'Draft 1';
+  const draftSourceMappings = lockedMappings || fieldMappings;
   const getNextDraftName = () => {
     const names = Object.keys(namedDrafts);
     const usedNumbers = names
@@ -987,6 +1125,31 @@ export default function CaspioTestPage() {
       .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
     const nextNumber = usedNumbers.length === 0 ? 1 : Math.max(...usedNumbers) + 1;
     return `Draft ${nextNumber}`;
+  };
+  const handleSaveDraft = () => {
+    if (Object.keys(draftSourceMappings).length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Mappings to Save",
+        description: "Map at least one field before saving.",
+      });
+      return;
+    }
+    const resolvedDraftName = draftName.trim() || getNextDraftName();
+    const updatedDrafts = {
+      ...namedDrafts,
+      [resolvedDraftName]: draftSourceMappings,
+    };
+    setNamedDrafts(updatedDrafts);
+    setLastDraftName(resolvedDraftName);
+    localStorage.setItem(namedDraftsKey, JSON.stringify(updatedDrafts));
+    localStorage.setItem(lastDraftNameKey, resolvedDraftName);
+    setHasDraftMappings(true);
+    toast({
+      title: "Draft Saved",
+      description: `Draft "${resolvedDraftName}" saved.`,
+    });
+    setDraftName('');
   };
 
   return (
@@ -1582,6 +1745,20 @@ export default function CaspioTestPage() {
                     >
                       Load Draft
                     </Button>
+                    <Input
+                      value={draftName}
+                      onChange={(event) => setDraftName(event.target.value)}
+                      placeholder={autoSaveLabel}
+                      className="h-9 w-40"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSaveDraft}
+                      disabled={Object.keys(draftSourceMappings).length === 0}
+                    >
+                      Save Draft
+                    </Button>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
@@ -1667,53 +1844,6 @@ export default function CaspioTestPage() {
                       </div>
                     </div>
                   ))}
-                </div>
-
-                <div className="p-4 border rounded-lg bg-white space-y-3">
-                  <div className="text-sm text-muted-foreground">
-                    Auto-save is enabled for each selection. Use a name below to save this draft.
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Input
-                      value={draftName}
-                      onChange={(event) => setDraftName(event.target.value)}
-                      placeholder={autoSaveLabel}
-                      className="h-9 w-64"
-                      disabled={!!lockedMappings}
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (Object.keys(fieldMappings).length === 0) {
-                          toast({
-                            variant: "destructive",
-                            title: "No Mappings to Save",
-                            description: "Map at least one field before saving.",
-                          });
-                          return;
-                        }
-                        const resolvedDraftName = draftName.trim() || getNextDraftName();
-                        const updatedDrafts = {
-                          ...namedDrafts,
-                          [resolvedDraftName]: fieldMappings,
-                        };
-                        setNamedDrafts(updatedDrafts);
-                        setLastDraftName(resolvedDraftName);
-                        localStorage.setItem(namedDraftsKey, JSON.stringify(updatedDrafts));
-                        localStorage.setItem(lastDraftNameKey, resolvedDraftName);
-                        setHasDraftMappings(true);
-                        toast({
-                          title: "Draft Saved",
-                          description: `Draft "${resolvedDraftName}" saved.`,
-                        });
-                        setDraftName('');
-                      }}
-                      disabled={!!lockedMappings}
-                    >
-                      Save Draft
-                    </Button>
-                  </div>
                 </div>
 
                 {/* Export Mappings */}

@@ -11,7 +11,7 @@ import { ArrowLeft, Bell, FileText, Loader2, RotateCcw, Upload, Users } from 'lu
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
-import { addDoc, collection, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -564,11 +564,39 @@ export default function CreateApplicationPage() {
   const [isPushingSingleAuthToCaspio, setIsPushingSingleAuthToCaspio] = useState(false);
   const [isSendingFamilyInviteEmail, setIsSendingFamilyInviteEmail] = useState(false);
   const [lastCreatedSkeleton, setLastCreatedSkeleton] = useState<{ applicationId: string; memberName: string } | null>(null);
+  const [lockedCaspioPushMapping, setLockedCaspioPushMapping] = useState<Record<string, string> | null>(null);
   const ilsSpreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
   const parseAbortControllerRef = useRef<AbortController | null>(null);
   const createApplicationRef = useRef<() => Promise<string | null> | string | null>(() => null);
   const [memberData, setMemberData] = useState(getEmptyMemberData);
+
+  useEffect(() => {
+    const loadLockedMapping = async () => {
+      if (!firestore || !user?.uid) return;
+      try {
+        const mappingRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
+        const mappingSnap = await getDoc(mappingRef);
+        if (!mappingSnap.exists()) return;
+        const data = (mappingSnap.data() || {}) as Record<string, any>;
+        const locked = data?.lockedMappings;
+        if (locked && typeof locked === 'object' && Object.keys(locked).length > 0) {
+          setLockedCaspioPushMapping(locked as Record<string, string>);
+        }
+      } catch (error) {
+        console.warn('Failed to load locked Caspio mapping from Firestore:', error);
+      }
+    };
+    void loadLockedMapping();
+  }, [firestore, user?.uid]);
+
+  const activeCaspioPushMapping = useMemo<Record<string, string>>(
+    () =>
+      lockedCaspioPushMapping && Object.keys(lockedCaspioPushMapping).length > 0
+        ? lockedCaspioPushMapping
+        : CASPIO_PUSH_MAPPING,
+    [lockedCaspioPushMapping]
+  );
 
   useEffect(() => {
     const intakeSource = String(searchParams.get('intakeSource') || '').trim().toLowerCase();
@@ -691,12 +719,12 @@ export default function CreateApplicationPage() {
       assignedStaffName: sample.assignedStaffName,
       healthPlan: 'Kaiser',
     };
-    return Object.entries(CASPIO_PUSH_MAPPING).map(([source, caspioField]) => ({
+    return Object.entries(activeCaspioPushMapping).map(([source, caspioField]) => ({
       source,
       caspioField,
       value: String(sourceValueMap[source] || '').trim() || '—',
     }));
-  }, [quickViewIlsRow]);
+  }, [activeCaspioPushMapping, quickViewIlsRow]);
 
   const parseIlsSpreadsheetFile = async (file: File) => {
     setIsParsingIlsSpreadsheet(true);
@@ -1035,7 +1063,7 @@ export default function CreateApplicationPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               applicationData,
-              mapping: CASPIO_PUSH_MAPPING,
+              mapping: activeCaspioPushMapping,
             }),
           });
           const data = (await res.json().catch(() => ({}))) as any;
@@ -1684,7 +1712,7 @@ export default function CreateApplicationPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           applicationData,
-          mapping: CASPIO_PUSH_MAPPING,
+          mapping: activeCaspioPushMapping,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
