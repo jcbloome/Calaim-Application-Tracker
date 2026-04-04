@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCaspioSync } from '@/modules/caspio-integration';
 import { useAuth, useFirestore, useUser } from '@/firebase';
+import { formSchema } from '@/app/forms/cs-summary-form/schema';
 
 interface TestResult {
   member: string;
@@ -147,6 +148,27 @@ const csSummaryFields = {
   rcfeAdminLastName: "",
   rcfeAdminPhone: "",
   rcfeAdminEmail: ""
+};
+
+const extractCsSummaryFieldTemplateFromSchema = (): Record<string, string> => {
+  try {
+    let current: any = formSchema as any;
+    // Unwrap zod refinements/effects to reach the base object schema.
+    while (current?._def?.schema) {
+      current = current._def.schema;
+    }
+    const shape =
+      typeof current?._def?.shape === 'function'
+        ? current._def.shape()
+        : current?._def?.shape;
+    if (!shape || typeof shape !== 'object') return {};
+    return Object.keys(shape).reduce<Record<string, string>>((acc, key) => {
+      acc[key] = '';
+      return acc;
+    }, {});
+  } catch {
+    return {};
+  }
 };
 
 // CalAIM Members Table Field Names (loaded from Caspio)
@@ -267,6 +289,10 @@ export default function CaspioTestPage() {
   const [clearAllOpen, setClearAllOpen] = useState(false);
   const [isSingleTestPreviewLoading, setIsSingleTestPreviewLoading] = useState(false);
   const [fieldMappings, setFieldMappings] = useState<{[key: string]: string}>({});
+  const [appFieldTemplate, setAppFieldTemplate] = useState<Record<string, string>>(() => ({
+    ...csSummaryFields,
+    ...extractCsSummaryFieldTemplateFromSchema(),
+  }));
   const [isRefreshingCaspioFields, setIsRefreshingCaspioFields] = useState(false);
   const [isRefreshingAppFields, setIsRefreshingAppFields] = useState(false);
   const [isLoadingCachedFields, setIsLoadingCachedFields] = useState(false);
@@ -284,6 +310,7 @@ export default function CaspioTestPage() {
   const [currentDraftMappings, setCurrentDraftMappings] = useState<{[key: string]: string} | null>(null);
   const [hasLoadedCloudDrafts, setHasLoadedCloudDrafts] = useState(false);
   const [isApplyingCloudDrafts, setIsApplyingCloudDrafts] = useState(false);
+  const [fieldSearchQuery, setFieldSearchQuery] = useState('');
   const draftKey = 'calaim_cs_caspio_mapping_draft';
   const lockedKey = 'calaim_cs_caspio_mapping';
   const caspioFieldsKey = 'calaim_caspio_fields_cache';
@@ -788,13 +815,20 @@ export default function CaspioTestPage() {
   const refreshAppFields = async () => {
     setIsRefreshingAppFields(true);
     try {
-      // Simulate refreshing app fields - in a real scenario, this might reload from a config file
-      // For now, we'll just show a success message since the fields are hardcoded
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      
+      const schemaFields = extractCsSummaryFieldTemplateFromSchema();
+      setAppFieldTemplate((prev) => ({
+        ...prev,
+        ...csSummaryFields,
+        ...schemaFields,
+      }));
+      const schemaCount = Object.keys(schemaFields).length;
+      const totalCount = Object.keys({
+        ...csSummaryFields,
+        ...schemaFields,
+      }).length;
       toast({
         title: "App Fields Refreshed",
-        description: `CS Summary form fields reloaded (${Object.keys(csSummaryFields).length} fields)`,
+        description: `CS Summary fields refreshed (${totalCount} total; ${schemaCount} from form schema). Existing draft mappings were kept.`,
       });
     } catch (error: any) {
       console.error('Error refreshing app fields:', error);
@@ -1151,6 +1185,16 @@ export default function CaspioTestPage() {
     });
     setDraftName('');
   };
+  const filteredCsSummaryFieldEntries = useMemo(() => {
+    const query = fieldSearchQuery.trim().toLowerCase();
+    const entries = Object.entries(appFieldTemplate);
+    if (!query) return entries;
+    return entries.filter(([csField, sampleValue]) => {
+      const mappedField = String(fieldMappings[csField] || '').toLowerCase();
+      const sample = String(sampleValue ?? '').toLowerCase();
+      return csField.toLowerCase().includes(query) || mappedField.includes(query) || sample.includes(query);
+    });
+  }, [appFieldTemplate, fieldMappings, fieldSearchQuery]);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -1519,7 +1563,7 @@ export default function CaspioTestPage() {
                   <div>
                     <h4 className="font-medium text-blue-900">Field Mapping Progress</h4>
                     <p className="text-sm text-blue-700">
-                      {Object.keys(fieldMappings).length} of {Object.keys(csSummaryFields).length} fields mapped
+                      {Object.keys(fieldMappings).length} of {Object.keys(appFieldTemplate).length} fields mapped
                     </p>
                     <p className="text-xs text-blue-700 mt-1">
                       Last updated: {isLoadingCachedFields ? 'Loading cached fields...' : (lastRefreshTime > 0 ? new Date(lastRefreshTime).toLocaleString() : 'Not yet loaded')}
@@ -1764,6 +1808,19 @@ export default function CaspioTestPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      onClick={refreshAppFields}
+                      disabled={isRefreshingAppFields}
+                    >
+                      {isRefreshingAppFields ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                      )}
+                      Refresh CS Summary Fields
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={refreshCaspioFields}
                       disabled={isRefreshingCaspioFields}
                     >
@@ -1774,12 +1831,26 @@ export default function CaspioTestPage() {
                       )}
                       Refresh Caspio Fields
                     </Button>
+                    <div className="text-xs text-blue-700">
+                      Refresh updates field options only (CS Summary and Caspio). Your current draft mapping stays in place.
+                    </div>
                   </div>
                 </div>
 
                 {/* Field Mapping Grid */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Input
+                    value={fieldSearchQuery}
+                    onChange={(event) => setFieldSearchQuery(event.target.value)}
+                    placeholder="Search CS field, sample, or mapped Caspio field..."
+                    className="h-9 w-full sm:w-96"
+                  />
+                  <div className="text-xs text-muted-foreground">
+                    Showing {filteredCsSummaryFieldEntries.length} of {Object.keys(appFieldTemplate).length} fields
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto border rounded-lg p-4">
-                  {Object.entries(csSummaryFields).map(([csField, sampleValue]) => (
+                  {filteredCsSummaryFieldEntries.map(([csField, sampleValue]) => (
                     <div key={csField} className="grid grid-cols-2 gap-3 p-3 border rounded-lg bg-gray-50">
                       <div className="space-y-2">
                         <div className="p-2 bg-blue-100 rounded border">
@@ -1844,6 +1915,11 @@ export default function CaspioTestPage() {
                       </div>
                     </div>
                   ))}
+                  {filteredCsSummaryFieldEntries.length === 0 ? (
+                    <div className="rounded border border-dashed p-4 text-sm text-muted-foreground">
+                      No fields match your search.
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Export Mappings */}

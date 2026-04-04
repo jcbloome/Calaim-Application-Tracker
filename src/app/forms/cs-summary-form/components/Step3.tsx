@@ -8,6 +8,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
@@ -139,6 +140,30 @@ export default function Step3() {
                     </FormItem>
                   </RadioGroup>
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={control}
+            name="eligibilityRoute"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel>Eligibility Route <span className="text-destructive">*</span></FormLabel>
+                <FormControl>
+                  <Select onValueChange={field.onChange} value={field.value ?? undefined}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select eligibility route" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SNF Transition">SNF Transition</SelectItem>
+                      <SelectItem value="SNF Diversion">SNF Diversion</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+                <FormDescription>
+                  Select the eligibility route using the same options shown in Pathway Selection.
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}

@@ -1034,97 +1034,34 @@ export default function CreateApplicationPage() {
       toast({ title: 'No selected rows', description: 'Select one or more imported rows first.' });
       return;
     }
+    const createdRows = selectedIlsRows.filter((row) => Boolean(String(row.applicationId || '').trim()));
+    if (createdRows.length === 0) {
+      toast({
+        title: 'Create records first',
+        description: 'Create selected application records first, then open one from the main application page to push to Caspio.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (createdRows.length > 1) {
+      toast({
+        title: 'Select one record',
+        description: 'Push must happen from the main application page. Select one created record at a time.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsPushingIlsRows(true);
     try {
-      for (const row of selectedIlsRows) {
-        try {
-          if (!row.assignedStaffName && !row.assignedStaffId) {
-            throw new Error('Assign staff before pushing.');
-          }
-          const linkedApplicationId = String(row.applicationId || '').trim();
-          if (String(row.clientId2 || '').trim()) {
-            throw new Error(CASPIO_CLIENT_ID_CONFLICT_WARNING);
-          }
-          if (firestore && linkedApplicationId) {
-            const linkedSnap = await getDoc(doc(firestore, 'applications', linkedApplicationId));
-            if (linkedSnap.exists()) {
-              const linkedData = linkedSnap.data() as Record<string, unknown>;
-              const existingClientId2 = String(linkedData?.client_ID2 || linkedData?.clientId2 || '').trim();
-              if (existingClientId2) {
-                throw new Error(CASPIO_CLIENT_ID_CONFLICT_WARNING);
-              }
-            }
-          }
-          const applicationData = {
-            memberFirstName: row.memberFirstName,
-            memberLastName: row.memberLastName,
-            clientId2: row.clientId2,
-            memberMrn: row.memberMrn,
-            memberAddress: row.memberAddress,
-            memberCounty: row.memberCounty,
-            memberDob: row.memberDob,
-            memberPhone: row.memberPhone,
-            Authorization_Number_T038: row.authorizationNumberT2038,
-            Authorization_Start_T2038: row.authorizationStartT2038,
-            Authorization_End_T2038: row.authorizationEndT2038,
-            cptCode: row.cptCode,
-            Diagnostic_Code: row.diagnosticCode,
-            kaiserStatus: 'T2038 Received, Needs First Contact',
-            workflowStep: 'Needs First Contact',
-            assignedStaffId: row.assignedStaffId,
-            assignedStaffName: row.assignedStaffName,
-            healthPlan: 'Kaiser',
-          };
-          const res = await fetch('/api/admin/caspio/push-cs-summary', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              applicationData,
-              mapping: activeCaspioPushMapping,
-            }),
-          });
-          const data = (await res.json().catch(() => ({}))) as any;
-          if (!res.ok || !data?.success) {
-            throw new Error(data?.message || data?.details?.rawError || `Push failed (HTTP ${res.status})`);
-          }
-          const pushedClientId2 = String(data?.clientId2 || row.clientId2 || '').trim();
-          if (firestore && linkedApplicationId && pushedClientId2) {
-            await setDoc(
-              doc(firestore, 'applications', linkedApplicationId),
-              {
-                clientId2: pushedClientId2,
-                client_ID2: pushedClientId2,
-                caspioClientId2: pushedClientId2,
-                caspioSent: true,
-                caspioSentDate: serverTimestamp(),
-                lastUpdated: serverTimestamp(),
-              },
-              { merge: true }
-            );
-          }
-          setIlsImportRows((prev) =>
-            prev.map((r) =>
-              r.rowId === row.rowId
-                ? {
-                    ...r,
-                    pushStatus: 'pushed',
-                    pushedClientId2,
-                    statusNote: pushedClientId2
-                      ? `Pushed to Caspio • Client_ID2 ${pushedClientId2}`
-                      : data?.message || 'Pushed to Caspio',
-                  }
-                : r
-            )
-          );
-        } catch (err: any) {
-          setIlsImportRows((prev) =>
-            prev.map((r) =>
-              r.rowId === row.rowId ? { ...r, pushStatus: 'failed', statusNote: String(err?.message || 'Push failed') } : r
-            )
-          );
-        }
-      }
-      toast({ title: 'Caspio push finished', description: `Processed ${selectedIlsRows.length} selected row(s).` });
+      const target = createdRows[0];
+      setIlsImportRows((prev) =>
+        prev.map((r) =>
+          r.rowId === target.rowId
+            ? { ...r, statusNote: 'Open main application page and use Push to Caspio there.' }
+            : r
+        )
+      );
+      router.push(`/admin/applications/${target.applicationId}`);
     } finally {
       setIsPushingIlsRows(false);
     }
@@ -1682,7 +1619,7 @@ export default function CreateApplicationPage() {
     if (!memberData.memberFirstName || !memberData.memberLastName) {
       toast({
         title: 'Missing member name',
-        description: 'Parse the single auth PDF (or enter member first/last name) before pushing.',
+        description: 'Parse the single auth PDF (or enter member first/last name) before creating/opening the main application record.',
         variant: 'destructive',
       });
       return;
@@ -1702,86 +1639,22 @@ export default function CreateApplicationPage() {
       if (options?.createSkeletonFirst) {
         createdApplicationId = await createApplicationForMember({ skipNavigate: true, suppressSuccessToast: true });
         if (!createdApplicationId) {
-          throw new Error('Could not create skeleton application before Caspio push.');
+          throw new Error('Could not create skeleton application.');
         }
-        if (firestore) {
-          const createdSnap = await getDoc(doc(firestore, 'applications', createdApplicationId));
-          if (createdSnap.exists()) {
-            const createdData = createdSnap.data() as Record<string, unknown>;
-            const existingClientId2 = String(createdData?.client_ID2 || createdData?.clientId2 || '').trim();
-            if (existingClientId2) {
-              throw new Error(CASPIO_CLIENT_ID_CONFLICT_WARNING);
-            }
-          }
-        }
-      }
-      const applicationData = {
-        memberFirstName: memberData.memberFirstName || '',
-        memberLastName: memberData.memberLastName || '',
-        clientId2: '',
-        memberMrn: memberData.memberMrn || '',
-        memberAddress: memberData.memberCustomaryAddress || '',
-        memberCounty: memberData.memberCustomaryCounty || '',
-        memberDob: memberData.memberDob || '',
-        memberPhone: memberData.memberPhone || '',
-        Authorization_Number_T038: memberData.Authorization_Number_T038 || '',
-        Authorization_Start_T2038: memberData.Authorization_Start_T2038 || '',
-        Authorization_End_T2038: memberData.Authorization_End_T2038 || '',
-        cptCode: '',
-        Diagnostic_Code: memberData.Diagnostic_Code || '',
-        kaiserStatus: 'Authorization Received (Doc Collection)',
-        workflowStep: 'Needs First Contact',
-        assignedStaffId: selectedAssignedStaffId || '',
-        assignedStaffName: selectedAssignedStaffName || '',
-        healthPlan: 'Kaiser',
-      };
-      const res = await fetch('/api/admin/caspio/push-cs-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          applicationData,
-          mapping: activeCaspioPushMapping,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.message || data?.details?.rawError || `Push failed (HTTP ${res.status})`);
-      }
-      const pushedClientId2 = String(data?.clientId2 || '').trim();
-      if (firestore && createdApplicationId && pushedClientId2) {
-        await setDoc(
-          doc(firestore, 'applications', createdApplicationId),
-          {
-            clientId2: pushedClientId2,
-            client_ID2: pushedClientId2,
-            caspioClientId2: pushedClientId2,
-            caspioSent: true,
-            caspioSentDate: serverTimestamp(),
-            lastUpdated: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
-      if (createdApplicationId && pushedClientId2) {
-        setLastCreatedSkeleton((prev) =>
-          prev && prev.applicationId === createdApplicationId
-            ? { ...prev, clientId2: pushedClientId2 }
-            : prev
-        );
       }
       toast({
-        title: 'Single auth pushed to Caspio',
+        title: 'Skeleton created',
         description: createdApplicationId
-          ? `Created skeleton ${createdApplicationId} and pushed this member to Caspio.`
-          : 'Successfully pushed this single-auth intake to Caspio.',
+          ? `Open application ${createdApplicationId} and push to Caspio from the main application page.`
+          : 'Create a skeleton first, then push from the main application page.',
       });
       if (createdApplicationId) {
         router.push(`/admin/applications/${createdApplicationId}`);
       }
     } catch (error: any) {
       toast({
-        title: 'Single auth push failed',
-        description: String(error?.message || 'Unable to push single-auth intake to Caspio.'),
+        title: 'Create/open failed',
+        description: String(error?.message || 'Unable to create/open the main application page.'),
         variant: 'destructive',
       });
     } finally {
@@ -2060,7 +1933,7 @@ export default function CreateApplicationPage() {
                         ) : (
                           <Database className="mr-2 h-4 w-4 text-sky-600" />
                         )}
-                        Push Selected to Caspio
+                        Open Selected for Main-Page Push
                       </Button>
                     </div>
                   </div>
@@ -2115,7 +1988,7 @@ export default function CreateApplicationPage() {
                         ) : (
                           <Database className="mr-2 h-4 w-4 text-sky-600" />
                         )}
-                        Create + Push Single Auth
+                        Create + Open Main Page
                       </Button>
                       <Button
                         type="button"
@@ -2130,7 +2003,7 @@ export default function CreateApplicationPage() {
                       Spreadsheet file: {ilsSpreadsheetFileName || 'None'} • Single auth PDF: {serviceRequestFile?.name || 'None'}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Single-auth flow: Parse PDF -> Create skeleton -> Create + Push to Caspio.
+                      Single-auth flow: Parse PDF -> Create skeleton -> Open main application page -> Push to Caspio.
                     </div>
                     {serviceRequestParsedFields.length > 0 ? (
                       <div className="text-xs text-green-700">

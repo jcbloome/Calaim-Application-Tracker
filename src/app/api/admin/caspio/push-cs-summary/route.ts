@@ -10,6 +10,7 @@ const looksLikePkField = (fieldName: string) => /^pk_id$/i.test(clean(fieldName)
 const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(value));
 const HOLD_FOR_SOCIAL_WORKER_FIELD = 'Hold_For_Social_Worker';
 const HOLD_FOR_SOCIAL_WORKER_VALUE = '🔴 Hold';
+const CALAIM_STATUS_FIELD = 'CalAIM_Status';
 
 const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<string, string> | null) => {
   const memberData: Record<string, any> = {};
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
     const lastName = clean(applicationData.memberLastName);
     const assignedStaffName = clean(applicationData?.assignedStaffName);
     const assignedStaffId = clean(applicationData?.assignedStaffId);
+    const requestedCalAIMStatus = clean(applicationData?.caspioCalAIMStatus || applicationData?.CalAIM_Status);
     if (!firstName || !lastName) {
       return NextResponse.json(
         { success: false, message: 'Member first and last name are required.' },
@@ -112,6 +114,16 @@ export async function POST(request: NextRequest) {
           success: false,
           code: 'missing-assigned-staff',
           message: 'Assign staff before pushing this application to Caspio.',
+        },
+        { status: 400 }
+      );
+    }
+    if (requestedCalAIMStatus !== 'Authorized' && requestedCalAIMStatus !== 'Pending') {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'missing-calaim-status',
+          message: 'Select CalAIM Status (Authorized or Pending) on the main application page before pushing to Caspio.',
         },
         { status: 400 }
       );
@@ -190,6 +202,7 @@ export async function POST(request: NextRequest) {
       // Keep Kaiser tracker assignment in Caspio aligned with admin assignment at push time.
       memberData.Kaiser_User_Assignment = assignedStaffName;
     }
+    memberData[CALAIM_STATUS_FIELD] = requestedCalAIMStatus;
     // Always put pushed members into Social Worker hold queue.
     memberData[HOLD_FOR_SOCIAL_WORKER_FIELD] = HOLD_FOR_SOCIAL_WORKER_VALUE;
     Object.keys(memberData).forEach((key) => {

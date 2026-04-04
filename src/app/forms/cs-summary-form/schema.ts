@@ -111,6 +111,7 @@ export const formSchema = z.object({
     existingHealthPlan: optionalString,
     switchingHealthPlan: z.enum(['Yes', 'No', 'N/A']).optional().nullable(),
     pathway: z.enum(['SNF Transition', 'SNF Diversion'], { errorMap: () => ({ message: ' ' }) }),
+    eligibilityRoute: z.enum(['SNF Transition', 'SNF Diversion'], { errorMap: () => ({ message: ' ' }) }),
     snfDiversionReason: optionalString,
 
     // Step 4 - ISP & RCFE

@@ -801,6 +801,7 @@ function PushToCaspioDialog({
 
     const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
     const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
+    const caspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
     const existingClientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
     const hasExistingClientId2 = Boolean(existingClientId2);
     const clientIdConflictWarning =
@@ -818,6 +819,7 @@ function PushToCaspioDialog({
       { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
       { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
+      { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(caspioCalAIMStatus) },
       {
         key: 'familyEmail',
         label: 'Family/POA email',
@@ -832,6 +834,14 @@ function PushToCaspioDialog({
     const missingRequiredReadiness = readinessChecks.filter((item) => item.required && !item.ready);
     const readinessComplete = missingRequiredReadiness.length === 0;
     const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
+        if (!caspioCalAIMStatus) {
+            toast({
+                variant: 'destructive',
+                title: 'CalAIM status required',
+                description: 'Select CalAIM Status (Authorized or Pending) in the main application card before pushing to Caspio.',
+            });
+            return;
+        }
         if (hasExistingClientId2) {
             toast({
                 variant: 'destructive',
@@ -871,7 +881,10 @@ function PushToCaspioDialog({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    applicationData: application,
+                    applicationData: {
+                      ...application,
+                      caspioCalAIMStatus,
+                    },
                     mapping: mappingOverride || caspioMappingPreview || null,
                 }),
             });
@@ -1069,6 +1082,15 @@ function PushToCaspioDialog({
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle>Client_ID2 already exists: {existingClientId2}</AlertTitle>
                         <AlertDescription>{clientIdConflictWarning}</AlertDescription>
+                    </Alert>
+                )}
+                {!caspioCalAIMStatus && (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>CalAIM Status for Caspio is required</AlertTitle>
+                        <AlertDescription>
+                            Set CalAIM Status (Authorized or Pending) in the main application card before pushing.
+                        </AlertDescription>
                     </Alert>
                 )}
                 {!hasAssignedStaff && (
@@ -1795,6 +1817,7 @@ function ApplicationDetailPageContent() {
 
   const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
+  const [isUpdatingCaspioStatus, setIsUpdatingCaspioStatus] = useState(false);
   const [isSendingProofIncomeSocWarning, setIsSendingProofIncomeSocWarning] = useState(false);
   const [isUpdatingKaiserTierLevel, setIsUpdatingKaiserTierLevel] = useState(false);
   const [isGeneratingRoomBoardPreview, setIsGeneratingRoomBoardPreview] = useState(false);
@@ -4815,6 +4838,33 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const updateCaspioCalAIMStatus = async (status: 'Authorized' | 'Pending') => {
+    if (!docRef || !application) return;
+    setIsUpdatingCaspioStatus(true);
+    try {
+      const updateData = {
+        caspioCalAIMStatus: status,
+        lastUpdated: serverTimestamp(),
+      };
+      await setDoc(docRef, updateData, { merge: true });
+      setApplication((prev) => (prev ? ({ ...prev, ...updateData } as any) : prev));
+      toast({
+        title: 'CalAIM Status updated',
+        description: `Caspio push status set to ${status}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error) {
+      console.error('Error updating Caspio CalAIM status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not update CalAIM Status for Caspio.',
+      });
+    } finally {
+      setIsUpdatingCaspioStatus(false);
+    }
+  };
+
   const updateKaiserTierLevel = async (tierLevel: string) => {
     if (!docRef || !application || !user || !isKaiserPlan) return;
     const clientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
@@ -6431,7 +6481,7 @@ function ApplicationDetailPageContent() {
                         : 'Off'}
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-7">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pl-7">
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-muted-foreground">Email reminders</Label>
                       <RadioGroup
@@ -6471,6 +6521,29 @@ function ApplicationDetailPageContent() {
                           <Label htmlFor="main-status-reminders-off" className="text-sm">Off</Label>
                         </div>
                       </RadioGroup>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-muted-foreground">CalAIM Status for Caspio</Label>
+                      <Select
+                        value={String((application as any)?.caspioCalAIMStatus || '')}
+                        onValueChange={(value) => {
+                          if (value === 'Authorized' || value === 'Pending') {
+                            void updateCaspioCalAIMStatus(value);
+                          }
+                        }}
+                        disabled={isUpdatingCaspioStatus}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Authorized">Authorized</SelectItem>
+                          <SelectItem value="Pending">Pending</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Required before Push to Caspio from this page.
+                      </p>
                     </div>
                   </div>
                   {familyStatusLastSentLabel ? (
