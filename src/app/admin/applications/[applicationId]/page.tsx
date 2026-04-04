@@ -46,6 +46,7 @@ import {
   Target,
   Wrench,
   RefreshCw,
+  ClipboardPaste,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
@@ -1448,6 +1449,7 @@ function ApplicationDetailPageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [eligibilityPasteLoading, setEligibilityPasteLoading] = useState(false);
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -3724,10 +3726,8 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  const handleEligibilityScreenshotUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files?.length) return;
+  const uploadEligibilityScreenshotFiles = async (files: File[]) => {
     const requirementTitle = 'Eligibility Screenshot';
-    const files = Array.from(event.target.files);
     if (files.length === 0) return;
 
     setUploading((prev) => ({ ...prev, [requirementTitle]: true }));
@@ -3769,7 +3769,84 @@ function ApplicationDetailPageContent() {
     } finally {
       setUploading((prev) => ({ ...prev, [requirementTitle]: false }));
       setUploadProgress((prev) => ({ ...prev, [requirementTitle]: 0 }));
+    }
+  };
+
+  const getImageFilesFromClipboardItems = (items?: DataTransferItemList | null): File[] => {
+    if (!items) return [];
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (!item || item.kind !== 'file' || !String(item.type || '').startsWith('image/')) continue;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+    return files;
+  };
+
+  const handleEligibilityScreenshotUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files?.length) return;
+    const files = Array.from(event.target.files);
+    try {
+      await uploadEligibilityScreenshotFiles(files);
+    } finally {
       event.target.value = '';
+    }
+  };
+
+  const handleEligibilityScreenshotPaste = async (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const files = getImageFilesFromClipboardItems(event.clipboardData?.items);
+    if (files.length === 0) return;
+    event.preventDefault();
+    await uploadEligibilityScreenshotFiles(files);
+  };
+
+  const pasteEligibilityScreenshotFromClipboard = async () => {
+    if (!navigator?.clipboard || typeof navigator.clipboard.read !== 'function') {
+      toast({
+        variant: 'destructive',
+        title: 'Paste unavailable',
+        description: 'Clipboard image paste is not supported in this browser. Use Upload Screenshot(s).',
+      });
+      return;
+    }
+
+    setEligibilityPasteLoading(true);
+    try {
+      const items = await navigator.clipboard.read();
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i += 1) {
+        const item = items[i] as any;
+        const types: string[] = Array.isArray(item?.types) ? item.types : [];
+        const imageType = types.find((type) => String(type).startsWith('image/'));
+        if (!imageType || typeof item?.getType !== 'function') continue;
+        const blob = await item.getType(imageType);
+        const ext = String(imageType.split('/')[1] || 'png').toLowerCase();
+        files.push(
+          new File([blob], `eligibility-screenshot-${Date.now()}-${i}.${ext}`, {
+            type: imageType,
+          })
+        );
+      }
+
+      if (files.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'No image found',
+          description: 'Copy a screenshot to your clipboard first, then click Paste Screenshot.',
+        });
+        return;
+      }
+
+      await uploadEligibilityScreenshotFiles(files);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Paste failed',
+        description: String(error?.message || 'Could not read image from clipboard.'),
+      });
+    } finally {
+      setEligibilityPasteLoading(false);
     }
   };
 
@@ -5469,7 +5546,7 @@ function ApplicationDetailPageContent() {
                const canViewAny = uploads.some((u) => Boolean(u.downloadURL));
 
                return (
-                 <div className="space-y-2">
+                 <div className="space-y-2" onPasteCapture={(event) => void handleEligibilityScreenshotPaste(event)}>
                    {req.id === 'eligibility-screenshot' && 'links' in req && req.links ? (
                      <div className="flex flex-col space-y-1">
                        {(req.links as { name: string; url: string }[]).map((link) => (
@@ -5537,21 +5614,39 @@ function ApplicationDetailPageContent() {
                      </div>
                    ) : null}
 
-                   {isUploading && <Progress value={currentProgress} className="h-1 w-full" />}
-                   <Label
-                     htmlFor={req.id}
-                     className={cn(
-                       'flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                       isUploading && 'opacity-50 pointer-events-none'
-                     )}
-                   >
-                     {isUploading ? (
-                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                     ) : (
-                       <UploadCloud className="mr-2 h-4 w-4" />
-                     )}
-                     <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload Screenshot(s)'}</span>
-                   </Label>
+                  {isUploading && <Progress value={currentProgress} className="h-1 w-full" />}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Label
+                      htmlFor={req.id}
+                      className={cn(
+                        'flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                        isUploading && 'opacity-50 pointer-events-none'
+                      )}
+                    >
+                      {isUploading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <UploadCloud className="mr-2 h-4 w-4" />
+                      )}
+                      <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload Screenshot(s)'}</span>
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void pasteEligibilityScreenshotFromClipboard()}
+                      disabled={isUploading || eligibilityPasteLoading}
+                    >
+                      {eligibilityPasteLoading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <ClipboardPaste className="mr-2 h-4 w-4" />
+                      )}
+                      Paste Screenshot
+                    </Button>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Tip: copy a screenshot, then press Ctrl+V in this card or click Paste Screenshot.
+                  </div>
                    <Input
                      id={req.id}
                      type="file"
