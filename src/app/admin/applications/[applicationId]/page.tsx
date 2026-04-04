@@ -6430,6 +6430,23 @@ function ApplicationDetailPageContent() {
                     )}
                     <span>{caspioPushed ? 'Caspio: Pushed' : 'Caspio: Pending'}</span>
                   </div>
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 text-base font-semibold',
+                      String((application as any)?.caspioCalAIMStatus || '').trim() ? 'text-green-700' : 'text-amber-700'
+                    )}
+                  >
+                    {String((application as any)?.caspioCalAIMStatus || '').trim() ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                    <span>
+                      {String((application as any)?.caspioCalAIMStatus || '').trim()
+                        ? `CalAIM Status for Caspio: ${String((application as any)?.caspioCalAIMStatus || '').trim()}`
+                        : 'CalAIM Status for Caspio: Pending selection'}
+                    </span>
+                  </div>
                   <div className={cn('flex items-center gap-2 text-base font-semibold', staffAssigned ? 'text-green-700' : 'text-amber-700')}>
                     {staffAssigned ? (
                       <CheckCircle2 className="h-5 w-5" />

@@ -311,6 +311,7 @@ export default function CaspioTestPage() {
   const [hasLoadedCloudDrafts, setHasLoadedCloudDrafts] = useState(false);
   const [isApplyingCloudDrafts, setIsApplyingCloudDrafts] = useState(false);
   const [fieldSearchQuery, setFieldSearchQuery] = useState('');
+  const [caspioFieldSearchQuery, setCaspioFieldSearchQuery] = useState('');
   const draftKey = 'calaim_cs_caspio_mapping_draft';
   const lockedKey = 'calaim_cs_caspio_mapping';
   const caspioFieldsKey = 'calaim_caspio_fields_cache';
@@ -1195,6 +1196,12 @@ export default function CaspioTestPage() {
       return csField.toLowerCase().includes(query) || mappedField.includes(query) || sample.includes(query);
     });
   }, [appFieldTemplate, fieldMappings, fieldSearchQuery]);
+  const filteredCaspioFieldOptions = useMemo(() => {
+    const query = caspioFieldSearchQuery.trim().toLowerCase();
+    const all = dynamicCaspioFields.filter((fieldName) => fieldName !== 'CalAIM_Status');
+    if (!query) return all;
+    return all.filter((fieldName) => fieldName.toLowerCase().includes(query));
+  }, [caspioFieldSearchQuery, dynamicCaspioFields]);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -1849,6 +1856,17 @@ export default function CaspioTestPage() {
                     Showing {filteredCsSummaryFieldEntries.length} of {Object.keys(appFieldTemplate).length} fields
                   </div>
                 </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Input
+                    value={caspioFieldSearchQuery}
+                    onChange={(event) => setCaspioFieldSearchQuery(event.target.value)}
+                    placeholder="Search Caspio fields for dropdown options..."
+                    className="h-9 w-full sm:w-96"
+                  />
+                  <div className="text-xs text-muted-foreground">
+                    Caspio options shown: {filteredCaspioFieldOptions.length} of {dynamicCaspioFields.filter((fieldName) => fieldName !== 'CalAIM_Status').length}
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto border rounded-lg p-4">
                   {filteredCsSummaryFieldEntries.map(([csField, sampleValue]) => (
                     <div key={csField} className="grid grid-cols-2 gap-3 p-3 border rounded-lg bg-gray-50">
@@ -1890,9 +1908,12 @@ export default function CaspioTestPage() {
                               <SelectItem value="no-fields" disabled>
                                 {isLoadingCachedFields ? 'Loading cached Caspio fields...' : 'No Caspio fields loaded — click “Refresh Caspio Fields”'}
                               </SelectItem>
+                            ) : filteredCaspioFieldOptions.length === 0 ? (
+                              <SelectItem value="no-search-matches" disabled>
+                                No Caspio fields match current search
+                              </SelectItem>
                             ) : (
-                              dynamicCaspioFields
-                                .filter((fieldName) => fieldName !== 'CalAIM_Status')
+                              filteredCaspioFieldOptions
                                 .map(fieldName => (
                                 <SelectItem key={fieldName} value={fieldName}>
                                   {fieldName}
