@@ -20,8 +20,10 @@ function isPublicPathname(pathname: string) {
 }
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname() || '/';
-  const isPublic = isPublicPathname(pathname);
+  const pathname = usePathname();
+  // Treat unresolved path as protected so Firebase context is always available
+  // during client hydration on admin/staff pages.
+  const isPublic = pathname ? isPublicPathname(pathname) : false;
 
   // For public pages, avoid pulling Firebase/Auth and notification systems.
   if (isPublic) {

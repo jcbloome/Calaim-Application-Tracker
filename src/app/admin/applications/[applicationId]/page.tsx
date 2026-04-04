@@ -82,6 +82,8 @@ import { format } from 'date-fns';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
 
+const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
+
 // Staff Assignment Dropdown Component
 function StaffAssignmentDropdown({ 
     application, 
@@ -803,6 +805,12 @@ function PushToCaspioDialog({
     const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
     const caspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
     const requestedKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+    const requestedSocialWorkerHold = String(
+      (application as any)?.holdForSocialWorkerStatus ||
+      (application as any)?.Hold_For_Social_Worker_Visit ||
+      (application as any)?.Hold_For_Social_Worker ||
+      ''
+    ).trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
     const appHealthPlan = String((application as any)?.healthPlan || (application as any)?.CalAIM_MCO || '').trim().toLowerCase();
     const existingClientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
     const hasExistingClientId2 = Boolean(existingClientId2);
@@ -824,6 +832,7 @@ function PushToCaspioDialog({
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
       { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(caspioCalAIMStatus) },
       { key: 'kaiserStatus', label: 'Kaiser Status', required: requiresKaiserStatus, ready: Boolean(requestedKaiserStatus) },
+      { key: 'socialWorkerHold', label: 'SW Hold for Caspio', required: true, ready: Boolean(requestedSocialWorkerHold) },
       {
         key: 'familyEmail',
         label: 'Family/POA email',
@@ -837,6 +846,122 @@ function PushToCaspioDialog({
     ];
     const missingRequiredReadiness = readinessChecks.filter((item) => item.required && !item.ready);
     const readinessComplete = missingRequiredReadiness.length === 0;
+    const currentMappedSnapshot = useMemo(() => {
+        if (!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0) return {} as Record<string, string>;
+        const out: Record<string, string> = {};
+        Object.entries(caspioMappingPreview).forEach(([csField, caspioField]) => {
+            out[String(caspioField)] = String((application as any)?.[csField] ?? '').trim();
+        });
+        return out;
+    }, [application, caspioMappingPreview]);
+    const previousMappedSnapshot = useMemo(() => {
+        const raw = (application as any)?.caspioLastPushedMappedData;
+        if (!raw || typeof raw !== 'object') return {} as Record<string, string>;
+        return raw as Record<string, string>;
+    }, [application]);
+    const mappedFieldChanges = useMemo(() => {
+        const keys = new Set<string>([
+            ...Object.keys(previousMappedSnapshot || {}),
+            ...Object.keys(currentMappedSnapshot || {}),
+        ]);
+        return Array.from(keys)
+            .map((field) => {
+                const previousValue = String(previousMappedSnapshot?.[field] ?? '').trim();
+                const nextValue = String(currentMappedSnapshot?.[field] ?? '').trim();
+                return { field, previousValue, nextValue };
+            })
+            .filter((item) => item.previousValue !== item.nextValue);
+    }, [currentMappedSnapshot, previousMappedSnapshot]);
+    const hasMappedSnapshotBaseline = Object.keys(previousMappedSnapshot).length > 0;
+    const currentSpecialSnapshot = useMemo(() => {
+        const monthlyIncomeForCaspio = String(
+          (application as any)?.proofIncomeActualAmount ||
+          (application as any)?.monthlyIncome ||
+          ''
+        ).trim();
+        return {
+            CalAIM_Status: String(caspioCalAIMStatus || '').trim(),
+            Kaiser_Status: String(requestedKaiserStatus || '').trim(),
+            Hold_For_Social_Worker_Visit: String(requestedSocialWorkerHold || '').trim(),
+            Monthly_Income: monthlyIncomeForCaspio,
+        } as Record<string, string>;
+    }, [application, caspioCalAIMStatus, requestedKaiserStatus, requestedSocialWorkerHold]);
+    const previousSpecialSnapshot = useMemo(() => {
+        const raw = (application as any)?.caspioLastPushedSpecialData;
+        if (!raw || typeof raw !== 'object') return {} as Record<string, string>;
+        return raw as Record<string, string>;
+    }, [application]);
+    const specialFieldChanges = useMemo(() => {
+        const keys = new Set<string>([
+            ...Object.keys(previousSpecialSnapshot || {}),
+            ...Object.keys(currentSpecialSnapshot || {}),
+        ]);
+        return Array.from(keys)
+            .map((field) => {
+                const previousValue = String(previousSpecialSnapshot?.[field] ?? '').trim();
+                const nextValue = String(currentSpecialSnapshot?.[field] ?? '').trim();
+                return { field, previousValue, nextValue };
+            })
+            .filter((item) => item.previousValue !== item.nextValue);
+    }, [currentSpecialSnapshot, previousSpecialSnapshot]);
+    const hasSpecialSnapshotBaseline = Object.keys(previousSpecialSnapshot).length > 0;
+    // Avoid noisy false positives for legacy records that were pushed before mapped snapshots existed.
+    // In that case, still show tracked special/status changes and store mapped baseline on next push.
+    const effectiveMappedFieldChanges = hasMappedSnapshotBaseline ? mappedFieldChanges : [];
+    const combinedChangeCount = effectiveMappedFieldChanges.length + specialFieldChanges.length;
+    const notifyKaiserManagersIfT2038Ready = async () => {
+        if (!firestore) return;
+        const normalizedStatus = String(requestedKaiserStatus || '').trim().toLowerCase();
+        if (normalizedStatus !== 't2038 request ready') return;
+        const applicationId = String(application.id || '').trim();
+        if (!applicationId) return;
+        try {
+            const managerSnap = await getDocs(
+                query(collection(firestore, 'users'), where('isKaiserAssignmentManager', '==', true))
+            );
+            if (managerSnap.empty) return;
+            const existingForAppSnap = await getDocs(
+                query(collection(firestore, 'staff_notifications'), where('applicationId', '==', applicationId))
+            );
+            const existingByUser = new Set(
+                existingForAppSnap.docs
+                    .map((d) => d.data() as any)
+                    .filter((n) => String(n?.type || '').trim() === 'kaiser_t2038_request_ready')
+                    .map((n) => String(n?.userId || '').trim())
+                    .filter(Boolean)
+            );
+            const memberName = `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim() || 'Member';
+            const dueDate = new Date();
+            dueDate.setHours(17, 0, 0, 0);
+            const senderName = String(user?.displayName || user?.email || 'Admin').trim();
+            for (const docSnap of managerSnap.docs) {
+                const managerUid = String(docSnap.id || '').trim();
+                if (!managerUid || existingByUser.has(managerUid)) continue;
+                await addDoc(collection(firestore, 'staff_notifications'), {
+                    userId: managerUid,
+                    title: `Kaiser status ready: ${memberName}`,
+                    message: `${memberName} was pushed with Kaiser_Status "T2038 Request Ready". Please review and proceed with next actions.`,
+                    memberName,
+                    applicationId,
+                    type: 'kaiser_t2038_request_ready',
+                    priority: 'Priority',
+                    status: 'Open',
+                    isRead: false,
+                    requiresStaffAction: true,
+                    followUpRequired: true,
+                    followUpDate: dueDate.toISOString(),
+                    senderName,
+                    assignedByUid: String(user?.uid || '').trim() || null,
+                    assignedByName: senderName || null,
+                    actionUrl: `/admin/applications/${applicationId}`,
+                    source: 'application-pathway',
+                    timestamp: serverTimestamp(),
+                });
+            }
+        } catch (error) {
+            console.warn('Failed to send Kaiser manager T2038-ready notification:', error);
+        }
+    };
     const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
         if (!caspioCalAIMStatus) {
             toast({
@@ -854,7 +979,7 @@ function PushToCaspioDialog({
             });
             return;
         }
-        if (hasExistingClientId2) {
+        if (hasExistingClientId2 && !isAlreadySent) {
             toast({
                 variant: 'destructive',
                 title: 'Client_ID2 already exists',
@@ -897,6 +1022,7 @@ function PushToCaspioDialog({
                       ...application,
                       caspioCalAIMStatus,
                       kaiserStatus: requestedKaiserStatus,
+                      holdForSocialWorkerStatus: requestedSocialWorkerHold,
                     },
                     mapping: mappingOverride || caspioMappingPreview || null,
                 }),
@@ -920,6 +1046,23 @@ function PushToCaspioDialog({
                 });
 
                 if (docRef) {
+                    const effectiveMapping = (mappingOverride || caspioMappingPreview || {}) as Record<string, string>;
+                    const pushedMappedSnapshot: Record<string, string> = {};
+                    const pushedSpecialSnapshot: Record<string, string> = {
+                        CalAIM_Status: String(caspioCalAIMStatus || '').trim(),
+                        Kaiser_Status: String(requestedKaiserStatus || '').trim(),
+                        Hold_For_Social_Worker_Visit: String(requestedSocialWorkerHold || '').trim(),
+                        Monthly_Income: String(
+                          (application as any)?.proofIncomeActualAmount ||
+                          (application as any)?.monthlyIncome ||
+                          ''
+                        ).trim(),
+                    };
+                    if (effectiveMapping && typeof effectiveMapping === 'object') {
+                        Object.entries(effectiveMapping).forEach(([csField, caspioField]) => {
+                            pushedMappedSnapshot[String(caspioField)] = String((application as any)?.[csField] ?? '').trim();
+                        });
+                    }
                     await setDoc(
                         docRef,
                         {
@@ -935,10 +1078,15 @@ function PushToCaspioDialog({
                             caspioPushLastError: null,
                             caspioPushLastErrorCode: null,
                             caspioPushLastErrorDetails: null,
+                            caspioLastPushedMappedData: pushedMappedSnapshot,
+                            caspioLastPushedMappingCount: Object.keys(pushedMappedSnapshot).length,
+                            caspioLastPushedSpecialData: pushedSpecialSnapshot,
+                            caspioLastPushedAt: serverTimestamp(),
                             lastUpdated: serverTimestamp(),
                         },
                         { merge: true }
                     );
+                    await notifyKaiserManagersIfT2038Ready();
                 }
                 setIsOpen(false);
             } else {
@@ -1090,7 +1238,7 @@ function PushToCaspioDialog({
                         </AlertDescription>
                     </Alert>
                 )}
-                {hasExistingClientId2 && (
+                {hasExistingClientId2 && !isAlreadySent && (
                     <Alert variant="destructive">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle>Client_ID2 already exists: {existingClientId2}</AlertTitle>
@@ -1147,7 +1295,9 @@ function PushToCaspioDialog({
                 {caspioMappingPreview && Object.keys(caspioMappingPreview).length > 0 ? (
                     <div className="space-y-3">
                         <div className="text-sm text-muted-foreground">
-                            Mapped fields: {Object.keys(caspioMappingPreview).length}
+                            {isAlreadySent
+                              ? 'Change preview for already-pushed application'
+                              : `Mapped fields: ${Object.keys(caspioMappingPreview).length}`}
                         </div>
                         {String((application as any)?.caspioPushLastStatus || '').trim() === 'error' && (
                             <Alert variant="destructive">
@@ -1165,19 +1315,52 @@ function PushToCaspioDialog({
                                 </AlertDescription>
                             </Alert>
                         )}
-                        <div className="max-h-64 overflow-y-auto rounded border p-3 text-xs">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
-                                {Object.entries(caspioMappingPreview).map(([csField, caspioField]) => {
-                                    const value = (application as any)?.[csField];
-                                    return (
-                                        <div key={`${csField}-${caspioField}`} className="font-mono">
-                                            {csField} → {caspioField}
-                                            <span className="text-muted-foreground">: {value ?? '—'}</span>
-                                        </div>
-                                    );
-                                })}
+                        {!isAlreadySent ? (
+                          <div className="max-h-64 overflow-y-auto rounded border p-3 text-xs">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                                  {Object.entries(caspioMappingPreview).map(([csField, caspioField]) => {
+                                      const value = (application as any)?.[csField];
+                                      return (
+                                          <div key={`${csField}-${caspioField}`} className="font-mono">
+                                              {csField} → {caspioField}
+                                              <span className="text-muted-foreground">: {value ?? '—'}</span>
+                                          </div>
+                                      );
+                                  })}
+                              </div>
+                          </div>
+                        ) : null}
+                        {isAlreadySent ? (
+                            <div className="space-y-2 rounded-md border p-3">
+                                <div className="text-sm font-medium">CS Summary changes to push</div>
+                                {combinedChangeCount > 0 ? (
+                                    <div className="max-h-40 overflow-auto rounded border p-2 text-xs">
+                                        {specialFieldChanges.map((item) => (
+                                            <div key={`spchg-${item.field}`} className="font-mono py-0.5">
+                                                {item.field}: {item.previousValue || '—'} → {item.nextValue || '—'}
+                                            </div>
+                                        ))}
+                                        {effectiveMappedFieldChanges.map((item) => (
+                                            <div key={`chg-${item.field}`} className="font-mono py-0.5">
+                                                {item.field}: {item.previousValue || '—'} → {item.nextValue || '—'}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : !hasMappedSnapshotBaseline && hasSpecialSnapshotBaseline ? (
+                                    <div className="text-xs text-muted-foreground">
+                                        Mapped-field baseline is not available for this older record yet. Only status changes are shown until the next push stores the baseline.
+                                    </div>
+                                ) : !(hasMappedSnapshotBaseline || hasSpecialSnapshotBaseline) ? (
+                                    <div className="text-xs text-muted-foreground">
+                                        No previous push snapshot found yet. First change-push will store a baseline snapshot from current mapped values.
+                                    </div>
+                                ) : combinedChangeCount === 0 ? (
+                                    <div className="text-xs text-muted-foreground">
+                                        No CS Summary/Caspio changes detected since last push snapshot.
+                                    </div>
+                                ) : null}
                             </div>
-                        </div>
+                        ) : null}
                     </div>
                 ) : (
                     <Alert variant="destructive">
@@ -1219,9 +1402,17 @@ function PushToCaspioDialog({
                               }
                             })();
                         }}
-                        disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0 || isSendingToCaspio || isAlreadySent || hasExistingClientId2 || !hasAssignedStaff || !readinessComplete}
+                        disabled={
+                          !caspioMappingPreview ||
+                          Object.keys(caspioMappingPreview).length === 0 ||
+                          isSendingToCaspio ||
+                          (hasExistingClientId2 && !isAlreadySent) ||
+                          !hasAssignedStaff ||
+                          !readinessComplete ||
+                          (isAlreadySent && (hasMappedSnapshotBaseline || hasSpecialSnapshotBaseline) && combinedChangeCount === 0)
+                        }
                     >
-                        Confirm & Push
+                        {isAlreadySent ? 'Confirm & Push Changes' : 'Confirm & Push'}
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
@@ -1840,7 +2031,9 @@ function ApplicationDetailPageContent() {
   const [isUpdatingProgression, setIsUpdatingProgression] = useState(false);
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
   const [isUpdatingCaspioStatus, setIsUpdatingCaspioStatus] = useState(false);
+  const [isUpdatingSocialWorkerHold, setIsUpdatingSocialWorkerHold] = useState(false);
   const [isSendingProofIncomeSocWarning, setIsSendingProofIncomeSocWarning] = useState(false);
+  const [isSocWarningPreviewOpen, setIsSocWarningPreviewOpen] = useState(false);
   const [isUpdatingKaiserTierLevel, setIsUpdatingKaiserTierLevel] = useState(false);
   const [isGeneratingRoomBoardPreview, setIsGeneratingRoomBoardPreview] = useState(false);
   const [roomBoardPreview, setRoomBoardPreview] = useState<{
@@ -1875,6 +2068,7 @@ function ApplicationDetailPageContent() {
     missingItems: string[];
   } | null>(null);
   const [isSendingStatusTestReminder, setIsSendingStatusTestReminder] = useState(false);
+  const [isConfirmingCaspioPush, setIsConfirmingCaspioPush] = useState(false);
   const [isLoadingStatusReminderPreview, setIsLoadingStatusReminderPreview] = useState(false);
   const [isReminderDialogOpen, setIsReminderDialogOpen] = useState(false);
   const [statusReminderPreview, setStatusReminderPreview] = useState<{
@@ -2669,6 +2863,23 @@ function ApplicationDetailPageContent() {
 
     return () => unsubscribe();
   }, [docRef, isUserLoading]);
+
+  useEffect(() => {
+    if (!docRef || !application) return;
+    const current = String(
+      (application as any)?.holdForSocialWorkerStatus ||
+      (application as any)?.Hold_For_Social_Worker_Visit ||
+      (application as any)?.Hold_For_Social_Worker ||
+      ''
+    ).trim();
+    if (current) return;
+    const patch = {
+      holdForSocialWorkerStatus: DEFAULT_SOCIAL_WORKER_HOLD_VALUE,
+      lastUpdated: serverTimestamp(),
+    } as Record<string, any>;
+    void setDoc(docRef, patch, { merge: true }).catch(() => undefined);
+    setApplication((prev) => (prev ? ({ ...(prev as any), ...patch } as any) : prev));
+  }, [docRef, application]);
 
   useEffect(() => {
     if (!firestore || !memberIdForNotes) return;
@@ -4259,6 +4470,33 @@ function ApplicationDetailPageContent() {
     ''
   ).trim();
   const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+  const currentCaspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
+  const currentSocialWorkerHold = String(
+    (application as any)?.holdForSocialWorkerStatus ||
+    (application as any)?.Hold_For_Social_Worker_Visit ||
+    (application as any)?.Hold_For_Social_Worker ||
+    ''
+  ).trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
+  const lastPushedSpecialData = ((application as any)?.caspioLastPushedSpecialData || {}) as Record<string, unknown>;
+  const lastPushedCalAIMStatus = String(lastPushedSpecialData?.CalAIM_Status || '').trim();
+  const lastPushedKaiserStatus = String(lastPushedSpecialData?.Kaiser_Status || '').trim();
+  const lastPushedSocialWorkerHold = String(
+    lastPushedSpecialData?.Hold_For_Social_Worker_Visit ||
+    lastPushedSpecialData?.Hold_For_Social_Worker ||
+    ''
+  ).trim();
+  const hasPendingStatusPushWarning =
+    Boolean((application as any)?.caspioSent) &&
+    (
+      lastPushedCalAIMStatus !== currentCaspioCalAIMStatus ||
+      (isKaiserPlan && lastPushedKaiserStatus !== currentKaiserStatus) ||
+      (lastPushedSocialWorkerHold && lastPushedSocialWorkerHold !== currentSocialWorkerHold)
+    );
+  const pendingStatusFields = [
+    lastPushedCalAIMStatus !== currentCaspioCalAIMStatus ? 'CalAIM Status' : '',
+    isKaiserPlan && lastPushedKaiserStatus !== currentKaiserStatus ? 'Kaiser Status' : '',
+    lastPushedSocialWorkerHold && lastPushedSocialWorkerHold !== currentSocialWorkerHold ? 'SW Hold' : '',
+  ].filter(Boolean);
   const firstPushKaiserStatusOptions = kaiserSteps.filter((status) =>
     String(status || '').trim().toLowerCase().startsWith('t2038')
   );
@@ -4352,6 +4590,19 @@ function ApplicationDetailPageContent() {
   const proofIncomeActualAmountRaw = String((application as any)?.proofIncomeActualAmount || '').trim();
   const proofIncomeActualAmount = parseCurrencyAmount(proofIncomeActualAmountRaw);
   const proofIncomeSocFlag = proofIncomeActualAmount != null && proofIncomeActualAmount > 1800;
+  const socWarningRecipientEmail = String((application as any)?.referrerEmail || '').trim();
+  const socWarningAmountLabel = proofIncomeActualAmountRaw || 'the reviewed amount';
+  const socWarningMemberName =
+    `${String(application?.memberFirstName || '').trim()} ${String(application?.memberLastName || '').trim()}`.trim() || 'the member';
+  const socWarningSubject = `Proof of income SOC warning for ${socWarningMemberName}`;
+  const socWarningMessage = [
+    `We reviewed proof of income for ${socWarningMemberName}.`,
+    '',
+    `The amount we reviewed is ${socWarningAmountLabel}, which may trigger a Medi-Cal Share of Cost (SOC).`,
+    'Please confirm with Medi-Cal that SOC is $0 and reply with confirmation.',
+    '',
+    'If SOC is not $0, please share next steps so we can continue processing this application.',
+  ].join('\n');
   
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
@@ -4896,6 +5147,96 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const updateSocialWorkerHoldStatus = async (status: string) => {
+    if (!docRef || !application) return;
+    const nextStatus = String(status || '').trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
+    setIsUpdatingSocialWorkerHold(true);
+    try {
+      const updateData = {
+        holdForSocialWorkerStatus: nextStatus,
+        lastUpdated: serverTimestamp(),
+      };
+      await setDoc(docRef, updateData, { merge: true });
+      setApplication((prev) => (prev ? ({ ...prev, ...updateData } as any) : prev));
+      toast({
+        title: 'SW hold status updated',
+        description: `Social Worker hold set to ${nextStatus}.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error) {
+      console.error('Error updating Social Worker hold status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not update SW hold status.',
+      });
+    } finally {
+      setIsUpdatingSocialWorkerHold(false);
+    }
+  };
+
+  const confirmCaspioPushAndRetrieveClientId2 = async () => {
+    if (!docRef || !application) return;
+    setIsConfirmingCaspioPush(true);
+    try {
+      const res = await fetch('/api/admin/caspio/confirm-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationData: {
+            memberFirstName: (application as any)?.memberFirstName || '',
+            memberLastName: (application as any)?.memberLastName || '',
+            clientId2: (application as any)?.client_ID2 || (application as any)?.clientId2 || '',
+            healthPlan: (application as any)?.healthPlan || '',
+          },
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.message || data?.details || `Confirm failed (HTTP ${res.status})`);
+      }
+      if (!data?.found || !String(data?.member?.clientId2 || '').trim()) {
+        toast({
+          variant: 'destructive',
+          title: 'Not found in Caspio',
+          description: 'No matching pushed Caspio record with client_ID2 was found for this application yet.',
+        });
+        return;
+      }
+      const retrievedClientId2 = String(data.member.clientId2 || '').trim();
+      const patch = {
+        clientId2: retrievedClientId2,
+        client_ID2: retrievedClientId2,
+        caspioClientId2: retrievedClientId2,
+        caspioSent: true,
+        caspioPushLastStatus: 'confirmed',
+        lastUpdated: serverTimestamp(),
+      } as Record<string, any>;
+      await setDoc(docRef, patch, { merge: true });
+      setApplication((prev) =>
+        prev
+          ? ({
+              ...prev,
+              ...patch,
+            } as any)
+          : prev
+      );
+      toast({
+        title: 'Caspio record confirmed',
+        description: `Found pushed Caspio record and retrieved Client_ID2: ${retrievedClientId2}`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Confirm failed',
+        description: String(error?.message || 'Could not confirm pushed Caspio record.'),
+      });
+    } finally {
+      setIsConfirmingCaspioPush(false);
+    }
+  };
+
   const updateKaiserTierLevel = async (tierLevel: string) => {
     if (!docRef || !application || !user || !isKaiserPlan) return;
     const clientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
@@ -5244,7 +5585,7 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  const updateProofIncomeDetails = async (patch: { proofIncomeActualAmount?: string; proofIncomeSocFlag?: boolean }) => {
+  const updateProofIncomeDetails = async (patch: { proofIncomeActualAmount?: string; proofIncomeSocFlag?: boolean; monthlyIncome?: string }) => {
     if (!docRef || !application) return;
     try {
       await setDoc(
@@ -5267,7 +5608,7 @@ function ApplicationDetailPageContent() {
 
   const sendProofIncomeSocWarning = async () => {
     if (!application) return;
-    const to = String((application as any)?.referrerEmail || '').trim();
+    const to = socWarningRecipientEmail;
     if (!to) {
       toast({
         variant: 'destructive',
@@ -5276,8 +5617,6 @@ function ApplicationDetailPageContent() {
       });
       return;
     }
-    const amountLabel = proofIncomeActualAmountRaw || 'the reviewed amount';
-    const memberName = `${String(application.memberFirstName || '').trim()} ${String(application.memberLastName || '').trim()}`.trim() || 'the member';
     setIsSendingProofIncomeSocWarning(true);
     try {
       const response = await fetch('/api/email/send', {
@@ -5286,24 +5625,18 @@ function ApplicationDetailPageContent() {
         body: JSON.stringify({
           to,
           includeBcc: false,
-          subject: `Proof of income SOC warning for ${memberName}`,
+          subject: socWarningSubject,
           memberName: String(application.referrerName || 'there'),
           staffName: String(user?.displayName || user?.email || 'The Connections Team'),
           status: String(application.status || 'In Progress'),
-          message: [
-            `We reviewed proof of income for ${memberName}.`,
-            '',
-            `The amount we reviewed is ${amountLabel}, which may trigger a Medi-Cal Share of Cost (SOC).`,
-            'Please confirm with Medi-Cal that SOC is $0 and reply with confirmation.',
-            '',
-            'If SOC is not $0, please share next steps so we can continue processing this application.',
-          ].join('\n'),
+          message: socWarningMessage,
         }),
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.success) {
         throw new Error(result?.message || 'Failed to send SOC warning email.');
       }
+      setIsSocWarningPreviewOpen(false);
       await setDoc(
         docRef!,
         {
@@ -5434,9 +5767,11 @@ function ApplicationDetailPageContent() {
               onBlur={(event) => {
                 const nextRaw = String(event.target.value || '').trim();
                 const nextAmount = parseCurrencyAmount(nextRaw);
+                const monthlyIncomeForCaspio = nextRaw || String((application as any)?.monthlyIncome || '').trim();
                 void updateProofIncomeDetails({
                   proofIncomeActualAmount: nextRaw,
                   proofIncomeSocFlag: nextAmount != null && nextAmount > 1800,
+                  monthlyIncome: monthlyIncomeForCaspio,
                 });
               }}
             />
@@ -5452,26 +5787,65 @@ function ApplicationDetailPageContent() {
               </span>
             )}
           </div>
+          <div className="text-xs text-muted-foreground">
+            Saved amount is queued for Caspio push to <span className="font-mono">Monthly_Income</span>.
+          </div>
           {proofIncomeSocFlag ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => void sendProofIncomeSocWarning()}
-              disabled={isSendingProofIncomeSocWarning}
-            >
-              {isSendingProofIncomeSocWarning ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending SOC warning...
-                </>
-              ) : (
-                <>
+            <AlertDialog open={isSocWarningPreviewOpen} onOpenChange={setIsSocWarningPreviewOpen}>
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={isSendingProofIncomeSocWarning}
+                >
                   <Send className="mr-2 h-4 w-4" />
                   Send SOC warning to family
-                </>
-              )}
-            </Button>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="max-w-xl">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Preview SOC warning email</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Review this email before sending to the family contact.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="space-y-2 rounded-md border p-3 text-sm">
+                  <div>
+                    <span className="font-medium">To:</span>{' '}
+                    <span className="font-mono">{socWarningRecipientEmail || 'No family email on file'}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium">Subject:</span> {socWarningSubject}
+                  </div>
+                  <div className="space-y-1">
+                    <div className="font-medium">Message</div>
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded border bg-muted/40 p-2 text-xs">
+                      {socWarningMessage}
+                    </pre>
+                  </div>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isSendingProofIncomeSocWarning}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(event) => {
+                      event.preventDefault();
+                      void sendProofIncomeSocWarning();
+                    }}
+                    disabled={isSendingProofIncomeSocWarning || !socWarningRecipientEmail}
+                  >
+                    {isSendingProofIncomeSocWarning ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      'Send email'
+                    )}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           ) : null}
         </div>
       ) : null;
@@ -6502,6 +6876,23 @@ function ApplicationDetailPageContent() {
                       </span>
                     </div>
                   ) : null}
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 text-base font-semibold',
+                      currentSocialWorkerHold ? 'text-green-700' : 'text-amber-700'
+                    )}
+                  >
+                    {currentSocialWorkerHold ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <XCircle className="h-5 w-5" />
+                    )}
+                    <span>
+                      {currentSocialWorkerHold
+                        ? `SW Hold for Caspio: ${currentSocialWorkerHold}`
+                        : 'SW Hold for Caspio: Pending selection'}
+                    </span>
+                  </div>
                   <div className={cn('flex items-center gap-2 text-base font-semibold', staffAssigned ? 'text-green-700' : 'text-amber-700')}>
                     {staffAssigned ? (
                       <CheckCircle2 className="h-5 w-5" />
@@ -6553,7 +6944,7 @@ function ApplicationDetailPageContent() {
                         : 'Off'}
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pl-7">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 pl-7">
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-muted-foreground">Email reminders</Label>
                       <RadioGroup
@@ -6617,6 +7008,29 @@ function ApplicationDetailPageContent() {
                         Required before Push to Caspio from this page.
                       </p>
                     </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-muted-foreground">SW Hold for Caspio</Label>
+                      <Select
+                        value={currentSocialWorkerHold}
+                        onValueChange={(value) => {
+                          if (value) {
+                            void updateSocialWorkerHoldStatus(value);
+                          }
+                        }}
+                        disabled={isUpdatingSocialWorkerHold}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Select hold status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="🔴 Hold">🔴 Hold</SelectItem>
+                          <SelectItem value="Hold">Hold</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Defaults to Hold; this can later be changed from Social Worker assignment workflow.
+                      </p>
+                    </div>
                     {isKaiserPlan ? (
                       <div className="space-y-2">
                         <Label className="text-xs font-medium text-muted-foreground">Kaiser Status</Label>
@@ -6646,6 +7060,15 @@ function ApplicationDetailPageContent() {
                       </div>
                     ) : null}
                   </div>
+                  {hasPendingStatusPushWarning ? (
+                    <Alert variant="destructive" className="ml-7">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertTitle>Status change pending Caspio push</AlertTitle>
+                      <AlertDescription>
+                        {pendingStatusFields.join(' and ')} changed after last push. Open "Already pushed to Caspio (manage)" and use Confirm & Push Changes.
+                      </AlertDescription>
+                    </Alert>
+                  ) : null}
                   {familyStatusLastSentLabel ? (
                     <div className="text-xs text-muted-foreground pl-7">
                       Last family status email: {familyStatusLastSentLabel}
@@ -7337,6 +7760,15 @@ function ApplicationDetailPageContent() {
               buttonVariant="outline"
               buttonClassName="w-full justify-start gap-2"
             />
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-2 -mt-1"
+              onClick={() => void confirmCaspioPushAndRetrieveClientId2()}
+              disabled={isConfirmingCaspioPush}
+            >
+              {isConfirmingCaspioPush ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+              Test if pushed + retrieve Client_ID2
+            </Button>
 
             <Dialog>
               <DialogTrigger asChild>

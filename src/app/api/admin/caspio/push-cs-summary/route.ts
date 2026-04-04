@@ -5,12 +5,19 @@ import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-
 const clean = (value: unknown) => String(value ?? '').trim();
 const esc = (value: unknown) => clean(value).replace(/'/g, "''");
 const looksLikeClientId2 = (fieldName: string) => /client[_\s-]*id2/i.test(clean(fieldName));
+const looksLikeHoldForSocialWorkerField = (fieldName: string) =>
+  /hold[_\s-]*for[_\s-]*social[_\s-]*worker/i.test(clean(fieldName));
+const normalizeFieldName = (fieldName: string) =>
+  clean(fieldName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 const hasValue = (value: unknown) => clean(value).length > 0;
 const looksLikePkField = (fieldName: string) => /^pk_id$/i.test(clean(fieldName));
 const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(value));
-const HOLD_FOR_SOCIAL_WORKER_FIELD = 'Hold_For_Social_Worker';
+const HOLD_FOR_SOCIAL_WORKER_FIELD = 'Hold_For_Social_Worker_Visit';
 const HOLD_FOR_SOCIAL_WORKER_VALUE = '🔴 Hold';
 const CALAIM_STATUS_FIELD = 'CalAIM_Status';
+const MONTHLY_INCOME_FIELD = 'Monthly_Income';
 const MCO_AND_TIER_FIELD = 'MCO_and_Tier';
 const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
 const KAISER_STATUS_FIELD = 'Kaiser_Status';
@@ -30,6 +37,31 @@ const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<strin
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchTableFieldNames(baseUrl: string, token: string, tableName: string): Promise<string[]> {
+  const encodedTable = encodeURIComponent(tableName);
+  const endpoints = [
+    `${baseUrl}/tables/${encodedTable}/fields`,
+    `${baseUrl}/tables/${encodedTable}/columns`,
+  ];
+  for (const url of endpoints) {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+    });
+    if (!res.ok) continue;
+    const json = await res.json().catch(() => ({} as any));
+    const list = Array.isArray(json?.Result) ? json.Result : [];
+    const names = list
+      .map((item: any) => clean(item?.Name || item?.name))
+      .filter(Boolean);
+    if (names.length > 0) return names;
+  }
+  return [];
+}
 
 async function createClientAndGetClientId2(
   baseUrl: string,
@@ -106,6 +138,18 @@ export async function POST(request: NextRequest) {
     const assignedStaffId = clean(applicationData?.assignedStaffId);
     const requestedCalAIMStatus = clean(applicationData?.caspioCalAIMStatus || applicationData?.CalAIM_Status);
     const requestedKaiserStatus = clean(applicationData?.kaiserStatus || applicationData?.Kaiser_Status);
+    const requestedSocialWorkerHold = clean(
+      applicationData?.holdForSocialWorkerStatus ||
+      applicationData?.Hold_For_Social_Worker_Visit ||
+      applicationData?.Hold_For_Social_Worker ||
+      applicationData?.hold_for_social_worker ||
+      HOLD_FOR_SOCIAL_WORKER_VALUE
+    ) || HOLD_FOR_SOCIAL_WORKER_VALUE;
+    const requestedMonthlyIncome = clean(
+      applicationData?.proofIncomeActualAmount ||
+      applicationData?.monthlyIncome ||
+      applicationData?.Monthly_Income
+    );
     const normalizedHealthPlan = clean(
       applicationData?.healthPlan || applicationData?.CalAIM_MCO || applicationData?.calaimMco
     ).toLowerCase();
@@ -196,6 +240,13 @@ export async function POST(request: NextRequest) {
     }
 
     const mappedFields = buildMemberDataFromMapping(applicationData, mapping);
+    // Prevent stale draft mappings from sending an invalid hold-column alias.
+    // We set this field explicitly below using canonical column naming.
+    Object.keys(mappedFields).forEach((fieldName) => {
+      if (looksLikeHoldForSocialWorkerField(fieldName)) {
+        delete mappedFields[fieldName];
+      }
+    });
     const mappedClientIdField = Object.keys(mappedFields).find((field) => looksLikeClientId2(field));
     const inferredClientIdFieldFromMap =
       Object.values(mapping || {}).find((field) => looksLikeClientId2(String(field || ''))) || '';
@@ -224,8 +275,26 @@ export async function POST(request: NextRequest) {
     if (isKaiserApplication && requestedKaiserStatus) {
       memberData[KAISER_STATUS_FIELD] = requestedKaiserStatus;
     }
+    if (requestedMonthlyIncome && !hasValue(memberData[MONTHLY_INCOME_FIELD])) {
+      memberData[MONTHLY_INCOME_FIELD] = requestedMonthlyIncome;
+    }
+    const memberFieldNames = await fetchTableFieldNames(baseUrl, token, membersTable).catch(() => []);
+    const fieldNameByNormalized = new Map<string, string>();
+    memberFieldNames.forEach((name) => {
+      fieldNameByNormalized.set(normalizeFieldName(name), name);
+    });
+    const holdFieldCandidates = [
+      HOLD_FOR_SOCIAL_WORKER_FIELD,
+      'Hold_For_Social_Worker',
+      'Hold_for_Social_Worker_Visit',
+      'Hold_for_Social_Worker',
+      'HoldForSocialWorker',
+    ];
+    const holdFieldName =
+      holdFieldCandidates.find((name) => fieldNameByNormalized.has(normalizeFieldName(name))) ||
+      HOLD_FOR_SOCIAL_WORKER_FIELD;
     // Always put pushed members into Social Worker hold queue.
-    memberData[HOLD_FOR_SOCIAL_WORKER_FIELD] = HOLD_FOR_SOCIAL_WORKER_VALUE;
+    memberData[holdFieldName] = requestedSocialWorkerHold;
     Object.keys(memberData).forEach((key) => {
       if (looksLikePkField(key)) delete memberData[key];
     });
@@ -250,14 +319,16 @@ export async function POST(request: NextRequest) {
       ? `${baseUrl}/tables/${membersTable}/records?q.where=${encodeURIComponent(updateWhere)}`
       : `${baseUrl}/tables/${membersTable}/records`;
     const upsertMethod = isUpdate ? 'PUT' : 'POST';
-    let upsertResponse = await fetch(upsertUrl, {
+    const doUpsert = async (payload: Record<string, any>) =>
+      fetch(upsertUrl, {
       method: upsertMethod,
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(memberData),
+      body: JSON.stringify(payload),
     });
+    let upsertResponse = await doUpsert(memberData);
 
     // Some Caspio tables may not have Kaiser_User_Assignment. If so, retry once without it.
     if (!upsertResponse.ok && hasValue(memberData.Kaiser_User_Assignment)) {
@@ -267,14 +338,7 @@ export async function POST(request: NextRequest) {
       if (mentionsMissingAssignmentColumn) {
         const fallbackData = { ...memberData };
         delete fallbackData.Kaiser_User_Assignment;
-        upsertResponse = await fetch(upsertUrl, {
-          method: upsertMethod,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(fallbackData),
-        });
+        upsertResponse = await doUpsert(fallbackData);
       } else {
         return NextResponse.json(
           {
@@ -297,7 +361,50 @@ export async function POST(request: NextRequest) {
     }
 
     if (!upsertResponse.ok) {
-      const caspioError = await upsertResponse.text().catch(() => '');
+      const firstErrorBody = await upsertResponse.text().catch(() => '');
+      const holdPattern = /columnnotfound/i.test(firstErrorBody) && /hold[_\s-]*for[_\s-]*social[_\s-]*worker/i.test(firstErrorBody);
+      if (holdPattern) {
+        const fallbackData = { ...memberData };
+        Object.keys(fallbackData).forEach((key) => {
+          if (looksLikeHoldForSocialWorkerField(key)) delete fallbackData[key];
+        });
+        // Retry with canonical field in case table metadata was stale or endpoint returned a variant.
+        fallbackData[HOLD_FOR_SOCIAL_WORKER_FIELD] = requestedSocialWorkerHold;
+        upsertResponse = await doUpsert(fallbackData);
+        if (upsertResponse.ok) {
+          const result = await upsertResponse.json().catch(() => ({} as any));
+          return NextResponse.json({
+            success: true,
+            message: isUpdate
+              ? `Successfully updated Caspio profile for "${firstName} ${lastName}".`
+              : `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio.`,
+            mode: isUpdate ? 'update' : 'create',
+            clientId2: clean(memberData[clientIdField]),
+            data: result,
+          });
+        }
+        // Last-chance fallback: some Caspio environments expose no hold column on this table.
+        // Keep the member update unblocked by retrying without hold-related fields.
+        const noHoldData = { ...memberData };
+        Object.keys(noHoldData).forEach((key) => {
+          if (looksLikeHoldForSocialWorkerField(key)) delete noHoldData[key];
+        });
+        upsertResponse = await doUpsert(noHoldData);
+        if (upsertResponse.ok) {
+          const result = await upsertResponse.json().catch(() => ({} as any));
+          return NextResponse.json({
+            success: true,
+            message: isUpdate
+              ? `Successfully updated Caspio profile for "${firstName} ${lastName}" (hold column not available on this table).`
+              : `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio (hold column not available on this table).`,
+            mode: isUpdate ? 'update' : 'create',
+            clientId2: clean(memberData[clientIdField]),
+            warning: 'hold-field-missing',
+            data: result,
+          });
+        }
+      }
+      const caspioError = await upsertResponse.text().catch(() => '') || firstErrorBody;
       return NextResponse.json(
         {
           success: false,
@@ -310,6 +417,8 @@ export async function POST(request: NextRequest) {
             caspioError,
             memberName: `${firstName} ${lastName}`.trim(),
             clientIdField,
+            holdFieldTried: holdFieldName,
+            membersTableFieldCount: memberFieldNames.length,
             mode: isUpdate ? 'update' : 'create',
           },
         },
