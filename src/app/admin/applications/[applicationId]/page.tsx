@@ -1451,9 +1451,6 @@ function ApplicationDetailPageContent() {
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [mrnEditValue, setMrnEditValue] = useState('');
-  const [mrnEditSaving, setMrnEditSaving] = useState(false);
-  const [mrnEditError, setMrnEditError] = useState<string | null>(null);
   const [intakeImportOpen, setIntakeImportOpen] = useState(false);
   const [intakeRequirementTitle, setIntakeRequirementTitle] = useState<string>('');
   const [intakeLoading, setIntakeLoading] = useState(false);
@@ -1529,12 +1526,6 @@ function ApplicationDetailPageContent() {
       }
     ];
   };
-
-  useEffect(() => {
-    // Keep MRN editor in sync when application changes.
-    const raw = String((application as any)?.memberMrn || '').trim();
-    setMrnEditValue(raw);
-  }, [application?.id, (application as any)?.memberMrn]);
 
   const resetWaiversStatus = async () => {
     if (!docRef || !application) return;
@@ -4070,51 +4061,6 @@ function ApplicationDetailPageContent() {
     return '—';
   })();
 
-  const saveMrnOverride = async () => {
-    if (!user || !application?.id) return;
-    const next = String(mrnEditValue || '').trim();
-    setMrnEditError(null);
-    if (!next) {
-      setMrnEditError('MRN is required.');
-      return;
-    }
-
-    setMrnEditSaving(true);
-    try {
-      await ensureAdminClaim();
-      const idToken = await user.getIdToken();
-      const res = await fetch('/api/admin/applications/update-mrn', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          applicationId: application.id,
-          userId: appUserId || '',
-          clientId2: String((application as any)?.client_ID2 || (application as any)?.Client_ID2 || '').trim(),
-          memberMrn: next,
-          reason: 'Manual MRN update (admin)',
-        }),
-      });
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) {
-        throw new Error(String(data?.error || 'Failed to update MRN'));
-      }
-
-      setApplication((prev) => (prev ? ({ ...(prev as any), memberMrn: next } as any) : prev));
-      toast({ title: 'MRN updated', description: 'Saved manual MRN override.' });
-    } catch (e: any) {
-      setMrnEditError(String(e?.message || 'Failed to update MRN'));
-      toast({
-        variant: 'destructive',
-        title: 'Could not update MRN',
-        description: String(e?.message || 'Please retry.'),
-      });
-    } finally {
-      setMrnEditSaving(false);
-    }
-  };
   const pathwayDisplay =
     String(
       (application as any)?.pathway ||
@@ -6749,41 +6695,6 @@ function ApplicationDetailPageContent() {
                       <div>
                         <span className="font-medium">MRN:</span>{' '}
                         {memberMrnDisplay}
-                      </div>
-                      <div className="sm:col-span-2">
-                        <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <div className="sm:flex-1 min-w-0">
-                            <Input
-                              value={mrnEditValue}
-                              onChange={(e) => setMrnEditValue(e.target.value)}
-                              placeholder="Enter MRN"
-                              disabled={mrnEditSaving}
-                              aria-label="Edit MRN"
-                            />
-                            {mrnEditError ? (
-                              <div className="mt-1 text-xs text-destructive">{mrnEditError}</div>
-                            ) : null}
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={saveMrnOverride}
-                            disabled={mrnEditSaving || !String(mrnEditValue || '').trim()}
-                            className="shrink-0"
-                          >
-                            {mrnEditSaving ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Saving…
-                              </>
-                            ) : (
-                              'Save MRN'
-                            )}
-                          </Button>
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          Manual override for this application. Used for Kaiser region (MRN starts with 1/2 = North, 0 = South).
-                        </div>
                       </div>
                       <div>
                         <span className="font-medium">Health Plan:</span>{' '}
