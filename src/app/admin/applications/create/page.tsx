@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Bell, FileText, Loader2, RotateCcw, Upload, Users } from 'lucide-react';
+import { ArrowLeft, Bell, Database, FileText, Loader2, RotateCcw, Upload, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
@@ -485,6 +485,9 @@ type KaiserIlsImportRow = {
   pushedClientId2: string;
 };
 
+const CASPIO_CLIENT_ID_CONFLICT_WARNING =
+  'This application already has Client_ID2. Delete the existing record in Caspio Clients Table and CalAIM Members tables before pushing again.';
+
 const normalizeSheetHeader = (value: unknown) =>
   String(value || '')
     .toLowerCase()
@@ -563,7 +566,7 @@ export default function CreateApplicationPage() {
   const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
   const [isPushingSingleAuthToCaspio, setIsPushingSingleAuthToCaspio] = useState(false);
   const [isSendingFamilyInviteEmail, setIsSendingFamilyInviteEmail] = useState(false);
-  const [lastCreatedSkeleton, setLastCreatedSkeleton] = useState<{ applicationId: string; memberName: string } | null>(null);
+  const [lastCreatedSkeleton, setLastCreatedSkeleton] = useState<{ applicationId: string; memberName: string; clientId2: string } | null>(null);
   const [lockedCaspioPushMapping, setLockedCaspioPushMapping] = useState<Record<string, string> | null>(null);
   const ilsSpreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1038,6 +1041,20 @@ export default function CreateApplicationPage() {
           if (!row.assignedStaffName && !row.assignedStaffId) {
             throw new Error('Assign staff before pushing.');
           }
+          const linkedApplicationId = String(row.applicationId || '').trim();
+          if (String(row.clientId2 || '').trim()) {
+            throw new Error(CASPIO_CLIENT_ID_CONFLICT_WARNING);
+          }
+          if (firestore && linkedApplicationId) {
+            const linkedSnap = await getDoc(doc(firestore, 'applications', linkedApplicationId));
+            if (linkedSnap.exists()) {
+              const linkedData = linkedSnap.data() as Record<string, unknown>;
+              const existingClientId2 = String(linkedData?.client_ID2 || linkedData?.clientId2 || '').trim();
+              if (existingClientId2) {
+                throw new Error(CASPIO_CLIENT_ID_CONFLICT_WARNING);
+              }
+            }
+          }
           const applicationData = {
             memberFirstName: row.memberFirstName,
             memberLastName: row.memberLastName,
@@ -1071,7 +1088,6 @@ export default function CreateApplicationPage() {
             throw new Error(data?.message || data?.details?.rawError || `Push failed (HTTP ${res.status})`);
           }
           const pushedClientId2 = String(data?.clientId2 || row.clientId2 || '').trim();
-          const linkedApplicationId = String(row.applicationId || '').trim();
           if (firestore && linkedApplicationId && pushedClientId2) {
             await setDoc(
               doc(firestore, 'applications', linkedApplicationId),
@@ -1093,7 +1109,9 @@ export default function CreateApplicationPage() {
                     ...r,
                     pushStatus: 'pushed',
                     pushedClientId2,
-                    statusNote: data?.message || 'Pushed to Caspio',
+                    statusNote: pushedClientId2
+                      ? `Pushed to Caspio • Client_ID2 ${pushedClientId2}`
+                      : data?.message || 'Pushed to Caspio',
                   }
                 : r
             )
@@ -1566,7 +1584,7 @@ export default function CreateApplicationPage() {
         });
       }
       const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
-      setLastCreatedSkeleton({ applicationId, memberName });
+      setLastCreatedSkeleton({ applicationId, memberName, clientId2: '' });
       const shouldSkipNavigate = options?.skipNavigate ?? isKaiserAuthReceived;
       if (!shouldSkipNavigate) {
         if (isKaiserAuthReceived) {
@@ -1686,6 +1704,16 @@ export default function CreateApplicationPage() {
         if (!createdApplicationId) {
           throw new Error('Could not create skeleton application before Caspio push.');
         }
+        if (firestore) {
+          const createdSnap = await getDoc(doc(firestore, 'applications', createdApplicationId));
+          if (createdSnap.exists()) {
+            const createdData = createdSnap.data() as Record<string, unknown>;
+            const existingClientId2 = String(createdData?.client_ID2 || createdData?.clientId2 || '').trim();
+            if (existingClientId2) {
+              throw new Error(CASPIO_CLIENT_ID_CONFLICT_WARNING);
+            }
+          }
+        }
       }
       const applicationData = {
         memberFirstName: memberData.memberFirstName || '',
@@ -1732,6 +1760,13 @@ export default function CreateApplicationPage() {
             lastUpdated: serverTimestamp(),
           },
           { merge: true }
+        );
+      }
+      if (createdApplicationId && pushedClientId2) {
+        setLastCreatedSkeleton((prev) =>
+          prev && prev.applicationId === createdApplicationId
+            ? { ...prev, clientId2: pushedClientId2 }
+            : prev
         );
       }
       toast({
@@ -2020,7 +2055,11 @@ export default function CreateApplicationPage() {
                         Delete Created Records
                       </Button>
                       <Button type="button" onClick={pushSelectedIlsRowsToCaspio} disabled={isPushingIlsRows || selectedIlsRows.length === 0}>
-                        {isPushingIlsRows ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {isPushingIlsRows ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Database className="mr-2 h-4 w-4 text-sky-600" />
+                        )}
                         Push Selected to Caspio
                       </Button>
                     </div>
@@ -2071,7 +2110,11 @@ export default function CreateApplicationPage() {
                         onClick={() => void pushSingleAuthToCaspio({ createSkeletonFirst: true })}
                         disabled={isPushingSingleAuthToCaspio || isCreating}
                       >
-                        {isPushingSingleAuthToCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {isPushingSingleAuthToCaspio ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Database className="mr-2 h-4 w-4 text-sky-600" />
+                        )}
                         Create + Push Single Auth
                       </Button>
                       <Button
@@ -2103,6 +2146,9 @@ export default function CreateApplicationPage() {
                       <div className="rounded-md border bg-emerald-50/60 p-2 space-y-2">
                         <div className="text-xs font-medium">
                           Skeleton created: <span className="font-semibold">{lastCreatedSkeleton.applicationId}</span> ({lastCreatedSkeleton.memberName})
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Client_ID2: <span className="font-mono">{lastCreatedSkeleton.clientId2 || 'Pending (set after Caspio push)'}</span>
                         </div>
                         <div className="text-xs text-muted-foreground">
                           Share these links with family so they can sign in, continue the application, and upload required documents.

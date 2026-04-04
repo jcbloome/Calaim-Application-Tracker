@@ -8,6 +8,8 @@ const looksLikeClientId2 = (fieldName: string) => /client[_\s-]*id2/i.test(clean
 const hasValue = (value: unknown) => clean(value).length > 0;
 const looksLikePkField = (fieldName: string) => /^pk_id$/i.test(clean(fieldName));
 const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(value));
+const HOLD_FOR_SOCIAL_WORKER_FIELD = 'Hold_For_Social_Worker';
+const HOLD_FOR_SOCIAL_WORKER_VALUE = '🔴 Hold';
 
 const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<string, string> | null) => {
   const memberData: Record<string, any> = {};
@@ -188,6 +190,8 @@ export async function POST(request: NextRequest) {
       // Keep Kaiser tracker assignment in Caspio aligned with admin assignment at push time.
       memberData.Kaiser_User_Assignment = assignedStaffName;
     }
+    // Always put pushed members into Social Worker hold queue.
+    memberData[HOLD_FOR_SOCIAL_WORKER_FIELD] = HOLD_FOR_SOCIAL_WORKER_VALUE;
     Object.keys(memberData).forEach((key) => {
       if (looksLikePkField(key)) delete memberData[key];
     });

@@ -801,6 +801,10 @@ function PushToCaspioDialog({
 
     const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
     const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
+    const existingClientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
+    const hasExistingClientId2 = Boolean(existingClientId2);
+    const clientIdConflictWarning =
+      'This application already has Client_ID2. Delete the existing record in Caspio Clients Table and CalAIM Members tables before pushing again.';
     const hasAssignedStaff = Boolean(assignedStaffId || assignedStaffName);
     const isKaiserAuthReceivedIntake =
       Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
@@ -828,6 +832,14 @@ function PushToCaspioDialog({
     const missingRequiredReadiness = readinessChecks.filter((item) => item.required && !item.ready);
     const readinessComplete = missingRequiredReadiness.length === 0;
     const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
+        if (hasExistingClientId2) {
+            toast({
+                variant: 'destructive',
+                title: 'Client_ID2 already exists',
+                description: clientIdConflictWarning,
+            });
+            return;
+        }
         if (!hasAssignedStaff) {
             toast({
                 variant: 'destructive',
@@ -885,6 +897,9 @@ function PushToCaspioDialog({
                     await setDoc(
                         docRef,
                         {
+                            clientId2: String(data?.clientId2 || '').trim() || null,
+                            client_ID2: String(data?.clientId2 || '').trim() || null,
+                            caspioClientId2: String(data?.clientId2 || '').trim() || null,
                             caspioSent: true,
                             caspioSentDate: serverTimestamp(),
                             caspioSentByName: pushedByName || null,
@@ -1027,7 +1042,7 @@ function PushToCaspioDialog({
                         </>
                     ) : (
                         <>
-                            <Database className="mr-2 h-4 w-4" />
+                            <Database className="mr-2 h-4 w-4 text-sky-600" />
                             Push to Caspio
                         </>
                     )}
@@ -1047,6 +1062,13 @@ function PushToCaspioDialog({
                         <AlertDescription>
                             If the Caspio record was deleted or needs to be recreated, use <strong>Reset push status</strong> first, then push again.
                         </AlertDescription>
+                    </Alert>
+                )}
+                {hasExistingClientId2 && (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Client_ID2 already exists: {existingClientId2}</AlertTitle>
+                        <AlertDescription>{clientIdConflictWarning}</AlertDescription>
                     </Alert>
                 )}
                 {!hasAssignedStaff && (
@@ -1153,7 +1175,7 @@ function PushToCaspioDialog({
                               }
                             })();
                         }}
-                        disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0 || isSendingToCaspio || isAlreadySent || !hasAssignedStaff || !readinessComplete}
+                        disabled={!caspioMappingPreview || Object.keys(caspioMappingPreview).length === 0 || isSendingToCaspio || isAlreadySent || hasExistingClientId2 || !hasAssignedStaff || !readinessComplete}
                     >
                         Confirm & Push
                     </AlertDialogAction>
@@ -5609,7 +5631,16 @@ function ApplicationDetailPageContent() {
                                 <div><p className="text-sm text-muted-foreground">Submitted Date</p><p className="font-semibold">{formatDateTimeValue(application.submissionDate) || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div><p className="text-sm text-muted-foreground">Last Updated</p><p className="font-semibold">{formatDateTimeValue(application.lastUpdated) || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div><p className="text-sm text-muted-foreground">Submitted By</p><p className="font-semibold">{application.referrerName || <span className="font-normal text-gray-400">N/A</span>}</p></div>
-                                <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Application ID</p><p className="font-semibold">{application.id || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div className="md:col-span-2">
+                                  <p className="text-sm text-muted-foreground">Application ID</p>
+                                  <p className="font-semibold">{application.id || <span className="font-normal text-gray-400">N/A</span>}</p>
+                                  <p className="mt-1 text-sm text-muted-foreground">
+                                    Client_ID2:{' '}
+                                    <span className="font-semibold text-foreground">
+                                      {String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim() || 'Pending (set after Caspio push)'}
+                                    </span>
+                                  </p>
+                                </div>
                               </div>
                               <Separator className="my-6" />
                             </div>
