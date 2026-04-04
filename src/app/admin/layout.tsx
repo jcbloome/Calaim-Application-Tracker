@@ -576,6 +576,11 @@ function AdminHeader() {
     if (auth) {
       await auth.signOut();
     }
+    try {
+      await fetch('/api/auth/admin-session', { method: 'DELETE' });
+    } catch {
+      // best-effort cookie cleanup
+    }
     const isRealDesktop =
       typeof window !== 'undefined' &&
       Boolean((window as any).desktopNotifications) &&
@@ -2267,7 +2272,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     const readLastActivity = () => {
       const fromStorage = Number(window.localStorage.getItem(ADMIN_LAST_ACTIVITY_KEY) || '0');
-      return Number.isFinite(fromStorage) && fromStorage > 0 ? fromStorage : Date.now();
+      return Number.isFinite(fromStorage) && fromStorage > 0 ? fromStorage : 0;
     };
 
     const recordActivity = () => {
@@ -2305,16 +2310,21 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       } catch {
         // Best effort only.
       }
+      window.localStorage.removeItem(ADMIN_LAST_ACTIVITY_KEY);
       window.localStorage.removeItem('calaim_session_type');
       window.localStorage.removeItem('calaim_admin_context');
       window.location.href = `/admin/login?redirect=${encodeURIComponent(redirectTarget)}`;
     };
 
     const checkIdle = () => {
-      const elapsed = Date.now() - readLastActivity();
+      const lastActivityAt = readLastActivity();
+      if (!lastActivityAt) return false;
+      const elapsed = Date.now() - lastActivityAt;
       if (elapsed >= ADMIN_IDLE_TIMEOUT_MS) {
         void forceReauth();
+        return true;
       }
+      return false;
     };
 
     const onVisibilityChange = () => {
@@ -2323,20 +2333,31 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       }
     };
 
-    const activityEvents: Array<keyof WindowEventMap> = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'focus'];
+    const onUserActivity = () => {
+      // If the user comes back after timeout, force re-auth before refreshing activity.
+      if (checkIdle()) return;
+      recordActivity();
+    };
+
+    const activityEvents: Array<keyof WindowEventMap> = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
     activityEvents.forEach((eventName) => {
-      window.addEventListener(eventName, recordActivity, { passive: true });
+      window.addEventListener(eventName, onUserActivity, { passive: true });
     });
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // Ensure this tab has an activity baseline, then periodically enforce timeout.
-    recordActivity();
+    // On load, enforce timeout first. Only create a baseline if this is a fresh admin session.
+    const existingActivity = readLastActivity();
+    if (existingActivity > 0) {
+      checkIdle();
+    } else {
+      recordActivity();
+    }
     intervalId = setInterval(checkIdle, 30_000);
 
     return () => {
       if (intervalId) clearInterval(intervalId);
       activityEvents.forEach((eventName) => {
-        window.removeEventListener(eventName, recordActivity);
+        window.removeEventListener(eventName, onUserActivity);
       });
       document.removeEventListener('visibilitychange', onVisibilityChange);
       adminIdleLogoutRef.current = false;
