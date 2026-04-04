@@ -47,6 +47,7 @@ import {
   Wrench,
   RefreshCw,
   ClipboardPaste,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
@@ -1450,6 +1451,7 @@ function ApplicationDetailPageContent() {
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [eligibilityPasteLoading, setEligibilityPasteLoading] = useState(false);
+  const [isResettingEligibilityUploads, setIsResettingEligibilityUploads] = useState(false);
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -3802,7 +3804,11 @@ function ApplicationDetailPageContent() {
   };
 
   const pasteEligibilityScreenshotFromClipboard = async () => {
-    if (!navigator?.clipboard || typeof navigator.clipboard.read !== 'function') {
+    if (
+      !navigator?.clipboard ||
+      typeof navigator.clipboard.read !== 'function' ||
+      typeof globalThis.File !== 'function'
+    ) {
       toast({
         variant: 'destructive',
         title: 'Paste unavailable',
@@ -3823,7 +3829,7 @@ function ApplicationDetailPageContent() {
         const blob = await item.getType(imageType);
         const ext = String(imageType.split('/')[1] || 'png').toLowerCase();
         files.push(
-          new File([blob], `eligibility-screenshot-${Date.now()}-${i}.${ext}`, {
+          new globalThis.File([blob], `eligibility-screenshot-${Date.now()}-${i}.${ext}`, {
             type: imageType,
           })
         );
@@ -3863,6 +3869,60 @@ function ApplicationDetailPageContent() {
     }
     await upsertEligibilityScreenshotUploads(next);
     toast({ title: 'Removed', description: 'Eligibility screenshot removed.' });
+  };
+
+  const resetEligibilityUploads = async () => {
+    if (isResettingEligibilityUploads) return;
+    setIsResettingEligibilityUploads(true);
+    try {
+      const screenshotUploads = getEligibilityScreenshotUploads();
+      const screenshotDeleteTasks = screenshotUploads
+        .map((upload) => String(upload.filePath || '').trim())
+        .filter(Boolean)
+        .map((filePath) => {
+          if (!storage) return Promise.resolve();
+          return deleteObject(ref(storage, filePath)).catch(() => undefined);
+        });
+      await Promise.all(screenshotDeleteTasks);
+      await upsertEligibilityScreenshotUploads([]);
+
+      const otherEligibilityUpdates: Partial<FormStatusType>[] = [];
+      for (const req of eligibilityRequirements) {
+        if (req.id === 'eligibility-screenshot' || req.type !== 'Upload') continue;
+        const formInfo = formStatusMap.get(req.title) as any;
+        if (!formInfo) continue;
+        const filePath = String(formInfo?.filePath || '').trim();
+        if (filePath && storage) {
+          await deleteObject(ref(storage, filePath)).catch(() => undefined);
+        }
+        otherEligibilityUpdates.push({
+          name: req.title,
+          status: 'Pending',
+          fileName: null,
+          filePath: null,
+          downloadURL: null,
+          dateCompleted: null,
+          acknowledged: false,
+        });
+      }
+
+      if (otherEligibilityUpdates.length > 0) {
+        await handleFormStatusUpdate(otherEligibilityUpdates);
+      }
+
+      toast({
+        title: 'Eligibility uploads reset',
+        description: 'All eligibility screenshots and uploaded files were removed. You can start over.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Reset failed',
+        description: String(error?.message || 'Could not reset eligibility uploads.'),
+      });
+    } finally {
+      setIsResettingEligibilityUploads(false);
+    }
   };
 
   const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -3997,6 +4057,14 @@ function ApplicationDetailPageContent() {
     return items;
   })();
   const formStatusMap = new Map(application.forms?.map(f => [f.name, f]));
+  const hasEligibilityUploadsToReset = (() => {
+    if (getEligibilityScreenshotUploads().length > 0) return true;
+    return eligibilityRequirements.some((req) => {
+      if (req.id === 'eligibility-screenshot' || req.type !== 'Upload') return false;
+      const formInfo = formStatusMap.get(req.title) as any;
+      return Boolean(formInfo?.fileName || formInfo?.filePath || formInfo?.downloadURL);
+    });
+  })();
   if (!formStatusMap.get('Room and Board/Tier Level Agreement') && formStatusMap.get('Room and Board/Tier Level Commitment')) {
     formStatusMap.set('Room and Board/Tier Level Agreement', formStatusMap.get('Room and Board/Tier Level Commitment') as any);
   } else if (!formStatusMap.get('Room and Board/Tier Level Agreement') && formStatusMap.get('Room and Board Commitment')) {
@@ -6932,7 +7000,28 @@ function ApplicationDetailPageContent() {
 
                   {eligibilityRequirements.length > 0 && (
                     <div className="space-y-3 border-t pt-4">
-                      <Label className="text-sm font-medium">Eligibility Uploads</Label>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-sm font-medium">Eligibility Uploads</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void resetEligibilityUploads()}
+                          disabled={isResettingEligibilityUploads || !hasEligibilityUploadsToReset}
+                        >
+                          {isResettingEligibilityUploads ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Resetting...
+                            </>
+                          ) : (
+                            <>
+                              <RotateCcw className="mr-2 h-4 w-4" />
+                              Delete All / Start Over
+                            </>
+                          )}
+                        </Button>
+                      </div>
                       <div className="space-y-3">
                         {eligibilityRequirements.map((req) => {
                           const formInfo = formStatusMap.get(req.title);
