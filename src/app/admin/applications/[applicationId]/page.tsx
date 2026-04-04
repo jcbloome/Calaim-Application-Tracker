@@ -4084,8 +4084,17 @@ function ApplicationDetailPageContent() {
       ''
     ).trim();
     if (!rawDob) return '—';
+
+    const mmDdYyyyMatch = rawDob.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (mmDdYyyyMatch) {
+      const mm = mmDdYyyyMatch[1].padStart(2, '0');
+      const dd = mmDdYyyyMatch[2].padStart(2, '0');
+      const yyyy = mmDdYyyyMatch[3];
+      return `${mm}-${dd}-${yyyy}`;
+    }
+
     const parsedDob = new Date(rawDob);
-    return Number.isNaN(parsedDob.getTime()) ? rawDob : format(parsedDob, 'PPP');
+    return Number.isNaN(parsedDob.getTime()) ? rawDob : format(parsedDob, 'MM-dd-yyyy');
   })();
   const parseCurrencyAmount = (value: unknown): number | null => {
     if (value == null) return null;

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import appPackage from '../../../package.json';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -2050,6 +2049,7 @@ function AdminHeader() {
   );
 }
 
+
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, isAdmin } = useAdmin();
   const pathname = usePathname();
@@ -2065,17 +2065,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     inProgress: false,
     failed: false,
   });
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; open: boolean }>({
-    x: 0,
-    y: 0,
-    open: false
-  });
-
-  const appVersion = appPackage?.version || 'unknown';
-  const buildTimeRaw = process.env.NEXT_PUBLIC_BUILD_TIME;
-  const buildTimeLabel = buildTimeRaw && !Number.isNaN(Date.parse(buildTimeRaw))
-    ? new Date(buildTimeRaw).toLocaleString()
-    : 'Unknown';
 
   // Allow access to login page without authentication
   const isLoginPage = pathname === '/admin/login';
@@ -2189,23 +2178,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     if (!isAdmin) return;
     setAdminBootstrap({ inProgress: false, failed: false });
   }, [adminBootstrap.inProgress, isAdmin]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-      setContextMenu({ x: event.clientX, y: event.clientY, open: true });
-    };
-    const handleClose = () => setContextMenu((prev) => ({ ...prev, open: false }));
-    window.addEventListener('contextmenu', handleContextMenu);
-    window.addEventListener('click', handleClose);
-    window.addEventListener('scroll', handleClose, true);
-    return () => {
-      window.removeEventListener('contextmenu', handleContextMenu);
-      window.removeEventListener('click', handleClose);
-      window.removeEventListener('scroll', handleClose, true);
-    };
-  }, []);
 
   useEffect(() => {
     if (!isLoading) {
@@ -2438,31 +2410,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
-      {contextMenu.open && (
-        <div
-          className="fixed z-[999] min-w-[240px] rounded-md border bg-white shadow-lg text-sm"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="px-3 py-2 font-medium">About Connect CalAIM</div>
-          <div className="px-3 pb-2 text-xs text-muted-foreground">
-            Version: {appVersion}
-            <br />
-            Last update: {buildTimeLabel}
-          </div>
-          <div className="border-t" />
-          <button
-            className="w-full px-3 py-2 text-left hover:bg-muted"
-            onClick={() => {
-              if (typeof window !== 'undefined') {
-                window.location.reload();
-              }
-            }}
-          >
-            Check for updates
-          </button>
-        </div>
-      )}
     </>
   );
 }
