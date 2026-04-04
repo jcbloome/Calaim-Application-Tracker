@@ -802,6 +802,8 @@ function PushToCaspioDialog({
     const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
     const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
     const caspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
+    const requestedKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+    const appHealthPlan = String((application as any)?.healthPlan || (application as any)?.CalAIM_MCO || '').trim().toLowerCase();
     const existingClientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
     const hasExistingClientId2 = Boolean(existingClientId2);
     const clientIdConflictWarning =
@@ -810,6 +812,7 @@ function PushToCaspioDialog({
     const isKaiserAuthReceivedIntake =
       Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
       String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils';
+    const requiresKaiserStatus = isKaiserAuthReceivedIntake || appHealthPlan.includes('kaiser');
     const toClean = (value: unknown) => String(value ?? '').trim();
     const readinessChecks = [
       { key: 'memberFirstName', label: 'Member first name', required: true, ready: Boolean(toClean((application as any)?.memberFirstName)) },
@@ -820,6 +823,7 @@ function PushToCaspioDialog({
       { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
       { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(caspioCalAIMStatus) },
+      { key: 'kaiserStatus', label: 'Kaiser Status', required: requiresKaiserStatus, ready: Boolean(requestedKaiserStatus) },
       {
         key: 'familyEmail',
         label: 'Family/POA email',
@@ -839,6 +843,14 @@ function PushToCaspioDialog({
                 variant: 'destructive',
                 title: 'CalAIM status required',
                 description: 'Select CalAIM Status (Authorized or Pending) in the main application card before pushing to Caspio.',
+            });
+            return;
+        }
+        if (requiresKaiserStatus && !requestedKaiserStatus) {
+            toast({
+                variant: 'destructive',
+                title: 'Kaiser status required',
+                description: 'Select Kaiser Status in the main application card before pushing to Caspio.',
             });
             return;
         }
@@ -884,6 +896,7 @@ function PushToCaspioDialog({
                     applicationData: {
                       ...application,
                       caspioCalAIMStatus,
+                      kaiserStatus: requestedKaiserStatus,
                     },
                     mapping: mappingOverride || caspioMappingPreview || null,
                 }),
@@ -1090,6 +1103,15 @@ function PushToCaspioDialog({
                         <AlertTitle>CalAIM Status for Caspio is required</AlertTitle>
                         <AlertDescription>
                             Set CalAIM Status (Authorized or Pending) in the main application card before pushing.
+                        </AlertDescription>
+                    </Alert>
+                )}
+                {requiresKaiserStatus && !requestedKaiserStatus && (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Kaiser Status is required</AlertTitle>
+                        <AlertDescription>
+                            Set Kaiser Status in the main application card before pushing this Kaiser application.
                         </AlertDescription>
                     </Alert>
                 )}
@@ -4236,6 +4258,15 @@ function ApplicationDetailPageContent() {
     (application as any)?.caspioSentByEmail ||
     ''
   ).trim();
+  const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+  const firstPushKaiserStatusOptions = kaiserSteps.filter((status) =>
+    String(status || '').trim().toLowerCase().startsWith('t2038')
+  );
+  // Manual picker stays scoped to T2038 statuses; downstream statuses auto-update via workflow progression.
+  const kaiserStatusSelectionOptions = firstPushKaiserStatusOptions;
+  const kaiserStatusPickerValue = kaiserStatusSelectionOptions.includes(currentKaiserStatus)
+    ? currentKaiserStatus
+    : '';
   const memberFirstNameDisplay = String(
     (application as any)?.memberFirstName ||
     (application as any)?.Member_First_Name ||
@@ -6384,7 +6415,12 @@ function ApplicationDetailPageContent() {
             </CardHeader>
             <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                <div className="truncate"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
+                <div className="truncate">
+                  <strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Client_ID2: <span className="font-mono">{String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim() || 'Pending (set after Caspio push)'}</span>
+                  </div>
+                </div>
                 <div><strong>Submission Status:</strong> <span className="font-semibold">{application.status}</span></div>
             </div>
             
@@ -6447,6 +6483,25 @@ function ApplicationDetailPageContent() {
                         : 'CalAIM Status for Caspio: Pending selection'}
                     </span>
                   </div>
+                  {isKaiserPlan ? (
+                    <div
+                      className={cn(
+                        'flex items-center gap-2 text-base font-semibold',
+                        String((application as any)?.kaiserStatus || '').trim() ? 'text-green-700' : 'text-amber-700'
+                      )}
+                    >
+                      {String((application as any)?.kaiserStatus || '').trim() ? (
+                        <CheckCircle2 className="h-5 w-5" />
+                      ) : (
+                        <XCircle className="h-5 w-5" />
+                      )}
+                      <span>
+                        {String((application as any)?.kaiserStatus || '').trim()
+                          ? `Kaiser Status: ${String((application as any)?.kaiserStatus || '').trim()}`
+                          : 'Kaiser Status: Pending selection'}
+                      </span>
+                    </div>
+                  ) : null}
                   <div className={cn('flex items-center gap-2 text-base font-semibold', staffAssigned ? 'text-green-700' : 'text-amber-700')}>
                     {staffAssigned ? (
                       <CheckCircle2 className="h-5 w-5" />
@@ -6498,7 +6553,7 @@ function ApplicationDetailPageContent() {
                         : 'Off'}
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pl-7">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pl-7">
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-muted-foreground">Email reminders</Label>
                       <RadioGroup
@@ -6562,6 +6617,34 @@ function ApplicationDetailPageContent() {
                         Required before Push to Caspio from this page.
                       </p>
                     </div>
+                    {isKaiserPlan ? (
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-muted-foreground">Kaiser Status</Label>
+                        <Select
+                          value={kaiserStatusPickerValue}
+                          onValueChange={(value) => {
+                            if (value) {
+                              void updateProgressionStatus(value, 'kaiser');
+                            }
+                          }}
+                          disabled={isUpdatingProgression}
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Select Kaiser status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {kaiserStatusSelectionOptions.map((status) => (
+                              <SelectItem key={`main-kaiser-status-${status}`} value={status}>
+                                {status}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Only T2038 Kaiser statuses are manually selectable here. Later statuses update through tracker progression.
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                   {familyStatusLastSentLabel ? (
                     <div className="text-xs text-muted-foreground pl-7">

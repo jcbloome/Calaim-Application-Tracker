@@ -11,6 +11,9 @@ const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(va
 const HOLD_FOR_SOCIAL_WORKER_FIELD = 'Hold_For_Social_Worker';
 const HOLD_FOR_SOCIAL_WORKER_VALUE = '🔴 Hold';
 const CALAIM_STATUS_FIELD = 'CalAIM_Status';
+const MCO_AND_TIER_FIELD = 'MCO_and_Tier';
+const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
+const KAISER_STATUS_FIELD = 'Kaiser_Status';
 
 const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<string, string> | null) => {
   const memberData: Record<string, any> = {};
@@ -102,6 +105,11 @@ export async function POST(request: NextRequest) {
     const assignedStaffName = clean(applicationData?.assignedStaffName);
     const assignedStaffId = clean(applicationData?.assignedStaffId);
     const requestedCalAIMStatus = clean(applicationData?.caspioCalAIMStatus || applicationData?.CalAIM_Status);
+    const requestedKaiserStatus = clean(applicationData?.kaiserStatus || applicationData?.Kaiser_Status);
+    const normalizedHealthPlan = clean(
+      applicationData?.healthPlan || applicationData?.CalAIM_MCO || applicationData?.calaimMco
+    ).toLowerCase();
+    const isKaiserApplication = normalizedHealthPlan === 'kaiser' || normalizedHealthPlan.includes('kaiser');
     if (!firstName || !lastName) {
       return NextResponse.json(
         { success: false, message: 'Member first and last name are required.' },
@@ -124,6 +132,16 @@ export async function POST(request: NextRequest) {
           success: false,
           code: 'missing-calaim-status',
           message: 'Select CalAIM Status (Authorized or Pending) on the main application page before pushing to Caspio.',
+        },
+        { status: 400 }
+      );
+    }
+    if (isKaiserApplication && !requestedKaiserStatus) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'missing-kaiser-status',
+          message: 'Select Kaiser Status on the main application page before pushing this Kaiser application.',
         },
         { status: 400 }
       );
@@ -203,6 +221,9 @@ export async function POST(request: NextRequest) {
       memberData.Kaiser_User_Assignment = assignedStaffName;
     }
     memberData[CALAIM_STATUS_FIELD] = requestedCalAIMStatus;
+    if (isKaiserApplication && requestedKaiserStatus) {
+      memberData[KAISER_STATUS_FIELD] = requestedKaiserStatus;
+    }
     // Always put pushed members into Social Worker hold queue.
     memberData[HOLD_FOR_SOCIAL_WORKER_FIELD] = HOLD_FOR_SOCIAL_WORKER_VALUE;
     Object.keys(memberData).forEach((key) => {
@@ -220,6 +241,10 @@ export async function POST(request: NextRequest) {
     }
 
     const isUpdate = Boolean(existingRow?.PK_ID || existingRow?.pk_id);
+    if (!isUpdate && isKaiserApplication) {
+      // Only set default tier on first insert for Kaiser applications.
+      memberData[MCO_AND_TIER_FIELD] = DEFAULT_KAISER_TIER_VALUE;
+    }
     const updateWhere = isUpdate ? `PK_ID=${Number(existingRow?.PK_ID || existingRow?.pk_id || 0)}` : '';
     const upsertUrl = isUpdate
       ? `${baseUrl}/tables/${membersTable}/records?q.where=${encodeURIComponent(updateWhere)}`

@@ -46,6 +46,13 @@ const integrationTools = [
     color: 'text-orange-600'
   },
   {
+    title: 'Kaiser Tier Backfill',
+    description: 'Preview Kaiser members missing MCO_and_Tier, then bulk set first-time default tier to Kaiser-0',
+    icon: Database,
+    href: '/admin/kaiser-tier-backfill',
+    color: 'text-cyan-600'
+  },
+  {
     title: 'Google Drive Test',
     description: 'Test Google Drive API integration, folder scanning, and document migration',
     icon: FolderSync,
