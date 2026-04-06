@@ -4,7 +4,7 @@ import React, { Suspense, useState, useEffect } from 'react';
 import { useAuth, useFirestore } from '@/firebase';
 import {
   signInWithEmailAndPassword,
-  browserSessionPersistence,
+  browserLocalPersistence,
   setPersistence,
 } from 'firebase/auth';
 import type { AuthError, User } from 'firebase/auth';
@@ -127,8 +127,8 @@ function LoginPageContent() {
         await auth.signOut();
       }
       
-      console.log('🔍 User Login Debug: Setting session-only persistence');
-      await setPersistence(auth, browserSessionPersistence);
+      console.log('🔍 User Login Debug: Setting persistent login mode');
+      await setPersistence(auth, browserLocalPersistence);
       
       console.log('🔍 User Login Debug: Attempting sign in with email/password');
       const userCredential = await signInWithEmailAndPassword(auth, email, password);

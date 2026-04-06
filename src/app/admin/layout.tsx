@@ -187,7 +187,7 @@ const superAdminNavLinks = [
   }
 ];
 
-const ADMIN_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const ADMIN_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const ADMIN_LAST_ACTIVITY_KEY = 'calaim_admin_last_activity_at';
 
 function AdminHeader() {

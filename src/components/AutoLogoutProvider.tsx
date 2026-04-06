@@ -16,17 +16,29 @@ export function AutoLogoutProvider({ children }: AutoLogoutProviderProps) {
   
   // Different timeout settings based on user type
   const isAdminArea = pathname.startsWith('/admin');
+  const isSwArea =
+    pathname.startsWith('/sw-portal') ||
+    pathname.startsWith('/sw-login') ||
+    pathname.startsWith('/sw-visit-verification') ||
+    pathname.startsWith('/swvisit');
   
   // Configure auto-logout based on area
   const config = isAdminArea 
     ? {
-        timeoutMinutes: 30,      // 30 minutes for admin (more sensitive data)
-        warningMinutes: 5,       // 5 minute warning
+        timeoutMinutes: 2 * 60,  // 2 hours for admin
+        warningMinutes: 10,      // 10 minute warning
         showWarning: true,
         redirectPath: '/admin/login'
       }
+    : isSwArea
+    ? {
+        timeoutMinutes: 2 * 60,  // 2 hours for social workers
+        warningMinutes: 10,
+        showWarning: true,
+        redirectPath: '/sw-login'
+      }
     : {
-        timeoutMinutes: 60,      // 1 hour for regular users
+        timeoutMinutes: 2 * 60,  // 2 hours for regular users
         warningMinutes: 10,      // 10 minute warning  
         showWarning: true,
         redirectPath: '/'
