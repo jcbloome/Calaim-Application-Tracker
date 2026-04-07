@@ -481,15 +481,29 @@ const getPathwayRequirements = (
 
   // Proof of income is required for Kaiser but not required for Health Net.
   const normalizedHealthPlan = String(healthPlan || '').trim();
+  const isKaiserPlan = normalizedHealthPlan.toLowerCase().includes('kaiser');
   const filteredCommonRequirements =
     normalizedHealthPlan === 'Health Net'
       ? commonRequirements.filter((req) => req.id !== 'proof-of-income')
       : commonRequirements;
+  const kaiserReferralRequirement = isKaiserPlan
+    ? [
+        {
+          id: 'kaiser-auth-referral',
+          title: 'Kaiser Referral Form (Authorization)',
+          description: 'Generate a pre-populated Kaiser referral form for authorization and print/download as PDF.',
+          type: 'online-form',
+          icon: FileText,
+          href: '/forms/kaiser-referral/printable',
+        },
+      ]
+    : [];
   
   if (pathway === 'SNF Diversion') {
     const isHealthNet = normalizedHealthPlan === 'Health Net';
     return [
       ...filteredCommonRequirements,
+      ...kaiserReferralRequirement,
       ...(isHealthNet
         ? [
             {
@@ -508,6 +522,7 @@ const getPathwayRequirements = (
   // SNF Transition
   return [
       ...filteredCommonRequirements,
+      ...kaiserReferralRequirement,
       { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'Upload', icon: UploadCloud, href: '#' },
   ];
 };
@@ -542,6 +557,7 @@ const quickStatusItems = [
   { key: 'Eligibility Check', label: 'Elig' },
   { key: 'Sent to Caspio', label: 'Caspio' },
   { key: 'Room and Board/Tier Level Agreement', label: 'R&B/Tier' },
+  { key: 'Kaiser Referral Form (Authorization)', label: 'KR' },
 ];
 
 function StaffApplicationTracker({ application }: { application: Application }) {
@@ -5851,6 +5867,73 @@ function ApplicationDetailPageContent() {
       ) : null;
 
     const recommendedFileName = buildStandardFileName(req.title, 'document.pdf');
+    const isKaiserReferralReq = req.id === 'kaiser-auth-referral';
+
+    if (isKaiserReferralReq) {
+      const memberAddress = [
+        String((application as any)?.currentAddress || '').trim(),
+        String((application as any)?.currentCity || '').trim(),
+        [String((application as any)?.currentState || '').trim(), String((application as any)?.currentZip || '').trim()]
+          .filter(Boolean)
+          .join(' '),
+      ]
+        .filter(Boolean)
+        .join(', ')
+        .replace(/,\s*,/g, ', ')
+        .trim();
+      const referrerName = `${String((application as any)?.referrerFirstName || '').trim()} ${String(
+        (application as any)?.referrerLastName || ''
+      ).trim()}`.trim();
+      const referralDate = (() => {
+        try {
+          return format(new Date(), 'yyyy-MM-dd');
+        } catch {
+          return '';
+        }
+      })();
+      const referralQuery = new URLSearchParams({
+        applicationId: String(applicationId || ''),
+        userId: String(appUserId || ''),
+        memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String(
+          (application as any)?.memberLastName || ''
+        ).trim()}`.trim(),
+        memberDob: String((application as any)?.memberDob || '').trim(),
+        memberPhone: String((application as any)?.memberPhone || '').trim(),
+        memberAddress,
+        memberMrn: String((application as any)?.memberMrn || '').trim(),
+        memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
+        caregiverName: `${String((application as any)?.bestContactFirstName || '').trim()} ${String(
+          (application as any)?.bestContactLastName || ''
+        ).trim()}`.trim(),
+        caregiverContact:
+          String((application as any)?.bestContactPhone || '').trim() ||
+          String((application as any)?.bestContactEmail || '').trim(),
+        referralDate,
+        referrerName,
+        referrerOrganization: String((application as any)?.agency || '').trim(),
+        referrerNpi: String((application as any)?.referrerNpi || '').trim(),
+        referrerAddress: String((application as any)?.referrerAddress || '').trim(),
+        referrerEmail: String((application as any)?.referrerEmail || '').trim(),
+        referrerPhone: String((application as any)?.referrerPhone || '').trim(),
+        referrerRelationship: String((application as any)?.referrerRelationship || '').trim(),
+        currentLocationName: String((application as any)?.currentLocationName || '').trim(),
+        currentLocationAddress: memberAddress,
+        healthPlan: String((application as any)?.healthPlan || '').trim(),
+      });
+
+      return (
+        <div className="space-y-2">
+          <Button asChild className="w-full">
+            <Link href={`/forms/kaiser-referral/printable?${referralQuery.toString()}`} target="_blank" rel="noopener noreferrer">
+              Generate + View PDF
+            </Link>
+          </Button>
+          <div className="text-xs text-muted-foreground">
+            Uses current application data to pre-populate member and referral fields.
+          </div>
+        </div>
+      );
+    }
 
     switch (req.type) {
         case 'online-form':
