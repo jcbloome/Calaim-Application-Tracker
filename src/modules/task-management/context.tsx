@@ -14,7 +14,6 @@ import type {
 import { taskProcessor } from './task-processor';
 import { workflowEngine } from './workflow-engine';
 import { smartTaskHub } from './smart-task-hub';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 
 // Initial state
 const initialState: TaskManagementState = {
@@ -211,22 +210,19 @@ export function TaskManagementProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_ERROR', payload: null });
     
     try {
-      const functions = getFunctions();
-      const fetchKaiserMembers = httpsCallable(functions, 'fetchKaiserMembersFromCaspio');
-      
-      const result = await fetchKaiserMembers();
-      const data = result.data as any;
-      
+      const res = await fetch('/api/kaiser-members');
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const data = await res.json();
+
       if (data.success) {
         const rawTasks = data.members || [];
-        
-        // Process tasks with intelligent enhancements
+
         const processedTasks = taskProcessor.processTasks(rawTasks, {
           enableSmartPrioritization: state.smartSortEnabled,
           enableWorkflowAnalysis: true,
           staffWorkloads: state.analytics.staffWorkloadDistribution
         });
-        
+
         dispatch({ type: 'SET_TASKS', payload: processedTasks });
       } else {
         throw new Error(data.error || 'Failed to load tasks');

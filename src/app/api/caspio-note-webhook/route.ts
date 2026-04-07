@@ -1,3 +1,28 @@
+/**
+ * NOTE PIPELINE ARCHITECTURE
+ * ==========================
+ * There are two parallel note systems:
+ *
+ * 1. FIREBASE FUNCTIONS (production webhook receivers):
+ *    - `caspioCalAIMNotesWebhook` / `caspioClientNotesWebhook` in functions/src/caspio-note-webhooks.ts
+ *    - These are the REAL endpoints registered with Caspio to receive incoming note data.
+ *
+ * 2. NEXT.JS API ROUTES (UI-facing read/write layer):
+ *    - /api/member-notes  – member-specific note CRUD used by kaiser-tracker, ils-report-editor, etc.
+ *    - /api/client-notes  – general client note CRUD used by tasks, my-notes, global-task-tracker, etc.
+ *    - /api/staff/notes, /api/staff/add-note, /api/staff/my-notes – staff-scoped note endpoints
+ *    - /api/admin/all-notes, /api/admin/system-notes – admin read-only aggregators
+ *
+ * 3. THIS ROUTE (/api/caspio-note-webhook):
+ *    - Secondary/test webhook endpoint used by /api/test-caspio-note (admin testing only).
+ *    - NOT registered with Caspio directly. Firebase Functions handle real webhooks.
+ *    - Kept alive because StaffAssignmentNotificationSystem.tsx tests note delivery via it.
+ *
+ * CONSOLIDATION OPPORTUNITY (future work):
+ *    - Firebase Function callables (getStaffNotes, getMemberNotes, addStaffNote, etc.) overlap
+ *      with the Next.js API routes listed above. The API routes should be the single source of
+ *      truth; the duplicate callable functions can be removed once callers are migrated.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';

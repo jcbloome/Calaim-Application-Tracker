@@ -96,26 +96,27 @@ export interface CaspioSocialWorker {
  * Get OAuth token from Caspio
  */
 export async function getCaspioToken(credentials: CaspioCredentials): Promise<string> {
+  const encoded = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString('base64');
   const tokenResponse = await fetch(`${credentials.baseUrl}/oauth/token`, {
     method: 'POST',
     headers: {
+      Authorization: `Basic ${encoded}`,
       'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
     },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: credentials.clientId,
-      client_secret: credentials.clientSecret,
-    }),
+    body: 'grant_type=client_credentials',
   });
   trackCaspioCall({ method: 'POST', kind: 'token', status: tokenResponse.status, ok: tokenResponse.ok, context: 'oauth/token' });
 
   if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text();
+    const errorText = await tokenResponse.text().catch(() => '');
     throw new Error(`Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
   }
 
   const tokenData = await tokenResponse.json();
-  return tokenData.access_token;
+  const accessToken = String(tokenData?.access_token || '');
+  if (!accessToken) throw new Error('Caspio token response missing access_token');
+  return accessToken;
 }
 
 /**
