@@ -338,6 +338,36 @@ export default function Step1({
                 </FormItem>
                 )}
             />
+            <FormField
+              control={control}
+              name="memberPhone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Member Phone</FormLabel>
+                  <FormControl>
+                    <PhoneInput {...field} value={field.value ?? ''} />
+                  </FormControl>
+                  <FormDescription>Optional</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+              control={control}
+              name="memberEmail"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Member Email</FormLabel>
+                  <FormControl>
+                    <Input type="text" inputMode="email" {...field} value={field.value ?? ''} />
+                  </FormControl>
+                  <FormDescription>Optional. If no email, leave blank or enter "N/A".</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField

@@ -9,6 +9,7 @@ type ReferralPrefill = {
   memberName?: string;
   memberDob?: string;
   memberPhone?: string;
+  memberEmail?: string;
   memberAddress?: string;
   memberMrn?: string;
   memberMediCal?: string;

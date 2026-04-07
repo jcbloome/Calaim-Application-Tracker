@@ -296,6 +296,8 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                             <Field label="Medi-Cal Number" value={application.memberMediCalNum} />
                             <Field label="Medical Record Number (MRN)" value={application.memberMrn} />
                             <Field label="Preferred Language" value={application.memberLanguage} />
+                            <Field label="Member Phone" value={application.memberPhone} />
+                            <Field label="Member Email" value={application.memberEmail} />
                             <Field label="County" value={application.currentCounty} />
                         </Section>
 

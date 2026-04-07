@@ -13,6 +13,7 @@ function KaiserReferralPrintableContent() {
       memberName={searchParams.get('memberName') || ''}
       memberDob={searchParams.get('memberDob') || ''}
       memberPhone={searchParams.get('memberPhone') || ''}
+      memberEmail={searchParams.get('memberEmail') || ''}
       memberAddress={searchParams.get('memberAddress') || ''}
       memberMrn={searchParams.get('memberMrn') || ''}
       memberMediCal={searchParams.get('memberMediCal') || ''}

@@ -5874,6 +5874,12 @@ function ApplicationDetailPageContent() {
           return '';
         }
       })();
+      const referralMemberPhone =
+        String((application as any)?.memberPhone || '').trim() ||
+        String((application as any)?.bestContactPhone || '').trim();
+      const referralMemberEmail =
+        String((application as any)?.memberEmail || '').trim() ||
+        String((application as any)?.bestContactEmail || '').trim();
       const referralQuery = new URLSearchParams({
         applicationId: String(applicationId || ''),
         userId: String(appUserId || ''),
@@ -5881,7 +5887,8 @@ function ApplicationDetailPageContent() {
           (application as any)?.memberLastName || ''
         ).trim()}`.trim(),
         memberDob: String((application as any)?.memberDob || '').trim(),
-        memberPhone: String((application as any)?.memberPhone || '').trim(),
+        memberPhone: referralMemberPhone,
+        memberEmail: referralMemberEmail,
         memberAddress,
         memberMrn: String((application as any)?.memberMrn || '').trim(),
         memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
@@ -7571,12 +7578,19 @@ function ApplicationDetailPageContent() {
                 [String((application as any)?.currentState || '').trim(), String((application as any)?.currentZip || '').trim()].filter(Boolean).join(' '),
               ].filter(Boolean).join(', ').replace(/,\s*,/g, ', ').trim();
               const qaReferrerName = `${String((application as any)?.referrerFirstName || '').trim()} ${String((application as any)?.referrerLastName || '').trim()}`.trim();
+              const qaMemberPhone =
+                String((application as any)?.memberPhone || '').trim() ||
+                String((application as any)?.bestContactPhone || '').trim();
+              const qaMemberEmail =
+                String((application as any)?.memberEmail || '').trim() ||
+                String((application as any)?.bestContactEmail || '').trim();
               const qaReferralQuery = new URLSearchParams({
                 applicationId: String(applicationId || ''),
                 userId: String(appUserId || ''),
                 memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
                 memberDob: String((application as any)?.memberDob || '').trim(),
-                memberPhone: String((application as any)?.memberPhone || '').trim(),
+                memberPhone: qaMemberPhone,
+                memberEmail: qaMemberEmail,
                 memberAddress: qaMemberAddress,
                 memberMrn: String((application as any)?.memberMrn || '').trim(),
                 memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),

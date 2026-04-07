@@ -76,6 +76,16 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           required
           width="half"
         />
+        <PrintableField
+          label="Member Phone"
+          value={data.memberPhone}
+          width="half"
+        />
+        <PrintableField
+          label="Member Email"
+          value={data.memberEmail}
+          width="half"
+        />
         
         <PrintableFormRow>
           <PrintableField

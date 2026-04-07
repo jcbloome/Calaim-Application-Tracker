@@ -45,6 +45,8 @@ export function PrintableCsSummaryFormSpanish({
       buildField({ label: 'Edad', value: data.memberAge?.toString(), width: 'half' }),
       buildField({ label: 'Sexo', value: data.sex, type: 'radio', options: ['Masculino', 'Femenino'], required: true, width: 'half' }),
       buildField({ label: 'Idioma Principal', value: data.memberLanguage, required: true, width: 'half' }),
+      buildField({ label: 'Teléfono del Miembro', value: data.memberPhone, width: 'half' }),
+      buildField({ label: 'Correo Electrónico del Miembro', value: data.memberEmail, width: 'half' }),
       buildRow([
         buildField({ label: 'Número de Medi-Cal', value: data.memberMediCalNum, placeholder: '9XXXXXXXA', required: true, width: 'half' }),
         buildField({ label: 'Confirmar Número de Medi-Cal', value: data.confirmMemberMediCalNum, placeholder: '9XXXXXXXA', required: true, width: 'half' }),
