@@ -73,21 +73,6 @@ export default function InfoPage() {
               </h1>
             </div>
 
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-xl sm:text-2xl">Acronym Glossary</CardTitle>
-              </CardHeader>
-              <CardContent className="prose prose-sm max-w-none text-gray-700">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {acronyms.map((item) => (
-                    <p key={item.term} className="mb-0">
-                      <strong>{item.term}:</strong> {item.definition}
-                    </p>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
             {infoSections.map((section, index) => (
                 <Card key={index} className="shadow-sm">
                 <CardHeader>
@@ -121,6 +106,21 @@ export default function InfoPage() {
                     </CardContent>
                 </Card>
             ))}
+            <Card className="shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-xl sm:text-2xl">Acronym Glossary</CardTitle>
+              </CardHeader>
+              <CardContent className="prose prose-sm max-w-none text-gray-700">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {acronyms.map((item) => (
+                    <p key={item.term} className="mb-0">
+                      <strong>{item.term}:</strong> {item.definition}
+                    </p>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="mt-8 w-full border-t pt-4">
                 <div className="text-left mb-2">
                     <span className="text-sm text-muted-foreground">Page 1 of 4</span>

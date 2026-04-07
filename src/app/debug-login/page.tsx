@@ -12,6 +12,9 @@ import { Header } from '@/components/Header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function DebugLoginPage() {
+  if (process.env.NODE_ENV === 'production') {
+    return null;
+  }
   const auth = useAuth();
   const [email, setEmail] = useState('jcbloome@gmail.com');
   const [password, setPassword] = useState('');

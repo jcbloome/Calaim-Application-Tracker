@@ -3,10 +3,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { PublicHeader } from '@/components/PublicHeader';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, BookOpen, LogIn } from 'lucide-react';
 
 export default function HomePage() {
-  // Force cache bust - timestamp: 2026-01-21-16:30
   return (
     <>
       <PublicHeader />
@@ -57,19 +56,37 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Enhanced Let's Go Button */}
-          <div className="mb-12">
-            <Link href="/info">
-              <Button 
-                size="lg" 
-                className="bg-blue-600 hover:bg-blue-700 text-white px-8 sm:px-12 py-4 text-lg font-semibold w-full sm:w-auto max-w-xs mx-auto rounded-full shadow-2xl transition-all duration-300 hover:scale-105 hover:shadow-3xl group"
+          {/* Dual CTA: returning users + new users */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8 px-4">
+            <Link href="/login" className="w-full sm:w-auto">
+              <Button
+                size="lg"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-lg font-semibold w-full rounded-full shadow-2xl transition-all duration-300 hover:scale-105 hover:shadow-3xl group"
               >
-                Let's Go!
+                <LogIn className="mr-2 h-5 w-5" />
+                Sign In / My Applications
+              </Button>
+            </Link>
+            <Link href="/info" className="w-full sm:w-auto">
+              <Button
+                size="lg"
+                variant="outline"
+                className="border-blue-300 text-blue-700 hover:bg-blue-50 px-8 py-4 text-lg font-semibold w-full rounded-full shadow transition-all duration-300 hover:scale-105 group"
+              >
+                <BookOpen className="mr-2 h-5 w-5" />
+                Learn About the Program
                 <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Button>
             </Link>
           </div>
 
+          <p className="text-sm text-gray-500">
+            New here?{' '}
+            <Link href="/signup" className="text-blue-600 hover:underline font-medium">
+              Create a free account
+            </Link>{' '}
+            to start your application.
+          </p>
         </div>
       </main>
     </>

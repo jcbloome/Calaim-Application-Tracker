@@ -33,8 +33,8 @@ const steps = [
       'hasLegalRep', 'repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail'
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentLocationName', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'customaryLocationType', 'customaryLocationName', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
-  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'eligibilityRoute', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
-  { id: 4, name: 'NMOHC, SOC, Room & Board', fields: [] },
+  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
+  { id: 4, name: 'Financial & Cost Information', fields: [] },
   { id: 5, name: 'ISP, ALW, RCFE Selection', fields: [
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail',
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip',
@@ -893,6 +893,15 @@ function CsSummaryFormComponent() {
                     </Button>
                   )}
               </div>
+            </div>
+
+            {/* Help footer */}
+            <div className="mt-6 pt-4 border-t text-center text-sm text-muted-foreground">
+              Need help filling out this form?{' '}
+              <Link href="/contact" className="text-blue-600 hover:underline font-medium">
+                Contact us
+              </Link>
+              {' '}and we&apos;ll guide you through it.
             </div>
             
           </div>

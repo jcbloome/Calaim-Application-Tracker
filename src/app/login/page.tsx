@@ -231,6 +231,17 @@ function LoginPageContent() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6">
+            {redirectPathRaw && redirectPathRaw !== '/applications' && (
+              <Alert className="mb-4 border-blue-200 bg-blue-50">
+                <AlertDescription className="text-sm text-blue-800">
+                  Sign in to continue, or{' '}
+                  <Link href={`/signup${redirectPathRaw ? `?redirect=${encodeURIComponent(redirectPathRaw)}` : ''}`} className="font-medium underline">
+                    create a free account
+                  </Link>{' '}
+                  if you&apos;re new.
+                </AlertDescription>
+              </Alert>
+            )}
             <form onSubmit={handleSignIn} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -284,11 +295,12 @@ function LoginPageContent() {
               </Link>
             </div>
             
-             <div className="mt-4 text-center text-sm">
-              Don't have an account?{' '}
-              <Link href="/signup" className="underline text-primary">
-                Sign Up
+             <div className="mt-4 p-3 rounded-lg bg-slate-50 border text-center text-sm">
+              New to Connect CalAIM?{' '}
+              <Link href="/signup" className="font-semibold text-primary hover:underline">
+                Create a free account
               </Link>
+              {' '}to start your application.
             </div>
             
             <div className="mt-4 text-center">

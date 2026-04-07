@@ -1517,9 +1517,29 @@ function PathwayPageContent() {
                     const formInfo = formStatusMap.get(req.title);
                     const status = (formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo)) ? 'Completed' : 'Pending';
                     const reviewState = getRequirementReviewState(formInfo);
+
+                    // Visual hierarchy: color-coded left border per state
+                    const cardBorderClass = reviewState === 'needs_revision'
+                      ? 'border-l-4 border-l-amber-400'
+                      : reviewState === 'reviewed'
+                      ? 'border-l-4 border-l-green-400'
+                      : reviewState === 'under_review'
+                      ? 'border-l-4 border-l-blue-400'
+                      : status === 'Pending'
+                      ? 'border-l-4 border-l-gray-200'
+                      : '';
+
+                    // Human-readable state label with icon hint
+                    const reviewBadge = reviewState === 'needs_revision'
+                      ? { text: '⚠ Action needed — please resubmit', cls: 'text-amber-700 font-semibold' }
+                      : reviewState === 'reviewed'
+                      ? { text: '✓ Reviewed by staff', cls: 'text-green-700 font-medium' }
+                      : reviewState === 'under_review'
+                      ? { text: '⏳ Submitted — staff is reviewing', cls: 'text-blue-700' }
+                      : { text: 'Not yet submitted', cls: 'text-muted-foreground' };
                     
                     return (
-                        <Card key={req.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
+                        <Card key={req.id} className={cn("flex flex-col shadow-sm hover:shadow-md transition-shadow", cardBorderClass)}>
                             <CardHeader className="pb-4">
                                 <div className="flex justify-between items-start gap-4">
                                     <CardTitle className="text-lg">{req.title}</CardTitle>
@@ -1537,21 +1557,12 @@ function PathwayPageContent() {
                             </CardHeader>
                             <CardContent className="flex flex-col flex-grow justify-end gap-4">
                                 <StatusIndicator status={status} />
-                                <p
-                                  className={cn(
-                                    'text-xs',
-                                    reviewState === 'reviewed' || reviewState === 'under_review'
-                                      ? 'text-green-700'
-                                      : reviewState === 'needs_revision'
-                                      ? 'text-amber-700 font-medium'
-                                      : 'text-muted-foreground'
-                                  )}
-                                >
-                                  {getRequirementReviewLabel(reviewState)}
+                                <p className={cn('text-xs', reviewBadge.cls)}>
+                                  {reviewBadge.text}
                                 </p>
                                 {reviewState === 'needs_revision' && Boolean((formInfo as any)?.revisionRequestedReason) && (
                                   <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-                                    {String((formInfo as any)?.revisionRequestedReason || '').trim()}
+                                    <strong>Staff note:</strong> {String((formInfo as any)?.revisionRequestedReason || '').trim()}
                                   </div>
                                 )}
                                 {getFormAction(req)}
@@ -1629,6 +1640,15 @@ function PathwayPageContent() {
                     </Card>
                 )}
             </div>
+
+          {/* Help footer */}
+          <div className="text-center text-sm text-muted-foreground border-t pt-6">
+            Have a question or need help with a document?{' '}
+            <Link href="/contact" className="text-blue-600 hover:underline font-medium">
+              Contact us
+            </Link>
+            {' '}and a Connections team member will assist you.
+          </div>
 
         </div>
       </main>

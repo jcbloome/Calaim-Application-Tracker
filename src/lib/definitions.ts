@@ -148,6 +148,7 @@ export type Application = {
   intakeType?: 'standard' | 'kaiser_auth_received_via_ils';
   kaiserAuthReceivedViaIls?: boolean;
   memberPhone?: string | null;
+  memberEmail?: string | null;
   kaiserAuthReceivedDate?: Timestamp | FieldValue;
 };
 

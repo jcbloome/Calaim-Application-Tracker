@@ -3,19 +3,11 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Trash2, Loader2, Bell, Mail, Plus } from 'lucide-react';
+import { Trash2, Loader2, Bell, Mail, Plus, ArrowRight, CheckCircle2, Clock, AlertCircle, CheckCheck, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Card, CardContent, CardHeader, CardFooter } from '@/components/ui/card';
 import { Header } from '@/components/Header';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ApplicationListSkeleton } from '@/components/ui/application-skeleton';
@@ -34,11 +26,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 
 
-// Define a type for the application data coming from Firestore
 interface ApplicationData {
   id: string;
   memberFirstName: string;
@@ -62,18 +55,41 @@ interface ApplicationData {
 
 type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved';
 
-const getBadgeVariant = (status: ApplicationStatus) => {
-  switch (status) {
-    case 'Approved':
-      return 'bg-green-100 text-green-800 border-green-200';
-    case 'Completed & Submitted':
-      return 'bg-blue-100 text-blue-800 border-blue-200';
-    case 'Requires Revision':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    case 'In Progress':
-    default:
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-  }
+const STATUS_CONFIG: Record<ApplicationStatus, {
+  label: string;
+  description: string;
+  icon: React.ElementType;
+  badgeClass: string;
+  iconClass: string;
+}> = {
+  'In Progress': {
+    label: 'In Progress',
+    description: 'Keep going — your application is not yet submitted.',
+    icon: Clock,
+    badgeClass: 'bg-gray-100 text-gray-800 border-gray-200',
+    iconClass: 'text-gray-500',
+  },
+  'Requires Revision': {
+    label: 'Requires Revision',
+    description: 'Staff found items that need your attention.',
+    icon: AlertCircle,
+    badgeClass: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    iconClass: 'text-yellow-600',
+  },
+  'Completed & Submitted': {
+    label: 'Submitted',
+    description: 'Your application is with our team for review.',
+    icon: CheckCircle2,
+    badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
+    iconClass: 'text-blue-600',
+  },
+  'Approved': {
+    label: 'Approved',
+    description: 'Your application has been approved!',
+    icon: CheckCheck,
+    badgeClass: 'bg-green-100 text-green-800 border-green-200',
+    iconClass: 'text-green-600',
+  },
 };
 
 const getPendingRevisionCount = (app: ApplicationData): number => {
@@ -83,157 +99,188 @@ const getPendingRevisionCount = (app: ApplicationData): number => {
   }).length;
 };
 
-const ApplicationsTable = ({
-  title,
-  applications,
-  onSelectionChange,
-  selection,
-  isLoading,
-  showNotifications = false,
-}: {
-  title: string;
-  applications: ApplicationData[];
-  onSelectionChange?: (id: string, isSelected: boolean) => void;
-  selection?: string[];
-  isLoading: boolean;
-  showNotifications?: boolean;
-}) => {
-  const getActionLink = (app: ApplicationData) => {
-    // If the application is still being worked on, check if CS Summary is completed
-    if (app.status === 'In Progress' || app.status === 'Requires Revision') {
-      // Check if CS Member Summary form is completed
-      const csSummaryForm = (app as any).forms?.find((form: any) => 
-        form.name === 'CS Member Summary' || form.name === 'CS Summary'
-      );
-      
-      // If CS Summary is completed, go directly to pathway
-      if (csSummaryForm?.status === 'Completed') {
-        return `/pathway?applicationId=${app.id}`;
-      }
-      
-      // Otherwise, continue with CS Summary form
-      return `/forms/cs-summary-form?applicationId=${app.id}`;
-    }
-    // For all other statuses, send them to the read-only pathway page.
-    return `/pathway?applicationId=${app.id}`;
-  };
+const getCompletionProgress = (app: ApplicationData): { completed: number; total: number } => {
+  const forms = app.forms || [];
+  if (forms.length === 0) return { completed: 0, total: 1 };
+  const completed = forms.filter(f => f.status === 'Completed').length;
+  return { completed, total: forms.length };
+};
 
-  const getActionText = (app: ApplicationData) => {
-    if (app.status === 'In Progress' || app.status === 'Requires Revision') {
-      const revisionCount = getPendingRevisionCount(app);
-      if (revisionCount > 0) return `Continue Revisions (${revisionCount})`;
-      // Check if CS Member Summary form is completed
-      const csSummaryForm = app.forms?.find(form => 
-        form.name === 'CS Member Summary' || form.name === 'CS Summary'
-      );
-      
-      // If CS Summary is completed, show "Continue to Pathway"
-      if (csSummaryForm?.status === 'Completed') {
-        return 'Continue to Pathway';
-      }
-      
-      return 'Continue Form';
+const getActionLink = (app: ApplicationData) => {
+  if (app.status === 'In Progress' || app.status === 'Requires Revision') {
+    const csSummaryForm = (app as any).forms?.find((form: any) =>
+      form.name === 'CS Member Summary' || form.name === 'CS Summary'
+    );
+    if (csSummaryForm?.status === 'Completed') {
+      return `/pathway?applicationId=${app.id}`;
     }
-    return 'View';
+    return `/forms/cs-summary-form?applicationId=${app.id}`;
   }
+  return `/pathway?applicationId=${app.id}`;
+};
+
+const getActionText = (app: ApplicationData) => {
+  if (app.status === 'Approved' || app.status === 'Completed & Submitted') return 'View Application';
+  const revisionCount = getPendingRevisionCount(app);
+  if (revisionCount > 0) return `Review Revisions (${revisionCount})`;
+  const csSummaryForm = app.forms?.find(form =>
+    form.name === 'CS Member Summary' || form.name === 'CS Summary'
+  );
+  if (csSummaryForm?.status === 'Completed') return 'Continue to Pathway';
+  return 'Continue Application';
+};
+
+function ApplicationCard({
+  app,
+  onDelete,
+}: {
+  app: ApplicationData;
+  onDelete?: (app: ApplicationData) => void;
+}) {
+  const statusConfig = STATUS_CONFIG[app.status] ?? STATUS_CONFIG['In Progress'];
+  const StatusIcon = statusConfig.icon;
+  const revisionCount = getPendingRevisionCount(app);
+  const { completed, total } = getCompletionProgress(app);
+  const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const isActive = app.status === 'In Progress' || app.status === 'Requires Revision';
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="p-0 sm:p-6 sm:pt-0">
-        <div className="w-full overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {onSelectionChange && <TableHead className="w-[50px] pl-4"></TableHead>}
-                <TableHead>Member</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="hidden lg:table-cell">Plan &amp; Pathway</TableHead>
-                <TableHead className="hidden sm:table-cell">Last Updated</TableHead>
-                {showNotifications && <TableHead className="hidden md:table-cell text-center">Notifications</TableHead>}
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={onSelectionChange ? (showNotifications ? 7 : 6) : (showNotifications ? 6 : 5)} className="h-24 text-center">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  </TableCell>
-                </TableRow>
-              ) : applications.length > 0 ? (
-                applications.map(app => (
-                  <TableRow key={app.id}>
-                    {onSelectionChange && (
-                      <TableCell className="pl-4">
-                        <Checkbox
-                          checked={selection?.includes(app.id)}
-                          onCheckedChange={checked => onSelectionChange(app.id, !!checked)}
-                          aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
-                        />
-                      </TableCell>
-                    )}
-                    <TableCell className="font-medium">
-                      <div>{`${app.memberFirstName} ${app.memberLastName}`}</div>
-                      <div className="text-xs text-muted-foreground font-mono truncate max-w-[120px] sm:max-w-xs">{app.id}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={getBadgeVariant(app.status)}>
-                        {app.status}
-                      </Badge>
-                      {getPendingRevisionCount(app) > 0 && (
-                        <div className="mt-1 text-xs text-amber-700">
-                          {getPendingRevisionCount(app)} item(s) need revision
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">{app.healthPlan} - {app.pathway}</TableCell>
-                    <TableCell className="hidden sm:table-cell">{app.lastUpdated ? format(app.lastUpdated.toDate(), 'MM/dd/yyyy') : 'N/A'}</TableCell>
-                    {showNotifications && (
-                      <TableCell className="hidden md:table-cell">
-                        <div className="flex items-center justify-center gap-2">
-                          <Bell 
-                            className={`h-4 w-4 ${
-                              app.statusRemindersEnabled !== false 
-                                ? 'text-blue-600' 
-                                : 'text-gray-300'
-                            }`}
-                            title={app.statusRemindersEnabled !== false ? 'Status reminders enabled' : 'Status reminders disabled'}
-                          />
-                          <Mail 
-                            className={`h-4 w-4 ${
-                              app.emailRemindersEnabled 
-                                ? 'text-green-600' 
-                                : 'text-gray-300'
-                            }`}
-                            title={app.emailRemindersEnabled ? 'Email reminders enabled' : 'Email reminders disabled'}
-                          />
-                        </div>
-                      </TableCell>
-                    )}
-                    <TableCell className="text-right">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={getActionLink(app)}>{getActionText(app)}</Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={onSelectionChange ? (showNotifications ? 7 : 6) : (showNotifications ? 6 : 5)} className="h-24 text-center">
-                    No applications found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+    <Card className={`transition-shadow hover:shadow-md ${app.status === 'Requires Revision' ? 'border-yellow-300' : app.status === 'Approved' ? 'border-green-300' : ''}`}>
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-semibold truncate">
+              {app.memberFirstName} {app.memberLastName}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {app.healthPlan} &middot; {app.pathway}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {app.statusRemindersEnabled !== false && (
+              <Bell className="h-4 w-4 text-blue-400" title="Status reminders on" />
+            )}
+            {app.emailRemindersEnabled && (
+              <Mail className="h-4 w-4 text-green-400" title="Email reminders on" />
+            )}
+          </div>
         </div>
+      </CardHeader>
+
+      <CardContent className="space-y-3">
+        {/* Status row */}
+        <div className="flex items-center gap-2">
+          <StatusIcon className={`h-4 w-4 shrink-0 ${statusConfig.iconClass}`} />
+          <Badge variant="outline" className={statusConfig.badgeClass}>
+            {statusConfig.label}
+          </Badge>
+          {revisionCount > 0 && (
+            <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 text-xs">
+              {revisionCount} item{revisionCount > 1 ? 's' : ''} to fix
+            </Badge>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground">{statusConfig.description}</p>
+
+        {/* Progress bar (only while active) */}
+        {isActive && total > 0 && (
+          <div>
+            <div className="flex justify-between text-xs text-muted-foreground mb-1">
+              <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> Requirements</span>
+              <span>{completed} of {total} complete</span>
+            </div>
+            <Progress value={progressPct} className="h-2" />
+          </div>
+        )}
+
+        {/* Last updated */}
+        <p className="text-xs text-muted-foreground">
+          Last updated: {app.lastUpdated ? format(app.lastUpdated.toDate(), 'MMM d, yyyy') : 'recently'}
+        </p>
       </CardContent>
+
+      <CardFooter className="flex items-center justify-between pt-2 gap-2">
+        <Button asChild size="sm" className={`flex-1 ${isActive && app.status !== 'Requires Revision' ? '' : ''}`}>
+          <Link href={getActionLink(app)} className="flex items-center justify-center gap-1">
+            {getActionText(app)}
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
+        {onDelete && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2"
+            onClick={() => onDelete(app)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        )}
+      </CardFooter>
     </Card>
   );
-};
+}
+
+function DeleteConfirmDialog({
+  app,
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  app: ApplicationData | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  const [confirmName, setConfirmName] = useState('');
+  const expectedName = app ? app.memberFirstName : '';
+  const isMatch = confirmName.trim().toLowerCase() === expectedName.toLowerCase();
+
+  useEffect(() => {
+    if (!open) setConfirmName('');
+  }, [open]);
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this application?</AlertDialogTitle>
+          <AlertDialogDescription className="space-y-3">
+            <span className="block">
+              This will permanently delete the application for{' '}
+              <strong>{app?.memberFirstName} {app?.memberLastName}</strong>. This cannot be undone.
+            </span>
+            <span className="block">
+              To confirm, type the member&apos;s first name below:
+            </span>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="px-1 pb-2">
+          <Label htmlFor="confirm-name" className="text-sm text-muted-foreground mb-1 block">
+            Member first name: <strong>{expectedName}</strong>
+          </Label>
+          <Input
+            id="confirm-name"
+            value={confirmName}
+            onChange={e => setConfirmName(e.target.value)}
+            placeholder={`Type "${expectedName}" to confirm`}
+            className={isMatch ? 'border-green-400' : ''}
+          />
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onConfirm}
+            disabled={!isMatch}
+            className="bg-destructive hover:bg-destructive/90 disabled:opacity-40"
+          >
+            Delete Application
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 export default function MyApplicationsPage() {
   const auth = useAuth();
@@ -242,29 +289,22 @@ export default function MyApplicationsPage() {
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
-  
+
   const applicationsQuery = useMemoFirebase(() => {
-    if (!user || !firestore) {
-      return null;
-    }
+    if (!user || !firestore) return null;
     return collection(firestore, `users/${user.uid}/applications`) as Query<ApplicationData>;
   }, [firestore, user]);
-  
+
   const { data, isLoading: isLoadingApplications, error } = useCollection<ApplicationData>(applicationsQuery);
   const applications = data || [];
 
-  const [selected, setSelected] = useState<string[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<ApplicationData | null>(null);
   const [hasAttemptedClaim, setHasAttemptedClaim] = useState(false);
-  
+
   useEffect(() => {
-    if (isUserLoading) return; 
-    if (!user) {
-        router.push('/login');
-    }
-    // If an admin user lands here, redirect them to the admin dashboard
-    if (user && (isAdmin || isSuperAdmin)) {
-        router.push('/admin');
-    }
+    if (isUserLoading) return;
+    if (!user) router.push('/login');
+    if (user && (isAdmin || isSuperAdmin)) router.push('/admin');
   }, [user, isUserLoading, router, isAdmin, isSuperAdmin]);
 
   useEffect(() => {
@@ -277,30 +317,22 @@ export default function MyApplicationsPage() {
         const [firstName = '', ...lastNameParts] = String(user.displayName || '').trim().split(' ');
         const response = await fetch('/api/applications/claim-admin-started', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            firstName,
-            lastName: lastNameParts.join(' '),
-          }),
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ firstName, lastName: lastNameParts.join(' ') }),
         });
-
         if (!response.ok) return;
         const result = await response.json().catch(() => null);
         const claimedCount = Number(result?.claimedCount || 0);
         if (claimedCount > 0) {
           toast({
             title: 'Application linked',
-            description: `${claimedCount} backend-started application(s) were linked to your account.`,
+            description: `${claimedCount} application(s) were linked to your account.`,
           });
         }
-      } catch (error) {
-        console.warn('Failed to auto-link admin-started applications:', error);
+      } catch {
+        // silent
       }
     };
-
     claimStartedApps();
   }, [auth, user, isUserLoading, isAdmin, isSuperAdmin, hasAttemptedClaim, toast]);
 
@@ -308,153 +340,154 @@ export default function MyApplicationsPage() {
 
   if (isUserLoading || !user || isAdmin || isSuperAdmin) {
     return (
-        <div className="flex items-center justify-center h-screen">
-            <Loader2 className="h-8 w-8 animate-spin" />
-        </div>
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
     );
   }
 
   const inProgressApps = applications.filter(
     app => app.status !== 'Completed & Submitted' && app.status !== 'Approved'
-  );
-  const mostRecentInProgress = [...inProgressApps].sort((a, b) => {
+  ).sort((a, b) => {
     const aMs = a.lastUpdated?.toDate?.().getTime?.() || 0;
     const bMs = b.lastUpdated?.toDate?.().getTime?.() || 0;
     return bMs - aMs;
-  })[0];
+  });
+
+  const mostRecentInProgress = inProgressApps[0];
+
   const completedApps = applications.filter(
     app => app.status === 'Completed & Submitted' || app.status === 'Approved'
-  );
+  ).sort((a, b) => {
+    const aMs = a.lastUpdated?.toDate?.().getTime?.() || 0;
+    const bMs = b.lastUpdated?.toDate?.().getTime?.() || 0;
+    return bMs - aMs;
+  });
 
-
-  const handleSelectionChange = (id: string, isSelected: boolean) => {
-    setSelected(prev =>
-      isSelected ? [...prev, id] : prev.filter(item => item !== id)
-    );
-  };
-  
-  const handleDelete = async () => {
-    if (!user || !firestore || selected.length === 0) return;
-
+  const handleDeleteConfirm = async () => {
+    if (!user || !firestore || !pendingDelete) return;
     const batch = writeBatch(firestore);
-    const docRefsToDelete = selected.map(appId => doc(firestore, `users/${user.uid}/applications`, appId));
-    
-    docRefsToDelete.forEach(docRef => {
-      batch.delete(docRef);
-    });
-    
+    batch.delete(doc(firestore, `users/${user.uid}/applications`, pendingDelete.id));
     batch.commit().then(() => {
-        toast({
-            title: 'Applications Deleted',
-            description: `${selected.length} application(s) have been successfully deleted.`
-        });
-        setSelected([]);
-    }).catch(error => {
-        // Create and emit a contextual error for each failed deletion.
-        docRefsToDelete.forEach(docRef => {
-            const permissionError = new FirestorePermissionError({
-                path: docRef.path,
-                operation: 'delete'
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        });
+      toast({ title: 'Application deleted', description: `Application for ${pendingDelete.memberFirstName} has been removed.` });
+      setPendingDelete(null);
+    }).catch(() => {
+      const permissionError = new FirestorePermissionError({ path: `users/${user.uid}/applications/${pendingDelete.id}`, operation: 'delete' });
+      errorEmitter.emit('permission-error', permissionError);
     });
-  }
+  };
 
   return (
     <ErrorBoundary>
       <Header />
-      <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
-        <div className="mb-6 space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex-1">
-                    <h1 className="text-3xl font-bold">My Applications</h1>
-                    <p className="text-muted-foreground mt-1">
-                        Welcome, <strong>{user?.displayName || user?.email || 'Guest'}</strong>.
-                    </p>
-                </div>
-                <div className="flex items-center gap-2 self-stretch sm:self-center flex-wrap">
-                    <Button asChild>
-                        <Link href="/forms/cs-summary-form">
-                            <Plus className="mr-2 h-4 w-4" />
-                            Start New Application
-                        </Link>
-                    </Button>
-                    {selected.length > 0 && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                           <Button variant="destructive">
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete ({selected.length})
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This action cannot be undone. This will permanently delete {selected.length} application(s).
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={handleDelete}>Continue</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
-                </div>
-            </div>
+      <main className="flex-grow container mx-auto px-4 py-8 sm:px-6 max-w-5xl">
+        {/* Page header */}
+        <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">My Applications</h1>
+            <p className="text-muted-foreground mt-1">
+              Welcome back, <strong>{user?.displayName || user?.email || 'Guest'}</strong>.
+            </p>
+          </div>
+          <Button asChild>
+            <Link href="/forms/cs-summary-form">
+              <Plus className="mr-2 h-4 w-4" />
+              Start New Application
+            </Link>
+          </Button>
         </div>
 
-        {error && 
-            <Alert variant="destructive" className="mb-4">
-                <AlertTitle>Data Fetching Error</AlertTitle>
-                <AlertDescription>
-                    <p>There was an error loading your applications. This is likely a security rule issue. The detailed error is below:</p>
-                    <pre className="mt-2 whitespace-pre-wrap text-xs font-mono bg-destructive/10 p-2 rounded">
-                        {error.message}
-                    </pre>
-                </AlertDescription>
-            </Alert>
-        }
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTitle>Error loading applications</AlertTitle>
+            <AlertDescription>{error.message}</AlertDescription>
+          </Alert>
+        )}
 
-        <div className="space-y-8">
+        <div className="space-y-10">
+          {/* Resume banner */}
           {mostRecentInProgress && (
             <Alert className="border-blue-200 bg-blue-50">
-              <AlertTitle>Continue where you left off</AlertTitle>
-              <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <AlertTitle className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-blue-600" />
+                Continue where you left off
+              </AlertTitle>
+              <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mt-1">
                 <span>
-                  {`${mostRecentInProgress.memberFirstName} ${mostRecentInProgress.memberLastName}`.trim()} was last updated on{' '}
-                  {mostRecentInProgress.lastUpdated ? format(mostRecentInProgress.lastUpdated.toDate(), 'MM/dd/yyyy') : 'recently'}.
+                  <strong>{mostRecentInProgress.memberFirstName} {mostRecentInProgress.memberLastName}</strong>
+                  {' '}&mdash; last updated{' '}
+                  {mostRecentInProgress.lastUpdated
+                    ? format(mostRecentInProgress.lastUpdated.toDate(), 'MMM d, yyyy')
+                    : 'recently'}.
                 </span>
-                <Button asChild size="sm">
-                  <Link href={(() => {
-                    const csSummaryForm = (mostRecentInProgress as any).forms?.find((form: any) =>
-                      form.name === 'CS Member Summary' || form.name === 'CS Summary'
-                    );
-                    if (csSummaryForm?.status === 'Completed') {
-                      return `/pathway?applicationId=${mostRecentInProgress.id}`;
-                    }
-                    return `/forms/cs-summary-form?applicationId=${mostRecentInProgress.id}`;
-                  })()}>
-                    Resume Application
+                <Button asChild size="sm" className="shrink-0">
+                  <Link href={getActionLink(mostRecentInProgress)}>
+                    Resume Application <ArrowRight className="ml-1 h-4 w-4" />
                   </Link>
                 </Button>
               </AlertDescription>
             </Alert>
           )}
-          <ApplicationsTable
-            title="In Progress"
-            applications={inProgressApps}
-            onSelectionChange={handleSelectionChange}
-            selection={selected}
-            isLoading={isPageLoading}
-          />
-          <ApplicationsTable
-            title="Completed"
-            applications={completedApps}
-            isLoading={isPageLoading}
-          />
+
+          {/* In Progress */}
+          {(isPageLoading || inProgressApps.length > 0) && (
+            <section>
+              <h2 className="text-lg font-semibold mb-3 text-gray-700">In Progress</h2>
+              {isPageLoading ? (
+                <ApplicationListSkeleton />
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {inProgressApps.map(app => (
+                    <ApplicationCard
+                      key={app.id}
+                      app={app}
+                      onDelete={setPendingDelete}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Completed / Approved */}
+          {(isPageLoading || completedApps.length > 0) && (
+            <section>
+              <h2 className="text-lg font-semibold mb-3 text-gray-700">Submitted &amp; Approved</h2>
+              {isPageLoading ? (
+                <ApplicationListSkeleton />
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {completedApps.map(app => (
+                    <ApplicationCard key={app.id} app={app} />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Empty state */}
+          {!isPageLoading && applications.length === 0 && (
+            <div className="text-center py-16 text-muted-foreground">
+              <FileText className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p className="text-lg font-medium">No applications yet</p>
+              <p className="text-sm mt-1 mb-6">Start your first application to get the process going.</p>
+              <Button asChild>
+                <Link href="/forms/cs-summary-form">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Start New Application
+                </Link>
+              </Button>
+            </div>
+          )}
         </div>
+
+        {/* Delete confirmation with name-match gate */}
+        <DeleteConfirmDialog
+          app={pendingDelete}
+          open={!!pendingDelete}
+          onOpenChange={open => { if (!open) setPendingDelete(null); }}
+          onConfirm={handleDeleteConfirm}
+        />
       </main>
     </ErrorBoundary>
   );

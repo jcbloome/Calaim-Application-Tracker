@@ -13,6 +13,9 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { CheckCircle, X, Loader2, AlertTriangle, Mail } from 'lucide-react';
 
 export default function LoginDebuggerPage() {
+  if (process.env.NODE_ENV === 'production') {
+    return null;
+  }
   const auth = useAuth();
   const [email, setEmail] = useState('jcbloome@gmail.com');
   const [password, setPassword] = useState('');
