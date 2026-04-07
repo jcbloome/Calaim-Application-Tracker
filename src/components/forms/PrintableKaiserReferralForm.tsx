@@ -86,6 +86,9 @@ const lineValue = (value?: string) => String(value || '').trim();
 const DEFAULT_REFERRER_ORG = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';
 const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';
+const DEFAULT_REFERRER_EMAIL = 'deydry@carehomefinders.com';
+const DEFAULT_REFERRER_PHONE = '800-330-5993';
+const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
 
@@ -242,9 +245,9 @@ export function PrintableKaiserReferralForm({
     referrerOrganization: DEFAULT_REFERRER_ORG,
     referrerNpi: DEFAULT_REFERRER_NPI,
     referrerAddress: DEFAULT_REFERRER_ADDRESS,
-    referrerEmail: lineValue(prefill.referrerEmail),
-    referrerPhone: lineValue(prefill.referrerPhone),
-    referrerRelationship: lineValue(prefill.referrerRelationship),
+    referrerEmail: DEFAULT_REFERRER_EMAIL,
+    referrerPhone: DEFAULT_REFERRER_PHONE,
+    referrerRelationship: DEFAULT_REFERRER_RELATIONSHIP,
     currentLocationName: lineValue(prefill.currentLocationName),
     currentLocationAddress: lineValue(prefill.currentLocationAddress || prefill.memberAddress),
   }));
@@ -550,7 +553,7 @@ export function PrintableKaiserReferralForm({
                 <span><Checkbox checked={referrerRelationship.includes('family') || referrerRelationship.includes('member')} /> Member/family</span>
               </div>
               <div className="mt-1 flex items-center gap-2">
-                <span><Checkbox checked={!referrerRelationship || referrerRelationship.includes('community')} /> Other please specify:</span>
+                <span><Checkbox checked={!referrerRelationship || referrerRelationship.includes('community') || referrerRelationship.includes('other')} /> Other please specify:</span>
                 <span className="inline-block min-w-[360px] border border-black px-1">
                   <EditableBox initialValue="Community Support (CalAim)" />
                 </span>
@@ -1029,7 +1032,7 @@ export function PrintableKaiserReferralForm({
               <div><Checkbox checked={false} /> Cancer post-hospitalization / active treatment</div>
             </div>
             <FieldLine label="6.2 Special dietary needs / allergies" value="" className="mt-3" />
-            <FieldLine label="6.3 Delivery address (if different)" value={memberAddress} className="mt-2" />
+            <FieldLine label="6.3 Delivery address (if different)" value="" className="mt-2" />
           </div>
         </PageShell>
 
