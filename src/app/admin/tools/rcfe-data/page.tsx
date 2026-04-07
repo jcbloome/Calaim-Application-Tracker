@@ -890,25 +890,21 @@ export default function RcfeDataToolsPage() {
       }),
     [rcfeRows, rcfeDrafts, rcfeFieldOverrides, updatedRowTimestamps, rcfePersistentStatusById, rcfeHistoricalBySignature, rcfeHistoricalByName, rcfeProgressOverridesByKey, rcfeProgressOverridesBySignature, rcfeRegistryById, rcfeRegistryByName]
   );
-  const rowsPendingPush = useMemo(() => {
-    const byKey = new Map<string, RCFEDirectoryRow>();
-    editedRows.forEach((row) => byKey.set(row.key, row));
-    countyBackfillRows.forEach((row) => {
-      if (!byKey.has(row.key)) byKey.set(row.key, row);
-    });
-    return Array.from(byKey.values());
-  }, [editedRows, countyBackfillRows]);
+  // Rows that are explicitly edited in this tool (must be pushed before re-sync).
+  const editedRowsPendingPush = useMemo(() => editedRows, [editedRows]);
+  // Rows with county-only historical backfill opportunities (optional push, not blocking manual pull).
+  const countyBackfillPendingPush = useMemo(() => countyBackfillRows, [countyBackfillRows]);
   const handleManualPullFromCaspio = useCallback(async () => {
-    if (rowsPendingPush.length > 0) {
+    if (editedRowsPendingPush.length > 0) {
       toast({
         title: 'Push changes before resync',
-        description: `You have ${rowsPendingPush.length} pending RCFE update(s). Push to Caspio first, then run manual pull.`,
+        description: `You have ${editedRowsPendingPush.length} pending edited RCFE row(s). Push those edits to Caspio first, then run manual pull.`,
         variant: 'destructive',
       });
       return;
     }
     await loadMembers();
-  }, [rowsPendingPush.length, loadMembers, toast]);
+  }, [editedRowsPendingPush.length, loadMembers, toast]);
   const updatedRowsCount = useMemo(
     () => rcfeRows.filter((row) => Boolean(updatedRowTimestamps[row.key])).length,
     [rcfeRows, updatedRowTimestamps]
@@ -1083,7 +1079,8 @@ export default function RcfeDataToolsPage() {
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) {
+      const isPartialSuccess = res.status === 207 && Boolean(data?.success) && Boolean(data?.partial);
+      if ((!res.ok && !isPartialSuccess) || !data?.success) {
         throw new Error(data?.error || `Failed to update RCFE data (HTTP ${res.status})`);
       }
 
@@ -1108,11 +1105,32 @@ export default function RcfeDataToolsPage() {
             : member
         )
       );
-      setRcfeDrafts((prev) => ({ ...prev, [row.key]: draft }));
-      setRcfeFieldOverrides((prev) => ({ ...prev, [row.key]: draft }));
+      // IMPORTANT: clear draft/override flags on successful push so the row
+      // no longer appears in "Push Edited" even if Caspio cache refresh lags.
+      setRcfeDrafts((prev) => {
+        if (!(row.key in prev)) return prev;
+        const copy = { ...prev };
+        delete copy[row.key];
+        return copy;
+      });
+      setRcfeFieldOverrides((prev) => {
+        if (!(row.key in prev)) return prev;
+        const copy = { ...prev };
+        delete copy[row.key];
+        return copy;
+      });
+      if (isPartialSuccess) {
+        toast({
+          title: 'Row synced (partial)',
+          description:
+            data?.error ||
+            'Most values were pushed, but some member IDs reported a partial update. Review this RCFE row if needed.',
+          variant: 'default',
+        });
+      }
       await loadRcfePersistentStatus();
     },
-    [auth?.currentUser, rcfeDrafts, loadRcfePersistentStatus]
+    [auth?.currentUser, loadRcfePersistentStatus, toast]
   );
 
   const syncEditedRows = useCallback(async (rows: RCFEDirectoryRow[]) => {
@@ -1173,8 +1191,12 @@ export default function RcfeDataToolsPage() {
   }, [saveRow, toast]);
 
   const pushAllEdited = useCallback(async () => {
-    await syncEditedRows(rowsPendingPush);
-  }, [rowsPendingPush, syncEditedRows]);
+    await syncEditedRows(editedRowsPendingPush);
+  }, [editedRowsPendingPush, syncEditedRows]);
+
+  const pushCountyBackfill = useCallback(async () => {
+    await syncEditedRows(countyBackfillPendingPush);
+  }, [countyBackfillPendingPush, syncEditedRows]);
 
   const stopSync = useCallback(() => {
     if (!isSavingAll) return;
@@ -1789,11 +1811,14 @@ export default function RcfeDataToolsPage() {
                 Unverified: {memberVerificationSummary.unverified}
               </Button>
               <Badge variant="secondary">Needs Update: {editedRows.length}</Badge>
-              {rowsPendingPush.length > 0 ? (
-                <Badge variant="destructive">Push to Caspio required before resync: {rowsPendingPush.length}</Badge>
+              {editedRowsPendingPush.length > 0 ? (
+                <Badge variant="destructive">Push edited rows before resync: {editedRowsPendingPush.length}</Badge>
               ) : (
                 <Badge variant="outline">Ready to resync from Caspio</Badge>
               )}
+              {countyBackfillPendingPush.length > 0 ? (
+                <Badge variant="outline">Optional county backfill rows: {countyBackfillPendingPush.length}</Badge>
+              ) : null}
               <Badge variant="outline">Beds Known (Historical): {historicalBedsKnownCount}</Badge>
               <Badge variant="outline">Already Updated: {updatedRowsCount}</Badge>
               {lastPushResult ? (
@@ -1803,8 +1828,16 @@ export default function RcfeDataToolsPage() {
                 </Badge>
               ) : null}
               <Badge variant="outline">Drafts saved to Firestore</Badge>
-              <Button onClick={pushAllEdited} disabled={isSavingAll || rowsPendingPush.length === 0}>
-                {isSavingAll ? 'Syncing rows...' : `Push All Edited (${rowsPendingPush.length})`}
+              <Button onClick={pushAllEdited} disabled={isSavingAll || editedRowsPendingPush.length === 0}>
+                {isSavingAll ? 'Syncing rows...' : `Push Edited (${editedRowsPendingPush.length})`}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={pushCountyBackfill}
+                disabled={isSavingAll || countyBackfillPendingPush.length === 0}
+              >
+                {isSavingAll ? 'Syncing rows...' : `Push County Backfill (${countyBackfillPendingPush.length})`}
               </Button>
               {isSavingAll ? (
                 <Button type="button" variant="destructive" onClick={stopSync}>
