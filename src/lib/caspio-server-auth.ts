@@ -5,10 +5,15 @@ export type CaspioServerConfig = {
   clientSecret: string;
 };
 
+const CASPIO_REST_PATH = '/integrations/rest/v3';
+
 export function getCaspioServerConfig(): CaspioServerConfig {
-  const rawBaseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
-  const oauthBaseUrl = String(rawBaseUrl).replace(/\/rest\/v2\/?$/i, '').replace(/\/+$/g, '');
-  const restBaseUrl = `${oauthBaseUrl}/rest/v2`;
+  const rawBaseUrl = process.env.CASPIO_BASE_URL || `https://c7ebl500.caspio.com${CASPIO_REST_PATH}`;
+  const oauthBaseUrl = String(rawBaseUrl)
+    .replace(/\/rest\/v2\/?$/i, '')
+    .replace(/\/integrations\/rest\/v3\/?$/i, '')
+    .replace(/\/+$/g, '');
+  const restBaseUrl = `${oauthBaseUrl}${CASPIO_REST_PATH}`;
   const clientId = process.env.CASPIO_CLIENT_ID || '';
   const clientSecret = process.env.CASPIO_CLIENT_SECRET || '';
 

@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       const credentials = getCaspioCredentialsFromEnv();
       const token = await getCaspioToken(credentials);
       
-      const updateUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=Client_ID2='${memberId}'`;
+      const updateUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=Client_ID2='${memberId}'`;
       
       const updateData = {
         SW_ID: staffId,

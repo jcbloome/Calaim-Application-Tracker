@@ -105,9 +105,11 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('❌ Caspio debug error:', error);
-    const dataBaseUrl = process.env.CASPIO_BASE_URL?.includes('/rest/v2')
+    const dataBaseUrl =
+      process.env.CASPIO_BASE_URL?.includes('/integrations/rest/v3')
+      || process.env.CASPIO_BASE_URL?.includes('/rest/v2')
       ? process.env.CASPIO_BASE_URL
-      : `${process.env.CASPIO_BASE_URL}/rest/v2`;
+      : `${process.env.CASPIO_BASE_URL}/integrations/rest/v3`;
     return NextResponse.json(
       { 
         success: false, 

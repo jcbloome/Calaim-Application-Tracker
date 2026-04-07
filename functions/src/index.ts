@@ -223,7 +223,7 @@ const caspioClientId = defineSecret("CASPIO_CLIENT_ID");
 const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
 
 function getRuntimeCaspioConfig() {
-  const fallbackBase = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
+  const fallbackBase = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3';
   const baseFromSecretOrEnv = (() => {
     try {
       return caspioBaseUrl.value() || fallbackBase;
@@ -245,8 +245,11 @@ function getRuntimeCaspioConfig() {
       return process.env.CASPIO_CLIENT_SECRET || '';
     }
   })();
-  const oauthBaseUrl = String(baseFromSecretOrEnv).replace(/\/rest\/v2\/?$/i, '').replace(/\/+$/g, '');
-  const restBaseUrl = `${oauthBaseUrl}/rest/v2`;
+  const oauthBaseUrl = String(baseFromSecretOrEnv)
+    .replace(/\/rest\/v2\/?$/i, '')
+    .replace(/\/integrations\/rest\/v3\/?$/i, '')
+    .replace(/\/+$/g, '');
+  const restBaseUrl = `${oauthBaseUrl}/integrations/rest/v3`;
   return { restBaseUrl, oauthBaseUrl, clientId, clientSecret };
 }
 
@@ -431,13 +434,13 @@ export const testCaspioConnection = onCall(async (request) => {
     
     try {
       // Try secrets first (for production)
-      baseUrl = caspioBaseUrl.value() || process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
+      baseUrl = caspioBaseUrl.value() || process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3';
       clientId = caspioClientId.value() || process.env.CASPIO_CLIENT_ID || '';
       clientSecret = caspioClientSecret.value() || process.env.CASPIO_CLIENT_SECRET || '';
     } catch (secretError) {
       // Fall back to environment variables (for local development)
       console.log('⚠️ Secrets not available, using environment variables');
-      baseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
+      baseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3';
       clientId = process.env.CASPIO_CLIENT_ID || '';
       clientSecret = process.env.CASPIO_CLIENT_SECRET || '';
     }
@@ -1137,7 +1140,7 @@ export const publishCsSummaryToCaspio = onCall({
     console.log('📤 Publishing CS Summary to Caspio via Functions...');
     
     // Get Caspio access token
-    const baseUrl = caspioBaseUrl.value() || 'https://c7ebl500.caspio.com/rest/v2';
+    const baseUrl = caspioBaseUrl.value() || 'https://c7ebl500.caspio.com/integrations/rest/v3';
     const clientId = caspioClientId.value();
     const clientSecret = caspioClientSecret.value();
     

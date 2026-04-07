@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     const accessToken = await getCaspioToken(credentials);
     const encodedTable = encodeURIComponent('CalAIM_Kaiser_Status');
 
-    const url = `${credentials.baseUrl}/rest/v2/tables/${encodedTable}/records?q.select=${encodeURIComponent(
+    const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${encodedTable}/records?q.select=${encodeURIComponent(
       'Kaiser_ID_Status,Status,Sort_Order'
     )}&q.pageSize=1000&q.pageNumber=1`;
 

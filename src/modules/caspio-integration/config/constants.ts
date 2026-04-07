@@ -3,7 +3,7 @@
 
 function normalizeCaspioRestBaseUrl(raw: string): string {
   const input = String(raw || '').trim();
-  if (!input) return 'https://c7ebl500.caspio.com/rest/v2';
+  if (!input) return 'https://c7ebl500.caspio.com/integrations/rest/v3';
 
   // Handle corrupted values by extracting domain.
   const domainMatch = input.match(/https?:\/\/([^\/\s]+)/i);
@@ -17,11 +17,12 @@ function normalizeCaspioRestBaseUrl(raw: string): string {
     base = `https://${base}`;
   }
 
-  // Remove any embedded /rest/v2 then re-append once.
+  // Remove any embedded REST path then re-append once.
   base = base.replace(/\/rest\/v2\/?/gi, '');
+  base = base.replace(/\/integrations\/rest\/v3\/?/gi, '');
   base = base.replace(/\/+$/g, '');
 
-  return `${base}/rest/v2`;
+  return `${base}/integrations/rest/v3`;
 }
 
 export const CASPIO_CONFIG = {
@@ -29,7 +30,7 @@ export const CASPIO_CONFIG = {
   BASE_URL: normalizeCaspioRestBaseUrl(
     process.env.NEXT_PUBLIC_CASPIO_BASE_URL ||
       process.env.CASPIO_BASE_URL ||
-      'https://c7ebl500.caspio.com/rest/v2'
+      'https://c7ebl500.caspio.com/integrations/rest/v3'
   ),
   
   // Table Names

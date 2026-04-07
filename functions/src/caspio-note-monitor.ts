@@ -56,7 +56,7 @@ async function getCaspioAccessToken(): Promise<string> {
 async function fetchNewPriorityNotes(sinceTimestamp?: string): Promise<CaspioNote[]> {
   try {
     const accessToken = await getCaspioAccessToken();
-    const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+    const baseUrl = 'https://c7ebl500.caspio.com/integrations/rest/v3';
     
     // Adjust table name and field names based on your actual Caspio structure
     const notesTable = 'CalAIM_tbl_Notes'; // Replace with actual table name

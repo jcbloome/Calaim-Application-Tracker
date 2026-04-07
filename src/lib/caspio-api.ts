@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 // Caspio API configuration
 const CASPIO_CONFIG = {
-  baseUrl: process.env.CASPIO_BASE_URL || 'https://c1abc123.caspio.com/rest/v2',
+  baseUrl: process.env.CASPIO_BASE_URL || 'https://c1abc123.caspio.com/integrations/rest/v3',
   clientId: process.env.CASPIO_CLIENT_ID,
   clientSecret: process.env.CASPIO_CLIENT_SECRET,
   tableName: process.env.CASPIO_TABLE_NAME || 'Applications',

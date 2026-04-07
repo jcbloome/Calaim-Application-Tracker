@@ -40,7 +40,7 @@ interface AuthorizationMember {
  * Fetch members with authorization data from Caspio
  */
 async function fetchMembersFromCaspio(token: string, baseUrl: string): Promise<CaspioMemberRecord[]> {
-  const apiUrl = `${baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records`;
+  const apiUrl = `${baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records`;
   
   // Only fetch members that have at least one authorization field
   const whereClause = `Authorization_Start_Date_T2038 IS NOT NULL OR Authorization_End_Date_T2038 IS NOT NULL OR Authorization_Start_Date_H2022 IS NOT NULL OR Authorization_End_Date_H2022 IS NOT NULL`;

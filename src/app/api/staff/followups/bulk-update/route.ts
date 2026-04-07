@@ -37,7 +37,7 @@ async function updateNotesWithSamePayload(args: {
   for (let i = 0; i < noteIds.length; i += chunkSize) {
     const chunk = noteIds.slice(i, i + chunkSize);
     const where = chunk.map((id) => `Note_ID='${escapeQuotes(id)}'`).join(' OR ');
-    const url = `${baseUrl}/rest/v2/tables/${table}/records?q.where=${encodeURIComponent(where)}`;
+    const url = `${baseUrl}/integrations/rest/v3/tables/${table}/records?q.where=${encodeURIComponent(where)}`;
 
     const res = await fetch(url, {
       method: 'PUT',

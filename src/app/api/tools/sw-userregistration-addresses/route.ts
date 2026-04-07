@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
 
     const rows: any[] = [];
     for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-      const url = `${credentials.baseUrl}/rest/v2/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}&q.select=${encodeURIComponent(
+      const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}&q.select=${encodeURIComponent(
         select
       )}`;
       const res = await fetch(url, {

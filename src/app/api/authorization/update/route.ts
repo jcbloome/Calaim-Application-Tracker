@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const token = await getCaspioToken(credentials);
     
     // Update member record in Caspio
-    const apiUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records`;
+    const apiUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records`;
     const whereClause = `Record_ID='${memberId}'`;
     
     const response = await fetch(`${apiUrl}?q.where=${encodeURIComponent(whereClause)}`, {

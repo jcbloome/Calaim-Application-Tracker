@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 
         do {
           // Use Caspio's correct pagination parameters (same as authorization tracker)
-          const staffUrl = `${credentials.baseUrl}/rest/v2/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+          const staffUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
           console.log(`🌐 Fetching page ${pageNumber} from ${tableName} (pageSize: ${pageSize})...`);
 
           const staffResponse = await fetch(staffUrl, {

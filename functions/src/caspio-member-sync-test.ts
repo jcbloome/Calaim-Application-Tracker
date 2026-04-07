@@ -109,7 +109,7 @@ export const testCaspioMemberSync = onCall({
 // Get Caspio OAuth access token
 async function getCaspioAccessToken(): Promise<string> {
   const config = buildCaspioConfig(
-    process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2',
+    process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3',
     process.env.CASPIO_CLIENT_ID || '',
     process.env.CASPIO_CLIENT_SECRET || ''
   );
@@ -127,7 +127,7 @@ async function getCaspioAccessToken(): Promise<string> {
 
 // Add member to Client table and return client_ID2
 async function addToClientTable(accessToken: string, member: MockMember): Promise<string> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const baseUrl = 'https://c7ebl500.caspio.com/integrations/rest/v3';
   const clientTableUrl = `${baseUrl}/tables/connect_tbl_clients/records`;
   
   const clientData = {
@@ -173,7 +173,7 @@ async function addToClientTable(accessToken: string, member: MockMember): Promis
 
 // Add member to CalAIM_tbl_Members with client_ID2 and MCO
 async function addToMemberTable(accessToken: string, member: MockMember, clientId: string): Promise<any> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const baseUrl = 'https://c7ebl500.caspio.com/integrations/rest/v3';
   const memberTableUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
   
   // First, get the client record to retrieve Senior_First and Senior_Last
@@ -227,7 +227,7 @@ async function addToMemberTable(accessToken: string, member: MockMember, clientI
 
 // Get client record by client_ID2 to retrieve Senior_First and Senior_Last
 async function getClientRecord(accessToken: string, clientId: string): Promise<any> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const baseUrl = 'https://c7ebl500.caspio.com/integrations/rest/v3';
   const clientRecordUrl = `${baseUrl}/tables/connect_tbl_clients/records`;
   
   console.log(`🔍 Fetching client record with ID: ${clientId}`);
@@ -261,7 +261,7 @@ async function getClientRecord(accessToken: string, clientId: string): Promise<a
 
 // Check what tables are available
 async function checkAvailableTables(accessToken: string): Promise<any> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const baseUrl = 'https://c7ebl500.caspio.com/integrations/rest/v3';
   const tablesUrl = `${baseUrl}/tables`;
   
   console.log(`🔍 Checking tables at: ${tablesUrl}`);
@@ -286,7 +286,7 @@ async function checkAvailableTables(accessToken: string): Promise<any> {
 
 // Get table structure/fields
 async function getTableStructure(accessToken: string, tableName: string): Promise<any> {
-  const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+  const baseUrl = 'https://c7ebl500.caspio.com/integrations/rest/v3';
   const tableUrl = `${baseUrl}/tables/${tableName}`;
   
   console.log(`🔍 Checking table structure at: ${tableUrl}`);

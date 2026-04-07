@@ -77,7 +77,7 @@ async function fetchAllRowsForMemberFromCaspio<T extends Record<string, any>>(pa
 
   while (pageNumber <= maxPages) {
     const url =
-      `${baseUrl}/rest/v2/tables/${table}/records` +
+      `${baseUrl}/integrations/rest/v3/tables/${table}/records` +
       `?q.where=${encodeURIComponent(whereClause)}` +
       `&q.orderBy=${encodeURIComponent(orderBy)}` +
       `&q.pageSize=${pageSize}` +
@@ -994,10 +994,10 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
     const token = await getCaspioToken(credentials);
     
     // Query for new regular notes
-    const regularNotesUrl = `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}' AND Time_Stamp>'${lastSyncAt}'&q.orderBy=Time_Stamp DESC`;
+    const regularNotesUrl = `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}' AND Time_Stamp>'${lastSyncAt}'&q.orderBy=Time_Stamp DESC`;
     
     // Query for new ILS notes
-    const ilsNotesUrl = `${baseUrl}/rest/v2/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}' AND Timestamp>'${lastSyncAt}'&q.orderBy=Timestamp DESC`;
+    const ilsNotesUrl = `${baseUrl}/integrations/rest/v3/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}' AND Timestamp>'${lastSyncAt}'&q.orderBy=Timestamp DESC`;
     
     const [regularResponse, ilsResponse] = await Promise.all([
       fetch(regularNotesUrl, {
@@ -1143,7 +1143,7 @@ async function resolveCaspioUserIdForMember(params: {
   try {
     const whereClause = `Client_ID2='${clientId2}'`;
     const url =
-      `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records` +
+      `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records` +
       `?q.where=${encodeURIComponent(whereClause)}` +
       `&q.orderBy=${encodeURIComponent('Time_Stamp DESC')}` +
       `&q.pageSize=1` +
@@ -1197,7 +1197,7 @@ async function syncNoteToCaspio(note: MemberNote): Promise<{ success: boolean; e
       Assigned_First: note.assignedToName || null
     };
 
-    const apiUrl = `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records`;
+    const apiUrl = `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records`;
     
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -1248,7 +1248,7 @@ async function syncExistingNoteStatusToCaspio(params: {
     const token = await getCaspioToken(credentials);
     const whereClause = `PK_ID=${pkId}`;
     const apiUrl =
-      `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records` +
+      `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records` +
       `?q.where=${encodeURIComponent(whereClause)}`;
 
     const nextStatus = params.status === 'Closed' ? 'Closed' : 'Open';
@@ -1472,7 +1472,7 @@ export async function PUT(request: NextRequest) {
         const pkId = Number(row?.PK_ID || 0);
         if (!Number.isFinite(pkId) || pkId <= 0) continue;
         const updateUrl =
-          `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records` +
+          `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records` +
           `?q.where=${encodeURIComponent(`PK_ID=${pkId}`)}`;
         const response = await fetch(updateUrl, {
           method: 'PUT',

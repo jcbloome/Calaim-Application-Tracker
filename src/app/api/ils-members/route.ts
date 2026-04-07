@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch ILS members from CalAIM_tbl_Members table
     // ILS members are those with ILS_View = 'Yes' or similar criteria
-    const membersUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=ILS_View='Yes'&q.limit=1000`;
+    const membersUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=ILS_View='Yes'&q.limit=1000`;
     
     const membersResponse = await fetch(membersUrl, {
       method: 'GET',

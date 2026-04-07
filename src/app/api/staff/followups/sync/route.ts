@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
       for (let i = 0; i < clientIds.length; i += chunkSize) {
         const chunk = clientIds.slice(i, i + chunkSize);
         const where = chunk.map((id) => `Client_ID2='${escapeQuotes(id)}'`).join(' OR ');
-        const url = `${credentials.baseUrl}/rest/v2/tables/connect_tbl_clients/records?q.where=${encodeURIComponent(where)}&q.pageSize=1000&q.pageNumber=1`;
+        const url = `${credentials.baseUrl}/integrations/rest/v3/tables/connect_tbl_clients/records?q.where=${encodeURIComponent(where)}&q.pageSize=1000&q.pageNumber=1`;
         const resp = await fetch(url, {
           method: 'GET',
           headers: {

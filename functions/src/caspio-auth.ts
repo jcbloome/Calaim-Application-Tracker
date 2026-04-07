@@ -5,11 +5,16 @@ export type CaspioConfig = {
   clientSecret: string;
 };
 
+const CASPIO_REST_PATH = '/integrations/rest/v3';
+
 export function buildCaspioConfig(rawBaseUrl: string, clientId: string, clientSecret: string): CaspioConfig {
-  const oauthBaseUrl = String(rawBaseUrl || '').replace(/\/rest\/v2\/?$/i, '').replace(/\/+$/g, '');
+  const oauthBaseUrl = String(rawBaseUrl || '')
+    .replace(/\/rest\/v2\/?$/i, '')
+    .replace(/\/integrations\/rest\/v3\/?$/i, '')
+    .replace(/\/+$/g, '');
   return {
     oauthBaseUrl,
-    restBaseUrl: `${oauthBaseUrl}/rest/v2`,
+    restBaseUrl: `${oauthBaseUrl}${CASPIO_REST_PATH}`,
     clientId: String(clientId || '').trim(),
     clientSecret: String(clientSecret || '').trim(),
   };

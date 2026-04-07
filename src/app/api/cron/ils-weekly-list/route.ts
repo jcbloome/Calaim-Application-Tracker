@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
 
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
-    const membersUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=5000`;
+    const membersUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=5000`;
     const membersResponse = await fetch(membersUrl, {
       method: 'GET',
       headers: {

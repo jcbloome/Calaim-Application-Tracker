@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < unique.length; i += chunkSize) {
       const chunk = unique.slice(i, i + chunkSize);
       const where = chunk.map((id) => `Note_ID='${escapeQuotes(id)}'`).join(' OR ');
-      const url = `${baseUrl}/rest/v2/tables/${table}/records?q.where=${encodeURIComponent(where)}`;
+      const url = `${baseUrl}/integrations/rest/v3/tables/${table}/records?q.where=${encodeURIComponent(where)}`;
 
       const res = await fetch(url, {
         method: 'PUT',

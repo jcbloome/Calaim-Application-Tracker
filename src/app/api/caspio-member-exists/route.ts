@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const baseUrl = credentials.baseUrl.replace(/\/$/, '');
 
     const whereClause = `MCP_CIN='${mrn.replace(/'/g, "''")}'`;
-    const queryUrl = `${baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(whereClause)}&q.limit=1`;
+    const queryUrl = `${baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(whereClause)}&q.limit=1`;
 
     const response = await fetch(queryUrl, {
       method: 'GET',

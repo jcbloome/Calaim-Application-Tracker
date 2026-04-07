@@ -25,7 +25,7 @@ const fetchPagedRows = async (
   const rows: CaspioFollowUpRow[] = [];
   for (let page = 1; page <= maxPages; page += 1) {
     const url =
-      `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records` +
+      `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records` +
       `?q.where=${encodeURIComponent(whereClause)}` +
       `&q.orderBy=${encodeURIComponent('PK_ID ASC')}` +
       `&q.pageSize=${pageSize}` +
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
         const pkId = Number(row?.PK_ID || 0);
         if (!Number.isFinite(pkId) || pkId <= 0) continue;
         const updateUrl =
-          `${baseUrl}/rest/v2/tables/connect_tbl_clientnotes/records` +
+          `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records` +
           `?q.where=${encodeURIComponent(`PK_ID=${pkId}`)}`;
         const res = await fetch(updateUrl, {
           method: 'PUT',

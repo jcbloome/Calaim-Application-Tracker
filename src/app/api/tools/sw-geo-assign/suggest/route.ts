@@ -95,7 +95,7 @@ async function fetchRcfeAddressByName(params: { accessToken: string; baseUrl: st
 
   const map = new Map<string, { address: string; city?: string; county?: string }>();
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-    const url = `${baseUrl}/rest/v2/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}&q.select=${encodeURIComponent(
+    const url = `${baseUrl}/integrations/rest/v3/tables/${tableName}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}&q.select=${encodeURIComponent(
       selectFields
     )}`;
     const res = await fetch(url, {

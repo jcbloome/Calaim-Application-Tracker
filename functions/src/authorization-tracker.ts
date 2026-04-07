@@ -50,7 +50,7 @@ interface AuthorizationMember {
  * Get OAuth token from Caspio
  */
 async function getCaspioToken(): Promise<string> {
-  const rawBaseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
+  const rawBaseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3';
   const clientId = process.env.CASPIO_CLIENT_ID || '';
   const clientSecret = process.env.CASPIO_CLIENT_SECRET || '';
   try {
@@ -65,7 +65,7 @@ async function getCaspioToken(): Promise<string> {
  * Fetch members with authorization data from Caspio
  */
 async function fetchMembersFromCaspio(token: string): Promise<CaspioMemberRecord[]> {
-  const baseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2';
+  const baseUrl = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3';
   const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
   
   // Fetch ALL members (don't filter by authorization fields here since they might be empty strings)
@@ -164,7 +164,7 @@ export const updateMemberAuthorization = onCall(async (request) => {
       const token = await getCaspioToken();
       
       // Update member record in Caspio
-      const baseUrl = 'https://c7ebl500.caspio.com/rest/v2';
+      const baseUrl = 'https://c7ebl500.caspio.com/integrations/rest/v3';
       const apiUrl = `${baseUrl}/tables/CalAIM_tbl_Members/records`;
       const whereClause = `Record_ID='${memberId}'`;
       

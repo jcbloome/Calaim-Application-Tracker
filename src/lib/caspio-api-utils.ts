@@ -36,7 +36,9 @@ export function getCaspioCredentialsFromEnv(): CaspioCredentials {
     throw new Error('Caspio credentials not configured');
   }
 
-  const baseUrl = baseUrlRaw.replace(/\/rest\/v2\/?$/, '');
+  const baseUrl = baseUrlRaw
+    .replace(/\/rest\/v2\/?$/i, '')
+    .replace(/\/integrations\/rest\/v3\/?$/i, '');
   return { baseUrl, clientId, clientSecret };
 }
 
@@ -126,7 +128,7 @@ export async function getCaspioRecordCount(
   whereClause?: string
 ): Promise<number> {
   const whereParam = whereClause ? `&q.where=${encodeURIComponent(whereClause)}` : '';
-  const countUrl = `${credentials.baseUrl}/rest/v2/tables/${tableName}/records?q.select=COUNT(*)${whereParam}`;
+  const countUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/${tableName}/records?q.select=COUNT(*)${whereParam}`;
   
   const countResponse = await fetch(countUrl, {
     method: 'GET',
@@ -164,7 +166,7 @@ export async function fetchCaspioRecords(
   console.log(`   🔄 Using pagination for: ${whereClause}`);
   
   while (pageNumber <= maxPages) {
-    const queryUrl = `${credentials.baseUrl}/rest/v2/tables/${tableName}/records?q.where=${encodeURIComponent(whereClause)}&q.pageSize=${limit}&q.pageNumber=${pageNumber}`;
+    const queryUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/${tableName}/records?q.where=${encodeURIComponent(whereClause)}&q.pageSize=${limit}&q.pageNumber=${pageNumber}`;
     
     const response = await fetch(queryUrl, {
       method: 'GET',
@@ -397,7 +399,7 @@ export async function fetchCaspioSocialWorkers(
     'SW_table_id',
     'Rate'
   ].join(',');
-  const socialWorkerUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Social_Worker/records?q.select=${encodeURIComponent(socialWorkerSelect)}`;
+  const socialWorkerUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Social_Worker/records?q.select=${encodeURIComponent(socialWorkerSelect)}`;
 
   const swResponse = await fetch(socialWorkerUrl, {
     method: 'GET',

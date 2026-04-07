@@ -322,10 +322,10 @@ const resolveCaspioConfig = () => {
   }
 
   const normalizedBaseUrl = baseUrl
-    ? baseUrl.replace(/\/$/, '').endsWith('/rest/v2')
+    ? baseUrl.replace(/\/$/, '').endsWith('/integrations/rest/v3')
       ? baseUrl.replace(/\/$/, '')
-      : `${baseUrl.replace(/\/$/, '')}/rest/v2`
-    : 'https://c7ebl500.caspio.com/rest/v2';
+      : `${baseUrl.replace(/\/$/, '')}/integrations/rest/v3`
+    : 'https://c7ebl500.caspio.com/integrations/rest/v3';
 
   return { baseUrl: normalizedBaseUrl, clientId, clientSecret };
 };

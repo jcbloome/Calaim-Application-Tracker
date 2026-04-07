@@ -148,9 +148,9 @@ async function fetchCaspioTableFields(params: {
   tableName: string;
 }): Promise<string[]> {
   const { accessToken, baseUrl, tableName } = params;
-  const restBaseUrl = baseUrl.replace(/\/$/, '').endsWith('/rest/v2')
+  const restBaseUrl = baseUrl.replace(/\/$/, '').endsWith('/integrations/rest/v3')
     ? baseUrl.replace(/\/$/, '')
-    : `${baseUrl.replace(/\/$/, '')}/rest/v2`;
+    : `${baseUrl.replace(/\/$/, '')}/integrations/rest/v3`;
 
   const encodedTableName = encodeURIComponent(tableName);
 
@@ -267,9 +267,9 @@ function buildSwSearchKeys(member: Record<string, any>): string[] {
 async function fetchRcfeAdminContactMap(params: { accessToken: string; baseUrl: string }) {
   const { accessToken, baseUrl } = params;
 
-  const restBaseUrl = baseUrl.replace(/\/$/, '').endsWith('/rest/v2')
+  const restBaseUrl = baseUrl.replace(/\/$/, '').endsWith('/integrations/rest/v3')
     ? baseUrl.replace(/\/$/, '')
-    : `${baseUrl.replace(/\/$/, '')}/rest/v2`;
+    : `${baseUrl.replace(/\/$/, '')}/integrations/rest/v3`;
 
   const pageSize = 250;
   const maxPages = 20;
@@ -380,7 +380,7 @@ async function fetchUpdatedMembersFromCaspio(params: {
       sp.set('q.pageNumber', String(pageNumber));
       if (opts.includeSelect && select) sp.set('q.select', select);
 
-      const url = `${baseUrl}/rest/v2/tables/${MEMBERS_TABLE}/records?${sp.toString()}`;
+      const url = `${baseUrl}/integrations/rest/v3/tables/${MEMBERS_TABLE}/records?${sp.toString()}`;
       const res = await fetch(url, {
         method: 'GET',
         headers: {

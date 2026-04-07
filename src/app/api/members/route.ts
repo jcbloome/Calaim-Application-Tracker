@@ -30,7 +30,7 @@ async function fetchCaspioMembers(
     const token = await getCaspioToken(credentials);
     
     // Build the query URL for CalAIM_tbl_Members table
-    let apiUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records`;
+    let apiUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records`;
     
     // Build query parameters
     const queryParams = new URLSearchParams();

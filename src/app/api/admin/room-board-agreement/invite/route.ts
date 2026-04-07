@@ -108,7 +108,7 @@ async function fetchCaspioMemberAndRate(clientId2: string) {
     'MCO_and_Tier',
   ].join(',');
   const memberUrl =
-    `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records` +
+    `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records` +
     `?q.select=${encodeURIComponent(memberSelect)}` +
     `&q.where=${encodeURIComponent(memberWhere)}` +
     `&q.limit=1`;
@@ -138,7 +138,7 @@ async function fetchCaspioMemberAndRate(clientId2: string) {
       'Units',
     ].join(',');
     const rateUrl =
-      `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_MCO_RCFE_Rates/records` +
+      `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_MCO_RCFE_Rates/records` +
       `?q.select=${encodeURIComponent(rateSelect)}` +
       `&q.where=${encodeURIComponent(rateWhere)}` +
       `&q.limit=1`;

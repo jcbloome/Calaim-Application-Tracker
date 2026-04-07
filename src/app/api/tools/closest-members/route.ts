@@ -57,7 +57,7 @@ async function fetchRcfeAddressByName(params: { accessToken: string; baseUrl: st
     sp.set('q.pageSize', String(pageSize));
     sp.set('q.pageNumber', String(pageNumber));
     sp.set('q.select', selectFields.join(','));
-    const url = `${baseUrl}/rest/v2/tables/${tableName}/records?${sp.toString()}`;
+    const url = `${baseUrl}/integrations/rest/v3/tables/${tableName}/records?${sp.toString()}`;
     const res = await fetch(url, {
       method: 'GET',
       headers: {
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
 
-    const eftUrl = `${credentials.baseUrl}/rest/v2/tables/Cal_AIM_EFT_Setup/records?q.where=${encodeURIComponent(
+    const eftUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/Cal_AIM_EFT_Setup/records?q.where=${encodeURIComponent(
       `User_ID2='${swId}' OR SW_ID='${swId}' OR User_ID='${swId}'`
     )}&q.pageSize=50&q.pageNumber=1`;
     const eftRes = await fetch(eftUrl, {

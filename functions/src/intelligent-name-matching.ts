@@ -185,7 +185,7 @@ async function getAllCaspioMembers(): Promise<CaspioMember[]> {
   try {
     // Get Caspio access token
     const config = buildCaspioConfig(
-      process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/rest/v2',
+      process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3',
       process.env.CASPIO_CLIENT_ID || '',
       process.env.CASPIO_CLIENT_SECRET || ''
     );

@@ -204,7 +204,7 @@ export async function GET(request: NextRequest) {
     console.log('📊 Fetching Kaiser members...');
     
     // First, check total count available
-    const countUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.select=COUNT(*)`;
+    const countUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.select=COUNT(*)`;
     console.log('🔢 Checking total Kaiser member count...');
     
     try {
@@ -230,7 +230,7 @@ export async function GET(request: NextRequest) {
     
     // Approach 1: Try without pagination first (get default limit)
     console.log('🔄 Approach 1: Fetching without pagination...');
-    const simpleUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'`;
+    const simpleUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'`;
     console.log(`🔗 Simple Query URL:`, simpleUrl);
     
     const simpleResponse = await fetch(simpleUrl, {
@@ -251,7 +251,7 @@ export async function GET(request: NextRequest) {
     
     // Try with higher limit to get all 405 records
     console.log('🔄 Approach 2: Trying with higher limit to get all 405 records...');
-    const highLimitUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=500`;
+    const highLimitUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=500`;
     console.log(`🔗 High Limit Query URL:`, highLimitUrl);
     
     const highLimitResponse = await fetch(highLimitUrl, {
@@ -281,7 +281,7 @@ export async function GET(request: NextRequest) {
     let paginatedMembers: any[] = [];
 
     while (hasMorePages && pageNumber <= 10) { // 10 pages * 100 = 1000 records max
-      const queryUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
+      const queryUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=${pageSize}&q.pageNumber=${pageNumber}`;
       console.log(`🔗 Page ${pageNumber} Query URL:`, queryUrl);
       
       const membersResponse = await fetch(queryUrl, {

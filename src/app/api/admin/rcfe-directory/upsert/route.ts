@@ -100,7 +100,7 @@ async function fetchRcfeRegistryBedMaps() {
       ? ['RCFE_Registered_ID', 'RCFE_Name', 'Number_of_Beds', 'RCFE_County', 'Timestamp'].join(',')
       : ['RCFE_Registered_ID', 'RCFE_Name', 'Number_of_Beds', 'RCFE_County'].join(',');
     const buildUrl = (fields: string) =>
-      `${credentials.baseUrl}/rest/v2/tables/${encodeURIComponent(
+      `${credentials.baseUrl}/integrations/rest/v3/tables/${encodeURIComponent(
         'CalAIM_tbl_New_RCFE_Registration'
       )}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}&q.select=${encodeURIComponent(fields)}`;
 
@@ -340,7 +340,7 @@ export async function POST(req: NextRequest) {
       memberIds.map(async (memberId) => {
         const escapedClientId2 = memberId.replace(/'/g, "''");
         const whereClause = `Client_ID2='${escapedClientId2}'`;
-        const apiUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(whereClause)}`;
+        const apiUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(whereClause)}`;
         const caspioRes = await fetch(apiUrl, {
           method: 'PUT',
           headers: {
@@ -376,7 +376,7 @@ export async function POST(req: NextRequest) {
       for (const rcfeRegisteredId of uniqueRcfeRegisteredIds) {
         const escapedRcfeRegisteredId = rcfeRegisteredId.replace(/'/g, "''");
         const whereClause = `RCFE_Registered_ID='${escapedRcfeRegisteredId}'`;
-        const rcfeApiUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_New_RCFE_Registration/records?q.where=${encodeURIComponent(whereClause)}`;
+        const rcfeApiUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_New_RCFE_Registration/records?q.where=${encodeURIComponent(whereClause)}`;
         const rcfeRes = await fetch(rcfeApiUrl, {
           method: 'PUT',
           headers: {

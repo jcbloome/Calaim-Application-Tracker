@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
         const token = await getCaspioToken(credentials);
         const escapedClientId2 = clientId2.replace(/'/g, "''");
         const whereClause = `Client_ID2='${escapedClientId2}'`;
-        const apiUrl = `${credentials.baseUrl}/rest/v2/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(whereClause)}`;
+        const apiUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=${encodeURIComponent(whereClause)}`;
 
         const fieldCandidates: Array<{ label: string; updates: Record<string, string> }> = [
           { label: 'Member_MRN', updates: { Member_MRN: nextMrn } },
