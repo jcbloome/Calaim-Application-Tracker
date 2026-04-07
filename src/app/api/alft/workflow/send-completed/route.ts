@@ -26,15 +26,24 @@ export async function POST(req: NextRequest) {
     const email = clean((decoded as any)?.email, 220).toLowerCase();
     if (!uid) return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 401 });
 
-    let allowed = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin) || isHardcodedAdminEmail(email);
-    if (!allowed) {
+    let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin) || isHardcodedAdminEmail(email);
+    if (!isAdmin) {
       const [adminRole, superAdminRole] = await Promise.all([
         adminDb.collection('roles_admin').doc(uid).get(),
         adminDb.collection('roles_super_admin').doc(uid).get(),
       ]);
-      allowed = adminRole.exists || superAdminRole.exists;
+      isAdmin = adminRole.exists || superAdminRole.exists;
     }
-    if (!allowed) return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
+    const meSnap = await adminDb.collection('users').doc(uid).get().catch(() => null);
+    const me = meSnap?.exists ? (meSnap.data() as any) : null;
+    const isKaiserAssignmentManager = Boolean(me?.isKaiserAssignmentManager);
+    const allowed = isAdmin || isKaiserAssignmentManager;
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Kaiser manager (or admin) access required to send completed ALFT to Jocelyn.' },
+        { status: 403 }
+      );
+    }
 
     const intakeRef = adminDb.collection('standalone_upload_submissions').doc(intakeId);
     const intakeSnap = await intakeRef.get();

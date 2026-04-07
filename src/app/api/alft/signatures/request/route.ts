@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { sendAlftSignatureRequestEmail } from '@/app/actions/send-email';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,7 +50,29 @@ export async function POST(req: NextRequest) {
     const decoded = await admin.auth().verifyIdToken(idToken);
     const requesterUid = clean(decoded?.uid, 128);
     const requesterEmail = clean(decoded?.email, 200).toLowerCase();
+    const requesterName = clean((decoded as any)?.name, 160) || requesterEmail || 'Manager';
     if (!requesterUid) return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 401 });
+
+    // Enforce manager/admin gate before RN phase.
+    let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
+    if (!isAdmin && isHardcodedAdminEmail(requesterEmail)) isAdmin = true;
+    if (!isAdmin) {
+      const [adminRole, superAdminRole] = await Promise.all([
+        adminDb.collection('roles_admin').doc(requesterUid).get(),
+        adminDb.collection('roles_super_admin').doc(requesterUid).get(),
+      ]);
+      isAdmin = adminRole.exists || superAdminRole.exists;
+    }
+    const meSnap = await adminDb.collection('users').doc(requesterUid).get().catch(() => null);
+    const me = meSnap?.exists ? (meSnap.data() as any) : null;
+    const isKaiserAssignmentManager = Boolean(me?.isKaiserAssignmentManager);
+    const canPreReview = isAdmin || isKaiserAssignmentManager;
+    if (!canPreReview) {
+      return NextResponse.json(
+        { success: false, error: 'Kaiser manager (or admin) access is required before sending ALFT to RN.' },
+        { status: 403 }
+      );
+    }
 
     const intakeSnap = await adminDb.collection('standalone_upload_submissions').doc(intakeId).get();
     if (!intakeSnap.exists) return NextResponse.json({ success: false, error: 'ALFT intake not found' }, { status: 404 });
@@ -60,6 +83,23 @@ export async function POST(req: NextRequest) {
     const isAlft = toolCode === 'ALFT' || docType.includes('alft');
     if (!isAlft) {
       return NextResponse.json({ success: false, error: 'This intake is not an ALFT upload' }, { status: 400 });
+    }
+    const workflowStatus = clean((intake as any)?.workflowStatus, 120).toLowerCase();
+    const allowedPreReviewStatuses = [
+      'awaiting_manager_review_pre_rn',
+      'returned_to_sw_for_revision',
+      'manager_review_pre_rn_complete_ready_for_rn',
+    ];
+    const canAdvanceToRn = allowedPreReviewStatuses.some((x) => workflowStatus.includes(x));
+    if (!canAdvanceToRn) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'This ALFT is not in pre-RN manager review state. Ensure SW submission is reviewed by Kaiser manager before sending to RN.',
+        },
+        { status: 409 }
+      );
     }
 
     const memberName = clean((intake as any)?.memberName, 140) || 'Member';
@@ -153,6 +193,14 @@ export async function POST(req: NextRequest) {
       .doc(intakeId)
       .set(
         {
+          // First Kaiser manager review (before RN changes/signature cycle).
+          alftManagerPreReview: {
+            status: 'approved_for_rn',
+            approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+            approvedByUid: requesterUid,
+            approvedByEmail: requesterEmail || null,
+            approvedByName: requesterName || null,
+          },
           alftSignature: {
             requestId,
             status: 'requested_signatures',
@@ -163,8 +211,8 @@ export async function POST(req: NextRequest) {
             mswRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
             rnRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
-          workflowStatus: 'awaiting_sw_then_rn_signature',
-          workflowStage: 'requested_sw_then_rn_signature',
+          workflowStatus: 'awaiting_rn_revision_and_signatures',
+          workflowStage: 'manager_pre_review_complete_sent_to_rn',
           alftRnUid: rnUid || null,
           alftRnEmail: rnEmail || null,
           alftRnName: rnName || null,

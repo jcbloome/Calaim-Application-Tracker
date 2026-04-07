@@ -469,6 +469,28 @@ export default function AdminAlftTrackerPage() {
     [isSuperAdmin, isAdmin, isKaiserAssignmentManager, user?.uid, user?.email]
   );
 
+  const canRunManagerWorkflow = useMemo(
+    () => Boolean(isSuperAdmin || isAdmin || isKaiserAssignmentManager),
+    [isSuperAdmin, isAdmin, isKaiserAssignmentManager]
+  );
+
+  // Step gate requested by workflow owner:
+  // SW submit -> Kaiser manager pre-review -> send to Leslie (RN) -> Kaiser manager final review -> email Jocelyn.
+  const canSendToRnAfterPreReview = useCallback(
+    (row: StandaloneUpload) => {
+      if (!canRunManagerWorkflow) return false;
+      const sigRequested = Boolean((row as any)?.alftSignature?.requestedAt);
+      if (sigRequested) return false;
+      const workflowStatus = String((row as any)?.workflowStatus || '').toLowerCase();
+      return (
+        workflowStatus.includes('awaiting_manager_review_pre_rn') ||
+        workflowStatus.includes('returned_to_sw_for_revision') ||
+        workflowStatus.includes('manager_review_pre_rn_complete_ready_for_rn')
+      );
+    },
+    [canRunManagerWorkflow]
+  );
+
   const canEditAlftRow = useCallback(
     (row: StandaloneUpload) => {
       const uid = String(user?.uid || '').trim();
@@ -817,7 +839,7 @@ export default function AdminAlftTrackerPage() {
       setSigDialogOpen(true);
       toast({
         title: 'Signature request sent',
-        description: `SW signs first, RN signs final. RN email: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.msw?.emailSent ? 'sent' : 'not sent'}`,
+        description: `Pre-review complete. Next: Leslie updates/signs, then Deydry final review. RN email: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.msw?.emailSent ? 'sent' : 'not sent'}`,
       });
     } catch (e: any) {
       toast({ title: 'Could not request signatures', description: e?.message || 'Request failed.', variant: 'destructive' });
@@ -1157,17 +1179,19 @@ export default function AdminAlftTrackerPage() {
                               variant="outline"
                               onClick={() => markSentForSignature(r)}
                               disabled={
-                                Boolean((r as any)?.alftSignature?.requestedAt) ||
+                                !canSendToRnAfterPreReview(r) ||
                                 Boolean(sigRequestingId && sigRequestingId === r.id)
                               }
                               title={
-                                (r as any)?.alftSignature?.requestedAt
+                                Boolean((r as any)?.alftSignature?.requestedAt)
                                   ? 'Signatures already requested'
-                                  : 'Request signatures (RN defaults to Leslie)'
+                                  : !canRunManagerWorkflow
+                                    ? 'Kaiser manager or admin pre-review is required'
+                                    : 'Kaiser manager pre-review complete: send to Leslie (RN) + SW signatures'
                               }
                             >
                               <Send className="h-4 w-4 mr-2" />
-                              {sigRequestingId === r.id ? 'Requesting…' : 'Send to Leslie for final changes + signatures'}
+                              {sigRequestingId === r.id ? 'Requesting…' : 'Manager pre-review → Send to Leslie (RN)'}
                             </Button>
                             <Button
                               size="sm"
@@ -1189,14 +1213,14 @@ export default function AdminAlftTrackerPage() {
                               disabled={
                                 managerReviewingId === r.id ||
                                 !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath) ||
-                                (!isSuperAdmin && !isKaiserAssignmentManager) ||
+                                !canRunManagerWorkflow ||
                                 String((r as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
                               }
                               title={
                                 !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath)
                                   ? 'Complete signatures first'
-                                  : (!isSuperAdmin && !isKaiserAssignmentManager)
-                                    ? 'Kaiser manager access required'
+                                  : !canRunManagerWorkflow
+                                    ? 'Kaiser manager or admin access required'
                                     : String((r as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
                                       ? 'Final review already completed'
                                       : 'Complete final Kaiser manager review'
@@ -1211,11 +1235,14 @@ export default function AdminAlftTrackerPage() {
                               onClick={() => void sendCompletedToJh(r)}
                               disabled={
                                 sendingCompletedId === r.id ||
+                                !canRunManagerWorkflow ||
                                 !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath) ||
                                 String((r as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
                               }
                               title={
-                                !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath)
+                                !canRunManagerWorkflow
+                                  ? 'Kaiser manager or admin access required'
+                                  : !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath)
                                   ? 'Complete signatures first'
                                   : String((r as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
                                     ? 'Kaiser manager final review is required first'
