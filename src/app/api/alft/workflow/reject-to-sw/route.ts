@@ -43,21 +43,29 @@ export async function POST(req: NextRequest) {
       isAdmin = adminRole.exists || superAdminRole.exists;
     }
 
-    const meSnap = await adminDb.collection('users').doc(uid).get().catch(() => null);
+    const [meSnap, intakeSnap] = await Promise.all([
+      adminDb.collection('users').doc(uid).get().catch(() => null),
+      adminDb.collection('standalone_upload_submissions').doc(intakeId).get(),
+    ]);
+
+    if (!intakeSnap.exists) return NextResponse.json({ success: false, error: 'ALFT intake not found' }, { status: 404 });
+    const intake = intakeSnap.data() || {};
+
     const me = meSnap?.exists ? (meSnap.data() as any) : null;
     const isKaiserAssignmentManager = Boolean(me?.isKaiserAssignmentManager);
-    const canReview = isAdmin || isKaiserAssignmentManager;
+
+    // The assigned RN (Leslie) may also kick back for revisions.
+    const rnUid = clean((intake as any)?.alftRnUid, 128);
+    const rnEmail = clean((intake as any)?.alftRnEmail, 220).toLowerCase();
+    const isAssignedRn = (uid && uid === rnUid) || (email && email === rnEmail);
+
+    const canReview = isAdmin || isKaiserAssignmentManager || isAssignedRn;
     if (!canReview) {
       return NextResponse.json(
-        { success: false, error: 'Kaiser manager (or admin) access is required to reject ALFT to SW.' },
+        { success: false, error: 'Kaiser manager, assigned RN, or admin access is required to return an ALFT to the SW.' },
         { status: 403 }
       );
     }
-
-    const intakeRef = adminDb.collection('standalone_upload_submissions').doc(intakeId);
-    const intakeSnap = await intakeRef.get();
-    if (!intakeSnap.exists) return NextResponse.json({ success: false, error: 'ALFT intake not found' }, { status: 404 });
-    const intake = intakeSnap.data() || {};
 
     const toolCode = clean((intake as any)?.toolCode, 50).toUpperCase();
     const docType = clean((intake as any)?.documentType, 120).toLowerCase();
@@ -97,6 +105,7 @@ export async function POST(req: NextRequest) {
           rejectedByUid: uid,
           rejectedByEmail: email || null,
           rejectedByName: name || null,
+          rejectedByRole: isAdmin ? 'admin' : isKaiserAssignmentManager ? 'kaiser_manager' : 'rn',
           rejectionReason: reason,
         },
         alftSignature: {

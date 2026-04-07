@@ -29,16 +29,12 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const [isMobileNavOpen, setMobileNavOpen] = useState(false);
 
   const mobileNavLinks = [
-    { href: '/sw-portal/queue', label: 'Queue' },
-    { href: '/sw-portal/roster', label: 'Roster' },
-    { href: '/sw-visit-verification', label: 'Questionnaire' },
-    { href: '/sw-portal/sign-off', label: 'Sign Off' },
-    { href: '/sw-portal/claims', label: 'Claims' },
+    { href: '/sw-portal/home', label: 'Home' },
     { href: '/sw-portal/ccl-checks', label: 'CCL Checks' },
-    { href: '/sw-portal/end-of-day', label: 'End of day' },
-    { href: '/sw-portal/status-log', label: 'Status Log' },
+    { href: '/sw-portal/history', label: 'History' },
+    { href: '/sw-portal/wrap-up', label: 'Wrap Up' },
     { href: '/sw-portal/alft-upload', label: 'ALFT Upload' },
-    { href: '/sw-portal/instructions', label: 'Primer' },
+    { href: '/sw-portal/instructions', label: 'Instructions' },
   ];
 
   const swName = String(
@@ -140,7 +136,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
       <div className="bg-card border-b sticky top-0 z-40">
         <div className="container mx-auto px-4 py-2 sm:px-6">
           <div className="flex items-center gap-3">
-            <Link href="/sw-portal/roster" className="shrink-0">
+            <Link href="/sw-portal/home" className="shrink-0">
               <Image
                 src="/calaimlogopdf.png"
                 alt="Connect CalAIM Logo"
@@ -172,7 +168,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
                     e.preventDefault();
                     const q = headerSearch.trim();
                     if (!q) return;
-                    router.push(`/sw-portal/queue?q=${encodeURIComponent(q)}`);
+                    router.push(`/sw-portal/home?q=${encodeURIComponent(q)}`);
                     setHeaderSearch('');
                   }}
                 >

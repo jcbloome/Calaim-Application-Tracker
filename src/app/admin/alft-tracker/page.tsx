@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, UploadCloud, ExternalLink, RefreshCw, UserCheck, CheckCircle2, Send, Download } from 'lucide-react';
+import { Loader2, UploadCloud, ExternalLink, RefreshCw, UserCheck, CheckCircle2, Send, Download, ClipboardList } from 'lucide-react';
 import { ExactAlftQuestionnaire, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import {
   addDoc,
@@ -455,19 +455,39 @@ export default function AdminAlftTrackerPage() {
     setAssignOpen(true);
   }, []);
 
+  // Returns true for any user allowed to kick a form back to the SW for revision:
+  // admins, Kaiser managers (isKaiserAssignmentManager), and the assigned RN for the intake.
+  const canKickBackToSw = useCallback(
+    (row: StandaloneUpload) => {
+      if (isSuperAdmin || isAdmin || isKaiserAssignmentManager) return true;
+      const uid = String(user?.uid || '').trim();
+      const email = String(user?.email || '').toLowerCase();
+      const rnUid = String((row as any)?.alftRnUid || '').trim();
+      const rnEmail = String((row as any)?.alftRnEmail || '').toLowerCase();
+      return (uid && uid === rnUid) || (email && email === rnEmail);
+    },
+    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, user?.uid, user?.email]
+  );
+
   const canEditAlftRow = useCallback(
     (row: StandaloneUpload) => {
       const uid = String(user?.uid || '').trim();
       if (!uid) return false;
-      if (isAdmin) return true;
+      // Admins and Kaiser assignment managers (Leslie, Deydry, etc.) can always edit
+      if (isAdmin || isKaiserAssignmentManager) return true;
       const collab = (row as any)?.alftCollaboration || {};
       if (Boolean(collab?.allowAllPartiesEdit)) {
         const editableUids = Array.isArray(collab?.editableUids) ? collab.editableUids.map((x: any) => String(x || '').trim()) : [];
         if (editableUids.includes(uid)) return true;
       }
+      const userEmail = String(user?.email || '').toLowerCase();
+      const rnEmail = String((row as any)?.alftRnEmail || '').toLowerCase();
+      const staffEmail = String((row as any)?.alftStaffEmail || '').toLowerCase();
+      const uploaderEmail = String(row.uploaderEmail || '').toLowerCase();
+      if (userEmail && [rnEmail, staffEmail, uploaderEmail].includes(userEmail)) return true;
       return [row.uploaderUid, row.alftRnUid, row.alftStaffUid].map((v) => String(v || '').trim()).includes(uid);
     },
-    [isAdmin, user?.uid]
+    [isAdmin, isKaiserAssignmentManager, user?.uid, user?.email]
   );
 
   const openEdit = useCallback((row: StandaloneUpload) => {
@@ -916,6 +936,12 @@ export default function AdminAlftTrackerPage() {
         <div className="flex items-center gap-2">
           <Badge variant={filtered.length > 0 ? 'secondary' : 'outline'}>{filtered.length} pending</Badge>
           <Button variant="outline" asChild>
+            <Link href="/admin/alft-log">
+              <ClipboardList className="h-4 w-4 mr-2" />
+              ALFT Log
+            </Link>
+          </Button>
+          <Button variant="outline" asChild>
             <Link href="/admin/alft-tracker/dummy-preview">
               View dummy ALFT (ILS PDF preview)
             </Link>
@@ -1092,6 +1118,13 @@ export default function AdminAlftTrackerPage() {
                       <TableCell className="text-right whitespace-nowrap">
                         <div className="flex flex-col gap-2 items-end">
                           <div className="flex flex-wrap justify-end gap-2">
+                            {/* View button — visible to all parties (admin, Kaiser manager, RN, SW uploader) */}
+                            <Button size="sm" variant="outline" asChild title="View full ALFT form (read-only, printable)">
+                              <Link href={`/admin/alft-view/${encodeURIComponent(r.id)}`} target="_blank">
+                                <ExternalLink className="h-4 w-4 mr-2" />
+                                View ALFT
+                              </Link>
+                            </Button>
                             <Button
                               size="sm"
                               variant="outline"
@@ -1140,10 +1173,10 @@ export default function AdminAlftTrackerPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => openRejectToSw(r)}
-                              disabled={rejectingId === r.id || (!isSuperAdmin && !isKaiserAssignmentManager)}
+                              disabled={rejectingId === r.id || !canKickBackToSw(r)}
                               title={
-                                !isSuperAdmin && !isKaiserAssignmentManager
-                                  ? 'Kaiser manager access required'
+                                !canKickBackToSw(r)
+                                  ? 'Kaiser manager or assigned RN access required'
                                   : 'Return to social worker for revision and require new SW signature'
                               }
                             >

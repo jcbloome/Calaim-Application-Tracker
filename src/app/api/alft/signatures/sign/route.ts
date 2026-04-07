@@ -9,6 +9,7 @@ type Body = {
   idToken?: string;
   token?: string;
   signedName?: string;
+  licenseNumber?: string;
   signaturePngDataUrl?: string; // data:image/png;base64,...
   consent?: boolean;
 };
@@ -66,94 +67,119 @@ async function generateSignaturePagePdf(args: {
   memberName: string;
   mrn?: string | null;
   reviewedAtMs?: number;
-  rn: { name: string; signedAtMs?: number; sigPngBytes?: Buffer | null };
-  msw: { name: string; signedAtMs?: number; sigPngBytes?: Buffer | null };
+  rn: { name: string; licenseNumber?: string | null; signedAtMs?: number; sigPngBytes?: Buffer | null };
+  msw: { name: string; licenseNumber?: string | null; signedAtMs?: number; sigPngBytes?: Buffer | null };
 }) {
   const pdf = await PDFDocument.create();
-  const page = pdf.addPage([612, 792]); // letter
+  const page = pdf.addPage([612, 792]); // US letter
 
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
   const marginX = 48;
+  const rightCol = marginX + 300;
   let y = 740;
   const lineGap = 18;
+  const dark = rgb(0.06, 0.09, 0.14);
+  const mid = rgb(0.2, 0.23, 0.28);
+  const light = rgb(0.4, 0.45, 0.53);
+  const rule = rgb(0.82, 0.85, 0.89);
 
-  const drawLabelValue = (label: string, value: string) => {
-    page.drawText(label, { x: marginX, y, size: 11, font: fontBold, color: rgb(0.06, 0.09, 0.14) });
-    page.drawText(value, { x: marginX + 140, y, size: 11, font, color: rgb(0.06, 0.09, 0.14) });
+  const drawLabelValue = (label: string, value: string, xOff = 0) => {
+    page.drawText(label, { x: marginX + xOff, y, size: 10.5, font: fontBold, color: dark });
+    page.drawText(value, { x: marginX + xOff + 130, y, size: 10.5, font, color: dark });
     y -= lineGap;
   };
 
-  page.drawText('ALFT Signature Page', { x: marginX, y, size: 22, font: fontBold, color: rgb(0.06, 0.09, 0.14) });
-  y -= 34;
+  // Title
+  page.drawText('ALFT Signature Page', { x: marginX, y, size: 20, font: fontBold, color: dark });
+  y -= 10;
+  page.drawLine({ start: { x: marginX, y }, end: { x: 564, y }, thickness: 1.5, color: rgb(0.06, 0.09, 0.14) });
+  y -= 20;
 
-  drawLabelValue('Member', args.memberName || 'Member');
-  if (args.mrn) drawLabelValue('MRN', String(args.mrn));
-  if (args.reviewedAtMs) drawLabelValue('Reviewed date', new Date(args.reviewedAtMs).toLocaleDateString());
+  // Member block
+  drawLabelValue('Member:', args.memberName || 'Member');
+  if (args.mrn) drawLabelValue('Kaiser MRN:', String(args.mrn));
+  if (args.reviewedAtMs) drawLabelValue('Reviewed:', new Date(args.reviewedAtMs).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
 
-  y -= 14;
+  y -= 8;
   page.drawText(
-    'By signing below, I attest that I have reviewed the ALFT documentation associated with this member.',
-    { x: marginX, y, size: 10.5, font, color: rgb(0.2, 0.23, 0.28), maxWidth: 520 }
+    'By signing below, I attest that I have reviewed the ALFT documentation for the above member and that the information is accurate to the best of my knowledge.',
+    { x: marginX, y, size: 9.5, font, color: mid, maxWidth: 516 }
   );
-  y -= 44;
+  y -= 36;
 
-  const drawSignerBlock = async (roleLabel: string, name: string, signedAtMs?: number, sigPngBytes?: Buffer | null) => {
-    page.drawText(roleLabel, { x: marginX, y, size: 13, font: fontBold, color: rgb(0.06, 0.09, 0.14) });
-    y -= 18;
+  const drawSignerBlock = async (
+    roleLabel: string,
+    signer: { name: string; licenseNumber?: string | null; signedAtMs?: number; sigPngBytes?: Buffer | null }
+  ) => {
+    // Role header bar
+    page.drawRectangle({ x: marginX, y: y - 2, width: 516, height: 18, color: rgb(0.94, 0.96, 0.98) });
+    page.drawText(roleLabel, { x: marginX + 6, y: y + 1, size: 12, font: fontBold, color: dark });
+    y -= 26;
 
-    // signature line
-    page.drawLine({
-      start: { x: marginX, y: y - 2 },
-      end: { x: marginX + 280, y: y - 2 },
-      thickness: 1,
-      color: rgb(0.82, 0.85, 0.89),
-    });
-    page.drawText('Signature', { x: marginX, y: y - 16, size: 9, font, color: rgb(0.4, 0.45, 0.53) });
+    // ── Left column: Signature image + label ──────────────────────────────
+    const sigBoxTop = y + 4;
+    const sigBoxH = 72;
+    page.drawRectangle({ x: marginX, y: sigBoxTop - sigBoxH, width: 240, height: sigBoxH, color: rgb(0.99, 0.99, 0.99), borderColor: rule, borderWidth: 1 });
 
-    if (sigPngBytes && sigPngBytes.length > 0) {
+    if (signer.sigPngBytes && signer.sigPngBytes.length > 0) {
       try {
-        const img = await pdf.embedPng(sigPngBytes);
-        const targetW = 240;
-        const scale = targetW / img.width;
-        const targetH = Math.min(80, img.height * scale);
-        page.drawImage(img, { x: marginX + 6, y: y + 6, width: targetW, height: targetH });
-      } catch {
-        // ignore embed errors
-      }
+        const img = await pdf.embedPng(signer.sigPngBytes);
+        const scaleW = 228 / img.width;
+        const drawH = Math.min(sigBoxH - 8, img.height * scaleW);
+        page.drawImage(img, {
+          x: marginX + 6,
+          y: sigBoxTop - sigBoxH + (sigBoxH - drawH) / 2,
+          width: 228,
+          height: drawH,
+        });
+      } catch { /* ignore embed errors */ }
     }
+    page.drawText('Signature', { x: marginX + 4, y: sigBoxTop - sigBoxH - 12, size: 8, font, color: light });
 
-    // name line
-    page.drawLine({
-      start: { x: marginX + 310, y: y - 2 },
-      end: { x: marginX + 520, y: y - 2 },
-      thickness: 1,
-      color: rgb(0.82, 0.85, 0.89),
-    });
-    page.drawText('Printed name', { x: marginX + 310, y: y - 16, size: 9, font, color: rgb(0.4, 0.45, 0.53) });
-    page.drawText(name || '—', { x: marginX + 310, y: y + 10, size: 11, font, color: rgb(0.06, 0.09, 0.14), maxWidth: 210 });
+    // ── Right column: Printed name, License, Date ─────────────────────────
+    const fieldX = marginX + 256;
+    const fieldW = 260;
+    let fy = sigBoxTop - 2;
 
-    y -= 64;
-    page.drawText(`Signed: ${signedAtMs ? new Date(signedAtMs).toLocaleString() : '—'}`, {
-      x: marginX,
-      y,
-      size: 10,
-      font,
-      color: rgb(0.2, 0.23, 0.28),
-    });
-    y -= 34;
+    const drawField = (label: string, value: string) => {
+      page.drawText(label, { x: fieldX, y: fy, size: 8, font, color: light });
+      fy -= 13;
+      page.drawText(value || '—', { x: fieldX, y: fy, size: 10.5, font: fontBold, color: dark, maxWidth: fieldW });
+      page.drawLine({ start: { x: fieldX, y: fy - 3 }, end: { x: fieldX + fieldW, y: fy - 3 }, thickness: 0.75, color: rule });
+      fy -= 22;
+    };
+
+    drawField('Printed name', signer.name || '—');
+    drawField('License number', signer.licenseNumber || '—');
+    drawField('Date of submission', signer.signedAtMs
+      ? new Date(signer.signedAtMs).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : '—');
+
+    y = sigBoxTop - sigBoxH - 36;
   };
 
-  await drawSignerBlock('RN signature', args.rn.name || 'RN', args.rn.signedAtMs, args.rn.sigPngBytes);
-  await drawSignerBlock('MSW signature', args.msw.name || 'MSW', args.msw.signedAtMs, args.msw.sigPngBytes);
+  await drawSignerBlock('MSW (Social Worker) — Master of Social Work', {
+    name: args.msw.name || 'MSW',
+    licenseNumber: args.msw.licenseNumber,
+    signedAtMs: args.msw.signedAtMs,
+    sigPngBytes: args.msw.sigPngBytes,
+  });
 
-  page.drawText('Generated by CalAIM Tracker', {
+  await drawSignerBlock('RN (Registered Nurse) — Leslie', {
+    name: args.rn.name || 'RN',
+    licenseNumber: args.rn.licenseNumber,
+    signedAtMs: args.rn.signedAtMs,
+    sigPngBytes: args.rn.sigPngBytes,
+  });
+
+  page.drawText('Generated by CalAIM Tracker · ILS Health · Confidential', {
     x: marginX,
-    y: 28,
-    size: 9.5,
+    y: 24,
+    size: 8.5,
     font,
-    color: rgb(0.4, 0.45, 0.53),
+    color: light,
   });
 
   const bytes = await pdf.save();
@@ -178,11 +204,13 @@ export async function POST(req: NextRequest) {
     const idToken = clean(body?.idToken, 8000);
     const token = clean(body?.token, 4000);
     const signedName = clean(body?.signedName, 140);
+    const licenseNumber = clean(body?.licenseNumber, 80);
     const signaturePngDataUrl = clean(body?.signaturePngDataUrl, 250000); // allow big
     const consent = Boolean(body?.consent);
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
     if (!token) return NextResponse.json({ success: false, error: 'Missing token' }, { status: 400 });
-    if (!signedName) return NextResponse.json({ success: false, error: 'Missing signedName' }, { status: 400 });
+    if (!signedName) return NextResponse.json({ success: false, error: 'Printed name is required' }, { status: 400 });
+    if (!licenseNumber) return NextResponse.json({ success: false, error: 'License number is required' }, { status: 400 });
     if (!consent) return NextResponse.json({ success: false, error: 'Consent is required' }, { status: 400 });
 
     const sigBytes = parsePngDataUrl(signaturePngDataUrl);
@@ -255,6 +283,7 @@ export async function POST(req: NextRequest) {
         [`${rolePath}.signedAt`]: admin.firestore.FieldValue.serverTimestamp(),
         [`${rolePath}.signatureStoragePath`]: sigStoragePath,
         [`${rolePath}.signedName`]: signedName,
+        [`${rolePath}.licenseNumber`]: licenseNumber,
         [`${rolePath}.signedByUid`]: uid,
       },
       { merge: true }
@@ -306,11 +335,13 @@ export async function POST(req: NextRequest) {
         reviewedAtMs: reviewedAtMs || undefined,
         rn: {
           name: clean(after?.signers?.rn?.signedName, 160) || clean(after?.signers?.rn?.name, 160) || 'RN',
+          licenseNumber: clean(after?.signers?.rn?.licenseNumber, 80) || null,
           signedAtMs: rnSignedMs || undefined,
           sigPngBytes: rnSigBytes,
         },
         msw: {
           name: clean(after?.signers?.msw?.signedName, 160) || clean(after?.signers?.msw?.name, 160) || 'MSW',
+          licenseNumber: clean(after?.signers?.msw?.licenseNumber, 80) || null,
           signedAtMs: mswSignedMs || undefined,
           sigPngBytes: mswSigBytes,
         },

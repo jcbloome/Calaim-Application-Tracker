@@ -105,6 +105,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const submissionMode = clean(body?.submissionMode, 80) || 'custom';
+    const isDigitalForm = submissionMode === 'digital_form';
+    const officialPdfTemplateUrl = clean(body?.officialPdfTemplateUrl, 1200) || null;
+
     const files = Array.isArray(body?.files) ? body.files : [];
     const normalizedFiles = files
       .map((f) => ({
@@ -115,11 +119,10 @@ export async function POST(request: NextRequest) {
       }))
       .filter((f) => Boolean(f.fileName && f.downloadURL && f.storagePath))
       .slice(0, 10);
-    if (normalizedFiles.length === 0) {
+    // Digital form submissions don't require an uploaded file — the form data itself is the record.
+    if (normalizedFiles.length === 0 && !isDigitalForm) {
       return NextResponse.json({ success: false, error: 'At least one uploaded ALFT file is required' }, { status: 400 });
     }
-    const submissionMode = clean(body?.submissionMode, 80) || 'custom';
-    const officialPdfTemplateUrl = clean(body?.officialPdfTemplateUrl, 1200) || null;
     const alftForm = {
       formVersion: clean(body?.alftForm?.formVersion, 40) || 'placeholder-v1',
       stage: clean(body?.alftForm?.stage, 40) || null,
@@ -140,7 +143,8 @@ export async function POST(request: NextRequest) {
       additionalNotes: clean(body?.alftForm?.additionalNotes, 4000) || null,
     };
     const isPlanB = submissionMode === 'official_pdf_plan_b';
-    if (!isPlanB && (!alftForm.transitionSummary || !alftForm.requestedActions)) {
+    // Digital form submissions don't require summary/actions text (the exactPacketAnswers is the record).
+    if (!isPlanB && !isDigitalForm && (!alftForm.transitionSummary || !alftForm.requestedActions)) {
       return NextResponse.json({ success: false, error: 'Missing ALFT summary or requested actions' }, { status: 400 });
     }
     if (isPlanB) {

@@ -89,7 +89,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Kaiser assignment managers (Deydry and any other designated managers) can always edit ALFT forms.
+    let isKaiserManager = false;
     if (!isAdmin) {
+      try {
+        const userDoc = await adminDb.collection('users').doc(uid).get();
+        const userData = userDoc.exists ? (userDoc.data() as any) : null;
+        isKaiserManager = Boolean(userData?.isKaiserAssignmentManager);
+      } catch {
+        isKaiserManager = false;
+      }
+    }
+
+    if (!isAdmin && !isKaiserManager) {
       const collab = intake?.alftCollaboration || {};
       const editableUids = Array.isArray(collab?.editableUids)
         ? collab.editableUids.map((x: any) => clean(x, 160)).filter(Boolean)
@@ -100,12 +112,17 @@ export async function POST(req: NextRequest) {
       const createdByUid = clean(collab?.createdByUid, 160);
       const allowAll = Boolean(collab?.allowAllPartiesEdit);
       const uploaderEmail = clean(intake?.uploaderEmail, 240).toLowerCase();
+      const rnEmail = clean(intake?.alftRnEmail, 240).toLowerCase();
+      const staffEmail = clean(intake?.alftStaffEmail, 240).toLowerCase();
       const permitted =
         (allowAll && editableUids.includes(uid)) ||
         [uploaderUid, rnUid, staffUid, createdByUid].includes(uid) ||
-        (email && uploaderEmail && email === uploaderEmail);
+        (email && [uploaderEmail, rnEmail, staffEmail].includes(email));
       if (!permitted) {
-        return NextResponse.json({ success: false, error: 'You do not have ALFT edit permission for this intake.' }, { status: 403 });
+        return NextResponse.json(
+          { success: false, error: 'You do not have ALFT edit permission for this intake.' },
+          { status: 403 }
+        );
       }
     }
 
@@ -124,12 +141,14 @@ export async function POST(req: NextRequest) {
       .slice(0, 80);
     if (changedExactQuestionIds.length > 0) changedFields.push('exactPacketAnswers');
 
+    const editorRole = isAdmin ? 'admin' : isKaiserManager ? 'kaiser_manager' : 'staff';
     const historyEntry = {
       editedAt: admin.firestore.FieldValue.serverTimestamp(),
       editedAtIso: new Date().toISOString(),
       editedByUid: uid || null,
       editedByName: name || email || 'Staff',
       editedByEmail: email || null,
+      editedByRole: editorRole,
       changedFields,
       changedExactQuestionIds,
       changedExactQuestionCount: changedExactQuestionIds.length,

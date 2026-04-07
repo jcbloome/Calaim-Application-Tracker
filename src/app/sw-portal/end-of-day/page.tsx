@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
-import { SWTopNav } from '@/components/sw/SWTopNav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -207,8 +206,6 @@ export default function SwEndOfDayPage() {
 
   return (
     <div className="container mx-auto max-w-6xl space-y-4 p-4 sm:p-6">
-      <SWTopNav />
-
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">End of day checklist</h1>

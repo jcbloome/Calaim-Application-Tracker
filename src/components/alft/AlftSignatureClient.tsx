@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useAuth, useUser } from '@/firebase';
+import { useAuth, useFirestore, useUser } from '@/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, RefreshCw, CheckCircle2, Download, PenTool, ShieldAlert } from 'lucide-react';
+import { Loader2, RefreshCw, CheckCircle2, Download, PenTool, ShieldAlert, BookUser } from 'lucide-react';
 
 type LookupResponse = {
   success: boolean;
@@ -49,6 +50,7 @@ function openBlobDownload(bytes: Blob, filename: string) {
 export function AlftSignatureClient({ token }: { token: string }) {
   const { toast } = useToast();
   const auth = useAuth();
+  const firestore = useFirestore();
   const { user, isUserLoading } = useUser();
 
   const [loading, setLoading] = useState(true);
@@ -57,6 +59,8 @@ export function AlftSignatureClient({ token }: { token: string }) {
   const [error, setError] = useState<string>('');
 
   const [signedName, setSignedName] = useState('');
+  const [licenseNumber, setLicenseNumber] = useState('');
+  const [profileSaved, setProfileSaved] = useState(false); // true when values were loaded from saved profile
   const [consent, setConsent] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -159,6 +163,38 @@ export function AlftSignatureClient({ token }: { token: string }) {
     };
   };
 
+  // Load the signer's saved profile (name + license) from Firestore users/{uid}.alftSigningProfile.
+  // This runs once when the user is known so fields are pre-populated on every future signing.
+  const loadSigningProfile = async (uid: string) => {
+    if (!firestore) return;
+    try {
+      const snap = await getDoc(doc(firestore, 'users', uid));
+      if (!snap.exists()) return;
+      const profile = (snap.data() as any)?.alftSigningProfile;
+      if (!profile) return;
+      const savedName = String(profile.printedName || '').trim();
+      const savedLicense = String(profile.licenseNumber || '').trim();
+      if (savedName) { setSignedName(savedName); setProfileSaved(true); }
+      if (savedLicense) { setLicenseNumber(savedLicense); setProfileSaved(true); }
+    } catch {
+      // non-fatal — user can still type manually
+    }
+  };
+
+  // Persist the signer's name + license to Firestore so future signings are pre-filled.
+  const saveSigningProfile = async (uid: string, printedName: string, license: string) => {
+    if (!firestore) return;
+    try {
+      await setDoc(
+        doc(firestore, 'users', uid),
+        { alftSigningProfile: { printedName, licenseNumber: license, savedAt: new Date().toISOString() } },
+        { merge: true }
+      );
+    } catch {
+      // non-fatal
+    }
+  };
+
   const load = async () => {
     if (!auth?.currentUser) return;
     setLoading(true);
@@ -173,6 +209,7 @@ export function AlftSignatureClient({ token }: { token: string }) {
       const json = (await res.json().catch(() => ({}))) as LookupResponse;
       if (!res.ok || !json?.success) throw new Error(String(json?.error || `Lookup failed (HTTP ${res.status})`));
       setData(json);
+      // Only fall back to display name if the profile loader hasn't already set a name.
       const defaultName = String(auth.currentUser.displayName || auth.currentUser.email || '').trim();
       setSignedName((prev) => (prev ? prev : defaultName));
     } catch (e: any) {
@@ -186,6 +223,8 @@ export function AlftSignatureClient({ token }: { token: string }) {
   useEffect(() => {
     if (isUserLoading) return;
     if (!user) return;
+    // Load saved profile first so fields are ready before the lookup response arrives.
+    void loadSigningProfile(user.uid);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUserLoading, user?.uid]);
@@ -206,8 +245,13 @@ export function AlftSignatureClient({ token }: { token: string }) {
     if (!auth?.currentUser) return;
     if (!canSign) return;
     const name = signedName.trim();
+    const license = licenseNumber.trim();
     if (!name) {
-      toast({ title: 'Enter your name', description: 'Please type your name exactly as you want it recorded.', variant: 'destructive' });
+      toast({ title: 'Enter your printed name', description: 'Please type your full name exactly as you want it recorded.', variant: 'destructive' });
+      return;
+    }
+    if (!license) {
+      toast({ title: 'License number required', description: 'Please enter your professional license number.', variant: 'destructive' });
       return;
     }
     if (!consent) {
@@ -233,13 +277,19 @@ export function AlftSignatureClient({ token }: { token: string }) {
           idToken,
           token,
           signedName: name,
+          licenseNumber: license,
           signaturePngDataUrl: sigUrl,
           consent: true,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !json?.success) throw new Error(String(json?.error || `Sign failed (HTTP ${res.status})`));
-      toast({ title: 'Signed', description: 'Your signature was recorded successfully.' });
+      // Persist name + license so next signing is pre-filled.
+      if (auth.currentUser?.uid) {
+        void saveSigningProfile(auth.currentUser.uid, name, license);
+        setProfileSaved(true);
+      }
+      toast({ title: 'Signed', description: 'Your signature was recorded. Name and license number have been saved for next time.' });
       clearCanvas();
       setConsent(false);
       await load();
@@ -359,9 +409,47 @@ export function AlftSignatureClient({ token }: { token: string }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <Label htmlFor="signed-name">Printed name</Label>
-            <Input id="signed-name" value={signedName} onChange={(e) => setSignedName(e.target.value)} disabled={!canSign || submitting} />
+          {/* Saved profile banner */}
+          {profileSaved && (
+            <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+              <BookUser className="h-4 w-4 shrink-0 text-green-600" />
+              <span>Your name and license number were remembered from your last signing. Just draw your signature below.</span>
+              <button
+                className="ml-auto shrink-0 text-xs underline text-green-700 hover:text-green-900"
+                onClick={() => setProfileSaved(false)}
+                type="button"
+              >
+                Edit
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="signed-name">Printed full name <span className="text-red-500">*</span></Label>
+              <Input
+                id="signed-name"
+                value={signedName}
+                onChange={(e) => { setSignedName(e.target.value); setProfileSaved(false); }}
+                placeholder="Full legal name"
+                disabled={!canSign || submitting}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="license-number">License number <span className="text-red-500">*</span></Label>
+              <Input
+                id="license-number"
+                value={licenseNumber}
+                onChange={(e) => { setLicenseNumber(e.target.value); setProfileSaved(false); }}
+                placeholder={data?.signerRole === 'rn' ? 'e.g. RN-123456' : 'e.g. MSW-789012'}
+                disabled={!canSign || submitting}
+              />
+            </div>
+          </div>
+          <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">Date of submission: </span>
+            <span className="font-medium">{new Date().toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+            <span className="text-xs text-muted-foreground ml-2">(auto-recorded at time of signing)</span>
           </div>
 
           <div className="space-y-2">

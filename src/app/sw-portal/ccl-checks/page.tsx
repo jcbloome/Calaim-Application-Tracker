@@ -7,7 +7,6 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
-import { SWTopNav } from '@/components/sw/SWTopNav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -257,8 +256,6 @@ export default function CclChecksPage() {
 
   return (
     <div className="container mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
-      <SWTopNav />
-
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -266,7 +263,7 @@ export default function CclChecksPage() {
             CCL Checks
           </h1>
           <p className="text-muted-foreground">
-            Monthly Community Care Licensing check per RCFE. Complete this before questionnaire/sign-off for the RCFE.
+            Monthly Community Care Licensing check per RCFE. Can be done before or after the visit — required before submitting your claim.
           </p>
         </div>
         <div className="flex items-center gap-2">

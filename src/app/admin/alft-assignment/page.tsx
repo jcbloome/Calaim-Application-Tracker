@@ -3,69 +3,71 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
-import { useAuth, useFirestore, useStorage } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, RefreshCw } from 'lucide-react';
-import { arrayUnion, collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  Loader2,
+  RefreshCw,
+  UserCheck,
+} from 'lucide-react';
+import {
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 
-type LegacyDocType = '602' | 'med_list' | 'snf_facesheet';
+// ── Types ──────────────────────────────────────────────────────────────────────
 
-type KaiserAlftMember = {
+type KaiserMember = {
   id: string;
   memberName: string;
+  memberFirstName: string;
+  memberLastName: string;
   memberMrn: string;
+  birthDate: string;
   kaiserStatus: string;
   alftAssigned: string;
   ispCurrentLocation: string;
   ispContactPhone: string;
   ispContactEmail: string;
   ispContactConfirmDate: string;
+  socialWorkerAssigned: string;
 };
 
-type TrackerRecord = {
+type SocialWorker = {
+  uid: string;
+  email: string;
+  displayName: string;
+  isActive: boolean;
+};
+
+type AlftAssignment = {
   memberId: string;
-  docs?: Partial<
-    Record<
-      LegacyDocType,
-      {
-        fileName: string;
-        downloadURL: string;
-      }
-    >
-  >;
-  docUploads?: Array<{
-    fileName: string;
-    downloadURL: string;
-    docType?: LegacyDocType | 'other';
-  }>;
+  memberName: string;
+  assignedSwEmail: string;
+  assignedSwName: string;
+  status: 'assigned' | 'in_progress' | 'submitted' | 'completed';
+  assignedAt: any;
+  assignedByEmail: string;
+  assignedByName: string;
 };
 
-const LEGACY_DOC_OPTIONS: Array<{ key: LegacyDocType; label: string }> = [
-  { key: '602', label: '602' },
-  { key: 'med_list', label: 'Med list' },
-  { key: 'snf_facesheet', label: 'SNF facesheet' },
-];
-
-const sanitizePathSegment = (value: string) =>
-  String(value || '')
-    .trim()
-    .replace(/[^\w.\- ]+/g, '_')
-    .replace(/\s+/g, '_')
-    .slice(0, 160);
-
-const inferLegacyDocType = (fileName: string): LegacyDocType | 'other' => {
-  const n = String(fileName || '').toLowerCase();
-  if (n.includes('602')) return '602';
-  if (n.includes('med') && n.includes('list')) return 'med_list';
-  if (n.includes('snf') && (n.includes('face') || n.includes('sheet'))) return 'snf_facesheet';
-  return 'other';
-};
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 const parseFlexibleDate = (value: string): Date | null => {
   const raw = String(value || '').trim();
@@ -84,78 +86,171 @@ const isWithinPastDays = (value: string, days: number): boolean => {
   const today = new Date();
   const a = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
   const b = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
-  const diffDays = Math.floor((a - b) / (24 * 60 * 60 * 1000));
-  return diffDays >= 0 && diffDays <= days;
+  return Math.floor((a - b) / 86400000) <= days;
 };
 
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  assigned: { label: 'Assigned', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+  in_progress: { label: 'In Progress', color: 'bg-amber-100 text-amber-800 border-amber-200' },
+  submitted: { label: 'Submitted', color: 'bg-green-100 text-green-800 border-green-200' },
+  completed: { label: 'Completed', color: 'bg-gray-100 text-gray-700 border-gray-200' },
+};
+
+// ── Page ───────────────────────────────────────────────────────────────────────
+
 export default function AdminAlftAssignmentPage() {
-  const { isAdmin, isLoading, user } = useAdmin();
-  const { toast } = useToast();
+  const { isAdmin, isLoading: adminLoading, user } = useAdmin();
   const auth = useAuth();
-  const storage = useStorage();
   const firestore = useFirestore();
+  const { toast } = useToast();
 
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [members, setMembers] = useState<KaiserAlftMember[]>([]);
+  const [members, setMembers] = useState<KaiserMember[]>([]);
+  const [socialWorkers, setSocialWorkers] = useState<SocialWorker[]>([]);
+  const [assignments, setAssignments] = useState<Record<string, AlftAssignment>>({});
   const [search, setSearch] = useState('');
-  const [trackerRecords, setTrackerRecords] = useState<Record<string, TrackerRecord>>({});
-  const [uploadingKey, setUploadingKey] = useState('');
-  const [pendingSingle, setPendingSingle] = useState<Record<string, File | null>>({});
-  const [pendingMulti, setPendingMulti] = useState<Record<string, File[]>>({});
+  const [assigning, setAssigning] = useState<string | null>(null); // memberId being saved
+  const [pickedSw, setPickedSw] = useState<Record<string, string>>({}); // memberId → swEmail
+
+  // ── Load Kaiser members (RN Visit Needed) ─────────────────────────────────────
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/kaiser-members');
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) throw new Error(String(data?.error || `Load failed (HTTP ${res.status})`));
-      const next = (Array.isArray(data?.members) ? data.members : [])
+      const res = await fetch('/api/kaiser-members', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      const next: KaiserMember[] = (Array.isArray(data?.members) ? data.members : [])
         .filter((m: any) => String(m?.Kaiser_Status || '').trim().toLowerCase() === 'rn visit needed')
         .map((m: any) => ({
-          id: String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim(),
+          id: String(m?.Client_ID2 || m?.id || '').trim(),
           memberName: String(m?.memberName || '').trim() || 'Member',
+          memberFirstName: String(m?.memberFirstName || '').trim(),
+          memberLastName: String(m?.memberLastName || '').trim(),
           memberMrn: String(m?.memberMrn || m?.MCP_CIN || '').trim(),
+          birthDate: String(m?.Birth_Date || m?.birthDate || '').trim(),
           kaiserStatus: String(m?.Kaiser_Status || '').trim(),
           alftAssigned: String(m?.ALFT_Assigned || '').trim(),
           ispCurrentLocation: String(m?.ISP_Current_Location || '').trim(),
           ispContactPhone: String(m?.ISP_Contact_Phone || '').trim(),
           ispContactEmail: String(m?.ISP_Contact_Email || '').trim(),
           ispContactConfirmDate: String(m?.ISP_Contact_Confirm_Field || '').trim(),
+          socialWorkerAssigned: String(m?.Social_Worker_Assigned || '').trim(),
         }))
-        .filter((m: KaiserAlftMember) => Boolean(m.id))
-        .sort((a: KaiserAlftMember, b: KaiserAlftMember) => a.memberName.localeCompare(b.memberName));
+        .filter((m: KaiserMember) => Boolean(m.id))
+        .sort((a: KaiserMember, b: KaiserMember) => a.memberName.localeCompare(b.memberName));
+
       setMembers(next);
       setHasLoadedOnce(true);
     } catch (e: any) {
-      setMembers([]);
+      toast({ title: 'Could not load members', description: e?.message || 'Retry.', variant: 'destructive' });
       setHasLoadedOnce(true);
-      toast({ title: 'Could not load members', description: e?.message || 'Try again.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   }, [toast]);
 
+  // ── Load social workers from Firestore ─────────────────────────────────────────
+
+  const loadSocialWorkers = useCallback(async () => {
+    if (!firestore) return;
+    try {
+      const snap = await getDocs(
+        query(collection(firestore, 'socialWorkers'), where('isActive', '==', true))
+      );
+      const list: SocialWorker[] = snap.docs
+        .map((d) => {
+          const data = d.data() as any;
+          return {
+            uid: d.id,
+            email: String(data?.email || '').trim().toLowerCase(),
+            displayName: String(data?.displayName || data?.email || 'Social Worker').trim(),
+            isActive: Boolean(data?.isActive),
+          };
+        })
+        .filter((sw) => Boolean(sw.email))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+      setSocialWorkers(list);
+    } catch {
+      // best-effort
+    }
+  }, [firestore]);
+
+  // ── Live-listen to alft_assignments ──────────────────────────────────────────
+
   useEffect(() => {
     if (!firestore || !isAdmin) return;
-    const unsub = onSnapshot(collection(firestore, 'alft_member_tracker'), (snap) => {
-      const next: Record<string, TrackerRecord> = {};
+    const unsub = onSnapshot(collection(firestore, 'alft_assignments'), (snap) => {
+      const next: Record<string, AlftAssignment> = {};
       snap.docs.forEach((d) => {
-        const row = (d.data() || {}) as any;
-        const memberId = String(row?.memberId || d.id || '').trim();
-        if (!memberId) return;
-        next[memberId] = { memberId, ...(row as any) };
+        const data = d.data() as AlftAssignment;
+        if (data.memberId) next[data.memberId] = data;
       });
-      setTrackerRecords(next);
+      setAssignments(next);
     });
     return () => unsub();
   }, [firestore, isAdmin]);
 
-  const filtered = useMemo(() => {
-    const q = String(search || '').trim().toLowerCase();
-    return members.filter((m) => !q || m.memberName.toLowerCase().includes(q) || m.memberMrn.toLowerCase().includes(q) || m.alftAssigned.toLowerCase().includes(q));
-  }, [members, search]);
+  useEffect(() => {
+    if (!adminLoading && isAdmin) {
+      void loadSocialWorkers();
+    }
+  }, [adminLoading, isAdmin, loadSocialWorkers]);
+
+  // ── Assign SW to member ───────────────────────────────────────────────────────
+
+  const assignSw = useCallback(
+    async (member: KaiserMember) => {
+      const swEmail = pickedSw[member.id];
+      if (!swEmail || !firestore || !auth?.currentUser) return;
+      const sw = socialWorkers.find((s) => s.email === swEmail);
+      if (!sw) return;
+
+      setAssigning(member.id);
+      try {
+        const adminEmail = String((user as any)?.email || auth.currentUser.email || '').trim().toLowerCase();
+        const adminName = String((user as any)?.displayName || adminEmail).trim();
+
+        const assignment: AlftAssignment & Record<string, any> = {
+          memberId: member.id,
+          memberName: member.memberName,
+          memberFirstName: member.memberFirstName,
+          memberLastName: member.memberLastName,
+          memberMrn: member.memberMrn,
+          birthDate: member.birthDate,
+          ispCurrentLocation: member.ispCurrentLocation,
+          ispContactPhone: member.ispContactPhone,
+          ispContactEmail: member.ispContactEmail,
+          ispContactConfirmDate: member.ispContactConfirmDate,
+          kaiserStatus: member.kaiserStatus,
+          assignedSwEmail: sw.email,
+          assignedSwName: sw.displayName,
+          assignedByEmail: adminEmail,
+          assignedByName: adminName,
+          assignedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          status: 'assigned',
+        };
+
+        await setDoc(doc(firestore, 'alft_assignments', member.id), assignment, { merge: true });
+
+        toast({
+          title: 'Assignment saved',
+          description: `${member.memberName} assigned to ${sw.displayName}.`,
+        });
+      } catch (e: any) {
+        toast({ title: 'Assignment failed', description: e?.message || 'Try again.', variant: 'destructive' });
+      } finally {
+        setAssigning(null);
+      }
+    },
+    [auth, firestore, pickedSw, socialWorkers, toast, user]
+  );
+
+  // ── Sync from Caspio ──────────────────────────────────────────────────────────
 
   const syncFromCaspio = useCallback(async () => {
     if (!auth?.currentUser) return;
@@ -167,112 +262,42 @@ export default function AdminAlftAssignmentPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken, mode: 'full' }),
       });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) throw new Error(String(data?.error || `Sync failed (HTTP ${res.status})`));
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `HTTP ${res.status}`);
       await loadMembers();
-      toast({ title: 'Sync complete', description: 'ALFT assignment members refreshed from Caspio.' });
+      toast({ title: 'Sync complete', description: 'Members refreshed from Caspio.' });
     } catch (e: any) {
-      toast({ title: 'Sync failed', description: e?.message || 'Could not sync from Caspio.', variant: 'destructive' });
+      toast({ title: 'Sync failed', description: e?.message || 'Could not sync.', variant: 'destructive' });
     } finally {
       setSyncing(false);
     }
   }, [auth, loadMembers, toast]);
 
-  const uploadOne = useCallback(
-    async (member: KaiserAlftMember, docType: LegacyDocType) => {
-      if (!firestore || !storage || !user?.uid) return;
-      const key = `${member.id}:${docType}`;
-      const file = pendingSingle[key];
-      if (!file) return;
-      setUploadingKey(key);
-      try {
-        const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const path = `admin_uploads/alft-legacy/${member.id}/${docType}_${ts}_${sanitizePathSegment(file.name)}`;
-        const task = uploadBytesResumable(ref(storage, path), file);
-        const downloadURL = await new Promise<string>((resolve, reject) => {
-          task.on('state_changed', () => {}, reject, async () => resolve(await getDownloadURL(task.snapshot.ref)));
-        });
-        await setDoc(
-          doc(firestore, 'alft_member_tracker', member.id),
-          {
-            memberId: member.id,
-            memberName: member.memberName,
-            memberMrn: member.memberMrn || null,
-            docs: {
-              [docType]: {
-                fileName: file.name,
-                downloadURL,
-                storagePath: path,
-                uploadedAtIso: new Date().toISOString(),
-                uploadedByName: String((user as any)?.displayName || '').trim() || null,
-                uploadedByEmail: String((user as any)?.email || '').trim() || null,
-              },
-            },
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-        setPendingSingle((prev) => ({ ...prev, [key]: null }));
-      } finally {
-        setUploadingKey('');
-      }
-    },
-    [firestore, pendingSingle, storage, user?.uid]
+  // ── Derived ───────────────────────────────────────────────────────────────────
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return members.filter(
+      (m) =>
+        !q ||
+        m.memberName.toLowerCase().includes(q) ||
+        m.memberMrn.toLowerCase().includes(q) ||
+        m.ispCurrentLocation.toLowerCase().includes(q) ||
+        (assignments[m.id]?.assignedSwName || '').toLowerCase().includes(q)
+    );
+  }, [assignments, members, search]);
+
+  const assignedCount = useMemo(() => members.filter((m) => Boolean(assignments[m.id])).length, [assignments, members]);
+  const submittedCount = useMemo(
+    () => members.filter((m) => ['submitted', 'completed'].includes(assignments[m.id]?.status || '')).length,
+    [assignments, members]
   );
 
-  const uploadBatch = useCallback(
-    async (member: KaiserAlftMember) => {
-      if (!firestore || !storage || !user?.uid) return;
-      const files = pendingMulti[member.id] || [];
-      if (files.length === 0) return;
-      const key = `${member.id}:multi`;
-      setUploadingKey(key);
-      try {
-        const rows: any[] = [];
-        const docsPatch: Record<string, any> = {};
-        for (const file of files.slice(0, 15)) {
-          const docType = inferLegacyDocType(file.name);
-          const ts = new Date().toISOString().replace(/[:.]/g, '-');
-          const path = `admin_uploads/alft-legacy/${member.id}/${docType}_${ts}_${sanitizePathSegment(file.name)}`;
-          const task = uploadBytesResumable(ref(storage, path), file);
-          const downloadURL = await new Promise<string>((resolve, reject) => {
-            task.on('state_changed', () => {}, reject, async () => resolve(await getDownloadURL(task.snapshot.ref)));
-          });
-          const row = {
-            fileName: file.name,
-            downloadURL,
-            storagePath: path,
-            uploadedAtIso: new Date().toISOString(),
-            uploadedByName: String((user as any)?.displayName || '').trim() || null,
-            uploadedByEmail: String((user as any)?.email || '').trim() || null,
-            docType,
-          };
-          rows.push(row);
-          if (docType !== 'other') docsPatch[docType] = row;
-        }
-        await setDoc(
-          doc(firestore, 'alft_member_tracker', member.id),
-          {
-            memberId: member.id,
-            memberName: member.memberName,
-            memberMrn: member.memberMrn || null,
-            docUploads: arrayUnion(...rows),
-            docs: docsPatch,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-        setPendingMulti((prev) => ({ ...prev, [member.id]: [] }));
-      } finally {
-        setUploadingKey('');
-      }
-    },
-    [firestore, pendingMulti, storage, user?.uid]
-  );
+  // ── Auth guard ────────────────────────────────────────────────────────────────
 
-  if (isLoading) {
+  if (adminLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
+      <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     );
@@ -280,13 +305,16 @@ export default function AdminAlftAssignmentPage() {
 
   if (!isAdmin) {
     return (
-      <Card>
+      <Card className="max-w-md mx-auto mt-12">
         <CardHeader>
           <CardTitle>Admin access required</CardTitle>
+          <CardDescription>You must be an admin to view this page.</CardDescription>
         </CardHeader>
       </Card>
     );
   }
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
     <div className="container mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
@@ -294,114 +322,187 @@ export default function AdminAlftAssignmentPage() {
         <CardHeader>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <CardTitle>ALFT Assignment Queue</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <ClipboardList className="h-5 w-5" />
+                ALFT Assignment Queue
+              </CardTitle>
               <CardDescription>
-                Use this page for Kaiser `RN Visit Needed` assignment, ISP contact freshness checks, and legacy ALFT document collection.
+                Assign Kaiser members (RN Visit Needed) to social workers for the ALFT assessment.
               </CardDescription>
             </div>
             <Button variant="outline" asChild>
-              <Link href="/admin/alft-tracker">Open ALFT Workflow Intake</Link>
+              <Link href="/admin/alft-tracker">Open ALFT Workflow Intake →</Link>
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3 overflow-x-auto">
-          <div className="flex gap-2">
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search member / MRN / assigned..." />
-            <Button variant="outline" onClick={() => void loadMembers()} disabled={loading || syncing}>
-              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+
+        <CardContent className="space-y-4">
+          {/* Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, MRN, location, or SW…"
+              className="w-60"
+            />
+            <Button variant="outline" size="sm" onClick={() => void loadMembers()} disabled={loading || syncing}>
+              {loading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
               Load from Cache
             </Button>
-            <Button variant="outline" onClick={() => void syncFromCaspio()} disabled={syncing || loading}>
-              {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-              Sync from Caspio + Load
+            <Button variant="outline" size="sm" onClick={() => void syncFromCaspio()} disabled={syncing || loading}>
+              {syncing ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+              Sync from Caspio
             </Button>
-            <Badge variant="secondary">{filtered.length} member(s)</Badge>
-          </div>
-          {!hasLoadedOnce ? (
-            <div className="text-sm text-muted-foreground">
-              Manual mode: this page does not auto-sync or auto-load. Click `Load from Cache` or `Sync from Caspio + Load`.
+            <div className="flex gap-2 ml-auto text-sm text-muted-foreground">
+              <Badge variant="outline">{filtered.length} shown</Badge>
+              <Badge variant="outline">{assignedCount} assigned</Badge>
+              <Badge variant="outline" className="text-green-700 border-green-300">{submittedCount} submitted</Badge>
             </div>
-          ) : loading ? (
-            <div className="text-sm text-muted-foreground">Loading members...</div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead>ALFT assigned</TableHead>
-                  <TableHead>ISP contact details</TableHead>
-                  <TableHead>Legacy docs</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((m) => {
-                  const tracker = trackerRecords[m.id];
-                  const fresh = isWithinPastDays(m.ispContactConfirmDate, 3);
-                  return (
-                    <TableRow key={m.id}>
-                      <TableCell>
-                        <div className="font-medium">{m.memberName}</div>
-                        <div className="text-xs text-muted-foreground font-mono">{m.memberMrn || 'No MRN'}</div>
-                      </TableCell>
-                      <TableCell>{m.alftAssigned || 'Unassigned'}</TableCell>
-                      <TableCell className="min-w-[320px] space-y-1">
-                        {m.ispContactConfirmDate ? (
-                          <Badge className={fresh ? 'bg-green-600 text-white hover:bg-green-600' : 'bg-red-600 text-white hover:bg-red-600'}>
-                            {fresh ? 'ISP contact confirm <= 3 days' : 'ISP contact confirm > 3 days'}
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline">ISP contact confirm missing</Badge>
-                        )}
-                        <div className="text-xs text-muted-foreground">Location: {m.ispCurrentLocation || '—'}</div>
-                        <div className="text-xs text-muted-foreground">Phone: {m.ispContactPhone || '—'}</div>
-                        <div className="text-xs text-muted-foreground">Email: {m.ispContactEmail || '—'}</div>
-                        <div className="text-xs text-muted-foreground">Confirm date: {m.ispContactConfirmDate || '—'}</div>
-                      </TableCell>
-                      <TableCell className="min-w-[360px]">
-                        <div className="space-y-3">
-                          <div className="rounded border p-2 space-y-2 bg-muted/20">
-                            <div className="text-xs font-semibold">Upload multiple docs (batch)</div>
-                            <Input type="file" multiple onChange={(e) => setPendingMulti((p) => ({ ...p, [m.id]: Array.from(e.target.files || []) }))} />
-                            <Button size="sm" variant="outline" onClick={() => void uploadBatch(m)} disabled={uploadingKey === `${m.id}:multi`}>
-                              {uploadingKey === `${m.id}:multi` ? 'Uploading batch...' : `Upload ${pendingMulti[m.id]?.length || 0} selected`}
-                            </Button>
-                            {(tracker?.docUploads || []).slice(-5).reverse().map((f, idx) => (
-                              <a key={`${f.downloadURL}-${idx}`} className="text-xs underline text-blue-700 block truncate" href={f.downloadURL} target="_blank" rel="noreferrer">
-                                {f.fileName} {f.docType ? `(${f.docType})` : ''}
-                              </a>
-                            ))}
+          </div>
+
+          {!hasLoadedOnce && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Click <strong>Load from Cache</strong> to view RN Visit Needed members, or <strong>Sync from Caspio</strong> to pull fresh data.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasLoadedOnce && !loading && filtered.length === 0 && (
+            <div className="py-10 text-center text-muted-foreground text-sm">
+              No members found with Kaiser Status = "RN Visit Needed".
+            </div>
+          )}
+
+          {hasLoadedOnce && (
+            <div className="overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-52">Member</TableHead>
+                    <TableHead>ISP Info</TableHead>
+                    <TableHead className="w-56">Assign to SW</TableHead>
+                    <TableHead className="w-36">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((m) => {
+                    const assignment = assignments[m.id];
+                    const fresh = isWithinPastDays(m.ispContactConfirmDate, 3);
+                    const statusMeta = STATUS_LABELS[assignment?.status || ''] || null;
+                    const currentSwEmail = assignment?.assignedSwEmail || '';
+
+                    return (
+                      <TableRow key={m.id} className={assignment?.status === 'submitted' ? 'bg-green-50/50' : ''}>
+                        {/* Member info */}
+                        <TableCell>
+                          <div className="font-medium text-sm">{m.memberName}</div>
+                          {m.memberMrn && <div className="text-xs text-muted-foreground font-mono">MRN: {m.memberMrn}</div>}
+                          {m.birthDate && (
+                            <div className="text-xs text-muted-foreground">
+                              DOB: {new Date(m.birthDate + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </div>
+                          )}
+                        </TableCell>
+
+                        {/* ISP contact */}
+                        <TableCell className="min-w-[260px]">
+                          <div className="space-y-0.5 text-xs">
+                            {m.ispCurrentLocation && (
+                              <div className="font-medium text-sm truncate max-w-[240px]">{m.ispCurrentLocation}</div>
+                            )}
+                            {m.ispContactPhone && <div className="text-muted-foreground">📞 {m.ispContactPhone}</div>}
+                            {m.ispContactEmail && <div className="text-muted-foreground truncate max-w-[240px]">✉ {m.ispContactEmail}</div>}
+                            {m.ispContactConfirmDate ? (
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] ${
+                                  fresh
+                                    ? 'text-green-700 border-green-300 bg-green-50'
+                                    : 'text-red-700 border-red-300 bg-red-50'
+                                }`}
+                              >
+                                Contact confirmed: {m.ispContactConfirmDate}
+                                {fresh ? ' ✓' : ' — outdated'}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] text-muted-foreground">No contact confirm date</Badge>
+                            )}
                           </div>
-                          {LEGACY_DOC_OPTIONS.map((opt) => {
-                            const key = `${m.id}:${opt.key}`;
-                            const row = tracker?.docs?.[opt.key];
-                            return (
-                              <div key={opt.key} className="rounded border p-2 space-y-2">
-                                <div className="text-xs font-semibold">{opt.label}</div>
-                                {row?.downloadURL ? (
-                                  <a className="text-xs underline text-blue-700 block truncate" href={row.downloadURL} target="_blank" rel="noreferrer">
-                                    {row.fileName || `Open ${opt.label}`}
-                                  </a>
-                                ) : (
-                                  <div className="text-xs text-muted-foreground">No file uploaded yet</div>
-                                )}
-                                <Input type="file" onChange={(e) => setPendingSingle((p) => ({ ...p, [key]: e.target.files?.[0] || null }))} />
-                                <Button size="sm" onClick={() => void uploadOne(m, opt.key)} disabled={uploadingKey === key}>
-                                  {uploadingKey === key ? 'Uploading...' : `Upload ${opt.label}`}
-                                </Button>
+                        </TableCell>
+
+                        {/* SW assignment picker */}
+                        <TableCell>
+                          <div className="space-y-2">
+                            <Select
+                              value={pickedSw[m.id] || currentSwEmail || ''}
+                              onValueChange={(val) => setPickedSw((p) => ({ ...p, [m.id]: val }))}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Select social worker…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {socialWorkers.map((sw) => (
+                                  <SelectItem key={sw.email} value={sw.email} className="text-xs">
+                                    {sw.displayName}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              size="sm"
+                              variant={currentSwEmail ? 'outline' : 'default'}
+                              className="h-7 text-xs w-full"
+                              disabled={
+                                assigning === m.id ||
+                                (!pickedSw[m.id] && !currentSwEmail) ||
+                                (pickedSw[m.id] === currentSwEmail && Boolean(currentSwEmail))
+                              }
+                              onClick={() => void assignSw(m)}
+                            >
+                              {assigning === m.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <UserCheck className="h-3 w-3 mr-1" />
+                              )}
+                              {currentSwEmail ? 'Re-assign' : 'Assign'}
+                            </Button>
+                            {currentSwEmail && assignment?.assignedSwName && (
+                              <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                {assignment.assignedSwName}
                               </div>
-                            );
-                          })}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        {/* Status */}
+                        <TableCell>
+                          {statusMeta ? (
+                            <div className="space-y-1">
+                              <Badge variant="outline" className={`text-[11px] ${statusMeta.color}`}>
+                                {statusMeta.label}
+                              </Badge>
+                              {assignment?.assignedAt?.toDate && (
+                                <div className="text-[10px] text-muted-foreground">
+                                  {assignment.assignedAt.toDate().toLocaleDateString()}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Unassigned</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
     </div>
   );
 }
-

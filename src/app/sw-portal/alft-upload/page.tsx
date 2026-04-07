@@ -1,1732 +1,852 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { useAuth, useFirestore, useStorage } from '@/firebase';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAuth, useFirestore } from '@/firebase';
+import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, UploadCloud, Info } from 'lucide-react';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { ExactAlftQuestionnaire, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
-import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  Eye,
+  FileText,
+  Loader2,
+  Pencil,
+  RefreshCw,
+  Send,
+  User,
+} from 'lucide-react';
 
-type UploadedFile = { fileName: string; downloadURL: string; storagePath: string; uploadedAtIso: string };
-type SwAssignedAlftMember = {
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type QuestionType = 'text' | 'textarea' | 'radio' | 'select' | 'checkboxGroup';
+type AnswerValue = string | string[];
+type Question = {
+  id: string;
+  label: string;
+  type: QuestionType;
+  rows?: number;
+  options?: Array<{ value: string; label: string }>;
+};
+type SourcePage = { id: string; title: string; questions: Question[] };
+
+type KaiserMember = {
   id: string;
   memberName: string;
-  memberFirstName: string;
-  memberLastName: string;
-  memberMrn: string;
-  kaiserStatus: string;
-  alftAssigned: string;
-  ispCurrentLocation: string;
-  ispContactPhone: string;
-  ispContactEmail: string;
-  ispContactConfirmDate: string;
+  memberFirstName?: string;
+  memberLastName?: string;
+  memberMrn?: string;
+  birthDate?: string;
+  kaiserStatus?: string;
+  alftAssigned?: string;
+  ispCurrentLocation?: string;
+  ispContactPhone?: string;
+  ispContactEmail?: string;
+  ispContactConfirmDate?: string;
+  // from alft_assignments Firestore doc
+  assignedSwEmail?: string;
+  assignedSwName?: string;
+  assignmentStatus?: string;
 };
-type TrackerDocs = Partial<
-  Record<
-    '602' | 'med_list' | 'snf_facesheet',
-    {
-      fileName: string;
-      downloadURL: string;
-    }
-  >
->;
-type TrackerRow = {
-  memberId: string;
-  docs?: TrackerDocs;
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
+
+const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; title: string }> = [
+  { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
+  { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
+  { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
+  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'General Health, Sensory, and Communication' },
+  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'Activities of Daily Living' },
+  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'Instrumental Activities of Daily Living' },
+  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'Health Conditions' },
+  { number: 8, sourceId: 'page7_8', prefix: 'p8_', title: 'Therapies + Specialty Care' },
+  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'Mental Health' },
+  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'Nutrition + Behavior Follow-Up' },
+  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'Medication + Advance Directive + Environment' },
+  { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
+  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'Medication and Substance Use' },
+];
+const TOTAL_PAGES = PAGE_LAYOUT.length;
+
+const MOVED_TEXT_FIELDS: Array<{
+  questionId: string;
+  targetPage: number;
+  afterQuestionId: string;
+  label: string;
+}> = [
+  { questionId: 'p6_notes_summary', targetPage: 3, afterQuestionId: 'p3_cognitive_problems_present', label: 'SECTION B. Notes and Summary:' },
+  { questionId: 'p6_section_d_text', targetPage: 5, afterQuestionId: 'p5_dme', label: 'SECTION D. Notes and Summary:' },
+  { questionId: 'p6_section_e_text', targetPage: 6, afterQuestionId: 'p6_iadl_transportation', label: 'SECTION E. Notes and Summary:' },
+  { questionId: 'p6_section_f_text', targetPage: 8, afterQuestionId: 'p8_visit_duties', label: 'SECTION F. Notes and Summary:' },
+  { questionId: 'p10_notes_summary', targetPage: 10, afterQuestionId: 'p10_special_diet_reason', label: 'SECTION I. Notes and Summary:' },
+];
+
+const MOVED_TEXT_FIELD_IDS = new Set(MOVED_TEXT_FIELDS.map((i) => i.questionId));
+const HIDE_FROM_PDF_QUESTION_IDS = new Set([
+  'p14_additional_details', 'p14_print_name', 'p14_date',
+  'p14_license_number', 'p14_role', 'p14_signature_note',
+]);
+
+const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: string }>> = {
+  1: [
+    { beforeQuestionId: 'p1_member_name', label: 'Header Information' },
+    { beforeQuestionId: 'p1_first_name', label: 'Demographic' },
+  ],
+  4: [{ beforeQuestionId: 'p4_adl_bathing', label: 'Activities of Daily Living' }],
+  5: [{ beforeQuestionId: 'p5_iadl_heavy_chores', label: 'Instrumental Activities of Daily Living' }],
+  6: [],
+  13: [{ beforeQuestionId: 'p13_commentary_section', label: 'Commentary Section' }],
 };
-type AssessmentPurpose = 'Initial' | 'Change of Condition' | 'Review';
-type LocationType = 'Private Residence' | 'Assisted Living Facility (ALF)' | 'Nursing Facility' | 'Hospital' | 'Adult Day Care' | 'Other';
-type AssessmentSite = 'Home' | 'Nursing Facility' | 'Hospital' | 'ALF' | 'Adult Day Care' | 'Other';
-type ApsRisk = 'High' | 'Intermediate' | 'Low' | 'Not Applicable';
-type YesNo = 'Yes' | 'No';
-type FunctionLevel = 'Independent' | 'Needs Assistance' | 'Dependent' | 'N/A';
-type BehaviorFrequency = 'None' | 'Rarely' | 'Sometimes' | 'Often' | 'Daily';
+
+const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
+  page.questions.forEach((q) => { acc[q.id] = q; });
+  return acc;
+}, {});
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const todayLocalKey = () => {
   const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const sanitizePathSegment = (value: string) =>
-  String(value || '')
-    .trim()
-    .replace(/[^\w.\- ]+/g, '_')
-    .replace(/\s+/g, '_')
-    .slice(0, 140);
+function buildDefaultAnswers(): Record<string, AnswerValue> {
+  const out: Record<string, AnswerValue> = {};
+  SOURCE.forEach((page) => {
+    page.questions.forEach((q) => {
+      if (q.type === 'checkboxGroup') out[q.id] = [];
+      else if (q.type === 'radio' || q.type === 'select') out[q.id] = q.options?.[0]?.value || '';
+      else out[q.id] = '';
+    });
+  });
+  return out;
+}
 
-const OFFICIAL_ALFT_TEMPLATE_URL =
-  'https://static1.squarespace.com/static/5513063be4b069b54e721157/t/69bc42610a780d5ba0d3d0ad/1773945441240/ALFT_Agreement.pdf';
+function preFillFromMember(
+  base: Record<string, AnswerValue>,
+  member: KaiserMember,
+  swName: string,
+): Record<string, AnswerValue> {
+  const next = { ...base };
+  const fullName = member.memberName || `${member.memberFirstName || ''} ${member.memberLastName || ''}`.trim();
+  next.p1_member_name = fullName;
+  next.p1_assessor_name = swName;
+  next.p1_assessment_date = todayLocalKey();
+  next.p1_agency = 'ILS Health';
+  if (member.memberFirstName) next.p1_first_name = member.memberFirstName;
+  if (member.memberLastName) next.p1_last_name = member.memberLastName;
+  if (member.memberMrn) next.p1_mrn = member.memberMrn;
+  // Date of birth — format as YYYY-MM-DD for the date field
+  if (member.birthDate) {
+    const dob = String(member.birthDate).trim();
+    // Convert M/D/YYYY → YYYY-MM-DD if needed
+    const usFmt = dob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    next.p1_dob = usFmt
+      ? `${usFmt[3]}-${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}`
+      : dob;
+  }
+  if (member.ispContactPhone) next.p1_phone = member.ispContactPhone;
+  if (member.ispCurrentLocation) next.p2_facility_name = member.ispCurrentLocation;
+  if (member.ispContactConfirmDate) next.p2_assessment_site = member.ispCurrentLocation || '';
+  return next;
+}
 
-export default function SwAlftUploadPage() {
-  const searchParams = useSearchParams();
-  const { toast } = useToast();
+function getRenderedQuestionsForPage(layoutNumber: number, baseQuestions: Question[]): Question[] {
+  const pageMoves = MOVED_TEXT_FIELDS.filter((m) => m.targetPage === layoutNumber);
+  const nextQuestions = baseQuestions.filter((q) => !MOVED_TEXT_FIELD_IDS.has(q.id));
+  if (!pageMoves.length) return nextQuestions;
+
+  const rendered: Question[] = [];
+  const movedInserted = new Set<string>();
+  nextQuestions.forEach((q) => {
+    rendered.push(q);
+    pageMoves
+      .filter((move) => move.afterQuestionId === q.id)
+      .forEach((move) => {
+        const src = QUESTION_BY_ID[move.questionId];
+        if (!src) return;
+        rendered.push({ ...src, label: move.label });
+        movedInserted.add(move.questionId);
+      });
+  });
+  pageMoves.forEach((move) => {
+    if (movedInserted.has(move.questionId)) return;
+    const src = QUESTION_BY_ID[move.questionId];
+    if (!src) return;
+    rendered.push({ ...src, label: move.label });
+  });
+  return rendered;
+}
+
+const isMovedTextQuestion = (id: string) => MOVED_TEXT_FIELD_IDS.has(id);
+const asText = (v: AnswerValue | undefined) => (Array.isArray(v) ? v.join(', ') : String(v || '').trim());
+const optionLabel = (q: Question, value: string) => q.options?.find((o) => o.value === value)?.label || value;
+const isLongText = (q: Question) => q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary');
+const isLargeCommentary = (q: Question) => q.id === 'p13_commentary_section';
+const isOptionQ = (q: Question) => q.type === 'radio' || q.type === 'select' || q.type === 'checkboxGroup';
+
+const formatLabel = (label: string) => {
+  const qm = label.match(/^Q(\d+)\s*:?\s*(.+)$/i);
+  if (qm) return `${qm[1]}. ${qm[2]}`;
+  const nm = label.match(/^(\d+)\.\s*(.+)$/);
+  if (nm) return `${nm[1]}. ${nm[2]}`;
+  return label;
+};
+
+function Dot({ selected }: { selected: boolean }) {
+  return (
+    <span aria-hidden className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-zinc-700 align-middle bg-white">
+      <span className={`h-1.5 w-1.5 rounded-full ${selected ? 'bg-zinc-800' : 'bg-transparent'}`} />
+    </span>
+  );
+}
+
+// ── Draft storage (localStorage) ───────────────────────────────────────────────
+
+const DRAFT_KEY = (memberId: string) => `swAlftDraft_v1_${memberId}`;
+
+function saveDraftLocally(memberId: string, answers: Record<string, AnswerValue>) {
+  try { localStorage.setItem(DRAFT_KEY(memberId), JSON.stringify({ answers, savedAt: new Date().toISOString() })); } catch { /* ignore */ }
+}
+function loadDraftLocally(memberId: string): Record<string, AnswerValue> | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY(memberId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.answers || null;
+  } catch { return null; }
+}
+function clearDraftLocally(memberId: string) {
+  try { localStorage.removeItem(DRAFT_KEY(memberId)); } catch { /* ignore */ }
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────
+
+export default function SwKaiserAlftPage() {
   const auth = useAuth();
   const firestore = useFirestore();
-  const storage = useStorage();
-  const { user, socialWorkerData, isSocialWorker, isLoading } = useSocialWorker();
+  const { toast } = useToast();
+  const { user, socialWorkerData, isSocialWorker, isLoading: swLoading } = useSocialWorker();
 
-  const swEmail = String((user as any)?.email || '').trim();
-  const swProfileName = String((socialWorkerData as any)?.displayName || (user as any)?.displayName || '').trim();
-  const swRealName = swProfileName && !swProfileName.includes('@') ? swProfileName : '';
-  const swDisplayName = swRealName || swEmail || 'Social Worker';
+  const swEmail = String((user as any)?.email || '').trim().toLowerCase();
+  const swName = String(
+    (socialWorkerData as any)?.displayName || (user as any)?.displayName || ''
+  ).trim() || swEmail.split('@')[0];
 
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [files, setFiles] = useState<FileList | null>(null);
-  const [assignedAlftMembers, setAssignedAlftMembers] = useState<SwAssignedAlftMember[]>([]);
-  const [assignedLoading, setAssignedLoading] = useState(false);
-  const [assignedSearch, setAssignedSearch] = useState('');
-  const [trackerRowsByMemberId, setTrackerRowsByMemberId] = useState<Record<string, TrackerRow>>({});
+  // ── State ─────────────────────────────────────────────────────────────────────
 
-  const [memberFirstName, setMemberFirstName] = useState('');
-  const [memberLastName, setMemberLastName] = useState('');
-  const [uploadDate, setUploadDate] = useState<string>(() => todayLocalKey()); // YYYY-MM-DD
-  const [kaiserMrn, setKaiserMrn] = useState('');
-  const [socialWorkerName, setSocialWorkerName] = useState(swRealName);
-  const [facilityName, setFacilityName] = useState('');
-  const [priorityLevel, setPriorityLevel] = useState('Routine');
-  const [transitionSummary, setTransitionSummary] = useState('');
-  const [barriersAndRisks, setBarriersAndRisks] = useState('');
-  const [requestedActions, setRequestedActions] = useState('');
-  const [additionalNotes, setAdditionalNotes] = useState('');
-  const [agencyName, setAgencyName] = useState('');
-  const [planId, setPlanId] = useState('');
-  const [assessorReferralDate, setAssessorReferralDate] = useState('');
-  const [assessmentPurpose, setAssessmentPurpose] = useState<AssessmentPurpose>('Initial');
-  const [hasOtherResponder, setHasOtherResponder] = useState<YesNo>('No');
-  const [otherResponderName, setOtherResponderName] = useState('');
-  const [otherResponderRelationship, setOtherResponderRelationship] = useState('');
-  const [memberMiddleName, setMemberMiddleName] = useState('');
-  const [memberPhone, setMemberPhone] = useState('');
-  const [memberDob, setMemberDob] = useState('');
-  const [memberSex, setMemberSex] = useState('');
-  const [memberRace, setMemberRace] = useState('');
-  const [memberEthnicity, setMemberEthnicity] = useState('');
-  const [memberPrimaryLanguage, setMemberPrimaryLanguage] = useState('');
-  const [limitedEnglish, setLimitedEnglish] = useState<YesNo>('No');
-  const [maritalStatus, setMaritalStatus] = useState('');
-  const [currentStreet, setCurrentStreet] = useState('');
-  const [currentCity, setCurrentCity] = useState('');
-  const [currentState, setCurrentState] = useState('');
-  const [currentZip, setCurrentZip] = useState('');
-  const [currentLocationType, setCurrentLocationType] = useState<LocationType>('Private Residence');
-  const [currentLocationOther, setCurrentLocationOther] = useState('');
-  const [homeStreet, setHomeStreet] = useState('');
-  const [homeCity, setHomeCity] = useState('');
-  const [homeState, setHomeState] = useState('');
-  const [homeZip, setHomeZip] = useState('');
-  const [mailStreet, setMailStreet] = useState('');
-  const [mailCity, setMailCity] = useState('');
-  const [mailState, setMailState] = useState('');
-  const [mailZip, setMailZip] = useState('');
-  const [assessmentSite, setAssessmentSite] = useState<AssessmentSite>('Home');
-  const [apsRisk, setApsRisk] = useState<ApsRisk>('Not Applicable');
-  const [imminentNursingRisk, setImminentNursingRisk] = useState<YesNo>('No');
-  const [onAlwpWaitlist, setOnAlwpWaitlist] = useState<YesNo>('No');
-  const [alwpAgency, setAlwpAgency] = useState('');
-  const [previousUnsuccessfulPlacements, setPreviousUnsuccessfulPlacements] = useState<YesNo>('No');
-  const [previousPlacementExplanation, setPreviousPlacementExplanation] = useState('');
-  const [hasPrimaryCaregiver, setHasPrimaryCaregiver] = useState<YesNo>('No');
-  const [livingSituation, setLivingSituation] = useState('');
-  const [incomeSources, setIncomeSources] = useState('');
-  const [cognitionOrientation, setCognitionOrientation] = useState('');
-  const [shortTermMemoryImpairment, setShortTermMemoryImpairment] = useState<YesNo>('No');
-  const [longTermMemoryImpairment, setLongTermMemoryImpairment] = useState<YesNo>('No');
-  const [confusionEpisodes, setConfusionEpisodes] = useState<YesNo>('No');
-  const [wanderingRisk, setWanderingRisk] = useState<YesNo>('No');
-  const [cognitiveNotes, setCognitiveNotes] = useState('');
-  const [majorDiagnoses, setMajorDiagnoses] = useState('');
-  const [fallHistoryPast6Months, setFallHistoryPast6Months] = useState<YesNo>('No');
-  const [fallCountPast6Months, setFallCountPast6Months] = useState('');
-  const [erVisitsPast6Months, setErVisitsPast6Months] = useState('');
-  const [hospitalizationsPast6Months, setHospitalizationsPast6Months] = useState('');
-  const [recentWeightLoss, setRecentWeightLoss] = useState<YesNo>('No');
-  const [painConcerns, setPainConcerns] = useState<YesNo>('No');
-  const [skinBreakdownRisk, setSkinBreakdownRisk] = useState<YesNo>('No');
-  const [oxygenUse, setOxygenUse] = useState<YesNo>('No');
-  const [oxygenDetails, setOxygenDetails] = useState('');
-  const [durableMedicalEquipment, setDurableMedicalEquipment] = useState('');
-  const [adlBathing, setAdlBathing] = useState<FunctionLevel>('Needs Assistance');
-  const [adlDressing, setAdlDressing] = useState<FunctionLevel>('Needs Assistance');
-  const [adlToileting, setAdlToileting] = useState<FunctionLevel>('Needs Assistance');
-  const [adlTransferring, setAdlTransferring] = useState<FunctionLevel>('Needs Assistance');
-  const [adlAmbulation, setAdlAmbulation] = useState<FunctionLevel>('Needs Assistance');
-  const [adlEating, setAdlEating] = useState<FunctionLevel>('Needs Assistance');
-  const [iadlMedicationManagement, setIadlMedicationManagement] = useState<FunctionLevel>('Needs Assistance');
-  const [iadlMealPrep, setIadlMealPrep] = useState<FunctionLevel>('Needs Assistance');
-  const [iadlHousekeeping, setIadlHousekeeping] = useState<FunctionLevel>('Needs Assistance');
-  const [iadlLaundry, setIadlLaundry] = useState<FunctionLevel>('Needs Assistance');
-  const [iadlTransportation, setIadlTransportation] = useState<FunctionLevel>('Needs Assistance');
-  const [iadlShopping, setIadlShopping] = useState<FunctionLevel>('Needs Assistance');
-  const [iadlFinances, setIadlFinances] = useState<FunctionLevel>('Needs Assistance');
-  const [iadlPhoneUse, setIadlPhoneUse] = useState<FunctionLevel>('Needs Assistance');
-  const [healthConditionsAndTherapies, setHealthConditionsAndTherapies] = useState('');
-  const [mentalHealthDiagnosis, setMentalHealthDiagnosis] = useState('');
-  const [depressionSymptoms, setDepressionSymptoms] = useState<BehaviorFrequency>('None');
-  const [anxietySymptoms, setAnxietySymptoms] = useState<BehaviorFrequency>('None');
-  const [agitationBehaviors, setAgitationBehaviors] = useState<BehaviorFrequency>('None');
-  const [aggressionBehaviors, setAggressionBehaviors] = useState<BehaviorFrequency>('None');
-  const [sleepDisturbance, setSleepDisturbance] = useState<BehaviorFrequency>('None');
-  const [behaviorInterventions, setBehaviorInterventions] = useState('');
-  const [nutritionNeeds, setNutritionNeeds] = useState('');
-  const [swMedicationSummary, setSwMedicationSummary] = useState('');
-  const [primaryPhysicianName, setPrimaryPhysicianName] = useState('');
-  const [primaryPhysicianPhone, setPrimaryPhysicianPhone] = useState('');
-  const [advanceDirectiveInPlace, setAdvanceDirectiveInPlace] = useState<YesNo>('No');
-  const [advanceDirectiveNotes, setAdvanceDirectiveNotes] = useState('');
-  const [environmentalRisks, setEnvironmentalRisks] = useState('');
-  const [visionStatus, setVisionStatus] = useState('');
-  const [hearingStatus, setHearingStatus] = useState('');
-  const [livingArrangementDetails, setLivingArrangementDetails] = useState('');
-  const [medicationTable, setMedicationTable] = useState('');
-  const [rnMswCommentary, setRnMswCommentary] = useState('');
-  const [rnReviewerName, setRnReviewerName] = useState('');
-  const [rnReviewerDate, setRnReviewerDate] = useState('');
-  const [mswSignatureName, setMswSignatureName] = useState('');
-  const [mswSignatureDate, setMswSignatureDate] = useState('');
-  const [exactPacketAnswers, setExactPacketAnswers] = useState<Record<string, string | string[]>>(() =>
-    createInitialExactAlftAnswers()
-  );
-  const prefillAppliedRef = useRef(false);
+  const [members, setMembers] = useState<KaiserMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [selectedMember, setSelectedMember] = useState<KaiserMember | null>(null);
 
-  const prefillFromQuery = useMemo(
-    () => ({
-      firstName: (searchParams.get('memberFirstName') || searchParams.get('firstName') || '').trim(),
-      lastName: (searchParams.get('memberLastName') || searchParams.get('lastName') || '').trim(),
-      dob: (searchParams.get('memberDob') || searchParams.get('dob') || '').trim(),
-      mrn: (searchParams.get('memberMrn') || searchParams.get('mrn') || '').trim(),
-      address: (searchParams.get('currentAddress') || searchParams.get('address') || '').trim(),
-      city: (searchParams.get('currentCity') || searchParams.get('city') || '').trim(),
-      state: (searchParams.get('currentState') || searchParams.get('state') || '').trim(),
-      zip: (searchParams.get('currentZip') || searchParams.get('zip') || '').trim(),
-      phone: (searchParams.get('memberPhone') || searchParams.get('phone') || '').trim(),
-    }),
-    [searchParams]
-  );
+  const [answers, setAnswers] = useState<Record<string, AnswerValue>>(buildDefaultAnswers);
+  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [swSignature, setSwSignature] = useState(''); // typed signature before submit
 
-  const assignedFilter = String(assignedSearch || '').trim().toLowerCase();
-  const visibleAssignedMembers = useMemo(
-    () =>
-      assignedAlftMembers.filter((m) =>
-        !assignedFilter
-          ? true
-          : m.memberName.toLowerCase().includes(assignedFilter) ||
-            m.memberMrn.toLowerCase().includes(assignedFilter) ||
-            m.alftAssigned.toLowerCase().includes(assignedFilter)
-      ),
-    [assignedAlftMembers, assignedFilter]
-  );
+  // ── Load assigned members from Firestore alft_assignments ─────────────────────
 
-  // If the SW profile name loads after first render, auto-populate the field.
-  useEffect(() => {
-    if (!swRealName) return;
-    setSocialWorkerName((prev) => (prev && !prev.includes('@') ? prev : swRealName));
-  }, [swRealName]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      if (!isSocialWorker) return;
-      setAssignedLoading(true);
-      try {
-        const res = await fetch('/api/kaiser-members');
-        const data = (await res.json().catch(() => ({}))) as any;
-        if (!res.ok || !data?.success) {
-          throw new Error(String(data?.error || `Load failed (HTTP ${res.status})`));
-        }
-        const raw = Array.isArray(data?.members) ? (data.members as any[]) : [];
-        const emailNeedle = swEmail.toLowerCase();
-        const nameNeedle = swDisplayName.toLowerCase();
-        const members = raw
-          .filter((m) => String(m?.Kaiser_Status || '').trim().toLowerCase() === 'rn visit needed')
-          .map((m) => {
-            const first = String(m?.memberFirstName || m?.Senior_First || '').trim();
-            const last = String(m?.memberLastName || m?.Senior_Last || '').trim();
-            const assigned = String(m?.ALFT_Assigned || '').trim();
-            return {
-              id: String(m?.Client_ID2 || m?.client_ID2 || m?.id || '').trim(),
-              memberName:
-                String(m?.memberName || '').trim() || [first, last].filter(Boolean).join(' ').trim() || 'Member',
-              memberFirstName: first,
-              memberLastName: last,
-              memberMrn: String(m?.memberMrn || m?.MCP_CIN || '').trim(),
-              kaiserStatus: String(m?.Kaiser_Status || '').trim(),
-              alftAssigned: assigned,
-              ispCurrentLocation: String(m?.ISP_Current_Location || '').trim(),
-              ispContactPhone: String(m?.ISP_Contact_Phone || '').trim(),
-              ispContactEmail: String(m?.ISP_Contact_Email || '').trim(),
-              ispContactConfirmDate: String(m?.ISP_Contact_Confirm_Field || '').trim(),
-            } as SwAssignedAlftMember;
-          })
-          .filter((m) => Boolean(m.id))
-          .filter((m) => {
-            const assigned = m.alftAssigned.toLowerCase();
-            if (!assigned) return false;
-            return (
-              (emailNeedle && assigned.includes(emailNeedle)) ||
-              (nameNeedle && !nameNeedle.includes('@') && assigned.includes(nameNeedle))
-            );
-          })
-          .sort((a, b) => a.memberName.localeCompare(b.memberName));
-        if (!cancelled) setAssignedAlftMembers(members);
-      } catch (e: any) {
-        if (!cancelled) {
-          setAssignedAlftMembers([]);
-          toast({
-            title: 'Could not load assigned ALFT members',
-            description: e?.message || 'Please try refreshing this page.',
-            variant: 'destructive',
-          });
-        }
-      } finally {
-        if (!cancelled) setAssignedLoading(false);
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [isSocialWorker, swDisplayName, swEmail, toast]);
-
-  useEffect(() => {
-    if (!firestore || !isSocialWorker) return;
-    const unsub = onSnapshot(
-      collection(firestore, 'alft_member_tracker'),
-      (snap) => {
-        const next: Record<string, TrackerRow> = {};
-        snap.docs.forEach((d) => {
-          const row = (d.data() || {}) as any;
-          const memberId = String(row?.memberId || d.id || '').trim();
-          if (!memberId) return;
-          next[memberId] = { memberId, ...(row as any) };
-        });
-        setTrackerRowsByMemberId(next);
-      },
-      () => setTrackerRowsByMemberId({})
-    );
-    return () => unsub();
-  }, [firestore, isSocialWorker]);
-
-  useEffect(() => {
-    if (prefillAppliedRef.current) return;
-    if (!prefillFromQuery.firstName && !prefillFromQuery.lastName && !prefillFromQuery.mrn) return;
-    prefillAppliedRef.current = true;
-
-    if (prefillFromQuery.firstName) setMemberFirstName(prefillFromQuery.firstName);
-    if (prefillFromQuery.lastName) setMemberLastName(prefillFromQuery.lastName);
-    if (prefillFromQuery.mrn) setKaiserMrn(prefillFromQuery.mrn);
-    if (prefillFromQuery.dob) setMemberDob(prefillFromQuery.dob);
-    if (prefillFromQuery.phone) setMemberPhone(prefillFromQuery.phone);
-    if (prefillFromQuery.address) setCurrentStreet(prefillFromQuery.address);
-    if (prefillFromQuery.city) setCurrentCity(prefillFromQuery.city);
-    if (prefillFromQuery.state) setCurrentState(normalizeUsStateCode(prefillFromQuery.state));
-    if (prefillFromQuery.zip) setCurrentZip(prefillFromQuery.zip);
-
-    setExactPacketAnswers((prev) => ({
-      ...prev,
-      p1_first_name: prefillFromQuery.firstName || String(prev.p1_first_name || ''),
-      p1_last_name: prefillFromQuery.lastName || String(prev.p1_last_name || ''),
-      p1_dob: prefillFromQuery.dob || String(prev.p1_dob || ''),
-      p1_mrn: prefillFromQuery.mrn || String(prev.p1_mrn || ''),
-      p1_phone: prefillFromQuery.phone || String(prev.p1_phone || ''),
-      p2_current_street: prefillFromQuery.address || String(prev.p2_current_street || ''),
-      p2_current_city: prefillFromQuery.city || String(prev.p2_current_city || ''),
-      p2_current_state: normalizeUsStateCode(prefillFromQuery.state || String(prev.p2_current_state || '')),
-      p2_current_zip: prefillFromQuery.zip || String(prev.p2_current_zip || ''),
-    }));
-  }, [prefillFromQuery.firstName, prefillFromQuery.lastName, prefillFromQuery.dob, prefillFromQuery.mrn, prefillFromQuery.address, prefillFromQuery.city, prefillFromQuery.state, prefillFromQuery.zip, prefillFromQuery.phone]);
-
-  const uploaderParts = useMemo(() => {
-    const cleaned = socialWorkerName.replace(/\s+/g, ' ').trim();
-    const parts = cleaned.split(' ').filter(Boolean);
-    if (parts.length <= 1) return { firstName: cleaned || 'Social', lastName: 'Worker' };
-    return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
-  }, [socialWorkerName]);
-
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isSocialWorker) {
-      toast({ title: 'Social worker access required', description: 'Please sign in again.', variant: 'destructive' });
-      return;
-    }
-    if (!auth?.currentUser || !user?.uid) {
-      toast({ title: 'Not signed in', description: 'Please sign in again.', variant: 'destructive' });
-      return;
-    }
-    const first = memberFirstName.trim();
-    const last = memberLastName.trim();
-    const memberName = `${first} ${last}`.replace(/\s+/g, ' ').trim();
-    const upDate = uploadDate.trim();
-    const mrn = kaiserMrn.trim();
-    const swName = socialWorkerName.trim();
-    if (!first || !last || !mrn || !swName || !upDate) {
-      toast({
-        title: 'Missing info',
-        description: 'Member first/last name, Kaiser MRN, social worker name, and upload date are required.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (swName.includes('@')) {
-      toast({
-        title: 'Social worker name required',
-        description: 'Please enter your real name (not an email address).',
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (!files || files.length === 0) {
-      toast({
-        title: 'Missing file upload',
-        description: 'Please upload the completed ALFT PDF before submitting.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (isUploading) return;
-
-    setIsUploading(true);
-    setUploadProgress(0);
-
+  const loadMembers = useCallback(async () => {
+    if (!firestore || !swEmail) return;
+    setLoadingMembers(true);
     try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const safeMember = sanitizePathSegment(memberName);
-      const uploadRoot = `user_uploads/${user.uid}/sw-portal/alft/${safeMember}_${timestamp}`;
+      // Primary: Firestore assignments for this SW
+      const snap = await getDocs(
+        query(collection(firestore, 'alft_assignments'), where('assignedSwEmail', '==', swEmail))
+      );
+      if (!snap.empty) {
+        const assigned: KaiserMember[] = snap.docs
+          .map((d) => {
+            const data = d.data() as any;
+            return {
+              id: String(data.memberId || d.id).trim(),
+              memberName: String(data.memberName || '').trim(),
+              memberFirstName: String(data.memberFirstName || '').trim(),
+              memberLastName: String(data.memberLastName || '').trim(),
+              memberMrn: String(data.memberMrn || '').trim(),
+              birthDate: String(data.birthDate || '').trim(),
+              ispCurrentLocation: String(data.ispCurrentLocation || '').trim(),
+              ispContactPhone: String(data.ispContactPhone || '').trim(),
+              ispContactEmail: String(data.ispContactEmail || '').trim(),
+              ispContactConfirmDate: String(data.ispContactConfirmDate || '').trim(),
+              kaiserStatus: String(data.kaiserStatus || '').trim(),
+              assignedSwEmail: String(data.assignedSwEmail || '').trim(),
+              assignedSwName: String(data.assignedSwName || '').trim(),
+              assignmentStatus: String(data.status || 'assigned').trim(),
+            };
+          })
+          .filter((m) => Boolean(m.id) && m.assignmentStatus !== 'completed')
+          .sort((a, b) => a.memberName.localeCompare(b.memberName));
+        setMembers(assigned);
+        setLoadingMembers(false);
+        return;
+      }
+      // Fallback: no assignments yet → show empty state with a clear message
+      setMembers([]);
+    } catch (e: any) {
+      toast({ title: 'Could not load assignments', description: e?.message || 'Retry in a moment.', variant: 'destructive' });
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, [firestore, swEmail, toast]);
 
-      const uploadPromises = Array.from(files || [])
-        .slice(0, 5)
-        .map((file, idx) => {
-          const safeFile = sanitizePathSegment(file.name);
-          const storagePath = `${uploadRoot}/${idx + 1}_${safeFile}`;
-          const storageRef = ref(storage, storagePath);
-          return new Promise<UploadedFile>((resolve, reject) => {
-            const task = uploadBytesResumable(storageRef, file);
-            task.on(
-              'state_changed',
-              (snap) => {
-                const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
-                setUploadProgress(Math.max(1, Math.min(99, Math.round(pct))));
-              },
-              (err) => reject(err),
-              async () => {
-                const downloadURL = await getDownloadURL(task.snapshot.ref);
-                resolve({
-                  fileName: file.name,
-                  downloadURL,
-                  storagePath: task.snapshot.ref.fullPath,
-                  uploadedAtIso: new Date().toISOString(),
-                });
-              }
-            );
-          });
-        });
+  useEffect(() => {
+    if (swLoading || !isSocialWorker) return;
+    void loadMembers();
+  }, [isSocialWorker, loadMembers, swLoading]);
 
-      const results = await Promise.all(uploadPromises);
+  // ── Select member ─────────────────────────────────────────────────────────────
+
+  const selectMember = useCallback((m: KaiserMember) => {
+    setSelectedMember(m);
+    setSubmitted(false);
+    setMode('edit');
+    const base = buildDefaultAnswers();
+    const draft = loadDraftLocally(m.id);
+    if (draft) {
+      setAnswers(draft);
+      setDraftSavedAt(localStorage.getItem(DRAFT_KEY(m.id)) ? JSON.parse(localStorage.getItem(DRAFT_KEY(m.id))!).savedAt : null);
+      toast({ title: 'Draft restored', description: 'Your saved draft has been loaded.' });
+    } else {
+      setAnswers(preFillFromMember(base, m, swName));
+      setDraftSavedAt(null);
+    }
+  }, [swName, toast]);
+
+  // ── Answer helpers ────────────────────────────────────────────────────────────
+
+  const setSingle = (id: string, value: string) => setAnswers((p) => ({ ...p, [id]: value }));
+  const toggleMulti = (id: string, value: string) =>
+    setAnswers((p) => {
+      const cur = Array.isArray(p[id]) ? (p[id] as string[]) : [];
+      return { ...p, [id]: cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value] };
+    });
+
+  // ── Save draft ────────────────────────────────────────────────────────────────
+
+  const saveDraft = useCallback(() => {
+    if (!selectedMember) return;
+    saveDraftLocally(selectedMember.id, answers);
+    const now = new Date().toISOString();
+    setDraftSavedAt(now);
+    toast({ title: 'Draft saved', description: 'Progress saved locally on this device.' });
+  }, [answers, selectedMember, toast]);
+
+  // ── Submit ────────────────────────────────────────────────────────────────────
+
+  const handleSubmit = useCallback(async () => {
+    if (!selectedMember || !auth?.currentUser) return;
+    if (!swSignature.trim()) {
+      toast({ title: 'Signature required', description: 'Please type your full name as your signature before submitting.', variant: 'destructive' });
+      return;
+    }
+    setSubmitting(true);
+    try {
       const idToken = await auth.currentUser.getIdToken();
+      const firstName = String(selectedMember.memberFirstName || selectedMember.memberName.split(' ')[0] || '').trim();
+      const lastName = String(selectedMember.memberLastName || selectedMember.memberName.split(' ').slice(1).join(' ') || '').trim();
+
+      // Embed SW signature into the answers as the assessor fields
+      const finalAnswers = {
+        ...answers,
+        p1_assessor_name: swSignature.trim() || swName,
+        p14_print_name: swSignature.trim() || swName,
+        p14_date: todayLocalKey(),
+      };
+
+      const body = {
+        idToken,
+        submissionMode: 'digital_form',
+        uploadDate: todayLocalKey(),
+        uploader: { displayName: swName, email: swEmail },
+        member: {
+          name: selectedMember.memberName,
+          firstName,
+          lastName,
+          healthPlan: 'Kaiser',
+          kaiserMrn: selectedMember.memberMrn || '',
+        },
+        alftForm: {
+          formVersion: 'digital-v1',
+          stage: 'digital',
+          exactPacketAnswers: finalAnswers,
+          transitionSummary: String(finalAnswers.p13_commentary_section || 'Digital ALFT form submitted by social worker.'),
+          requestedActions: 'Review digital ALFT form. RN (Leslie) to add comments and sign. Manager (Deydry) to review and save as PDF for Jocelyn.',
+          facilityName: String(finalAnswers.p2_facility_name || selectedMember.ispCurrentLocation || ''),
+          priorityLevel: 'Routine',
+          swSignature: swSignature.trim(),
+          swSignedAt: new Date().toISOString(),
+        },
+        files: [], // digital form — no file upload required
+      };
 
       const res = await fetch('/api/alft/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          idToken,
-          uploader: { ...uploaderParts, email: swEmail, displayName: swName },
-          uploadDate: upDate,
-          member: { firstName: first, lastName: last, name: memberName, healthPlan: 'Kaiser', kaiserMrn: mrn, medicalRecordNumber: mrn },
-          alftForm: {
-            formVersion: 'placeholder-v1',
-            stage: 'exact-1to1',
-            headerInformation: {
-              agencyName: agencyName.trim() || null,
-              assessmentDate: upDate,
-              planId: planId.trim() || null,
-              assessorName: swName,
-              assessorReferralDate: assessorReferralDate.trim() || null,
-              assessmentPurpose,
-              hasOtherResponder: hasOtherResponder === 'Yes',
-              otherResponderName: otherResponderName.trim() || null,
-              otherResponderRelationship: otherResponderRelationship.trim() || null,
-            },
-            demographics: {
-              firstName: first,
-              middleName: memberMiddleName.trim() || null,
-              lastName: last,
-              memberName,
-              mrn,
-              phoneNumber: memberPhone.trim() || null,
-              dateOfBirth: memberDob.trim() || null,
-              sex: memberSex.trim() || null,
-              race: memberRace.trim() || null,
-              ethnicity: memberEthnicity.trim() || null,
-              primaryLanguage: memberPrimaryLanguage.trim() || null,
-              limitedEnglish: limitedEnglish === 'Yes',
-              maritalStatus: maritalStatus.trim() || null,
-            },
-            physicalLocation: {
-              street: currentStreet.trim() || null,
-              city: currentCity.trim() || null,
-              state: normalizeUsStateCode(currentState) || null,
-              zip: currentZip.trim() || null,
-              locationType: currentLocationType,
-              locationTypeOther: currentLocationType === 'Other' ? currentLocationOther.trim() || null : null,
-              facilityName: facilityName.trim() || null,
-            },
-            homeAddress: {
-              street: homeStreet.trim() || null,
-              city: homeCity.trim() || null,
-              state: normalizeUsStateCode(homeState) || null,
-              zip: homeZip.trim() || null,
-            },
-            mailingAddress: {
-              street: mailStreet.trim() || null,
-              city: mailCity.trim() || null,
-              state: normalizeUsStateCode(mailState) || null,
-              zip: mailZip.trim() || null,
-            },
-            screening: {
-              assessmentSite,
-              apsRisk,
-              imminentNursingRisk,
-              onAlwpWaitlist,
-              alwpAgency: alwpAgency.trim() || null,
-              previousUnsuccessfulPlacements,
-              previousPlacementExplanation: previousPlacementExplanation.trim() || null,
-              hasPrimaryCaregiver,
-              livingSituation: livingSituation.trim() || null,
-              incomeSources: incomeSources.trim() || null,
-            },
-            clinicalAssessment: {
-              cognitiveScreen: {
-                orientation: cognitionOrientation.trim() || null,
-                shortTermMemoryImpairment: shortTermMemoryImpairment === 'Yes',
-                longTermMemoryImpairment: longTermMemoryImpairment === 'Yes',
-                confusionEpisodes: confusionEpisodes === 'Yes',
-                wanderingRisk: wanderingRisk === 'Yes',
-                notes: cognitiveNotes.trim() || null,
-              },
-              generalHealth: {
-                majorDiagnoses: majorDiagnoses.trim() || null,
-                fallHistoryPast6Months: fallHistoryPast6Months === 'Yes',
-                fallCountPast6Months: fallCountPast6Months.trim() || null,
-                erVisitsPast6Months: erVisitsPast6Months.trim() || null,
-                hospitalizationsPast6Months: hospitalizationsPast6Months.trim() || null,
-                recentWeightLoss: recentWeightLoss === 'Yes',
-                painConcerns: painConcerns === 'Yes',
-                skinBreakdownRisk: skinBreakdownRisk === 'Yes',
-                oxygenUse: oxygenUse === 'Yes',
-                oxygenDetails: oxygenDetails.trim() || null,
-                durableMedicalEquipment: durableMedicalEquipment.trim() || null,
-              },
-              adlIadl: {
-                bathing: adlBathing,
-                dressing: adlDressing,
-                toileting: adlToileting,
-                transferring: adlTransferring,
-                ambulation: adlAmbulation,
-                eating: adlEating,
-                medicationManagement: iadlMedicationManagement,
-                mealPreparation: iadlMealPrep,
-                housekeeping: iadlHousekeeping,
-                laundry: iadlLaundry,
-                transportation: iadlTransportation,
-                shopping: iadlShopping,
-                finances: iadlFinances,
-                phoneUse: iadlPhoneUse,
-              },
-            },
-            stage3Assessment: {
-              healthConditionsAndTherapies: healthConditionsAndTherapies.trim() || null,
-              mentalHealthAndBehavior: {
-                diagnosis: mentalHealthDiagnosis.trim() || null,
-                depressionSymptoms,
-                anxietySymptoms,
-                agitationBehaviors,
-                aggressionBehaviors,
-                sleepDisturbance,
-                interventions: behaviorInterventions.trim() || null,
-              },
-              nutritionMedsPhysicianDirectives: {
-                nutritionNeeds: nutritionNeeds.trim() || null,
-                medicationSummary: swMedicationSummary.trim() || null,
-                primaryPhysicianName: primaryPhysicianName.trim() || null,
-                primaryPhysicianPhone: primaryPhysicianPhone.trim() || null,
-                advanceDirectiveInPlace: advanceDirectiveInPlace === 'Yes',
-                advanceDirectiveNotes: advanceDirectiveNotes.trim() || null,
-              },
-              environmentSensoryLiving: {
-                environmentalRisks: environmentalRisks.trim() || null,
-                visionStatus: visionStatus.trim() || null,
-                hearingStatus: hearingStatus.trim() || null,
-                livingArrangementDetails: livingArrangementDetails.trim() || null,
-              },
-              medicationTable: medicationTable.trim() || null,
-              rnMswCommentaryAndSignoff: {
-                commentary: rnMswCommentary.trim() || null,
-                rnReviewerName: rnReviewerName.trim() || null,
-                rnReviewerDate: rnReviewerDate.trim() || null,
-                mswSignatureName: mswSignatureName.trim() || null,
-                mswSignatureDate: mswSignatureDate.trim() || null,
-              },
-            },
-            exactPacketAnswers,
-            facilityName: facilityName.trim(),
-            priorityLevel: priorityLevel.trim() || 'Routine',
-            transitionSummary: transitionSummary.trim(),
-            barriersAndRisks: barriersAndRisks.trim(),
-            requestedActions: requestedActions.trim(),
-            additionalNotes: additionalNotes.trim(),
-          },
-          submissionMode: 'official_pdf_plan_b',
-          officialPdfTemplateUrl: OFFICIAL_ALFT_TEMPLATE_URL,
-          files: results.map((r) => ({
-            fileName: r.fileName,
-            downloadURL: r.downloadURL,
-            storagePath: r.storagePath,
-            uploadedAtIso: r.uploadedAtIso,
-          })),
-        }),
+        body: JSON.stringify(body),
       });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) {
-        throw new Error(String(data?.error || `Submit failed (HTTP ${res.status})`));
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `Submission failed (HTTP ${res.status})`);
+
+      // Update the Firestore assignment status to 'submitted'
+      if (firestore && selectedMember.id) {
+        try {
+          await updateDoc(doc(firestore, 'alft_assignments', selectedMember.id), {
+            status: 'submitted',
+            submittedAt: new Date().toISOString(),
+            intakeId: data.id || null,
+          });
+        } catch { /* best-effort */ }
       }
 
-      toast({
-        title: 'ALFT uploaded',
-        description: `Sent to intake. Email: ${data?.emailSent ? 'yes' : 'no'} • Electron: ${data?.electronNotified ? 'yes' : 'no'}`,
-      });
-
-      setFiles(null);
-      setMemberFirstName('');
-      setMemberLastName('');
-      setUploadDate(todayLocalKey());
-      setKaiserMrn('');
-      setSocialWorkerName(swRealName);
-      setFacilityName('');
-      setPriorityLevel('Routine');
-      setTransitionSummary('');
-      setBarriersAndRisks('');
-      setRequestedActions('');
-      setAdditionalNotes('');
-      setAgencyName('');
-      setPlanId('');
-      setAssessorReferralDate('');
-      setAssessmentPurpose('Initial');
-      setHasOtherResponder('No');
-      setOtherResponderName('');
-      setOtherResponderRelationship('');
-      setMemberMiddleName('');
-      setMemberPhone('');
-      setMemberDob('');
-      setMemberSex('');
-      setMemberRace('');
-      setMemberEthnicity('');
-      setMemberPrimaryLanguage('');
-      setLimitedEnglish('No');
-      setMaritalStatus('');
-      setCurrentStreet('');
-      setCurrentCity('');
-      setCurrentState('');
-      setCurrentZip('');
-      setCurrentLocationType('Private Residence');
-      setCurrentLocationOther('');
-      setHomeStreet('');
-      setHomeCity('');
-      setHomeState('');
-      setHomeZip('');
-      setMailStreet('');
-      setMailCity('');
-      setMailState('');
-      setMailZip('');
-      setAssessmentSite('Home');
-      setApsRisk('Not Applicable');
-      setImminentNursingRisk('No');
-      setOnAlwpWaitlist('No');
-      setAlwpAgency('');
-      setPreviousUnsuccessfulPlacements('No');
-      setPreviousPlacementExplanation('');
-      setHasPrimaryCaregiver('No');
-      setLivingSituation('');
-      setIncomeSources('');
-      setCognitionOrientation('');
-      setShortTermMemoryImpairment('No');
-      setLongTermMemoryImpairment('No');
-      setConfusionEpisodes('No');
-      setWanderingRisk('No');
-      setCognitiveNotes('');
-      setMajorDiagnoses('');
-      setFallHistoryPast6Months('No');
-      setFallCountPast6Months('');
-      setErVisitsPast6Months('');
-      setHospitalizationsPast6Months('');
-      setRecentWeightLoss('No');
-      setPainConcerns('No');
-      setSkinBreakdownRisk('No');
-      setOxygenUse('No');
-      setOxygenDetails('');
-      setDurableMedicalEquipment('');
-      setAdlBathing('Needs Assistance');
-      setAdlDressing('Needs Assistance');
-      setAdlToileting('Needs Assistance');
-      setAdlTransferring('Needs Assistance');
-      setAdlAmbulation('Needs Assistance');
-      setAdlEating('Needs Assistance');
-      setIadlMedicationManagement('Needs Assistance');
-      setIadlMealPrep('Needs Assistance');
-      setIadlHousekeeping('Needs Assistance');
-      setIadlLaundry('Needs Assistance');
-      setIadlTransportation('Needs Assistance');
-      setIadlShopping('Needs Assistance');
-      setIadlFinances('Needs Assistance');
-      setIadlPhoneUse('Needs Assistance');
-      setHealthConditionsAndTherapies('');
-      setMentalHealthDiagnosis('');
-      setDepressionSymptoms('None');
-      setAnxietySymptoms('None');
-      setAgitationBehaviors('None');
-      setAggressionBehaviors('None');
-      setSleepDisturbance('None');
-      setBehaviorInterventions('');
-      setNutritionNeeds('');
-      setSwMedicationSummary('');
-      setPrimaryPhysicianName('');
-      setPrimaryPhysicianPhone('');
-      setAdvanceDirectiveInPlace('No');
-      setAdvanceDirectiveNotes('');
-      setEnvironmentalRisks('');
-      setVisionStatus('');
-      setHearingStatus('');
-      setLivingArrangementDetails('');
-      setMedicationTable('');
-      setRnMswCommentary('');
-      setRnReviewerName('');
-      setRnReviewerDate('');
-      setMswSignatureName('');
-      setMswSignatureDate('');
-      setExactPacketAnswers(createInitialExactAlftAnswers());
-      setUploadProgress(0);
-    } catch (err: any) {
-      toast({
-        title: 'Upload failed',
-        description: err?.message || 'Could not upload ALFT.',
-        variant: 'destructive',
-      });
+      clearDraftLocally(selectedMember.id);
+      setSubmitted(true);
+      toast({ title: 'ALFT submitted', description: `${selectedMember.memberName}'s assessment has been sent to the admin team for RN review.` });
+    } catch (e: any) {
+      toast({ title: 'Submission failed', description: e?.message || 'Please try again.', variant: 'destructive' });
     } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
+      setSubmitting(false);
     }
-  };
+  }, [answers, auth, firestore, selectedMember, swEmail, swName, swSignature, toast]);
 
-  const handlePrint = () => {
-    // Open the dedicated ALFT printable preview first (then print from there).
-    window.location.href = '/admin/alft-tracker/dummy-preview?view=pdf';
-  };
+  // ── Derived state ─────────────────────────────────────────────────────────────
 
-  if (isLoading) {
+  const filteredMembers = useMemo(() => {
+    const q = memberSearch.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter(
+      (m) =>
+        m.memberName.toLowerCase().includes(q) ||
+        String(m.memberMrn || '').toLowerCase().includes(q) ||
+        String(m.ispCurrentLocation || '').toLowerCase().includes(q)
+    );
+  }, [memberSearch, members]);
+
+  const rnName = asText(answers.p14_print_name);
+  const rnDate = asText(answers.p14_date);
+  const rnLicense = asText(answers.p14_license_number);
+  const mswName = asText(answers.p1_assessor_name);
+  const mswDate = asText(answers.p14_date) || todayLocalKey();
+
+  // ── Auth guard ────────────────────────────────────────────────────────────────
+
+  if (swLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="text-sm text-muted-foreground">Loading…</div>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  if (!isSocialWorker) {
+  // ── Success state ─────────────────────────────────────────────────────────────
+
+  if (submitted && selectedMember) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Social Worker Access Required</CardTitle>
-          <CardDescription>Please sign in with your social worker account.</CardDescription>
-        </CardHeader>
-      </Card>
+      <div className="mx-auto max-w-xl space-y-6 px-4 py-12 text-center">
+        <CheckCircle2 className="mx-auto h-14 w-14 text-green-500" />
+        <h1 className="text-2xl font-bold">ALFT Submitted</h1>
+        <p className="text-muted-foreground">
+          {selectedMember.memberName}'s assessment has been sent to the admin team for review.
+        </p>
+        <div className="flex flex-wrap justify-center gap-3">
+          <Button onClick={() => { setSelectedMember(null); setSubmitted(false); }}>
+            Start Another
+          </Button>
+          <Button variant="outline" onClick={() => { setMode('preview'); setSubmitted(false); }}>
+            View Form
+          </Button>
+        </div>
+      </div>
     );
   }
 
-  return (
-    <div className="max-w-2xl mx-auto space-y-6 alft-print-root">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <UploadCloud className="h-5 w-5" />
-            ALFT Internal Form + Upload (Kaiser)
-          </CardTitle>
-          <CardDescription>
-            Placeholder internal ALFT form for easy edits. This creates an intake workflow item for staff/RN/sign-off without Adobe.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              Plan B (temporary): download the official ALFT PDF, complete it, then upload the completed PDF here.
-              <a
-                className="ml-1 underline text-blue-700"
-                href={OFFICIAL_ALFT_TEMPLATE_URL}
-                target="_blank"
-                rel="noreferrer"
+  // ── Member selection ──────────────────────────────────────────────────────────
+
+  if (!selectedMember) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6 px-4 py-8">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="flex items-center gap-2 text-2xl font-bold">
+              <FileText className="h-6 w-6" />
+              Kaiser ALFT Assessment
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Select a member to begin their ALF Transition Assessment form.
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={loadMembers} disabled={loadingMembers}>
+            {loadingMembers ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </Button>
+        </div>
+
+        <div className="relative">
+          <input
+            type="text"
+            value={memberSearch}
+            onChange={(e) => setMemberSearch(e.target.value)}
+            placeholder="Search by name, MRN, or location…"
+            className="w-full rounded-md border px-3 py-2 pl-4 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+
+        {loadingMembers && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+
+        {!loadingMembers && filteredMembers.length === 0 && (
+          <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
+            <User className="h-10 w-10" />
+            <p className="font-medium">No ALFT assessments assigned to you</p>
+            <p className="max-w-xs text-sm">
+              Your ALFT manager (John) will assign Kaiser members to you once they are ready for assessment. Check back soon.
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {filteredMembers.map((m) => {
+            const hasDraft = Boolean(loadDraftLocally(m.id));
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => selectMember(m)}
+                className="flex w-full items-center gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/50 active:bg-muted"
               >
-                Download official ALFT PDF
-              </a>
-            </AlertDescription>
-          </Alert>
-
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              Signed in as <span className="font-semibold">{swDisplayName}</span>
-              {swEmail ? <span className="text-muted-foreground"> • {swEmail}</span> : null}
-            </AlertDescription>
-          </Alert>
-
-          <div className="rounded-md border p-3 space-y-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-sm font-semibold">My ALFT-assigned members</div>
-                <div className="text-xs text-muted-foreground">
-                  Kaiser members with `RN Visit Needed` assigned to you via `ALFT_Assigned`.
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">
+                  {m.memberName.charAt(0).toUpperCase()}
                 </div>
-              </div>
-              <Input
-                value={assignedSearch}
-                onChange={(e) => setAssignedSearch(e.target.value)}
-                placeholder="Search member / MRN"
-                className="sm:w-[260px]"
-              />
-            </div>
-            {assignedLoading ? (
-              <div className="text-sm text-muted-foreground">Loading assigned ALFT members…</div>
-            ) : visibleAssignedMembers.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No ALFT-assigned members found for your login.</div>
-            ) : (
-              <div className="space-y-2">
-                {visibleAssignedMembers.map((m) => {
-                  const tracker = trackerRowsByMemberId[m.id];
-                  const contactAddress = String(m.ispCurrentLocation || '').trim();
-                  const contactPhone = String(m.ispContactPhone || '').trim();
-                  const contactEmail = String(m.ispContactEmail || '').trim();
-                  const params = new URLSearchParams({
-                    memberFirstName: m.memberFirstName || '',
-                    memberLastName: m.memberLastName || '',
-                    memberMrn: m.memberMrn || '',
-                    currentAddress: contactAddress,
-                    memberPhone: contactPhone,
-                  });
-                  return (
-                    <div key={m.id} className="rounded border p-2 space-y-1">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <div className="font-medium truncate">{m.memberName}</div>
-                          <div className="text-xs text-muted-foreground font-mono">MRN: {m.memberMrn || '—'}</div>
-                        </div>
-                        <a className="text-xs underline text-blue-700" href={`/sw-portal/alft-upload?${params.toString()}`}>
-                          Use this member in ALFT form
-                        </a>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        ISP current location: {contactAddress || '—'}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        ISP contact phone: {contactPhone || '—'}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        ISP contact email: {contactEmail || '—'}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        ISP contact confirmed date: {m.ispContactConfirmDate || '—'}
-                      </div>
-                      <div className="flex flex-wrap gap-3 text-xs">
-                        {(['602', 'med_list', 'snf_facesheet'] as const).map((docKey) => {
-                          const doc = tracker?.docs?.[docKey];
-                          return doc?.downloadURL ? (
-                            <a key={docKey} className="underline text-blue-700" href={doc.downloadURL} target="_blank" rel="noreferrer">
-                              {docKey === '602' ? '602' : docKey === 'med_list' ? 'Med list' : 'SNF facesheet'}
-                            </a>
-                          ) : (
-                            <span key={docKey} className="text-muted-foreground">
-                              {docKey === '602' ? '602' : docKey === 'med_list' ? 'Med list' : 'SNF facesheet'}: none
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{m.memberName}</span>
+                    {hasDraft && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-700 border-amber-300">
+                        Draft saved
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-muted-foreground">
+                    {m.memberMrn && <span>MRN: {m.memberMrn}</span>}
+                    {m.ispCurrentLocation && <span>{m.ispCurrentLocation}</span>}
+                    {m.kaiserStatus && <span>Status: {m.kaiserStatus}</span>}
+                  </div>
+                </div>
+                <ChevronDown className="-rotate-90 h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── ALFT form (edit + preview) ────────────────────────────────────────────────
+
+  return (
+    <div className="alft-sw-tool mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
+
+      {/* ── Toolbar ── */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-white p-3 print:hidden">
+        <div className="min-w-0">
+          <div className="font-semibold text-sm">{selectedMember.memberName}</div>
+          <div className="text-xs text-zinc-500 flex flex-wrap gap-2 mt-0.5">
+            {selectedMember.memberMrn && <span>MRN: {selectedMember.memberMrn}</span>}
+            {selectedMember.ispCurrentLocation && <span>• {selectedMember.ispCurrentLocation}</span>}
+            {draftSavedAt && (
+              <span className="text-amber-600">
+                • Draft saved {new Date(draftSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
             )}
           </div>
-
-          <form onSubmit={handleUpload} className="space-y-4 alft-print-form">
-            <div className="rounded-md border p-3 space-y-3">
-              <div className="text-sm font-semibold">Stage 1: Header and demographics</div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="agencyName">Agency</Label>
-                  <Input id="agencyName" value={agencyName} onChange={(e) => setAgencyName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="planId">Plan ID</Label>
-                  <Input id="planId" value={planId} onChange={(e) => setPlanId(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="assessorReferralDate">Assessor referral date</Label>
-                  <Input
-                    id="assessorReferralDate"
-                    type="date"
-                    value={assessorReferralDate}
-                    onChange={(e) => setAssessorReferralDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="assessmentPurpose">Assessment purpose</Label>
-                  <select
-                    id="assessmentPurpose"
-                    value={assessmentPurpose}
-                    onChange={(e) => setAssessmentPurpose(e.target.value as AssessmentPurpose)}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="Initial">Initial</option>
-                    <option value="Change of Condition">Change of Condition</option>
-                    <option value="Review">Review</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="hasOtherResponder">Other responder?</Label>
-                  <select
-                    id="hasOtherResponder"
-                    value={hasOtherResponder}
-                    onChange={(e) => setHasOtherResponder(e.target.value as YesNo)}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="No">No</option>
-                    <option value="Yes">Yes</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input placeholder="Other responder name" value={otherResponderName} onChange={(e) => setOtherResponderName(e.target.value)} />
-                <Input
-                  placeholder="Other responder relationship"
-                  value={otherResponderRelationship}
-                  onChange={(e) => setOtherResponderRelationship(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <Label>Member name</Label>
-                <a
-                  className="text-xs underline underline-offset-2 text-blue-700"
-                  href="https://www.carehomefinders.com/alft"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  ALFT tool link
-                </a>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input
-                  id="memberFirstName"
-                  value={memberFirstName}
-                  onChange={(e) => setMemberFirstName(e.target.value)}
-                  placeholder="First name"
-                  required
-                />
-                <Input
-                  id="memberLastName"
-                  value={memberLastName}
-                  onChange={(e) => setMemberLastName(e.target.value)}
-                  placeholder="Last name"
-                  required
-                />
-              </div>
-              <Input
-                id="memberMiddleName"
-                value={memberMiddleName}
-                onChange={(e) => setMemberMiddleName(e.target.value)}
-                placeholder="Middle name (optional)"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="mrn">Kaiser MRN</Label>
-                <Input id="mrn" value={kaiserMrn} onChange={(e) => setKaiserMrn(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="memberPhone">Phone number</Label>
-                <Input id="memberPhone" value={memberPhone} onChange={(e) => setMemberPhone(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="memberDob">Date of birth</Label>
-                <Input id="memberDob" type="date" value={memberDob} onChange={(e) => setMemberDob(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="memberSex">Sex</Label>
-                <Input id="memberSex" value={memberSex} onChange={(e) => setMemberSex(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Input placeholder="Race" value={memberRace} onChange={(e) => setMemberRace(e.target.value)} />
-              <Input placeholder="Ethnicity" value={memberEthnicity} onChange={(e) => setMemberEthnicity(e.target.value)} />
-              <Input placeholder="Primary language" value={memberPrimaryLanguage} onChange={(e) => setMemberPrimaryLanguage(e.target.value)} />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="limitedEnglish">Limited English?</Label>
-                <select
-                  id="limitedEnglish"
-                  value={limitedEnglish}
-                  onChange={(e) => setLimitedEnglish(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">No</option>
-                  <option value="Yes">Yes</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="maritalStatus">Marital status</Label>
-                <Input id="maritalStatus" value={maritalStatus} onChange={(e) => setMaritalStatus(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="facilityName">Facility / RCFE name (optional)</Label>
-              <Input id="facilityName" value={facilityName} onChange={(e) => setFacilityName(e.target.value)} placeholder="Facility name" />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Current physical location</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input placeholder="Street" value={currentStreet} onChange={(e) => setCurrentStreet(e.target.value)} />
-                <Input placeholder="City" value={currentCity} onChange={(e) => setCurrentCity(e.target.value)} />
-                <select
-                  value={normalizeUsStateCode(currentState)}
-                  onChange={(e) => setCurrentState(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="">State</option>
-                  {US_STATE_OPTIONS.map((state) => (
-                    <option key={state.code} value={state.code}>
-                      {state.code} - {state.name}
-                    </option>
-                  ))}
-                </select>
-                <Input placeholder="ZIP" value={currentZip} onChange={(e) => setCurrentZip(e.target.value)} />
-              </div>
-              <select
-                value={currentLocationType}
-                onChange={(e) => setCurrentLocationType(e.target.value as LocationType)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="Private Residence">Private Residence</option>
-                <option value="Assisted Living Facility (ALF)">Assisted Living Facility (ALF)</option>
-                <option value="Nursing Facility">Nursing Facility</option>
-                <option value="Hospital">Hospital</option>
-                <option value="Adult Day Care">Adult Day Care</option>
-                <option value="Other">Other</option>
-              </select>
-              {currentLocationType === 'Other' ? (
-                <Input placeholder="Other location type" value={currentLocationOther} onChange={(e) => setCurrentLocationOther(e.target.value)} />
-              ) : null}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Home address (if different)</Label>
-                <Input placeholder="Street" value={homeStreet} onChange={(e) => setHomeStreet(e.target.value)} />
-                <Input placeholder="City" value={homeCity} onChange={(e) => setHomeCity(e.target.value)} />
-                <select
-                  value={normalizeUsStateCode(homeState)}
-                  onChange={(e) => setHomeState(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="">State</option>
-                  {US_STATE_OPTIONS.map((state) => (
-                    <option key={state.code} value={state.code}>
-                      {state.code} - {state.name}
-                    </option>
-                  ))}
-                </select>
-                <Input placeholder="ZIP" value={homeZip} onChange={(e) => setHomeZip(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Mailing address (if different)</Label>
-                <Input placeholder="Street" value={mailStreet} onChange={(e) => setMailStreet(e.target.value)} />
-                <Input placeholder="City" value={mailCity} onChange={(e) => setMailCity(e.target.value)} />
-                <select
-                  value={normalizeUsStateCode(mailState)}
-                  onChange={(e) => setMailState(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="">State</option>
-                  {US_STATE_OPTIONS.map((state) => (
-                    <option key={state.code} value={state.code}>
-                      {state.code} - {state.name}
-                    </option>
-                  ))}
-                </select>
-                <Input placeholder="ZIP" value={mailZip} onChange={(e) => setMailZip(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <select
-                value={assessmentSite}
-                onChange={(e) => setAssessmentSite(e.target.value as AssessmentSite)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="Home">Assessment site: Home</option>
-                <option value="Nursing Facility">Assessment site: Nursing Facility</option>
-                <option value="Hospital">Assessment site: Hospital</option>
-                <option value="ALF">Assessment site: ALF</option>
-                <option value="Adult Day Care">Assessment site: Adult Day Care</option>
-                <option value="Other">Assessment site: Other</option>
-              </select>
-              <select
-                value={apsRisk}
-                onChange={(e) => setApsRisk(e.target.value as ApsRisk)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="High">APS risk: High</option>
-                <option value="Intermediate">APS risk: Intermediate</option>
-                <option value="Low">APS risk: Low</option>
-                <option value="Not Applicable">APS risk: Not Applicable</option>
-              </select>
-              <select
-                value={imminentNursingRisk}
-                onChange={(e) => setImminentNursingRisk(e.target.value as YesNo)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="No">Imminent nursing risk: No</option>
-                <option value="Yes">Imminent nursing risk: Yes</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <select
-                value={onAlwpWaitlist}
-                onChange={(e) => setOnAlwpWaitlist(e.target.value as YesNo)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="No">ALWP waitlist: No</option>
-                <option value="Yes">ALWP waitlist: Yes</option>
-              </select>
-              <Input placeholder="ALWP agency (if yes)" value={alwpAgency} onChange={(e) => setAlwpAgency(e.target.value)} />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <select
-                value={previousUnsuccessfulPlacements}
-                onChange={(e) => setPreviousUnsuccessfulPlacements(e.target.value as YesNo)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="No">Previous unsuccessful placements: No</option>
-                <option value="Yes">Previous unsuccessful placements: Yes</option>
-              </select>
-              <select
-                value={hasPrimaryCaregiver}
-                onChange={(e) => setHasPrimaryCaregiver(e.target.value as YesNo)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="No">Primary caregiver: No</option>
-                <option value="Yes">Primary caregiver: Yes</option>
-              </select>
-            </div>
-
-            <Input
-              placeholder="Previous placement explanation (if yes)"
-              value={previousPlacementExplanation}
-              onChange={(e) => setPreviousPlacementExplanation(e.target.value)}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setSelectedMember(null)}>
+            ← Back
+          </Button>
+          <Button
+            variant={mode === 'edit' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setMode('edit')}
+          >
+            <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+          </Button>
+          <Button
+            variant={mode === 'preview' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setMode('preview')}
+          >
+            <Eye className="mr-1.5 h-3.5 w-3.5" /> Preview
+          </Button>
+          <Button variant="outline" size="sm" onClick={saveDraft}>
+            Save Draft
+          </Button>
+          {mode === 'preview' && (
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              Print / PDF
+            </Button>
+          )}
+          {/* SW signature before submit */}
+          <div className="flex items-center gap-1.5 border rounded-md px-2 bg-white">
+            <span className="text-[10px] text-zinc-500 whitespace-nowrap">Sign:</span>
+            <input
+              type="text"
+              value={swSignature}
+              onChange={(e) => setSwSignature(e.target.value)}
+              placeholder="Type your full name…"
+              className="h-7 w-40 bg-transparent text-xs focus:outline-none border-b border-zinc-400 placeholder:text-zinc-400"
+              title="Type your full name as your MSW signature"
             />
-            <Input placeholder="Living situation" value={livingSituation} onChange={(e) => setLivingSituation(e.target.value)} />
+          </div>
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={submitting || !swSignature.trim()}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            {submitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
+            {submitting ? 'Submitting…' : 'Sign & Submit'}
+          </Button>
+        </div>
+      </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="incomeSources">Income sources</Label>
-              <textarea
-                id="incomeSources"
-                value={incomeSources}
-                onChange={(e) => setIncomeSources(e.target.value)}
-                className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="SSI, SSDI, retirement, other amounts..."
-              />
+      {/* ── Edit mode: collapsible per-page editor ── */}
+      {mode === 'edit' && (
+        <div className="mb-4 space-y-3 rounded-md border border-zinc-200 bg-white p-3 print:hidden">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold">ALFT Form — {selectedMember.memberName}</div>
+              <div className="text-xs text-zinc-500">Fill in each section. Use Preview to check formatting before submitting.</div>
             </div>
+          </div>
 
-            <div className="rounded-md border p-3 space-y-3">
-              <div className="text-sm font-semibold">Stage 2: Cognitive, health, and ADL/IADL</div>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {PAGE_LAYOUT.map((layout) => {
+              const source = SOURCE.find((p) => p.id === layout.sourceId);
+              const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
+              return (
+                <details key={`editor-${layout.number}`} className="rounded border border-zinc-200 p-2" open={layout.number === 1}>
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-700 select-none">
+                    Page {layout.number}: {layout.title}
+                  </summary>
+                  <div className="mt-2 grid grid-cols-1 gap-2 xl:grid-cols-2">
+                    {questions.map((q) => (
+                      <div
+                        key={`ef-${q.id}`}
+                        className={`rounded border border-zinc-100 bg-zinc-50 p-2 ${isLongText(q) ? 'xl:col-span-2' : ''}`}
+                      >
+                        <div className="mb-1 text-[11px] font-medium leading-tight text-zinc-800">{formatLabel(q.label)}</div>
 
-              <div className="space-y-2">
-                <Label htmlFor="cognitionOrientation">Orientation / cognition summary</Label>
-                <Input
-                  id="cognitionOrientation"
-                  value={cognitionOrientation}
-                  onChange={(e) => setCognitionOrientation(e.target.value)}
-                  placeholder="Alert/oriented, intermittent confusion, etc."
-                />
-              </div>
+                        {q.type === 'text' && (
+                          <input
+                            value={String(answers[q.id] || '')}
+                            onChange={(e) => setSingle(q.id, e.target.value)}
+                            className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs"
+                          />
+                        )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select
-                  value={shortTermMemoryImpairment}
-                  onChange={(e) => setShortTermMemoryImpairment(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Short-term memory impairment: No</option>
-                  <option value="Yes">Short-term memory impairment: Yes</option>
-                </select>
-                <select
-                  value={longTermMemoryImpairment}
-                  onChange={(e) => setLongTermMemoryImpairment(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Long-term memory impairment: No</option>
-                  <option value="Yes">Long-term memory impairment: Yes</option>
-                </select>
-                <select
-                  value={confusionEpisodes}
-                  onChange={(e) => setConfusionEpisodes(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Confusion episodes: No</option>
-                  <option value="Yes">Confusion episodes: Yes</option>
-                </select>
-                <select
-                  value={wanderingRisk}
-                  onChange={(e) => setWanderingRisk(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Wandering risk: No</option>
-                  <option value="Yes">Wandering risk: Yes</option>
-                </select>
-              </div>
+                        {q.type === 'textarea' && (
+                          <textarea
+                            value={String(answers[q.id] || '')}
+                            onChange={(e) => setSingle(q.id, e.target.value)}
+                            rows={isLargeCommentary(q) ? 10 : Math.min(Math.max(q.rows || 3, 3), 6)}
+                            className={`w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs ${isLargeCommentary(q) ? 'min-h-[180px]' : ''}`}
+                          />
+                        )}
 
-              <div className="space-y-2">
-                <Label htmlFor="cognitiveNotes">Cognitive notes</Label>
-                <textarea
-                  id="cognitiveNotes"
-                  value={cognitiveNotes}
-                  onChange={(e) => setCognitiveNotes(e.target.value)}
-                  className="min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
-              </div>
+                        {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
+                          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
+                            {q.options.map((opt) => (
+                              <label key={opt.value} className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name={`sw-alft-${q.id}`}
+                                  checked={String(answers[q.id] || '') === opt.value}
+                                  onChange={() => setSingle(q.id, opt.value)}
+                                />
+                                {opt.label}
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
 
-              <div className="space-y-2">
-                <Label htmlFor="majorDiagnoses">Major diagnoses and conditions</Label>
-                <textarea
-                  id="majorDiagnoses"
-                  value={majorDiagnoses}
-                  onChange={(e) => setMajorDiagnoses(e.target.value)}
-                  className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
-              </div>
+                        {q.type === 'checkboxGroup' && q.options?.length ? (
+                          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
+                            {q.options.map((opt) => {
+                              const checked = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
+                              return (
+                                <label key={opt.value} className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer">
+                                  <input type="checkbox" checked={checked} onChange={() => toggleMulti(q.id, opt.value)} />
+                                  {opt.label}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select
-                  value={fallHistoryPast6Months}
-                  onChange={(e) => setFallHistoryPast6Months(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Falls in past 6 months: No</option>
-                  <option value="Yes">Falls in past 6 months: Yes</option>
-                </select>
-                <Input
-                  value={fallCountPast6Months}
-                  onChange={(e) => setFallCountPast6Months(e.target.value)}
-                  placeholder="Number of falls (if any)"
-                />
-                <Input
-                  value={erVisitsPast6Months}
-                  onChange={(e) => setErVisitsPast6Months(e.target.value)}
-                  placeholder="ER visits in past 6 months"
-                />
-                <Input
-                  value={hospitalizationsPast6Months}
-                  onChange={(e) => setHospitalizationsPast6Months(e.target.value)}
-                  placeholder="Hospitalizations in past 6 months"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select
-                  value={recentWeightLoss}
-                  onChange={(e) => setRecentWeightLoss(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Recent weight loss: No</option>
-                  <option value="Yes">Recent weight loss: Yes</option>
-                </select>
-                <select
-                  value={painConcerns}
-                  onChange={(e) => setPainConcerns(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Pain concerns: No</option>
-                  <option value="Yes">Pain concerns: Yes</option>
-                </select>
-                <select
-                  value={skinBreakdownRisk}
-                  onChange={(e) => setSkinBreakdownRisk(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Skin breakdown risk: No</option>
-                  <option value="Yes">Skin breakdown risk: Yes</option>
-                </select>
-                <select
-                  value={oxygenUse}
-                  onChange={(e) => setOxygenUse(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Oxygen use: No</option>
-                  <option value="Yes">Oxygen use: Yes</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input
-                  value={oxygenDetails}
-                  onChange={(e) => setOxygenDetails(e.target.value)}
-                  placeholder="Oxygen details (liters/device), if any"
-                />
-                <Input
-                  value={durableMedicalEquipment}
-                  onChange={(e) => setDurableMedicalEquipment(e.target.value)}
-                  placeholder="Durable medical equipment"
-                />
-              </div>
-
-              <div className="text-xs font-medium text-muted-foreground">ADLs</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select value={adlBathing} onChange={(e) => setAdlBathing(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Bathing: Independent</option>
-                  <option value="Needs Assistance">Bathing: Needs Assistance</option>
-                  <option value="Dependent">Bathing: Dependent</option>
-                  <option value="N/A">Bathing: N/A</option>
-                </select>
-                <select value={adlDressing} onChange={(e) => setAdlDressing(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Dressing: Independent</option>
-                  <option value="Needs Assistance">Dressing: Needs Assistance</option>
-                  <option value="Dependent">Dressing: Dependent</option>
-                  <option value="N/A">Dressing: N/A</option>
-                </select>
-                <select value={adlToileting} onChange={(e) => setAdlToileting(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Toileting: Independent</option>
-                  <option value="Needs Assistance">Toileting: Needs Assistance</option>
-                  <option value="Dependent">Toileting: Dependent</option>
-                  <option value="N/A">Toileting: N/A</option>
-                </select>
-                <select value={adlTransferring} onChange={(e) => setAdlTransferring(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Transferring: Independent</option>
-                  <option value="Needs Assistance">Transferring: Needs Assistance</option>
-                  <option value="Dependent">Transferring: Dependent</option>
-                  <option value="N/A">Transferring: N/A</option>
-                </select>
-                <select value={adlAmbulation} onChange={(e) => setAdlAmbulation(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Ambulation: Independent</option>
-                  <option value="Needs Assistance">Ambulation: Needs Assistance</option>
-                  <option value="Dependent">Ambulation: Dependent</option>
-                  <option value="N/A">Ambulation: N/A</option>
-                </select>
-                <select value={adlEating} onChange={(e) => setAdlEating(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Eating: Independent</option>
-                  <option value="Needs Assistance">Eating: Needs Assistance</option>
-                  <option value="Dependent">Eating: Dependent</option>
-                  <option value="N/A">Eating: N/A</option>
-                </select>
-              </div>
-
-              <div className="text-xs font-medium text-muted-foreground">IADLs</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select value={iadlMedicationManagement} onChange={(e) => setIadlMedicationManagement(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Medication management: Independent</option>
-                  <option value="Needs Assistance">Medication management: Needs Assistance</option>
-                  <option value="Dependent">Medication management: Dependent</option>
-                  <option value="N/A">Medication management: N/A</option>
-                </select>
-                <select value={iadlMealPrep} onChange={(e) => setIadlMealPrep(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Meal prep: Independent</option>
-                  <option value="Needs Assistance">Meal prep: Needs Assistance</option>
-                  <option value="Dependent">Meal prep: Dependent</option>
-                  <option value="N/A">Meal prep: N/A</option>
-                </select>
-                <select value={iadlHousekeeping} onChange={(e) => setIadlHousekeeping(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Housekeeping: Independent</option>
-                  <option value="Needs Assistance">Housekeeping: Needs Assistance</option>
-                  <option value="Dependent">Housekeeping: Dependent</option>
-                  <option value="N/A">Housekeeping: N/A</option>
-                </select>
-                <select value={iadlLaundry} onChange={(e) => setIadlLaundry(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Laundry: Independent</option>
-                  <option value="Needs Assistance">Laundry: Needs Assistance</option>
-                  <option value="Dependent">Laundry: Dependent</option>
-                  <option value="N/A">Laundry: N/A</option>
-                </select>
-                <select value={iadlTransportation} onChange={(e) => setIadlTransportation(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Transportation: Independent</option>
-                  <option value="Needs Assistance">Transportation: Needs Assistance</option>
-                  <option value="Dependent">Transportation: Dependent</option>
-                  <option value="N/A">Transportation: N/A</option>
-                </select>
-                <select value={iadlShopping} onChange={(e) => setIadlShopping(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Shopping: Independent</option>
-                  <option value="Needs Assistance">Shopping: Needs Assistance</option>
-                  <option value="Dependent">Shopping: Dependent</option>
-                  <option value="N/A">Shopping: N/A</option>
-                </select>
-                <select value={iadlFinances} onChange={(e) => setIadlFinances(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Finances: Independent</option>
-                  <option value="Needs Assistance">Finances: Needs Assistance</option>
-                  <option value="Dependent">Finances: Dependent</option>
-                  <option value="N/A">Finances: N/A</option>
-                </select>
-                <select value={iadlPhoneUse} onChange={(e) => setIadlPhoneUse(e.target.value as FunctionLevel)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="Independent">Phone use: Independent</option>
-                  <option value="Needs Assistance">Phone use: Needs Assistance</option>
-                  <option value="Dependent">Phone use: Dependent</option>
-                  <option value="N/A">Phone use: N/A</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="rounded-md border p-3 space-y-3">
-              <div className="text-sm font-semibold">Stage 3: Conditions, behavior, meds, environment, and sign-off prep</div>
-
-              <div className="space-y-2">
-                <Label htmlFor="healthConditionsAndTherapies">Health conditions and therapies</Label>
-                <textarea
-                  id="healthConditionsAndTherapies"
-                  value={healthConditionsAndTherapies}
-                  onChange={(e) => setHealthConditionsAndTherapies(e.target.value)}
-                  className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  placeholder="Chronic conditions, current therapies, treatment notes..."
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="mentalHealthDiagnosis">Mental health diagnosis / notes</Label>
-                <Input
-                  id="mentalHealthDiagnosis"
-                  value={mentalHealthDiagnosis}
-                  onChange={(e) => setMentalHealthDiagnosis(e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select value={depressionSymptoms} onChange={(e) => setDepressionSymptoms(e.target.value as BehaviorFrequency)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="None">Depression symptoms: None</option>
-                  <option value="Rarely">Depression symptoms: Rarely</option>
-                  <option value="Sometimes">Depression symptoms: Sometimes</option>
-                  <option value="Often">Depression symptoms: Often</option>
-                  <option value="Daily">Depression symptoms: Daily</option>
-                </select>
-                <select value={anxietySymptoms} onChange={(e) => setAnxietySymptoms(e.target.value as BehaviorFrequency)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="None">Anxiety symptoms: None</option>
-                  <option value="Rarely">Anxiety symptoms: Rarely</option>
-                  <option value="Sometimes">Anxiety symptoms: Sometimes</option>
-                  <option value="Often">Anxiety symptoms: Often</option>
-                  <option value="Daily">Anxiety symptoms: Daily</option>
-                </select>
-                <select value={agitationBehaviors} onChange={(e) => setAgitationBehaviors(e.target.value as BehaviorFrequency)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="None">Agitation behaviors: None</option>
-                  <option value="Rarely">Agitation behaviors: Rarely</option>
-                  <option value="Sometimes">Agitation behaviors: Sometimes</option>
-                  <option value="Often">Agitation behaviors: Often</option>
-                  <option value="Daily">Agitation behaviors: Daily</option>
-                </select>
-                <select value={aggressionBehaviors} onChange={(e) => setAggressionBehaviors(e.target.value as BehaviorFrequency)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="None">Aggression behaviors: None</option>
-                  <option value="Rarely">Aggression behaviors: Rarely</option>
-                  <option value="Sometimes">Aggression behaviors: Sometimes</option>
-                  <option value="Often">Aggression behaviors: Often</option>
-                  <option value="Daily">Aggression behaviors: Daily</option>
-                </select>
-                <select value={sleepDisturbance} onChange={(e) => setSleepDisturbance(e.target.value as BehaviorFrequency)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm sm:col-span-2">
-                  <option value="None">Sleep disturbance: None</option>
-                  <option value="Rarely">Sleep disturbance: Rarely</option>
-                  <option value="Sometimes">Sleep disturbance: Sometimes</option>
-                  <option value="Often">Sleep disturbance: Often</option>
-                  <option value="Daily">Sleep disturbance: Daily</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="behaviorInterventions">Behavior interventions / supports</Label>
-                <textarea
-                  id="behaviorInterventions"
-                  value={behaviorInterventions}
-                  onChange={(e) => setBehaviorInterventions(e.target.value)}
-                  className="min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="nutritionNeeds">Nutrition needs</Label>
-                <textarea
-                  id="nutritionNeeds"
-                  value={nutritionNeeds}
-                  onChange={(e) => setNutritionNeeds(e.target.value)}
-                  className="min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="swMedicationSummary">Medication summary</Label>
-                <textarea
-                  id="swMedicationSummary"
-                  value={swMedicationSummary}
-                  onChange={(e) => setSwMedicationSummary(e.target.value)}
-                  className="min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  placeholder="List key meds/doses/frequency or paste concise med table notes..."
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input placeholder="Primary physician name" value={primaryPhysicianName} onChange={(e) => setPrimaryPhysicianName(e.target.value)} />
-                <Input placeholder="Primary physician phone" value={primaryPhysicianPhone} onChange={(e) => setPrimaryPhysicianPhone(e.target.value)} />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <select
-                  value={advanceDirectiveInPlace}
-                  onChange={(e) => setAdvanceDirectiveInPlace(e.target.value as YesNo)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="No">Advance directive in place: No</option>
-                  <option value="Yes">Advance directive in place: Yes</option>
-                </select>
-                <Input
-                  placeholder="Advance directive notes"
-                  value={advanceDirectiveNotes}
-                  onChange={(e) => setAdvanceDirectiveNotes(e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Input placeholder="Environmental risks" value={environmentalRisks} onChange={(e) => setEnvironmentalRisks(e.target.value)} />
-                <Input placeholder="Vision status" value={visionStatus} onChange={(e) => setVisionStatus(e.target.value)} />
-                <Input placeholder="Hearing status" value={hearingStatus} onChange={(e) => setHearingStatus(e.target.value)} />
-              </div>
-
-              <Input
-                placeholder="Living arrangement details"
-                value={livingArrangementDetails}
-                onChange={(e) => setLivingArrangementDetails(e.target.value)}
-              />
-
-              <div className="space-y-2">
-                <Label htmlFor="medicationTable">Medication table (paste / structured text)</Label>
-                <textarea
-                  id="medicationTable"
-                  value={medicationTable}
-                  onChange={(e) => setMedicationTable(e.target.value)}
-                  className="min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  placeholder="Medication | Dose | Frequency | Route | Notes"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="rnMswCommentary">RN/MSW commentary</Label>
-                <textarea
-                  id="rnMswCommentary"
-                  value={rnMswCommentary}
-                  onChange={(e) => setRnMswCommentary(e.target.value)}
-                  className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input placeholder="RN reviewer name" value={rnReviewerName} onChange={(e) => setRnReviewerName(e.target.value)} />
-                <Input type="date" value={rnReviewerDate} onChange={(e) => setRnReviewerDate(e.target.value)} />
-                <Input placeholder="MSW signature name" value={mswSignatureName} onChange={(e) => setMswSignatureName(e.target.value)} />
-                <Input type="date" value={mswSignatureDate} onChange={(e) => setMswSignatureDate(e.target.value)} />
-              </div>
-            </div>
-
-            <ExactAlftQuestionnaire
-              answers={exactPacketAnswers}
-              onChange={(id, value) =>
-                setExactPacketAnswers((prev) => ({
-                  ...prev,
-                  [id]: value,
-                }))
-              }
-            />
-
-            <div className="space-y-2">
-              <Label htmlFor="swName">Social worker name</Label>
-              <Input
-                id="swName"
-                value={socialWorkerName}
-                onChange={(e) => setSocialWorkerName(e.target.value)}
-                placeholder={swRealName ? '' : 'Type your full name (not email)'}
-                required
-                disabled={Boolean(swRealName)}
-              />
-              {!swRealName ? (
-                <div className="text-xs text-muted-foreground">
-                  This should auto-fill from your Social Worker profile. If it’s blank, ask admin to set your display name.
+      {/* ── Preview mode: print-ready PDF layout ── */}
+      <div className={`space-y-4 print:space-y-0 ${mode === 'edit' ? 'hidden print:block' : ''}`}>
+        {PAGE_LAYOUT.map((layout) => {
+          const source = SOURCE.find((p) => p.id === layout.sourceId);
+          const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
+          const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter(
+            (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id)
+          );
+          return (
+            <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5">
+              {/* Page header */}
+              <div className="mb-2 border-b border-zinc-400 pb-1.5">
+                <div className="flex flex-col items-center gap-1">
+                  <img src="/ils-logo.png" alt="Independent Living Systems" className="alft-logo h-[36px] w-auto object-contain" loading="eager" />
+                  <div className="text-center text-[12px] font-semibold tracking-wide">ALF TRANSITION ASSESSMENT</div>
                 </div>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="uploadDate">Upload date</Label>
-              <Input
-                id="uploadDate"
-                type="date"
-                value={uploadDate}
-                onChange={(e) => setUploadDate(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="priorityLevel">Priority</Label>
-              <Input
-                id="priorityLevel"
-                value={priorityLevel}
-                onChange={(e) => setPriorityLevel(e.target.value)}
-                placeholder="Routine / Urgent / Priority"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="transitionSummary">Transition summary</Label>
-              <textarea
-                id="transitionSummary"
-                value={transitionSummary}
-                onChange={(e) => setTransitionSummary(e.target.value)}
-                className="min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="Brief summary of current transition status and goals..."
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="barriersAndRisks">Barriers / risks (optional)</Label>
-              <textarea
-                id="barriersAndRisks"
-                value={barriersAndRisks}
-                onChange={(e) => setBarriersAndRisks(e.target.value)}
-                className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="Any barriers, concerns, or risks..."
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="requestedActions">Requested actions</Label>
-              <textarea
-                id="requestedActions"
-                value={requestedActions}
-                onChange={(e) => setRequestedActions(e.target.value)}
-                className="min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="What should staff/RN review or update?"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="additionalNotes">Additional notes (optional)</Label>
-              <textarea
-                id="additionalNotes"
-                value={additionalNotes}
-                onChange={(e) => setAdditionalNotes(e.target.value)}
-                className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="Anything else the team should know..."
-              />
-            </div>
-
-            <div className="space-y-2 print:hidden">
-              <Label htmlFor="file">Attachments (PDF/images/docs)</Label>
-              <Input
-                id="file"
-                type="file"
-                multiple
-                onChange={(e) => setFiles(e.target.files)}
-                disabled={isUploading}
-              />
-              <div className="text-xs text-muted-foreground">
-                Upload the completed ALFT PDF (and optional supporting files). Up to 5 files.
+                <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-700">
+                  <span>{selectedMember.memberName} {selectedMember.memberMrn ? `• MRN: ${selectedMember.memberMrn}` : ''}</span>
+                  <span>Page {layout.number} of {TOTAL_PAGES}</span>
+                </div>
+                <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
+                  {layout.title}
+                </div>
               </div>
-            </div>
 
-            {isUploading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground print:hidden">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Uploading… {uploadProgress}%
+              {/* Questions grid */}
+              <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
+                {renderedQuestions.map((q) => (
+                  <div key={q.id} className="contents">
+                    {(SECTION_DIVIDERS[layout.number] || [])
+                      .filter((d) => d.beforeQuestionId === q.id)
+                      .map((d) => (
+                        <div key={`${layout.number}-${d.beforeQuestionId}-divider`} className="alft-subsection-title md:col-span-2 alft-col-span-2">
+                          {d.label}
+                        </div>
+                      ))}
+                    <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''}`}>
+                      <div className="font-semibold leading-tight">{formatLabel(q.label)}</div>
+                      {isOptionQ(q) && q.options?.length ? (
+                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                          {q.options.map((opt) => {
+                            const selected = q.type === 'checkboxGroup'
+                              ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value)
+                              : String(answers[q.id] || '') === opt.value;
+                            return (
+                              <div key={opt.value} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                                <Dot selected={selected} />
+                                <span className={selected ? 'font-semibold text-zinc-900' : 'text-zinc-600'}>{opt.label}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'} ${isLargeCommentary(q) ? 'large-commentary-box' : ''}`}>
+                          {asText(answers[q.id]) || ' '}
+                        </div>
+                      )}
+                      {q.type === 'select' && q.options?.length ? (
+                        <div className="mt-0.5 text-[9px] text-zinc-600">Selected: {optionLabel(q, String(answers[q.id] || ''))}</div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : null}
 
-            <div className="flex flex-col sm:flex-row gap-2 print:hidden">
-              <Button type="button" variant="outline" onClick={handlePrint} className="sm:flex-1">
-                View printable ALFT (Print/Download)
-              </Button>
-              <Button type="submit" disabled={isUploading} className="sm:flex-1">
-                {isUploading ? 'Submitting…' : 'Submit ALFT form'}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+              {/* Signature section on last page */}
+              {layout.number === 13 && (
+                <div className="signature-section mt-3 space-y-2 text-[10px]">
+                  <div className="alft-subsection-title">Signature Section</div>
+                  <div className="signature-block">
+                    <div className="signature-title">MSW Signature</div>
+                    <div className="signature-grid">
+                      <div><div className="signature-label">Name</div><div className="signature-line">{mswName || ' '}</div></div>
+                      <div><div className="signature-label">Date</div><div className="signature-line">{mswDate || ' '}</div></div>
+                      <div className="md:col-span-2"><div className="signature-label">Signature</div><div className="signature-line">{' '}</div></div>
+                    </div>
+                  </div>
+                  <div className="signature-block">
+                    <div className="signature-title">RN Signature</div>
+                    <div className="signature-grid">
+                      <div><div className="signature-label">Name</div><div className="signature-line">{rnName || ' '}</div></div>
+                      <div><div className="signature-label">Date</div><div className="signature-line">{rnDate || ' '}</div></div>
+                      <div><div className="signature-label">License Number</div><div className="signature-line">{rnLicense || ' '}</div></div>
+                      <div><div className="signature-label">Signature</div><div className="signature-line">{' '}</div></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 border-t border-zinc-300 pt-2 text-right text-[10px] text-zinc-600">
+                ALF Transition Assessment — Page {layout.number} of {TOTAL_PAGES}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      {/* ── Print/PDF styles ── */}
       <style jsx global>{`
+        body { background: #f5f5f5; }
+        .alft-sw-tool { color: #18181b; }
+        .alft-page {
+          min-height: 10.45in;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          font-family: Arial, Helvetica, sans-serif;
+          letter-spacing: 0.01em;
+        }
+        .alft-logo { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .alft-section-title {
+          background: #0f8bb5; border: 1px solid #0f8bb5; color: #ffffff;
+          padding: 2px 6px;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .alft-subsection-title {
+          background: #0f8bb5; border: 1px solid #0f8bb5; color: #ffffff;
+          padding: 2px 6px; font-size: 11px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.04em;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .question-block { background: #fff; }
+        .answer-line { min-height: 0.7rem; }
+        .section-notes-answer { min-height: 54px; border: none; font-size: 11px; line-height: 1.35; padding-top: 4px; }
+        .large-commentary-box { min-height: 240px; border: 1px solid #71717a; padding: 6px; background: #fafafa; }
+        .signature-block { border: 1px solid #d4d4d8; padding: 8px; background: #fff; }
+        .signature-section, .signature-block { break-inside: avoid; page-break-inside: avoid; }
+        .signature-title { font-size: 11px; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; }
+        .signature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .signature-label { font-size: 9px; color: #52525b; margin-bottom: 2px; text-transform: uppercase; }
+        .signature-line { border-bottom: 1px solid #3f3f46; min-height: 16px; font-size: 11px; }
         @media print {
-          @page {
-            size: letter;
-            margin: 0.5in;
-          }
-          .alft-print-root {
-            max-width: none !important;
-          }
-          .alft-print-root .card,
-          .alft-print-root [class*='rounded-md border'] {
-            border: 1px solid #d4d4d8 !important;
-            box-shadow: none !important;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-          .alft-print-root details > * {
-            display: block !important;
-          }
-          .alft-print-root details > summary {
-            list-style: none;
-            margin-bottom: 0.35rem;
-          }
-          .alft-print-root input,
-          .alft-print-root select,
-          .alft-print-root textarea {
-            border: 1px solid #d4d4d8 !important;
-            color: #111827 !important;
-            background: #ffffff !important;
-          }
-          .alft-print-root textarea {
-            min-height: 72px !important;
-          }
-          .alft-print-root a {
-            color: #111827 !important;
-            text-decoration: none !important;
-          }
+          @page { size: letter; margin: 0.5in; }
+          body * { visibility: hidden !important; }
+          .alft-sw-tool, .alft-sw-tool * { visibility: visible !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          .alft-sw-tool { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; max-width: none !important; }
+          body { background: #fff !important; }
+          .alft-sw-tool { margin: 0 !important; padding: 0 !important; }
+          .alft-page { min-height: auto !important; box-shadow: none !important; padding: 0.25in 0.2in 0.15in !important; border-color: #a1a1aa !important; page-break-after: always; break-after: page; }
+          .alft-page:last-child { page-break-after: auto; break-after: auto; }
+          .alft-question-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+          .alft-col-span-2 { grid-column: span 2 / span 2 !important; }
         }
       `}</style>
     </div>
   );
 }
-

@@ -85,7 +85,7 @@ function SWLoginPageContent() {
         const claims = (tokenResult?.claims || {}) as Record<string, any>;
         if (Boolean(claims.socialWorker)) {
           if (!stored) writeStoredSwLoginDay(today);
-          router.push('/sw-portal/roster');
+          router.push('/sw-portal/home');
         }
       } catch {
         // best-effort only
@@ -203,7 +203,7 @@ function SWLoginPageContent() {
         description: 'Welcome to the Social Worker Portal'
       });
 
-      router.push('/sw-portal/roster');
+      router.push('/sw-portal/home');
     })()
       .catch((err: any) => {
         const code = String(err?.code || '').trim();

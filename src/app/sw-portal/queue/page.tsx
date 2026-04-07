@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
@@ -105,7 +105,14 @@ export default function SWQueuePage() {
   const { user, isSocialWorker, isLoading } = useSocialWorker();
   const auth = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Redirect to the new Home dashboard; queue is kept for backward compatibility.
+  useEffect(() => {
+    const q = searchParams?.get('q');
+    router.replace(q ? `/sw-portal/home?q=${encodeURIComponent(q)}` : '/sw-portal/home');
+  }, [router, searchParams]);
 
   const swEmail = String((user as any)?.email || '').trim();
 

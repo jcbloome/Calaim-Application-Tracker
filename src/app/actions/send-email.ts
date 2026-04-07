@@ -751,15 +751,57 @@ export const sendAlftCompletedWorkflowEmail = async (payload: AlftCompletedWorkf
     ];
 
     const html = `
-      <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.45;">
-        <h2 style="margin-bottom: 8px;">ALFT Completed Form</h2>
-        <p style="margin-top: 0;">A completed internal ALFT workflow form is ready for review.</p>
-        <p><strong>Member:</strong> ${memberName}${mrn ? ` &nbsp; | &nbsp; <strong>MRN:</strong> ${mrn}` : ''}</p>
-        <p><strong>Intake ID:</strong> ${intakeId || '—'}</p>
-        ${summary ? `<p><strong>Summary:</strong> ${summary}</p>` : ''}
-        <p><strong>Files:</strong></p>
-        <ul>${listItems.length > 0 ? listItems.join('') : '<li>No file links available</li>'}</ul>
-        <p style="font-size: 12px; color: #64748b;">Sent by CalAIM Tracker ALFT workflow.</p>
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 600px;">
+        <div style="background: #0f172a; border-radius: 10px 10px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;">ILS Health — CalAIM ALFT Workflow</p>
+          <h2 style="margin: 6px 0 0; color: #ffffff; font-size: 20px;">Completed ALFT Assessment</h2>
+        </div>
+
+        <div style="border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px; padding: 24px;">
+          <p style="margin: 0 0 16px; color: #334155;">
+            Hi Jocelyn — the following Kaiser member's ALF Transition Assessment has been completed, reviewed, and signed by the MSW and RN.
+            The Kaiser manager (Deydry) has approved it for submission. Please find the documents below.
+          </p>
+
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <tr>
+              <td style="padding: 10px 14px; font-size: 12px; color: #64748b; width: 110px; border-bottom: 1px solid #e2e8f0;">Member</td>
+              <td style="padding: 10px 14px; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">${memberName}</td>
+            </tr>
+            ${mrn ? `
+            <tr>
+              <td style="padding: 10px 14px; font-size: 12px; color: #64748b; border-bottom: 1px solid #e2e8f0;">Kaiser MRN</td>
+              <td style="padding: 10px 14px; font-size: 14px; font-family: monospace; border-bottom: 1px solid #e2e8f0;">${mrn}</td>
+            </tr>` : ''}
+            ${summary ? `
+            <tr>
+              <td style="padding: 10px 14px; font-size: 12px; color: #64748b; vertical-align: top;">Summary</td>
+              <td style="padding: 10px 14px; font-size: 13px; color: #334155;">${summary}</td>
+            </tr>` : ''}
+          </table>
+
+          <h3 style="margin: 0 0 10px; font-size: 14px; color: #0f172a;">Documents</h3>
+          ${listItems.length > 0
+            ? `<ul style="margin: 0 0 20px; padding-left: 20px; font-size: 14px; line-height: 2;">
+                ${listItems.join('')}
+               </ul>`
+            : `<p style="color: #94a3b8; font-size: 13px; margin-bottom: 20px;">
+                No PDF links generated — the assessment was submitted as a digital form.
+                Log in to the admin portal to access the form data directly.
+               </p>`
+          }
+
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 20px;">
+            <p style="margin: 0; font-size: 13px; color: #166534;">
+              <strong>Action needed:</strong> Please download the final packet PDF and submit it to Kaiser per ILS protocol.
+              If you have any questions, contact Deydry or the ILS admin team.
+            </p>
+          </div>
+
+          <p style="font-size: 11px; color: #94a3b8; margin: 0;">
+            Intake ID: ${intakeId || '—'} &nbsp;·&nbsp; Sent automatically by CalAIM Tracker ALFT workflow.
+          </p>
+        </div>
       </div>
     `;
 
