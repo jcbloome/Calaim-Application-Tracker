@@ -29,6 +29,7 @@ function KaiserReferralPrintableContent() {
       currentLocationName={searchParams.get('currentLocationName') || ''}
       currentLocationAddress={searchParams.get('currentLocationAddress') || ''}
       healthPlan={searchParams.get('healthPlan') || ''}
+      memberCounty={searchParams.get('memberCounty') || ''}
       showPrintButton={true}
     />
   );
