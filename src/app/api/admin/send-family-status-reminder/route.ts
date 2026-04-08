@@ -82,10 +82,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skippedDisabled: true });
     }
 
-    const recipientEmail = String(overrideEmail || appData?.referrerEmail || '').trim();
+    const recipientEmail = String(overrideEmail || appData?.bestContactEmail || appData?.referrerEmail || '').trim();
     if (!recipientEmail) {
       return NextResponse.json(
-        { success: false, error: 'Referrer email is missing for this application' },
+        { success: false, error: 'Primary contact email is missing for this application' },
         { status: 400 }
       );
     }
@@ -106,7 +106,10 @@ export async function POST(request: NextRequest) {
     }
 
     const memberName = `${String(appData?.memberFirstName || '').trim()} ${String(appData?.memberLastName || '').trim()}`.trim() || 'CalAIM Member';
-    const referrerName = String(appData?.referrerName || '').trim() || 'there';
+    const primaryContactName = String(
+      `${appData?.bestContactFirstName || ''} ${appData?.bestContactLastName || ''}`
+    ).trim();
+    const referrerName = primaryContactName || String(appData?.referrerName || '').trim() || 'there';
     const senderName = String(sentByName || '').trim() || 'The Connections Team';
     const subject = `Application progress update for ${memberName}`;
     const processingSelected = /cs summary submitted - processing/i.test(statusText);

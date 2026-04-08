@@ -11,12 +11,18 @@ import { PhoneInput } from '@/components/ui/phone-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const locationOptions = ['Home', 'Hospital', 'Skilled Nursing', 'Unhoused', 'Sub-Acute', 'Assisted Living', 'Other', 'Unknown'];
 
 export default function Step5() {
-  const { control, watch, getValues, setValue } = useFormContext<FormValues>();
+  const { control, watch, getValues, setValue, clearErrors } = useFormContext<FormValues>();
   const hasPrefRCFE = watch('hasPrefRCFE');
+  const ispContactIsMember = watch('ispContactIsMember');
+  const memberFirstName = watch('memberFirstName');
+  const memberLastName = watch('memberLastName');
+  const memberPhone = watch('memberPhone');
+  const memberEmail = watch('memberEmail');
 
   useEffect(() => {
     const normalizedState = normalizeUsStateCode(getValues('ispState'));
@@ -24,6 +30,20 @@ export default function Step5() {
       setValue('ispState', normalizedState);
     }
   }, [getValues, setValue]);
+
+  useEffect(() => {
+    if (!ispContactIsMember) return;
+    setValue('ispFirstName', String(memberFirstName || '').trim());
+    setValue('ispLastName', String(memberLastName || '').trim());
+    setValue('ispRelationship', 'Self (Member)');
+    if (String(memberPhone || '').trim()) {
+      setValue('ispPhone', String(memberPhone || '').trim());
+    }
+    if (String(memberEmail || '').trim()) {
+      setValue('ispEmail', String(memberEmail || '').trim());
+    }
+    clearErrors(['ispFirstName', 'ispLastName', 'ispRelationship']);
+  }, [ispContactIsMember, memberFirstName, memberLastName, memberPhone, memberEmail, setValue, clearErrors]);
 
   const formatName = (value: string) => {
     if (!value) return '';
@@ -58,35 +78,51 @@ export default function Step5() {
       <Card className="border-l-4 border-accent">
         <CardHeader>
           <CardTitle>Section 11: Individual Service Plan (ISP)</CardTitle>
-          <CardDescription>Please review the ISP contact instructions below.</CardDescription>
+          <CardDescription>Choose who our RN/MSW should coordinate with and where the assessment discussion should happen.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-blue-900">
-            <p className="text-sm">
-              An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP)
-              clinical team to determine the member's care needs and to approve them for the program. The ISP assessment
-              is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or
-              in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the
-              MCP will pay for the "assisted living" portion). For Health Net, the tiered level is determined by
-              Connections. For Kaiser, the tiered level is determined by Kaiser.
+            <p className="text-sm font-medium">Why we ask these ISP questions</p>
+            <p className="text-sm mt-1">
+              ISP details help our RN/MSW complete the care-needs review used for tier level and plan authorization.
             </p>
+            <ul className="mt-2 list-disc pl-5 text-sm space-y-1">
+              <li><strong>Health Net:</strong> ISP review is virtual, but we still need the correct contact and location context for the call.</li>
+              <li><strong>Kaiser:</strong> ISP review is in-person with the member and/or the best care-needs contact.</li>
+              <li><strong>Contact can be the member</strong> or another person (family, SNF social worker, RCFE staff, etc.).</li>
+            </ul>
             <p className="text-sm mt-3">
-              Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician's
-              report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this is
-              not the primary care doctor but could be a SNF social worker, etc.
+              Examples: “Member at home in Long Beach”, “Daughter is contact, member is at SNF in Glendale”, “SNF social worker is contact; assessment at facility”.
             </p>
           </div>
+          <FormField
+            control={control}
+            name="ispContactIsMember"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3">
+                <FormControl>
+                  <Checkbox checked={Boolean(field.value)} onCheckedChange={(checked) => field.onChange(checked === true)} />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel className="text-sm font-medium">Only ISP contact is the member</FormLabel>
+                  <FormDescription className="text-xs text-muted-foreground">
+                    Check this to use member name as ISP contact. You can still update phone/email and must still provide ISP assessment location details below.
+                  </FormDescription>
+                </div>
+              </FormItem>
+            )}
+          />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField control={control} name="ispFirstName" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
             <FormField control={control} name="ispLastName" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField control={control} name="ispRelationship" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact Relationship to Member <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact Relationship to Member <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
             <FormField control={control} name="ispPhone" render={({ field }) => (
               <FormItem><FormLabel>ISP Contact Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput {...field} /></FormControl><FormMessage /></FormItem>
@@ -103,6 +139,9 @@ export default function Step5() {
 
           <div className="space-y-4 p-4 border rounded-md mt-4">
             <h3 className="font-medium text-base">ISP Assessment Location</h3>
+            <p className="text-sm text-muted-foreground">
+              Enter where the RN/MSW should connect for care-needs review. For Health Net this is the call location/context; for Kaiser this is the in-person assessment location.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={control}

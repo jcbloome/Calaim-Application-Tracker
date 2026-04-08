@@ -94,13 +94,14 @@ export async function POST(request: NextRequest) {
     }
     
     const fallbackReferrerName = `${appData?.referrerFirstName || ''} ${appData?.referrerLastName || ''}`.trim() || 'there';
+    const primaryContactName = `${appData?.bestContactFirstName || ''} ${appData?.bestContactLastName || ''}`.trim();
     const memberName = `${appData?.memberFirstName || ''} ${appData?.memberLastName || ''}`.trim();
     
-    const recipientEmail = overrideEmail || appData?.referrerEmail;
-    const referrerName = overrideReferrerName || fallbackReferrerName;
+    const recipientEmail = overrideEmail || appData?.bestContactEmail || appData?.referrerEmail;
+    const referrerName = overrideReferrerName || primaryContactName || fallbackReferrerName;
     if (!recipientEmail) {
       return NextResponse.json(
-        { success: false, error: 'Referrer email is missing for this application' },
+        { success: false, error: 'Primary contact email is missing for this application' },
         { status: 400 }
       );
     }

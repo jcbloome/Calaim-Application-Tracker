@@ -171,7 +171,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const observerRef = useRef<MutationObserver | null>(null);
   const translateTimerRef = useRef<number | null>(null);
   const didShowErrorRef = useRef(false);
-  const isTranslationEnabledForPath = !String(pathname || '').startsWith('/admin');
+  const currentPath = String(pathname || '');
+  const isPrintablePath =
+    currentPath.includes('/printable') ||
+    currentPath.startsWith('/forms/printable-package');
+  const isTranslationEnabledForPath =
+    !currentPath.startsWith('/admin') && !isPrintablePath;
   const effectiveLanguage: LanguageCode = isTranslationEnabledForPath ? language : 'en';
 
   const setLanguage = (next: LanguageCode) => {

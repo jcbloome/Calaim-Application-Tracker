@@ -541,7 +541,11 @@ function PathwayPageContent() {
 
 
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    requirementTitle: string,
+    replaceExistingForm?: FormStatusType
+  ) => {
     if (!event.target.files?.length || !user?.uid) {
       console.log('Upload blocked:', { 
         hasFiles: !!event.target.files?.length, 
@@ -583,6 +587,16 @@ function PathwayPageContent() {
     setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
     
     try {
+        // If this is a revision upload, remove the prior file first so the new
+        // upload replaces the original document in the pathway record.
+        if (replaceExistingForm?.filePath) {
+          try {
+            const previousRef = ref(storage, replaceExistingForm.filePath);
+            await deleteObject(previousRef);
+          } catch {
+            // Best effort only. Continue so metadata still points to the newest file.
+          }
+        }
         console.log('Attempting upload with user:', user?.email, 'applicationId:', applicationId);
         const uploadResult = await doUpload(files, requirementTitle);
         console.log('Upload result:', uploadResult);
@@ -914,12 +928,12 @@ function PathwayPageContent() {
   };
 
   const sendProofIncomeSocWarning = async () => {
-    const to = String((application as any)?.referrerEmail || '').trim();
+    const to = String((application as any)?.bestContactEmail || (application as any)?.referrerEmail || '').trim();
     if (!to) {
       toast({
         variant: 'destructive',
-        title: 'Family email not available',
-        description: 'Add a referrer/family email before sending an SOC warning.',
+        title: 'Primary contact email not available',
+        description: 'Add a primary contact email before sending an SOC warning.',
       });
       return;
     }
@@ -934,7 +948,11 @@ function PathwayPageContent() {
           to,
           includeBcc: false,
           subject: `Proof of income SOC warning for ${memberName}`,
-          memberName: String(application.referrerName || 'there'),
+          memberName: String(
+            `${(application as any)?.bestContactFirstName || ''} ${(application as any)?.bestContactLastName || ''}`.trim() ||
+              application.referrerName ||
+              'there'
+          ),
           staffName: String(user?.displayName || user?.email || 'The Connections Team'),
           status: String(application.status || 'In Progress'),
           message: [
@@ -1018,11 +1036,11 @@ function PathwayPageContent() {
                      <QuickViewField label="Preferred Language" value={application.memberLanguage} />
                    </Section>
 
-                   <Section title="Referrer Information">
-                     <QuickViewField label="Name" value={`${application.referrerFirstName || ''} ${application.referrerLastName || ''}`} />
-                     <QuickViewField label="Agency" value={application.agency} />
-                     <QuickViewField label="Email" value={application.referrerEmail} />
-                     <QuickViewField label="Phone" value={application.referrerPhone} />
+                  <Section title="Submitting User Information">
+                    <QuickViewField label="Submitting User Name" value={`${application.referrerFirstName || ''} ${application.referrerLastName || ''}`} />
+                    <QuickViewField label="Agency" value={application.agency} />
+                    <QuickViewField label="Submitting User Email" value={application.referrerEmail} />
+                    <QuickViewField label="Submitting User Phone" value={application.referrerPhone} />
                    </Section>
 
                    <Section title="Health Plan & Pathway">
@@ -1030,7 +1048,7 @@ function PathwayPageContent() {
                     {kaiserRegion ? <QuickViewField label="Kaiser Region" value={kaiserRegion} /> : null}
                      <QuickViewField label="Pathway" value={application.pathway} />
                      <QuickViewField label="Current Location Type" value={application.currentLocation} />
-                     <QuickViewField label="Customary Location Type" value={application.customaryLocationType} />
+                    <QuickViewField label="Normal Long Term Mailing Address Location Type" value={application.customaryLocationType} />
                    </Section>
 
                    <Section title="Location Information">
@@ -1051,7 +1069,7 @@ function PathwayPageContent() {
                      />
                      <QuickViewField label="Customary Location Name" value={application.customaryLocationName} />
                      <QuickViewField
-                       label="Customary Address"
+                      label="Normal Long Term Mailing Address"
                        value={[
                          String(application.customaryAddress || '').trim(),
                          String(application.customaryCity || '').trim(),
@@ -1155,11 +1173,11 @@ function PathwayPageContent() {
                                 <QuickViewField label="Preferred Language" value={application.memberLanguage} />
                               </Section>
 
-                              <Section title="Referrer Information">
-                                <QuickViewField label="Name" value={`${application.referrerFirstName || ''} ${application.referrerLastName || ''}`} />
+                              <Section title="Submitting User Information">
+                                <QuickViewField label="Submitting User Name" value={`${application.referrerFirstName || ''} ${application.referrerLastName || ''}`} />
                                 <QuickViewField label="Agency" value={application.agency} />
-                                <QuickViewField label="Email" value={application.referrerEmail} />
-                                <QuickViewField label="Phone" value={application.referrerPhone} />
+                                <QuickViewField label="Submitting User Email" value={application.referrerEmail} />
+                                <QuickViewField label="Submitting User Phone" value={application.referrerPhone} />
                               </Section>
 
                               <Section title="Health Plan & Pathway">
@@ -1167,7 +1185,7 @@ function PathwayPageContent() {
                                 {kaiserRegion ? <QuickViewField label="Kaiser Region" value={kaiserRegion} /> : null}
                                 <QuickViewField label="Pathway" value={application.pathway} />
                                 <QuickViewField label="Current Location Type" value={application.currentLocation} />
-                                <QuickViewField label="Customary Location Type" value={application.customaryLocationType} />
+                                <QuickViewField label="Normal Long Term Mailing Address Location Type" value={application.customaryLocationType} />
                               </Section>
 
                               <Section title="Location Information">
@@ -1188,7 +1206,7 @@ function PathwayPageContent() {
                                 />
                                 <QuickViewField label="Customary Location Name" value={application.customaryLocationName} />
                                 <QuickViewField
-                                  label="Customary Address"
+                                  label="Normal Long Term Mailing Address"
                                   value={[
                                     String(application.customaryAddress || '').trim(),
                                     String(application.customaryCity || '').trim(),
@@ -1268,7 +1286,7 @@ function PathwayPageContent() {
                         ) : (
                           <>
                             <Send className="mr-2 h-4 w-4" />
-                            Send SOC warning to family
+                            Send SOC warning to primary contact
                           </>
                         )}
                       </Button>
@@ -1279,33 +1297,55 @@ function PathwayPageContent() {
                   return (
                     <div className="space-y-2">
                       {proofIncomeControl}
-                      <div className="flex min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        {formInfo?.downloadURL && (isAdmin || isSuperAdmin) ? (
-                          <a
-                            href={formInfo.downloadURL}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
-                          >
-                            {formInfo?.fileName || 'Completed'}
-                          </a>
+                      <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
+                        {(isAdmin || isSuperAdmin) && formInfo?.downloadURL ? (
+                          <div className="flex items-center justify-between gap-2">
+                            <a
+                              href={formInfo.downloadURL}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
+                            >
+                              {formInfo?.fileName || 'Completed'}
+                            </a>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                              onClick={() => handleFileRemove(formInfo!)}
+                            >
+                              <X className="h-4 w-4" />
+                              <span className="sr-only">Remove file</span>
+                            </Button>
+                          </div>
                         ) : (
-                          <span className="min-w-0 flex-1 truncate text-green-800 font-medium">
-                            {formInfo?.fileName || 'Completed'}
-                            {!isAdmin && !isSuperAdmin && formInfo?.downloadURL && (
-                              <span className="block text-xs text-gray-500 mt-1">Document submitted - accessible by staff only</span>
+                          <div className="space-y-2">
+                            <span className="block text-green-800 font-medium">Document submitted</span>
+                            <span className="block text-xs text-gray-500">Document preview/download is restricted to staff.</span>
+                            {!isReadOnly && (
+                              <>
+                                <Label
+                                  htmlFor={`${req.id}-replace`}
+                                  className={cn(
+                                    "flex h-9 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-xs font-medium ring-offset-background transition-colors hover:bg-primary/90",
+                                    isUploading && "opacity-50 pointer-events-none"
+                                  )}
+                                >
+                                  {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                                  <span>{isUploading ? `Replacing... ${currentProgress?.toFixed(0)}%` : 'Upload Revised Document'}</span>
+                                </Label>
+                                <Input
+                                  id={`${req.id}-replace`}
+                                  type="file"
+                                  className="sr-only"
+                                  onChange={(e) => handleFileUpload(e, req.title, formInfo)}
+                                  disabled={isUploading}
+                                  multiple={false}
+                                />
+                              </>
                             )}
-                          </span>
+                          </div>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
-                          onClick={() => handleFileRemove(formInfo!)}
-                        >
-                          <X className="h-4 w-4" />
-                          <span className="sr-only">Remove file</span>
-                        </Button>
                       </div>
                     </div>
                   );
@@ -1329,33 +1369,55 @@ function PathwayPageContent() {
              }
              if (isCompleted) {
                  return (
-                    <div className="flex min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        {formInfo?.downloadURL && (isAdmin || isSuperAdmin) ? (
+                    <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
+                        {(isAdmin || isSuperAdmin) && formInfo?.downloadURL ? (
+                          <div className="flex items-center justify-between gap-2">
                             <a
                               href={formInfo.downloadURL}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
                             >
-                                {formInfo?.fileName || 'Completed'}
+                              {formInfo?.fileName || 'Completed'}
                             </a>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                              onClick={() => handleFileRemove(formInfo!)}
+                            >
+                              <X className="h-4 w-4" />
+                              <span className="sr-only">Remove file</span>
+                            </Button>
+                          </div>
                         ) : (
-                             <span className="min-w-0 flex-1 truncate text-green-800 font-medium">
-                                {formInfo?.fileName || 'Completed'}
-                                {!isAdmin && !isSuperAdmin && formInfo?.downloadURL && (
-                                    <span className="block text-xs text-gray-500 mt-1">Document submitted - accessible by staff only</span>
-                                )}
-                             </span>
+                          <div className="space-y-2">
+                            <span className="block text-green-800 font-medium">Document submitted</span>
+                            <span className="block text-xs text-gray-500">Document preview/download is restricted to staff.</span>
+                            {!isReadOnly && (
+                              <>
+                                <Label
+                                  htmlFor={`${req.id}-replace`}
+                                  className={cn(
+                                    "flex h-9 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-xs font-medium ring-offset-background transition-colors hover:bg-primary/90",
+                                    isUploading && "opacity-50 pointer-events-none"
+                                  )}
+                                >
+                                  {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                                  <span>{isUploading ? `Replacing... ${currentProgress?.toFixed(0)}%` : 'Upload Revised Document'}</span>
+                                </Label>
+                                <Input
+                                  id={`${req.id}-replace`}
+                                  type="file"
+                                  className="sr-only"
+                                  onChange={(e) => handleFileUpload(e, req.title, formInfo)}
+                                  disabled={isUploading}
+                                  multiple={false}
+                                />
+                              </>
+                            )}
+                          </div>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
-                          onClick={() => handleFileRemove(formInfo!)}
-                        >
-                            <X className="h-4 w-4" />
-                            <span className="sr-only">Remove file</span>
-                        </Button>
                     </div>
                  )
              }

@@ -36,7 +36,7 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const enhancedToast = useEnhancedToast();
-  const { user, isUserLoading, isAdmin } = useAdmin();
+  const { user, isUserLoading } = useAdmin();
   // NOTE: Do not auto-route "user login" into the SW portal.
   // Social workers should use `/sw-login` explicitly; otherwise a stale/legacy `socialWorkers`
   // record can incorrectly redirect regular users after password resets.
@@ -82,16 +82,14 @@ function LoginPageContent() {
       }
 
       if (user) {
-        if (isAdmin) {
-          router.push('/admin');
-        } else {
-          router.push(redirectPath);
-        }
+        // Keep /login as the user-portal entry point.
+        // Admins should use /admin/login for admin workflows.
+        router.push(redirectPath);
       }
     };
 
     void run();
-  }, [user, isUserLoading, isAdmin, router, auth, redirectPath]);
+  }, [user, isUserLoading, router, auth, redirectPath]);
 
   const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,19 +147,22 @@ function LoginPageContent() {
           body: JSON.stringify({ idToken }),
         });
         if (sessionResponse.ok) {
-          try {
-            localStorage.removeItem('calaim_session_type');
-            localStorage.setItem('calaim_session_type', 'admin');
-            localStorage.removeItem('calaim_admin_context');
-          } catch {
-            // ignore
-          }
-          // Force refresh to pick up the new custom claims.
+          // Force refresh and verify admin claim before redirecting to admin.
           await userCredential.user.getIdToken(true);
-          enhancedToast.success('Admin access detected', 'Redirecting to the admin portal…');
-          router.replace('/admin');
-          setIsLoading(false);
-          return;
+          const tokenResult = await userCredential.user.getIdTokenResult();
+          if (Boolean((tokenResult?.claims as any)?.admin)) {
+            try {
+              localStorage.removeItem('calaim_session_type');
+              localStorage.setItem('calaim_session_type', 'admin');
+              localStorage.removeItem('calaim_admin_context');
+            } catch {
+              // ignore
+            }
+            enhancedToast.success('Admin access detected', 'Redirecting to the admin portal…');
+            router.replace('/admin');
+            setIsLoading(false);
+            return;
+          }
         }
       } catch {
         // If the user isn't an admin, admin-session will fail. Ignore and continue as a normal user.

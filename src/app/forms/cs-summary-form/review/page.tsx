@@ -238,19 +238,6 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
       ? `/admin/applications/${applicationId}?userId=${appUserId}`
       : `/forms/cs-summary-form?applicationId=${applicationId}&step=5`;
 
-    const alftPrefillParams = new URLSearchParams({
-      memberFirstName: String(application.memberFirstName || ''),
-      memberLastName: String(application.memberLastName || ''),
-      memberDob: toHtmlDate(application.memberDob),
-      memberMrn: String(application.memberMrn || ''),
-      currentAddress: String(application.currentAddress || ''),
-      currentCity: String(application.currentCity || ''),
-      currentState: String(application.currentState || ''),
-      currentZip: String(application.currentZip || ''),
-      memberPhone: String(application.bestContactPhone || application.referrerPhone || ''),
-    });
-    const alftPrefillHref = `/sw-portal/alft-upload?${alftPrefillParams.toString()}`;
-
     const getCapacityStatus = (hasLegalRepValue: Application['hasLegalRep']) => {
         switch(hasLegalRepValue) {
             case 'notApplicable':
@@ -303,17 +290,17 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
 
                         <Separator />
 
-                        <Section title="Referrer Information" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
-                            <Field label="Name" value={application.referrerName} />
-                            <Field label="Email" value={application.referrerEmail} />
-                            <Field label="Phone" value={application.referrerPhone} />
-                            <Field label="Relationship to Member" value={application.referrerRelationship} />
+                        <Section title="Submitting User Information" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
+                            <Field label="Submitting User Name" value={application.referrerName} />
+                            <Field label="Submitting User Email" value={application.referrerEmail} />
+                            <Field label="Submitting User Phone" value={application.referrerPhone} />
+                            <Field label="Submitting User Relationship to Member" value={application.referrerRelationship} />
                             <Field label="Agency" value={application.agency} />
                         </Section>
                         
                          <Separator />
 
-                        <Section title="Primary Contact" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
+                        <Section title="Primary Contact (Receives Updates)" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
                             <Field label="First Name" value={application.bestContactFirstName} />
                             <Field label="Last Name" value={application.bestContactLastName} />
                             <Field label="Relationship" value={application.bestContactRelationship} />
@@ -339,8 +326,8 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                         <Section title="Location Information" editLink={getEditLink(2)} isReadOnly={isReadOnly}>
                             <Field label="Current Location Type" value={application.currentLocation} />
                             <Field label="Current Address" value={`${application.currentAddress || ''}, ${application.currentCity || ''}, ${application.currentState || ''} ${application.currentZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} fullWidth />
-                            <Field label="Customary Residence Location Type" value={application.customaryLocationType} />
-                            <Field label="Customary Residence" value={`${application.customaryAddress || ''}, ${application.customaryCity || ''}, ${application.customaryState || ''} ${application.customaryZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} fullWidth />
+                            <Field label="Normal Long Term Mailing Address Location Type" value={application.customaryLocationType} />
+                            <Field label="Normal Long Term Mailing Address" value={`${application.customaryAddress || ''}, ${application.customaryCity || ''}, ${application.customaryState || ''} ${application.customaryZip || ''}`.replace(/, , /g, ', ').replace(/^, |, $/g, '')} fullWidth />
                         </Section>
 
                         <Separator />
@@ -394,12 +381,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
 
                         {!isReadOnly && !isAdminView && (
                             <div className="pt-6 border-t">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <Button variant="outline" asChild size="lg">
-                                        <Link href={alftPrefillHref}>
-                                            Open ALFT Tool with Prefill
-                                        </Link>
-                                    </Button>
+                                <div className="grid grid-cols-1 gap-3">
                                     <Button size="lg" onClick={handleConfirm}>
                                         <Send className="mr-2 h-4 w-4" />
                                         Confirm &amp; Continue to Pathway

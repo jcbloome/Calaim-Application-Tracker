@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider, FieldPath, FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Loader2, AlertCircle, CheckCircle2, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, CheckCircle2, Save, Trash2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
@@ -36,6 +36,7 @@ const steps = [
   { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
   { id: 4, name: 'Financial & Cost Information', fields: [] },
   { id: 5, name: 'ISP, ALW, RCFE Selection', fields: [
+      'ispContactIsMember',
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail',
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip',
       'onALWWaitlist', 'hasPrefRCFE',
@@ -80,7 +81,8 @@ function CsSummaryFormComponent() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       isPrimaryContactSameAsReferrer: false,
-      copyAddress: false
+      copyAddress: false,
+      ispContactIsMember: false,
     }
   });
 
@@ -744,6 +746,15 @@ function CsSummaryFormComponent() {
                             )}
                             {autoSaveError ? <span className="text-red-600">Autosave error: {autoSaveError}</span> : null}
                           </div>
+                      </div>
+                      <div className="self-start sm:self-auto rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          Progress autosaves
+                        </div>
+                        <p className="mt-0.5 text-blue-800">
+                          You can safely leave and return later without losing your CS Summary progress.
+                        </p>
                       </div>
                   </div>
               </div>

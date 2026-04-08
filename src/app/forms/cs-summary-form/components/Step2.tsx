@@ -12,6 +12,7 @@ import { useEffect } from 'react';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { californiaCounties } from '@/lib/california-counties';
 import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
+import { findCountyByCity } from '@/lib/california-cities';
 
 const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other", "Unknown"];
 const UNKNOWN_VALUE = 'Unknown';
@@ -31,6 +32,8 @@ export default function Step2() {
   ]);
   const currentLocation = watch('currentLocation');
   const customaryLocationType = watch('customaryLocationType');
+  const currentCity = watch('currentCity');
+  const customaryCity = watch('customaryCity');
   const currentSubacuteSelected = String(currentLocation || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'subacute';
   const customarySubacuteSelected = String(customaryLocationType || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'subacute';
 
@@ -91,6 +94,21 @@ export default function Step2() {
     setValue('customaryCounty', UNKNOWN_VALUE);
     clearErrors(['customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty']);
   }, [customaryLocationType, setValue, clearErrors]);
+
+  useEffect(() => {
+    const county = findCountyByCity(String(currentCity || '').trim());
+    if (!county) return;
+    setValue('currentCounty', county);
+    clearErrors('currentCounty');
+  }, [currentCity, setValue, clearErrors]);
+
+  useEffect(() => {
+    if (copyAddress) return;
+    const county = findCountyByCity(String(customaryCity || '').trim());
+    if (!county) return;
+    setValue('customaryCounty', county);
+    clearErrors('customaryCounty');
+  }, [customaryCity, copyAddress, setValue, clearErrors]);
   
   const formatName = (value: string) => {
     if (!value) return '';
@@ -225,7 +243,7 @@ export default function Step2() {
           </div>
 
           <div>
-            <h3 className="font-medium mb-2">Section 6A: Customary Residence (Normal Long-Term Address)</h3>
+            <h3 className="font-medium mb-2">Section 6A: Normal Long Term Mailing Address (e.g., where member normally resides if not at the current location)</h3>
             <div className="p-4 border rounded-md space-y-4">
                  <FormField
                     control={control}
@@ -248,7 +266,7 @@ export default function Step2() {
                           name="customaryLocationType"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Location Type <span className="text-destructive">*</span></FormLabel>
+                              <FormLabel>Normal Long Term Mailing Address Location Type <span className="text-destructive">*</span></FormLabel>
                               <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={copyAddress}>
                                     <FormControl>
                                         <SelectTrigger>
@@ -272,7 +290,7 @@ export default function Step2() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>
-                                Customary Location Name {customarySubacuteSelected ? <span className="text-destructive">*</span> : '(if applicable)'}
+                                Normal Long Term Mailing Address Location Name {customarySubacuteSelected ? <span className="text-destructive">*</span> : '(if applicable)'}
                               </FormLabel>
                               <FormControl>
                                 <Input
@@ -292,16 +310,16 @@ export default function Step2() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <FormField control={control} name="customaryAddress" render={({ field }) => (
-                          <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                          <FormItem><FormLabel>Normal Long Term Mailing Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
                       )} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField control={control} name="customaryCity" render={({ field }) => (
-                            <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>Normal Long Term Mailing City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                         )} />
                         <FormField control={control} name="customaryState" render={({ field }) => (
                             <FormItem>
-                              <FormLabel>State <span className="text-destructive">*</span></FormLabel>
+                              <FormLabel>Normal Long Term Mailing State <span className="text-destructive">*</span></FormLabel>
                               <Select
                                 onValueChange={field.onChange}
                                 value={String(field.value || '').trim().toLowerCase() === UNKNOWN_VALUE.toLowerCase() ? UNKNOWN_VALUE : normalizeUsStateCode(field.value ?? '')}
@@ -327,11 +345,11 @@ export default function Step2() {
                     </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <FormField control={control} name="customaryZip" render={({ field }) => (
-                            <FormItem><FormLabel>ZIP Code <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
+                            <FormItem><FormLabel>Normal Long Term Mailing ZIP Code <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={copyAddress} /></FormControl><FormMessage /></FormItem>
                         )} />
                          <FormField control={control} name="customaryCounty" render={({ field }) => (
                             <FormItem>
-                              <FormLabel>County <span className="text-destructive">*</span></FormLabel>
+                              <FormLabel>Normal Long Term Mailing County <span className="text-destructive">*</span></FormLabel>
                               <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={copyAddress}>
                                 <FormControl>
                                   <SelectTrigger>

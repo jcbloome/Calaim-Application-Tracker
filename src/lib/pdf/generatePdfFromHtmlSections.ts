@@ -120,6 +120,90 @@ function findSafeBreakY(
   return bestY;
 }
 
+type KeepTogetherRange = { top: number; bottom: number; height: number };
+
+function collectKeepTogetherRanges(
+  section: HTMLElement,
+  scale: number,
+  pageSliceHeightCanvasPx: number
+): KeepTogetherRange[] {
+  const rootRect = section.getBoundingClientRect();
+  // Prefer explicit keep-together markers, but also include common section/card containers.
+  const candidates = Array.from(
+    section.querySelectorAll(
+      '[data-keep-together], .print-keep-together, .form-section, section, .signature-block, .instructions, .card'
+    )
+  ) as HTMLElement[];
+
+  const ranges: KeepTogetherRange[] = [];
+  for (const node of candidates) {
+    const rect = node.getBoundingClientRect();
+    const cssHeight = Math.max(0, rect.height);
+    if (cssHeight < 24) continue;
+    // Only protect blocks that can reasonably fit on a single page slice.
+    if (cssHeight * scale > pageSliceHeightCanvasPx * 0.98) continue;
+
+    const top = Math.max(0, Math.floor((rect.top - rootRect.top) * scale));
+    const bottom = Math.max(top + 1, Math.ceil((rect.bottom - rootRect.top) * scale));
+    ranges.push({ top, bottom, height: bottom - top });
+  }
+
+  if (ranges.length <= 1) return ranges;
+  ranges.sort((a, b) => a.top - b.top);
+
+  // Merge overlapping ranges to avoid conflicting break instructions.
+  const merged: KeepTogetherRange[] = [ranges[0]];
+  for (let i = 1; i < ranges.length; i++) {
+    const prev = merged[merged.length - 1];
+    const cur = ranges[i];
+    if (cur.top <= prev.bottom) {
+      prev.bottom = Math.max(prev.bottom, cur.bottom);
+      prev.height = prev.bottom - prev.top;
+    } else {
+      merged.push(cur);
+    }
+  }
+  return merged;
+}
+
+function adjustBreakForKeepTogether(
+  breakY: number,
+  sliceStartY: number,
+  maxSliceEndY: number,
+  keepRanges: KeepTogetherRange[]
+): number {
+  let adjusted = breakY;
+  const minSliceHeight = 180;
+
+  for (const range of keepRanges) {
+    // Only care if the break line cuts through this protected range.
+    if (adjusted <= range.top || adjusted >= range.bottom) continue;
+
+    const beforeRangeHeight = range.top - sliceStartY;
+    const afterRangeEnd = range.bottom;
+    const afterRangeHeight = afterRangeEnd - sliceStartY;
+
+    // Prefer pushing the whole block to next page (break before range),
+    // but only if we won't create a tiny/empty page slice.
+    if (
+      beforeRangeHeight >= minSliceHeight &&
+      range.top > sliceStartY
+    ) {
+      adjusted = range.top;
+      continue;
+    }
+
+    // Otherwise keep the block in the current page by breaking after range,
+    // if that still fits this page slice.
+    if (afterRangeHeight <= maxSliceEndY - sliceStartY) {
+      adjusted = afterRangeEnd;
+      continue;
+    }
+  }
+
+  return clamp(adjusted, sliceStartY + 1, maxSliceEndY);
+}
+
 export async function generatePdfFromHtmlSections(
   sections: HTMLElement[],
   params: {
@@ -167,6 +251,7 @@ export async function generatePdfFromHtmlSections(
     const ptsPerPx = contentWidthPts / sourceWidthPx;
     const pageSliceHeightPx = Math.max(1, Math.floor(contentHeightPts / ptsPerPx));
     const pageSliceHeightCanvasPx = Math.max(1, Math.floor(pageSliceHeightPx * scale));
+    const keepTogetherRanges = collectKeepTogetherRanges(section, scale, pageSliceHeightCanvasPx);
 
     // Prefer a single full render of the section, then slice the resulting canvas.
     // This avoids transform/overflow edge cases that can clip content at page boundaries.
@@ -205,7 +290,13 @@ export async function generatePdfFromHtmlSections(
           const minBreak = yPx + Math.max(200, Math.floor(pageSliceHeightCanvasPx * 0.7));
           const maxBreak = Math.min(fullCanvas.height - 1, yPx + pageSliceHeightCanvasPx);
           const safeBreak = findSafeBreakY(fullCtx, preferredBreak, minBreak, maxBreak);
-          sliceH = Math.max(1, safeBreak - yPx);
+          const keepAwareBreak = adjustBreakForKeepTogether(
+            safeBreak,
+            yPx,
+            maxBreak,
+            keepTogetherRanges
+          );
+          sliceH = Math.max(1, keepAwareBreak - yPx);
         }
         const sliceCanvas = document.createElement('canvas');
         sliceCanvas.width = fullCanvas.width;

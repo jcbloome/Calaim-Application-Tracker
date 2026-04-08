@@ -67,20 +67,21 @@ export function PrintableCsSummaryFormContent() {
                 </div>
 
                 <div>
-                <SectionTitle>Your Information (Person Filling Out Form)</SectionTitle>
-                 <p className="text-xs text-gray-600 my-2">This is the person that will receive email updates as to the application status, including any missing documents, etc.</p>
+                <SectionTitle>User Submitting This Application</SectionTitle>
+                 <p className="text-xs text-gray-600 my-2">This section identifies the person submitting the application. Application progress and missing-document updates should be sent to the Primary Contact section below.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                    <Field label="First Name" />
-                    <Field label="Last Name" />
-                    <Field label="Your Phone" description="(xxx) xxx-xxxx" />
-                    <Field label="Your Email" />
-                    <Field label="Relationship to Member (e.g., Son, POA, Self, etc.)" />
+                    <Field label="Submitting User First Name" />
+                    <Field label="Submitting User Last Name" />
+                    <Field label="Submitting User Phone" description="(xxx) xxx-xxxx" />
+                    <Field label="Submitting User Email" />
+                    <Field label="Submitting User Relationship to Member (e.g., Son, POA, Self, etc.)" />
                     <Field label="Agency (e.g., Bob's Referral Agency, Hospital Name, etc.)" description="If not applicable, leave blank."/>
                 </div>
                 </div>
 
                 <div>
                 <SectionTitle>Primary Contact Person</SectionTitle>
+                    <p className="text-xs text-gray-600 my-2">This contact receives application status and missing-document communications.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="First Name" />
                     <Field label="Last Name" />
@@ -142,7 +143,7 @@ export function PrintableCsSummaryFormContent() {
                 </div>
                 <h3 className="text-sm font-medium text-gray-800 mt-4">Current Address</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
-                    <Field label="Location Type" />
+                    <Field label="Normal Long Term Mailing Address Location Type" />
                     <p className="text-xs text-gray-500 pt-1">Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.</p>
                     <Field label="Current Location Name (if applicable; required for Sub-Acute)" />
                     <p className="text-xs text-gray-500 pt-1">If location type is Sub-Acute, location name must be entered.</p>
@@ -153,18 +154,18 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="ZIP Code" />
                     <Field label="County" />
                     </div>
-                <h3 className="text-sm font-medium text-gray-800 mt-4">Customary Residence (where is the member's normal long term address)</h3>
+                <h3 className="text-sm font-medium text-gray-800 mt-4">Normal Long Term Mailing Address (e.g., where member normally resides if not at the current location)</h3>
                     <CheckboxField label="Same as current location" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Location Type" />
                     <p className="text-xs text-gray-500 pt-1">Examples: RCFE, SNF, Home, Unhoused, Hospital, Assisted Living, Other.</p>
-                    <Field label="Customary Location Name (if applicable; required for Sub-Acute)" />
+                    <Field label="Normal Long Term Mailing Address Location Name (if applicable; required for Sub-Acute)" />
                     <p className="text-xs text-gray-500 pt-1">If location type is Sub-Acute, location name must be entered.</p>
-                    <Field label="Street Address" />
-                    <Field label="City" />
-                    <Field label="State" />
-                    <Field label="ZIP Code" />
-                    <Field label="County" />
+                    <Field label="Normal Long Term Mailing Street Address" />
+                    <Field label="Normal Long Term Mailing City" />
+                    <Field label="Normal Long Term Mailing State" />
+                    <Field label="Normal Long Term Mailing ZIP Code" />
+                    <Field label="Normal Long Term Mailing County" />
                     </div>
                 </div>
 

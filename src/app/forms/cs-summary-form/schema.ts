@@ -68,12 +68,12 @@ export const formSchema = z.object({
 
     // Step 1 - Primary Contact Person
     isPrimaryContactSameAsReferrer: z.boolean().optional().nullable().transform(val => val === true),
-    bestContactFirstName: requiredString,
-    bestContactLastName: requiredString,
-    bestContactRelationship: requiredString,
-    bestContactPhone: requiredPhone,
-    bestContactEmail: requiredEmail,
-    bestContactLanguage: requiredString,
+    bestContactFirstName: optionalString,
+    bestContactLastName: optionalString,
+    bestContactRelationship: optionalString,
+    bestContactPhone: optionalPhone,
+    bestContactEmail: optionalEmail,
+    bestContactLanguage: optionalString,
 
     // Secondary Contact
     secondaryContactFirstName: optionalString,
@@ -116,6 +116,7 @@ export const formSchema = z.object({
     snfDiversionReason: optionalString,
 
     // Step 4 - ISP & RCFE
+    ispContactIsMember: z.boolean().optional().nullable().transform(val => val === true),
     ispFirstName: requiredString,
     ispLastName: requiredString,
     ispRelationship: requiredString,
@@ -146,6 +147,27 @@ export const formSchema = z.object({
     path: ["confirmMemberMrn"],
   })
   .superRefine((data, ctx) => {
+    if (!data.isPrimaryContactSameAsReferrer) {
+      if (!String(data.bestContactFirstName ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactFirstName'] });
+      }
+      if (!String(data.bestContactLastName ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactLastName'] });
+      }
+      if (!String(data.bestContactRelationship ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactRelationship'] });
+      }
+      if (!String(data.bestContactPhone ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactPhone'] });
+      }
+      if (!String(data.bestContactEmail ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactEmail'] });
+      }
+      if (!String(data.bestContactLanguage ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactLanguage'] });
+      }
+    }
+
     if (data.pathway === 'SNF Diversion' && (!data.snfDiversionReason || data.snfDiversionReason.trim() === '')) {
       ctx.addIssue({
         code: 'custom',

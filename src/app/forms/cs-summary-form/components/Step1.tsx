@@ -5,13 +5,28 @@ import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type FormValues } from '../schema';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { FormSection } from '@/components/FormSection';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+const MEMBER_LANGUAGE_OPTIONS = [
+  'English',
+  'Spanish',
+  'Chinese',
+  'Tagalog',
+  'Vietnamese',
+  'Korean',
+  'Armenian',
+  'Russian',
+  'Arabic',
+  'Farsi',
+] as const;
+const MEMBER_LANGUAGE_OTHER_VALUE = '__other__';
 
 export default function Step1({
   isAdminView,
@@ -23,8 +38,10 @@ export default function Step1({
   const { control, watch, setValue, getValues, clearErrors, trigger } = useFormContext<FormValues>();
   
   const memberDob = watch('memberDob');
+  const memberLanguage = watch('memberLanguage');
   const hasLegalRep = watch('hasLegalRep');
   const isPrimaryContactSameAsReferrer = watch('isPrimaryContactSameAsReferrer');
+  const [isMemberLanguageOther, setIsMemberLanguageOther] = useState(false);
 
   useEffect(() => {
     if (memberDob && /^\d{2}\/\d{2}\/\d{4}$/.test(memberDob)) {
@@ -88,17 +105,37 @@ export default function Step1({
 
   }, [hasLegalRep, setValue, getValues, clearErrors]);
 
-  // Auto-fill primary contact when checkbox is checked
+  // When marked as same-as-submitting-user, clear validation errors for primary contact.
+  // We intentionally do not auto-populate values; the checkbox itself is the source of truth.
   useEffect(() => {
     if (isPrimaryContactSameAsReferrer) {
-      setValue('bestContactFirstName', getValues('referrerFirstName') || '');
-      setValue('bestContactLastName', getValues('referrerLastName') || '');
-      setValue('bestContactPhone', getValues('referrerPhone') || '');
-      setValue('bestContactEmail', getValues('referrerEmail') || '');
-      setValue('bestContactRelationship', getValues('referrerRelationship') || '');
-      clearErrors(['bestContactFirstName', 'bestContactLastName', 'bestContactPhone', 'bestContactEmail', 'bestContactRelationship']);
+      clearErrors([
+        'bestContactFirstName',
+        'bestContactLastName',
+        'bestContactRelationship',
+        'bestContactPhone',
+        'bestContactEmail',
+        'bestContactLanguage',
+      ]);
     }
-  }, [isPrimaryContactSameAsReferrer, setValue, getValues, clearErrors]);
+  }, [isPrimaryContactSameAsReferrer, clearErrors]);
+
+  useEffect(() => {
+    const normalized = String(memberLanguage || '').trim().toLowerCase();
+    if (!normalized) return;
+    const isPopular = MEMBER_LANGUAGE_OPTIONS.some((option) => option.toLowerCase() === normalized);
+    setIsMemberLanguageOther(!isPopular);
+  }, [memberLanguage]);
+
+  const selectedMemberLanguage = useMemo(() => {
+    const normalized = String(memberLanguage || '').trim().toLowerCase();
+    if (!normalized) {
+      return isMemberLanguageOther ? MEMBER_LANGUAGE_OTHER_VALUE : '';
+    }
+    const matched = MEMBER_LANGUAGE_OPTIONS.find((option) => option.toLowerCase() === normalized);
+    if (matched) return matched;
+    return MEMBER_LANGUAGE_OTHER_VALUE;
+  }, [isMemberLanguageOther, memberLanguage]);
   
   const formatName = (value: string) => {
     if (!value) return '';
@@ -124,6 +161,16 @@ export default function Step1({
             "whole person care," which includes addressing social determinants of health, integrating physical, 
             mental, and social services, and launching new programs like Enhanced Care Management (ECM) and 
             Community Supports. CS and ECM are administered through managed care plans (MCPs).
+            <br /><br />
+            For CalAIM assisted living placements, there are usually two payment parts: the managed care plan
+            pays the assisted living services portion, and the member pays a room-and-board portion (typically
+            from Social Security income). As part of this application, the member (or authorized representative)
+            should be prepared to provide monthly income verification, usually either three months of bank
+            statements showing Social Security deposits or the annual Social Security award letter.
+            <br /><br />
+            This is also important because CalAIM enrollment generally does not allow participation for members
+            with a Medi-Cal Share of Cost. For more details, please review the appropriate section in Program
+            Information.
           </p>
         </CardContent>
       </Card>
@@ -361,9 +408,41 @@ export default function Step1({
                 <FormItem>
                     <FormLabel>Preferred Language <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
-                    <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                      <div className="space-y-2">
+                        <Select
+                          value={selectedMemberLanguage || undefined}
+                          onValueChange={(value) => {
+                            if (value === MEMBER_LANGUAGE_OTHER_VALUE) {
+                              setIsMemberLanguageOther(true);
+                              field.onChange('');
+                              return;
+                            }
+                            setIsMemberLanguageOther(false);
+                            field.onChange(value);
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select preferred language" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MEMBER_LANGUAGE_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value={MEMBER_LANGUAGE_OTHER_VALUE}>Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {isMemberLanguageOther ? (
+                          <Input
+                            value={field.value ?? ''}
+                            onChange={(event) => field.onChange(formatName(event.target.value))}
+                            placeholder="Enter preferred language"
+                          />
+                        ) : null}
+                      </div>
                     </FormControl>
-                    <FormDescription>e.g., English, Spanish</FormDescription>
+                    <FormDescription>Select a language, or choose Other to type it in.</FormDescription>
                     <FormMessage />
                 </FormItem>
                 )}
@@ -430,214 +509,6 @@ export default function Step1({
       </FormSection>
       
       <FormSection 
-        title="Section 2: Referrer Information" 
-        required={true}
-        description="This is the person that will receive email updates as to the application status, including any missing documents, etc."
-      >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={control}
-              name="referrerFirstName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>First Name</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} onChange={e => field.onChange(formatName(e.target.value))}/>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={control}
-              name="referrerLastName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Last Name</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} onChange={e => field.onChange(formatName(e.target.value))}/>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={control}
-              name="referrerEmail"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      inputMode="email"
-                      {...field}
-                      value={field.value ?? ''}
-                      readOnly={!isAdminView}
-                      className={!isAdminView ? "bg-muted" : ""}
-                    />
-                  </FormControl>
-                  <FormDescription>If no email, enter "N/A".</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={control}
-              name="referrerPhone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Phone <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <PhoneInput {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-            <FormField
-              control={control}
-              name="referrerRelationship"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Relationship to Member <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
-                  </FormControl>
-                   <FormDescription>e.g., Son, POA, Self, etc.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={control}
-              name="agency"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Agency</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
-                  </FormControl>
-                   <FormDescription>e.g., Bob's Referral Agency, Hospital Name, etc. If not applicable, leave blank.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-      </FormSection>
-      
-      <FormSection 
-        title="Section 3: Primary Contact Person" 
-        required={true}
-        description="Provide contact details for the member's main point of contact. If member is primary contact reinput member name and put N/A in relationship field."
-      >
-          <div className="p-4 border rounded-md space-y-4">
-              {/* Checkbox to use referrer as primary contact */}
-              <FormField
-                control={control}
-                name="isPrimaryContactSameAsReferrer"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={(checked) => field.onChange(checked === true)}
-                      />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel className="text-sm font-medium">
-                        Primary contact is the same person inputting this form
-                      </FormLabel>
-                      <FormDescription className="text-xs text-muted-foreground">
-                        Check this box to automatically fill in your information as the primary contact
-                      </FormDescription>
-                    </div>
-                  </FormItem>
-                )}
-              />
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField control={control} name="bestContactFirstName" render={({ field }) => (
-                      <FormItem><FormLabel>First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={control} name="bestContactLastName" render={({ field }) => (
-                      <FormItem><FormLabel>Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                  )} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField control={control} name="bestContactRelationship" render={({ field }) => (
-                    <FormItem><FormLabel>Relationship <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                )} />
-                 <FormField control={control} name="bestContactLanguage" render={({ field }) => (
-                    <FormItem><FormLabel>Language <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                )} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField control={control} name="bestContactPhone" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><PhoneInput {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                  )} />
-                  <FormField control={control} name="bestContactEmail" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
-                        <FormDescription>If no email, enter "N/A".</FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                  )} />
-              </div>
-          </div>
-      </FormSection>
-
-      <FormSection 
-        title="Section 4: Secondary Contact Person (Optional)" 
-        badge="Optional"
-        badgeVariant="secondary"
-        description="Provide details for a secondary point of contact if available."
-      >
-             <div className="p-4 border rounded-md space-y-4 mt-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={control} name="secondaryContactFirstName" render={({ field }) => (
-                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                    )} />
-                    <FormField control={control} name="secondaryContactLastName" render={({ field }) => (
-                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                    )} />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={control} name="secondaryContactRelationship" render={({ field }) => (
-                        <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                    )} />
-                    <FormField control={control} name="secondaryContactLanguage" render={({ field }) => (
-                        <FormItem><FormLabel>Language</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                    )} />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={control} name="secondaryContactPhone" render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Phone</FormLabel>
-                            <FormControl><PhoneInput {...field} /></FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )} />
-                    <FormField control={control} name="secondaryContactEmail" render={({ field }) => (
-                       <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
-                           <FormDescription>If no email, enter "N/A".</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                    )} />
-                </div>
-            </div>
-      </FormSection>
-      
-      <FormSection 
         title="Section 5: Legal Representative" 
         description="A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role."
       >
@@ -693,6 +564,215 @@ export default function Step1({
                 </div>
             </div>
       </FormSection>
+      
+      <FormSection 
+        title="Section 2: User Submitting This Application" 
+        required={true}
+        description="This identifies who is completing/submitting this application. Status and missing-document updates are sent to the Primary Contact in Section 3."
+      >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+              control={control}
+              name="referrerFirstName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Submitting User First Name</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} onChange={e => field.onChange(formatName(e.target.value))}/>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={control}
+              name="referrerLastName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Submitting User Last Name</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} onChange={e => field.onChange(formatName(e.target.value))}/>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+              control={control}
+              name="referrerEmail"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Submitting User Email</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      inputMode="email"
+                      {...field}
+                      value={field.value ?? ''}
+                      readOnly={!isAdminView}
+                      className={!isAdminView ? "bg-muted" : ""}
+                    />
+                  </FormControl>
+                  <FormDescription>For submitter identity only. Primary contact receives status/document updates.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={control}
+              name="referrerPhone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Submitting User Phone <span className="text-destructive">*</span></FormLabel>
+                  <FormControl>
+                    <PhoneInput {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+            <FormField
+              control={control}
+              name="referrerRelationship"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Submitting User Relationship to Member <span className="text-destructive">*</span></FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                  </FormControl>
+                   <FormDescription>e.g., Son, POA, Self, etc.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={control}
+              name="agency"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Agency</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                  </FormControl>
+                   <FormDescription>e.g., Bob's Referral Agency, Hospital Name, etc. If not applicable, leave blank.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+      </FormSection>
+      
+      <FormSection 
+        title="Section 3: Primary Contact Person" 
+        required={true}
+        description="This contact receives application progress updates and missing-document notices. If the member is primary contact, re-enter member name and use N/A for relationship."
+      >
+          <div className="p-4 border rounded-md space-y-4">
+              {/* Checkbox to use referrer as primary contact */}
+              <FormField
+                control={control}
+                name="isPrimaryContactSameAsReferrer"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={(checked) => field.onChange(checked === true)}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel className="text-sm font-medium">
+                        Primary contact is the same as the submitting user
+                      </FormLabel>
+                      <FormDescription className="text-xs text-muted-foreground">
+                        Check this to copy submitting-user details into Primary Contact (recipient of status/document updates)
+                      </FormDescription>
+                    </div>
+                  </FormItem>
+                )}
+              />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField control={control} name="bestContactFirstName" render={({ field }) => (
+                      <FormItem><FormLabel>First Name {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormField control={control} name="bestContactLastName" render={({ field }) => (
+                      <FormItem><FormLabel>Last Name {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                  )} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField control={control} name="bestContactRelationship" render={({ field }) => (
+                    <FormItem><FormLabel>Relationship {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                )} />
+                 <FormField control={control} name="bestContactLanguage" render={({ field }) => (
+                    <FormItem><FormLabel>Language {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField control={control} name="bestContactPhone" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel>
+                        <FormControl><PhoneInput {...field} disabled={isPrimaryContactSameAsReferrer} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                  )} />
+                  <FormField control={control} name="bestContactEmail" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel>
+                        <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} /></FormControl>
+                        <FormDescription>If no email, enter "N/A".</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                  )} />
+              </div>
+          </div>
+      </FormSection>
+
+      <FormSection 
+        title="Section 4: Secondary Contact Person (Optional)" 
+        badge="Optional"
+        badgeVariant="secondary"
+        description="Provide details for a secondary point of contact if available."
+      >
+             <div className="p-4 border rounded-md space-y-4 mt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={control} name="secondaryContactFirstName" render={({ field }) => (
+                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={control} name="secondaryContactLastName" render={({ field }) => (
+                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={control} name="secondaryContactRelationship" render={({ field }) => (
+                        <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={control} name="secondaryContactLanguage" render={({ field }) => (
+                        <FormItem><FormLabel>Language</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    )} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={control} name="secondaryContactPhone" render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Phone</FormLabel>
+                            <FormControl><PhoneInput {...field} /></FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )} />
+                    <FormField control={control} name="secondaryContactEmail" render={({ field }) => (
+                       <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
+                           <FormDescription>If no email, enter "N/A".</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                    )} />
+                </div>
+            </div>
+      </FormSection>
+      
     </div>
   );
 }
