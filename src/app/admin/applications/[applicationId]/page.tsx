@@ -1437,19 +1437,32 @@ function getReminderMissingItems(application: Application | null): string[] {
 }
 
 function AdminActions({ application }: { application: Application }) {
-    const { isAdmin, isSuperAdmin } = useAdmin();
+    const { isAdmin, isSuperAdmin, user: adminUser } = useAdmin();
     const [notes, setNotes] = useState('');
     const [status, setStatus] = useState<Application['status'] | ''>('');
+    const [adminProcessingStatus, setAdminProcessingStatus] = useState<NonNullable<Application['adminProcessingStatus']> | ''>(
+      (application.adminProcessingStatus as NonNullable<Application['adminProcessingStatus']>) || ''
+    );
+    const [adminProcessingReason, setAdminProcessingReason] = useState<string>(String(application.adminProcessingReason || ''));
     const [isSending, setIsSending] = useState(false);
+    const [isSavingAdminProcessing, setIsSavingAdminProcessing] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
 
     const firestore = useFirestore();
-    const docRef = useMemoFirebase(() => {
+    const userDocRef = useMemoFirebase(() => {
         if (!firestore || !application.userId || !application.id) return null;
         return doc(firestore, `users/${application.userId}/applications`, application.id);
     }, [firestore, application.id, application.userId]);
+    const adminDocRef = useMemoFirebase(() => {
+      if (!firestore || !application.id) return null;
+      return doc(firestore, 'applications', application.id);
+    }, [firestore, application.id]);
+    const isAdminSource =
+      (application as any)?.source === 'admin' ||
+      application.id.startsWith('admin_app_') ||
+      !application.userId;
 
     const kaiserStatusOptions: Application['status'][] = [
         'Application in Review',
@@ -1478,10 +1491,33 @@ function AdminActions({ application }: { application: Application }) {
     const statusOptions = application.healthPlan?.toLowerCase().includes('kaiser')
         ? kaiserStatusOptions
         : standardStatusOptions;
+    const adminProcessingStatusOptions: Array<NonNullable<Application['adminProcessingStatus']>> = [
+      'In Process',
+      'On Hold',
+      'Pending Documents',
+      'Pending Authorization',
+      'Pending Placement',
+      'Ready for Placement',
+      'Closed',
+    ];
 
     if (!isAdmin && !isSuperAdmin) {
         return null;
     }
+
+    const saveToApplicationDocs = async (payload: Record<string, unknown>) => {
+      const writes: Array<Promise<void>> = [];
+      if (userDocRef) {
+        writes.push(setDoc(userDocRef, payload, { merge: true }));
+      }
+      if (isAdminSource && adminDocRef) {
+        writes.push(setDoc(adminDocRef, payload, { merge: true }));
+      }
+      if (!writes.length) {
+        throw new Error('No writable application document found.');
+      }
+      await Promise.all(writes);
+    };
     
     const sendEmailAndUpdateStatus = async () => {
         if (!status) {
@@ -1526,9 +1562,7 @@ function AdminActions({ application }: { application: Application }) {
             const result = await response.json();
             
             if (result.success) {
-                if (docRef) {
-                     await setDoc(docRef, { status: status, lastUpdated: serverTimestamp() }, { merge: true });
-                }
+                await saveToApplicationDocs({ status, lastUpdated: serverTimestamp() });
 
                 toast({
                     title: 'Success!',
@@ -1552,6 +1586,50 @@ function AdminActions({ application }: { application: Application }) {
         }
     };
 
+    const saveAdminProcessingStatus = async () => {
+      if (!adminProcessingStatus) {
+        toast({
+          variant: 'destructive',
+          title: 'Status required',
+          description: 'Please select an internal processing status.',
+        });
+        return;
+      }
+      if (!adminProcessingReason.trim()) {
+        toast({
+          variant: 'destructive',
+          title: 'Reason required',
+          description: 'Please provide a reason for this internal processing status.',
+        });
+        return;
+      }
+
+      setIsSavingAdminProcessing(true);
+      try {
+        await saveToApplicationDocs({
+          adminProcessingStatus,
+          adminProcessingReason: adminProcessingReason.trim(),
+          adminProcessingUpdatedAt: serverTimestamp(),
+          adminProcessingUpdatedBy: adminUser?.displayName || adminUser?.email || 'Admin',
+          adminProcessingUpdatedByUid: adminUser?.uid || null,
+          lastUpdated: serverTimestamp(),
+        });
+        toast({
+          title: 'Internal status saved',
+          description: `Internal status set to "${adminProcessingStatus}".`,
+          className: 'bg-green-100 text-green-900',
+        });
+      } catch (error: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Save failed',
+          description: error?.message || 'Could not save internal processing status.',
+        });
+      } finally {
+        setIsSavingAdminProcessing(false);
+      }
+    };
+
     const handleDeleteApplication = async () => {
         if (!firestore) {
             toast({ variant: 'destructive', title: 'Error', description: 'Firestore not available.' });
@@ -1564,13 +1642,7 @@ function AdminActions({ application }: { application: Application }) {
                 await deleteDoc(userDocRef);
             }
 
-            const isAdminSource =
-                (application as any)?.source === 'admin' ||
-                application.id.startsWith('admin_app_') ||
-                !application.userId;
-
-            if (isAdminSource) {
-                const adminDocRef = doc(firestore, 'applications', application.id);
+            if (isAdminSource && adminDocRef) {
                 await deleteDoc(adminDocRef);
             }
 
@@ -1608,9 +1680,74 @@ function AdminActions({ application }: { application: Application }) {
                 </CardHeader>
                 {isOpen && (
                 <CardContent className="space-y-3">
+                    <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+                      <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide">Internal Processing Status</p>
+                      <p className="mt-1 text-sm text-blue-900">
+                        <strong>{String((application as any)?.adminProcessingStatus || 'Not set')}</strong>
+                      </p>
+                      <p className="mt-1 text-xs text-blue-800">
+                        {String((application as any)?.adminProcessingReason || 'No reason on file.')}
+                      </p>
+                    </div>
                     <DialogTrigger asChild>
                         <Button variant="outline" className="w-full">Update Status</Button>
                     </DialogTrigger>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="secondary" className="w-full">Set Internal Processing Status</Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Internal Processing Status</DialogTitle>
+                          <DialogDescription>Set admin tracking status (notifies no one by default).</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="admin-processing-status-select">Processing Status</Label>
+                            <Select
+                              value={adminProcessingStatus}
+                              onValueChange={(value) =>
+                                setAdminProcessingStatus(value as NonNullable<Application['adminProcessingStatus']>)
+                              }
+                            >
+                              <SelectTrigger id="admin-processing-status-select">
+                                <SelectValue placeholder="Select internal status..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {adminProcessingStatusOptions.map((option) => (
+                                  <SelectItem key={option} value={option}>
+                                    {option}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="admin-processing-reason">Reason</Label>
+                            <Textarea
+                              id="admin-processing-reason"
+                              placeholder="Required: add context (e.g., waiting on family documents, payer response pending, etc.)"
+                              value={adminProcessingReason}
+                              onChange={(e) => setAdminProcessingReason(e.target.value)}
+                              rows={4}
+                            />
+                            <p className="text-xs text-muted-foreground">This reason is required for internal tracking and appears to admins.</p>
+                          </div>
+                          <Button
+                            className="w-full"
+                            onClick={saveAdminProcessingStatus}
+                            disabled={isSavingAdminProcessing || !adminProcessingStatus || !adminProcessingReason.trim()}
+                          >
+                            {isSavingAdminProcessing ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <List className="mr-2 h-4 w-4" />
+                            )}
+                            Save Internal Status
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                     
                     <AlertDialog>
                         <AlertDialogTrigger asChild>

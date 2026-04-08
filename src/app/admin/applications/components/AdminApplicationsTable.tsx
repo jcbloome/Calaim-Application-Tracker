@@ -124,6 +124,22 @@ const getProcessStatusFromApp = (
   return '';
 };
 
+const getAdminProcessingStatus = (app: WithId<Application & FormValues>) =>
+  String((app as any)?.adminProcessingStatus || '').trim();
+
+const getAdminProcessingReason = (app: WithId<Application & FormValues>) =>
+  String((app as any)?.adminProcessingReason || '').trim();
+
+const getAdminProcessingBadgeClass = (status: string) => {
+  const normalized = status.toLowerCase();
+  if (normalized === 'on hold') return 'bg-amber-100 text-amber-800 border-amber-200';
+  if (normalized === 'in process') return 'bg-blue-100 text-blue-800 border-blue-200';
+  if (normalized === 'closed') return 'bg-slate-100 text-slate-800 border-slate-200';
+  if (normalized.includes('pending')) return 'bg-purple-100 text-purple-800 border-purple-200';
+  if (normalized.includes('ready')) return 'bg-green-100 text-green-800 border-green-200';
+  return 'bg-gray-100 text-gray-800 border-gray-200';
+};
+
 const getAssignedStaffLabel = (app: WithId<Application & FormValues>) => {
   const candidates = [
     (app as any)?.assignedStaffName,
@@ -645,6 +661,8 @@ export const AdminApplicationsTable = ({
               const planBadgeClass = getPlanBadgeClass(app);
               const csSummaryIsNew = isNewCsSummary(app);
               const processStatus = getProcessStatusFromApp(app);
+              const adminProcessingStatus = getAdminProcessingStatus(app);
+              const adminProcessingReason = getAdminProcessingReason(app);
               const staffLabel = getAssignedStaffLabel(app);
               const isAuthReceivedIntake = Boolean(
                 (app as any)?.kaiserAuthReceivedViaIls ||
@@ -731,9 +749,26 @@ export const AdminApplicationsTable = ({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline" className={getBadgeVariant(app.status)}>
-                    {app.status}
-                  </Badge>
+                  <div className="space-y-1">
+                    <Badge variant="outline" className={getBadgeVariant(app.status)}>
+                      {app.status}
+                    </Badge>
+                    {adminProcessingStatus ? (
+                      <div className="space-y-1">
+                        <Badge
+                          variant="outline"
+                          className={cn('text-[10px] px-1.5 py-0.5', getAdminProcessingBadgeClass(adminProcessingStatus))}
+                        >
+                          Internal: {adminProcessingStatus}
+                        </Badge>
+                        {adminProcessingReason ? (
+                          <p className="text-[10px] text-muted-foreground max-w-[220px] truncate" title={adminProcessingReason}>
+                            {adminProcessingReason}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </TableCell>
                  <TableCell className="hidden lg:table-cell">
                     <div className="flex items-center gap-2">
@@ -869,6 +904,8 @@ export const AdminApplicationsTable = ({
             const planBadgeClass = getPlanBadgeClass(app);
             const csSummaryIsNew = isNewCsSummary(app);
             const processStatus = getProcessStatusFromApp(app);
+            const adminProcessingStatus = getAdminProcessingStatus(app);
+            const adminProcessingReason = getAdminProcessingReason(app);
             const staffLabel = getAssignedStaffLabel(app);
             const isAuthReceivedIntake = Boolean(
               (app as any)?.kaiserAuthReceivedViaIls ||
@@ -944,6 +981,15 @@ export const AdminApplicationsTable = ({
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
                     </Badge>
+                    {adminProcessingStatus ? (
+                      <Badge
+                        variant="outline"
+                        className={cn('text-[10px] px-1.5 py-0.5', getAdminProcessingBadgeClass(adminProcessingStatus))}
+                        title={adminProcessingReason || adminProcessingStatus}
+                      >
+                        Internal: {adminProcessingStatus}
+                      </Badge>
+                    ) : null}
                     <QuickViewDialog application={app} />
                     <FilesQuickViewDialog application={app} />
                     <Button asChild size="sm" variant="outline">
@@ -952,6 +998,11 @@ export const AdminApplicationsTable = ({
                       </Link>
                     </Button>
                   </div>
+                  {adminProcessingStatus && adminProcessingReason ? (
+                    <p className="text-[10px] text-muted-foreground pt-1" title={adminProcessingReason}>
+                      Reason: {adminProcessingReason}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             );

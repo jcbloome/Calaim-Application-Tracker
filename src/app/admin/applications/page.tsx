@@ -83,6 +83,7 @@ function AdminApplicationsPageContent() {
   const [healthPlanFilter, setHealthPlanFilter] = useState('all');
   const [pathwayFilter, setPathwayFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [internalStatusFilter, setInternalStatusFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
   const [intakeFilter, setIntakeFilter] = useState<IntakeFilterValue>('all');
   const [memberFilter, setMemberFilter] = useState('');
@@ -278,11 +279,25 @@ function AdminApplicationsPageContent() {
     });
   }, [allApplications]);
 
+  const internalStatusFilterOptions = useMemo(() => {
+    const unique = new Set<string>();
+    allApplications.forEach((app) => {
+      const value = String((app as any)?.adminProcessingStatus || '').trim();
+      if (value) unique.add(value);
+    });
+    return Array.from(unique).sort((a, b) => a.localeCompare(b));
+  }, [allApplications]);
+
   const filteredApplications = useMemo(() => {
     return allApplications.filter(app => {
       const healthPlanMatch = healthPlanFilter === 'all' || app.healthPlan === healthPlanFilter;
       const pathwayMatch = pathwayFilter === 'all' || app.pathway === pathwayFilter;
       const statusMatch = statusFilter === 'all' || app.status === statusFilter;
+      const appInternalStatus = String((app as any)?.adminProcessingStatus || '').trim();
+      const internalStatusMatch =
+        internalStatusFilter === 'all' ||
+        (internalStatusFilter === 'none' && !appInternalStatus) ||
+        appInternalStatus === internalStatusFilter;
       const staffMatch = staffFilter === 'all' || getAssignedStaffLabel(app) === staffFilter;
       const query = memberFilter.toLowerCase();
       const memberMatch =
@@ -314,9 +329,9 @@ function AdminApplicationsPageContent() {
         (reviewFilter === 'cs' && hasCompletedSummary && !app.applicationChecked) ||
         (reviewFilter === 'docs' && hasUnacknowledgedDocs);
 
-      return healthPlanMatch && pathwayMatch && statusMatch && staffMatch && memberMatch && intakeMatch && reviewMatch;
+      return healthPlanMatch && pathwayMatch && statusMatch && internalStatusMatch && staffMatch && memberMatch && intakeMatch && reviewMatch;
     });
-  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, staffFilter, intakeFilter, memberFilter, reviewFilter]);
+  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, internalStatusFilter, staffFilter, intakeFilter, memberFilter, reviewFilter]);
   
 
   const handleSelectionChange = (id: string, checked: boolean) => {
@@ -385,6 +400,7 @@ function AdminApplicationsPageContent() {
     setHealthPlanFilter('all');
     setPathwayFilter('all');
     setStatusFilter('all');
+    setInternalStatusFilter('all');
     setStaffFilter('all');
     setIntakeFilter('all');
     setMemberFilter('');
@@ -584,6 +600,20 @@ function AdminApplicationsPageContent() {
                           </Select>
                         </div>
                         <div className="flex-1 min-w-[180px]">
+                          <Select value={internalStatusFilter} onValueChange={setInternalStatusFilter}>
+                            <SelectTrigger><SelectValue placeholder="Filter by Internal Status" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Internal Statuses</SelectItem>
+                              <SelectItem value="none">No Internal Status</SelectItem>
+                              {internalStatusFilterOptions.map((internalStatus) => (
+                                <SelectItem key={internalStatus} value={internalStatus}>
+                                  {internalStatus}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex-1 min-w-[180px]">
                           <Select value={staffFilter} onValueChange={setStaffFilter}>
                             <SelectTrigger><SelectValue placeholder="Filter by Staff" /></SelectTrigger>
                             <SelectContent>
@@ -596,7 +626,7 @@ function AdminApplicationsPageContent() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="flex-1 min-w-[180px]">
+                        <div className="flex-1 min-w-[200px]">
                           <Select value={intakeFilter} onValueChange={(value) => setIntakeFilter(value as IntakeFilterValue)}>
                             <SelectTrigger><SelectValue placeholder="Filter by Intake Type" /></SelectTrigger>
                             <SelectContent>

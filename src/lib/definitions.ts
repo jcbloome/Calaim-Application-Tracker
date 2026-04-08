@@ -33,6 +33,19 @@ export type Application = {
   memberDob?: any;
   sex?: 'Male' | 'Female';
   status: ApplicationStatus;
+  adminProcessingStatus?:
+    | 'In Process'
+    | 'On Hold'
+    | 'Pending Documents'
+    | 'Pending Authorization'
+    | 'Pending Placement'
+    | 'Ready for Placement'
+    | 'Closed'
+    | null;
+  adminProcessingReason?: string | null;
+  adminProcessingUpdatedAt?: Timestamp | FieldValue;
+  adminProcessingUpdatedBy?: string | null;
+  adminProcessingUpdatedByUid?: string | null;
   submissionDate?: Timestamp | FieldValue;
   lastUpdated: Timestamp | FieldValue;
   pathway: 'SNF Transition' | 'SNF Diversion';
