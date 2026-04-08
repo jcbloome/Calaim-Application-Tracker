@@ -7,6 +7,7 @@ import { NotificationProvider } from '@/components/NotificationProvider';
 import { SessionIsolationGate } from '@/components/SessionIsolationGate';
 import PWAServiceWorker from '@/components/PWAServiceWorker';
 import { Toaster } from '@/components/ui/toaster';
+import { LanguageProvider } from '@/components/LanguageProvider';
 
 function isPublicPathname(pathname: string) {
   if (!pathname) return true;
@@ -28,15 +29,15 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   // For public pages, avoid pulling Firebase/Auth and notification systems.
   if (isPublic) {
     return (
-      <>
+      <LanguageProvider>
         <PWAServiceWorker />
         {children}
-      </>
+      </LanguageProvider>
     );
   }
 
   return (
-    <>
+    <LanguageProvider>
       <FirebaseClientProvider>
         <NotificationProvider>
           <SessionIsolationGate />
@@ -45,7 +46,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         </NotificationProvider>
       </FirebaseClientProvider>
       <Toaster />
-    </>
+    </LanguageProvider>
   );
 }
 

@@ -19,6 +19,7 @@ import Image from 'next/image';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import { setPortalSessionOfflineClient, trackLoginActivityClient } from '@/lib/login-activity-client';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 const navLinks = [
     { href: "/info", label: "Program Information" },
@@ -124,6 +125,8 @@ export function Header() {
                     <Link href={link.href} className="text-sm">{link.label}</Link>
                 </Button>
             ))}
+
+            <LanguageSwitcher className="h-9 w-9 ml-2" />
             
             {/* Contact Us on the right side */}
             <Button variant="outline" size="sm" asChild className="ml-2 xl:ml-4">
@@ -213,6 +216,12 @@ export function Header() {
                 >
                   Contact Us
                 </Link>
+                <div className="mt-2 border-t pt-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-muted-foreground">Language</span>
+                    <LanguageSwitcher />
+                  </div>
+                </div>
               </nav>
               <div className="mt-2 border-t pt-3">
                 {(isUserLoading || isAdminLoading) ? (

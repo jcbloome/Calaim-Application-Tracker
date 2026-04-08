@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 const navLinks = [
   { href: '/info', label: 'Program Information' },
@@ -48,6 +49,7 @@ export function PublicHeader() {
               </Link>
             </Button>
           ))}
+          <LanguageSwitcher className="h-9 w-9 ml-2" />
           <Button variant="outline" size="sm" asChild className="ml-2 xl:ml-4">
             <Link href="/contact" className="text-sm">
               Contact Us
@@ -108,6 +110,12 @@ export function PublicHeader() {
                 >
                   Contact Us
                 </Link>
+                <div className="mt-2 border-t pt-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-muted-foreground">Language</span>
+                    <LanguageSwitcher />
+                  </div>
+                </div>
               </nav>
               <div className="mt-2 border-t pt-3">
                 <Button asChild className="w-full">

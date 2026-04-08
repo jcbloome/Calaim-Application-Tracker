@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider, FieldPath, FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Loader2, AlertCircle, Languages, CheckCircle2, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, CheckCircle2, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
@@ -745,21 +745,6 @@ function CsSummaryFormComponent() {
                             {autoSaveError ? <span className="text-red-600">Autosave error: {autoSaveError}</span> : null}
                           </div>
                       </div>
-                      {!isAdminView && (
-                          <Button 
-                              type="button" 
-                              variant="outline" 
-                              size="sm"
-                              className="flex items-center gap-2 self-start sm:self-auto"
-                              onClick={() => {
-                                  // TODO: Implement Spanish translation
-                                  console.log('Spanish translation will be implemented later');
-                              }}
-                          >
-                              <Languages className="h-4 w-4" />
-                              Español
-                          </Button>
-                      )}
                   </div>
               </div>
                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
