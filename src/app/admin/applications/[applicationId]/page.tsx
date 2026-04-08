@@ -289,9 +289,7 @@ function StaffAssignmentDropdown({
               ? `/admin/applications/${application.id}?userId=${encodeURIComponent(String(application.userId))}`
               : `/admin/applications/${application.id}`;
 
-            // Create a high-priority assignment item so it appears in:
-            // - Action Items (notes bell badge)
-            // - Daily Task Tracker calendar (follow-up tasks)
+            // Create action item notification (bell badge in Action Items)
             try {
               await addDoc(collection(firestore, 'staff_notifications'), {
                 userId: selectedStaff.uid,
@@ -316,14 +314,39 @@ function StaffAssignmentDropdown({
                 timestamp: serverTimestamp(),
               });
             } catch (notificationError) {
-              console.warn('Failed to create assignment action item notification:', notificationError);
+              console.warn('Failed to create assignment notification:', notificationError);
+            }
+
+            // Create a tagged daily calendar task for the assigned staff member
+            try {
+              await fetch('/api/daily-tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  title: `${planLabel} assignment: ${memberName}`,
+                  description: `You were assigned ${memberName}. Please review and complete the next step.`,
+                  memberName,
+                  healthPlan: String(application.healthPlan || '').trim(),
+                  assignedTo: selectedStaff.uid,
+                  assignedToName: selectedStaff.displayName,
+                  priority: 'high',
+                  dueDate: dueDate.toISOString().split('T')[0],
+                  createdBy: String(adminUser?.uid || '').trim(),
+                  notes: `Assigned by ${assignedByName} from Caspio pathway.`,
+                  applicationId: application.id,
+                  applicationLink: actionUrl,
+                  source: 'caspio_assignment',
+                }),
+              });
+            } catch (calendarError) {
+              console.warn('Failed to create calendar task for assignment:', calendarError);
             }
 
             onStaffChange(staffId, selectedStaff.displayName);
             
             toast({
                 title: "Staff Assigned",
-                description: `Application assigned to ${selectedStaff.displayName}. Action items + daily task calendar updated.`,
+                description: `Application assigned to ${selectedStaff.displayName}. Action items + calendar updated.`,
             });
         } catch (error) {
             console.error('Error assigning staff:', error);
@@ -936,6 +959,7 @@ function PushToCaspioDialog({
             for (const docSnap of managerSnap.docs) {
                 const managerUid = String(docSnap.id || '').trim();
                 if (!managerUid || existingByUser.has(managerUid)) continue;
+                // Action item notification
                 await addDoc(collection(firestore, 'staff_notifications'), {
                     userId: managerUid,
                     title: `Kaiser status ready: ${memberName}`,
@@ -956,6 +980,32 @@ function PushToCaspioDialog({
                     source: 'application-pathway',
                     timestamp: serverTimestamp(),
                 });
+                // Tagged daily calendar task for Kaiser manager
+                try {
+                  const managerData = docSnap.data() as any;
+                  const managerName = String(managerData?.displayName || managerData?.firstName || managerUid).trim();
+                  await fetch('/api/daily-tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      title: `Kaiser T2038 Ready: ${memberName}`,
+                      description: `${memberName} was pushed with Kaiser_Status "T2038 Request Ready". Please review and proceed.`,
+                      memberName,
+                      healthPlan: 'Kaiser',
+                      assignedTo: managerUid,
+                      assignedToName: managerName,
+                      priority: 'high',
+                      dueDate: dueDate.toISOString().split('T')[0],
+                      createdBy: String(user?.uid || '').trim(),
+                      notes: `Triggered by Caspio push. Assigned by ${senderName}.`,
+                      applicationId,
+                      applicationLink: `/admin/applications/${applicationId}`,
+                      source: 'caspio_kaiser',
+                    }),
+                  });
+                } catch (calendarError) {
+                  console.warn('Failed to create Kaiser calendar task:', calendarError);
+                }
             }
         } catch (error) {
             console.warn('Failed to send Kaiser manager T2038-ready notification:', error);
@@ -1447,6 +1497,13 @@ function AdminActions({ application }: { application: Application }) {
     const [isSending, setIsSending] = useState(false);
     const [isSavingAdminProcessing, setIsSavingAdminProcessing] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
+    // Schedule next step in calendar
+    const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
+    const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined);
+    const [scheduleTitle, setScheduleTitle] = useState('');
+    const [scheduleNotes, setScheduleNotes] = useState('');
+    const [schedulePriority, setSchedulePriority] = useState<'high' | 'medium' | 'low'>('medium');
+    const [isSavingSchedule, setIsSavingSchedule] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
 
@@ -1645,6 +1702,48 @@ function AdminActions({ application }: { application: Application }) {
       }
     };
 
+    const handleScheduleTask = async () => {
+      if (!scheduleDate) {
+        toast({ variant: 'destructive', title: 'Date required', description: 'Please select a date for this calendar entry.' });
+        return;
+      }
+      const title = scheduleTitle.trim() || `Follow up: ${application.memberFirstName} ${application.memberLastName}`.trim();
+      setIsSavingSchedule(true);
+      try {
+        const dueDateStr = scheduleDate.toISOString().split('T')[0];
+        const response = await fetch('/api/daily-tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            description: scheduleNotes.trim(),
+            memberName: `${application.memberFirstName || ''} ${application.memberLastName || ''}`.trim(),
+            healthPlan: application.healthPlan || '',
+            assignedTo: adminUser?.uid || '',
+            assignedToName: adminUser?.displayName || adminUser?.email || 'Admin',
+            priority: schedulePriority,
+            dueDate: dueDateStr,
+            createdBy: adminUser?.uid || '',
+            applicationId: application.id,
+            applicationLink: `/admin/applications/${application.id}`,
+            source: 'application',
+          }),
+        });
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'Failed to create calendar entry');
+        toast({ title: 'Added to calendar', description: `Scheduled for ${format(scheduleDate, 'MMM d, yyyy')}`, className: 'bg-green-100 text-green-900' });
+        setIsScheduleDialogOpen(false);
+        setScheduleDate(undefined);
+        setScheduleTitle('');
+        setScheduleNotes('');
+        setSchedulePriority('medium');
+      } catch (error: any) {
+        toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Could not add to calendar.' });
+      } finally {
+        setIsSavingSchedule(false);
+      }
+    };
+
     const handleDeleteApplication = async () => {
         if (!firestore) {
             toast({ variant: 'destructive', title: 'Error', description: 'Firestore not available.' });
@@ -1788,6 +1887,82 @@ function AdminActions({ application }: { application: Application }) {
                       </DialogContent>
                     </Dialog>
                     
+                    {/* Schedule Next Step in Calendar */}
+                    <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" className="w-full flex items-center gap-2">
+                          <CalendarIcon className="h-4 w-4" />
+                          Schedule Next Step in Calendar
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Schedule Next Step in Calendar</DialogTitle>
+                          <DialogDescription>Add a follow-up date to the daily task calendar for this member.</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="schedule-title">Task Title</Label>
+                            <Input
+                              id="schedule-title"
+                              placeholder={`Follow up: ${application.memberFirstName} ${application.memberLastName}`}
+                              value={scheduleTitle}
+                              onChange={(e) => setScheduleTitle(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Due Date *</Label>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className={cn('w-full justify-start text-left font-normal', !scheduleDate && 'text-muted-foreground')}
+                                >
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {scheduleDate ? format(scheduleDate, 'PPP') : <span>Pick a date</span>}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                  mode="single"
+                                  selected={scheduleDate}
+                                  onSelect={setScheduleDate}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="schedule-priority">Priority</Label>
+                            <Select value={schedulePriority} onValueChange={(v) => setSchedulePriority(v as 'high' | 'medium' | 'low')}>
+                              <SelectTrigger id="schedule-priority">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="high">High</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="low">Low</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="schedule-notes">Notes</Label>
+                            <Textarea
+                              id="schedule-notes"
+                              placeholder="What needs to happen on this date?"
+                              value={scheduleNotes}
+                              onChange={(e) => setScheduleNotes(e.target.value)}
+                              rows={3}
+                            />
+                          </div>
+                          <Button className="w-full" onClick={handleScheduleTask} disabled={isSavingSchedule || !scheduleDate}>
+                            {isSavingSchedule ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarIcon className="mr-2 h-4 w-4" />}
+                            Add to Calendar
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
                             <Button variant="destructive" className="w-full">
@@ -3282,9 +3457,49 @@ function ApplicationDetailPageContent() {
         )
       );
 
+      // Auto-create daily calendar tasks for each recipient if a follow-up date is set
+      const followUpDateStr = String(interofficeNote.followUpDate || '').trim();
+      if (followUpDateStr) {
+        const calendarDueDate = followUpDateStr.length === 10
+          ? followUpDateStr // already YYYY-MM-DD
+          : new Date(followUpDateStr).toISOString().split('T')[0];
+
+        const senderName = String(user?.displayName || user?.email || 'Admin').trim();
+        await Promise.allSettled(
+          recipients.map((recipient) =>
+            fetch('/api/daily-tasks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: `Follow-up: ${memberName}`,
+                description: interofficeNote.message.trim(),
+                memberName,
+                healthPlan: String(application.healthPlan || '').trim(),
+                assignedTo: recipient.uid,
+                assignedToName: recipient.name,
+                priority:
+                  interofficeNote.priority === 'Immediate'
+                    ? 'high'
+                    : interofficeNote.priority === 'Priority'
+                    ? 'medium'
+                    : 'low',
+                dueDate: calendarDueDate,
+                createdBy: user?.uid || 'system',
+                notes: `Assigned by ${senderName} via interoffice note.`,
+                applicationId,
+                applicationLink: `/admin/applications/${applicationId}`,
+                source: 'interoffice_note',
+              }),
+            })
+          )
+        );
+      }
+
       toast({
         title: 'Interoffice Note Sent',
-        description: `Sent to ${recipients.length} staff member${recipients.length === 1 ? '' : 's'}.`
+        description: followUpDateStr
+          ? `Sent to ${recipients.length} staff member${recipients.length === 1 ? '' : 's'} · Follow-up added to calendar`
+          : `Sent to ${recipients.length} staff member${recipients.length === 1 ? '' : 's'}.`,
       });
 
       setInterofficeNote((prev) => ({
@@ -5204,6 +5419,7 @@ function ApplicationDetailPageContent() {
       // Update local state
       setApplication(prev => prev ? { ...prev, ...updateData } : null);
 
+      let nextStepForCalendar = '';
       if (statusType === 'kaiser') {
         const oldSuggested = String(kaiserNextStatus || '').trim();
         const currentNext = String((staffTracker as any)?.nextStep || '').trim();
@@ -5214,6 +5430,7 @@ function ApplicationDetailPageContent() {
           updateStaffTracker({ nextStep: next } as any);
           if (!nextStepDateInputValue) setNextStepDateMissing(true);
         }
+        nextStepForCalendar = next || oldSuggested;
       } else if (statusType === 'healthNet') {
         const oldSuggested = String(healthNetNextStatus || '').trim();
         const currentNext = String((staffTracker as any)?.nextStep || '').trim();
@@ -5223,11 +5440,43 @@ function ApplicationDetailPageContent() {
           updateStaffTracker({ nextStep: next } as any);
           if (!nextStepDateInputValue) setNextStepDateMissing(true);
         }
+        nextStepForCalendar = next || oldSuggested;
       }
-      
+
+      // Create a calendar task for the assigned staff member whenever progression status changes
+      const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
+      const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
+      const memberName = `${String(application.memberFirstName || '').trim()} ${String(application.memberLastName || '').trim()}`.trim() || 'Member';
+      const planLabel = statusType === 'kaiser' ? 'Kaiser' : 'Health Net';
+      const calendarSource = statusType === 'kaiser' ? 'caspio_kaiser' : 'caspio_health_net';
+      const todayStr = new Date().toISOString().split('T')[0];
+      try {
+        await fetch('/api/daily-tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: `${planLabel} status update: ${memberName}`,
+            description: `Status changed to "${status}"${nextStepForCalendar ? `. Next step: ${nextStepForCalendar}` : ''}.`,
+            memberName,
+            healthPlan: planLabel,
+            assignedTo: assignedStaffId || String(user?.uid || '').trim(),
+            assignedToName: assignedStaffName || String(user?.displayName || user?.email || 'Admin').trim(),
+            priority: 'medium',
+            dueDate: todayStr,
+            createdBy: String(user?.uid || '').trim(),
+            notes: nextStepForCalendar ? `Suggested next step: ${nextStepForCalendar}` : '',
+            applicationId: applicationId,
+            applicationLink: `/admin/applications/${applicationId}`,
+            source: calendarSource,
+          }),
+        });
+      } catch (calendarError) {
+        console.warn('Failed to create calendar task for status update:', calendarError);
+      }
+
       toast({
         title: "Status Updated",
-        description: `${statusType === 'kaiser' ? 'Kaiser' : 'Health Net'} progression status updated to: ${status}`,
+        description: `${planLabel} progression status updated to: ${status}`,
         className: "bg-green-100 text-green-900 border-green-200",
       });
     } catch (error: any) {

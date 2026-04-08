@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { normalizePriorityLabel } from '@/lib/notification-utils';
+import { adminDb } from '@/firebase-admin';
 
-interface DailyTask {
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export interface DailyTask {
   id?: string;
   title: string;
   description?: string;
@@ -10,70 +13,29 @@ interface DailyTask {
   healthPlan?: string;
   assignedTo: string;
   assignedToName?: string;
-  priority: 'General' | 'Priority' | 'Urgent';
+  priority: 'high' | 'medium' | 'low';
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
-  dueDate: string;
+  dueDate: string; // ISO date YYYY-MM-DD
   createdAt: string;
   updatedAt: string;
   createdBy: string;
   completedAt?: string;
   notes?: string;
   tags?: string[];
+  // Application linkage
+  applicationId?: string;
+  applicationLink?: string;
+  /** Where the task originated — used to show a source badge in the calendar */
+  source?: 'manual' | 'application' | 'interoffice_note' | 'caspio_assignment' | 'caspio_kaiser' | 'caspio_health_net';
 }
 
-// In-memory storage for tasks (in production, this would be a database)
-let tasks: DailyTask[] = [
-  {
-    id: '1',
-    title: 'Follow up with Sample Member Kaiser authorization',
-    description: 'Check status of pending Kaiser authorization for member',
-    memberName: 'Sample Member A',
-    memberClientId: 'KAI-12345',
-    healthPlan: 'Kaiser',
-    assignedTo: 'user1',
-    assignedToName: 'Sarah Johnson',
-    priority: 'Priority',
-    status: 'pending',
-    dueDate: new Date().toISOString().split('T')[0], // Today
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    createdBy: 'admin',
-    notes: 'Member has been waiting for 2 weeks'
-  },
-  {
-    id: '2',
-    title: 'Schedule Health Net member visit',
-    description: 'Coordinate home visit for Health Net member assessment',
-    memberName: 'Sample Member B',
-    memberClientId: 'HN-67890',
-    healthPlan: 'Health Net',
-    assignedTo: 'user2',
-    assignedToName: 'Mike Wilson',
-    priority: 'General',
-    status: 'in_progress',
-    dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Tomorrow
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-    updatedAt: new Date().toISOString(),
-    createdBy: 'admin',
-    notes: 'Member prefers morning appointments'
-  },
-  {
-    id: '3',
-    title: 'Complete monthly report for CalAIM program',
-    description: 'Compile statistics and member progress for monthly reporting',
-    assignedTo: 'user1',
-    assignedToName: 'Sarah Johnson',
-    priority: 'General',
-    status: 'pending',
-    dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0], // Next week
-    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-    updatedAt: new Date().toISOString(),
-    createdBy: 'admin',
-    notes: 'Due by end of month'
-  }
-];
-
-let nextId = 4;
+function normalizePriority(raw: unknown): 'high' | 'medium' | 'low' {
+  const s = String(raw || '').toLowerCase().trim();
+  if (s === 'high' || s === 'urgent' || s === 'priority') return 'high';
+  if (s === 'medium' || s === 'general') return 'medium';
+  if (s === 'low') return 'low';
+  return 'medium';
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -81,53 +43,44 @@ export async function GET(request: NextRequest) {
     const assignedTo = searchParams.get('assignedTo');
     const status = searchParams.get('status');
     const priority = searchParams.get('priority');
-    
-    console.log('📥 Fetching daily tasks...');
-    
-    let filteredTasks = [...tasks];
-    
-    // Apply filters if provided
+    const applicationId = searchParams.get('applicationId');
+
+    let query: FirebaseFirestore.Query = adminDb.collection('adminDailyTasks');
+
     if (assignedTo && assignedTo !== 'all') {
-      filteredTasks = filteredTasks.filter(task => task.assignedTo === assignedTo);
+      query = query.where('assignedTo', '==', assignedTo);
     }
-    
     if (status && status !== 'all') {
-      filteredTasks = filteredTasks.filter(task => task.status === status);
+      query = query.where('status', '==', status);
     }
-    
+    if (applicationId) {
+      query = query.where('applicationId', '==', applicationId);
+    }
+
+    const snapshot = await query.orderBy('dueDate', 'asc').get();
+
+    let tasks: DailyTask[] = snapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<DailyTask, 'id'>),
+    }));
+
+    // Priority filter done client-side since compound indexes may not exist
     if (priority && priority !== 'all') {
-      filteredTasks = filteredTasks.filter(task => task.priority === priority);
+      const normalizedFilter = normalizePriority(priority);
+      tasks = tasks.filter((t) => t.priority === normalizedFilter);
     }
-    
-    // Calculate summary statistics
+
     const today = new Date().toISOString().split('T')[0];
-    const urgentCount = filteredTasks.filter(t => t.priority === 'Urgent').length;
-    const priorityCount = filteredTasks.filter(t => t.priority === 'Priority').length;
-    const generalCount = filteredTasks.filter(t => t.priority === 'General').length;
     const summary = {
-      total: filteredTasks.length,
-      urgent: urgentCount,
-      priority: priorityCount,
-      general: generalCount,
-      high: urgentCount + priorityCount,
-      medium: generalCount,
-      low: 0,
-      pending: filteredTasks.filter(t => t.status === 'pending').length,
-      inProgress: filteredTasks.filter(t => t.status === 'in_progress').length,
-      completed: filteredTasks.filter(t => t.status === 'completed').length,
-      overdue: filteredTasks.filter(t => t.dueDate < today && t.status !== 'completed').length,
-      dueToday: filteredTasks.filter(t => t.dueDate === today && t.status !== 'completed').length
+      total: tasks.length,
+      pending: tasks.filter((t) => t.status === 'pending').length,
+      inProgress: tasks.filter((t) => t.status === 'in_progress').length,
+      completed: tasks.filter((t) => t.status === 'completed').length,
+      overdue: tasks.filter((t) => t.dueDate < today && t.status !== 'completed').length,
+      dueToday: tasks.filter((t) => t.dueDate === today && t.status !== 'completed').length,
     };
-    
-    console.log(`✅ Loaded ${filteredTasks.length} daily tasks`);
-    console.log(`📊 Task summary:`, summary);
-    
-    return NextResponse.json({
-      success: true,
-      tasks: filteredTasks,
-      summary
-    });
-    
+
+    return NextResponse.json({ success: true, tasks, summary });
   } catch (error: any) {
     console.error('Error fetching daily tasks:', error);
     return NextResponse.json(
@@ -140,39 +93,39 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    console.log('📝 Creating new daily task:', body);
-    
+
+    if (!body.title || !body.dueDate) {
+      return NextResponse.json(
+        { success: false, error: 'title and dueDate are required' },
+        { status: 400 }
+      );
+    }
+
     const now = new Date().toISOString();
-    const newTask: DailyTask = {
-      id: nextId.toString(),
-      title: body.title,
-      description: body.description || '',
-      memberName: body.memberName || '',
-      memberClientId: body.memberClientId || '',
-      healthPlan: body.healthPlan || '',
-      assignedTo: body.assignedTo,
-      assignedToName: body.assignedToName || '',
-      priority: normalizePriorityLabel(body.priority),
+    const newTask: Omit<DailyTask, 'id'> = {
+      title: String(body.title).trim(),
+      description: String(body.description || '').trim(),
+      memberName: String(body.memberName || '').trim(),
+      memberClientId: String(body.memberClientId || '').trim(),
+      healthPlan: String(body.healthPlan || '').trim(),
+      assignedTo: String(body.assignedTo || '').trim(),
+      assignedToName: String(body.assignedToName || '').trim(),
+      priority: normalizePriority(body.priority),
       status: 'pending',
-      dueDate: body.dueDate,
+      dueDate: String(body.dueDate).trim(),
       createdAt: now,
       updatedAt: now,
-      createdBy: body.createdBy,
-      notes: body.notes || '',
-      tags: body.tags || []
+      createdBy: String(body.createdBy || '').trim(),
+      notes: String(body.notes || '').trim(),
+      tags: Array.isArray(body.tags) ? body.tags : [],
+      applicationId: body.applicationId ? String(body.applicationId).trim() : undefined,
+      applicationLink: body.applicationLink ? String(body.applicationLink).trim() : undefined,
+      source: body.source || 'manual',
     };
-    
-    tasks.push(newTask);
-    nextId++;
-    
-    console.log(`✅ Created daily task with ID: ${newTask.id}`);
-    
-    return NextResponse.json({
-      success: true,
-      taskId: newTask.id,
-      task: newTask
-    });
-    
+
+    const docRef = await adminDb.collection('adminDailyTasks').add(newTask);
+
+    return NextResponse.json({ success: true, taskId: docRef.id, task: { id: docRef.id, ...newTask } });
   } catch (error: any) {
     console.error('Error creating daily task:', error);
     return NextResponse.json(
@@ -186,68 +139,49 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
     const action = String(body?.action || '').trim().toLowerCase();
+
     if (action === 'clear_member_followups') {
       const memberClientId = String(body?.memberClientId || '').trim();
       if (!memberClientId) {
-        return NextResponse.json(
-          { success: false, error: 'memberClientId is required' },
-          { status: 400 }
-        );
+        return NextResponse.json({ success: false, error: 'memberClientId is required' }, { status: 400 });
       }
-
-      const before = tasks.length;
-      tasks = tasks.filter((task) => String(task?.memberClientId || '').trim() !== memberClientId);
-      const removedCount = Math.max(0, before - tasks.length);
-
-      return NextResponse.json({
-        success: true,
-        action: 'clear_member_followups',
-        memberClientId,
-        removedCount
-      });
+      const snap = await adminDb
+        .collection('adminDailyTasks')
+        .where('memberClientId', '==', memberClientId)
+        .get();
+      const batch = adminDb.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      return NextResponse.json({ success: true, action: 'clear_member_followups', memberClientId, removedCount: snap.size });
     }
 
     const { id, ...updates } = body;
-    
     if (!id) {
-      return NextResponse.json(
-        { success: false, error: 'Task ID is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Task ID is required' }, { status: 400 });
     }
-    
-    console.log(`📝 Updating daily task ${id}:`, updates);
-    
-    const taskIndex = tasks.findIndex(task => task.id === id);
-    if (taskIndex === -1) {
-      return NextResponse.json(
-        { success: false, error: 'Task not found' },
-        { status: 404 }
-      );
+
+    const docRef = adminDb.collection('adminDailyTasks').doc(id);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return NextResponse.json({ success: false, error: 'Task not found' }, { status: 404 });
     }
-    
+
     const now = new Date().toISOString();
-    const updateData = {
+    const updateData: Record<string, any> = {
       ...updates,
-      ...(updates?.priority ? { priority: normalizePriorityLabel(updates.priority) } : {}),
-      updatedAt: now
+      updatedAt: now,
     };
-    
-    // Add completedAt timestamp if status is being set to completed
+    if (updates?.priority) {
+      updateData.priority = normalizePriority(updates.priority);
+    }
     if (updates.status === 'completed' && !updates.completedAt) {
       updateData.completedAt = now;
     }
-    
-    tasks[taskIndex] = { ...tasks[taskIndex], ...updateData };
-    
-    console.log(`✅ Updated daily task ${id}`);
-    
-    return NextResponse.json({
-      success: true,
-      taskId: id,
-      task: tasks[taskIndex]
-    });
-    
+
+    await docRef.update(updateData);
+    const updated = (await docRef.get()).data() as DailyTask;
+
+    return NextResponse.json({ success: true, taskId: id, task: { id, ...updated } });
   } catch (error: any) {
     console.error('Error updating daily task:', error);
     return NextResponse.json(
@@ -261,33 +195,18 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    
     if (!id) {
-      return NextResponse.json(
-        { success: false, error: 'Task ID is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'Task ID is required' }, { status: 400 });
     }
-    
-    console.log(`🗑️ Deleting daily task ${id}`);
-    
-    const taskIndex = tasks.findIndex(task => task.id === id);
-    if (taskIndex === -1) {
-      return NextResponse.json(
-        { success: false, error: 'Task not found' },
-        { status: 404 }
-      );
+
+    const docRef = adminDb.collection('adminDailyTasks').doc(id);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      return NextResponse.json({ success: false, error: 'Task not found' }, { status: 404 });
     }
-    
-    tasks.splice(taskIndex, 1);
-    
-    console.log(`✅ Deleted daily task ${id}`);
-    
-    return NextResponse.json({
-      success: true,
-      taskId: id
-    });
-    
+
+    await docRef.delete();
+    return NextResponse.json({ success: true, taskId: id });
   } catch (error: any) {
     console.error('Error deleting daily task:', error);
     return NextResponse.json(

@@ -1,20 +1,67 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAdmin } from '@/hooks/use-admin';
 import { Button } from '@/components/ui/button';
-import { Loader2, Calendar, AlertTriangle, CheckCircle, Clock, Plus, Edit, Trash2, Filter } from 'lucide-react';
-import { format } from 'date-fns';
+import {
+  Loader2,
+  Calendar,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Plus,
+  Edit,
+  Trash2,
+  Filter,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  CalendarDays,
+  Flame,
+  TrendingUp,
+  Target,
+  MessageSquare,
+  UserCheck,
+  Stethoscope,
+} from 'lucide-react';
+import {
+  format,
+  addMonths,
+  subMonths,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  eachDayOfInterval,
+  isSameDay,
+  isSameMonth,
+  isToday,
+  parseISO,
+  isPast,
+  isTomorrow,
+  isThisWeek,
+  addDays,
+} from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 interface DailyTask {
   id?: string;
@@ -34,20 +81,330 @@ interface DailyTask {
   completedAt?: string;
   notes?: string;
   tags?: string[];
+  applicationId?: string;
+  applicationLink?: string;
+  source?: 'manual' | 'application';
 }
 
-export default function DailyTasksPage() {
-  const { isAdmin, user, isLoading: isAdminLoading } = useAdmin();
+const PRIORITY_CONFIG = {
+  high: {
+    label: 'High',
+    badge: 'bg-red-100 text-red-800 border-red-200',
+    border: 'border-l-red-500',
+    dot: 'bg-red-500',
+    icon: Flame,
+  },
+  medium: {
+    label: 'Medium',
+    badge: 'bg-amber-100 text-amber-800 border-amber-200',
+    border: 'border-l-amber-400',
+    dot: 'bg-amber-400',
+    icon: TrendingUp,
+  },
+  low: {
+    label: 'Low',
+    badge: 'bg-green-100 text-green-800 border-green-200',
+    border: 'border-l-green-400',
+    dot: 'bg-green-400',
+    icon: Target,
+  },
+} as const;
 
-  const [tasks, setTasks] = useState<DailyTask[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterPriority, setFilterPriority] = useState<string>('all');
-  
-  // Form state for creating/editing tasks
+const STATUS_CONFIG = {
+  pending: { label: 'Pending', badge: 'bg-slate-100 text-slate-700 border-slate-200' },
+  in_progress: { label: 'In Progress', badge: 'bg-blue-100 text-blue-800 border-blue-200' },
+  completed: { label: 'Completed', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  cancelled: { label: 'Cancelled', badge: 'bg-gray-100 text-gray-500 border-gray-200' },
+} as const;
+
+const HEALTH_PLAN_CONFIG: Record<string, string> = {
+  Kaiser: 'bg-green-50 text-green-700 border-green-200',
+  'Health Net': 'bg-orange-50 text-orange-700 border-orange-200',
+};
+
+const SOURCE_CONFIG: Record<
+  string,
+  { label: string; badge: string; icon: React.ElementType }
+> = {
+  interoffice_note: {
+    label: 'Interoffice Note',
+    badge: 'bg-purple-50 text-purple-700 border-purple-200',
+    icon: MessageSquare,
+  },
+  caspio_assignment: {
+    label: 'Staff Assignment',
+    badge: 'bg-blue-50 text-blue-800 border-blue-200',
+    icon: UserCheck,
+  },
+  caspio_kaiser: {
+    label: 'Kaiser · Caspio',
+    badge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    icon: Stethoscope,
+  },
+  caspio_health_net: {
+    label: 'Health Net · Caspio',
+    badge: 'bg-orange-50 text-orange-800 border-orange-200',
+    icon: Stethoscope,
+  },
+  application: {
+    label: 'Scheduled',
+    badge: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    icon: CalendarDays,
+  },
+};
+
+// ─── Mini Calendar Component ─────────────────────────────────────────────────
+function MiniCalendar({
+  tasks,
+  onDayClick,
+  selectedDate,
+}: {
+  tasks: DailyTask[];
+  onDayClick: (date: Date) => void;
+  selectedDate: Date | null;
+}) {
+  const [viewMonth, setViewMonth] = useState(new Date());
+
+  const taskDateSet = useMemo(() => {
+    const set = new Set<string>();
+    tasks
+      .filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
+      .forEach((t) => set.add(t.dueDate));
+    return set;
+  }, [tasks]);
+
+  const overdueSet = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const set = new Set<string>();
+    tasks
+      .filter((t) => t.dueDate < today && t.status !== 'completed' && t.status !== 'cancelled')
+      .forEach((t) => set.add(t.dueDate));
+    return set;
+  }, [tasks]);
+
+  const calendarDays = useMemo(() => {
+    const monthStart = startOfMonth(viewMonth);
+    const monthEnd = endOfMonth(viewMonth);
+    const calStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+    const calEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+    return eachDayOfInterval({ start: calStart, end: calEnd });
+  }, [viewMonth]);
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="pb-3 pt-4 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setViewMonth((m) => subMonths(m, 1))}
+            className="p-1 rounded hover:bg-white/20 transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="font-semibold text-sm">{format(viewMonth, 'MMMM yyyy')}</span>
+          <button
+            onClick={() => setViewMonth((m) => addMonths(m, 1))}
+            className="p-1 rounded hover:bg-white/20 transition-colors"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-3">
+        <div className="grid grid-cols-7 mb-1">
+          {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+            <div key={d} className="text-center text-[10px] font-semibold text-muted-foreground py-1">
+              {d}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-0.5">
+          {calendarDays.map((day) => {
+            const dayStr = format(day, 'yyyy-MM-dd');
+            const hasTask = taskDateSet.has(dayStr);
+            const isOverdue = overdueSet.has(dayStr);
+            const isCurrentMonth = isSameMonth(day, viewMonth);
+            const isSelected = selectedDate && isSameDay(day, selectedDate);
+            const isTodayDay = isToday(day);
+
+            return (
+              <button
+                key={dayStr}
+                onClick={() => onDayClick(day)}
+                className={cn(
+                  'relative flex flex-col items-center justify-center rounded-md text-xs py-1.5 transition-all hover:bg-muted',
+                  !isCurrentMonth && 'opacity-30',
+                  isTodayDay && !isSelected && 'bg-blue-50 text-blue-700 font-semibold ring-1 ring-blue-300',
+                  isSelected && 'bg-blue-600 text-white font-semibold shadow-sm',
+                )}
+              >
+                <span>{format(day, 'd')}</span>
+                {hasTask && (
+                  <span
+                    className={cn(
+                      'absolute bottom-0.5 h-1 w-1 rounded-full',
+                      isSelected ? 'bg-white' : isOverdue ? 'bg-red-500' : 'bg-blue-500'
+                    )}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 pt-2 border-t flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-blue-500 inline-block" /> Tasks</span>
+          <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-red-500 inline-block" /> Overdue</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Task Card Component ─────────────────────────────────────────────────────
+function TaskCard({
+  task,
+  today,
+  onEdit,
+  onToggleComplete,
+  onDelete,
+}: {
+  task: DailyTask;
+  today: string;
+  onEdit: (task: DailyTask) => void;
+  onToggleComplete: (task: DailyTask) => void;
+  onDelete: (taskId: string) => void;
+}) {
+  const priority = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG.medium;
+  const statusCfg = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending;
+  const PriorityIcon = priority.icon;
+  const isOverdue = task.dueDate < today && task.status !== 'completed' && task.status !== 'cancelled';
+  const isDueToday = task.dueDate === today;
+  const isCompleted = task.status === 'completed';
+
+  return (
+    <div
+      className={cn(
+        'group relative flex gap-3 rounded-lg border bg-card p-3.5 shadow-sm transition-all hover:shadow-md border-l-4',
+        priority.border,
+        isCompleted && 'opacity-60',
+      )}
+    >
+      {/* Complete toggle */}
+      <button
+        onClick={() => onToggleComplete(task)}
+        className={cn(
+          'mt-0.5 flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors',
+          isCompleted
+            ? 'border-emerald-500 bg-emerald-500 text-white'
+            : 'border-muted-foreground/40 hover:border-emerald-400',
+        )}
+      >
+        {isCompleted && <CheckCircle className="h-3 w-3" />}
+      </button>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-start gap-2 mb-1">
+          <span className={cn('text-sm font-medium leading-tight', isCompleted && 'line-through text-muted-foreground')}>
+            {task.title}
+          </span>
+          <div className="flex flex-wrap gap-1 ml-auto">
+            <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', priority.badge)}>
+              <PriorityIcon className="h-2.5 w-2.5 mr-0.5" />
+              {priority.label}
+            </Badge>
+            <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', statusCfg.badge)}>
+              {statusCfg.label}
+            </Badge>
+            {task.source && task.source !== 'manual' && SOURCE_CONFIG[task.source] && (() => {
+              const src = SOURCE_CONFIG[task.source!]!;
+              const SrcIcon = src.icon;
+              return (
+                <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', src.badge)}>
+                  <SrcIcon className="h-2.5 w-2.5 mr-0.5" />
+                  {src.label}
+                </Badge>
+              );
+            })()}
+          </div>
+        </div>
+
+        {task.description && (
+          <p className="text-xs text-muted-foreground mb-1.5 line-clamp-2">{task.description}</p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {task.memberName && (
+            <span className="flex items-center gap-1 font-medium text-foreground/80">
+              {task.memberName}
+              {task.healthPlan && (
+                <Badge variant="outline" className={cn('text-[10px] px-1 py-0 ml-1', HEALTH_PLAN_CONFIG[task.healthPlan] ?? 'bg-gray-50 text-gray-700 border-gray-200')}>
+                  {task.healthPlan}
+                </Badge>
+              )}
+            </span>
+          )}
+          {task.assignedToName && <span>→ {task.assignedToName}</span>}
+          <span
+            className={cn(
+              'flex items-center gap-0.5 font-medium',
+              isOverdue ? 'text-red-600' : isDueToday ? 'text-amber-600' : 'text-muted-foreground',
+            )}
+          >
+            <Calendar className="h-3 w-3" />
+            {isOverdue ? 'Overdue · ' : isDueToday ? 'Today · ' : ''}
+            {format(parseISO(task.dueDate + 'T00:00:00'), 'MMM d')}
+          </span>
+          {task.source !== 'manual' && task.applicationLink && (
+            <Link
+              href={task.applicationLink}
+              className="flex items-center gap-0.5 text-blue-600 hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              View application
+            </Link>
+          )}
+        </div>
+
+        {task.notes && (
+          <p className="mt-1.5 text-[11px] bg-muted/60 rounded px-2 py-1 text-muted-foreground italic line-clamp-2">
+            {task.notes}
+          </p>
+        )}
+      </div>
+
+      {/* Actions - visible on hover */}
+      <div className="flex-shrink-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onEdit(task)}>
+          <Edit className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+          onClick={() => onDelete(task.id!)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Task Form Dialog ────────────────────────────────────────────────────────
+function TaskFormDialog({
+  open,
+  onOpenChange,
+  editingTask,
+  defaultDueDate,
+  user,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  editingTask: DailyTask | null;
+  defaultDueDate?: string;
+  user: any;
+  onSave: () => void;
+}) {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -59,451 +416,125 @@ export default function DailyTasksPage() {
     priority: 'medium' as 'high' | 'medium' | 'low',
     dueDate: '',
     notes: '',
-    tags: [] as string[]
   });
 
-  const fetchDailyTasks = useCallback(async () => {
-    if (isAdminLoading || !isAdmin) {
-      if (!isAdminLoading) setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      console.log('📥 Fetching daily tasks...');
-      const params = new URLSearchParams();
-      
-      // Add filters if set
-      if (filterStatus !== 'all') {
-        params.append('status', filterStatus);
-      }
-      if (filterPriority !== 'all') {
-        params.append('priority', filterPriority);
-      }
-      
-      const response = await fetch(`/api/daily-tasks?${params.toString()}`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.success && data.tasks) {
-        console.log(`✅ Successfully fetched ${data.tasks.length} daily tasks`);
-        console.log(`📊 Task summary:`, data.summary);
-        
-        setTasks(data.tasks);
-      } else {
-        console.error('❌ Failed to fetch daily tasks:', data);
-        setError('Failed to fetch daily tasks');
-      }
-    } catch (error) {
-      console.error('❌ Error fetching daily tasks:', error);
-      setError('Error connecting to database');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAdmin, isAdminLoading, filterStatus, filterPriority]);
-
   useEffect(() => {
-    fetchDailyTasks();
-  }, [fetchDailyTasks]);
+    if (editingTask) {
+      setFormData({
+        title: editingTask.title,
+        description: editingTask.description || '',
+        memberName: editingTask.memberName || '',
+        memberClientId: editingTask.memberClientId || '',
+        healthPlan: editingTask.healthPlan || '',
+        assignedTo: editingTask.assignedTo,
+        assignedToName: editingTask.assignedToName || '',
+        priority: editingTask.priority,
+        dueDate: editingTask.dueDate,
+        notes: editingTask.notes || '',
+      });
+    } else {
+      setFormData({
+        title: '',
+        description: '',
+        memberName: '',
+        memberClientId: '',
+        healthPlan: '',
+        assignedTo: '',
+        assignedToName: '',
+        priority: 'medium',
+        dueDate: defaultDueDate || '',
+        notes: '',
+      });
+    }
+  }, [editingTask, defaultDueDate, open]);
 
-  const handleCreateTask = async () => {
+  const handleSubmit = async () => {
     if (!formData.title || !formData.dueDate || !user) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive"
-      });
+      toast({ title: 'Error', description: 'Please fill in all required fields', variant: 'destructive' });
       return;
     }
 
     try {
-      const response = await fetch('/api/daily-tasks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...formData,
-          assignedTo: formData.assignedTo || user.uid,
-          assignedToName: formData.assignedToName || user.displayName || user.email,
-          createdBy: user.uid
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        toast({
-          title: "Success",
-          description: "Task created successfully"
+      if (editingTask) {
+        await fetch('/api/daily-tasks', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editingTask.id, ...formData }),
         });
-        setIsCreateDialogOpen(false);
-        resetForm();
-        fetchDailyTasks();
+        toast({ title: 'Task updated' });
       } else {
-        throw new Error(data.error);
-      }
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create task",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleUpdateTask = async (taskId: string, updates: Partial<DailyTask>) => {
-    try {
-      const response = await fetch('/api/daily-tasks', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: taskId,
-          ...updates
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        toast({
-          title: "Success",
-          description: "Task updated successfully"
+        await fetch('/api/daily-tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...formData,
+            assignedTo: formData.assignedTo || user.uid,
+            assignedToName: formData.assignedToName || user.displayName || user.email,
+            createdBy: user.uid,
+          }),
         });
-        fetchDailyTasks();
-      } else {
-        throw new Error(data.error);
+        toast({ title: 'Task created' });
       }
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update task",
-        variant: "destructive"
-      });
+      onOpenChange(false);
+      onSave();
+    } catch {
+      toast({ title: 'Error', description: 'Could not save task', variant: 'destructive' });
     }
   };
 
-  const handleDeleteTask = async (taskId: string) => {
-    if (!confirm('Are you sure you want to delete this task?')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/daily-tasks?id=${taskId}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        toast({
-          title: "Success",
-          description: "Task deleted successfully"
-        });
-        fetchDailyTasks();
-      } else {
-        throw new Error(data.error);
-      }
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete task",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      title: '',
-      description: '',
-      memberName: '',
-      memberClientId: '',
-      healthPlan: '',
-      assignedTo: '',
-      assignedToName: '',
-      priority: 'medium',
-      dueDate: '',
-      notes: '',
-      tags: []
-    });
-    setEditingTask(null);
-  };
-
-  const openEditDialog = (task: DailyTask) => {
-    setFormData({
-      title: task.title,
-      description: task.description || '',
-      memberName: task.memberName || '',
-      memberClientId: task.memberClientId || '',
-      healthPlan: task.healthPlan || '',
-      assignedTo: task.assignedTo,
-      assignedToName: task.assignedToName || '',
-      priority: task.priority,
-      dueDate: task.dueDate,
-      notes: task.notes || '',
-      tags: task.tags || []
-    });
-    setEditingTask(task);
-    setIsCreateDialogOpen(true);
-  };
-
-  const handleEditTask = async () => {
-    if (!editingTask || !formData.title || !formData.dueDate) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    await handleUpdateTask(editingTask.id!, formData);
-    setIsCreateDialogOpen(false);
-    resetForm();
-  };
-
-  // Calculate summary statistics
-  const today = new Date().toISOString().split('T')[0];
-  const todayTasks = tasks.filter(task => task.dueDate === today && task.status !== 'completed');
-  const overdueTasks = tasks.filter(task => task.dueDate < today && task.status !== 'completed');
-  const upcomingTasks = tasks.filter(task => task.dueDate > today && task.status !== 'completed');
-  const completedTasks = tasks.filter(task => task.status === 'completed');
-
-  const getPriorityColor = (priority: 'high' | 'medium' | 'low') => {
-    switch (priority) {
-      case 'high': return 'bg-red-100 text-red-800 border-red-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-gray-100 text-gray-800 border-gray-200';
-      case 'in_progress': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'completed': return 'bg-green-100 text-green-800 border-green-200';
-      case 'cancelled': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getPriorityIcon = (priority: 'high' | 'medium' | 'low') => {
-    switch (priority) {
-      case 'high': return <AlertTriangle className="h-3 w-3" />;
-      case 'medium': return <Clock className="h-3 w-3" />;
-      case 'low': return <CheckCircle className="h-3 w-3" />;
-    }
-  };
-
-  if (isAdminLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            Access denied. Admin privileges required.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
+  const set = (k: string, v: any) => setFormData((p) => ({ ...p, [k]: v }));
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Calendar className="h-8 w-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold">Daily Task Tracker</h1>
-            <p className="text-muted-foreground">
-              Manage and track daily tasks for all staff across CalAIM health plans - {format(new Date(), 'PPPP')}
-            </p>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{editingTask ? 'Edit Task' : 'New Task'}</DialogTitle>
+          <DialogDescription>
+            {editingTask ? 'Update the task details.' : 'Add a new item to the daily task calendar.'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Title *</Label>
+              <Input value={formData.title} onChange={(e) => set('title', e.target.value)} placeholder="Task title" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Due Date *</Label>
+              <Input type="date" value={formData.dueDate} onChange={(e) => set('dueDate', e.target.value)} />
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={resetForm}>
-                <Plus className="mr-2 h-4 w-4" />
-                New Task
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>{editingTask ? 'Edit Task' : 'Create New Task'}</DialogTitle>
-                <DialogDescription>
-                  {editingTask ? 'Update the task details below.' : 'Create a new daily task for staff members.'}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="title">Task Title *</Label>
-                    <Input
-                      id="title"
-                      value={formData.title}
-                      onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                      placeholder="Enter task title"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dueDate">Due Date *</Label>
-                    <Input
-                      id="dueDate"
-                      type="date"
-                      value={formData.dueDate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Enter task description"
-                    rows={3}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="memberName">Member Name</Label>
-                    <Input
-                      id="memberName"
-                      value={formData.memberName}
-                      onChange={(e) => setFormData(prev => ({ ...prev, memberName: e.target.value }))}
-                      placeholder="CalAIM member name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="healthPlan">Health Plan</Label>
-                    <Select value={formData.healthPlan} onValueChange={(value) => setFormData(prev => ({ ...prev, healthPlan: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select health plan" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Kaiser">Kaiser</SelectItem>
-                        <SelectItem value="Health Net">Health Net</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="assignedToName">Assigned To</Label>
-                    <Input
-                      id="assignedToName"
-                      value={formData.assignedToName}
-                      onChange={(e) => setFormData(prev => ({ ...prev, assignedToName: e.target.value }))}
-                      placeholder="Staff member name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="priority">Priority</Label>
-                    <Select value={formData.priority} onValueChange={(value: 'high' | 'medium' | 'low') => setFormData(prev => ({ ...prev, priority: value }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="low">Low</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Notes</Label>
-                  <Textarea
-                    id="notes"
-                    value={formData.notes}
-                    onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                    placeholder="Additional notes"
-                    rows={2}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => { setIsCreateDialogOpen(false); resetForm(); }}>
-                  Cancel
-                </Button>
-                <Button onClick={editingTask ? handleEditTask : handleCreateTask}>
-                  {editingTask ? 'Update Task' : 'Create Task'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          
-          <Button variant="outline" onClick={fetchDailyTasks}>
-            <Loader2 className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-      </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="statusFilter">Status</Label>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
+          <div className="space-y-1.5">
+            <Label>Description</Label>
+            <Textarea value={formData.description} onChange={(e) => set('description', e.target.value)} placeholder="Optional details" rows={2} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Member Name</Label>
+              <Input value={formData.memberName} onChange={(e) => set('memberName', e.target.value)} placeholder="CalAIM member" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Health Plan</Label>
+              <Select value={formData.healthPlan} onValueChange={(v) => set('healthPlan', v)}>
+                <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="Kaiser">Kaiser</SelectItem>
+                  <SelectItem value="Health Net">Health Net</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="priorityFilter">Priority</Label>
-              <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Assigned To</Label>
+              <Input value={formData.assignedToName} onChange={(e) => set('assignedToName', e.target.value)} placeholder="Staff name" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Priority</Label>
+              <Select value={formData.priority} onValueChange={(v) => set('priority', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Priority</SelectItem>
                   <SelectItem value="high">High</SelectItem>
                   <SelectItem value="medium">Medium</SelectItem>
                   <SelectItem value="low">Low</SelectItem>
@@ -511,278 +542,381 @@ export default function DailyTasksPage() {
               </Select>
             </div>
           </div>
-        </CardContent>
-      </Card>
+          <div className="space-y-1.5">
+            <Label>Notes</Label>
+            <Textarea value={formData.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Additional notes" rows={2} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSubmit}>{editingTask ? 'Update' : 'Create'} Task</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Due Today</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{todayTasks.length}</div>
-            <p className="text-xs text-muted-foreground">Immediate attention needed</p>
-          </CardContent>
-        </Card>
+// ─── Page ────────────────────────────────────────────────────────────────────
+export default function DailyTasksPage() {
+  const { isAdmin, user, isLoading: isAdminLoading } = useAdmin();
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
-            <Clock className="h-4 w-4 text-orange-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{overdueTasks.length}</div>
-            <p className="text-xs text-muted-foreground">Past due date</p>
-          </CardContent>
-        </Card>
+  const [tasks, setTasks] = useState<DailyTask[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterSource, setFilterSource] = useState<string>('all');
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const [defaultDueDate, setDefaultDueDate] = useState<string>('');
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Upcoming</CardTitle>
-            <Calendar className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{upcomingTasks.length}</div>
-            <p className="text-xs text-muted-foreground">Future tasks</p>
-          </CardContent>
-        </Card>
+  const today = new Date().toISOString().split('T')[0];
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{completedTasks.length}</div>
-            <p className="text-xs text-muted-foreground">Tasks finished</p>
-          </CardContent>
-        </Card>
+  const fetchTasks = useCallback(async () => {
+    if (isAdminLoading || !isAdmin) {
+      if (!isAdminLoading) setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (filterStatus !== 'all') params.append('status', filterStatus);
+      if (filterPriority !== 'all') params.append('priority', filterPriority);
+      const res = await fetch(`/api/daily-tasks?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.success) setTasks(data.tasks);
+      else throw new Error(data.error || 'Failed to fetch tasks');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isAdmin, isAdminLoading, filterStatus, filterPriority]);
+
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
+  const handleToggleComplete = async (task: DailyTask) => {
+    const newStatus = task.status === 'completed' ? 'pending' : 'completed';
+    await fetch('/api/daily-tasks', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: task.id, status: newStatus }),
+    });
+    fetchTasks();
+  };
+
+  const handleDelete = async (taskId: string) => {
+    if (!confirm('Delete this task?')) return;
+    await fetch(`/api/daily-tasks?id=${taskId}`, { method: 'DELETE' });
+    toast({ title: 'Task deleted' });
+    fetchTasks();
+  };
+
+  const openEdit = (task: DailyTask) => {
+    setEditingTask(task);
+    setDefaultDueDate('');
+    setIsDialogOpen(true);
+  };
+
+  const openNew = (date?: Date) => {
+    setEditingTask(null);
+    setDefaultDueDate(date ? format(date, 'yyyy-MM-dd') : today);
+    setIsDialogOpen(true);
+  };
+
+  const handleDayClick = (date: Date) => {
+    setSelectedDay((prev) => (prev && isSameDay(prev, date) ? null : date));
+  };
+
+  // Group tasks for display
+  const filteredTasks = useMemo(() => {
+    let result = [...tasks];
+    if (selectedDay) {
+      const dayStr = format(selectedDay, 'yyyy-MM-dd');
+      result = result.filter((t) => t.dueDate === dayStr);
+    }
+    if (filterSource !== 'all') {
+      if (filterSource === 'manual') {
+        result = result.filter((t) => !t.source || t.source === 'manual');
+      } else {
+        result = result.filter((t) => t.source === filterSource);
+      }
+    }
+    return result;
+  }, [tasks, selectedDay, filterSource]);
+
+  const groupedTasks = useMemo(() => {
+    const groups: { label: string; tasks: DailyTask[]; accent: string }[] = [];
+
+    const overdue = filteredTasks.filter((t) => t.dueDate < today && t.status !== 'completed' && t.status !== 'cancelled');
+    const dueToday = filteredTasks.filter((t) => t.dueDate === today && t.status !== 'completed' && t.status !== 'cancelled');
+    const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd');
+    const dueTomorrow = filteredTasks.filter((t) => t.dueDate === tomorrow && t.status !== 'completed' && t.status !== 'cancelled');
+    const upcoming = filteredTasks.filter(
+      (t) => t.dueDate > tomorrow && t.status !== 'completed' && t.status !== 'cancelled'
+    );
+    const completed = filteredTasks.filter((t) => t.status === 'completed' || t.status === 'cancelled');
+
+    if (overdue.length) groups.push({ label: '⚠ Overdue', tasks: overdue, accent: 'text-red-700' });
+    if (dueToday.length) groups.push({ label: '📅 Today', tasks: dueToday, accent: 'text-amber-700' });
+    if (dueTomorrow.length) groups.push({ label: '🔜 Tomorrow', tasks: dueTomorrow, accent: 'text-blue-700' });
+    if (upcoming.length) groups.push({ label: '🗓 Upcoming', tasks: upcoming, accent: 'text-indigo-700' });
+    if (completed.length) groups.push({ label: '✓ Completed', tasks: completed, accent: 'text-emerald-700' });
+
+    return groups;
+  }, [filteredTasks, today]);
+
+  // Summary stats (against all tasks, not filtered)
+  const todayCount = tasks.filter((t) => t.dueDate === today && t.status !== 'completed' && t.status !== 'cancelled').length;
+  const overdueCount = tasks.filter((t) => t.dueDate < today && t.status !== 'completed' && t.status !== 'cancelled').length;
+  const upcomingCount = tasks.filter((t) => t.dueDate > today && t.status !== 'completed' && t.status !== 'cancelled').length;
+  const completedCount = tasks.filter((t) => t.status === 'completed').length;
+
+  if (isAdminLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-6">
+        <Alert variant="destructive" className="max-w-sm">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>Access denied. Admin privileges required.</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/30">
+      {/* ── Header ── */}
+      <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 text-white px-6 py-8 shadow-lg">
+        <div className="container mx-auto max-w-7xl">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <div className="p-2 bg-white/20 rounded-xl">
+                  <CalendarDays className="h-6 w-6" />
+                </div>
+                <h1 className="text-2xl font-bold tracking-tight">Daily Task Calendar</h1>
+              </div>
+              <p className="text-blue-100 text-sm">
+                {format(new Date(), 'EEEE, MMMM d, yyyy')} · {tasks.filter((t) => t.status !== 'completed').length} active tasks
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => openNew()}
+                className="bg-white text-blue-700 hover:bg-blue-50 font-semibold shadow"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                New Task
+              </Button>
+              <Button
+                variant="outline"
+                onClick={fetchTasks}
+                className="border-white/30 text-white hover:bg-white/10"
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Tasks Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Daily Task Tracker ({tasks.length})
-          </CardTitle>
-          <CardDescription>
-            Track and manage daily tasks for all staff across CalAIM health plans (Kaiser, Health Net, and other health plans)
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {tasks.length > 0 ? (
-            <>
-              <div className="hidden lg:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Task</TableHead>
-                      <TableHead>Member</TableHead>
-                      <TableHead>Health Plan</TableHead>
-                      <TableHead>Assigned To</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Due Date</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tasks.map((task) => (
-                      <TableRow key={task.id}>
-                        <TableCell>
-                          <Badge variant="outline" className={getPriorityColor(task.priority)}>
-                            {getPriorityIcon(task.priority)}
-                            <span className="ml-1 capitalize">{task.priority}</span>
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{task.title}</div>
-                          {task.description && (
-                            <div className="text-sm text-muted-foreground mt-1">{task.description}</div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {task.memberName ? (
-                            <div>
-                              <div className="font-medium">{task.memberName}</div>
-                              {task.memberClientId && (
-                                <div className="text-sm text-muted-foreground">ID: {task.memberClientId}</div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">No member assigned</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {task.healthPlan ? (
-                            <Badge variant="outline" className={
-                              task.healthPlan === 'Kaiser' ? 'bg-green-50 text-green-700 border-green-200' :
-                              task.healthPlan === 'Health Net' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                              'bg-gray-50 text-gray-700 border-gray-200'
-                            }>
-                              {task.healthPlan}
-                            </Badge>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{task.assignedToName || 'Unassigned'}</div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={getStatusColor(task.status)}>
-                            {task.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className={`text-sm ${
-                            task.dueDate < today && task.status !== 'completed' ? 'text-red-600 font-medium' : 
-                            task.dueDate === today ? 'text-orange-600 font-medium' : 
-                            'text-gray-600'
-                          }`}>
-                            {format(new Date(task.dueDate), 'MMM d, yyyy')}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openEditDialog(task)}
-                            >
-                              <Edit className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleUpdateTask(task.id!, { 
-                                status: task.status === 'completed' ? 'pending' : 'completed' 
-                              })}
-                            >
-                              <CheckCircle className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleDeleteTask(task.id!)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+      <div className="container mx-auto max-w-7xl px-4 py-6">
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* ── Summary Stats ── */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          {[
+            { label: 'Due Today', value: todayCount, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50', ring: 'ring-red-100' },
+            { label: 'Overdue', value: overdueCount, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50', ring: 'ring-orange-100' },
+            { label: 'Upcoming', value: upcomingCount, icon: Calendar, color: 'text-blue-600', bg: 'bg-blue-50', ring: 'ring-blue-100' },
+            { label: 'Completed', value: completedCount, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50', ring: 'ring-emerald-100' },
+          ].map(({ label, value, icon: Icon, color, bg, ring }) => (
+            <Card key={label} className={cn('border-0 shadow-sm ring-1', ring)}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">{label}</span>
+                  <div className={cn('p-1.5 rounded-lg', bg)}>
+                    <Icon className={cn('h-4 w-4', color)} />
+                  </div>
+                </div>
+                <div className={cn('text-3xl font-bold', color)}>{value}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+          {/* ── Sidebar: Mini Calendar + Filters ── */}
+          <div className="space-y-4">
+            <MiniCalendar tasks={tasks} onDayClick={handleDayClick} selectedDate={selectedDay} />
+
+            {/* Filters */}
+            <Card>
+              <CardHeader className="pb-3 pt-4 px-4">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  Filters
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Status</Label>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Priority</Label>
+                  <Select value={filterPriority} onValueChange={setFilterPriority}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All priorities</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Source</Label>
+                  <Select value={filterSource} onValueChange={setFilterSource}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All sources</SelectItem>
+                      <SelectItem value="interoffice_note">Interoffice Note</SelectItem>
+                      <SelectItem value="caspio_assignment">Staff Assignment</SelectItem>
+                      <SelectItem value="caspio_kaiser">Kaiser · Caspio</SelectItem>
+                      <SelectItem value="caspio_health_net">Health Net · Caspio</SelectItem>
+                      <SelectItem value="application">Scheduled</SelectItem>
+                      <SelectItem value="manual">Manual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(selectedDay || filterSource !== 'all' || filterStatus !== 'all' || filterPriority !== 'all') && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full h-8 text-xs text-muted-foreground"
+                    onClick={() => {
+                      setSelectedDay(null);
+                      setFilterSource('all');
+                      setFilterStatus('all');
+                      setFilterPriority('all');
+                    }}
+                  >
+                    Clear all filters
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Quick Add for selected day */}
+            {selectedDay && (
+              <Card className="border-dashed border-blue-300 bg-blue-50/50">
+                <CardContent className="p-4 text-center">
+                  <p className="text-xs text-blue-700 font-medium mb-2">
+                    {format(selectedDay, 'MMMM d')}
+                  </p>
+                  <Button size="sm" variant="outline" className="border-blue-300 text-blue-700" onClick={() => openNew(selectedDay)}>
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add task for this day
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* ── Main Task List ── */}
+          <div className="space-y-5">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : groupedTasks.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="py-16 text-center">
+                  <div className="p-4 bg-blue-50 rounded-full w-fit mx-auto mb-4">
+                    <CalendarDays className="h-10 w-10 text-blue-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold mb-1">No tasks found</h3>
+                  <p className="text-muted-foreground text-sm mb-4">
+                    {selectedDay
+                      ? `No tasks for ${format(selectedDay, 'MMMM d, yyyy')}`
+                      : 'Start by creating your first daily task.'}
+                  </p>
+                  <Button onClick={() => openNew(selectedDay ?? undefined)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Task
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              groupedTasks.map(({ label, tasks: groupTasks, accent }) => (
+                <div key={label}>
+                  <h2 className={cn('text-sm font-semibold mb-2.5 flex items-center gap-2', accent)}>
+                    {label}
+                    <span className="text-xs font-normal text-muted-foreground bg-muted rounded-full px-2 py-0.5">
+                      {groupTasks.length}
+                    </span>
+                  </h2>
+                  <div className="space-y-2">
+                    {groupTasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        today={today}
+                        onEdit={openEdit}
+                        onToggleComplete={handleToggleComplete}
+                        onDelete={handleDelete}
+                      />
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="lg:hidden space-y-3">
-                {tasks.map((task) => (
-                  <Card key={task.id} className="border border-border">
-                    <CardContent className="p-4 space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className={getPriorityColor(task.priority)}>
-                          {getPriorityIcon(task.priority)}
-                          <span className="ml-1 capitalize">{task.priority}</span>
-                        </Badge>
-                        <Badge variant="outline" className={getStatusColor(task.status)}>
-                          {task.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </Badge>
-                        {task.healthPlan && (
-                          <Badge
-                            variant="outline"
-                            className={
-                              task.healthPlan === 'Kaiser'
-                                ? 'bg-green-50 text-green-700 border-green-200'
-                                : task.healthPlan === 'Health Net'
-                                ? 'bg-orange-50 text-orange-700 border-orange-200'
-                                : 'bg-gray-50 text-gray-700 border-gray-200'
-                            }
-                          >
-                            {task.healthPlan}
-                          </Badge>
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-medium">{task.title}</div>
-                        {task.description && (
-                          <div className="text-sm text-muted-foreground mt-1">{task.description}</div>
-                        )}
-                      </div>
-                      <div className="text-sm text-muted-foreground space-y-1">
-                        {task.memberName ? (
-                          <div>
-                            <span className="font-medium text-foreground">{task.memberName}</span>
-                            {task.memberClientId && (
-                              <span className="ml-2 text-muted-foreground">ID: {task.memberClientId}</span>
-                            )}
-                          </div>
-                        ) : (
-                          <div>No member assigned</div>
-                        )}
-                        <div>Assigned: {task.assignedToName || 'Unassigned'}</div>
-                        <div className={`${
-                          task.dueDate < today && task.status !== 'completed'
-                            ? 'text-red-600 font-medium'
-                            : task.dueDate === today
-                            ? 'text-orange-600 font-medium'
-                            : 'text-gray-600'
-                        }`}>
-                          Due: {format(new Date(task.dueDate), 'MMM d, yyyy')}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditDialog(task)}
-                        >
-                          <Edit className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleUpdateTask(task.id!, { 
-                            status: task.status === 'completed' ? 'pending' : 'completed' 
-                          })}
-                        >
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          {task.status === 'completed' ? 'Reopen' : 'Complete'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDeleteTask(task.id!)}
-                        >
-                          <Trash2 className="h-3 w-3 mr-1" />
-                          Delete
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-8">
-              <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No tasks found</h3>
-              <p className="text-muted-foreground mb-4">
-                {isLoading ? 'Loading tasks...' : 'Create your first daily task to get started.'}
-              </p>
-              {!isLoading && (
-                <Button onClick={() => setIsCreateDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Task
-                </Button>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Task Form Dialog */}
+      <TaskFormDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        editingTask={editingTask}
+        defaultDueDate={defaultDueDate}
+        user={user}
+        onSave={fetchTasks}
+      />
     </div>
   );
 }
