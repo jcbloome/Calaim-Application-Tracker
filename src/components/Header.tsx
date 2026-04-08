@@ -126,7 +126,7 @@ export function Header() {
                 </Button>
             ))}
 
-            <LanguageSwitcher className="h-9 w-9 ml-2" />
+            {!isAdmin && !isSuperAdmin ? <LanguageSwitcher className="h-9 w-9 ml-2" /> : null}
             
             {/* Contact Us on the right side */}
             <Button variant="outline" size="sm" asChild className="ml-2 xl:ml-4">
@@ -216,12 +216,14 @@ export function Header() {
                 >
                   Contact Us
                 </Link>
-                <div className="mt-2 border-t pt-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">Language</span>
-                    <LanguageSwitcher />
+                {!isAdmin && !isSuperAdmin ? (
+                  <div className="mt-2 border-t pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-muted-foreground">Language</span>
+                      <LanguageSwitcher />
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </nav>
               <div className="mt-2 border-t pt-3">
                 {(isUserLoading || isAdminLoading) ? (

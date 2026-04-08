@@ -29,11 +29,11 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => setLanguage('en')}>
+        <DropdownMenuItem onSelect={() => setLanguage('en')} onClick={() => setLanguage('en')}>
           {currentLanguage === 'en' ? <Check className="mr-2 h-4 w-4" /> : <span className="mr-2 inline-block w-4" />}
           English
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setLanguage('es')}>
+        <DropdownMenuItem onSelect={() => setLanguage('es')} onClick={() => setLanguage('es')}>
           {currentLanguage === 'es' ? <Check className="mr-2 h-4 w-4" /> : <span className="mr-2 inline-block w-4" />}
           Espanol
         </DropdownMenuItem>

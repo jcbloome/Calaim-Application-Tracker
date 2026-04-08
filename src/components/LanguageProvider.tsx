@@ -50,12 +50,15 @@ async function translateTexts(texts: string[]): Promise<Map<string, string>> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ texts, target: 'es', source: 'en' }),
   });
+  const payload = (await response.json().catch(() => ({}))) as {
+    translations?: string[];
+    error?: string;
+  };
 
   if (!response.ok) {
-    throw new Error(`Translation API failed: ${response.status}`);
+    throw new Error(String(payload?.error || `Translation API failed: ${response.status}`));
   }
 
-  const payload = (await response.json()) as { translations?: string[] };
   const translated = Array.isArray(payload?.translations) ? payload.translations : [];
   texts.forEach((source, index) => {
     map.set(source, translated[index] ?? source);
@@ -167,9 +170,15 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<LanguageCode>('en');
   const observerRef = useRef<MutationObserver | null>(null);
   const translateTimerRef = useRef<number | null>(null);
+  const didShowErrorRef = useRef(false);
+  const isTranslationEnabledForPath = !String(pathname || '').startsWith('/admin');
+  const effectiveLanguage: LanguageCode = isTranslationEnabledForPath ? language : 'en';
 
   const setLanguage = (next: LanguageCode) => {
     setLanguageState(next);
+    if (next === 'es') {
+      didShowErrorRef.current = false;
+    }
     try {
       localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
     } catch {
@@ -182,7 +191,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       window.clearTimeout(translateTimerRef.current);
     }
     translateTimerRef.current = window.setTimeout(() => {
-      void translatePageToSpanish().catch(() => undefined);
+      void translatePageToSpanish().catch((error: any) => {
+        console.error('Translation failed:', error);
+        if (!didShowErrorRef.current) {
+          didShowErrorRef.current = true;
+          const message = String(error?.message || 'Translation failed.');
+          window.alert(`Spanish translation could not be applied.\n\n${message}`);
+        }
+      });
     }, 200);
   };
 
@@ -199,10 +215,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.documentElement.lang = language === 'es' ? 'es' : 'en';
+      document.documentElement.lang = effectiveLanguage === 'es' ? 'es' : 'en';
     }
 
-    if (language === 'es') {
+    if (effectiveLanguage === 'es') {
       queueTranslate();
       if (observerRef.current) observerRef.current.disconnect();
       observerRef.current = new MutationObserver(() => queueTranslate());
@@ -222,13 +238,13 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       if (observerRef.current) observerRef.current.disconnect();
       if (translateTimerRef.current) window.clearTimeout(translateTimerRef.current);
     };
-  }, [language]);
+  }, [effectiveLanguage]);
 
   useEffect(() => {
-    if (language === 'es') {
+    if (effectiveLanguage === 'es') {
       queueTranslate();
     }
-  }, [pathname, language]);
+  }, [pathname, effectiveLanguage]);
 
   const value = useMemo<LanguageContextValue>(
     () => ({ language, setLanguage }),
