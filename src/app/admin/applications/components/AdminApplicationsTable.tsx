@@ -735,7 +735,7 @@ export const AdminApplicationsTable = ({
                         </Badge>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">
+                    <div className="text-xs text-muted-foreground mt-1 break-words">
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy')}` : 'Created: N/A'}
                       {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yyyy')}`}
                       • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
@@ -762,7 +762,7 @@ export const AdminApplicationsTable = ({
                           Internal: {adminProcessingStatus}
                         </Badge>
                         {adminProcessingReason ? (
-                          <p className="text-[10px] text-muted-foreground max-w-[220px] truncate" title={adminProcessingReason}>
+                          <p className="text-[10px] text-muted-foreground max-w-[220px] break-words" title={adminProcessingReason}>
                             {adminProcessingReason}
                           </p>
                         ) : null}
@@ -962,7 +962,7 @@ export const AdminApplicationsTable = ({
                         </Badge>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs text-muted-foreground break-words">
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yy')}` : 'Created: N/A'}
                       {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yy')}`}
                       • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
@@ -999,7 +999,7 @@ export const AdminApplicationsTable = ({
                     </Button>
                   </div>
                   {adminProcessingStatus && adminProcessingReason ? (
-                    <p className="text-[10px] text-muted-foreground pt-1" title={adminProcessingReason}>
+                    <p className="text-[10px] text-muted-foreground pt-1 break-words" title={adminProcessingReason}>
                       Reason: {adminProcessingReason}
                     </p>
                   ) : null}

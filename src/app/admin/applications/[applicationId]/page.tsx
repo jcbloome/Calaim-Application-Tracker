@@ -52,7 +52,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType, StaffTracker, StaffMember } from '@/lib/definitions';
 import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
-import { addDoc, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit, deleteField } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, doc, getDoc, setDoc, serverTimestamp, Timestamp, onSnapshot, deleteDoc, getDocs, query, where, documentId, limit, deleteField } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -1500,6 +1500,14 @@ function AdminActions({ application }: { application: Application }) {
       'Ready for Placement',
       'Closed',
     ];
+    const adminProcessingHistory = Array.isArray((application as any)?.adminProcessingHistory)
+      ? ((application as any).adminProcessingHistory as Array<{
+          status?: string;
+          reason?: string;
+          updatedBy?: string;
+          updatedAtIso?: string;
+        }>)
+      : [];
 
     if (!isAdmin && !isSuperAdmin) {
         return null;
@@ -1612,6 +1620,13 @@ function AdminActions({ application }: { application: Application }) {
           adminProcessingUpdatedAt: serverTimestamp(),
           adminProcessingUpdatedBy: adminUser?.displayName || adminUser?.email || 'Admin',
           adminProcessingUpdatedByUid: adminUser?.uid || null,
+          adminProcessingHistory: arrayUnion({
+            status: adminProcessingStatus,
+            reason: adminProcessingReason.trim(),
+            updatedBy: adminUser?.displayName || adminUser?.email || 'Admin',
+            updatedByUid: adminUser?.uid || null,
+            updatedAtIso: new Date().toISOString(),
+          }),
           lastUpdated: serverTimestamp(),
         });
         toast({
@@ -1685,10 +1700,34 @@ function AdminActions({ application }: { application: Application }) {
                       <p className="mt-1 text-sm text-blue-900">
                         <strong>{String((application as any)?.adminProcessingStatus || 'Not set')}</strong>
                       </p>
-                      <p className="mt-1 text-xs text-blue-800">
+                      <p className="mt-1 text-xs text-blue-800 break-words">
                         {String((application as any)?.adminProcessingReason || 'No reason on file.')}
                       </p>
                     </div>
+                    {adminProcessingHistory.length > 0 ? (
+                      <div className="rounded-md border bg-muted/30 p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Internal Status History</p>
+                        <div className="mt-2 max-h-40 overflow-y-auto space-y-2 pr-1">
+                          {[...adminProcessingHistory].reverse().map((entry, index) => (
+                            <div key={`admin-history-${index}`} className="rounded border bg-background p-2">
+                              <p className="text-xs font-medium">
+                                {String(entry?.status || 'Unknown status')}
+                                {' '}
+                                <span className="text-muted-foreground font-normal">
+                                  {entry?.updatedAtIso ? `• ${format(new Date(entry.updatedAtIso), 'MM/dd/yyyy h:mm a')}` : ''}
+                                </span>
+                              </p>
+                              <p className="text-xs text-muted-foreground break-words mt-1">
+                                {String(entry?.reason || 'No reason')}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground mt-1">
+                                By: {String(entry?.updatedBy || 'Admin')}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <DialogTrigger asChild>
                         <Button variant="outline" className="w-full">Update Status</Button>
                     </DialogTrigger>

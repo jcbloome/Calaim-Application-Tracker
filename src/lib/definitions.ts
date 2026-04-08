@@ -46,6 +46,13 @@ export type Application = {
   adminProcessingUpdatedAt?: Timestamp | FieldValue;
   adminProcessingUpdatedBy?: string | null;
   adminProcessingUpdatedByUid?: string | null;
+  adminProcessingHistory?: Array<{
+    status: string;
+    reason: string;
+    updatedBy?: string | null;
+    updatedByUid?: string | null;
+    updatedAtIso?: string;
+  }>;
   submissionDate?: Timestamp | FieldValue;
   lastUpdated: Timestamp | FieldValue;
   pathway: 'SNF Transition' | 'SNF Diversion';
