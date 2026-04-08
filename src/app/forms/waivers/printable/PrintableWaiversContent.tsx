@@ -119,7 +119,7 @@ export function PrintableWaiversContent() {
                     <CheckboxField label="Income source: SSA" />
                     <CheckboxField label="Income source: SSD" />
                     <CheckboxField label="Income source: Other" />
-                    <CheckboxField label="I have read and understood the Room and Board Commitment and Medi-Cal SOC Determination sections." />
+                    <CheckboxField label="I have read and understood the Room and Board Commitment and Medi-Cal SOC Determination sections, including that if room and board is not paid to the RCFE/ARF, the member may be subject to eviction from the RCFE/ARF and/or ineligibility for CalAIM where state guidelines require room and board payment." />
                     <p className="text-sm text-gray-700">
                         For more information about the room and board payment, SOC, or NMOHC, see our program information page: https://connectcalaim.com/info/eligibility
                     </p>

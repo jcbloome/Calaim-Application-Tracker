@@ -498,7 +498,7 @@ function WaiversFormComponent() {
                                               disabled={isReadOnly}
                                             />
                                             <label htmlFor="ack-room-board" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                               I have read and understood the Room and Board Commitment and Medi-Cal SOC Determination sections.
+                                               I have read and understood the Room and Board Commitment and Medi-Cal SOC Determination sections, including that if room and board is not paid to the RCFE/ARF, the member may be subject to eviction from the RCFE/ARF and/or ineligibility for CalAIM where state guidelines require room and board payment.
                                             </label>
                                         </div>
                                     </AlertDescription>
