@@ -2,9 +2,16 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow authenticated users to upload to their own user_uploads folder
+    // HIPAA hardening: submitters can upload/update/delete their own files,
+    // but only staff/admin roles can read/view document contents.
     match /user_uploads/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && (
+      allow read: if request.auth != null && (
+        request.auth.token.admin == true ||
+        firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) ||
+        firestore.exists(/databases/(default)/documents/roles_admin/$(request.auth.uid)) ||
+        firestore.exists(/databases/(default)/documents/roles_super_admin/$(request.auth.uid))
+      );
+      allow write: if request.auth != null && (
         request.auth.uid == userId ||
         request.auth.token.admin == true ||
         firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) ||

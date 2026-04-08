@@ -249,6 +249,7 @@ function PathwayPageContent() {
     'Medicine List': false,
     'SNF Facesheet': false,
   });
+  const [staffDownloadUrls, setStaffDownloadUrls] = useState<Record<string, string>>({});
 
   const isAdminCreatedApp = applicationId?.startsWith('admin_app_');
 
@@ -330,6 +331,42 @@ function PathwayPageContent() {
         setDoc(docRef, { forms: initialForms }, { merge: true });
     }
   }, [application, docRef]);
+
+  useEffect(() => {
+    if (!storage || !(isAdmin || isSuperAdmin) || !application) return;
+    const formsNeedingUrl = getSafeForms(application.forms).filter((form) => {
+      if (form?.status !== 'Completed') return false;
+      if (form?.type !== 'Upload') return false;
+      const name = String(form?.name || '').trim();
+      if (!name) return false;
+      if (!form?.filePath) return false;
+      if (String(form?.downloadURL || '').trim()) return false;
+      if (String(staffDownloadUrls[name] || '').trim()) return false;
+      return true;
+    });
+
+    if (formsNeedingUrl.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const resolved: Record<string, string> = {};
+      for (const form of formsNeedingUrl) {
+        try {
+          const url = await getDownloadURL(ref(storage, String(form.filePath)));
+          const name = String(form.name || '').trim();
+          if (name && url) resolved[name] = url;
+        } catch {
+          // Keep silent in UI: staff may still resolve through backend tools.
+        }
+      }
+      if (cancelled || Object.keys(resolved).length === 0) return;
+      setStaffDownloadUrls((prev) => ({ ...prev, ...resolved }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [application, isAdmin, isSuperAdmin, staffDownloadUrls, storage]);
 
   const handleFormStatusUpdate = async (updates: Partial<FormStatusType>[]) => {
       if (!docRef || !application) return;
@@ -469,7 +506,7 @@ function PathwayPageContent() {
       
       const storageRef = ref(storage, storagePath);
 
-      return new Promise<{ downloadURL: string, path: string }>((resolve, reject) => {
+      return new Promise<{ downloadURL: string | null, path: string }>((resolve, reject) => {
             console.log('Starting upload task for file:', file.name, 'Size:', file.size, 'Type:', file.type);
             console.log('Storage instance details:', {
                 app: storage.app.name,
@@ -522,10 +559,16 @@ function PathwayPageContent() {
               async () => {
                   try {
                       clearTimeout(uploadTimeout);
-                      console.log('Upload completed, getting download URL...');
-                      const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                      console.log('Download URL obtained:', downloadURL);
-                      resolve({ downloadURL, path: storagePath });
+                      const isInternalStaffUpload = Boolean(isAdmin || isSuperAdmin);
+                      if (isInternalStaffUpload) {
+                        console.log('Upload completed, getting download URL...');
+                        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                        console.log('Download URL obtained:', downloadURL);
+                        resolve({ downloadURL, path: storagePath });
+                        return;
+                      }
+                      // HIPAA: submitters can upload/replace but do not receive file URLs.
+                      resolve({ downloadURL: null, path: storagePath });
                   } catch (error: any) {
                       console.error('Error getting download URL:', error);
                       clearTimeout(uploadTimeout);
@@ -608,7 +651,7 @@ function PathwayPageContent() {
                 status: 'Completed',
                 fileName: files.map(f => f.name).join(', '),
                 filePath: uploadResult.path,
-                downloadURL: uploadResult.downloadURL,
+                downloadURL: null,
                 dateCompleted: Timestamp.now(),
                 uploadedByUid: user.uid,
                 uploadedByEmail: user.email || null,
@@ -669,7 +712,7 @@ function PathwayPageContent() {
           status: 'Completed',
           fileName: files.map(f => f.name).join(', '),
           filePath: uploadResult.path,
-          downloadURL: uploadResult.downloadURL,
+          downloadURL: null,
           dateCompleted: Timestamp.now(),
           uploadedByUid: user.uid,
           uploadedByEmail: user.email || null,
@@ -1089,12 +1132,13 @@ function PathwayPageContent() {
            </div>
          );
        }
-       if (req.type === 'Upload') {
+      if (req.type === 'Upload') {
+          const staffDownloadUrl = formInfo?.downloadURL || (formInfo?.name ? staffDownloadUrls[formInfo.name] : '');
            return (
                 <div className="flex min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                    {formInfo?.downloadURL && (isAdmin || isSuperAdmin) ? (
+                    {staffDownloadUrl && (isAdmin || isSuperAdmin) ? (
                         <a
-                          href={formInfo.downloadURL}
+                          href={staffDownloadUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
@@ -1294,14 +1338,15 @@ function PathwayPageContent() {
                   </div>
                 );
                 if (isCompleted) {
+                  const staffDownloadUrl = formInfo?.downloadURL || (formInfo?.name ? staffDownloadUrls[formInfo.name] : '');
                   return (
                     <div className="space-y-2">
                       {proofIncomeControl}
                       <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        {(isAdmin || isSuperAdmin) && formInfo?.downloadURL ? (
+                        {(isAdmin || isSuperAdmin) && staffDownloadUrl ? (
                           <div className="flex items-center justify-between gap-2">
                             <a
-                              href={formInfo.downloadURL}
+                              href={staffDownloadUrl}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
@@ -1368,12 +1413,13 @@ function PathwayPageContent() {
                 );
              }
              if (isCompleted) {
+                 const staffDownloadUrl = formInfo?.downloadURL || (formInfo?.name ? staffDownloadUrls[formInfo.name] : '');
                  return (
                     <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
-                        {(isAdmin || isSuperAdmin) && formInfo?.downloadURL ? (
+                        {(isAdmin || isSuperAdmin) && staffDownloadUrl ? (
                           <div className="flex items-center justify-between gap-2">
                             <a
-                              href={formInfo.downloadURL}
+                              href={staffDownloadUrl}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"

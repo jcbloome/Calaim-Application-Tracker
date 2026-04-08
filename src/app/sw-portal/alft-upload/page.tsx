@@ -227,6 +227,25 @@ function clearDraftLocally(memberId: string) {
   try { localStorage.removeItem(DRAFT_KEY(memberId)); } catch { /* ignore */ }
 }
 
+function SwAlftInstructionBox() {
+  return (
+    <Alert className="print:hidden border-blue-200 bg-blue-50">
+      <AlertDescription className="space-y-3 text-blue-950">
+        <div className="font-semibold">ALFT and CCL guidance (SW portal)</div>
+        <ul className="list-disc space-y-1.5 pl-5 text-sm">
+          <li>Complete all ALFT sections before submitting. Do not leave required clinical sections blank.</li>
+          <li>For level-of-care scoring, evaluate the member on their worst day, not their best day, because needs fluctuate.</li>
+          <li>In the ALFT commentary section, include only pertinent health-care information that supports tier-level decisions.</li>
+          <li>Avoid non-clinical commentary (for example, "member seems happy") unless it directly affects care needs or safety.</li>
+          <li>For CCL checks, capture violation counts and flag only severe events (for example, abuse, neglect, serious elopement risk).</li>
+          <li>Do not escalate minor infractions alone (for example, water temperature findings) unless they create clear member safety risk.</li>
+          <li>CCL reports are facility-wide; when flagging to the team, prioritize issues likely relevant to our CalAIM member.</li>
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function SwKaiserAlftPage() {
@@ -490,6 +509,8 @@ export default function SwKaiserAlftPage() {
           </Button>
         </div>
 
+        <SwAlftInstructionBox />
+
         <div className="relative">
           <input
             type="text"
@@ -557,6 +578,7 @@ export default function SwKaiserAlftPage() {
 
   return (
     <div className="alft-sw-tool mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
+      <SwAlftInstructionBox />
 
       {/* ── Toolbar ── */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-white p-3 print:hidden">

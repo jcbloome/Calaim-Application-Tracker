@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
@@ -282,6 +282,14 @@ export default function CclChecksPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
+
+      <Alert className="border-blue-200 bg-blue-50 text-blue-950">
+        <ShieldCheck className="h-4 w-4" />
+        <AlertTitle>What to flag in CCL checks</AlertTitle>
+        <AlertDescription className="mt-1">
+          Enter Type A and Type B counts each month, and only escalate severe violations that may affect member safety (for example abuse, neglect, or serious wandering incidents). CCL findings are facility-wide and may not involve our CalAIM member directly, so prioritize flags likely related to our member and avoid escalating minor infractions by themselves.
+        </AlertDescription>
+      </Alert>
 
       <Card>
         <CardHeader className="pb-3">
