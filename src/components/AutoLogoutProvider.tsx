@@ -14,37 +14,30 @@ interface AutoLogoutProviderProps {
 export function AutoLogoutProvider({ children }: AutoLogoutProviderProps) {
   const pathname = usePathname();
   
-  // Different timeout settings based on user type
   const isAdminArea = pathname.startsWith('/admin');
   const isSwArea =
     pathname.startsWith('/sw-portal') ||
     pathname.startsWith('/sw-login') ||
     pathname.startsWith('/sw-visit-verification') ||
-    pathname.startsWith('/swvisit');
+    pathname.startsWith('/swvisit') ||
+    pathname.startsWith('/sw-reset-password');
+  const isAuthPath =
+    pathname === '/login' ||
+    pathname === '/signup' ||
+    pathname === '/reset-password';
+  const shouldEnableUserIdleLogout = !isAdminArea && !isSwArea && !isAuthPath;
   
-  // Configure auto-logout based on area
-  const config = isAdminArea 
-    ? {
-        timeoutMinutes: 2 * 60,  // 2 hours for admin
-        warningMinutes: 10,      // 10 minute warning
-        showWarning: true,
-        redirectPath: '/admin/login'
-      }
-    : isSwArea
-    ? {
-        timeoutMinutes: 2 * 60,  // 2 hours for social workers
-        warningMinutes: 10,
-        showWarning: true,
-        redirectPath: '/sw-login'
-      }
-    : {
-        timeoutMinutes: 2 * 60,  // 2 hours for regular users
-        warningMinutes: 10,      // 10 minute warning  
-        showWarning: true,
-        redirectPath: '/'
-      };
+  // Keep users signed in while they are active.
+  // Only log out after 60 minutes of no interaction.
+  const config = {
+    enabled: shouldEnableUserIdleLogout,
+    timeoutMinutes: 60,
+    warningMinutes: 10,
+    showWarning: true,
+    redirectPath: '/login?fresh=1',
+  };
 
-  // Initialize auto-logout (only runs when user is logged in)
+  // Initialize user idle-logout only in user app areas.
   useAutoLogout(config);
 
   return <>{children}</>;

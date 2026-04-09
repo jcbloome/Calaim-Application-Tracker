@@ -6,6 +6,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
 interface AutoLogoutConfig {
+  /** Whether inactivity logout is enabled for this route/context */
+  enabled?: boolean;
   /** Inactivity timeout in minutes (default: 30) */
   timeoutMinutes?: number;
   /** Warning time before logout in minutes (default: 5) */
@@ -22,6 +24,7 @@ interface AutoLogoutConfig {
  */
 export function useAutoLogout(config: AutoLogoutConfig = {}) {
   const {
+    enabled = true,
     timeoutMinutes = 30,
     warningMinutes = 5,
     showWarning = true,
@@ -125,6 +128,12 @@ export function useAutoLogout(config: AutoLogoutConfig = {}) {
   }, [resetTimer]);
 
   useEffect(() => {
+    if (!enabled) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+      return;
+    }
+
     // Only activate auto-logout if user is logged in
     if (!auth?.currentUser) {
       // Clear timers if user logs out
@@ -161,7 +170,7 @@ export function useAutoLogout(config: AutoLogoutConfig = {}) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
     };
-  }, [auth?.currentUser, handleActivity, resetTimer]);
+  }, [auth?.currentUser, handleActivity, resetTimer, enabled]);
 
   // Utility functions
   const extendSession = useCallback(() => {

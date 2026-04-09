@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { NotificationProvider } from '@/components/NotificationProvider';
 import { SessionIsolationGate } from '@/components/SessionIsolationGate';
+import { AutoLogoutProvider } from '@/components/AutoLogoutProvider';
 import PWAServiceWorker from '@/components/PWAServiceWorker';
 import { Toaster } from '@/components/ui/toaster';
 import { LanguageProvider } from '@/components/LanguageProvider';
@@ -40,9 +41,11 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <LanguageProvider>
       <FirebaseClientProvider>
         <NotificationProvider>
-          <SessionIsolationGate />
-          <PWAServiceWorker />
-          {children}
+          <AutoLogoutProvider>
+            <SessionIsolationGate />
+            <PWAServiceWorker />
+            {children}
+          </AutoLogoutProvider>
         </NotificationProvider>
       </FirebaseClientProvider>
       <Toaster />

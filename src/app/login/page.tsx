@@ -274,7 +274,7 @@ function LoginPageContent() {
                 </AlertDescription>
               </Alert>
             )}
-            {shouldForceFreshLogin && (
+            {forceLogin && (
               <Alert className="mb-4 border-amber-200 bg-amber-50">
                 <AlertDescription className="text-sm text-amber-900">
                   For security, please sign in again to continue to this application.
