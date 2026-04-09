@@ -46,7 +46,9 @@ function LoginPageContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isForcingFreshLogin, setIsForcingFreshLogin] = useState(false);
   const redirectPathRaw = String(searchParams.get('redirect') || '').trim();
+  const forceLogin = String(searchParams.get('forceLogin') || '').trim() === '1';
   const redirectPath = redirectPathRaw.startsWith('/') && !redirectPathRaw.startsWith('//')
     ? redirectPathRaw
     : '/applications';
@@ -70,6 +72,22 @@ function LoginPageContent() {
     if (isUserLoading) return;
 
     const run = async () => {
+      if (forceLogin) {
+        setIsForcingFreshLogin(true);
+        // Force a fresh credential entry for reminder-email links.
+        try {
+          safeLocalStorageRemove('calaim_session_type');
+          safeLocalStorageRemove('calaim_admin_context');
+          await fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
+          if (auth?.currentUser) {
+            await auth.signOut().catch(() => null);
+          }
+        } finally {
+          setIsForcingFreshLogin(false);
+        }
+        return;
+      }
+
       // If we're coming from an SW session, force a fresh user login.
       // This prevents the user portal from reusing SW credentials.
       const stored = safeLocalStorageGet('calaim_session_type');
@@ -89,7 +107,7 @@ function LoginPageContent() {
     };
 
     void run();
-  }, [user, isUserLoading, router, auth, redirectPath]);
+  }, [user, isUserLoading, router, auth, redirectPath, forceLogin]);
 
   const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();
@@ -211,7 +229,7 @@ function LoginPageContent() {
   };
 
   
-  if (isUserLoading || user) {
+  if (isUserLoading || isForcingFreshLogin || (user && !forceLogin)) {
       return (
           <div className="flex items-center justify-center h-screen">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -240,6 +258,13 @@ function LoginPageContent() {
                     create a free account
                   </Link>{' '}
                   if you&apos;re new.
+                </AlertDescription>
+              </Alert>
+            )}
+            {forceLogin && (
+              <Alert className="mb-4 border-amber-200 bg-amber-50">
+                <AlertDescription className="text-sm text-amber-900">
+                  For security, please sign in again to continue to this application.
                 </AlertDescription>
               </Alert>
             )}

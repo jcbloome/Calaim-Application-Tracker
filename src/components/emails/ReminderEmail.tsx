@@ -84,7 +84,7 @@ const ReminderEmail: React.FC<Readonly<ReminderEmailProps>> = ({
   const fallbackBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://calaim-pathfinder.web.app';
   const resolvedBaseUrl = baseUrl || fallbackBaseUrl;
   const returnPath = `/pathway?applicationId=${applicationId}`;
-  const continueUrl = `${resolvedBaseUrl}/login?redirect=${encodeURIComponent(returnPath)}`;
+  const continueUrl = `${resolvedBaseUrl}/login?redirect=${encodeURIComponent(returnPath)}&forceLogin=1`;
 
   return (
   <div style={container}>

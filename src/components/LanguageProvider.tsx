@@ -171,6 +171,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const observerRef = useRef<MutationObserver | null>(null);
   const translateTimerRef = useRef<number | null>(null);
   const didShowErrorRef = useRef(false);
+  const didExplicitLanguageSwitchRef = useRef(false);
+  const translationDisabledRef = useRef(false);
+  const notifyOnNextFailureRef = useRef(false);
   const currentPath = String(pathname || '');
   const isPrintablePath =
     currentPath.includes('/printable') ||
@@ -180,9 +183,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const effectiveLanguage: LanguageCode = isTranslationEnabledForPath ? language : 'en';
 
   const setLanguage = (next: LanguageCode) => {
+    didExplicitLanguageSwitchRef.current = true;
     setLanguageState(next);
     if (next === 'es') {
       didShowErrorRef.current = false;
+      translationDisabledRef.current = false;
+      notifyOnNextFailureRef.current = true;
+    } else {
+      notifyOnNextFailureRef.current = false;
     }
     try {
       localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
@@ -192,18 +200,41 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   };
 
   const queueTranslate = () => {
+    if (translationDisabledRef.current) return;
     if (translateTimerRef.current) {
       window.clearTimeout(translateTimerRef.current);
     }
     translateTimerRef.current = window.setTimeout(() => {
-      void translatePageToSpanish().catch((error: any) => {
-        console.error('Translation failed:', error);
-        if (!didShowErrorRef.current) {
-          didShowErrorRef.current = true;
+      void translatePageToSpanish()
+        .then(() => {
+          // Only the immediate request after explicit dropdown selection can notify.
+          notifyOnNextFailureRef.current = false;
+        })
+        .catch((error: any) => {
+          console.error('Translation failed:', error);
           const message = String(error?.message || 'Translation failed.');
-          window.alert(`Spanish translation could not be applied.\n\n${message}`);
-        }
-      });
+          const missingApiKey =
+            message.toLowerCase().includes('missing google translate api key') ||
+            message.toLowerCase().includes('google translate api key configuration');
+          if (missingApiKey) {
+            translationDisabledRef.current = true;
+            if (!didExplicitLanguageSwitchRef.current) {
+              // Silent fallback for background/remembered language state.
+              setLanguageState('en');
+              try {
+                localStorage.setItem(LANGUAGE_STORAGE_KEY, 'en');
+              } catch {
+                // ignore
+              }
+              return;
+            }
+          }
+          if (!didShowErrorRef.current && didExplicitLanguageSwitchRef.current && notifyOnNextFailureRef.current) {
+            didShowErrorRef.current = true;
+            notifyOnNextFailureRef.current = false;
+            window.alert(`Spanish translation could not be applied.\n\n${message}`);
+          }
+        });
     }, 200);
   };
 
