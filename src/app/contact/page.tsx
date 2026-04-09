@@ -178,7 +178,7 @@ export default function ContactPage() {
                 Access your CalAIM application portal or learn more about our services
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                <Link href="/login">
+                <Link href="/login?fresh=1">
                   <Button size="lg" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3">
                     Access Portal
                   </Button>

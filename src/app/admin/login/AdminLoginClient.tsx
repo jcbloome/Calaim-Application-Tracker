@@ -93,6 +93,14 @@ export default function AdminLoginClient() {
 
   const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password) {
+      setError('Please enter both email and password.');
+      return;
+    }
+
     setIsLoading(true);
     setLoginPhase('auth');
     setError(null);
@@ -126,7 +134,7 @@ export default function AdminLoginClient() {
       // Using local persistence here fixes staff being bounced back to login on some environments.
       await setPersistence(auth, browserLocalPersistence);
 
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
 
       const idToken = await userCredential.user.getIdToken();
       const sessionResponse = await fetch('/api/auth/admin-session', {

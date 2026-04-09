@@ -56,7 +56,7 @@ export default function SocialWorkerPortal() {
               <p className="text-gray-600 mb-6">
                 This portal is exclusively for authorized social workers. Please contact your administrator if you need access.
               </p>
-              <Link href="/login">
+              <Link href="/login?fresh=1">
                 <Button className="bg-blue-600 hover:bg-blue-700">
                   Return to Login
                 </Button>

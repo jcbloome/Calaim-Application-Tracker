@@ -58,7 +58,7 @@ export default function HomePage() {
 
           {/* Dual CTA: returning users + new users */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8 px-4">
-            <Link href="/login" className="w-full sm:w-auto">
+            <Link href="/login?fresh=1" className="w-full sm:w-auto">
               <Button
                 size="lg"
                 className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-lg font-semibold w-full rounded-full shadow-2xl transition-all duration-300 hover:scale-105 hover:shadow-3xl group"

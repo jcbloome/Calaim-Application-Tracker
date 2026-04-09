@@ -57,7 +57,7 @@ export function PublicHeader() {
           </Button>
           <div className="flex items-center gap-2 ml-2">
             <Button asChild>
-              <Link href="/login" className="text-sm">
+              <Link href="/login?fresh=1" className="text-sm">
                 Login
               </Link>
             </Button>
@@ -119,7 +119,7 @@ export function PublicHeader() {
               </nav>
               <div className="mt-2 border-t pt-3">
                 <Button asChild className="w-full">
-                  <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+                  <Link href="/login?fresh=1" onClick={() => setMobileMenuOpen(false)}>
                     Login
                   </Link>
                 </Button>

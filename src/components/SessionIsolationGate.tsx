@@ -25,7 +25,12 @@ export function SessionIsolationGate() {
 
   // Always call hooks unconditionally. Disable isolation effects on login-related routes.
   const disableIsolation =
-    pathname === '/admin/login';
+    pathname === '/admin/login' ||
+    pathname === '/login' ||
+    pathname === '/sw-login' ||
+    pathname === '/signup' ||
+    pathname === '/reset-password' ||
+    pathname === '/sw-reset-password';
   useSessionIsolation(sessionType, { disabled: disableIsolation });
 
   // Global master access switch: blocks ALL users except Jason.

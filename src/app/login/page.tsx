@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect, useRef } from 'react';
 import { useAuth, useFirestore } from '@/firebase';
 import {
   signInWithEmailAndPassword,
@@ -47,8 +47,11 @@ function LoginPageContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isForcingFreshLogin, setIsForcingFreshLogin] = useState(false);
+  const hasAppliedFreshLoginRef = useRef(false);
   const redirectPathRaw = String(searchParams.get('redirect') || '').trim();
   const forceLogin = String(searchParams.get('forceLogin') || '').trim() === '1';
+  const freshLogin = String(searchParams.get('fresh') || '').trim() === '1';
+  const shouldForceFreshLogin = forceLogin || freshLogin;
   const redirectPath = redirectPathRaw.startsWith('/') && !redirectPathRaw.startsWith('//')
     ? redirectPathRaw
     : '/applications';
@@ -72,12 +75,14 @@ function LoginPageContent() {
     if (isUserLoading) return;
 
     const run = async () => {
-      if (forceLogin) {
+      if (shouldForceFreshLogin && !hasAppliedFreshLoginRef.current) {
+        hasAppliedFreshLoginRef.current = true;
         setIsForcingFreshLogin(true);
-        // Force a fresh credential entry for reminder-email links.
+        // Force a fresh credential entry one time for this page load.
         try {
           safeLocalStorageRemove('calaim_session_type');
           safeLocalStorageRemove('calaim_admin_context');
+          await fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
           await fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
           if (auth?.currentUser) {
             await auth.signOut().catch(() => null);
@@ -107,14 +112,22 @@ function LoginPageContent() {
     };
 
     void run();
-  }, [user, isUserLoading, router, auth, redirectPath, forceLogin]);
+  }, [user, isUserLoading, router, auth, redirectPath, shouldForceFreshLogin]);
 
   const handleSignIn = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password) {
+      setError('Please enter both email and password.');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
-    console.log('🔍 User Login Debug: Sign in attempt started', { email });
+    console.log('🔍 User Login Debug: Sign in attempt started', { email: normalizedEmail });
 
     if (!auth || !firestore) {
       const errorMsg = 'Firebase services are not available.';
@@ -147,7 +160,7 @@ function LoginPageContent() {
       await setPersistence(auth, browserLocalPersistence);
       
       console.log('🔍 User Login Debug: Attempting sign in with email/password');
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
       
       console.log('🔍 User Login Debug: Sign in successful', { 
         uid: userCredential.user.uid,
@@ -229,7 +242,7 @@ function LoginPageContent() {
   };
 
   
-  if (isUserLoading || isForcingFreshLogin || (user && !forceLogin)) {
+  if (isUserLoading || isForcingFreshLogin || Boolean(user)) {
       return (
           <div className="flex items-center justify-center h-screen">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -261,7 +274,7 @@ function LoginPageContent() {
                 </AlertDescription>
               </Alert>
             )}
-            {forceLogin && (
+            {shouldForceFreshLogin && (
               <Alert className="mb-4 border-amber-200 bg-amber-50">
                 <AlertDescription className="text-sm text-amber-900">
                   For security, please sign in again to continue to this application.

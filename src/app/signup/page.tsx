@@ -224,7 +224,7 @@ function SignUpPageContent() {
             </form>
             <div className="mt-4 text-center text-sm">
               Already have an account?{' '}
-              <Link href="/login" className="underline text-primary">
+              <Link href="/login?fresh=1" className="underline text-primary">
                 Log In
               </Link>
             </div>

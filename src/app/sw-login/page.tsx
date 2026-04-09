@@ -107,8 +107,10 @@ function SWLoginPageContent() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!email || !password) {
+    if (isLoading) return;
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password) {
       setError('Please enter both email and password');
       return;
     }
@@ -117,7 +119,6 @@ function SWLoginPageContent() {
     setError('');
 
     void (async () => {
-      const normalizedEmail = email.trim().toLowerCase();
       // Clear any stale daily marker before a fresh SW sign-in.
       // This prevents the "new day" effect from signing out immediately during first-login bootstrap.
       clearStoredSwLoginDay();
@@ -129,6 +130,12 @@ function SWLoginPageContent() {
         localStorage.removeItem('calaim_admin_context');
       } catch {
         // ignore
+      }
+
+      // Ensure account switching is deterministic (avoids first-attempt failures
+      // when a different portal user is still in Firebase Auth state).
+      if (auth.currentUser) {
+        await auth.signOut().catch(() => null);
       }
 
       // Sign in with Firebase Auth

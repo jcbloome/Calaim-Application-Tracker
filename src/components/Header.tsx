@@ -166,7 +166,7 @@ export function Header() {
           ) : (
             <div className="flex items-center gap-2">
                 <Button asChild>
-                    <Link href="/login"><LogIn className="mr-2 h-4 w-4" />Login</Link>
+                    <Link href="/login?fresh=1"><LogIn className="mr-2 h-4 w-4" />Login</Link>
                 </Button>
             </div>
           )}
@@ -257,7 +257,7 @@ export function Header() {
                   </div>
                 ) : (
                   <Button asChild className="w-full">
-                    <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+                    <Link href="/login?fresh=1" onClick={() => setMobileMenuOpen(false)}>
                       <LogIn className="mr-2 h-4 w-4" />
                       Login
                     </Link>
