@@ -70,6 +70,7 @@ export default function RcfeWeeklyConfirmPage() {
   const [automationEnabled, setAutomationEnabled] = useState(false);
   const [isSavingAutomation, setIsSavingAutomation] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [rows, setRows] = useState<RcfeRow[]>([]);
   const [search, setSearch] = useState('');
@@ -199,6 +200,40 @@ export default function RcfeWeeklyConfirmPage() {
       });
     } finally {
       setIsSavingTemplate(false);
+    }
+  };
+
+  const sendTestEmailToMe = async () => {
+    try {
+      if (!auth?.currentUser) throw new Error('You must be signed in');
+      setIsSendingTestEmail(true);
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-rcfe-weekly-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          action: 'send_test_email',
+          emailSubjectTemplate,
+          emailBodyTemplate,
+          testRcfeName: 'Template Preview RCFE',
+          testRcfeAdminName: 'Template Preview Admin',
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to send test email');
+      toast({
+        title: 'Test email sent',
+        description: `Preview sent to ${String(data?.sentTo || auth.currentUser.email || 'your inbox')}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Test email failed',
+        description: error?.message || 'Could not send test template email.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingTestEmail(false);
     }
   };
 
@@ -377,10 +412,21 @@ export default function RcfeWeeklyConfirmPage() {
                 Placeholders: {'{{rcfeName}}'}, {'{{rcfeAdminName}}'}, {'{{memberList}}'}, {'{{deydryReplyLinkList}}'}, {'{{memberCount}}'}, {'{{today}}'}
               </div>
             </div>
-            <Button onClick={() => void saveTemplate()} disabled={isSavingTemplate || isLoadingSettings} className="w-full sm:w-auto">
-              {isSavingTemplate ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Save Template Settings
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button onClick={() => void saveTemplate()} disabled={isSavingTemplate || isLoadingSettings} className="w-full sm:w-auto">
+                {isSavingTemplate ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save Template Settings
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => void sendTestEmailToMe()}
+                disabled={isSendingTestEmail || isLoadingSettings}
+                className="w-full sm:w-auto"
+              >
+                {isSendingTestEmail ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Send Test Email to Me
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

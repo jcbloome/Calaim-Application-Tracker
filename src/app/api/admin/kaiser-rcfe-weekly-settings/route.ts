@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/firebase-admin';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { Resend } from 'resend';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,6 +26,49 @@ const DEFAULT_EMAIL_BODY_TEMPLATE = [
   'Thank you,',
   'Connections CalAIM Care Coordination',
 ].join('\n');
+const DEYDRY_EMAIL = 'deydry@carehomefinders.com';
+
+let resendClient: Resend | null = null;
+function getResendClient(): Resend | null {
+  if (resendClient) return resendClient;
+  const key = String(process.env.RESEND_API_KEY || '').trim();
+  if (!key) return null;
+  resendClient = new Resend(key);
+  return resendClient;
+}
+
+const renderTemplate = (template: string, data: Record<string, string>) => {
+  let rendered = String(template || '');
+  Object.entries(data).forEach(([key, value]) => {
+    rendered = rendered.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g'), value);
+  });
+  return rendered;
+};
+
+const escapeHtml = (value: string) =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const buildDeydryMailtoUrl = (memberName: string, rcfeName: string, authEndT2038: string) => {
+  const subject = `To Deydy RE: Kaiser/ILS Status Update Check for ${memberName}`;
+  const body = [
+    'Hi Deydry,',
+    '',
+    `RCFE shared an ILS status update for ${memberName}.`,
+    `RCFE: ${rcfeName}`,
+    `Authorization End Date (T2038): ${authEndT2038 || 'Not set'}`,
+    '',
+    'Update details:',
+    '',
+    '',
+    'Thank you,',
+  ].join('\n');
+  return `mailto:${DEYDRY_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+};
 
 async function requireAdmin(idToken: string) {
   const decoded = await adminAuth.verifyIdToken(idToken);
@@ -155,6 +199,99 @@ export async function POST(req: NextRequest) {
         emailBodyTemplate,
         cadenceDays,
         automationEnabled: nextAutomationEnabled,
+      });
+    }
+
+    if (action === 'send_test_email') {
+      const resend = getResendClient();
+      if (!resend) {
+        return NextResponse.json({ success: false, error: 'RESEND_API_KEY missing' }, { status: 500 });
+      }
+      const to = normalizeEmail(authz.email);
+      if (!to) {
+        return NextResponse.json(
+          { success: false, error: 'Your logged-in account does not have an email address' },
+          { status: 400 }
+        );
+      }
+
+      const testRcfeName = String(body?.testRcfeName || 'Sample RCFE').trim();
+      const testRcfeAdminName = String(body?.testRcfeAdminName || 'RCFE Admin').trim();
+      const templateSubject = String(body?.emailSubjectTemplate || '').trim() || emailSubjectTemplate;
+      const templateBody = String(body?.emailBodyTemplate || '').trim() || emailBodyTemplate;
+
+      const sampleMembers = [
+        { fullName: 'Sample Member One', clientId2: 'TEST-1001', authorizationEndT2038: '2026-12-31' },
+        { fullName: 'Sample Member Two', clientId2: 'TEST-1002', authorizationEndT2038: '2026-11-30' },
+      ];
+
+      const memberLines = sampleMembers
+        .map((m) => `- ${m.fullName} (Client_ID2: ${m.clientId2}) - Auth End: ${m.authorizationEndT2038}`)
+        .join('\n');
+      const memberHtmlList = sampleMembers
+        .map(
+          (m) =>
+            `<li>${escapeHtml(m.fullName)} (Client_ID2: ${escapeHtml(m.clientId2)}) - Auth End: ${escapeHtml(
+              m.authorizationEndT2038
+            )}</li>`
+        )
+        .join('');
+      const deydryReplyLinkList = sampleMembers
+        .map((m) => {
+          const url = buildDeydryMailtoUrl(m.fullName, testRcfeName, m.authorizationEndT2038);
+          return `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Email update to Deydry for ${escapeHtml(
+            m.fullName
+          )}</a></li>`;
+        })
+        .join('');
+
+      const templateData = {
+        rcfeName: testRcfeName,
+        rcfeAdminName: testRcfeAdminName,
+        memberCount: String(sampleMembers.length),
+        memberList: memberLines,
+        deydryReplyLinkList: sampleMembers.map((m) => `- Email update to Deydry for ${m.fullName}`).join('\n'),
+        today: new Date().toLocaleDateString('en-US'),
+      };
+      const renderedSubject = renderTemplate(templateSubject, templateData);
+      const bodyLines = String(templateBody || '').split('\n');
+      const hasDeydryPlaceholder = bodyLines.some((line) => line.trim() === '{{deydryReplyLinkList}}');
+      const deydryLinksHtml = `<div style="margin:8px 0;"><strong>Reply links to Kaiser manager (${escapeHtml(
+        DEYDRY_EMAIL
+      )}):</strong><ul style="margin:8px 0 10px 20px;">${deydryReplyLinkList}</ul></div>`;
+
+      const renderedHtml = `
+        <div style="font-family: Arial, sans-serif; color:#111827; line-height:1.5;">
+          <div style="margin-bottom:10px; padding:8px; border:1px solid #d1d5db; background:#f9fafb; font-size:12px;">
+            Test email preview sent to ${escapeHtml(to)}
+          </div>
+          ${bodyLines
+            .map((lineRaw) => {
+              if (lineRaw.trim() === '{{memberList}}') {
+                return `<ul style="margin:10px 0 10px 20px;">${memberHtmlList}</ul>`;
+              }
+              if (lineRaw.trim() === '{{deydryReplyLinkList}}') {
+                return deydryLinksHtml;
+              }
+              const line = renderTemplate(lineRaw, templateData);
+              if (!line.trim()) return '<div style="height:8px"></div>';
+              return `<p style="margin:0 0 8px;">${escapeHtml(line)}</p>`;
+            })
+            .join('')}
+          ${hasDeydryPlaceholder ? '' : deydryLinksHtml}
+        </div>
+      `;
+
+      await resend.emails.send({
+        from: 'Connections CalAIM <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `[TEST PREVIEW] ${renderedSubject || 'Biweekly ILS follow-up template preview'}`,
+        html: renderedHtml,
+      });
+
+      return NextResponse.json({
+        success: true,
+        sentTo: to,
       });
     }
 
