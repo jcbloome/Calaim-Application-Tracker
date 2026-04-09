@@ -218,16 +218,16 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
             message.toLowerCase().includes('google translate api key configuration');
           if (missingApiKey) {
             translationDisabledRef.current = true;
-            if (!didExplicitLanguageSwitchRef.current) {
-              // Silent fallback for background/remembered language state.
-              setLanguageState('en');
-              try {
-                localStorage.setItem(LANGUAGE_STORAGE_KEY, 'en');
-              } catch {
-                // ignore
-              }
-              return;
+            notifyOnNextFailureRef.current = false;
+            // Always use silent fallback for missing key errors, including explicit switches.
+            // This avoids disruptive browser alerts when translation is unavailable.
+            setLanguageState('en');
+            try {
+              localStorage.setItem(LANGUAGE_STORAGE_KEY, 'en');
+            } catch {
+              // ignore
             }
+            return;
           }
           if (!didShowErrorRef.current && didExplicitLanguageSwitchRef.current && notifyOnNextFailureRef.current) {
             didShowErrorRef.current = true;

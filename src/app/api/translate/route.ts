@@ -30,6 +30,7 @@ export async function POST(request: Request) {
     const apiKey =
       process.env.GOOGLE_CLOUD_TRANSLATE_API_KEY ||
       process.env.GOOGLE_TRANSLATE_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
       process.env.NEXT_PUBLIC_GOOGLE_TRANSLATE_API_KEY;
 
     if (!apiKey) {
