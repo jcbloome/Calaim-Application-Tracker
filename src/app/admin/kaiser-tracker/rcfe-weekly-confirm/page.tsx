@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
@@ -18,14 +19,42 @@ type RcfeRow = {
   rcfeName: string;
   rcfeAdminEmail: string;
   memberCount: number;
+  nearestAuthorizationEndT2038: string;
 };
 
 const normalizeRcfeKey = (name: string, email: string) =>
   `${String(name || '').trim().toLowerCase()}|${String(email || '').trim().toLowerCase()}`;
 
-const isRbPendingIlsContractStatus = (status: string) => {
+const isBiweeklyFollowupStatus = (status: string) => {
   const s = String(status || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  return s === 'r&b sent pending ils contract' || s === 'r & b sent pending ils contract';
+  return (
+    s === 'r&b sent pending ils contract' ||
+    s === 'r & b sent pending ils contract' ||
+    s === 'final-member at rcfe' ||
+    s === 'final- member at rcfe' ||
+    s === 'final member at rcfe'
+  );
+};
+
+const toDateOrNull = (value: unknown) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const isUnexpiredT2038 = (value: unknown) => {
+  const date = toDateOrNull(value);
+  if (!date) return false;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return endDay >= today;
+};
+
+const formatShortDate = (value: unknown) => {
+  const d = toDateOrNull(value);
+  return d ? d.toLocaleDateString() : 'Not set';
 };
 
 export default function RcfeWeeklyConfirmPage() {
@@ -35,6 +64,12 @@ export default function RcfeWeeklyConfirmPage() {
   const [isLoadingRows, setIsLoadingRows] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [settings, setSettings] = useState<Record<string, { enabled: boolean; rcfeName: string; rcfeAdminEmail: string }>>({});
+  const [emailSubjectTemplate, setEmailSubjectTemplate] = useState('');
+  const [emailBodyTemplate, setEmailBodyTemplate] = useState('');
+  const [cadenceDays, setCadenceDays] = useState(14);
+  const [automationEnabled, setAutomationEnabled] = useState(false);
+  const [isSavingAutomation, setIsSavingAutomation] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [rows, setRows] = useState<RcfeRow[]>([]);
   const [search, setSearch] = useState('');
@@ -50,16 +85,29 @@ export default function RcfeWeeklyConfirmPage() {
       const rowsByKey = new Map<string, RcfeRow>();
       for (const member of members) {
         const status = getEffectiveKaiserStatus(member);
-        if (!isRbPendingIlsContractStatus(status)) continue;
+        if (!isBiweeklyFollowupStatus(status)) continue;
+        const authEnd = String((member as any)?.Authorization_End_Date_T2038 || (member as any)?.Authorization_End_T2038 || '').trim();
+        if (!isUnexpiredT2038(authEnd)) continue;
         const rcfeName = String(member?.RCFE_Name || '').trim();
         const rcfeAdminEmail = String(member?.RCFE_Admin_Email || member?.RCFE_Administrator_Email || '').trim().toLowerCase();
         if (!rcfeName || !rcfeAdminEmail) continue;
         const key = normalizeRcfeKey(rcfeName, rcfeAdminEmail);
         const prev = rowsByKey.get(key);
         if (!prev) {
-          rowsByKey.set(key, { key, rcfeName, rcfeAdminEmail, memberCount: 1 });
+          rowsByKey.set(key, {
+            key,
+            rcfeName,
+            rcfeAdminEmail,
+            memberCount: 1,
+            nearestAuthorizationEndT2038: authEnd,
+          });
         } else {
           prev.memberCount += 1;
+          const prevDate = toDateOrNull(prev.nearestAuthorizationEndT2038);
+          const nextDate = toDateOrNull(authEnd);
+          if (!prevDate || (nextDate && nextDate.getTime() < prevDate.getTime())) {
+            prev.nearestAuthorizationEndT2038 = authEnd;
+          }
           rowsByKey.set(key, prev);
         }
       }
@@ -103,6 +151,10 @@ export default function RcfeWeeklyConfirmPage() {
         };
       });
       setSettings(next);
+      setEmailSubjectTemplate(String(data?.emailSubjectTemplate || ''));
+      setEmailBodyTemplate(String(data?.emailBodyTemplate || ''));
+      setCadenceDays(Number(data?.cadenceDays || 14));
+      setAutomationEnabled(Boolean(data?.automationEnabled));
     } catch (error: any) {
       toast({
         title: 'Settings load failed',
@@ -111,6 +163,74 @@ export default function RcfeWeeklyConfirmPage() {
       });
     } finally {
       setIsLoadingSettings(false);
+    }
+  };
+
+  const saveTemplate = async () => {
+    try {
+      if (!auth?.currentUser) throw new Error('You must be signed in');
+      setIsSavingTemplate(true);
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-rcfe-weekly-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          action: 'set_template',
+          emailSubjectTemplate,
+          emailBodyTemplate,
+          cadenceDays,
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to save template settings');
+      setEmailSubjectTemplate(String(data?.emailSubjectTemplate || emailSubjectTemplate));
+      setEmailBodyTemplate(String(data?.emailBodyTemplate || emailBodyTemplate));
+      setCadenceDays(Number(data?.cadenceDays || cadenceDays));
+      toast({
+        title: 'Saved',
+        description: 'Biweekly RCFE email template settings updated.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Save failed',
+        description: error?.message || 'Could not save template settings.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
+
+  const saveAutomationToggle = async (enabled: boolean) => {
+    try {
+      if (!auth?.currentUser) throw new Error('You must be signed in');
+      setIsSavingAutomation(true);
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-rcfe-weekly-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          action: 'set_automation',
+          automationEnabled: enabled,
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to update automation setting');
+      setAutomationEnabled(Boolean(data?.automationEnabled));
+      toast({
+        title: 'Updated',
+        description: enabled ? 'Biweekly RCFE emails are now ON.' : 'Biweekly RCFE emails are now OFF.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Update failed',
+        description: error?.message || 'Could not update automation setting.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingAutomation(false);
     }
   };
 
@@ -192,9 +312,9 @@ export default function RcfeWeeklyConfirmPage() {
     <div className="container mx-auto py-8 space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">RCFE Weekly Confirmation</h1>
+          <h1 className="text-2xl font-bold tracking-tight">RCFE Biweekly Follow-Up</h1>
           <p className="text-sm text-muted-foreground">
-            RCFEs at Kaiser status: R&B Sent Pending ILS Contract
+            RCFEs needing biweekly follow-up: R&B Sent Pending ILS Contract + Final-Member at RCFE, with active T2038 authorization
           </p>
         </div>
         <Button variant="outline" asChild className="w-full sm:w-auto">
@@ -207,12 +327,62 @@ export default function RcfeWeeklyConfirmPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Weekly Auto-Email Toggles</CardTitle>
+          <CardTitle className="text-base">Biweekly Auto-Email Toggles</CardTitle>
           <CardDescription>
-            Enable weekly confirmation emails to RCFE admins for members currently in R&B Sent Pending ILS Contract.
+            Emails run every {cadenceDays} days (default 14). Toggle OFF to exclude an RCFE from automated follow-ups.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          <div className="rounded-md border p-3 bg-amber-50 border-amber-200">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">Master send toggle</div>
+                <div className="text-xs text-muted-foreground">
+                  Turn ON only when you are ready for cron to send RCFE follow-up emails.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{automationEnabled ? 'ON' : 'OFF'}</span>
+                <Switch
+                  checked={automationEnabled}
+                  disabled={isSavingAutomation || isLoadingSettings}
+                  onCheckedChange={(next) => void saveAutomationToggle(Boolean(next))}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3 bg-slate-50">
+            <div className="text-sm font-medium">Email template and cadence</div>
+            <Input
+              value={emailSubjectTemplate}
+              onChange={(e) => setEmailSubjectTemplate(e.target.value)}
+              placeholder="Subject template"
+            />
+            <Textarea
+              value={emailBodyTemplate}
+              onChange={(e) => setEmailBodyTemplate(e.target.value)}
+              rows={8}
+              placeholder="Body template"
+            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                type="number"
+                min={1}
+                value={cadenceDays}
+                onChange={(e) => setCadenceDays(Math.max(1, Number(e.target.value || 14)))}
+                className="w-full sm:w-36"
+              />
+              <div className="text-xs text-muted-foreground">
+                Placeholders: {'{{rcfeName}}'}, {'{{rcfeAdminName}}'}, {'{{memberList}}'}, {'{{deydryReplyLinkList}}'}, {'{{memberCount}}'}, {'{{today}}'}
+              </div>
+            </div>
+            <Button onClick={() => void saveTemplate()} disabled={isSavingTemplate || isLoadingSettings} className="w-full sm:w-auto">
+              {isSavingTemplate ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Save Template Settings
+            </Button>
+          </div>
+
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Input
               value={search}
@@ -233,20 +403,20 @@ export default function RcfeWeeklyConfirmPage() {
 
           {!isLoadingRows && !isLoadingSettings && filteredRows.length === 0 && (
             <div className="text-sm text-muted-foreground">
-              No RCFE rows found with admin email in R&B Sent Pending ILS Contract stage.
+              No eligible RCFE rows found (requires matching Kaiser status, RCFE admin email, and active T2038 end date).
             </div>
           )}
 
           <div className="space-y-2">
             {filteredRows.map((row) => {
-              const enabled = Boolean(settings[row.key]?.enabled);
+              const enabled = settings[row.key]?.enabled !== false;
               const saving = savingKey === row.key;
               return (
                 <div key={row.key} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-md border p-2">
                   <div className="min-w-0">
                     <div className="font-medium text-sm truncate">{row.rcfeName}</div>
                     <div className="text-xs text-muted-foreground truncate">
-                      {row.rcfeAdminEmail} • {row.memberCount} member{row.memberCount === 1 ? '' : 's'} in stage
+                      {row.rcfeAdminEmail} • {row.memberCount} member{row.memberCount === 1 ? '' : 's'} • nearest T2038 end: {formatShortDate(row.nearestAuthorizationEndT2038)}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 self-start sm:self-auto">

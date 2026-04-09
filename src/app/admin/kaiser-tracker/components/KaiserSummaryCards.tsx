@@ -97,6 +97,19 @@ export function KaiserSummaryCards({
       normalized === 'final at rcfe'
     );
   };
+  const isBiweeklyRcfeFollowupStatus = (value: unknown) => {
+    const normalized = normalize(String(value || ''));
+    return (
+      normalized === 'r b sent pending ils contract' ||
+      normalized === 'final member at rcfe'
+    );
+  };
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const hasUnexpiredT2038Authorization = (value: unknown) => {
+    const date = toValidDate(value);
+    if (!date) return false;
+    return startOfDay(date) >= startOfDay(new Date());
+  };
   const isCalaimH2022 = (value: unknown) => normalize(String(value || '')) === 'h2022';
   const isFinalAtRcfeSummaryStatus = (status: string) => {
     const normalized = normalize(status);
@@ -120,6 +133,12 @@ export function KaiserSummaryCards({
   const rbAndFinalIlsConnectedMembers = members.filter((m) =>
     isRbPendingOrFinalAtRcfeStatus(getEffectiveKaiserStatus(m))
   );
+  const biweeklyRcfeFollowUpMembers = members.filter((m) => {
+    if (!isBiweeklyRcfeFollowupStatus(getEffectiveKaiserStatus(m))) return false;
+    if (!hasUnexpiredT2038Authorization((m as any)?.Authorization_End_Date_T2038)) return false;
+    const rcfeEmail = String((m as any)?.RCFE_Admin_Email || '').trim();
+    return Boolean(rcfeEmail);
+  });
 
   const ilsStatusRequestMembers = members.filter((m) => Boolean(getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(m))));
   const ilsMemberRequestsMembers = members.filter((m) => {
@@ -258,6 +277,22 @@ export function KaiserSummaryCards({
             </button>
           </div>
           <div className="border-t pt-2 space-y-1">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-fuchsia-700 hover:bg-fuchsia-50 hover:underline"
+              onClick={() =>
+                openMemberModal(
+                  biweeklyRcfeFollowUpMembers,
+                  'Biweekly RCFE Follow-Up (Active T2038)',
+                  `${biweeklyRcfeFollowUpMembers.length} members in R&B Sent Pending ILS Contract / Final-Member at RCFE with active T2038 authorization and RCFE admin email`,
+                  'kaiser_status',
+                  'biweekly_rcfe_follow_up_active_t2038'
+                )
+              }
+            >
+              <span className="truncate pr-2">Biweekly RCFE follow-up (active T2038)</span>
+              <span className="font-semibold text-fuchsia-700">{biweeklyRcfeFollowUpMembers.length}</span>
+            </button>
             <button
               type="button"
               className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-blue-700 hover:bg-blue-50 hover:underline"

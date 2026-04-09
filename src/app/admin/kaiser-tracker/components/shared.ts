@@ -30,6 +30,8 @@ export interface KaiserMember {
   RCFE_Admin_Email?: string;
   Authorization_Start_Date_H2022?: string;
   Authorization_End_Date_H2022?: string;
+  Authorization_End_Date_T2038?: string;
+  RCFE_Admin_Name?: string;
   Need_More_Contact_Info_ILS?: string;
 }
 

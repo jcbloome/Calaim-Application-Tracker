@@ -800,7 +800,9 @@ function KaiserTrackerPageContent() {
           ),
           Staff_Assigned: staffAssigned,
           RCFE_Name: member?.RCFE_Name || '',
+          RCFE_Admin_Name: member?.RCFE_Admin_Name || member?.RCFE_Administrator || member?.RCFE_Admin || '',
           RCFE_Admin_Email: member?.RCFE_Admin_Email || member?.RCFE_Administrator_Email || '',
+          Authorization_End_Date_T2038: member?.Authorization_End_Date_T2038 || member?.Authorization_End_T2038 || '',
           Next_Step_Due_Date: member?.Next_Step_Due_Date || '',
           workflow_step: member?.workflow_step || '',
           workflow_notes: member?.workflow_notes || '',
@@ -1244,7 +1246,7 @@ function KaiserTrackerPageContent() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
           <Button variant="outline" asChild className="w-full sm:w-auto">
             <Link href="/admin/kaiser-tracker/rcfe-weekly-confirm">
-              RCFE Weekly Confirmation (R&B Stage)
+              RCFE Biweekly Follow-Up (R&B/Final)
             </Link>
           </Button>
           <Button

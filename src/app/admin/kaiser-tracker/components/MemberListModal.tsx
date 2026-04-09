@@ -76,6 +76,14 @@ export function MemberListModal({
     return now - parsed.getTime() >= sevenDaysMs;
   };
 
+  const formatDate = (value: unknown) => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'Not set';
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    return parsed.toLocaleDateString();
+  };
+
   React.useEffect(() => {
     if (!isOpen || members.length === 0) return;
     const clientIds = Array.from(
@@ -271,7 +279,6 @@ export function MemberListModal({
               {displayedMembers.map((member, index) => {
                 const assigned = String(member.Staff_Assigned || member.Kaiser_User_Assignment || '').trim();
                 const effectiveKaiserStatus = getEffectiveKaiserStatus(member);
-                const memberClientId = String(member.client_ID2 || '').trim();
                 const memberMeta = getMemberMeta(member);
                 const noActionForWeek = isNoActionForWeek(memberMeta?.lastSyncAt || '');
 
@@ -310,6 +317,10 @@ export function MemberListModal({
                           <p className="text-sm text-muted-foreground mt-1">
                             ID: {member.client_ID2} | DOB: {formatBirthDate(member)} | MRN: {member.memberMrn} | County:{' '}
                             {member.memberCounty}
+                          </p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            T2038 Authorization End: {formatDate((member as any)?.Authorization_End_Date_T2038)} | RCFE:{' '}
+                            {String((member as any)?.RCFE_Name || '').trim() || 'Not set'}
                           </p>
 
                           <div className="flex gap-2 mt-2">
