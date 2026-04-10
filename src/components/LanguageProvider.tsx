@@ -239,11 +239,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // Always default to English on page load.
+    // Users can switch languages explicitly from the selector.
+    setLanguageState('en');
     try {
-      const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-      if (stored === 'es' || stored === 'en') {
-        setLanguageState(stored);
-      }
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, 'en');
     } catch {
       // ignore
     }
