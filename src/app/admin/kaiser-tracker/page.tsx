@@ -349,6 +349,19 @@ function KaiserTrackerPageContent() {
     }).format(parsed);
   };
 
+  const parseApiJson = async (response: Response) => {
+    const raw = await response.text();
+    try {
+      return { ok: true as const, data: JSON.parse(raw) };
+    } catch {
+      const excerpt = raw.slice(0, 200).replace(/\s+/g, ' ').trim();
+      return {
+        ok: false as const,
+        error: `Invalid API response (${response.status}). ${excerpt || 'No response body.'}`,
+      };
+    }
+  };
+
   // Calculate status summary using the defined Kaiser status order
   const statusSummary = useMemo(() => {
     const summary: Record<string, number> = {};
@@ -479,7 +492,11 @@ function KaiserTrackerPageContent() {
     try {
       // Open behavior: load existing saved notes only (no Caspio sync on modal open).
       const response = await fetch(`/api/member-notes?clientId2=${member.client_ID2}&skipSync=true`);
-      const data = await response.json();
+      const parsed = await parseApiJson(response);
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
+      }
+      const data = parsed.data;
       
       if (data.success) {
         setMemberNotesModal(prev => ({
@@ -532,7 +549,11 @@ function KaiserTrackerPageContent() {
       const response = await fetch(
         `/api/member-notes?clientId2=${member.client_ID2}&forceSync=false&skipSync=false&repairIfEmpty=true`
       );
-      const data = await response.json();
+      const parsed = await parseApiJson(response);
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
+      }
+      const data = parsed.data;
       if (!data.success) {
         throw new Error(data.error || 'Failed to sync notes');
       }

@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertTriangle, MessageSquare, RefreshCw, User, X } from 'lucide-react';
 import { useAuth } from '@/firebase';
+import { useAdmin } from '@/hooks/use-admin';
 import type { KaiserMember } from './shared';
 import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor } from './shared';
 
@@ -46,6 +47,7 @@ export function MemberListModal({
   staffMembers,
 }: MemberListModalProps) {
   const auth = useAuth();
+  const { isSuperAdmin, isKaiserManager } = useAdmin();
   const [notesMetaByClientId, setNotesMetaByClientId] = React.useState<
     Record<
       string,
@@ -222,6 +224,15 @@ export function MemberListModal({
     !memberHasActiveOverride(member) && isNoActionForWeek(getMemberMeta(member)?.lastAssignedStaffActionAt || '');
   const displayedMembers = showNoActionOnly ? members.filter(memberHasNoActionForWeek) : members;
   const noActionCount = members.filter(memberHasNoActionForWeek).length;
+  const getOverrideDisplay = (override: any) => {
+    const byName = String(override?.updatedByName || override?.updatedByEmail || '').trim() || 'Unknown';
+    const byRole = String(override?.updatedByRole || '').trim();
+    const at = String(override?.updatedAtIso || '').trim() || String(override?.updatedAtMs || '').trim();
+    return {
+      byName: byRole ? `${byName} (${byRole})` : byName,
+      atLabel: at ? formatEtDateTime(at) : 'Unknown time',
+    };
+  };
 
   const setManagerOverride = async (member: KaiserMember) => {
     try {
@@ -445,6 +456,11 @@ export function MemberListModal({
                               Manager override active until {formatDate(activeOverride?.expiresAtIso || '')}
                             </div>
                           ) : null}
+                          {activeOverride ? (
+                            <div className="text-[11px] text-amber-700 mt-1">
+                              Override by {getOverrideDisplay(activeOverride).byName} at {getOverrideDisplay(activeOverride).atLabel}
+                            </div>
+                          ) : null}
                           <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700">
                             <MessageSquare className="h-3 w-3" />
                             Click card to open member notes
@@ -475,34 +491,36 @@ export function MemberListModal({
                               <span className="ml-1 font-medium">{assigned || 'Unassigned'}</span>
                             </div>
                           </div>
-                          <div className="mt-2 flex items-center gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-xs"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void setManagerOverride(member);
-                              }}
-                            >
-                              Set manager override
-                            </Button>
-                            {activeOverride ? (
+                          {isSuperAdmin || isKaiserManager ? (
+                            <div className="mt-2 flex items-center gap-2">
                               <Button
                                 type="button"
                                 size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 text-xs text-amber-700"
+                                variant="outline"
+                                className="h-7 px-2 text-xs"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  void clearManagerOverride(member);
+                                  void setManagerOverride(member);
                                 }}
                               >
-                                Clear override
+                                Set manager override
                               </Button>
-                            ) : null}
-                          </div>
+                              {activeOverride ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs text-amber-700"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void clearManagerOverride(member);
+                                  }}
+                                >
+                                  Clear override
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </CardContent>

@@ -11,6 +11,7 @@ import type { User } from 'firebase/auth';
 interface AdminStatus {
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  isKaiserManager: boolean;
   isClaimsStaff: boolean;
   isLoading: boolean;
   isUserLoading: boolean;
@@ -20,14 +21,16 @@ interface AdminStatus {
 export function useAdmin(): AdminStatus {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
-  const lastKnownRoleRef = useRef<{ isAdmin: boolean; isSuperAdmin: boolean; isClaimsStaff: boolean }>({
+  const lastKnownRoleRef = useRef<{ isAdmin: boolean; isSuperAdmin: boolean; isKaiserManager: boolean; isClaimsStaff: boolean }>({
     isAdmin: false,
     isSuperAdmin: false,
+    isKaiserManager: false,
     isClaimsStaff: false,
   });
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isKaiserManager, setIsKaiserManager] = useState(false);
   const [isClaimsStaff, setIsClaimsStaff] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -65,10 +68,12 @@ export function useAdmin(): AdminStatus {
       if (isBlockedPortalEmail(user.email)) {
         setIsAdmin(false);
         setIsSuperAdmin(false);
+        setIsKaiserManager(false);
         setIsClaimsStaff(false);
         lastKnownRoleRef.current = {
           isAdmin: false,
           isSuperAdmin: false,
+          isKaiserManager: false,
           isClaimsStaff: false,
         };
         setIsLoading(false);
@@ -87,11 +92,14 @@ export function useAdmin(): AdminStatus {
         if (hasAdminClaim || hasSuperAdminClaim) {
           setIsAdmin(true);
           const nextSuper = Boolean(isEmailAdmin || hasSuperAdminClaim);
+        const nextKaiserManager = Boolean((claims as any)?.kaiserManager);
           setIsSuperAdmin(nextSuper);
+        setIsKaiserManager(nextKaiserManager);
           setIsClaimsStaff(nextSuper);
           lastKnownRoleRef.current = {
             isAdmin: true,
             isSuperAdmin: nextSuper,
+          isKaiserManager: nextKaiserManager,
             isClaimsStaff: nextSuper,
           };
           setIsLoading(false);
@@ -105,10 +113,12 @@ export function useAdmin(): AdminStatus {
       if (isEmailAdmin) {
         setIsAdmin(true);
         setIsSuperAdmin(true);
+        setIsKaiserManager(false);
         setIsClaimsStaff(true);
         lastKnownRoleRef.current = {
           isAdmin: true,
           isSuperAdmin: true,
+          isKaiserManager: false,
           isClaimsStaff: true,
         };
         setIsLoading(false);
@@ -118,6 +128,7 @@ export function useAdmin(): AdminStatus {
       if (!firestore) {
         setIsAdmin(false);
         setIsSuperAdmin(false);
+        setIsKaiserManager(false);
         setIsClaimsStaff(false);
         setIsLoading(false);
         return;
@@ -155,13 +166,17 @@ export function useAdmin(): AdminStatus {
 
         setIsAdmin(isAdminUser);
         setIsSuperAdmin(isSuperAdminUser);
-        // Claims access: super admins always allowed; other staff use `users/{uid}.isClaimsStaff`.
         const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
+        const roleLabel = String(userData?.role || '').trim().toLowerCase();
+        const nextKaiserManager = Boolean(userData?.isKaiserManager || roleLabel.includes('kaiser manager'));
+        setIsKaiserManager(nextKaiserManager);
+        // Claims access: super admins always allowed; other staff use `users/{uid}.isClaimsStaff`.
         const nextClaimsStaff = Boolean(isSuperAdminUser || userData?.isClaimsStaff);
         setIsClaimsStaff(nextClaimsStaff);
         lastKnownRoleRef.current = {
           isAdmin: isAdminUser,
           isSuperAdmin: isSuperAdminUser,
+          isKaiserManager: nextKaiserManager,
           isClaimsStaff: nextClaimsStaff,
         };
       } catch (error) {
@@ -174,10 +189,12 @@ export function useAdmin(): AdminStatus {
         if (fallbackAllowed) {
           setIsAdmin(lastKnownRoleRef.current.isAdmin);
           setIsSuperAdmin(lastKnownRoleRef.current.isSuperAdmin);
+          setIsKaiserManager(lastKnownRoleRef.current.isKaiserManager);
           setIsClaimsStaff(lastKnownRoleRef.current.isClaimsStaff);
         } else {
           setIsAdmin(false);
           setIsSuperAdmin(false);
+          setIsKaiserManager(false);
           setIsClaimsStaff(false);
         }
       } finally {
@@ -192,6 +209,7 @@ export function useAdmin(): AdminStatus {
     user,
     isAdmin,
     isSuperAdmin,
+    isKaiserManager,
     isClaimsStaff,
     isLoading: isUserLoading || isLoading,
     isUserLoading,

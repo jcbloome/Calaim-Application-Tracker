@@ -22,13 +22,17 @@ async function requireAdmin(idToken: string) {
 
   const uid = String(decoded?.uid || '').trim();
   const email = String((decoded as any)?.email || '').trim().toLowerCase();
+  const claimSuperAdmin = Boolean((decoded as any)?.superAdmin);
+  const claimKaiserManager = Boolean((decoded as any)?.kaiserManager);
 
   if (!uid) {
     return { ok: false as const, status: 401, error: 'Invalid token' };
   }
 
-  let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
+  let isAdmin = Boolean((decoded as any)?.admin) || claimSuperAdmin;
   if (!isAdmin && isHardcodedAdminEmail(email)) isAdmin = true;
+  let isSuperAdmin = claimSuperAdmin || isHardcodedAdminEmail(email);
+  let isKaiserManager = claimKaiserManager;
 
   if (!isAdmin) {
     const [adminRole, superAdminRole] = await Promise.all([
@@ -36,13 +40,30 @@ async function requireAdmin(idToken: string) {
       adminDb.collection('roles_super_admin').doc(uid).get(),
     ]);
     isAdmin = adminRole.exists || superAdminRole.exists;
+    isSuperAdmin = isSuperAdmin || superAdminRole.exists;
   }
 
   if (!isAdmin) {
     return { ok: false as const, status: 403, error: 'Admin privileges required' };
   }
 
-  return { ok: true as const, adminDb, uid, email };
+  const userDoc = await adminDb.collection('users').doc(uid).get().catch(() => null as any);
+  const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
+  const roleLabel = String(userData?.role || '').trim().toLowerCase();
+  isKaiserManager = Boolean(
+    isKaiserManager ||
+      userData?.isKaiserManager ||
+      roleLabel.includes('kaiser manager')
+  );
+  const displayName = String(
+    userData?.displayName ||
+      `${String(userData?.firstName || '').trim()} ${String(userData?.lastName || '').trim()}`.trim() ||
+      String((decoded as any)?.name || '').trim() ||
+      email ||
+      uid
+  ).trim();
+
+  return { ok: true as const, adminDb, uid, email, isSuperAdmin, isKaiserManager, displayName };
 }
 
 function getBearerToken(req: NextRequest): string {
@@ -141,10 +162,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'expiresAt must be a future date' }, { status: 400 });
     }
 
-    const { adminDb, uid, email } = adminCheck;
+    const { adminDb, uid, email, isSuperAdmin, isKaiserManager, displayName } = adminCheck;
+    if (!isSuperAdmin && !isKaiserManager) {
+      return NextResponse.json(
+        { success: false, error: 'Only Super Admin or Kaiser Manager can set manager overrides' },
+        { status: 403 }
+      );
+    }
     const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
 
+    const nowMs = Date.now();
     const payload = {
       memberId,
       reason,
@@ -153,10 +181,13 @@ export async function POST(req: NextRequest) {
       active: true,
       expiresAtIso: new Date(expiresAtMs).toISOString(),
       expiresAtMs,
-      updatedAtMs: Date.now(),
+      updatedAtMs: nowMs,
+      updatedAtIso: new Date(nowMs).toISOString(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedByUid: uid,
       updatedByEmail: email,
+      updatedByName: displayName || null,
+      updatedByRole: isSuperAdmin ? 'Super Admin' : 'Kaiser Manager',
     };
 
     await adminDb.collection(COLLECTION).doc(memberId).set(payload, { merge: true });
@@ -184,17 +215,27 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'memberId is required' }, { status: 400 });
     }
 
-    const { adminDb, uid, email } = adminCheck;
+    const { adminDb, uid, email, isSuperAdmin, isKaiserManager, displayName } = adminCheck;
+    if (!isSuperAdmin && !isKaiserManager) {
+      return NextResponse.json(
+        { success: false, error: 'Only Super Admin or Kaiser Manager can clear manager overrides' },
+        { status: 403 }
+      );
+    }
     const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
+    const nowMs = Date.now();
 
     await adminDb.collection(COLLECTION).doc(memberId).set(
       {
         active: false,
-        clearedAtMs: Date.now(),
+        clearedAtMs: nowMs,
+        clearedAtIso: new Date(nowMs).toISOString(),
         clearedAt: admin.firestore.FieldValue.serverTimestamp(),
         clearedByUid: uid,
         clearedByEmail: email,
+        clearedByName: displayName || null,
+        clearedByRole: isSuperAdmin ? 'Super Admin' : 'Kaiser Manager',
       },
       { merge: true }
     );
