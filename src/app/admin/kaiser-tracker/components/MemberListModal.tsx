@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertTriangle, MessageSquare, RefreshCw, User, X } from 'lucide-react';
+import { useAuth } from '@/firebase';
 import type { KaiserMember } from './shared';
 import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor } from './shared';
 
@@ -44,10 +45,30 @@ export function MemberListModal({
   availableCalAIMStatuses,
   staffMembers,
 }: MemberListModalProps) {
+  const auth = useAuth();
   const [notesMetaByClientId, setNotesMetaByClientId] = React.useState<
-    Record<string, { lastSyncAt: string; notesTodayCount: number; newNotesCount: number }>
+    Record<
+      string,
+      {
+        lastSyncAt: string;
+        notesTodayCount: number;
+        newNotesCount: number;
+        lastAssignedStaffActionAt: string;
+      }
+    >
   >({});
   const [showNoActionOnly, setShowNoActionOnly] = React.useState(false);
+  const [overrideByClientId, setOverrideByClientId] = React.useState<Record<string, any>>({});
+
+  const getAssignedStaffName = (member: KaiserMember) =>
+    String(
+      (member as any)?.Kaiser_Staff_Assignment ||
+        member?.Staff_Assigned ||
+        member?.Kaiser_User_Assignment ||
+        (member as any)?.Staff_Assignment ||
+        (member as any)?.Assigned_Staff ||
+        ''
+    ).trim();
 
   const formatEtDateTime = (value: string) => {
     if (!value) return 'Never';
@@ -107,9 +128,17 @@ export function MemberListModal({
         if (i >= clientIds.length) return;
         const clientId2 = clientIds[i];
         try {
-          const res = await fetch(
-            `/api/member-notes?clientId2=${encodeURIComponent(clientId2)}&skipSync=true&metaOnly=true`
-          );
+          const member = members.find((m) => String(m?.client_ID2 || '').trim() === clientId2);
+          const assignedStaff = member ? getAssignedStaffName(member) : '';
+          const query = new URLSearchParams({
+            clientId2,
+            skipSync: 'true',
+            metaOnly: 'true',
+          });
+          if (assignedStaff) {
+            query.set('assignedStaff', assignedStaff);
+          }
+          const res = await fetch(`/api/member-notes?${query.toString()}`);
           const data = await res.json().catch(() => ({}));
           if (cancelled) return;
           setNotesMetaByClientId((prev) => ({
@@ -118,6 +147,7 @@ export function MemberListModal({
               lastSyncAt: String(data?.syncLastAt || ''),
               notesTodayCount: Number(data?.notesTodayCount || 0),
               newNotesCount: Number(data?.newNotesCount || 0),
+              lastAssignedStaffActionAt: String(data?.lastAssignedStaffActionAt || ''),
             },
           }));
           await delay(40);
@@ -129,6 +159,7 @@ export function MemberListModal({
               lastSyncAt: '',
               notesTodayCount: 0,
               newNotesCount: 0,
+              lastAssignedStaffActionAt: '',
             },
           }));
         }
@@ -143,6 +174,34 @@ export function MemberListModal({
   }, [isOpen, members]);
 
   React.useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!isOpen || members.length === 0 || !auth?.currentUser) {
+        if (!cancelled) setOverrideByClientId({});
+        return;
+      }
+      try {
+        const token = await auth.currentUser.getIdToken();
+        const clientIds = Array.from(new Set(members.map((m) => String(m?.client_ID2 || '').trim()).filter(Boolean)));
+        const query = new URLSearchParams({ clientIds: clientIds.join(','), activeOnly: 'true' });
+        const res = await fetch(`/api/admin/kaiser-no-action-overrides?${query.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && data?.success) {
+          setOverrideByClientId((data?.byMemberId || {}) as Record<string, any>);
+        }
+      } catch {
+        if (!cancelled) setOverrideByClientId({});
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, members, auth]);
+
+  React.useEffect(() => {
     if (!isOpen) {
       setShowNoActionOnly(false);
     }
@@ -154,9 +213,79 @@ export function MemberListModal({
     const memberClientId = String(member.client_ID2 || '').trim();
     return notesMetaByClientId[memberClientId];
   };
-  const memberHasNoActionForWeek = (member: KaiserMember) => isNoActionForWeek(getMemberMeta(member)?.lastSyncAt || '');
+  const getActiveOverride = (member: KaiserMember) => {
+    const memberClientId = String(member.client_ID2 || '').trim();
+    return overrideByClientId[memberClientId] || null;
+  };
+  const memberHasActiveOverride = (member: KaiserMember) => Boolean(getActiveOverride(member));
+  const memberHasNoActionForWeek = (member: KaiserMember) =>
+    !memberHasActiveOverride(member) && isNoActionForWeek(getMemberMeta(member)?.lastAssignedStaffActionAt || '');
   const displayedMembers = showNoActionOnly ? members.filter(memberHasNoActionForWeek) : members;
   const noActionCount = members.filter(memberHasNoActionForWeek).length;
+
+  const setManagerOverride = async (member: KaiserMember) => {
+    try {
+      if (!auth?.currentUser) return;
+      const reason = window.prompt('Enter manager override reason (required):', '');
+      if (!reason || !reason.trim()) return;
+      const daysText = window.prompt('Override expiration in days (default 7):', '7');
+      const days = Math.max(1, Number.parseInt(String(daysText || '7').trim(), 10) || 7);
+      const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+      const token = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-no-action-overrides', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          memberId: String(member?.client_ID2 || '').trim(),
+          reason: reason.trim(),
+          expiresAt,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success) {
+        setOverrideByClientId((prev) => ({
+          ...prev,
+          [String(member?.client_ID2 || '').trim()]: data?.override || null,
+        }));
+      } else {
+        window.alert(data?.error || 'Failed to save manager override.');
+      }
+    } catch {
+      window.alert('Failed to save manager override.');
+    }
+  };
+
+  const clearManagerOverride = async (member: KaiserMember) => {
+    try {
+      if (!auth?.currentUser) return;
+      const token = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-no-action-overrides', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          memberId: String(member?.client_ID2 || '').trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success) {
+        setOverrideByClientId((prev) => {
+          const next = { ...prev };
+          delete next[String(member?.client_ID2 || '').trim()];
+          return next;
+        });
+      } else {
+        window.alert(data?.error || 'Failed to clear manager override.');
+      }
+    } catch {
+      window.alert('Failed to clear manager override.');
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -280,7 +409,9 @@ export function MemberListModal({
                 const assigned = String(member.Staff_Assigned || member.Kaiser_User_Assignment || '').trim();
                 const effectiveKaiserStatus = getEffectiveKaiserStatus(member);
                 const memberMeta = getMemberMeta(member);
-                const noActionForWeek = isNoActionForWeek(memberMeta?.lastSyncAt || '');
+                const activeOverride = getActiveOverride(member);
+                const noActionForWeek = !activeOverride && isNoActionForWeek(memberMeta?.lastAssignedStaffActionAt || '');
+                const assignedStaffLastActionAt = memberMeta?.lastAssignedStaffActionAt || '';
 
                 return (
                   <Card
@@ -297,9 +428,9 @@ export function MemberListModal({
                             </h3>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
-                            Last notes sync (ET):{' '}
+                            Last note by assigned staff (ET):{' '}
                             {formatEtDateTime(
-                              memberMeta?.lastSyncAt || ''
+                              assignedStaffLastActionAt
                             )}{' '}
                             | New notes: {memberMeta?.newNotesCount ?? 0}
                           </p>
@@ -307,6 +438,11 @@ export function MemberListModal({
                             <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">
                               <AlertTriangle className="h-3 w-3" />
                               No action in 7+ days
+                            </div>
+                          ) : null}
+                          {activeOverride ? (
+                            <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                              Manager override active until {formatDate(activeOverride?.expiresAtIso || '')}
                             </div>
                           ) : null}
                           <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700">
@@ -338,6 +474,34 @@ export function MemberListModal({
                               <span className="text-gray-600">Assigned:</span>
                               <span className="ml-1 font-medium">{assigned || 'Unassigned'}</span>
                             </div>
+                          </div>
+                          <div className="mt-2 flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void setManagerOverride(member);
+                              }}
+                            >
+                              Set manager override
+                            </Button>
+                            {activeOverride ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs text-amber-700"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void clearManagerOverride(member);
+                                }}
+                              >
+                                Clear override
+                              </Button>
+                            ) : null}
                           </div>
                         </div>
                       </div>

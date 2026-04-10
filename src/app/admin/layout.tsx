@@ -2061,6 +2061,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const adminBootstrapStartedAtRef = useRef<number>(0);
   const adminRedirectGraceRef = useRef<{ uid: string; startedAt: number }>({ uid: '', startedAt: 0 });
   const adminIdleLogoutRef = useRef(false);
+  const loginPageRedirectInFlightRef = useRef(false);
   const [adminBootstrap, setAdminBootstrap] = useState<{ inProgress: boolean; failed: boolean }>({
     inProgress: false,
     failed: false,
@@ -2229,12 +2230,51 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         if (adminBootstrap.inProgress || bootstrapGraceActive || redirectGraceActive) return;
         console.log('🚫 Redirecting to login - user not recognized as admin');
         router.replace(`/admin/login?redirect=${encodeURIComponent(intendedPath)}`);
-      } else if (isAdmin && isLoginPage) {
-        console.log('✅ Admin detected on login page - redirecting to dashboard');
-        router.replace(safeRedirect);
       }
     }
   }, [isLoading, isAdmin, isLoginPage, router, user, pathname, adminBootstrap.inProgress]);
+
+  // On /admin/login, ensure the admin session cookie exists before redirecting.
+  // This prevents a race where middleware-protected admin routes bounce back to login.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isLoading) return;
+    if (!isLoginPage) {
+      loginPageRedirectInFlightRef.current = false;
+      return;
+    }
+    if (!isAdmin || !user) return;
+    if (loginPageRedirectInFlightRef.current) return;
+    loginPageRedirectInFlightRef.current = true;
+
+    const currentSearch = window.location.search || '';
+    const redirectParam = new URLSearchParams(currentSearch).get('redirect');
+    const safeRedirect =
+      redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin/login')
+        ? redirectParam
+        : '/admin';
+
+    void (async () => {
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/auth/admin-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        });
+        if (!res.ok) {
+          console.warn('Admin session refresh failed on login page redirect', res.status);
+          loginPageRedirectInFlightRef.current = false;
+          return;
+        }
+        console.log('✅ Admin detected on login page - redirecting to dashboard');
+        router.replace(safeRedirect);
+      } catch (error) {
+        console.warn('Admin login-page redirect failed:', error);
+        loginPageRedirectInFlightRef.current = false;
+      }
+    })();
+  }, [isLoading, isLoginPage, isAdmin, user, router]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

@@ -642,6 +642,113 @@ function toEtDayKey(value: string | Date): string {
   return ET_DATE_FMT.format(d);
 }
 
+function normalizePersonName(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getNameVariants(value: unknown): string[] {
+  const normalized = normalizePersonName(value);
+  if (!normalized) return [];
+  const tokens = normalized.split(' ').filter(Boolean);
+  const variants = new Set<string>([normalized]);
+  if (tokens.length >= 2) {
+    variants.add(`${tokens[tokens.length - 1]} ${tokens.slice(0, -1).join(' ')}`.trim());
+  }
+  return Array.from(variants).filter(Boolean);
+}
+
+type StaffAliasMap = Record<string, string[]>;
+let staffAliasCache: { data: StaffAliasMap; expiresAt: number } = { data: {}, expiresAt: 0 };
+
+async function getStaffAliasMap(): Promise<StaffAliasMap> {
+  if (!adminDb) return {};
+  const now = Date.now();
+  if (staffAliasCache.expiresAt > now) return staffAliasCache.data;
+
+  try {
+    const snap = await adminDb.collection('kaiser_staff_aliases').limit(2000).get();
+    const map: StaffAliasMap = {};
+    snap.forEach((docSnap: any) => {
+      const row = docSnap.data() || {};
+      const canonical = normalizePersonName(row?.canonicalName || docSnap.id);
+      const aliasesRaw = Array.isArray(row?.aliases) ? row.aliases : [];
+      if (!canonical) return;
+      const aliases = aliasesRaw
+        .map((value: unknown) => normalizePersonName(value))
+        .filter(Boolean);
+      map[canonical] = Array.from(new Set([canonical, ...aliases]));
+    });
+    staffAliasCache = { data: map, expiresAt: now + 10 * 60 * 1000 };
+    return map;
+  } catch (error) {
+    console.warn('Failed to load Kaiser staff alias map:', error);
+    return {};
+  }
+}
+
+function noteMatchesAssignedStaff(note: MemberNote, assignedStaff: string, aliasMap?: StaffAliasMap): boolean {
+  const assignedVariants = getNameVariants(assignedStaff);
+  const canonicalAssigned = normalizePersonName(assignedStaff);
+  const aliases = canonicalAssigned && aliasMap?.[canonicalAssigned] ? aliasMap[canonicalAssigned] : [];
+  aliases.forEach((name) => {
+    getNameVariants(name).forEach((variant) => assignedVariants.push(variant));
+  });
+  const dedupedAssignedVariants = Array.from(new Set(assignedVariants.filter(Boolean)));
+
+  const assignedVariantSet = new Set(dedupedAssignedVariants);
+  if (canonicalAssigned) assignedVariantSet.add(canonicalAssigned);
+  aliases.forEach((name) => {
+    if (name) assignedVariantSet.add(name);
+  });
+
+  const finalAssignedVariants = Array.from(assignedVariantSet);
+  const expandedNoteNames: string[] = [];
+  if (assignedVariants.length === 0) return false;
+
+  const noteNames = [
+    note?.createdByName,
+    note?.updatedByName,
+    note?.assignedToName,
+    note?.createdBy,
+    note?.assignedTo,
+  ]
+    .map((name) => normalizePersonName(name))
+    .filter(Boolean);
+
+  if (noteNames.length === 0) return false;
+  noteNames.forEach((name) => {
+    expandedNoteNames.push(name);
+    const aliasForNote = aliasMap?.[name] || [];
+    aliasForNote.forEach((aliasName) => {
+      if (aliasName) expandedNoteNames.push(aliasName);
+    });
+  });
+  const finalNoteNames = Array.from(new Set(expandedNoteNames.filter(Boolean)));
+
+  for (const assigned of finalAssignedVariants) {
+    const assignedTokens = assigned.split(' ').filter(Boolean);
+    for (const noteName of finalNoteNames) {
+      if (noteName === assigned || noteName.includes(assigned) || assigned.includes(noteName)) {
+        return true;
+      }
+      const noteTokens = noteName.split(' ').filter(Boolean);
+      if (
+        assignedTokens.length > 0 &&
+        assignedTokens.every((token) => token.length > 1 && noteTokens.includes(token))
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // Health monitoring configuration
 const SYNC_HEALTH_COLLECTION = 'sync-health-status';
 const MAX_FAILED_SYNCS = 3;
@@ -751,6 +858,7 @@ export async function GET(request: NextRequest) {
     const skipSync = searchParams.get('skipSync') === 'true';
     const repairIfEmpty = searchParams.get('repairIfEmpty') === 'true';
     const metaOnly = searchParams.get('metaOnly') === 'true';
+    const assignedStaff = String(searchParams.get('assignedStaff') || '').trim();
     const searchQuery = searchParams.get('search');
 
     // Handle full-text search across all cached historical notes.
@@ -779,6 +887,7 @@ export async function GET(request: NextRequest) {
     // Lightweight mode for status-only lookups (no notes payload, no Caspio sync).
     if (metaOnly) {
       const notes = await getNotesFromFirestore(memberKey);
+      const staffAliasMap = await getStaffAliasMap();
       const todayEt = toEtDayKey(new Date());
       const notesTodayCount = notes.reduce((acc, note) => {
         if (!note?.createdAt) return acc;
@@ -790,11 +899,27 @@ export async function GET(request: NextRequest) {
         return status === 'closed' ? acc + 1 : acc;
       }, 0);
       const openCount = Math.max(0, notes.length - closedCount);
+      const matchingAssignedStaffNotes = assignedStaff
+        ? notes.filter((note) => noteMatchesAssignedStaff(note, assignedStaff, staffAliasMap))
+        : [];
+      const lastAssignedStaffActionAt = matchingAssignedStaffNotes.reduce((latest, note) => {
+        const createdAt = String(note?.createdAt || '').trim();
+        if (!createdAt) return latest;
+        const createdMs = new Date(createdAt).getTime();
+        if (Number.isNaN(createdMs)) return latest;
+        if (!latest) return createdAt;
+        const latestMs = new Date(latest).getTime();
+        if (Number.isNaN(latestMs) || createdMs > latestMs) return createdAt;
+        return latest;
+      }, '' as string);
 
       return NextResponse.json({
         success: true,
         clientId2: memberKey,
         syncLastAt: prevLastSyncAt,
+        assignedStaff,
+        lastAssignedStaffActionAt,
+        assignedStaffNotesCount: matchingAssignedStaffNotes.length,
         firstSyncCompleted: hasFirstSync,
         didSync: false,
         notes: [],
