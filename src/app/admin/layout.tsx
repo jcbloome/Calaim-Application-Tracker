@@ -2071,6 +2071,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const isLoginPage = pathname === '/admin/login';
   const isDesktopNotificationWindow = pathname === '/admin/desktop-notification-window';
   const isDesktopChatWindow = pathname === '/admin/desktop-chat-window';
+  const getLastSignInAtMs = useCallback(() => {
+    const raw = String(user?.metadata?.lastSignInTime || '').trim();
+    const parsed = raw ? Date.parse(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }, [user?.metadata?.lastSignInTime]);
 
   // Debug logging for admin layout
   useEffect(() => {
@@ -2256,6 +2261,26 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
+        const lastSignInAt = getLastSignInAtMs();
+        const signInAgeMs = lastSignInAt ? Date.now() - lastSignInAt : Number.POSITIVE_INFINITY;
+        if (signInAgeMs >= ADMIN_IDLE_TIMEOUT_MS) {
+          try {
+            await fetch('/api/auth/admin-session', { method: 'DELETE' });
+          } catch {
+            // Best effort only.
+          }
+          try {
+            await auth?.signOut();
+          } catch {
+            // Best effort only.
+          }
+          window.localStorage.removeItem(ADMIN_LAST_ACTIVITY_KEY);
+          window.localStorage.removeItem('calaim_session_type');
+          window.localStorage.removeItem('calaim_admin_context');
+          loginPageRedirectInFlightRef.current = false;
+          return;
+        }
+
         const idToken = await user.getIdToken();
         const res = await fetch('/api/auth/admin-session', {
           method: 'POST',
@@ -2274,7 +2299,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         loginPageRedirectInFlightRef.current = false;
       }
     })();
-  }, [isLoading, isLoginPage, isAdmin, user, router]);
+  }, [auth, getLastSignInAtMs, isLoading, isLoginPage, isAdmin, user, router]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2329,6 +2354,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     };
 
     const checkIdle = () => {
+      const signInAtMs = getLastSignInAtMs();
+      if (signInAtMs) {
+        const signInAgeMs = Date.now() - signInAtMs;
+        if (signInAgeMs >= ADMIN_IDLE_TIMEOUT_MS) {
+          void forceReauth();
+          return true;
+        }
+      }
       const lastActivityAt = readLastActivity();
       if (!lastActivityAt) return false;
       const elapsed = Date.now() - lastActivityAt;
@@ -2375,6 +2408,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       adminIdleLogoutRef.current = false;
     };
   }, [
+    getLastSignInAtMs,
     auth,
     firestore,
     isAdmin,
