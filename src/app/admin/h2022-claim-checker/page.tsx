@@ -75,6 +75,14 @@ const statusBadgeClass = (status: ResultRow['resolutionStatus']) => {
   return 'bg-slate-600';
 };
 
+const claimAcceptanceBadgeClass = (value?: string) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'accepted') return 'bg-emerald-600';
+  if (normalized === 'denied') return 'bg-red-600';
+  if (normalized === 'pending') return 'bg-amber-600';
+  return 'bg-slate-500';
+};
+
 export default function H2022ClaimCheckerPage() {
   const auth = useAuth();
   const { isSuperAdmin, isClaimsStaff, isLoading: adminLoading } = useAdmin();
@@ -541,7 +549,7 @@ export default function H2022ClaimCheckerPage() {
               onClick={() => void syncClaims('full', false)}
             >
               {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Full Caspio Re-Sync to Firestore
+              Run Full Caspio Re-Sync (On Demand)
             </Button>
             <Button
               type="button"
@@ -567,6 +575,9 @@ export default function H2022ClaimCheckerPage() {
               Last pull payload: {lastPulledClaims.length} claim(s) available for quick overlap check.
             </div>
           ) : null}
+          <div className="text-xs text-muted-foreground">
+            If claims are edited in Caspio, run the full re-sync on demand to refresh all cached Firestore claim records.
+          </div>
         </CardContent>
       </Card>
 
@@ -664,6 +675,7 @@ export default function H2022ClaimCheckerPage() {
                     <TableHead>Workflow</TableHead>
                     <TableHead>Submitted</TableHead>
                     <TableHead>Claim ID</TableHead>
+                    <TableHead>Claim Acceptance</TableHead>
                     <TableHead>Member</TableHead>
                     <TableHead>RCFE</TableHead>
                     <TableHead>Service Windows</TableHead>
@@ -702,6 +714,11 @@ export default function H2022ClaimCheckerPage() {
                       <TableCell>{formatDate(row.submittedAtIso)}</TableCell>
                       <TableCell className="font-mono text-xs">{row.claimRecordId}</TableCell>
                       <TableCell>
+                        <Badge className={claimAcceptanceBadgeClass(row.claimAcceptance)}>
+                          {row.claimAcceptance || 'Unknown'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
                         <div className="text-sm font-medium">
                           {`${row.clientLast || ''}, ${row.clientFirst || ''}`.replace(/^,\s*/, '').trim() || 'Unknown'}
                         </div>
@@ -717,10 +734,13 @@ export default function H2022ClaimCheckerPage() {
                           <span className="text-xs text-emerald-700">No overlap with previous submitted claims</span>
                         ) : (
                           <div className="space-y-1 text-xs text-red-700">
+                            <div className="font-medium text-red-800">
+                              Submitted claim: {row.claimRecordId} ({formatDate(row.submittedAtIso)})
+                            </div>
                             {row.overlaps.slice(0, 3).map((conflict) => (
                               <div key={`${row.claimRecordId}-${conflict.claimRecordId}`}>
                                 <ShieldAlert className="h-3 w-3 inline-block mr-1" />
-                                Conflicts with {conflict.claimRecordId} ({formatDate(conflict.submittedAtIso)})
+                                Overlaps with: {conflict.claimRecordId} ({formatDate(conflict.submittedAtIso)})
                               </div>
                             ))}
                             {row.overlaps.length > 3 ? (
