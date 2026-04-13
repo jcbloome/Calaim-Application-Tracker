@@ -108,6 +108,24 @@ const toDocId = (claimRecordId: string) =>
     .trim()
     .replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
+const claimFingerprint = (claim: NormalizedClaim) =>
+  JSON.stringify({
+    claimRecordId: claim.claimRecordId,
+    rcfeRegisteredId: claim.rcfeRegisteredId,
+    rcfeName: claim.rcfeName,
+    clientId2: claim.clientId2,
+    clientFirst: claim.clientFirst,
+    clientLast: claim.clientLast,
+    userFirst: claim.userFirst,
+    userLast: claim.userLast,
+    emailSubmitter: claim.emailSubmitter,
+    submittedAtIso: claim.submittedAtIso,
+    windows: claim.windows.map((w) => ({
+      from: w.from || null,
+      to: w.to || w.from || null,
+    })),
+  });
+
 const inSubmittedRange = (claim: NormalizedClaim, fromDate: string | null, toDate: string | null) => {
   if (!fromDate && !toDate) return true;
   if (!claim.submittedAtIso) return false;
@@ -243,26 +261,65 @@ async function fetchH2022Claims(whereClause?: string) {
   const pageSize = 300;
   const maxPages = 30;
   const rows: Record<string, unknown>[] = [];
+  let includeSelect = true;
+  let includeWhere = Boolean(whereClause && whereClause.trim());
+  const normalizedWhere = whereClause && whereClause.trim() ? whereClause.trim() : '';
+
+  const shouldFallbackSelect = (status: number, text: string) => {
+    const lower = String(text || '').toLowerCase();
+    if (status !== 400) return false;
+    return (
+      lower.includes('invalid column name') ||
+      lower.includes('sqlservererror') ||
+      lower.includes('q=select') ||
+      lower.includes('q.select')
+    );
+  };
+
+  const shouldFallbackWhere = (status: number, text: string) => {
+    const lower = String(text || '').toLowerCase();
+    if (status !== 400) return false;
+    return (
+      lower.includes('invalid column name') ||
+      lower.includes('sqlservererror') ||
+      lower.includes('timestamp') ||
+      lower.includes('date_submitted') ||
+      lower.includes('q.where')
+    );
+  };
 
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-    const sp = new URLSearchParams();
-    if (whereClause && whereClause.trim()) sp.set('q.where', whereClause);
-    sp.set('q.select', selectFields.join(','));
-    sp.set('q.pageSize', String(pageSize));
-    sp.set('q.pageNumber', String(pageNumber));
-    const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${table}/records?${sp.toString()}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Caspio read failed (${res.status}): ${text}`);
+    const runAttempt = async (opts: { useSelect: boolean; useWhere: boolean }) => {
+      const sp = new URLSearchParams();
+      if (opts.useWhere && normalizedWhere) sp.set('q.where', normalizedWhere);
+      if (opts.useSelect) sp.set('q.select', selectFields.join(','));
+      sp.set('q.pageSize', String(pageSize));
+      sp.set('q.pageNumber', String(pageNumber));
+      const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${table}/records?${sp.toString()}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const text = !res.ok ? await res.text().catch(() => '') : '';
+      return { res, text };
+    };
+
+    let attempt = await runAttempt({ useSelect: includeSelect, useWhere: includeWhere });
+    if (!attempt.res.ok && includeSelect && shouldFallbackSelect(attempt.res.status, attempt.text)) {
+      includeSelect = false;
+      attempt = await runAttempt({ useSelect: includeSelect, useWhere: includeWhere });
     }
-    const data = (await res.json().catch(() => ({}))) as { Result?: unknown[] };
+    if (!attempt.res.ok && includeWhere && shouldFallbackWhere(attempt.res.status, attempt.text)) {
+      includeWhere = false;
+      attempt = await runAttempt({ useSelect: includeSelect, useWhere: includeWhere });
+    }
+    if (!attempt.res.ok) {
+      throw new Error(`Caspio read failed (${attempt.res.status}): ${attempt.text}`);
+    }
+    const data = (await attempt.res.json().catch(() => ({}))) as { Result?: unknown[] };
     const pageRows = Array.isArray(data?.Result) ? data.Result : [];
     if (!pageRows.length) break;
     rows.push(...(pageRows as Record<string, unknown>[]));
@@ -768,16 +825,22 @@ export async function POST(request: NextRequest) {
       const requestedForceFull = Boolean(body?.forceFullSync);
       const runFullSync = requestedForceFull || !hasFullSync;
       const lastSyncedAt = parseDateLoose(meta?.lastSyncedAtIso);
-      const incrementalFrom = !runFullSync ? lastSyncedAt : null;
 
       const whereParts: string[] = [];
-      if (incrementalFrom) whereParts.push(`Timestamp>='${escapeSqlLiteral(incrementalFrom)}'`);
       if (syncDateFrom) whereParts.push(`Timestamp>='${escapeSqlLiteral(syncDateFrom)}'`);
       if (syncDateTo) whereParts.push(`Timestamp<='${escapeSqlLiteral(syncDateTo)}'`);
       const whereClause = whereParts.length > 0 ? whereParts.join(' AND ') : undefined;
 
       const fetched = (await fetchH2022Claims(whereClause)).map(normalizeClaim);
       const normalized = fetched.filter((claim) => inSubmittedRange(claim, syncDateFrom, syncDateTo));
+      const existingById = await getWorkflowForClaims(normalized.map((claim) => claim.claimRecordId));
+      const changedOrNew = normalized.filter((claim) => {
+        const existing = existingById.get(claim.claimRecordId);
+        if (!existing) return true;
+        const existingClaim = coerceIncomingClaim(existing as IncomingClaim);
+        if (!existingClaim) return true;
+        return claimFingerprint(claim) !== claimFingerprint(existingClaim);
+      });
       const written = await upsertCachedClaims(normalized);
       const newestSubmittedAt = normalized.reduce<string | null>((acc, claim) => {
         if (!claim.submittedAtIso) return acc;
@@ -792,10 +855,11 @@ export async function POST(request: NextRequest) {
         lastSyncedAtIso: newestSubmittedAt || lastSyncedAt || null,
         lastSyncMode: runFullSync ? 'full' : 'incremental',
         lastSyncFetchedCount: normalized.length,
+        lastSyncChangedCount: changedOrNew.length,
         lastSyncWrittenCount: written,
       });
 
-      const syncedSorted = [...normalized].sort((a, b) => b.submittedAtMs - a.submittedAtMs);
+      const syncedSorted = [...(runFullSync ? normalized : changedOrNew)].sort((a, b) => b.submittedAtMs - a.submittedAtMs);
       return NextResponse.json({
         success: true,
         action: 'sync',
@@ -806,6 +870,7 @@ export async function POST(request: NextRequest) {
           hasFullSync: true,
           previousLastSyncedAt: lastSyncedAt,
           nextLastSyncedAt: newestSubmittedAt || null,
+          changedOrNew: changedOrNew.length,
           written,
         },
         filters: {

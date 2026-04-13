@@ -482,7 +482,7 @@ export default function H2022ClaimCheckerPage() {
         <CardHeader>
           <CardTitle>Sync and Check</CardTitle>
           <CardDescription>
-            Incremental pulls check overlap on newly pulled claims. Full sync refreshes all submitted claims from Caspio.
+            Incremental pulls reconcile new and changed claims. Full sync refreshes all submitted claims from Caspio.
             Failed rows support preview/test/send email and workflow status tracking.
           </CardDescription>
         </CardHeader>
@@ -512,7 +512,7 @@ export default function H2022ClaimCheckerPage() {
             </div>
           ) : (
             <div className="text-xs text-muted-foreground">
-              First sync performs a full Firestore seed. Later syncs pull only new claims.
+              First sync performs a full Firestore seed. Later syncs reconcile updates and any new claims.
             </div>
           )}
           {lastPulledClaims.length > 0 ? (
