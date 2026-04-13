@@ -20,7 +20,10 @@ export default function PWAServiceWorker() {
       pathname.startsWith('/admin') ||
       pathname.startsWith('/sw-portal') ||
       pathname.startsWith('/sw-login') ||
-      pathname.startsWith('/sw-visit-verification');
+      pathname.startsWith('/sw-visit-verification') ||
+      pathname === '/login' ||
+      pathname === '/signup' ||
+      pathname === '/reset-password';
     if (disableOnThisRoute) {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then((registrations) => {

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSessionIsolation } from '@/hooks/use-session-isolation';
-import { useAuth, useFirestore } from '@/firebase';
+import { useAuth, useFirestore, useUser } from '@/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
@@ -12,6 +12,7 @@ export function SessionIsolationGate() {
   const router = useRouter();
   const auth = useAuth();
   const firestore = useFirestore();
+  const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   const blockedRef = useRef(false);
 
@@ -36,6 +37,11 @@ export function SessionIsolationGate() {
   // Global master access switch: blocks ALL users except Jason.
   // Stored at `system_settings/app_access` with boolean `enabled`.
   useEffect(() => {
+    // Pre-login user pages should not poll the app-access switch.
+    // We only enforce this control when an authenticated user exists.
+    if (isUserLoading) return;
+    if (!user) return;
+
     const enforce = async (enabled: boolean, message: string) => {
       if (enabled) {
         blockedRef.current = false;
@@ -101,7 +107,7 @@ export function SessionIsolationGate() {
       }
     );
     return () => unsub();
-  }, [auth, firestore, router, toast]);
+  }, [auth, firestore, isUserLoading, router, toast, user]);
 
   return null;
 }
