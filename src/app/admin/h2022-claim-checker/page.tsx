@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -99,6 +99,35 @@ export default function H2022ClaimCheckerPage() {
   const [emailHistoryLoading, setEmailHistoryLoading] = useState(false);
   const [emailHistoryRows, setEmailHistoryRows] = useState<EmailHistoryRow[]>([]);
   const [emailHistoryClaimId, setEmailHistoryClaimId] = useState('');
+  const [outcomeFilter, setOutcomeFilter] = useState<'all' | 'rejected' | 'accepted'>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'rcfe' | 'member'>('date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  const displayedRows = useMemo(() => {
+    const filtered = rows.filter((row) => {
+      if (outcomeFilter === 'rejected') return !row.pass;
+      if (outcomeFilter === 'accepted') return row.pass;
+      return true;
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortBy === 'date') {
+        const aMs = a.submittedAtIso ? Date.parse(a.submittedAtIso) : 0;
+        const bMs = b.submittedAtIso ? Date.parse(b.submittedAtIso) : 0;
+        return aMs - bMs;
+      }
+      if (sortBy === 'rcfe') {
+        const aValue = `${a.rcfeName || ''} ${a.rcfeRegisteredId || ''}`.trim().toLowerCase();
+        const bValue = `${b.rcfeName || ''} ${b.rcfeRegisteredId || ''}`.trim().toLowerCase();
+        return aValue.localeCompare(bValue);
+      }
+      const aValue = `${a.clientLast || ''}, ${a.clientFirst || ''} ${a.clientId2 || ''}`.trim().toLowerCase();
+      const bValue = `${b.clientLast || ''}, ${b.clientFirst || ''} ${b.clientId2 || ''}`.trim().toLowerCase();
+      return aValue.localeCompare(bValue);
+    });
+
+    return sortDirection === 'asc' ? sorted : sorted.reverse();
+  }, [rows, outcomeFilter, sortBy, sortDirection]);
 
   if (adminLoading) {
     return (
@@ -560,9 +589,44 @@ export default function H2022ClaimCheckerPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Filter</div>
+              <select
+                value={outcomeFilter}
+                onChange={(e) => setOutcomeFilter(e.target.value as 'all' | 'rejected' | 'accepted')}
+                className="h-9 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="all">All claims</option>
+                <option value="rejected">Rejected claims (overlap fail)</option>
+                <option value="accepted">Accepted claims (pass)</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Sort by</div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'date' | 'rcfe' | 'member')}
+                className="h-9 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="date">Submitted date</option>
+                <option value="rcfe">RCFE</option>
+                <option value="member">Member</option>
+              </select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+            >
+              {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+            </Button>
+            <div className="text-xs text-muted-foreground pb-1">{displayedRows.length} shown</div>
+          </div>
+          {displayedRows.length === 0 ? (
             <div className="text-sm text-muted-foreground py-8 text-center">
-              No results yet. Run a check to view pass/fail rows.
+              No matching claims for the selected filter. Run a check or adjust filters.
             </div>
           ) : (
             <div className="max-h-[640px] overflow-auto rounded-md border">
@@ -581,7 +645,7 @@ export default function H2022ClaimCheckerPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
+                  {displayedRows.map((row) => (
                     <TableRow key={`${row.claimRecordId}:${row.submittedAtIso || 'na'}`}>
                       <TableCell>
                         <div className="flex items-center gap-2">
