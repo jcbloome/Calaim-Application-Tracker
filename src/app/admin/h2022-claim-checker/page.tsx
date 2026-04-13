@@ -19,6 +19,7 @@ type ResultRow = {
   submittedAtIso: string | null;
   rcfeRegisteredId: string;
   rcfeName: string;
+  claimAcceptance?: string;
   clientId2: string;
   clientFirst: string;
   clientLast: string;
@@ -155,8 +156,14 @@ export default function H2022ClaimCheckerPage() {
     );
   }
 
-  const runCheck = async (opts: { claimsOverride: ResultRow[] }) => {
-    if (!opts?.claimsOverride?.length) return;
+  const runCheck = async (opts?: { claimsOverride?: ResultRow[]; sourceLabel?: string }) => {
+    if (opts?.claimsOverride && opts.claimsOverride.length === 0) {
+      toast({
+        title: 'No claims to check',
+        description: 'This pull has no claims to evaluate.',
+      });
+      return;
+    }
     setLoading(true);
     try {
       const idToken = await auth?.currentUser?.getIdToken();
@@ -164,11 +171,13 @@ export default function H2022ClaimCheckerPage() {
         throw new Error('Please log in with an admin account before running checks.');
       }
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         action: 'check',
         mode: 'batch',
-        syncedClaims: opts.claimsOverride,
       };
+      if (opts?.claimsOverride?.length) {
+        payload.syncedClaims = opts.claimsOverride;
+      }
 
       const res = await fetch('/api/admin/h2022-claim-checker', {
         method: 'POST',
@@ -191,7 +200,7 @@ export default function H2022ClaimCheckerPage() {
       setSummary(data?.summary || { total: 0, passed: 0, failed: 0 });
       toast({
         title: 'H2022 check complete',
-        description: `Reviewed ${data?.summary?.total || 0} claim(s).`,
+        description: `Reviewed ${data?.summary?.total || 0} claim(s)${opts?.sourceLabel ? ` from ${opts.sourceLabel}` : ''}.`,
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unable to run overlap check.';
@@ -247,7 +256,7 @@ export default function H2022ClaimCheckerPage() {
         description: `${data?.syncMode === 'full' ? 'Full sync' : 'Incremental sync'} pulled ${synced.length} claim(s) from Caspio.`,
       });
       if (checkPulled && synced.length > 0) {
-        await runCheck({ claimsOverride: synced });
+        await runCheck({ claimsOverride: synced, sourceLabel: 'latest pull' });
       } else if (checkPulled && synced.length === 0) {
         toast({
           title: 'No new claims pulled',
@@ -534,6 +543,15 @@ export default function H2022ClaimCheckerPage() {
               {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Full Caspio Re-Sync to Firestore
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={syncing || loading}
+              onClick={() => void runCheck({ sourceLabel: 'full Firestore cache' })}
+            >
+              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Check All Cached Claims
+            </Button>
           </div>
           {syncMeta ? (
             <div className="text-xs text-muted-foreground">
@@ -554,7 +572,10 @@ export default function H2022ClaimCheckerPage() {
 
       {summary ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
+          <Card
+            className={`cursor-pointer transition-colors ${outcomeFilter === 'all' ? 'ring-2 ring-primary' : 'hover:bg-muted/40'}`}
+            onClick={() => setOutcomeFilter('all')}
+          >
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Claims checked</CardTitle>
             </CardHeader>
@@ -562,7 +583,10 @@ export default function H2022ClaimCheckerPage() {
               <div className="text-2xl font-bold">{summary.total}</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card
+            className={`cursor-pointer transition-colors ${outcomeFilter === 'accepted' ? 'ring-2 ring-emerald-500' : 'hover:bg-muted/40'}`}
+            onClick={() => setOutcomeFilter('accepted')}
+          >
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Passed</CardTitle>
             </CardHeader>
@@ -570,7 +594,10 @@ export default function H2022ClaimCheckerPage() {
               <div className="text-2xl font-bold text-emerald-600">{summary.passed}</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card
+            className={`cursor-pointer transition-colors ${outcomeFilter === 'rejected' ? 'ring-2 ring-red-500' : 'hover:bg-muted/40'}`}
+            onClick={() => setOutcomeFilter('rejected')}
+          >
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Failed (overlap)</CardTitle>
             </CardHeader>
@@ -774,6 +801,11 @@ export default function H2022ClaimCheckerPage() {
             <DialogDescription>Review and edit before sending this claim-specific rejection notice.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {selectedRow ? (
+              <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                Submitted claim number: <span className="font-semibold text-foreground">{selectedRow.claimRecordId}</span>
+              </div>
+            ) : null}
             <div className="flex items-center gap-2">
               <Button
                 type="button"

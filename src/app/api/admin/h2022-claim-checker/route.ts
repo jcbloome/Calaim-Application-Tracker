@@ -13,6 +13,7 @@ type NormalizedClaim = {
   claimRecordId: string;
   rcfeRegisteredId: string;
   rcfeName: string;
+  claimAcceptance: string;
   clientId2: string;
   clientFirst: string;
   clientLast: string;
@@ -113,6 +114,7 @@ const claimFingerprint = (claim: NormalizedClaim) =>
     claimRecordId: claim.claimRecordId,
     rcfeRegisteredId: claim.rcfeRegisteredId,
     rcfeName: claim.rcfeName,
+    claimAcceptance: claim.claimAcceptance,
     clientId2: claim.clientId2,
     clientFirst: claim.clientFirst,
     clientLast: claim.clientLast,
@@ -167,6 +169,7 @@ function buildRejectionEmailTemplate(params: {
     '',
     `Your H2022 claim (${params.claimRecordId}) for ${params.memberName || 'Member'} at ${params.rcfeName || 'the RCFE'} was flagged for overlapping service dates and is at risk of rejection.`,
     '',
+    `Submitted claim number: ${params.claimRecordId}`,
     `Current claim submitted date: ${params.submittedAtIso || 'N/A'}`,
     `Current claim service windows: ${currentWindows}`,
     '',
@@ -248,6 +251,8 @@ async function fetchH2022Claims(whereClause?: string) {
     'ID',
     'RCFE_Registered_ID',
     'RCFE_Name',
+    'Service_Location_Name',
+    'Claim_Acceptance',
     'Client_ID2',
     'Client_First',
     'Client_Last',
@@ -454,7 +459,8 @@ function normalizeClaim(row: Record<string, unknown>): NormalizedClaim {
     normalizeText(getField(row, ['PK_ID', 'Record_ID', 'ID', 'Claim_ID'])) ||
     `claim-${Math.random().toString(36).slice(2, 10)}`;
   const rcfeRegisteredId = normalizeText(getField(row, ['RCFE_Registered_ID']));
-  const rcfeName = normalizeText(getField(row, ['RCFE_Name']));
+  const rcfeName = normalizeText(getField(row, ['Service_Location_Name', 'RCFE_Name']));
+  const claimAcceptance = normalizeText(getField(row, ['Claim_Acceptance']));
   const clientId2 = normalizeText(getField(row, ['Client_ID2']));
   const clientFirst = normalizeText(getField(row, ['Client_First']));
   const clientLast = normalizeText(getField(row, ['Client_Last']));
@@ -475,6 +481,7 @@ function normalizeClaim(row: Record<string, unknown>): NormalizedClaim {
     claimRecordId,
     rcfeRegisteredId,
     rcfeName,
+    claimAcceptance,
     clientId2,
     clientFirst,
     clientLast,
@@ -504,6 +511,7 @@ function coerceIncomingClaim(row: IncomingClaim): NormalizedClaim | null {
     claimRecordId,
     rcfeRegisteredId: normalizeText(row?.rcfeRegisteredId),
     rcfeName: normalizeText(row?.rcfeName),
+    claimAcceptance: normalizeText((row as Record<string, unknown>)?.claimAcceptance),
     clientId2: normalizeText(row?.clientId2),
     clientFirst: normalizeText(row?.clientFirst),
     clientLast: normalizeText(row?.clientLast),
@@ -798,7 +806,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const requiresRcfe = action !== 'sync' && providedClaims.length === 0;
+    const requiresRcfe = action !== 'sync' && action !== 'check' && providedClaims.length === 0;
     if (requiresRcfe && !rcfeRegisteredId && !rcfeName) {
       return NextResponse.json(
         { success: false, error: 'RCFE Registered ID or RCFE Name is required.' },
@@ -929,8 +937,11 @@ export async function POST(request: NextRequest) {
         normalizeKeyPart(claim.clientFirst),
       ].join('|');
       const previous = priorByMember.get(memberKey) || [];
+      const previousEligible = previous.filter(
+        (priorClaim) => normalizeKeyPart((priorClaim as NormalizedClaim).claimAcceptance) !== 'denied'
+      );
 
-      const overlaps = previous
+      const overlaps = previousEligible
         .map((priorClaim) => {
           const hasOverlap = claim.windows.some((currentWindow) =>
             priorClaim.windows.some((priorWindow) => rangesOverlap(currentWindow, priorWindow))
@@ -964,6 +975,7 @@ export async function POST(request: NextRequest) {
         submittedAtIso: claim.submittedAtIso,
         rcfeRegisteredId: claim.rcfeRegisteredId,
         rcfeName: claim.rcfeName,
+        claimAcceptance: claim.claimAcceptance,
         clientId2: claim.clientId2,
         clientFirst: claim.clientFirst,
         clientLast: claim.clientLast,
