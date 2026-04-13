@@ -150,6 +150,7 @@ const adminNavLinks = [
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },
       { isDivider: true, label: 'Claims', icon: FileBarChart },
       { href: '/admin/sw-claims-management', label: 'Claims Management', icon: FileBarChart },
+      { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Claim Checker', icon: ClipboardCheck },
       { isDivider: true, label: 'Kaiser', icon: Heart },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
       { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
@@ -1722,7 +1723,8 @@ function AdminHeader() {
   if (!isSuperAdmin && !isClaimsStaff) {
     combinedNavLinks = combinedNavLinks.map((nav: any) => {
       if (nav.label !== 'Tools' || !Array.isArray(nav?.submenuItems)) return nav;
-      const removedClaims = nav.submenuItems.filter((it: any) => it?.href !== '/admin/sw-claims-management');
+      const claimsOnlyHrefs = new Set(['/admin/sw-claims-management', '/admin/tools/h2022-claim-checker']);
+      const removedClaims = nav.submenuItems.filter((it: any) => !claimsOnlyHrefs.has(String(it?.href || '')));
       const finalItems = removedClaims.filter((it: any) => !(it?.isDivider && String(it?.label || '').trim() === 'Claims'));
       return { ...nav, submenuItems: finalItems };
     });

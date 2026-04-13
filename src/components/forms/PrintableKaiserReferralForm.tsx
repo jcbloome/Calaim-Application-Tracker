@@ -84,7 +84,7 @@ const InteractiveCheckbox = ({
 );
 
 const lineValue = (value?: string) => String(value || '').trim();
-const DEFAULT_REFERRER_NAME = 'Kaiser Manager (Deydry Miranda)';
+const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
 const DEFAULT_REFERRER_ORG = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';
 const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';
@@ -243,7 +243,8 @@ export function PrintableKaiserReferralForm({
     caregiverName: lineValue(prefill.caregiverName),
     caregiverContact: lineValue(prefill.caregiverContact),
     referralDate: lineValue(prefill.referralDate),
-    referrerName: lineValue(prefill.referrerName) || DEFAULT_REFERRER_NAME,
+    // Do not source Referrer Name from CS Summary prefill.
+    referrerName: DEFAULT_REFERRER_NAME,
     referrerOrganization: DEFAULT_REFERRER_ORG,
     referrerNpi: DEFAULT_REFERRER_NPI,
     referrerAddress: DEFAULT_REFERRER_ADDRESS,
