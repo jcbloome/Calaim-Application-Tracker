@@ -4,6 +4,15 @@ import React from 'react';
 import { PrintableFormLayout } from './PrintableFormLayout';
 import { Button } from '@/components/ui/button';
 import { Loader2, Send } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 
 type ReferralPrefill = {
   memberName?: string;
@@ -93,6 +102,7 @@ const DEFAULT_REFERRER_PHONE = '800-330-5993';
 const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
+const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
 
 function normalizeCountyName(value: unknown): string {
   return String(value || '')
@@ -276,6 +286,10 @@ export function PrintableKaiserReferralForm({
   });
   const [currentLivingLocation, setCurrentLivingLocation] = React.useState<'A' | 'B' | 'C' | ''>('');
   const [isSendingToKaiser, setIsSendingToKaiser] = React.useState(false);
+  const [emailPreviewOpen, setEmailPreviewOpen] = React.useState(false);
+  const [emailDescription, setEmailDescription] = React.useState(
+    'Please review the attached referral form for authorization request processing.'
+  );
   const memberName = formValues.memberName;
   const referrerRelationship = lineValue(formValues.referrerRelationship).toLowerCase();
   const hasKaiserPlan = lineValue(prefill.healthPlan).toLowerCase().includes('kaiser');
@@ -291,23 +305,24 @@ export function PrintableKaiserReferralForm({
   const memberCounty = lineValue(prefill.memberCounty);
   const kaiserRegion = getKaiserRegionFromCounty(memberCounty);
   const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
+  const resolvedMemberName = memberName || 'Member';
+  const resolvedMrn = formValues.memberMrn || 'N/A';
+  const subjectLine = `Authorization Request for ${resolvedMemberName} and MRN: ${resolvedMrn}`;
+  const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
 
-  const handleSendToKaiserIntake = async () => {
-    if (!packetRef.current) return;
+  const handleOpenEmailPreview = () => {
     if (!currentLivingLocation) {
       window.alert('Section 2.2 is required: select either A, B, or C for where the member is currently living.');
       return;
     }
-    const defaultSubject = `CS Referral for Member Name: ${memberName || 'Member'} and MRN: ${formValues.memberMrn || 'N/A'}`;
-    const customSubject = window.prompt('Email title (subject):', defaultSubject);
-    if (customSubject == null) return;
+    setEmailPreviewOpen(true);
+  };
 
-    const defaultMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\nPlease find attached the reviewed Community Supports referral form.\n\nThank you.`;
-    const customMessage = window.prompt('Email message:', defaultMessage);
-    if (customMessage == null) return;
-
-    if (!window.confirm(`Send this reviewed PDF to ${kaiserIntakeEmail} (${kaiserRegion || 'Kaiser South'})?`)) return;
-
+  const handleSendToKaiserIntake = async () => {
+    if (!packetRef.current) {
+      window.alert('Form preview is not ready yet. Please wait a moment and try again.');
+      return;
+    }
     setIsSendingToKaiser(true);
     try {
       const mod: any = await import('html2pdf.js');
@@ -346,8 +361,8 @@ export function PrintableKaiserReferralForm({
           memberMrn: formValues.memberMrn || '',
           memberCounty: memberCounty || '',
           referrerName: referrerName || '',
-          customSubject: customSubject.trim() || defaultSubject,
-          customMessage: customMessage.trim() || defaultMessage,
+          customSubject: subjectLine,
+          customMessage: previewMessage,
           pdfBase64,
           fileName: `kaiser_referral_${(memberName || 'member').replace(/[^a-z0-9]+/gi, '_').toLowerCase()}.pdf`,
         }),
@@ -358,6 +373,7 @@ export function PrintableKaiserReferralForm({
         throw new Error(String(result?.error || 'Failed to send email.'));
       }
 
+      setEmailPreviewOpen(false);
       window.alert(`Sent to ${kaiserIntakeEmail} successfully.`);
     } catch (error: any) {
       window.alert(`Send failed: ${String(error?.message || error)}`);
@@ -367,7 +383,51 @@ export function PrintableKaiserReferralForm({
   };
 
   return (
-    <PrintableFormLayout
+    <>
+      <Dialog open={emailPreviewOpen} onOpenChange={setEmailPreviewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Kaiser Referral Email Preview</DialogTitle>
+            <DialogDescription>Review the subject and preview before sending.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div>
+              <div className="text-xs text-muted-foreground">To</div>
+              <div>{kaiserIntakeEmail}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">CC</div>
+              <div>{ILS_CC_EMAIL}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Email description (editable)</div>
+              <Textarea
+                value={emailDescription}
+                onChange={(e) => setEmailDescription(e.target.value)}
+                rows={4}
+                disabled={isSendingToKaiser}
+              />
+            </div>
+            <div className="rounded-md border bg-muted/30 p-3">
+              <div className="text-xs text-muted-foreground">Resolved subject</div>
+              <div className="font-medium">{subjectLine}</div>
+              <div className="mt-3 text-xs text-muted-foreground">Email preview</div>
+              <div className="mt-1 whitespace-pre-wrap text-sm">{previewMessage}</div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailPreviewOpen(false)} disabled={isSendingToKaiser}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSendToKaiserIntake()} disabled={isSendingToKaiser}>
+              {isSendingToKaiser ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Send to Kaiser Intake
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <PrintableFormLayout
       title="Kaiser Community Supports Member Referral Form"
       subtitle="Initial or Renewal Authorization Referral (Pre-Populated)"
       formType="generic"
@@ -376,13 +436,19 @@ export function PrintableKaiserReferralForm({
       hideDocumentChrome
       disableMonochrome
       extraControlsBelow={
-        <div className="text-xs text-muted-foreground">
-          Detected region: {kaiserRegion || 'Kaiser South'} ({kaiserIntakeEmail})
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">
+            Detected region: {kaiserRegion || 'Kaiser South'} ({kaiserIntakeEmail})
+          </div>
+          <div className="text-xs text-emerald-700">
+            Staff reminder: Section 2.2 "Where member is currently living" is required before sending.
+            {currentLivingLocation ? ' (Completed)' : ' (Please complete)'}
+          </div>
         </div>
       }
       extraControls={(
         <Button
-          onClick={handleSendToKaiserIntake}
+          onClick={handleOpenEmailPreview}
           variant="outline"
           className="flex-1 sm:flex-none"
           disabled={isSendingToKaiser}
@@ -1174,6 +1240,7 @@ export function PrintableKaiserReferralForm({
         }
       `}</style>
     </PrintableFormLayout>
+    </>
   );
 }
 

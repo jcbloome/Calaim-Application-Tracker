@@ -15,6 +15,8 @@ type SendPayload = {
   fileName?: string;
 };
 
+const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as SendPayload;
@@ -60,6 +62,7 @@ export async function POST(request: NextRequest) {
     const { error } = await resend.emails.send({
       from: fromAddress,
       to: [to],
+      cc: [ILS_CC_EMAIL],
       subject,
       html,
       attachments: [
