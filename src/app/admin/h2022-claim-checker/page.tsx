@@ -6,7 +6,6 @@ import { useAdmin } from '@/hooks/use-admin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -16,11 +15,16 @@ import { CheckCircle2, Loader2, ShieldAlert, XCircle } from 'lucide-react';
 type ResultRow = {
   pass: boolean;
   claimRecordId: string;
+  claimNumber?: string;
   submittedAtIso: string | null;
   rcfeRegisteredId: string;
   rcfeName: string;
+  serviceLocationName?: string;
   claimAcceptance?: string;
   clientId2: string;
+  mcpCin?: string;
+  mrn?: string;
+  lastFirstId2?: string;
   clientFirst: string;
   clientLast: string;
   userFirst: string;
@@ -34,7 +38,13 @@ type ResultRow = {
   windows: Array<{ from: string | null; to: string | null }>;
   overlaps: Array<{
     claimRecordId: string;
+    claimNumber?: string;
     submittedAtIso: string | null;
+    clientId2?: string;
+    mcpCin?: string;
+    lastFirstId2?: string;
+    clientFirst?: string;
+    clientLast?: string;
     windows: Array<{ from: string | null; to: string | null }>;
   }>;
 };
@@ -42,6 +52,7 @@ type ResultRow = {
 type EmailHistoryRow = {
   id: string;
   createdAt?: string;
+  eventType?: string;
   to?: string;
   cc?: string[];
   bcc?: string[];
@@ -54,25 +65,47 @@ const formatDate = (value: string | null) => {
   if (!value) return 'N/A';
   const d = new Date(`${value}T00:00:00`);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 };
 
 const formatWindows = (windows: Array<{ from: string | null; to: string | null }>) => {
   if (!Array.isArray(windows) || windows.length === 0) return 'No service dates';
   return windows
     .map((w, idx) => {
-      const from = w.from || 'N/A';
-      const to = w.to || w.from || 'N/A';
+      const from = formatDate(w.from || null);
+      const to = formatDate(w.to || w.from || null);
       return `${idx + 1}) ${from} - ${to}`;
     })
     .join(' | ');
 };
 
-const statusBadgeClass = (status: ResultRow['resolutionStatus']) => {
-  if (status === 'notified') return 'bg-blue-600';
-  if (status === 'corrected') return 'bg-amber-600';
-  if (status === 'rechecked-pass') return 'bg-emerald-600';
-  return 'bg-slate-600';
+const formatMemberName = (params: {
+  clientLast?: string;
+  clientFirst?: string;
+  lastFirstId2?: string;
+  fallbackName?: string;
+}) => {
+  const fullName = `${params.clientLast || ''}, ${params.clientFirst || ''}`.replace(/^,\s*/, '').trim();
+  if (fullName) return fullName;
+  const formula = String(params.lastFirstId2 || '').trim();
+  if (formula) return formula.replace(/\s+\S+$/, '').trim() || formula;
+  return params.fallbackName || 'Same member';
+};
+
+const formatHistoryEvent = (item: EmailHistoryRow) => {
+  const eventType = String(item.eventType || '').trim().toLowerCase();
+  if (eventType === 'claim_acceptance_denied') return 'Claim switched to Denied';
+  if (eventType === 'email_sent') {
+    const emailType = String(item.emailType || '').trim().toLowerCase();
+    if (emailType === 'test') return 'Test email sent';
+    if (emailType === 'production') return 'Rejection email sent';
+    return 'Email sent';
+  }
+  if (String(item.emailType || '').trim().toLowerCase() === 'status-update') return 'Claim switched to Denied';
+  return String(item.emailType || '').trim() || 'Activity';
 };
 
 const claimAcceptanceBadgeClass = (value?: string) => {
@@ -108,6 +141,10 @@ export default function H2022ClaimCheckerPage() {
   const [emailHistoryLoading, setEmailHistoryLoading] = useState(false);
   const [emailHistoryRows, setEmailHistoryRows] = useState<EmailHistoryRow[]>([]);
   const [emailHistoryClaimId, setEmailHistoryClaimId] = useState('');
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const [conflictRow, setConflictRow] = useState<ResultRow | null>(null);
+  const [recheckingClaim, setRecheckingClaim] = useState(false);
+  const [denyingClaimId, setDenyingClaimId] = useState<string | null>(null);
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | 'rejected' | 'accepted'>('all');
   const [sortBy, setSortBy] = useState<'date' | 'rcfe' | 'member'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -126,8 +163,8 @@ export default function H2022ClaimCheckerPage() {
         return aMs - bMs;
       }
       if (sortBy === 'rcfe') {
-        const aValue = `${a.rcfeName || ''} ${a.rcfeRegisteredId || ''}`.trim().toLowerCase();
-        const bValue = `${b.rcfeName || ''} ${b.rcfeRegisteredId || ''}`.trim().toLowerCase();
+        const aValue = `${a.serviceLocationName || a.rcfeName || ''} ${a.rcfeRegisteredId || ''}`.trim().toLowerCase();
+        const bValue = `${b.serviceLocationName || b.rcfeName || ''} ${b.rcfeRegisteredId || ''}`.trim().toLowerCase();
         return aValue.localeCompare(bValue);
       }
       const aValue = `${a.clientLast || ''}, ${a.clientFirst || ''} ${a.clientId2 || ''}`.trim().toLowerCase();
@@ -261,15 +298,18 @@ export default function H2022ClaimCheckerPage() {
       });
       toast({
         title: 'Claims synced',
-        description: `${data?.syncMode === 'full' ? 'Full sync' : 'Incremental sync'} pulled ${synced.length} claim(s) from Caspio.`,
+        description:
+          data?.syncMode === 'full'
+            ? `Full sync refreshed ${Number(data?.summary?.total || 0)} claim(s) from Caspio.`
+            : `Incremental sync pulled ${synced.length} claim(s) from Caspio.`,
       });
-      if (checkPulled && synced.length > 0) {
+
+      if (syncKind === 'full') {
+        await runCheck({ sourceLabel: 'full Firestore cache' });
+      } else if (checkPulled && synced.length > 0) {
         await runCheck({ claimsOverride: synced, sourceLabel: 'latest pull' });
       } else if (checkPulled && synced.length === 0) {
-        toast({
-          title: 'No new claims pulled',
-          description: 'Nothing to check for overlap in this pull.',
-        });
+        await runCheck({ sourceLabel: 'full Firestore cache' });
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unable to sync claims.';
@@ -379,6 +419,53 @@ export default function H2022ClaimCheckerPage() {
         description: message,
         variant: 'destructive',
       });
+    }
+  };
+
+  const pushClaimDeniedToCaspio = async (row: ResultRow) => {
+    setDenyingClaimId(row.claimRecordId);
+    try {
+      const idToken = await auth?.currentUser?.getIdToken();
+      if (!idToken) throw new Error('Please log in with an admin account before pushing claim denial.');
+      const response = await fetch('/api/admin/h2022-claim-checker', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          action: 'set_claim_acceptance_denied',
+          claimRecordId: row.claimRecordId,
+          claimNumber: row.claimNumber,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string };
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to set claim acceptance denied (HTTP ${response.status})`);
+      }
+      setRows((prev) =>
+        prev.map((item) =>
+          item.claimRecordId === row.claimRecordId
+            ? {
+                ...item,
+                claimAcceptance: 'Denied',
+              }
+            : item
+        )
+      );
+      toast({
+        title: 'Claim acceptance updated',
+        description: `Caspio claim acceptance set to Denied for claim ${row.claimNumber || row.claimRecordId}.`,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to push claim denial to Caspio.';
+      toast({
+        title: 'Push failed',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setDenyingClaimId(null);
     }
   };
 
@@ -512,6 +599,66 @@ export default function H2022ClaimCheckerPage() {
       });
     } finally {
       setEmailSending(false);
+    }
+  };
+
+  const openConflictDetails = (row: ResultRow) => {
+    setConflictRow(row);
+    setConflictDialogOpen(true);
+  };
+
+  const recheckSingleClaim = async (row: ResultRow) => {
+    setRecheckingClaim(true);
+    try {
+      const idToken = await auth?.currentUser?.getIdToken();
+      if (!idToken) throw new Error('Please log in with an admin account before re-checking.');
+      const response = await fetch('/api/admin/h2022-claim-checker', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          action: 'check',
+          mode: 'single',
+          rcfeRegisteredId: row.rcfeRegisteredId || undefined,
+          rcfeName: row.serviceLocationName || row.rcfeName || undefined,
+          memberClientId2: row.clientId2 || undefined,
+          memberFirst: row.clientFirst || undefined,
+          memberLast: row.clientLast || undefined,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        rows?: ResultRow[];
+      };
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Single re-check failed (HTTP ${response.status})`);
+      }
+      const match = (Array.isArray(data.rows) ? data.rows : []).find((r) => r.claimRecordId === row.claimRecordId);
+      if (!match) {
+        toast({
+          title: 'Re-check complete',
+          description: `Claim ${row.claimRecordId} is not in the current member result set.`,
+        });
+        return;
+      }
+      setRows((prev) => prev.map((item) => (item.claimRecordId === row.claimRecordId ? { ...item, ...match } : item)));
+      setConflictRow((prev) => (prev && prev.claimRecordId === row.claimRecordId ? { ...prev, ...match } : prev));
+      toast({
+        title: 'Claim re-checked',
+        description: `Updated overlap status for claim ${row.claimNumber || row.claimRecordId}.`,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to re-check this claim.';
+      toast({
+        title: 'Re-check failed',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRecheckingClaim(false);
     }
   };
 
@@ -672,13 +819,10 @@ export default function H2022ClaimCheckerPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Status</TableHead>
-                    <TableHead>Workflow</TableHead>
-                    <TableHead>Submitted</TableHead>
-                    <TableHead>Claim ID</TableHead>
+                    <TableHead>Submitted Claim</TableHead>
                     <TableHead>Claim Acceptance</TableHead>
                     <TableHead>Member</TableHead>
                     <TableHead>RCFE</TableHead>
-                    <TableHead>Service Windows</TableHead>
                     <TableHead>Conflict Details</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -702,17 +846,11 @@ export default function H2022ClaimCheckerPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-1">
-                          <Badge className={statusBadgeClass(row.resolutionStatus)}>{row.resolutionStatus}</Badge>
-                          {row.lastRejectionEmailAt ? (
-                            <div className="text-[10px] text-muted-foreground">
-                              Last email: {new Date(row.lastRejectionEmailAt).toLocaleString()}
-                            </div>
-                          ) : null}
+                        <div className="text-xs font-medium">{formatDate(row.submittedAtIso)}</div>
+                        <div className="font-mono text-[11px] text-muted-foreground">
+                          {row.claimNumber || row.claimRecordId}
                         </div>
                       </TableCell>
-                      <TableCell>{formatDate(row.submittedAtIso)}</TableCell>
-                      <TableCell className="font-mono text-xs">{row.claimRecordId}</TableCell>
                       <TableCell>
                         <Badge className={claimAcceptanceBadgeClass(row.claimAcceptance)}>
                           {row.claimAcceptance || 'Unknown'}
@@ -720,32 +858,28 @@ export default function H2022ClaimCheckerPage() {
                       </TableCell>
                       <TableCell>
                         <div className="text-sm font-medium">
-                          {`${row.clientLast || ''}, ${row.clientFirst || ''}`.replace(/^,\s*/, '').trim() || 'Unknown'}
+                          {formatMemberName({
+                            clientLast: row.clientLast,
+                            clientFirst: row.clientFirst,
+                            lastFirstId2: row.lastFirstId2,
+                          })}
                         </div>
                         <div className="text-xs text-muted-foreground">ID2: {row.clientId2 || 'N/A'}</div>
+                        <div className="text-xs text-muted-foreground">Medi-Cal (MCP_CIN): {row.mcpCin || 'N/A'}</div>
                       </TableCell>
                       <TableCell>
-                        <div className="text-sm">{row.rcfeName || 'N/A'}</div>
+                        <div className="text-sm">{row.serviceLocationName || row.rcfeName || 'N/A'}</div>
                         <div className="text-xs text-muted-foreground">ID: {row.rcfeRegisteredId || 'N/A'}</div>
                       </TableCell>
-                      <TableCell className="text-xs">{formatWindows(row.windows)}</TableCell>
                       <TableCell>
                         {row.pass ? (
                           <span className="text-xs text-emerald-700">No overlap with previous submitted claims</span>
                         ) : (
-                          <div className="space-y-1 text-xs text-red-700">
-                            <div className="font-medium text-red-800">
-                              Submitted claim: {row.claimRecordId} ({formatDate(row.submittedAtIso)})
-                            </div>
-                            {row.overlaps.slice(0, 3).map((conflict) => (
-                              <div key={`${row.claimRecordId}-${conflict.claimRecordId}`}>
-                                <ShieldAlert className="h-3 w-3 inline-block mr-1" />
-                                Overlaps with: {conflict.claimRecordId} ({formatDate(conflict.submittedAtIso)})
-                              </div>
-                            ))}
-                            {row.overlaps.length > 3 ? (
-                              <div className="text-muted-foreground">+{row.overlaps.length - 3} more overlap(s)</div>
-                            ) : null}
+                          <div className="space-y-2">
+                            <div className="text-xs text-red-800">{row.overlaps.length} overlap(s) detected</div>
+                            <Button size="sm" variant="outline" onClick={() => openConflictDetails(row)}>
+                              View conflict details
+                            </Button>
                           </div>
                         )}
                       </TableCell>
@@ -778,6 +912,20 @@ export default function H2022ClaimCheckerPage() {
                                 Email History ({row.rejectionEmailCount})
                               </Button>
                             ) : null}
+                            {row.rejectionEmailCount > 0 &&
+                            String(row.claimAcceptance || '').trim().toLowerCase() !== 'denied' ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void pushClaimDeniedToCaspio(row)}
+                                disabled={denyingClaimId === row.claimRecordId}
+                              >
+                                {denyingClaimId === row.claimRecordId ? (
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : null}
+                                Push Claim Acceptance = Denied
+                              </Button>
+                            ) : null}
                             {row.resolutionStatus !== 'corrected' ? (
                               <Button
                                 size="sm"
@@ -807,6 +955,85 @@ export default function H2022ClaimCheckerPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={conflictDialogOpen}
+        onOpenChange={(open) => {
+          setConflictDialogOpen(open);
+          if (!open) setConflictRow(null);
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Overlap Conflict Details</DialogTitle>
+            <DialogDescription>
+              Submitted claim and prior overlapping claims for review.
+            </DialogDescription>
+          </DialogHeader>
+          {conflictRow ? (
+            <div className="space-y-3">
+              <div className="rounded-md border bg-muted/30 p-3 text-xs">
+                <div className="font-medium text-foreground">
+                  Submitted claim: {conflictRow.claimNumber || conflictRow.claimRecordId}
+                </div>
+                <div className="text-muted-foreground">Submitted date: {formatDate(conflictRow.submittedAtIso)}</div>
+                <div className="text-muted-foreground">
+                  Member:{' '}
+                  {formatMemberName({
+                    clientLast: conflictRow.clientLast,
+                    clientFirst: conflictRow.clientFirst,
+                    lastFirstId2: conflictRow.lastFirstId2,
+                  })}
+                </div>
+                <div className="text-muted-foreground">
+                  ID2: {conflictRow.clientId2 || 'N/A'} | MCP_CIN: {conflictRow.mcpCin || 'N/A'}
+                </div>
+                <div className="text-muted-foreground">Service windows: {formatWindows(conflictRow.windows)}</div>
+              </div>
+              <div className="space-y-2">
+                {conflictRow.overlaps.map((conflict) => (
+                  <div
+                    key={`${conflictRow.claimRecordId}-${conflict.claimRecordId}`}
+                    className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-900"
+                  >
+                    <div className="font-medium">
+                      Overlaps with: {conflict.claimNumber || conflict.claimRecordId}
+                    </div>
+                    <div>Submitted date: {formatDate(conflict.submittedAtIso)}</div>
+                    <div>
+                      Member:{' '}
+                      {formatMemberName({
+                        clientLast: conflict.clientLast,
+                        clientFirst: conflict.clientFirst,
+                        lastFirstId2: conflict.lastFirstId2,
+                        fallbackName: 'Member name unavailable',
+                      })}
+                    </div>
+                    <div>
+                      ID2: {conflict.clientId2 || 'N/A'} | MCP_CIN: {conflict.mcpCin || 'N/A'}
+                    </div>
+                    <div>Service windows: {formatWindows(conflict.windows)}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                If you clear an overlap in Caspio, run "Check All Cached Claims" to refresh this row to pass.
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            {conflictRow ? (
+              <Button onClick={() => void recheckSingleClaim(conflictRow)} disabled={recheckingClaim}>
+                {recheckingClaim ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Re-check This Claim Only
+              </Button>
+            ) : null}
+            <Button variant="outline" onClick={() => setConflictDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={emailDialogOpen}
@@ -864,16 +1091,9 @@ export default function H2022ClaimCheckerPage() {
                 <Input value={emailBcc} onChange={(e) => setEmailBcc(e.target.value)} placeholder="audit@carehomefinders.com" />
               </div>
             </div>
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Subject</div>
-              <Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Message</div>
-              <Textarea value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={14} />
-            </div>
             <div className="rounded-md border p-3 bg-muted/30">
               <div className="text-xs font-medium mb-1">Preview</div>
+              <div className="text-xs text-muted-foreground mb-2">Subject: {emailSubject}</div>
               <div className="text-sm whitespace-pre-wrap">{emailBody}</div>
             </div>
             {duplicateWarning ? (
@@ -919,7 +1139,7 @@ export default function H2022ClaimCheckerPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Sent At</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>Activity</TableHead>
                     <TableHead>To</TableHead>
                     <TableHead>Subject</TableHead>
                     <TableHead>Sent By</TableHead>
@@ -929,7 +1149,7 @@ export default function H2022ClaimCheckerPage() {
                   {emailHistoryRows.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell className="text-xs">{item.createdAt ? new Date(item.createdAt).toLocaleString() : 'N/A'}</TableCell>
-                      <TableCell className="text-xs">{item.emailType || 'unknown'}</TableCell>
+                      <TableCell className="text-xs">{formatHistoryEvent(item)}</TableCell>
                       <TableCell className="text-xs">{item.to || 'N/A'}</TableCell>
                       <TableCell className="text-xs">{item.subject || 'N/A'}</TableCell>
                       <TableCell className="text-xs">{item.sentByEmail || 'N/A'}</TableCell>

@@ -11,10 +11,15 @@ type ClaimResolutionStatus = 'pending-review' | 'notified' | 'corrected' | 'rech
 
 type NormalizedClaim = {
   claimRecordId: string;
+  claimNumber: string;
   rcfeRegisteredId: string;
   rcfeName: string;
+  serviceLocationName: string;
   claimAcceptance: string;
   clientId2: string;
+  mcpCin: string;
+  mrn: string;
+  lastFirstId2: string;
   clientFirst: string;
   clientLast: string;
   userFirst: string;
@@ -109,13 +114,46 @@ const toDocId = (claimRecordId: string) =>
     .trim()
     .replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
+const normalizeIdentifier = (value: unknown) => {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return '';
+  const compact = raw.replace(/[^a-z0-9]/g, '');
+  // Caspio rows may contain placeholders like N/A, null, unknown; treat these as missing IDs.
+  const invalid = new Set(['na', 'n/a', 'none', 'null', 'unknown', 'notavailable', '']);
+  if (invalid.has(raw) || invalid.has(compact)) return '';
+  return compact;
+};
+
+const cleanIdentifier = (value: unknown) => {
+  const trimmed = String(value ?? '').trim();
+  return normalizeIdentifier(trimmed) ? trimmed : '';
+};
+
+const getIdentityKeys = (claim: NormalizedClaim) =>
+  [claim.clientId2, claim.mrn, claim.lastFirstId2]
+    .map((v) => normalizeIdentifier(v))
+    .filter(Boolean);
+
+const claimsBelongToSameMember = (a: NormalizedClaim, b: NormalizedClaim) => {
+  const aIds = [a.mcpCin, a.clientId2, a.mrn, a.lastFirstId2].map(normalizeIdentifier).filter(Boolean);
+  const bIds = [b.mcpCin, b.clientId2, b.mrn, b.lastFirstId2].map(normalizeIdentifier).filter(Boolean);
+  if (!aIds.length || !bIds.length) return false;
+  const bSet = new Set(bIds);
+  return aIds.some((id) => bSet.has(id));
+};
+
 const claimFingerprint = (claim: NormalizedClaim) =>
   JSON.stringify({
     claimRecordId: claim.claimRecordId,
+    claimNumber: claim.claimNumber,
     rcfeRegisteredId: claim.rcfeRegisteredId,
     rcfeName: claim.rcfeName,
+    serviceLocationName: claim.serviceLocationName,
     claimAcceptance: claim.claimAcceptance,
     clientId2: claim.clientId2,
+    mcpCin: claim.mcpCin,
+    mrn: claim.mrn,
+    lastFirstId2: claim.lastFirstId2,
     clientFirst: claim.clientFirst,
     clientLast: claim.clientLast,
     userFirst: claim.userFirst,
@@ -167,7 +205,7 @@ function buildRejectionEmailTemplate(params: {
   const bodyText = [
     `Hello ${safeName},`,
     '',
-    `Your H2022 claim (${params.claimRecordId}) for ${params.memberName || 'Member'} at ${params.rcfeName || 'the RCFE'} was flagged for overlapping service dates and is at risk of rejection.`,
+    `Your claim for ${params.memberName || 'Member'} at ${params.rcfeName || 'the RCFE'} (${params.claimRecordId}) was flagged for overlapping service dates and is at risk of rejection.`,
     '',
     `Submitted claim number: ${params.claimRecordId}`,
     `Current claim submitted date: ${params.submittedAtIso || 'N/A'}`,
@@ -176,7 +214,7 @@ function buildRejectionEmailTemplate(params: {
     'Conflicting prior submitted claims:',
     ...(overlapLines.length ? overlapLines : ['- No overlap details available.']),
     '',
-    'Please correct and resubmit the claim.',
+    'Please notify billing@carehomefinders.com for review. The RCFE must correct and resubmit the claim.',
     '',
     'Thank you,',
     'CalAIM Claims Team',
@@ -249,11 +287,16 @@ async function fetchH2022Claims(whereClause?: string) {
     'PK_ID',
     'Record_ID',
     'ID',
+    'Claim_Number',
     'RCFE_Registered_ID',
     'RCFE_Name',
     'Service_Location_Name',
     'Claim_Acceptance',
     'Client_ID2',
+    'MCP_CIN',
+    'MRN',
+    'Last_First_ID2',
+    'Client_Last_First_ID2',
     'Client_First',
     'Client_Last',
     'User_First',
@@ -332,6 +375,58 @@ async function fetchH2022Claims(whereClause?: string) {
   }
 
   return rows;
+}
+
+async function setCaspioClaimAcceptanceDenied(params: { claimRecordId: string; claimNumber?: string }) {
+  const credentials = getCaspioCredentialsFromEnv();
+  const token = await getCaspioToken(credentials);
+  const table = 'CalAIM_Claim_Submit_RCFE_H2022';
+  const valueSet = new Set(
+    [normalizeText(params.claimRecordId), normalizeText(params.claimNumber)]
+      .map((v) => v.trim())
+      .filter(Boolean)
+  );
+  const values = Array.from(valueSet);
+  if (!values.length) throw new Error('Missing claim identifier for Caspio update.');
+
+  const whereCandidates: string[] = [];
+  for (const value of values) {
+    const literal = /^-?\d+(?:\.\d+)?$/.test(value) ? value : `'${escapeSqlLiteral(value)}'`;
+    whereCandidates.push(`PK_ID=${literal}`);
+    whereCandidates.push(`Record_ID=${literal}`);
+    whereCandidates.push(`ID=${literal}`);
+    whereCandidates.push(`Claim_Number=${literal}`);
+  }
+
+  const payloadAttempts: Array<Record<string, string>> = [
+    { Claim_Acceptance: 'Denied', CalAIM_Acceptance: 'Denied' },
+    { Claim_Acceptance: 'Denied' },
+    { CalAIM_Acceptance: 'Denied' },
+  ];
+
+  let lastError = 'Unable to set claim acceptance to Denied in Caspio.';
+  for (const whereClause of whereCandidates) {
+    for (const payload of payloadAttempts) {
+      const url =
+        `${credentials.baseUrl}/integrations/rest/v3/tables/${table}/records` +
+        `?q.where=${encodeURIComponent(whereClause)}`;
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return { whereClause, payloadKeys: Object.keys(payload) };
+      const text = await res.text().catch(() => '');
+      const lower = String(text || '').toLowerCase();
+      lastError = `Caspio update failed (${res.status}): ${text || 'Unknown error'}`;
+      // Keep trying if schema differs by field name.
+      if (res.status === 400 && lower.includes('invalid column name')) continue;
+    }
+  }
+  throw new Error(lastError);
 }
 
 async function getCacheMeta() {
@@ -458,10 +553,17 @@ function normalizeClaim(row: Record<string, unknown>): NormalizedClaim {
   const claimRecordId =
     normalizeText(getField(row, ['PK_ID', 'Record_ID', 'ID', 'Claim_ID'])) ||
     `claim-${Math.random().toString(36).slice(2, 10)}`;
+  const claimNumber = normalizeText(getField(row, ['Claim_Number', 'Claim Number']));
   const rcfeRegisteredId = normalizeText(getField(row, ['RCFE_Registered_ID']));
-  const rcfeName = normalizeText(getField(row, ['Service_Location_Name', 'RCFE_Name']));
+  const serviceLocationName = normalizeText(
+    getField(row, ['Service_Location_Name', 'Service Location Name', 'Service_Location', 'Service Location'])
+  );
+  const rcfeName = normalizeText(getField(row, ['RCFE_Name'])) || serviceLocationName;
   const claimAcceptance = normalizeText(getField(row, ['Claim_Acceptance']));
-  const clientId2 = normalizeText(getField(row, ['Client_ID2']));
+  const clientId2 = cleanIdentifier(getField(row, ['Client_ID2']));
+  const mcpCin = cleanIdentifier(getField(row, ['MCP_CIN', 'MCP CIN']));
+  const mrn = cleanIdentifier(getField(row, ['MRN']));
+  const lastFirstId2 = cleanIdentifier(getField(row, ['Last_First_ID2', 'Client_Last_First_ID2', 'Last First ID2']));
   const clientFirst = normalizeText(getField(row, ['Client_First']));
   const clientLast = normalizeText(getField(row, ['Client_Last']));
   const userFirst = normalizeText(getField(row, ['User_First']));
@@ -479,10 +581,15 @@ function normalizeClaim(row: Record<string, unknown>): NormalizedClaim {
 
   return {
     claimRecordId,
+    claimNumber,
     rcfeRegisteredId,
     rcfeName,
+    serviceLocationName,
     claimAcceptance,
     clientId2,
+    mcpCin,
+    mrn,
+    lastFirstId2,
     clientFirst,
     clientLast,
     userFirst,
@@ -509,10 +616,16 @@ function coerceIncomingClaim(row: IncomingClaim): NormalizedClaim | null {
   const submittedAtMs = submittedAtIso ? Date.parse(submittedAtIso) : 0;
   return {
     claimRecordId,
+    claimNumber: normalizeText((row as Record<string, unknown>)?.claimNumber),
     rcfeRegisteredId: normalizeText(row?.rcfeRegisteredId),
-    rcfeName: normalizeText(row?.rcfeName),
+    rcfeName: normalizeText(row?.rcfeName) || normalizeText((row as Record<string, unknown>)?.serviceLocationName),
+    serviceLocationName:
+      normalizeText((row as Record<string, unknown>)?.serviceLocationName) || normalizeText(row?.rcfeName),
     claimAcceptance: normalizeText((row as Record<string, unknown>)?.claimAcceptance),
-    clientId2: normalizeText(row?.clientId2),
+    clientId2: cleanIdentifier(row?.clientId2),
+    mcpCin: cleanIdentifier((row as Record<string, unknown>)?.mcpCin),
+    mrn: cleanIdentifier((row as Record<string, unknown>)?.mrn),
+    lastFirstId2: cleanIdentifier((row as Record<string, unknown>)?.lastFirstId2),
     clientFirst: normalizeText(row?.clientFirst),
     clientLast: normalizeText(row?.clientLast),
     userFirst: normalizeText(row?.userFirst),
@@ -545,6 +658,8 @@ export async function POST(request: NextRequest) {
               ? 'update_claim_status'
               : actionRaw === 'get_claim_email_history'
                 ? 'get_claim_email_history'
+                : actionRaw === 'set_claim_acceptance_denied'
+                  ? 'set_claim_acceptance_denied'
               : 'check';
     const mode = String(body?.mode || 'single').toLowerCase() === 'batch' ? 'batch' : 'single';
     const rcfeRegisteredId = normalizeText(body?.rcfeRegisteredId);
@@ -648,6 +763,64 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (action === 'set_claim_acceptance_denied') {
+      const claimRecordId = normalizeText(body?.claimRecordId);
+      const claimNumber = normalizeText(body?.claimNumber);
+      if (!claimRecordId) {
+        return NextResponse.json({ success: false, error: 'claimRecordId is required.' }, { status: 400 });
+      }
+      const adminModule = await import('@/firebase-admin');
+      const adminDb = adminModule.adminDb;
+      const claimRef = adminDb.collection(CLAIMS_CACHE_COLLECTION).doc(toDocId(claimRecordId));
+      const claimSnap = await claimRef.get();
+      const claimData = claimSnap.exists ? (claimSnap.data() as Record<string, unknown>) : {};
+      const emailCount = Number(claimData?.rejectionEmailCount || 0);
+      const lastEmailAt = normalizeText(claimData?.lastRejectionEmailAt);
+      if (!lastEmailAt && emailCount <= 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Send rejection email first before setting claim acceptance to Denied in Caspio.',
+          },
+          { status: 409 }
+        );
+      }
+
+      await setCaspioClaimAcceptanceDenied({ claimRecordId, claimNumber });
+
+      const nowIso = new Date().toISOString();
+      await claimRef.set(
+        {
+          claimRecordId,
+          claimAcceptance: 'Denied',
+          claimAcceptanceUpdatedAt: nowIso,
+          claimAcceptanceUpdatedByUid: authContext.uid,
+          claimAcceptanceUpdatedByEmail: authContext.email,
+        },
+        { merge: true }
+      );
+      await adminDb.collection(CLAIMS_EMAIL_AUDIT_COLLECTION).add({
+        createdAt: nowIso,
+        claimRecordId,
+        eventType: 'claim_acceptance_denied',
+        emailType: 'status-update',
+        to: null,
+        subject: 'Claim acceptance switched to Denied',
+        bodyText: `Claim acceptance set to Denied in Caspio by ${authContext.email}.`,
+        sentByUid: authContext.uid,
+        sentByEmail: authContext.email,
+        provider: 'system',
+        providerMessageId: null,
+      });
+
+      return NextResponse.json({
+        success: true,
+        action: 'set_claim_acceptance_denied',
+        claimRecordId,
+        claimAcceptance: 'Denied',
+      });
+    }
+
     if (action === 'send_rejection_email') {
       const to = normalizeText(body?.to);
       const subjectInput = normalizeText(body?.subject);
@@ -709,7 +882,8 @@ export async function POST(request: NextRequest) {
         .split(',')
         .map((v) => v.trim())
         .filter(Boolean);
-      const ccFinal = Array.from(new Set([...cc, ...normalizeEmailList(defaultCc)]));
+      const billingEmail = 'billing@carehomefinders.com';
+      const ccFinal = Array.from(new Set([...cc, ...normalizeEmailList(defaultCc), billingEmail]));
       const bccFinal = Array.from(new Set([...bcc, ...normalizeEmailList(defaultBcc)]));
 
       const adminModule = await import('@/firebase-admin');
@@ -770,6 +944,7 @@ export async function POST(request: NextRequest) {
       await adminDb.collection(CLAIMS_EMAIL_AUDIT_COLLECTION).add({
         createdAt: nowIso,
         claimRecordId,
+        eventType: 'email_sent',
         to,
         cc: ccFinal,
         bcc: bccFinal,
@@ -921,24 +1096,40 @@ export async function POST(request: NextRequest) {
       return true;
     });
 
-    const claimsAsc = [...filtered].sort((a, b) => {
+    const mcpCinByIdentity = new Map<string, string>();
+    for (const claim of filtered) {
+      const mcp = cleanIdentifier(claim.mcpCin);
+      if (!mcp) continue;
+      const keys = getIdentityKeys(claim);
+      for (const key of keys) {
+        if (!mcpCinByIdentity.has(key)) mcpCinByIdentity.set(key, mcp);
+      }
+    }
+    const enriched = filtered.map((claim) => {
+      if (cleanIdentifier(claim.mcpCin)) return claim;
+      const keys = getIdentityKeys(claim);
+      for (const key of keys) {
+        const inferred = mcpCinByIdentity.get(key);
+        if (inferred) return { ...claim, mcpCin: inferred };
+      }
+      return claim;
+    });
+
+    const claimsAsc = [...enriched].sort((a, b) => {
       const ts = a.submittedAtMs - b.submittedAtMs;
       if (ts !== 0) return ts;
       return a.claimRecordId.localeCompare(b.claimRecordId);
     });
 
-    const priorByMember = new Map<string, NormalizedClaim[]>();
+    const priorByRcfe = new Map<string, NormalizedClaim[]>();
     const workflowByClaimId = await getWorkflowForClaims(claimsAsc.map((c) => c.claimRecordId));
     const results = claimsAsc.map((claim) => {
-      const memberKey = [
-        normalizeKeyPart(claim.rcfeRegisteredId || claim.rcfeName),
-        normalizeKeyPart(claim.clientId2),
-        normalizeKeyPart(claim.clientLast),
-        normalizeKeyPart(claim.clientFirst),
-      ].join('|');
-      const previous = priorByMember.get(memberKey) || [];
+      const rcfeKey = normalizeKeyPart(claim.rcfeRegisteredId || claim.serviceLocationName || claim.rcfeName);
+      const previous = priorByRcfe.get(rcfeKey) || [];
       const previousEligible = previous.filter(
-        (priorClaim) => normalizeKeyPart((priorClaim as NormalizedClaim).claimAcceptance) !== 'denied'
+        (priorClaim) =>
+          normalizeKeyPart((priorClaim as NormalizedClaim).claimAcceptance) !== 'denied' &&
+          claimsBelongToSameMember(claim, priorClaim)
       );
 
       const overlaps = previousEligible
@@ -949,7 +1140,13 @@ export async function POST(request: NextRequest) {
           return hasOverlap
             ? {
                 claimRecordId: priorClaim.claimRecordId,
+                claimNumber: priorClaim.claimNumber,
                 submittedAtIso: priorClaim.submittedAtIso,
+                clientId2: priorClaim.clientId2,
+                mcpCin: priorClaim.mcpCin,
+                lastFirstId2: priorClaim.lastFirstId2,
+                clientFirst: priorClaim.clientFirst,
+                clientLast: priorClaim.clientLast,
                 windows: priorClaim.windows,
               }
             : null;
@@ -968,15 +1165,20 @@ export async function POST(request: NextRequest) {
       } else if (previousStatus === 'rechecked-pass' || !previousStatus) {
         resolutionStatus = 'pending-review';
       }
-      priorByMember.set(memberKey, [...previous, claim]);
+      priorByRcfe.set(rcfeKey, [...previous, claim]);
       return {
         pass,
         claimRecordId: claim.claimRecordId,
+        claimNumber: claim.claimNumber,
         submittedAtIso: claim.submittedAtIso,
         rcfeRegisteredId: claim.rcfeRegisteredId,
-        rcfeName: claim.rcfeName,
+        rcfeName: claim.serviceLocationName || claim.rcfeName,
+        serviceLocationName: claim.serviceLocationName || claim.rcfeName,
         claimAcceptance: claim.claimAcceptance,
         clientId2: claim.clientId2,
+        mcpCin: claim.mcpCin,
+        mrn: claim.mrn,
+        lastFirstId2: claim.lastFirstId2,
         clientFirst: claim.clientFirst,
         clientLast: claim.clientLast,
         userFirst: claim.userFirst,

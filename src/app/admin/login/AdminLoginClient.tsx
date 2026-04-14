@@ -173,9 +173,16 @@ export default function AdminLoginClient() {
       }
 
       // Wait briefly for auth state to be observable in the app before redirecting.
-      // This prevents immediate bounces back to /admin/login in environments with delayed persistence.
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Sign-in did not complete. Please try again.')), 6000);
+      // This is best-effort only; do not block sign-in completion if the observer is delayed.
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          try {
+            unsubscribe();
+          } catch {
+            // ignore
+          }
+          resolve();
+        }, 2000);
         const unsubscribe = onAuthStateChanged(auth, (u) => {
           if (u) {
             clearTimeout(timeout);
@@ -187,22 +194,27 @@ export default function AdminLoginClient() {
 
       const tokenResult = await userCredential.user.getIdTokenResult().catch(() => null);
       const role = Boolean((tokenResult?.claims as any)?.superAdmin) ? 'Super Admin' : 'Admin';
-      await trackLoginActivityClient(firestore, {
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        displayName: userCredential.user.displayName,
-        role,
-        action: 'login',
-        portal: 'admin',
-      });
-      await setPortalSessionOnlineClient(firestore, {
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        displayName: userCredential.user.displayName,
-        role,
-        portal: 'admin',
-        sessionType: 'admin',
-      });
+      try {
+        await trackLoginActivityClient(firestore, {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName,
+          role,
+          action: 'login',
+          portal: 'admin',
+        });
+        await setPortalSessionOnlineClient(firestore, {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName,
+          role,
+          portal: 'admin',
+          sessionType: 'admin',
+        });
+      } catch (activityError) {
+        // Do not fail login for activity/audit writes; user is already authenticated.
+        console.warn('[ADMIN_LOGIN] Non-blocking activity tracking failure:', activityError);
+      }
 
       toast({
         title: 'Sign In Successful!',
@@ -221,7 +233,8 @@ export default function AdminLoginClient() {
       } else if (code === 'auth/too-many-requests') {
         errorMessage = 'Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.';
       } else {
-        errorMessage = `${errorMessage}${code ? ` (Error: ${code})` : ''}`;
+        const rawMessage = String((authError as any)?.message || '').trim();
+        errorMessage = `${errorMessage}${code ? ` (Error: ${code})` : ''}${rawMessage ? ` ${rawMessage}` : ''}`;
       }
 
       setError(errorMessage);
