@@ -30,16 +30,13 @@ export function PrintableProgramInfo() {
                 ))}
             </div>
 
-            <SectionTitle>What is CalAIM?</SectionTitle>
-            <p>California Advancing and Innovating Medi-Cal (CalAIM) is California's long-term initiative to transform the Medi-Cal program by improving quality outcomes, reducing health disparities, and creating a more seamless and consistent system. It aims to achieve this through a focus on 'whole person care,' which includes addressing social determinants of health, integrating physical, mental, and social services, and launching new programs like Enhanced Care Management (ECM) and Community Supports (CS). ECM and CS are administered through managed care plans (MCPs).</p>
-            
-            <SectionTitle>Community Support for Assisted Living Transitions</SectionTitle>
-            <p>There are 14 Community Supports (CS), and this application portal is for one of them, called Assisted Living Transitions. This CS gives eligible members the choice to reside in an assisted living setting—such as a Residential Care Facility for the Elderly (RCFE) or an Adult Residential Facility (ARF)—as a safe alternative to a skilled nursing facility (SNF), promoting greater independence and community integration.</p>
-            <p>The CS is either for SNF Diversion (e.g. for members coming from a community-based setting (e.g., from home or hospital) at risk of premature institutionalization or SNF Transitions (e.g., for members residing in SNFs) eligible to reside in assisted living settings.</p>
-            
             <SectionTitle>The Role of Connections Care Home Consultants</SectionTitle>
-            <p>For 35 years Connections has helped private paid families find care homes. We are excited to now be partnered with MCPs as a CS Provider that assists with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS.</p>
-            <p>Once a member is placed, we also send a MSW to visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination.</p>
+            <p>For 35 years Connections has helped private paid families find care homes. We are excited to also help Medi-Cal members find care home placement as a Community Support partner with managed care plans (MCP) for the California Advancing and Innovating Medi-Cal (CalAIM) program. Our role is to assist with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS.</p>
+
+            <SectionTitle>What are CalAIM and Community Supports (CS)?</SectionTitle>
+            <p>California Advancing and Innovating Medi-Cal (CalAIM) is California's statewide effort to improve Medi-Cal by focusing on whole-person care, reducing health disparities, and better coordinating medical and social services through managed care plans.</p>
+            <p>Community Supports (CS) are optional extra Medi-Cal services offered by health plans to address needs that affect health outcomes. There are 14 CS services, and this portal focuses on Assisted Living Transitions.</p>
+            <p>Assisted Living Transitions helps eligible members move to or remain in assisted living settings, such as RCFEs and ARFs, as a safe alternative to unnecessary skilled nursing placement.</p>
 
             <SectionTitle>Types of Assisted Living (RCFEs/ARFs)</SectionTitle>
             <p>Assisted Living facilities (RCFEs or ARFs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:</p>

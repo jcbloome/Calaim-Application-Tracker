@@ -36,52 +36,38 @@ export function PrintableProgramInfoForm({
         </div>
       </div>
 
-      {/* What is CalAIM */}
-      <div className="col-span-full mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
-          What is CalAIM?
-        </h2>
-        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          California Advancing and Innovating Medi-Cal (CalAIM) is California's long-term initiative to 
-          transform the Medi-Cal program by improving quality outcomes, reducing health disparities, and 
-          creating a more seamless and consistent system. It aims to achieve this through a focus on 
-          "whole person care," which includes addressing social determinants of health, integrating physical, 
-          mental, and social services, and launching new programs like Enhanced Care Management (ECM) and 
-          Community Supports. CS and ECM are administered through managed care plans (MCPs).
-        </p>
-      </div>
-
-      {/* Community Support for Assisted Living Transitions */}
-      <div className="col-span-full mb-8">
-        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
-          Community Support for Assisted Living Transitions
-        </h2>
-        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          There are 14 Community Supports (CS), and this application portal is for one of them, called
-          Assisted Living Transitions. This CS gives eligible members the choice to reside in an assisted
-          living setting-such as a Residential Care Facility for the Elderly (RCFE) or an Adult Residential
-          Facility (ARF)-as a safe alternative to a skilled nursing facility (SNF), promoting greater
-          independence and community integration.
-        </p>
-        <p className="mt-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          The CS is either for SNF Diversion (e.g. for members coming from a community-based setting (e.g., from
-          home or hospital) at risk of premature institutionalization or SNF Transitions (e.g., for members residing
-          in SNFs) eligible to reside in assisted living settings.
-        </p>
-      </div>
-
       {/* The Role of Connections */}
       <div className="col-span-full mb-8">
         <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
           The Role of Connections Care Home Consultants
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          For 35 years Connections has helped private paid families find care homes. We are excited to now 
-          be partnered with MCPs as a CS Provider that assists with understanding the program, finding 
-          participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS.
+          For 35 years Connections has helped private paid families find care homes. We are excited to also
+          help Medi-Cal members find care home placement as a Community Support partner with managed care plans
+          (MCP) for the California Advancing and Innovating Medi-Cal (CalAIM) program. Our role is to assist
+          with understanding the program, finding participating facilities, coordinating paperwork and
+          assessments, and liaising with your MCP to request authorization for the CS.
+        </p>
+      </div>
+
+      {/* CalAIM + Community Supports */}
+      <div className="col-span-full mb-8">
+        <h2 className="text-xl font-semibold text-gray-900 print:text-black mb-4 pb-2 border-b print:border-black">
+          What are CalAIM and Community Supports (CS)?
+        </h2>
+        <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+          California Advancing and Innovating Medi-Cal (CalAIM) is California&apos;s statewide effort to improve
+          Medi-Cal by focusing on whole-person care, reducing health disparities, and better coordinating
+          medical and social services through managed care plans.
         </p>
         <p className="mt-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          Once a member is placed, we also send a MSW to visit the member at the RCFE/ARF for monthly quality control checks and provide ongoing care coordination.
+          Community Supports (CS) are optional extra Medi-Cal services offered by health plans to address
+          needs that affect health outcomes. There are 14 CS services, and this portal focuses on Assisted
+          Living Transitions.
+        </p>
+        <p className="mt-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
+          Assisted Living Transitions helps eligible members move to or remain in assisted living settings,
+          such as RCFEs and ARFs, as a safe alternative to unnecessary skilled nursing placement.
         </p>
       </div>
 
