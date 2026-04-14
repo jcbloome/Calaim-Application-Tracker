@@ -882,6 +882,29 @@ function PathwayPageContent() {
   const healthPlanWithRegion = kaiserRegion
     ? `${application.healthPlan} (${kaiserRegion})`
     : application.healthPlan;
+  const kaiserReferralSubmission = (application as any)?.kaiserReferralSubmission || null;
+  const kaiserReferralSubmitted = Boolean(
+    kaiserReferralSubmission?.submitted ||
+      kaiserReferralSubmission?.submittedAt ||
+      kaiserReferralSubmission?.submittedAtIso
+  );
+  const kaiserReferralSubmittedAt = (() => {
+    const raw = kaiserReferralSubmission?.submittedAtIso || kaiserReferralSubmission?.submittedAt;
+    if (!raw) return '';
+    try {
+      if (typeof raw?.toDate === 'function') {
+        const date = raw.toDate();
+        if (date instanceof Date && !Number.isNaN(date.getTime())) {
+          return date.toLocaleString();
+        }
+      }
+      const parsed = new Date(String(raw));
+      if (!Number.isNaN(parsed.getTime())) return parsed.toLocaleString();
+      return String(raw);
+    } catch {
+      return '';
+    }
+  })();
 
   const pathwayRequirements = getPathwayRequirements(
     application.pathway as 'SNF Transition' | 'SNF Diversion',
@@ -1552,6 +1575,16 @@ function PathwayPageContent() {
                           </div>
                         </AlertDescription>
                     </Alert>
+                )}
+                {String(application.healthPlan || '').toLowerCase().includes('kaiser') && kaiserReferralSubmitted && (
+                  <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertTitle>Kaiser referral form already submitted</AlertTitle>
+                    <AlertDescription>
+                      Submitted {kaiserReferralSubmittedAt ? `on ${kaiserReferralSubmittedAt}` : 'previously'}.
+                      Duplicate sends are blocked unless staff uses an explicit override.
+                    </AlertDescription>
+                  </Alert>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                     <div className="truncate col-span-2 sm:col-span-1"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>

@@ -5021,6 +5021,17 @@ function ApplicationDetailPageContent() {
           : new Date(value);
     return Number.isNaN(parsed.getTime()) ? '' : format(parsed, 'PPP p');
   };
+  const kaiserReferralSubmission = (application as any)?.kaiserReferralSubmission || null;
+  const kaiserReferralSubmitted = Boolean(
+    kaiserReferralSubmission?.submitted ||
+      kaiserReferralSubmission?.submittedAt ||
+      kaiserReferralSubmission?.submittedAtIso ||
+      kaiserReferralSubmission?.providerMessageId
+  );
+  const kaiserReferralSubmittedAtLabel =
+    formatDateTimeValue(kaiserReferralSubmission?.submittedAt) ||
+    formatDateTimeValue(kaiserReferralSubmission?.submittedAtIso) ||
+    '';
   const isNewCsSummary =
     Boolean(csSummaryCompletedAt) &&
     !application.applicationChecked &&
@@ -7247,6 +7258,16 @@ function ApplicationDetailPageContent() {
                     The member or their representative has declined Community Support services in the Freedom of Choice waiver. Immediate follow-up may be required.
                 </AlertDescription>
             </Alert>
+        )}
+        {isKaiserPlan && kaiserReferralSubmitted && (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertTitle>Kaiser referral form already submitted</AlertTitle>
+            <AlertDescription>
+              Submitted {kaiserReferralSubmittedAtLabel ? `on ${kaiserReferralSubmittedAtLabel}` : 'previously'}.
+              Additional sends are blocked unless override is explicitly enabled.
+            </AlertDescription>
+          </Alert>
         )}
         {needsUrgentAttention && (
              <Alert variant="destructive">

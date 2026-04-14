@@ -27,6 +27,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { trackLoginActivityClient, setPortalSessionOnlineClient } from '@/lib/login-activity-client';
 
+const ADMIN_LAST_ACTIVITY_KEY = 'calaim_admin_last_activity_at';
+
 export default function AdminLoginClient() {
   const auth = useAuth();
   const firestore = useFirestore();
@@ -124,6 +126,7 @@ export default function AdminLoginClient() {
       // Mark the current session as admin early (before auth state flips) to prevent
       // session isolation from signing out on the first redirect.
       safeLocalStorageSet('calaim_session_type', 'admin');
+      safeLocalStorageSet(ADMIN_LAST_ACTIVITY_KEY, String(Date.now()));
 
       const isRealDesktop =
         typeof window !== 'undefined' &&
@@ -223,6 +226,7 @@ export default function AdminLoginClient() {
 
       const redirectTo = searchParams.get('redirect');
       const safeRedirect = getSafeAdminRedirect(redirectTo);
+      safeLocalStorageSet(ADMIN_LAST_ACTIVITY_KEY, String(Date.now()));
       router.replace(safeRedirect);
     })().catch((err) => {
       const authError = err as AuthError;

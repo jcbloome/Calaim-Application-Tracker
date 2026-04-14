@@ -170,6 +170,21 @@ export type Application = {
   memberPhone?: string | null;
   memberEmail?: string | null;
   kaiserAuthReceivedDate?: Timestamp | FieldValue;
+  kaiserReferralSubmission?: {
+    submitted?: boolean;
+    submittedAt?: Timestamp | FieldValue;
+    submittedAtIso?: string | null;
+    from?: string | null;
+    to?: string | null;
+    cc?: string[] | null;
+    subject?: string | null;
+    region?: string | null;
+    providerMessageId?: string | null;
+    submittedByName?: string | null;
+    overrideResubmit?: boolean;
+    overrideReason?: string | null;
+  };
+  kaiserReferralSubmissionCount?: number;
 };
 
 export type FormStatus = {

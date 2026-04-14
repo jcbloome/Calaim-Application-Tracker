@@ -40,6 +40,7 @@ type ReferralPrefill = {
 
 interface PrintableKaiserReferralFormProps extends ReferralPrefill {
   applicationId?: string;
+  userId?: string;
   showPrintButton?: boolean;
 }
 
@@ -240,6 +241,7 @@ function SectionBHeader({ itemLabel = '' }: { itemLabel?: string }) {
 
 export function PrintableKaiserReferralForm({
   applicationId,
+  userId,
   showPrintButton = true,
   ...prefill
 }: PrintableKaiserReferralFormProps) {
@@ -287,6 +289,10 @@ export function PrintableKaiserReferralForm({
   const [currentLivingLocation, setCurrentLivingLocation] = React.useState<'A' | 'B' | 'C' | ''>('');
   const [isSendingToKaiser, setIsSendingToKaiser] = React.useState(false);
   const [emailPreviewOpen, setEmailPreviewOpen] = React.useState(false);
+  const [duplicateSubmissionMessage, setDuplicateSubmissionMessage] = React.useState('');
+  const [overrideResubmit, setOverrideResubmit] = React.useState(false);
+  const [overrideReason, setOverrideReason] = React.useState('');
+  const [wasSubmittedInSession, setWasSubmittedInSession] = React.useState(false);
   const [emailDescription, setEmailDescription] = React.useState(
     'Please review the attached referral form for authorization request processing.'
   );
@@ -357,6 +363,7 @@ export function PrintableKaiserReferralForm({
           to: kaiserIntakeEmail,
           region: kaiserRegion || 'Kaiser South',
           applicationId: String(applicationId || ''),
+          userId: String(userId || ''),
           memberName: memberName || 'Member',
           memberMrn: formValues.memberMrn || '',
           memberCounty: memberCounty || '',
@@ -365,15 +372,28 @@ export function PrintableKaiserReferralForm({
           customMessage: previewMessage,
           pdfBase64,
           fileName: `kaiser_referral_${(memberName || 'member').replace(/[^a-z0-9]+/gi, '_').toLowerCase()}.pdf`,
+          overrideResubmit,
+          overrideReason: overrideResubmit ? overrideReason.trim() : '',
         }),
       });
 
       const result = await response.json().catch(() => ({}));
+      if (response.status === 409) {
+        setDuplicateSubmissionMessage(
+          String(
+            result?.error ||
+              `This referral was already submitted${result?.alreadySubmittedAt ? ` on ${result.alreadySubmittedAt}` : ''}.`
+          )
+        );
+        return;
+      }
       if (!response.ok || !result?.success) {
         throw new Error(String(result?.error || 'Failed to send email.'));
       }
 
       setEmailPreviewOpen(false);
+      setDuplicateSubmissionMessage('');
+      setWasSubmittedInSession(true);
       window.alert(`Sent to ${kaiserIntakeEmail} successfully.`);
     } catch (error: any) {
       window.alert(`Send failed: ${String(error?.message || error)}`);
@@ -391,6 +411,35 @@ export function PrintableKaiserReferralForm({
             <DialogDescription>Review the subject and preview before sending.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
+            {duplicateSubmissionMessage ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                <div className="font-semibold">Referral already submitted</div>
+                <div className="mt-1 text-xs">{duplicateSubmissionMessage}</div>
+                <div className="mt-2 flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant={overrideResubmit ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setOverrideResubmit((prev) => !prev)}
+                    disabled={isSendingToKaiser}
+                  >
+                    {overrideResubmit ? 'Override enabled' : 'Enable override resend'}
+                  </Button>
+                </div>
+                {overrideResubmit ? (
+                  <div className="mt-2">
+                    <div className="text-xs text-muted-foreground">Override reason (required)</div>
+                    <Textarea
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      rows={2}
+                      disabled={isSendingToKaiser}
+                      placeholder="Reason for resubmitting this referral"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div>
               <div className="text-xs text-muted-foreground">To</div>
               <div>{kaiserIntakeEmail}</div>
@@ -419,9 +468,12 @@ export function PrintableKaiserReferralForm({
             <Button variant="outline" onClick={() => setEmailPreviewOpen(false)} disabled={isSendingToKaiser}>
               Cancel
             </Button>
-            <Button onClick={() => void handleSendToKaiserIntake()} disabled={isSendingToKaiser}>
+            <Button
+              onClick={() => void handleSendToKaiserIntake()}
+              disabled={isSendingToKaiser || (overrideResubmit && !overrideReason.trim())}
+            >
               {isSendingToKaiser ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Send to Kaiser Intake
+              {overrideResubmit ? 'Resend to Kaiser Intake (Override)' : 'Send to Kaiser Intake'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -444,6 +496,11 @@ export function PrintableKaiserReferralForm({
             Staff reminder: Section 2.2 "Where member is currently living" is required before sending.
             {currentLivingLocation ? ' (Completed)' : ' (Please complete)'}
           </div>
+          {wasSubmittedInSession ? (
+            <div className="text-xs text-blue-700">
+              Kaiser referral was sent in this session. Any additional send requires an override.
+            </div>
+          ) : null}
         </div>
       }
       extraControls={(

@@ -6,6 +6,7 @@ type SendPayload = {
   to: string;
   region: string;
   applicationId?: string;
+  userId?: string;
   memberName?: string;
   memberMrn?: string;
   memberCounty?: string;
@@ -14,6 +15,8 @@ type SendPayload = {
   customMessage?: string;
   pdfBase64: string;
   fileName?: string;
+  overrideResubmit?: boolean;
+  overrideReason?: string;
 };
 
 const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
@@ -47,6 +50,71 @@ async function logKaiserReferralEmail(params: {
   } catch (error) {
     console.error('Failed to write Kaiser referral email log:', error);
   }
+}
+
+function hasPriorKaiserSubmission(data: Record<string, any> | undefined): boolean {
+  if (!data) return false;
+  const submission = (data as any).kaiserReferralSubmission;
+  if (!submission || typeof submission !== 'object') return false;
+  return Boolean(
+    submission.submitted ||
+      submission.submittedAt ||
+      submission.submittedAtIso ||
+      submission.providerMessageId
+  );
+}
+
+function formatSubmissionDate(value: unknown): string | null {
+  if (!value) return null;
+  const ts = value as { toDate?: () => Date };
+  if (ts && typeof ts.toDate === 'function') {
+    try {
+      return ts.toDate().toISOString();
+    } catch {
+      return null;
+    }
+  }
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  return raw;
+}
+
+async function resolveApplicationDoc(params: {
+  applicationId: string;
+  userId?: string;
+}): Promise<{ ref: FirebaseFirestore.DocumentReference; data: Record<string, any> } | null> {
+  const applicationId = String(params.applicationId || '').trim();
+  const userId = String(params.userId || '').trim();
+  if (!applicationId) return null;
+
+  if (userId) {
+    const userAppRef = adminDb.doc(`users/${userId}/applications/${applicationId}`);
+    const userAppSnap = await userAppRef.get();
+    if (userAppSnap.exists) {
+      return { ref: userAppRef, data: (userAppSnap.data() || {}) as Record<string, any> };
+    }
+  }
+
+  const adminAppRef = adminDb.collection('applications').doc(applicationId);
+  const adminAppSnap = await adminAppRef.get();
+  if (adminAppSnap.exists) {
+    return { ref: adminAppRef, data: (adminAppSnap.data() || {}) as Record<string, any> };
+  }
+
+  const groupSnap = await adminDb
+    .collectionGroup('applications')
+    .where(admin.firestore.FieldPath.documentId(), '==', applicationId)
+    .limit(1)
+    .get();
+
+  if (!groupSnap.empty) {
+    const snap = groupSnap.docs[0];
+    return { ref: snap.ref, data: (snap.data() || {}) as Record<string, any> };
+  }
+
+  return null;
 }
 
 export async function POST(request: NextRequest) {
@@ -95,15 +163,63 @@ export async function POST(request: NextRequest) {
     const memberCounty = String(body?.memberCounty || '').trim();
     const referrerName = String(body?.referrerName || '').trim();
     const appId = String(body?.applicationId || '').trim();
+    const userId = String(body?.userId || '').trim();
+    const overrideResubmit = Boolean(body?.overrideResubmit);
+    const overrideReason = String(body?.overrideReason || '').trim();
     const metadata = {
       region,
       applicationId: appId || null,
+      userId: userId || null,
       memberName: memberName || null,
       memberMrn: memberMrn || null,
       memberCounty: memberCounty || null,
       referrerName: referrerName || null,
       fileName,
+      overrideResubmit,
+      overrideReason: overrideReason || null,
     };
+
+    let resolvedApp: { ref: FirebaseFirestore.DocumentReference; data: Record<string, any> } | null = null;
+    if (appId) {
+      resolvedApp = await resolveApplicationDoc({ applicationId: appId, userId });
+      if (resolvedApp && hasPriorKaiserSubmission(resolvedApp.data) && !overrideResubmit) {
+        const alreadySubmittedAt =
+          formatSubmissionDate(resolvedApp.data?.kaiserReferralSubmission?.submittedAtIso) ||
+          formatSubmissionDate(resolvedApp.data?.kaiserReferralSubmission?.submittedAt) ||
+          null;
+
+        await logKaiserReferralEmail({
+          status: 'failure',
+          from: fromAddress,
+          to,
+          cc: [ILS_CC_EMAIL],
+          subject: 'Kaiser referral resend blocked (already submitted)',
+          errorMessage: 'Blocked duplicate referral send without override.',
+          metadata: {
+            ...metadata,
+            alreadySubmittedAt,
+            blockedByDuplicateGuard: true,
+          },
+        });
+
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'This Kaiser referral has already been submitted. Enable override to resend.',
+            alreadySubmittedAt,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    if (overrideResubmit && !overrideReason) {
+      return NextResponse.json(
+        { success: false, error: 'Override reason is required when resubmitting.' },
+        { status: 400 }
+      );
+    }
 
     const subject = String(body?.customSubject || '').trim() || `CS Referral for Member Name: ${memberName} and MRN: ${memberMrn || 'N/A'}`;
     const customMessage = String(body?.customMessage || '').trim();
@@ -158,6 +274,30 @@ export async function POST(request: NextRequest) {
       providerMessageId: String(data?.id || ''),
       metadata,
     });
+
+    if (resolvedApp) {
+      await resolvedApp.ref.set(
+        {
+          kaiserReferralSubmission: {
+            submitted: true,
+            submittedAt: admin.firestore.FieldValue.serverTimestamp(),
+            submittedAtIso: new Date().toISOString(),
+            from: fromAddress,
+            to,
+            cc: [ILS_CC_EMAIL],
+            subject,
+            region: region || null,
+            providerMessageId: String(data?.id || ''),
+            submittedByName: referrerName || null,
+            overrideResubmit,
+            overrideReason: overrideReason || null,
+          },
+          kaiserReferralSubmissionCount: admin.firestore.FieldValue.increment(1),
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

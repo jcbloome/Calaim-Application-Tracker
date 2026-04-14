@@ -10,6 +10,7 @@ function KaiserReferralPrintableContent() {
   return (
     <PrintableKaiserReferralForm
       applicationId={searchParams.get('applicationId') || ''}
+      userId={searchParams.get('userId') || ''}
       memberName={searchParams.get('memberName') || ''}
       memberDob={searchParams.get('memberDob') || ''}
       memberPhone={searchParams.get('memberPhone') || ''}
