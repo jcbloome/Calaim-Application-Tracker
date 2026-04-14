@@ -22,7 +22,7 @@ export function GlossaryDialog({ className }: { className?: string }) {
         <Button
           variant="outline"
           className={cn(
-            "shadow-sm border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-800",
+            "h-9 px-3 text-sm shadow-sm border-border text-muted-foreground hover:bg-muted hover:text-foreground",
             className
           )}
         >

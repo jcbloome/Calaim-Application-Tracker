@@ -149,7 +149,7 @@ function ApplicationCard({
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-semibold truncate">
+            <h3 className="text-lg font-semibold break-words">
               {app.memberFirstName} {app.memberLastName}
             </h3>
             <p className="text-sm text-muted-foreground">
@@ -199,8 +199,8 @@ function ApplicationCard({
         </p>
       </CardContent>
 
-      <CardFooter className="flex items-center justify-between pt-2 gap-2">
-        <Button asChild size="sm" className={`flex-1 ${isActive && app.status !== 'Requires Revision' ? '' : ''}`}>
+      <CardFooter className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between pt-2 gap-2">
+        <Button asChild size="sm" className={`w-full sm:flex-1 ${isActive && app.status !== 'Requires Revision' ? '' : ''}`}>
           <Link href={getActionLink(app)} className="flex items-center justify-center gap-1">
             {getActionText(app)}
             <ArrowRight className="h-4 w-4" />
@@ -210,7 +210,7 @@ function ApplicationCard({
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2"
+            className="w-full sm:w-auto text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2"
             onClick={() => onDelete(app)}
           >
             <Trash2 className="h-4 w-4" />
@@ -340,7 +340,7 @@ export default function MyApplicationsPage() {
 
   if (isUserLoading || !user || isAdmin || isSuperAdmin) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
@@ -384,13 +384,13 @@ export default function MyApplicationsPage() {
         {/* Page header */}
         <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">My Applications</h1>
-            <p className="text-muted-foreground mt-1">
+            <h1 className="text-2xl sm:text-3xl font-bold">My Applications</h1>
+            <p className="text-sm sm:text-base text-muted-foreground mt-1 break-words">
               Welcome back, <strong>{user?.displayName || user?.email || 'Guest'}</strong>.
             </p>
           </div>
-          <Button asChild>
-            <Link href="/forms/cs-summary-form">
+          <Button asChild className="w-full sm:w-auto">
+            <Link href="/forms/cs-summary-form" className="w-full">
               <Plus className="mr-2 h-4 w-4" />
               Start New Application
             </Link>

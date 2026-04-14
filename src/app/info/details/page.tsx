@@ -71,7 +71,7 @@ export default function InfoDetailsPage() {
                 Program Information Page 2
               </h1>
               <div className="mt-4">
-                <GlossaryDialog className="bg-blue-600 text-white hover:bg-blue-700 border-blue-600" />
+                <GlossaryDialog />
               </div>
             </div>
 
@@ -100,7 +100,7 @@ export default function InfoDetailsPage() {
                     <div className="text-left mb-2">
                         <span className="text-sm text-muted-foreground">Page 2 of 4</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex items-center justify-between">
                         <Link href="/info" className="text-sm font-medium text-primary hover:underline">
                             <ArrowLeft className="mr-1 h-4 w-4 inline" /> Previous
                         </Link>

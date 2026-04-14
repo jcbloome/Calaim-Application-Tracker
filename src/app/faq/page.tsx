@@ -53,10 +53,10 @@ export default function FaqPage() {
       <PublicHeader />
       <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             FAQ & Glossary
           </h1>
-          <p className="mt-2 text-lg text-muted-foreground max-w-3xl mx-auto">
+          <p className="mt-2 text-base sm:text-lg text-muted-foreground max-w-3xl mx-auto">
             Find answers to common questions and definitions for key terms.
           </p>
         </div>
@@ -70,8 +70,8 @@ export default function FaqPage() {
                             <dl className="p-4">
                                 {acronyms.map((item, index) => (
                                 <div key={item.term}>
-                                    <div className="flex items-baseline gap-4 py-3">
-                                    <dt className="w-20 text-right font-bold text-primary shrink-0">{item.term}</dt>
+                                    <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-4 py-3">
+                                    <dt className="w-auto sm:w-20 text-left sm:text-right font-bold text-primary shrink-0">{item.term}</dt>
                                     <dd className="text-muted-foreground">{item.definition}</dd>
                                     </div>
                                     {index < acronyms.length - 1 && <Separator />}

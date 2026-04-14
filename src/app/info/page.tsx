@@ -11,7 +11,7 @@ import { PublicHeader } from '@/components/PublicHeader';
 import React from 'react';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-import { acronyms } from '@/lib/data';
+import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 interface InfoSection {
   title: string;
@@ -22,17 +22,17 @@ interface InfoSection {
 
 const infoSections: InfoSection[] = [
   {
-    title: 'The Role of Connections Care Home Consultants',
+    title: 'What is the California Advancing and Innovating Medi-Cal program?',
     content: [
-      'For 35 years Connections has helped private paid families find care homes. We are excited to also help Medi-Cal members find care home placement as a Community Support partner with managed care plans (MCP) for the California Advancing and Innovating Medi-Cal (CalAIM) program. Our role is to assist with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS.',
+      "California Advancing and Innovating Medi-Cal (CalAIM) is California's statewide effort to improve Medi-Cal by focusing on whole-person care, reducing health disparities, and better coordinating medical and social services through managed care plans.",
+      "Community Supports (CS) are optional extra Medi-Cal services offered by managed care plans (MCPs) to address needs that affect health outcomes. There are 14 CS services, and this portal focuses on Assisted Living Transitions.",
+      "Assisted Living Transitions helps eligible members move to or remain in assisted living settings, such as RCFEs and ARFs, as a safe alternative to unnecessary skilled nursing placement.",
     ],
   },
   {
-    title: 'What are CalAIM and Community Supports (CS)?',
+    title: 'The Role of Connections Care Home Consultants',
     content: [
-      "California Advancing and Innovating Medi-Cal (CalAIM) is California's statewide effort to improve Medi-Cal by focusing on whole-person care, reducing health disparities, and better coordinating medical and social services through managed care plans.",
-      "Community Supports (CS) are optional extra Medi-Cal services offered by health plans to address needs that affect health outcomes. There are 14 CS services, and this portal focuses on Assisted Living Transitions.",
-      "Assisted Living Transitions helps eligible members move to or remain in assisted living settings, such as RCFEs and ARFs, as a safe alternative to unnecessary skilled nursing placement.",
+      'For 35 years Connections has helped private paid families find care homes. We are excited to also help Medi-Cal members find care home placement as a Community Support partner with CalAIM MCPs. Our role is to assist with understanding the program, finding participating facilities, coordinating paperwork and assessments, and liaising with your MCP to request authorization for the CS.',
     ],
   },
    {
@@ -65,6 +65,9 @@ export default function InfoPage() {
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
                 Program Information
               </h1>
+              <div className="mt-4">
+                <GlossaryDialog />
+              </div>
             </div>
 
             {infoSections.map((section, index) => (
@@ -100,21 +103,6 @@ export default function InfoPage() {
                     </CardContent>
                 </Card>
             ))}
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-xl sm:text-2xl">Acronym Glossary</CardTitle>
-              </CardHeader>
-              <CardContent className="prose prose-sm max-w-none text-gray-700">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {acronyms.map((item) => (
-                    <p key={item.term} className="mb-0">
-                      <strong>{item.term}:</strong> {item.definition}
-                    </p>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
             <div className="mt-8 w-full border-t pt-4">
                 <div className="text-left mb-2">
                     <span className="text-sm text-muted-foreground">Page 1 of 4</span>

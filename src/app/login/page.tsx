@@ -244,7 +244,7 @@ function LoginPageContent() {
   
   if (isUserLoading || isForcingFreshLogin || Boolean(user)) {
       return (
-          <div className="flex items-center justify-center h-screen">
+          <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
               <Loader2 className="h-8 w-8 animate-spin" />
               <p className="ml-2">Loading session...</p>
           </div>
@@ -254,15 +254,15 @@ function LoginPageContent() {
   return (
     <>
       <Header />
-      <main className="flex-grow flex items-center justify-center bg-slate-50 p-4 min-h-screen">
+      <main className="flex-grow flex items-center justify-center bg-slate-50 p-3 sm:p-4 min-h-screen">
         <Card className="w-full max-w-md shadow-2xl">
-          <CardHeader className="items-center text-center p-6">
-            <CardTitle className="text-3xl font-bold">Connect CalAIM Login</CardTitle>
-            <CardDescription className="text-base">
+          <CardHeader className="items-center text-center p-5 sm:p-6">
+            <CardTitle className="text-2xl sm:text-3xl font-bold">Connect CalAIM Login</CardTitle>
+            <CardDescription className="text-sm sm:text-base">
               Enter your credentials to begin a new or access existing CalAIM applications.
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-6">
+          <CardContent className="p-5 sm:p-6">
             {redirectPathRaw && redirectPathRaw !== '/applications' && (
               <Alert className="mb-4 border-blue-200 bg-blue-50">
                 <AlertDescription className="text-sm text-blue-800">
@@ -358,7 +358,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center h-screen">
+        <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
           <Loader2 className="h-8 w-8 animate-spin" />
           <p className="ml-2">Loading session...</p>
         </div>
