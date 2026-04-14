@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { PublicHeader } from '@/components/PublicHeader';
-import { ArrowRight, BookOpen, LogIn } from 'lucide-react';
+import { ArrowRight, BookOpen, FilePenLine, LogIn } from 'lucide-react';
 
 export default function HomePage() {
   return (
@@ -56,37 +56,47 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Dual CTA: returning users + new users */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8 px-4">
-            <Link href="/login?fresh=1" className="w-full sm:w-auto">
-              <Button
-                size="lg"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-lg font-semibold w-full rounded-full shadow-2xl transition-all duration-300 hover:scale-105 hover:shadow-3xl group"
-              >
-                <LogIn className="mr-2 h-5 w-5" />
-                Sign In / My Applications
-              </Button>
-            </Link>
-            <Link href="/info" className="w-full sm:w-auto">
-              <Button
-                size="lg"
-                variant="outline"
-                className="border-blue-300 text-blue-700 hover:bg-blue-50 px-8 py-4 text-lg font-semibold w-full rounded-full shadow transition-all duration-300 hover:scale-105 group"
-              >
-                <BookOpen className="mr-2 h-5 w-5" />
-                Learn About the Program
-                <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
-              </Button>
-            </Link>
+          {/* Equal-weight CTA options for new and returning users */}
+          <div className="max-w-5xl mx-auto mb-8 px-4">
+            <p className="text-sm sm:text-base text-gray-600 mb-4 font-medium">Choose how you want to get started:</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Link href="/signup" className="w-full">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50 px-6 py-6 text-base sm:text-lg font-semibold w-full rounded-2xl shadow transition-all duration-300 hover:scale-[1.02] group h-auto"
+                >
+                  <FilePenLine className="mr-2 h-5 w-5" />
+                  Begin an Application
+                  <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+                </Button>
+              </Link>
+              <Link href="/login?fresh=1" className="w-full">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50 px-6 py-6 text-base sm:text-lg font-semibold w-full rounded-2xl shadow transition-all duration-300 hover:scale-[1.02] group h-auto"
+                >
+                  <LogIn className="mr-2 h-5 w-5" />
+                  Log In to Existing Applications
+                  <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+                </Button>
+              </Link>
+              <Link href="/info" className="w-full">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50 px-6 py-6 text-base sm:text-lg font-semibold w-full rounded-2xl shadow transition-all duration-300 hover:scale-[1.02] group h-auto"
+                >
+                  <BookOpen className="mr-2 h-5 w-5" />
+                  Learn About the Program
+                  <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+                </Button>
+              </Link>
+            </div>
           </div>
 
-          <p className="text-sm text-gray-500">
-            New here?{' '}
-            <Link href="/signup" className="text-blue-600 hover:underline font-medium">
-              Create a free account
-            </Link>{' '}
-            to start your application.
-          </p>
+          <p className="text-sm text-gray-500">Not sure where to begin? Start with "Learn About the Program."</p>
         </div>
       </main>
     </>
