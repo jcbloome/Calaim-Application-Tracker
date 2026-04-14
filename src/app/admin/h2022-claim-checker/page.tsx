@@ -124,6 +124,10 @@ export default function H2022ClaimCheckerPage() {
   const [syncing, setSyncing] = useState(false);
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [summary, setSummary] = useState<{ total: number; passed: number; failed: number } | null>(null);
+  const [lastCheckMeta, setLastCheckMeta] = useState<{
+    source: 'provided' | 'firestore-cache' | 'caspio-live' | null;
+    checkedAt: string | null;
+  }>({ source: null, checkedAt: null });
   const [lastPulledClaims, setLastPulledClaims] = useState<ResultRow[]>([]);
   const [syncMeta, setSyncMeta] = useState<{ total: number; syncedAt: string; syncMode: 'full' | 'incremental' } | null>(null);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
@@ -237,12 +241,17 @@ export default function H2022ClaimCheckerPage() {
         error?: string;
         summary?: { total: number; passed: number; failed: number };
         rows?: ResultRow[];
+        source?: 'provided' | 'firestore-cache' | 'caspio-live';
       };
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || `Check failed (HTTP ${res.status})`);
       }
       setRows(Array.isArray(data?.rows) ? data.rows : []);
       setSummary(data?.summary || { total: 0, passed: 0, failed: 0 });
+      setLastCheckMeta({
+        source: (data?.source as 'provided' | 'firestore-cache' | 'caspio-live' | undefined) || null,
+        checkedAt: new Date().toISOString(),
+      });
       toast({
         title: 'H2022 check complete',
         description: `Reviewed ${data?.summary?.total || 0} claim(s)${opts?.sourceLabel ? ` from ${opts.sourceLabel}` : ''}.`,
@@ -687,7 +696,7 @@ export default function H2022ClaimCheckerPage() {
               onClick={() => void syncClaims('incremental', true)}
             >
               {syncing || loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Pull New Claims + Check Overlaps
+              Incremental Sync + Check
             </Button>
             <Button
               type="button"
@@ -696,7 +705,7 @@ export default function H2022ClaimCheckerPage() {
               onClick={() => void syncClaims('full', false)}
             >
               {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Run Full Caspio Re-Sync (On Demand)
+              Full Caspio Re-Sync (Refresh Cache)
             </Button>
             <Button
               type="button"
@@ -705,8 +714,22 @@ export default function H2022ClaimCheckerPage() {
               onClick={() => void runCheck({ sourceLabel: 'full Firestore cache' })}
             >
               {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Check All Cached Claims
+              Check All Cached Claims (No Pull)
             </Button>
+          </div>
+          <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1">
+            <div>
+              <span className="font-medium text-foreground">Incremental Sync + Check:</span> pulls only new/changed claims from
+              Caspio, then checks overlap on that latest pull.
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Full Caspio Re-Sync (Refresh Cache):</span> reloads all claims from
+              Caspio into Firestore cache, then runs a full cached overlap check.
+            </div>
+            <div>
+              <span className="font-medium text-foreground">Check All Cached Claims (No Pull):</span> runs overlap checks from
+              Firestore cache only (fastest path, no Caspio pull).
+            </div>
           </div>
           {syncMeta ? (
             <div className="text-xs text-muted-foreground">
@@ -725,6 +748,19 @@ export default function H2022ClaimCheckerPage() {
           <div className="text-xs text-muted-foreground">
             If claims are edited in Caspio, run the full re-sync on demand to refresh all cached Firestore claim records.
           </div>
+          {lastCheckMeta.checkedAt ? (
+            <div className="text-xs text-muted-foreground">
+              Last check source:{' '}
+              {lastCheckMeta.source === 'firestore-cache'
+                ? 'Firestore cache'
+                : lastCheckMeta.source === 'caspio-live'
+                  ? 'Caspio live fallback'
+                  : lastCheckMeta.source === 'provided'
+                    ? 'Latest pulled payload'
+                    : 'Unknown'}{' '}
+              at {new Date(lastCheckMeta.checkedAt).toLocaleString()}.
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
