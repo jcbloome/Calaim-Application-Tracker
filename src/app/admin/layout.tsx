@@ -117,6 +117,7 @@ const adminNavLinks = [
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
       { href: '/admin/email-logs', label: 'Email Logs', icon: Mail },
+      { href: '/admin/email-logs/kaiser-referrals', label: 'Kaiser Referral Logs', icon: Mail },
     ],
   },
   {

@@ -19,11 +19,10 @@ type EmailLogEntry = {
   source?: string;
   to?: string[];
   cc?: string[];
-  bcc?: string[];
   subject?: string;
-  provider?: string;
-  providerMessageId?: string | null;
   errorMessage?: string | null;
+  providerMessageId?: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 function toDateLabel(value: any): string {
@@ -37,7 +36,7 @@ function toDateLabel(value: any): string {
   return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
 }
 
-export default function AdminEmailLogsPage() {
+export default function KaiserReferralEmailLogsPage() {
   const { isAdmin, isUserLoading } = useAdmin();
   const firestore = useFirestore();
   const [logs, setLogs] = useState<EmailLogEntry[]>([]);
@@ -51,7 +50,7 @@ export default function AdminEmailLogsPage() {
       return;
     }
 
-    const q = query(collection(firestore, 'emailLogs'), orderBy('createdAt', 'desc'), limit(500));
+    const q = query(collection(firestore, 'emailLogs'), orderBy('createdAt', 'desc'), limit(1000));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -69,24 +68,29 @@ export default function AdminEmailLogsPage() {
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return logs.filter((row) => {
-      const status = String(row.status || '').toLowerCase();
-      if (statusFilter !== 'all' && status !== statusFilter) return false;
-      if (!needle) return true;
-      const hay = [
-        String(row.from || ''),
-        String(row.subject || ''),
-        String(row.template || ''),
-        String(row.source || ''),
-        String(row.provider || ''),
-        String(row.errorMessage || ''),
-        ...(Array.isArray(row.to) ? row.to : []),
-        ...(Array.isArray(row.cc) ? row.cc : []),
-      ]
-        .join(' ')
-        .toLowerCase();
-      return hay.includes(needle);
-    });
+    return logs
+      .filter((row) => {
+        const template = String(row.template || '').toLowerCase();
+        const source = String(row.source || '').toLowerCase();
+        return template === 'kaiser-referral-intake' || source.includes('/kaiser-referral/send-intake');
+      })
+      .filter((row) => {
+        const status = String(row.status || '').toLowerCase();
+        if (statusFilter !== 'all' && status !== statusFilter) return false;
+        if (!needle) return true;
+        const hay = [
+          String(row.from || ''),
+          String(row.subject || ''),
+          String(row.errorMessage || ''),
+          String(row.providerMessageId || ''),
+          String((row.metadata?.applicationId as string) || ''),
+          ...(Array.isArray(row.to) ? row.to : []),
+          ...(Array.isArray(row.cc) ? row.cc : []),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(needle);
+      });
   }, [logs, search, statusFilter]);
 
   if (isUserLoading) {
@@ -101,18 +105,22 @@ export default function AdminEmailLogsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Email Logs</h1>
-          <p className="text-sm text-muted-foreground">Track all outbound emails with success/failure status.</p>
+          <h1 className="text-2xl font-semibold">Kaiser Referral Email Logs</h1>
+          <p className="text-sm text-muted-foreground">
+            Audit Kaiser referral email delivery attempts and outcomes.
+          </p>
         </div>
-        <Link href="/admin/email-logs/kaiser-referrals">
-          <Button variant="outline" size="sm">Kaiser Referral Logs</Button>
+        <Link href="/admin/email-logs">
+          <Button variant="outline" size="sm">Back to All Email Logs</Button>
         </Link>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Delivery History</CardTitle>
-          <CardDescription>Most recent 500 records from the email log.</CardDescription>
+          <CardTitle>Kaiser Referral Delivery History</CardTitle>
+          <CardDescription>
+            Includes sent time, sender, recipients, status, provider id, and failure details.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
@@ -128,15 +136,15 @@ export default function AdminEmailLogsPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search recipient, subject, template, error..."
+              placeholder="Search by application id, recipient, sender, or error..."
               className="min-w-[260px] max-w-md"
             />
           </div>
 
           {isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading email logs...</div>
+            <div className="text-sm text-muted-foreground">Loading Kaiser referral email logs...</div>
           ) : filtered.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No email logs found.</div>
+            <div className="text-sm text-muted-foreground">No Kaiser referral email logs found.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -146,9 +154,10 @@ export default function AdminEmailLogsPage() {
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2 pr-3">Sender</th>
                     <th className="py-2 pr-3">To</th>
+                    <th className="py-2 pr-3">CC</th>
+                    <th className="py-2 pr-3">Application ID</th>
                     <th className="py-2 pr-3">Subject</th>
-                    <th className="py-2 pr-3">Template</th>
-                    <th className="py-2 pr-3">Source</th>
+                    <th className="py-2 pr-3">Provider Message ID</th>
                     <th className="py-2 pr-3">Error</th>
                   </tr>
                 </thead>
@@ -170,9 +179,10 @@ export default function AdminEmailLogsPage() {
                       </td>
                       <td className="py-2 pr-3">{String(row.from || 'N/A')}</td>
                       <td className="py-2 pr-3">{Array.isArray(row.to) && row.to.length > 0 ? row.to.join(', ') : 'N/A'}</td>
+                      <td className="py-2 pr-3">{Array.isArray(row.cc) && row.cc.length > 0 ? row.cc.join(', ') : 'N/A'}</td>
+                      <td className="py-2 pr-3">{String((row.metadata?.applicationId as string) || 'N/A')}</td>
                       <td className="py-2 pr-3">{String(row.subject || 'N/A')}</td>
-                      <td className="py-2 pr-3">{String(row.template || 'N/A')}</td>
-                      <td className="py-2 pr-3">{String(row.source || 'N/A')}</td>
+                      <td className="py-2 pr-3">{String(row.providerMessageId || 'N/A')}</td>
                       <td className="py-2 pr-3 text-red-700">{row.errorMessage ? String(row.errorMessage) : '-'}</td>
                     </tr>
                   ))}
@@ -185,4 +195,3 @@ export default function AdminEmailLogsPage() {
     </div>
   );
 }
-
