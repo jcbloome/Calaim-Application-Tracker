@@ -11,6 +11,7 @@ type SendPayload = {
   memberMrn?: string;
   memberCounty?: string;
   referrerName?: string;
+  referrerEmail?: string;
   customSubject?: string;
   customMessage?: string;
   pdfBase64: string;
@@ -20,7 +21,30 @@ type SendPayload = {
 };
 
 const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
+const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
+const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_FROM = 'alberto@carehomefinders.com';
+
+function getKaiserReferralCcRecipients() {
+  return Array.from(
+    new Set(
+      [ILS_CC_EMAIL, ALBERTO_COPY_EMAIL, DEYDRY_COPY_EMAIL]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function getKaiserReferralCcRecipientsWithSubmitter(submitterEmail?: string) {
+  const normalizedSubmitterEmail = String(submitterEmail || '').trim().toLowerCase();
+  return Array.from(
+    new Set(
+      [...getKaiserReferralCcRecipients(), normalizedSubmitterEmail]
+        .map((value) => String(value || '').trim())
+        .filter((value) => Boolean(value) && value.includes('@'))
+    )
+  );
+}
 
 async function logKaiserReferralEmail(params: {
   status: 'success' | 'failure';
@@ -130,7 +154,7 @@ export async function POST(request: NextRequest) {
         status: 'failure',
         from: KAISER_REFERRAL_FROM,
         to,
-        cc: [ILS_CC_EMAIL],
+        cc: ccRecipients,
         subject: 'Kaiser referral send failed (invalid payload)',
         errorMessage: 'Missing required email payload.',
         metadata: {
@@ -146,7 +170,7 @@ export async function POST(request: NextRequest) {
         status: 'failure',
         from: KAISER_REFERRAL_FROM,
         to,
-        cc: [ILS_CC_EMAIL],
+        cc: ccRecipients,
         subject: 'Kaiser referral send failed (missing RESEND_API_KEY)',
         errorMessage: 'RESEND_API_KEY is not configured.',
         metadata: {
@@ -162,6 +186,8 @@ export async function POST(request: NextRequest) {
     const memberMrn = String(body?.memberMrn || '').trim();
     const memberCounty = String(body?.memberCounty || '').trim();
     const referrerName = String(body?.referrerName || '').trim();
+    const referrerEmail = String(body?.referrerEmail || '').trim();
+    const ccRecipients = getKaiserReferralCcRecipientsWithSubmitter(referrerEmail);
     const appId = String(body?.applicationId || '').trim();
     const userId = String(body?.userId || '').trim();
     const overrideResubmit = Boolean(body?.overrideResubmit);
@@ -174,6 +200,7 @@ export async function POST(request: NextRequest) {
       memberMrn: memberMrn || null,
       memberCounty: memberCounty || null,
       referrerName: referrerName || null,
+      referrerEmail: referrerEmail || null,
       fileName,
       overrideResubmit,
       overrideReason: overrideReason || null,
@@ -192,7 +219,7 @@ export async function POST(request: NextRequest) {
           status: 'failure',
           from: fromAddress,
           to,
-          cc: [ILS_CC_EMAIL],
+          cc: ccRecipients,
           subject: 'Kaiser referral resend blocked (already submitted)',
           errorMessage: 'Blocked duplicate referral send without override.',
           metadata: {
@@ -241,7 +268,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await resend.emails.send({
       from: fromAddress,
       to: [to],
-      cc: [ILS_CC_EMAIL],
+      cc: ccRecipients,
       subject,
       html,
       attachments: [
@@ -257,7 +284,7 @@ export async function POST(request: NextRequest) {
         status: 'failure',
         from: fromAddress,
         to,
-        cc: [ILS_CC_EMAIL],
+        cc: ccRecipients,
         subject,
         errorMessage: String(error.message || 'Email send failed.'),
         metadata,
@@ -269,7 +296,7 @@ export async function POST(request: NextRequest) {
       status: 'success',
       from: fromAddress,
       to,
-      cc: [ILS_CC_EMAIL],
+      cc: ccRecipients,
       subject,
       providerMessageId: String(data?.id || ''),
       metadata,
@@ -284,11 +311,12 @@ export async function POST(request: NextRequest) {
             submittedAtIso: new Date().toISOString(),
             from: fromAddress,
             to,
-            cc: [ILS_CC_EMAIL],
+            cc: ccRecipients,
             subject,
             region: region || null,
             providerMessageId: String(data?.id || ''),
             submittedByName: referrerName || null,
+            submittedByEmail: referrerEmail || null,
             overrideResubmit,
             overrideReason: overrideReason || null,
           },
@@ -305,7 +333,7 @@ export async function POST(request: NextRequest) {
       status: 'failure',
       from: KAISER_REFERRAL_FROM,
       to: 'unknown',
-      cc: [ILS_CC_EMAIL],
+      cc: getKaiserReferralCcRecipients(),
       subject: 'Kaiser referral send failed (unexpected error)',
       errorMessage: String(error?.message || 'Unexpected error while sending.'),
       metadata: {

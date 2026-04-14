@@ -905,6 +905,8 @@ function PathwayPageContent() {
       return '';
     }
   })();
+  const kaiserReferralSubmittedByName = String(kaiserReferralSubmission?.submittedByName || '').trim();
+  const kaiserReferralSubmittedByEmail = String(kaiserReferralSubmission?.submittedByEmail || '').trim();
 
   const pathwayRequirements = getPathwayRequirements(
     application.pathway as 'SNF Transition' | 'SNF Diversion',
@@ -1582,6 +1584,13 @@ function PathwayPageContent() {
                     <AlertTitle>Kaiser referral form already submitted</AlertTitle>
                     <AlertDescription>
                       Submitted {kaiserReferralSubmittedAt ? `on ${kaiserReferralSubmittedAt}` : 'previously'}.
+                      {kaiserReferralSubmittedByName || kaiserReferralSubmittedByEmail
+                        ? ` Sent by ${
+                            [kaiserReferralSubmittedByName, kaiserReferralSubmittedByEmail]
+                              .filter(Boolean)
+                              .join(' ')
+                          }.`
+                        : ''}
                       Duplicate sends are blocked unless staff uses an explicit override.
                     </AlertDescription>
                   </Alert>

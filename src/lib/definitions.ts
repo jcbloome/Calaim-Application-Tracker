@@ -181,6 +181,7 @@ export type Application = {
     region?: string | null;
     providerMessageId?: string | null;
     submittedByName?: string | null;
+    submittedByEmail?: string | null;
     overrideResubmit?: boolean;
     overrideReason?: string | null;
   };

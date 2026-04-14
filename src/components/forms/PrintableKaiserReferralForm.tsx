@@ -104,6 +104,9 @@ const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
 const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
+const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
+const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
+const KAISER_REFERRAL_CC_RECIPIENTS = [ILS_CC_EMAIL, ALBERTO_COPY_EMAIL, DEYDRY_COPY_EMAIL];
 
 function normalizeCountyName(value: unknown): string {
   return String(value || '')
@@ -308,6 +311,16 @@ export function PrintableKaiserReferralForm({
   const referrerPhone = formValues.referrerPhone;
   const referrerNpi = formValues.referrerNpi;
   const referrerAddress = formValues.referrerAddress;
+  const ccRecipients = React.useMemo(() => {
+    const submitterEmail = String(referrerEmail || '').trim().toLowerCase();
+    return Array.from(
+      new Set(
+        [...KAISER_REFERRAL_CC_RECIPIENTS, submitterEmail]
+          .map((value) => String(value || '').trim())
+          .filter((value) => Boolean(value) && value.includes('@'))
+      )
+    );
+  }, [referrerEmail]);
   const memberCounty = lineValue(prefill.memberCounty);
   const kaiserRegion = getKaiserRegionFromCounty(memberCounty);
   const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
@@ -368,6 +381,7 @@ export function PrintableKaiserReferralForm({
           memberMrn: formValues.memberMrn || '',
           memberCounty: memberCounty || '',
           referrerName: referrerName || '',
+          referrerEmail: referrerEmail || '',
           customSubject: subjectLine,
           customMessage: previewMessage,
           pdfBase64,
@@ -446,7 +460,7 @@ export function PrintableKaiserReferralForm({
             </div>
             <div>
               <div className="text-xs text-muted-foreground">CC</div>
-              <div>{ILS_CC_EMAIL}</div>
+              <div>{ccRecipients.join(', ')}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Email description (editable)</div>
