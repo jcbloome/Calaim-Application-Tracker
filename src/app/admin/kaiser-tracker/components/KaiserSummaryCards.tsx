@@ -75,6 +75,11 @@ export function KaiserSummaryCards({
   const ilsRequestStatusMatchers = [
     { key: 't2038', label: 'T2038 Auth Only Email', accepts: ['t2038 auth only email', 't2308 auth only'] },
     { key: 't2038_requested', label: 'T2038 Requested', accepts: ['t2038 requested'] },
+    {
+      key: 't2038_received_unreachable',
+      label: 'T2038 Received, Unreachable',
+      accepts: ['t2038 received unreachable', 't2038 received, unreachable'],
+    },
     { key: 'h2022', label: 'H2022 Requested', accepts: ['h2022 requested'] },
     { key: 'tier', label: 'Tier Level Requested', accepts: ['tier level requested'] },
     { key: 'tier_appeals', label: 'Tier Level Appeals', accepts: ['tier level appeals', 'tier level appeal'] },

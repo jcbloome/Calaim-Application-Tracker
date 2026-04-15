@@ -126,6 +126,10 @@ export async function GET(request: NextRequest) {
       );
       return requested && !received;
     });
+    const t2038ReceivedUnreachableMembers = rows.filter((m: any) => {
+      const compactStatus = normalizeStatus(m?.Kaiser_Status).replace(/[^a-z0-9]+/g, ' ').trim();
+      return compactStatus === 't2038 received unreachable';
+    });
     const tierRequestedMembers = rows.filter((m: any) => {
       const requested = Boolean(
         toYmd(
@@ -172,6 +176,10 @@ export async function GET(request: NextRequest) {
     const queues = {
       t2038AuthOnly: queueRows(t2038AuthOnlyMembers, (m) => toYmd(m?.Kaiser_T2038_Requested_Date)),
       t2038Requested: queueRows(t2038RequestedMembers, (m) => toYmd(m?.Kaiser_T2038_Requested || m?.Kaiser_T2038_Requested_Date)),
+      t2038ReceivedUnreachable: queueRows(
+        t2038ReceivedUnreachableMembers,
+        (m) => toYmd(m?.Kaiser_T2038_Received_Date || m?.Kaiser_T2038_Received || m?.Kaiser_T038_Received)
+      ),
       tierRequested: queueRows(
         tierRequestedMembers,
         (m) =>
@@ -202,6 +210,7 @@ export async function GET(request: NextRequest) {
     const totalUnique = new Set<string>([
       ...queues.t2038AuthOnly.map((r) => r.id).filter(Boolean),
       ...queues.t2038Requested.map((r) => r.id).filter(Boolean),
+      ...queues.t2038ReceivedUnreachable.map((r) => r.id).filter(Boolean),
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
       ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
@@ -230,6 +239,7 @@ export async function GET(request: NextRequest) {
           <div style="margin:0 0 16px;font-size:12px;color:#374151;">
             <div>T2038 Auth Only Email: <strong>${queues.t2038AuthOnly.length}</strong></div>
             <div>T2038 Requested: <strong>${queues.t2038Requested.length}</strong></div>
+            <div>T2038 Received, Unreachable: <strong>${queues.t2038ReceivedUnreachable.length}</strong></div>
             <div>Tier Level Requested: <strong>${queues.tierRequested.length}</strong></div>
             <div>Tier Level Appeals: <strong>${queues.tierAppeals.length}</strong></div>
             <div>R &amp; B Pending ILS Contract: <strong>${queues.rbPendingIlsContract.length}</strong></div>
@@ -240,6 +250,7 @@ export async function GET(request: NextRequest) {
           ${[
             ['T2038 Auth Only Email', queues.t2038AuthOnly],
             ['T2038 Requested', queues.t2038Requested],
+            ['T2038 Received, Unreachable', queues.t2038ReceivedUnreachable],
             ['Tier Level Requested', queues.tierRequested],
             ['Tier Level Appeals', queues.tierAppeals],
             ['R &amp; B Pending ILS Contract', queues.rbPendingIlsContract],

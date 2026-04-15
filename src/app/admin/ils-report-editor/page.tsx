@@ -88,6 +88,7 @@ const NEW_ILS_NOTE_WINDOW_MS = 48 * 60 * 60 * 1000;
 type QueueKey =
   | 't2038_auth_only_email'
   | 't2038_requested'
+  | 't2038_received_unreachable'
   | 'tier_level_requested'
   | 'tier_level_appeals'
   | 'rb_sent_pending_ils_contract'
@@ -196,6 +197,10 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
       );
     return requested && !received;
   }
+  if (key === 't2038_received_unreachable') {
+    const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
+    return compactStatus === 't2038 received unreachable';
+  }
   if (key === 'tier_level_requested') {
     const requested = Boolean(toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date));
     const received =
@@ -244,6 +249,12 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
 
 const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
   if (key === 't2038_requested') return toYmd(member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date);
+  if (key === 't2038_received_unreachable')
+    return toYmd(
+      (member as any).Kaiser_T2038_Received_Date ||
+        (member as any).Kaiser_T2038_Received ||
+        (member as any).Kaiser_T038_Received
+    );
   if (key === 'tier_level_requested')
     return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
   if (key === 'tier_level_appeals')
@@ -405,6 +416,7 @@ export default function ILSReportEditorPage() {
             (m: ILSReportMember) =>
               queueIncludes(m, 't2038_auth_only_email') ||
               queueIncludes(m, 't2038_requested') ||
+              queueIncludes(m, 't2038_received_unreachable') ||
               queueIncludes(m, 'tier_level_requested') ||
               queueIncludes(m, 'tier_level_appeals') ||
               queueIncludes(m, 'rb_sent_pending_ils_contract') ||
@@ -415,6 +427,7 @@ export default function ILSReportEditorPage() {
             const aDates = [
               ymdSortKey(queueRequestedDate(a, 't2038_auth_only_email')),
               ymdSortKey(queueRequestedDate(a, 't2038_requested')),
+              ymdSortKey(queueRequestedDate(a, 't2038_received_unreachable')),
               ymdSortKey(queueRequestedDate(a, 'tier_level_requested')),
               ymdSortKey(queueRequestedDate(a, 'tier_level_appeals')),
               ymdSortKey(queueRequestedDate(a, 'rb_sent_pending_ils_contract')),
@@ -424,6 +437,7 @@ export default function ILSReportEditorPage() {
             const bDates = [
               ymdSortKey(queueRequestedDate(b, 't2038_auth_only_email')),
               ymdSortKey(queueRequestedDate(b, 't2038_requested')),
+              ymdSortKey(queueRequestedDate(b, 't2038_received_unreachable')),
               ymdSortKey(queueRequestedDate(b, 'tier_level_requested')),
               ymdSortKey(queueRequestedDate(b, 'tier_level_appeals')),
               ymdSortKey(queueRequestedDate(b, 'rb_sent_pending_ils_contract')),
@@ -724,6 +738,7 @@ export default function ILSReportEditorPage() {
 
     const queues = {
       t2038Requested: makeRows('t2038_requested'),
+      t2038ReceivedUnreachable: makeRows('t2038_received_unreachable'),
       tierRequested: makeRows('tier_level_requested'),
       tierAppeals: makeRows('tier_level_appeals'),
       rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
@@ -734,6 +749,7 @@ export default function ILSReportEditorPage() {
 
     const uniqueMemberIds = new Set<string>([
       ...queues.t2038Requested.map((r) => r.id).filter(Boolean),
+      ...queues.t2038ReceivedUnreachable.map((r) => r.id).filter(Boolean),
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
       ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
@@ -785,6 +801,7 @@ export default function ILSReportEditorPage() {
 
     return {
       t2038Requested: makeRows('t2038_requested'),
+      t2038ReceivedUnreachable: makeRows('t2038_received_unreachable'),
       tierRequested: makeRows('tier_level_requested'),
       tierAppeals: makeRows('tier_level_appeals'),
       rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
@@ -798,6 +815,7 @@ export default function ILSReportEditorPage() {
   const stats = useMemo(() => {
     const uniqueMemberIds = new Set<string>([
       ...queues.t2038Requested.map((r) => r.id).filter(Boolean),
+      ...queues.t2038ReceivedUnreachable.map((r) => r.id).filter(Boolean),
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
       ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
@@ -808,6 +826,7 @@ export default function ILSReportEditorPage() {
       totalInQueues: uniqueMemberIds.size,
       t2038AuthOnly: queues.t2038AuthOnly.length,
       t2038Requested: queues.t2038Requested.length,
+      t2038ReceivedUnreachable: queues.t2038ReceivedUnreachable.length,
       tierRequested: queues.tierRequested.length,
       tierAppeals: queues.tierAppeals.length,
       rbPendingIlsContract: queues.rbPendingIlsContract.length,
@@ -818,6 +837,7 @@ export default function ILSReportEditorPage() {
     queues.rbPendingIlsContract,
     queues.t2038AuthOnly,
     queues.t2038Requested,
+    queues.t2038ReceivedUnreachable,
     queues.tierRequested,
     queues.tierAppeals,
     queues.needMoreContactInfoIls,
@@ -882,6 +902,7 @@ export default function ILSReportEditorPage() {
     if (v === 'tier_level_appeals') return 'Tier Level Appeals';
     if (v === 'rb_sent_pending_ils_contract') return 'R & B Sent Pending ILS Contract';
     if (v === 't2038_requested') return 'T2038 Requested';
+    if (v === 't2038_received_unreachable') return 'T2038 Received, Unreachable';
     if (v === 't2038_auth_only_email') return 'T2038 Auth Only Email';
     if (v === 'ils_staff_note') return 'ILS Staff Note';
     return value || 'Unknown Queue';
@@ -1099,7 +1120,7 @@ export default function ILSReportEditorPage() {
       </Card>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -1132,6 +1153,18 @@ export default function ILSReportEditorPage() {
                 <p className="text-xs text-muted-foreground">T2038 Requested</p>
               </div>
               <Clock className="h-4 w-4 text-yellow-700" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-orange-700">{stats.t2038ReceivedUnreachable}</p>
+                <p className="text-xs text-muted-foreground">T2038 Received, Unreachable</p>
+              </div>
+              <Clock className="h-4 w-4 text-orange-700" />
             </div>
           </CardContent>
         </Card>
@@ -1211,6 +1244,14 @@ export default function ILSReportEditorPage() {
                     label: 'Tier Level Requested',
                     rows: queues.tierRequested,
                     editable: true,
+                  },
+                  {
+                    key: 't2038ReceivedUnreachable' as const,
+                    queueKey: 't2038_received_unreachable' as const,
+                    label: 'T2038 Received, Unreachable',
+                    rows: queues.t2038ReceivedUnreachable,
+                    editable: false,
+                    showIlsConnected: false,
                   },
                   {
                     key: 'tierAppeals' as const,

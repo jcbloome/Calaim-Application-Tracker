@@ -28,6 +28,7 @@ type ReportPayload = {
   generatedAtIso?: string;
   queues: {
     t2038Requested: QueueRow[];
+    t2038ReceivedUnreachable: QueueRow[];
     tierRequested: QueueRow[];
     tierAppeals: QueueRow[];
     rbPendingIlsContract: QueueRow[];
@@ -99,6 +100,12 @@ export default function IlsReportPrintablePage() {
         label: 'T2038 Requested',
         rows: payload.queues.t2038Requested,
         key: 't2038req' as const,
+        showIlsConnected: false,
+      },
+      {
+        label: 'T2038 Received, Unreachable',
+        rows: payload.queues.t2038ReceivedUnreachable || [],
+        key: 't2038Unreachable' as const,
         showIlsConnected: false,
       },
       {
@@ -193,6 +200,9 @@ export default function IlsReportPrintablePage() {
           <>
             <span className="rounded-full border px-3 py-1 text-xs">
               <strong>T2038 Requested:</strong> {payload.queues.t2038Requested.length}
+            </span>
+            <span className="rounded-full border px-3 py-1 text-xs">
+              <strong>T2038 Received, Unreachable:</strong> {(payload.queues.t2038ReceivedUnreachable || []).length}
             </span>
             <span className="rounded-full border px-3 py-1 text-xs">
               <strong>Tier Level Requested:</strong> {payload.queues.tierRequested.length}
