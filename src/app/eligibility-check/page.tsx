@@ -313,50 +313,6 @@ export default function EligibilityCheckPage() {
           </Card>
         </div>
 
-        {/* Portal Links (match Pathway links) */}
-        <div className="mb-8">
-          <Card className="border-slate-200 bg-white">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-900">
-                <Shield className="h-5 w-5" />
-                Eligibility portals
-              </CardTitle>
-              <CardDescription>
-                Use these official portals to look up eligibility and take screenshots if needed.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid sm:grid-cols-3 gap-3 text-sm">
-                {[
-                  {
-                    label: 'Health Net Portal',
-                    url: 'https://sso.entrykeyid.com/as/authorization.oauth2?response_type=code&client_id=44eb17c3-cf1e-4479-a811-61d23ae8ffbd&scope=openid%20profile&state=AHTpvDa32bFDvM5ov3mwyNx0K75Gqqp4McPzc6oUgds%3D&redirect_uri=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&code_challenge_method=S256&nonce=maCZdZx6F1X7mug7ZQiIcWILmxz29uLnBvZQ6mNj4LE&code_challenge=45qFtSM3GXeNCBHkpyU9vJmOwqtKUwYdcb7VJBbw6YA&app_origin=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&brand=healthnet',
-                  },
-                  {
-                    label: 'Kaiser South Portal',
-                    url: 'https://healthy.kaiserpermanente.org/southern-california/community-providers/eligibility',
-                  },
-                  {
-                    label: 'Kaiser North Portal',
-                    url: 'https://healthy.kaiserpermanente.org/northern-california/community-providers/eligibility',
-                  },
-                ].map((link) => (
-                  <a
-                    key={link.label}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50"
-                  >
-                    <span className="font-medium text-slate-800">{link.label}</span>
-                    <ExternalLink className="h-4 w-4 text-slate-500 group-hover:text-slate-700" />
-                  </a>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
         {/* Eligibility Check Form */}
         <Card>
           <CardHeader>
