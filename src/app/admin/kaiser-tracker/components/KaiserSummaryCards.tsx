@@ -122,16 +122,28 @@ export function KaiserSummaryCards({
     return 'other';
   };
 
+  const noActionScopedStatuses = React.useMemo(
+    () => [
+      'T2038 received, Need First Contact',
+      'T2038 received, doc collection',
+      'RCFE Needed',
+      'R&B Needed',
+    ],
+    []
+  );
+
+  const noActionScopedStatusNormalized = React.useMemo(
+    () =>
+      new Set([
+        ...noActionScopedStatuses.map((status) => normalize(status)),
+        normalize('T2038 received, Needs First Contact'),
+        normalize('R B Needed'),
+      ]),
+    [noActionScopedStatuses]
+  );
+
   const isNoActionStatusInScope = (status: string): boolean => {
-    const normalized = normalize(status);
-    return (
-      normalized === 't2038 received need first contact' ||
-      normalized === 't2038 received needs first contact' ||
-      normalized === 't2038 received doc collection' ||
-      normalized === 'rcfe needed' ||
-      normalized === 'r b needed' ||
-      normalized === 'r&b needed'
-    );
+    return noActionScopedStatusNormalized.has(normalize(status));
   };
 
   React.useEffect(() => {
@@ -848,6 +860,17 @@ export function KaiserSummaryCards({
             ) : (
               <div className="text-[11px] text-emerald-700">No assignment-name issues detected.</div>
             )}
+          </div>
+
+          <div className="space-y-1 border-t pt-2">
+            <div className="text-[11px] font-semibold text-muted-foreground">Scoped Kaiser_Status values (No Action 7+ Days)</div>
+            <div className="grid grid-cols-1 gap-1 text-[11px] text-muted-foreground">
+              {noActionScopedStatuses.map((status) => (
+                <div key={`no-action-scope-${status}`} className="rounded border border-slate-200 bg-slate-50 px-2 py-1">
+                  {status}
+                </div>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>
