@@ -35,11 +35,10 @@ export function PrintableProgramInfo() {
 
             <SectionTitle>What are CalAIM and Community Supports (CS)?</SectionTitle>
             <p>California Advancing and Innovating Medi-Cal (CalAIM) is California's statewide effort to improve Medi-Cal by focusing on whole-person care, reducing health disparities, and better coordinating medical and social services through managed care plans.</p>
-            <p>Community Supports (CS) are optional extra Medi-Cal services offered by health plans to address needs that affect health outcomes. There are 14 CS services, and this portal focuses on Assisted Living Transitions.</p>
-            <p>Assisted Living Transitions helps eligible members move to or remain in assisted living settings, such as RCFEs and ARFs, as a safe alternative to unnecessary skilled nursing placement.</p>
+            <p>CalAIM has two components: Enhanced Care Management (ECM), which provides ongoing case management for members with complex care needs, and Community Supports (CS), optional Medi-Cal services that address needs affecting health outcomes. This portal is related to one CS service, Assisted Living Transitions, which helps eligible members in skilled nursing facilities or in the community who are at risk of premature institutionalization transition to assisted living settings.</p>
 
             <SectionTitle>Types of Assisted Living (RCFEs/ARFs)</SectionTitle>
-            <p>Assisted Living facilities (RCFEs or ARFs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:</p>
+            <p>Assisted living--also known as residential care facilities for the elderly (RCFEs) or adult residential facilities (ARFs)--comes in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:</p>
             <ul className="list-disc pl-5 space-y-2">
                 <li><strong>Small, Home-Like Settings:</strong> These are typically 4-6 bed homes that provide a high staff-to-resident ratio. This environment offers more personalized attention and a quieter, more intimate living experience.</li>
                 <li><strong>Large, Community Settings:</strong> These are often 100+ bed facilities that feature amenities like group dining rooms, a wide variety of planned activities, and social opportunities. Staff is available as needed to provide care and support.</li>
@@ -49,10 +48,10 @@ export function PrintableProgramInfo() {
             <p>Medicare is a federal health insurance program mainly for people 65 or older. Medi-Cal is California's Medicaid program for low-income individuals. The CalAIM program is a Medi-Cal benefit.</p>
 
             <SectionTitle>Managed Care Plans We Work With</SectionTitle>
-            <p>Connections currently is only contracted with <strong>Health Net</strong> and <strong>Kaiser</strong> for the CS for Assisted Living Transitions.</p>
+            <p>Connections is currently contracted with <strong>Health Net</strong> and <strong>Kaiser</strong> for the CS for Assisted Living Transitions.</p>
             <ul className="list-disc pl-5 space-y-2">
                 <li><strong>Health Net:</strong> Serving members in <strong>Sacramento</strong> and <strong>Los Angeles</strong> counties.</li>
-                <li><strong>Kaiser Permanente:</strong> Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser. Kaiser is active in these counties: Alameda, Alpine, Amador, Butte, Calaveras, Colusa, Contra Costa, Del Norte, El Dorado, Fresno, Glenn, Humboldt, Imperial, Inyo, Kern, Kings, Lake, Lassen, Los Angeles, Madera, Marin, Mariposa, Mendocino, Merced, Modoc, Mono, Monterey, Napa, Nevada, Orange, Placer, Plumas, Riverside, Sacramento, San Benito, San Bernardino, San Diego, San Francisco, San Joaquin, San Luis Obispo, San Mateo, Santa Barbara, Santa Clara, Santa Cruz, Shasta, Sierra, Siskiyou, Solano, Sonoma, Stanislaus, Sutter, Tehama, Trinity, Tulare, Tuolumne, Ventura, Yolo, and Yuba.</li>
+                <li><strong>Kaiser:</strong> Serving members in various counties in California, including <strong>Los Angeles</strong>, <strong>Sacramento</strong>, <strong>Riverside</strong>, <strong>San Bernardino</strong>, <strong>Ventura</strong>, <strong>San Diego</strong>, and <strong>Orange</strong>, as well as other counties statewide.</li>
             </ul>
 
             <SectionTitle>Switching to Health Net or Kaiser</SectionTitle>

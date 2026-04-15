@@ -17,11 +17,11 @@ const infoSections = [
   {
     title: 'Managed Care Plans We Work With',
     content: [
-      'Connections currently is only contracted with Health Net and Kaiser for the CS for Assisted Living Transitions.',
+      'Connections is currently contracted with Health Net and Kaiser for the CS for Assisted Living Transitions.',
     ],
     list: [
       <>Health Net: Serving members in <strong>Sacramento</strong> and <strong>Los Angeles</strong> counties.</>,
-      <>Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser. Kaiser is active in these counties: Alameda, Alpine, Amador, Butte, Calaveras, Colusa, Contra Costa, Del Norte, El Dorado, Fresno, Glenn, Humboldt, Imperial, Inyo, Kern, Kings, Lake, Lassen, Los Angeles, Madera, Marin, Mariposa, Mendocino, Merced, Modoc, Mono, Monterey, Napa, Nevada, Orange, Placer, Plumas, Riverside, Sacramento, San Benito, San Bernardino, San Diego, San Francisco, San Joaquin, San Luis Obispo, San Mateo, Santa Barbara, Santa Clara, Santa Cruz, Shasta, Sierra, Siskiyou, Solano, Sonoma, Stanislaus, Sutter, Tehama, Trinity, Tulare, Tuolumne, Ventura, Yolo, and Yuba.</>,
+      <>Kaiser: Serving members in various counties in California, including <strong>Los Angeles</strong>, <strong>Sacramento</strong>, <strong>Riverside</strong>, <strong>San Bernardino</strong>, <strong>Ventura</strong>, <strong>San Diego</strong>, and <strong>Orange</strong>, as well as other counties statewide.</>,
     ],
   },
   {

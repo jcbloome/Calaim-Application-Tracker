@@ -48,7 +48,7 @@ export function PrintableProgramInfoFormSpanish({
             Planes de Atención Administrada con los que Trabajamos
           </h3>
           <p className="text-sm print:text-xs text-gray-700 print:text-black mb-4">
-            Connections actualmente solo tiene contrato con <strong>Health Net</strong> y <strong>Kaiser</strong> para el CS para Transiciones de Vida Asistida. Debe cambiar a uno de estos planes si desea trabajar con Connections.
+            Connections actualmente tiene contrato con <strong>Health Net</strong> y <strong>Kaiser</strong> para el CS para Transiciones de Vida Asistida. Debe cambiar a uno de estos planes si desea trabajar con Connections.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="p-4 print:p-4 border print:border-black">
@@ -58,9 +58,9 @@ export function PrintableProgramInfoFormSpanish({
               </p>
             </div>
             <div className="p-4 print:p-4 border print:border-black">
-              <h4 className="font-semibold text-gray-900 print:text-black">Kaiser Permanente</h4>
+              <h4 className="font-semibold text-gray-900 print:text-black">Kaiser</h4>
               <p className="text-sm print:text-xs text-gray-700 print:text-black">
-                Connections tiene contrato para el CS para Kaiser Permanente a través de un subcontrato con Independent Living Systems (ILS), que administra el programa para Kaiser.
+                Sirviendo a miembros en varios condados de California, incluyendo <strong>Los Ángeles</strong>, <strong>Sacramento</strong>, <strong>Riverside</strong>, <strong>San Bernardino</strong>, <strong>Ventura</strong>, <strong>San Diego</strong> y <strong>Orange</strong>, así como en otros condados del estado.
               </p>
             </div>
           </div>
@@ -111,7 +111,7 @@ export function PrintableProgramInfoFormSpanish({
             Tipos de Vida Asistida (RCFEs/ARFs)
           </h3>
           <p className="text-sm print:text-xs text-gray-700 print:text-black mb-4">
-            Las instalaciones de vida asistida (RCFEs o ARFs) vienen en varios tamaños, cada una ofreciendo un ambiente diferente. Connections puede ayudarle a encontrar un entorno que mejor se adapte a sus necesidades:
+            La vida asistida--también conocida como centros residenciales para adultos mayores (RCFEs) o centros residenciales para adultos (ARFs)--viene en varios tamaños, cada uno ofreciendo un ambiente diferente. Connections puede ayudarle a encontrar un entorno que mejor se adapte a sus necesidades:
           </p>
           <ul className="list-disc pl-5 space-y-2 text-sm print:text-xs text-gray-700 print:text-black">
             <li><strong>Entornos Pequeños, Como el Hogar:</strong> Estos son típicamente hogares de 4-6 camas que proporcionan una alta proporción de personal por residente. Este ambiente ofrece atención más personalizada y una experiencia de vida más tranquila e íntima.</li>

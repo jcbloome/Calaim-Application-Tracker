@@ -61,13 +61,11 @@ export function PrintableProgramInfoForm({
           medical and social services through managed care plans.
         </p>
         <p className="mt-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          Community Supports (CS) are optional extra Medi-Cal services offered by health plans to address
-          needs that affect health outcomes. There are 14 CS services, and this portal focuses on Assisted
-          Living Transitions.
-        </p>
-        <p className="mt-3 text-sm print:text-xs text-gray-700 print:text-black leading-relaxed">
-          Assisted Living Transitions helps eligible members move to or remain in assisted living settings,
-          such as RCFEs and ARFs, as a safe alternative to unnecessary skilled nursing placement.
+          CalAIM has two components: Enhanced Care Management (ECM), which provides ongoing case management for
+          members with complex care needs, and Community Supports (CS), optional Medi-Cal services that address
+          needs affecting health outcomes. This portal is related to one CS service, Assisted Living Transitions,
+          which helps eligible members in skilled nursing facilities or in the community who are at risk of
+          premature institutionalization transition to assisted living settings.
         </p>
       </div>
 
@@ -77,8 +75,9 @@ export function PrintableProgramInfoForm({
           Types of Assisted Living (RCFEs/ARFs)
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed mb-4">
-          Assisted Living facilities (RCFEs or ARFs) come in various sizes, each offering a different 
-          environment. Connections can help you find a setting that best suits your needs:
+          Assisted living--also known as residential care facilities for the elderly (RCFEs) or adult residential
+          facilities (ARFs)--comes in various sizes, each offering a different environment. Connections can help
+          you find a setting that best suits your needs:
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div className="p-4 print:p-4 bg-gray-50 print:bg-white border print:border-black">
@@ -115,7 +114,7 @@ export function PrintableProgramInfoForm({
           Managed Care Plans We Work With
         </h2>
         <p className="text-sm print:text-xs text-gray-700 print:text-black leading-relaxed mb-4">
-          Connections currently is only contracted with <strong>Health Net</strong> and <strong>Kaiser</strong> for the CS for Assisted Living Transitions. 
+          Connections is currently contracted with <strong>Health Net</strong> and <strong>Kaiser</strong> for the CS for Assisted Living Transitions. 
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="p-4 print:p-4 border print:border-black">
@@ -127,7 +126,7 @@ export function PrintableProgramInfoForm({
           <div className="p-4 print:p-4 border print:border-black">
             <h3 className="font-semibold text-gray-900 print:text-black">Kaiser Permanente</h3>
             <p className="text-sm print:text-xs text-gray-700 print:text-black">
-              Connections is contracted for the CS for Kaiser Permanente through a subcontract with Independent Living Systems (ILS), which manages the program for Kaiser. Kaiser is active in these counties: Alameda, Alpine, Amador, Butte, Calaveras, Colusa, Contra Costa, Del Norte, El Dorado, Fresno, Glenn, Humboldt, Imperial, Inyo, Kern, Kings, Lake, Lassen, Los Angeles, Madera, Marin, Mariposa, Mendocino, Merced, Modoc, Mono, Monterey, Napa, Nevada, Orange, Placer, Plumas, Riverside, Sacramento, San Benito, San Bernardino, San Diego, San Francisco, San Joaquin, San Luis Obispo, San Mateo, Santa Barbara, Santa Clara, Santa Cruz, Shasta, Sierra, Siskiyou, Solano, Sonoma, Stanislaus, Sutter, Tehama, Trinity, Tulare, Tuolumne, Ventura, Yolo, and Yuba.
+              Serving members in various counties in California, including <strong>Los Angeles</strong>, <strong>Sacramento</strong>, <strong>Riverside</strong>, <strong>San Bernardino</strong>, <strong>Ventura</strong>, <strong>San Diego</strong>, and <strong>Orange</strong>, as well as other counties statewide.
             </p>
           </div>
         </div>

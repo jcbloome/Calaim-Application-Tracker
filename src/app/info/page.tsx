@@ -25,8 +25,7 @@ const infoSections: InfoSection[] = [
     title: 'What is the California Advancing and Innovating Medi-Cal program?',
     content: [
       "California Advancing and Innovating Medi-Cal (CalAIM) is California's statewide effort to improve Medi-Cal by focusing on whole-person care, reducing health disparities, and better coordinating medical and social services through managed care plans.",
-      "Community Supports (CS) are optional extra Medi-Cal services offered by managed care plans (MCPs) to address needs that affect health outcomes. There are 14 CS services, and this portal focuses on Assisted Living Transitions.",
-      "Assisted Living Transitions helps eligible members move to or remain in assisted living settings, such as RCFEs and ARFs, as a safe alternative to unnecessary skilled nursing placement.",
+      "CalAIM has two components: Enhanced Care Management (ECM), which provides ongoing case management for members with complex care needs, and Community Supports (CS), optional Medi-Cal services that address needs affecting health outcomes. This portal is related to one CS service, Assisted Living Transitions, which helps eligible members in skilled nursing facilities or in the community who are at risk of premature institutionalization transition to assisted living settings.",
     ],
   },
   {
@@ -38,7 +37,7 @@ const infoSections: InfoSection[] = [
    {
     title: 'Types of Assisted Living (RCFEs/ARFs)',
     content: [
-      'Assisted Living facilities (RCFEs or ARFs) come in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:',
+      'Assisted living--also known as residential care facilities for the elderly (RCFEs) or adult residential facilities (ARFs)--comes in various sizes, each offering a different environment. Connections can help you find a setting that best suits your needs:',
     ],
     list: [
       'Small, Home-Like Settings: These are typically 4-6 bed homes that provide a high staff-to-resident ratio. This environment offers more personalized attention and a quieter, more intimate living experience.',
