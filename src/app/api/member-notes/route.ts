@@ -710,12 +710,11 @@ function noteMatchesAssignedStaff(note: MemberNote, assignedStaff: string, alias
   const expandedNoteNames: string[] = [];
   if (assignedVariants.length === 0) return false;
 
+  // Strict no-action matching: only count note authorship fields.
+  // Do not treat assignment targets or other staff touches as assigned-staff action.
   const noteNames = [
     note?.createdByName,
-    note?.updatedByName,
-    note?.assignedToName,
     note?.createdBy,
-    note?.assignedTo,
   ]
     .map((name) => normalizePersonName(name))
     .filter(Boolean);
