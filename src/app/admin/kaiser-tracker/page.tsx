@@ -869,18 +869,28 @@ function KaiserTrackerPageContent() {
     if (isLoading || statusListSyncing || notesGlobalSyncing) return;
     stopAllSyncRef.current = false;
     try {
-      await Promise.all([
+      const [, fetchedMembers] = await Promise.all([
         syncKaiserStatusOptions({ quiet: true }),
         fetchCaspioData({ quiet: true }),
       ]);
+      const syncScope = Array.isArray(fetchedMembers) ? fetchedMembers : [];
+      if (syncScope.length > 0) {
+        await syncGlobalLatestNotes(syncScope, {
+          quiet: true,
+          scopeLabel: 'Sync (All): all Kaiser members',
+          includeAllMembers: true,
+        });
+      }
       toast({
         title: 'Synced',
-        description: 'Updated members cache + Kaiser status list.',
+        description: `Updated members cache + Kaiser status list${
+          syncScope.length > 0 ? ' + synced member notes' : ''
+        }.`,
       });
     } catch (e: any) {
       toast({
         title: 'Sync failed',
-        description: e?.message || 'Could not sync members and statuses.',
+        description: e?.message || 'Could not sync members, statuses, and notes.',
         variant: 'destructive',
       });
     }
@@ -1266,7 +1276,7 @@ function KaiserTrackerPageContent() {
             Overview of {members.length} Kaiser members | Members cache sync (ET): {formatEtDateTime(membersCacheLastSyncAt)}
           </p>
           <p className="text-muted-foreground text-xs mt-1">
-            Sync (All) updates member data from Caspio. To sync notes for a specific group, open a staff/status card and use the member list modal&apos;s sync button.
+            Sync (All) updates member data, Kaiser statuses, and member notes. You can still sync notes for a specific group from a staff/status modal.
           </p>
           <p className="text-muted-foreground text-xs mt-1">
             {statusListLoading ? 'Loading Kaiser status list…' : (kaiserStatusListUpdatedAtLabel || ' ')}
