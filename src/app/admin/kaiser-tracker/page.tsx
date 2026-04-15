@@ -332,6 +332,12 @@ function KaiserTrackerPageContent() {
     staffAssigned: 'all'
   });
 
+  const bumpNotesMetaRefresh = () => {
+    // Force child meta effects keyed by members arrays to run again after note syncs.
+    setMembers((prev) => [...prev]);
+    setModalMembers((prev) => [...prev]);
+  };
+
   const formatEtDateTime = (value: string) => {
     if (!value) return 'Never';
     const parsed = new Date(value);
@@ -566,6 +572,7 @@ function KaiserTrackerPageContent() {
         newNotesCount: Number(data?.newNotesCount || 0),
         didSync: true,
       }));
+      bumpNotesMetaRefresh();
       toast({
         title: 'Notes sync complete',
         description: `${data?.existingNotesCount || 0} existing + ${data?.newNotesCount || 0} new notes for ${member.memberFirstName} ${member.memberLastName}`,
@@ -1029,6 +1036,7 @@ function KaiserTrackerPageContent() {
     } finally {
       notesFetchControllerRef.current = null;
       setNotesGlobalSyncing(false);
+      bumpNotesMetaRefresh();
     }
   };
 
