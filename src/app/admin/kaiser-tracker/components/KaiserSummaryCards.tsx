@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle, Database, MapPin, CalendarClock } from 'lucide-react';
 import { useAuth } from '@/firebase';
+import { useAdmin } from '@/hooks/use-admin';
 import type { KaiserMember } from './shared';
 import { getEffectiveKaiserStatus } from './shared';
 
@@ -34,6 +35,7 @@ export function KaiserSummaryCards({
   openMemberModal,
 }: KaiserSummaryCardsProps) {
   const auth = useAuth();
+  const { isSuperAdmin, isKaiserManager } = useAdmin();
   const [assignedStaffMetaByClientId, setAssignedStaffMetaByClientId] = React.useState<
     Record<string, { lastAssignedStaffActionAt: string }>
   >({});
@@ -41,6 +43,21 @@ export function KaiserSummaryCards({
   const [assignedStaffMetaRefreshedAt, setAssignedStaffMetaRefreshedAt] = React.useState('');
   const [activeOverrideByMemberId, setActiveOverrideByMemberId] = React.useState<Record<string, any>>({});
   const [weeklyDigestStatus, setWeeklyDigestStatus] = React.useState<string>('');
+  const [dailyNoActionSnapshot, setDailyNoActionSnapshot] = React.useState<{
+    dayKey: string;
+    start?: {
+      critical: number;
+      priority: number;
+      capturedAt: string;
+      byStaff: Record<string, { critical: number; priority: number }>;
+    };
+    end?: {
+      critical: number;
+      priority: number;
+      capturedAt: string;
+      byStaff: Record<string, { critical: number; priority: number }>;
+    };
+  } | null>(null);
 
   const normalize = (value: string) =>
     String(value || '')
@@ -267,6 +284,8 @@ export function KaiserSummaryCards({
     () => scopedNoActionMembers.filter((m) => getPriorityBucket(getEffectiveKaiserStatus(m)) === 'lesser'),
     [scopedNoActionMembers, getPriorityBucket]
   );
+  const currentNoActionCriticalCount = noActionPriorityMembers.length;
+  const currentNoActionPriorityCount = noActionLesserPriorityMembers.length;
 
   const noActionByStaffRows = React.useMemo(() => {
     const grouped = scopedNoActionMembers.reduce((acc, member) => {
@@ -300,6 +319,15 @@ export function KaiserSummaryCards({
       };
     });
   }, [noActionByStaffRows, getPriorityBucket]);
+  const noActionByStaffCounts = React.useMemo(() => {
+    return noActionOverviewByStaffRows.reduce((acc, row) => {
+      acc[row.staffName] = {
+        critical: row.priorityMembers.length,
+        priority: row.lesserMembers.length,
+      };
+      return acc;
+    }, {} as Record<string, { critical: number; priority: number }>);
+  }, [noActionOverviewByStaffRows]);
 
   const noActionAgingBuckets = React.useMemo(() => {
     const members7to13 = scopedNoActionMembers.filter((member) => {
@@ -316,6 +344,94 @@ export function KaiserSummaryCards({
     });
     return { members7to13, members14to20, members21plus };
   }, [scopedNoActionMembers, assignedStaffMetaByClientId]);
+
+  const getEtDayKey = React.useCallback(() => {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  }, []);
+
+  const persistDailySnapshot = React.useCallback(
+    (snapshot: {
+      dayKey: string;
+      start?: { critical: number; priority: number; capturedAt: string };
+      end?: { critical: number; priority: number; capturedAt: string };
+    } | null) => {
+      try {
+        if (typeof window === 'undefined') return;
+        const storageKey = 'kaiser-no-action-daily-snapshot-v1';
+        if (!snapshot) {
+          window.localStorage.removeItem(storageKey);
+          return;
+        }
+        window.localStorage.setItem(storageKey, JSON.stringify(snapshot));
+      } catch {}
+    },
+    []
+  );
+
+  React.useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const storageKey = 'kaiser-no-action-daily-snapshot-v1';
+      const raw = window.localStorage.getItem(storageKey);
+      const todayKey = getEtDayKey();
+      if (!raw) {
+        setDailyNoActionSnapshot({ dayKey: todayKey });
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        setDailyNoActionSnapshot({ dayKey: todayKey });
+        return;
+      }
+      const parsedDayKey = String(parsed?.dayKey || '').trim();
+      if (!parsedDayKey || parsedDayKey !== todayKey) {
+        const resetForToday = { dayKey: todayKey };
+        setDailyNoActionSnapshot(resetForToday);
+        persistDailySnapshot(resetForToday);
+        return;
+      }
+      setDailyNoActionSnapshot({
+        dayKey: parsedDayKey,
+        start: parsed?.start || undefined,
+        end: parsed?.end || undefined,
+      });
+    } catch {
+      setDailyNoActionSnapshot({ dayKey: getEtDayKey() });
+    }
+  }, [getEtDayKey, persistDailySnapshot]);
+
+  const captureNoActionSnapshot = React.useCallback(
+    (captureType: 'start' | 'end') => {
+      const nowIso = new Date().toISOString();
+      const todayKey = getEtDayKey();
+      setDailyNoActionSnapshot((prev) => {
+        const base = prev?.dayKey === todayKey ? prev : { dayKey: todayKey };
+        const next = {
+          ...base,
+          [captureType]: {
+            critical: currentNoActionCriticalCount,
+            priority: currentNoActionPriorityCount,
+            capturedAt: nowIso,
+            byStaff: noActionByStaffCounts,
+          },
+        };
+        persistDailySnapshot(next);
+        return next;
+      });
+    },
+    [currentNoActionCriticalCount, currentNoActionPriorityCount, getEtDayKey, noActionByStaffCounts, persistDailySnapshot]
+  );
+
+  const startSnapshot = dailyNoActionSnapshot?.start;
+  const endSnapshot = dailyNoActionSnapshot?.end;
+  const criticalDelta = startSnapshot && endSnapshot ? startSnapshot.critical - endSnapshot.critical : null;
+  const priorityDelta = startSnapshot && endSnapshot ? startSnapshot.priority - endSnapshot.priority : null;
+  const canViewDailyProductivityTracker = isSuperAdmin || isKaiserManager;
 
   const staffDataQualityIssues = React.useMemo(() => {
     const issues = new Set<string>();
@@ -671,6 +787,18 @@ export function KaiserSummaryCards({
               : 'Never'}
           </div>
           {weeklyDigestStatus ? <div className="text-[11px] text-muted-foreground">{weeklyDigestStatus}</div> : null}
+          {canViewDailyProductivityTracker ? (
+            <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-700">
+              <span className="font-semibold">Daily progress (ET):</span>{' '}
+              {criticalDelta === null || priorityDelta === null
+                ? 'Capture beginning and end of day to see down/up movement.'
+                : `Critical ${criticalDelta > 0 ? 'down' : criticalDelta < 0 ? 'up' : 'no change'} ${Math.abs(
+                    criticalDelta
+                  )}, Priority ${priorityDelta > 0 ? 'down' : priorityDelta < 0 ? 'up' : 'no change'} ${Math.abs(
+                    priorityDelta
+                  )}`}
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent className="pt-0 space-y-2">
           <button
@@ -780,6 +908,61 @@ export function KaiserSummaryCards({
             </button>
           </div>
 
+          {canViewDailyProductivityTracker ? (
+            <div className="space-y-2 border-t pt-2 rounded border border-slate-200 bg-slate-50 px-2 py-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] font-semibold text-slate-700">
+                  Daily Critical/Priority Tracking (ET)
+                </div>
+                <div className="text-[10px] text-slate-600">{dailyNoActionSnapshot?.dayKey || getEtDayKey()}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <button
+                  type="button"
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-800 hover:bg-slate-100"
+                  onClick={() => captureNoActionSnapshot('start')}
+                >
+                  Capture Beginning of Day
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-800 hover:bg-slate-100"
+                  onClick={() => captureNoActionSnapshot('end')}
+                >
+                  Capture End of Day
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-1 text-[11px] text-slate-700">
+                <div className="rounded border border-slate-200 bg-white px-2 py-1">
+                  <span className="font-semibold">Beginning of day:</span>{' '}
+                  {startSnapshot
+                    ? `Critical ${startSnapshot.critical}, Priority ${startSnapshot.priority} (saved ${formatEtDateTime(
+                        startSnapshot.capturedAt
+                      )})`
+                    : 'Not captured'}
+                </div>
+                <div className="rounded border border-slate-200 bg-white px-2 py-1">
+                  <span className="font-semibold">End of day:</span>{' '}
+                  {endSnapshot
+                    ? `Critical ${endSnapshot.critical}, Priority ${endSnapshot.priority} (saved ${formatEtDateTime(
+                        endSnapshot.capturedAt
+                      )})`
+                    : 'Not captured'}
+                </div>
+                <div className="rounded border border-slate-200 bg-white px-2 py-1">
+                  <span className="font-semibold">Change (BOD → EOD):</span>{' '}
+                  {criticalDelta === null || priorityDelta === null
+                    ? 'Capture both beginning and end of day to calculate'
+                    : `Critical ${criticalDelta > 0 ? 'down' : criticalDelta < 0 ? 'up' : 'no change'} ${Math.abs(
+                        criticalDelta
+                      )}, Priority ${priorityDelta > 0 ? 'down' : priorityDelta < 0 ? 'up' : 'no change'} ${Math.abs(
+                        priorityDelta
+                      )}`}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-1 border-t pt-2">
             <div className="text-[11px] font-semibold text-muted-foreground">Global overview by assigned Kaiser staff</div>
             {noActionOverviewByStaffRows.length === 0 ? (
@@ -806,6 +989,12 @@ export function KaiserSummaryCards({
                     <span className="font-semibold text-red-700 hover:underline">{row.staffMembers.length}</span>
                   </button>
                   <div className="mt-1 grid grid-cols-3 gap-1 text-[10px]">
+                    {(() => {
+                      const startByStaff = startSnapshot?.byStaff?.[row.staffName];
+                      const startCritical = Number(startByStaff?.critical || 0);
+                      const startPriority = Number(startByStaff?.priority || 0);
+                      return (
+                        <>
                     <button
                       type="button"
                       className="rounded border border-red-200 bg-white px-1 py-0.5 text-red-800 hover:bg-red-100"
@@ -820,6 +1009,7 @@ export function KaiserSummaryCards({
                       }
                     >
                       Critical: {row.priorityMembers.length}
+                      {canViewDailyProductivityTracker ? ` (start ${startCritical})` : ''}
                     </button>
                     <button
                       type="button"
@@ -835,10 +1025,14 @@ export function KaiserSummaryCards({
                       }
                     >
                       Priority: {row.lesserMembers.length}
+                      {canViewDailyProductivityTracker ? ` (start ${startPriority})` : ''}
                     </button>
                     <div className="rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-center text-slate-500">
                       Scoped statuses only
                     </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               ))

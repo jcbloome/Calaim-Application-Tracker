@@ -869,28 +869,55 @@ function KaiserTrackerPageContent() {
     if (isLoading || statusListSyncing || notesGlobalSyncing) return;
     stopAllSyncRef.current = false;
     try {
-      const [, fetchedMembers] = await Promise.all([
+      await Promise.all([
         syncKaiserStatusOptions({ quiet: true }),
         fetchCaspioData({ quiet: true }),
       ]);
-      const syncScope = Array.isArray(fetchedMembers) ? fetchedMembers : [];
-      if (syncScope.length > 0) {
-        await syncGlobalLatestNotes(syncScope, {
-          quiet: true,
-          scopeLabel: 'Sync (All): all Kaiser members',
-          includeAllMembers: true,
-        });
-      }
       toast({
         title: 'Synced',
-        description: `Updated members cache + Kaiser status list${
-          syncScope.length > 0 ? ' + synced member notes' : ''
-        }.`,
+        description: 'Updated members cache + Kaiser status list.',
       });
     } catch (e: any) {
       toast({
         title: 'Sync failed',
-        description: e?.message || 'Could not sync members, statuses, and notes.',
+        description: e?.message || 'Could not sync members and statuses.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const syncNoActionNotesGlobal = async () => {
+    if (isLoading || statusListSyncing || notesGlobalSyncing) return;
+    stopAllSyncRef.current = false;
+    const scope = members.filter((member) => String(member?.client_ID2 || '').trim());
+    if (scope.length === 0) {
+      toast({
+        title: 'No members in scope',
+        description: 'Sync members first, then run no-action notes sync.',
+      });
+      return;
+    }
+    try {
+      await syncGlobalLatestNotes(scope, {
+        quiet: true,
+        scopeLabel: 'Global no-action notes sync',
+        includeAllMembers: true,
+      });
+      if (stopAllSyncRef.current) {
+        toast({
+          title: 'No-action notes sync stopped',
+          description: 'Stopped before finishing all members.',
+        });
+        return;
+      }
+      toast({
+        title: 'No-action notes synced',
+        description: `Processed ${scope.length} member${scope.length === 1 ? '' : 's'} for 7-day no-action accuracy.`,
+      });
+    } catch (e: any) {
+      toast({
+        title: 'No-action notes sync failed',
+        description: e?.message || 'Could not sync notes for no-action tracking.',
         variant: 'destructive',
       });
     }
@@ -1276,7 +1303,7 @@ function KaiserTrackerPageContent() {
             Overview of {members.length} Kaiser members | Members cache sync (ET): {formatEtDateTime(membersCacheLastSyncAt)}
           </p>
           <p className="text-muted-foreground text-xs mt-1">
-            Sync (All) updates member data, Kaiser statuses, and member notes. You can still sync notes for a specific group from a staff/status modal.
+            Sync (All) updates member data + Kaiser statuses quickly. Use Sync No-Action Notes to refresh member notes for accurate 7-day no-action tracking.
           </p>
           <p className="text-muted-foreground text-xs mt-1">
             {statusListLoading ? 'Loading Kaiser status list…' : (kaiserStatusListUpdatedAtLabel || ' ')}
@@ -1295,6 +1322,15 @@ function KaiserTrackerPageContent() {
           >
             <RefreshCw className={`h-4 w-4 ${isLoading || statusListSyncing || notesGlobalSyncing ? 'animate-spin' : ''}`} />
             {isLoading || statusListSyncing || notesGlobalSyncing ? 'Syncing…' : 'Sync (All)'}
+          </Button>
+          <Button
+            onClick={() => void syncNoActionNotesGlobal()}
+            disabled={isLoading || statusListSyncing || statusListLoading || notesGlobalSyncing}
+            variant="outline"
+            className="w-full sm:w-auto flex items-center gap-2"
+          >
+            <MessageSquare className={`h-4 w-4 ${notesGlobalSyncing ? 'animate-spin' : ''}`} />
+            {notesGlobalSyncing ? 'Syncing notes…' : 'Sync No-Action Notes'}
           </Button>
           {notesGlobalSyncing ? (
             <Button
