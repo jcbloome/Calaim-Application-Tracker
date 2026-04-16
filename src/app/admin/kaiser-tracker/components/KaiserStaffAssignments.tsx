@@ -33,11 +33,14 @@ export interface NoActionStaffSummary {
   criticalMembers: KaiserMember[];
   priorityMembers: KaiserMember[];
   todayNotedMembers: KaiserMember[];
+  yesterdayNotedMembers: KaiserMember[];
   total: number;
   critical: number;
   priority: number;
   notesTodayTotal: number;
+  notesYesterdayTotal: number;
   membersWithNotesToday: number;
+  membersWithNotesYesterday: number;
 }
 
 export interface KaiserStaffAssignmentsProps {
@@ -109,7 +112,9 @@ export function KaiserStaffAssignments({
           </Button>
         ) : null}
         <div className="text-xs text-muted-foreground mt-2">
-          Pulls notes from Caspio (historical + new) into Firestore and refreshes Notes Today + No Action 7+ Days.
+          {onRefreshNoAction
+            ? 'Pulls notes from Caspio (historical + new) into Firestore and refreshes Recent Notes + No Action 7+ Days.'
+            : 'Recent Notes sync is available to Super Admin and Kaiser Admin only.'}
         </div>
         <div className="text-xs text-muted-foreground mt-1">
           Notes sync (ET): {notesSyncLastAtLabel || 'Never'}
@@ -135,11 +140,14 @@ export function KaiserStaffAssignments({
           const criticalMembers = noAction?.criticalMembers || [];
           const priorityMembers = noAction?.priorityMembers || [];
           const todayNotedMembers = noAction?.todayNotedMembers || [];
+          const yesterdayNotedMembers = noAction?.yesterdayNotedMembers || [];
           const total = Number(noAction?.total || 0);
           const critical = Number(noAction?.critical || 0);
           const priority = Number(noAction?.priority || 0);
           const notesTodayTotal = Number(noAction?.notesTodayTotal || 0);
+          const notesYesterdayTotal = Number(noAction?.notesYesterdayTotal || 0);
           const membersWithNotesToday = Number(noAction?.membersWithNotesToday || 0);
+          const membersWithNotesYesterday = Number(noAction?.membersWithNotesYesterday || 0);
           const activeActionMembers = assignment.members.filter((member) =>
             noActionScopedSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
           );
@@ -294,15 +302,15 @@ export function KaiserStaffAssignments({
                     </div>
 
                     <div className="rounded border border-emerald-100 bg-emerald-50/50 p-2">
-                      <h4 className="text-xs font-semibold text-emerald-800 mb-1">Notes Today</h4>
-                      <div className="space-y-1 text-xs">
+                      <h4 className="text-xs font-semibold text-emerald-800 mb-1">Recent Notes</h4>
+                      <div className="space-y-2 text-xs">
                         <button
                           type="button"
-                          className="w-full flex items-center justify-between rounded px-1 py-0.5 hover:bg-emerald-100"
+                          className="w-full rounded border border-emerald-200 bg-white px-2 py-1 text-left hover:bg-emerald-100"
                           onClick={() =>
                             openMemberModal(
                               todayNotedMembers,
-                              `Notes Today — ${staffName}`,
+                              `Recent Notes — Today (${staffName})`,
                               `${notesTodayTotal} note(s) entered today across ${membersWithNotesToday} members assigned to ${staffName}`,
                               'staff_assignment',
                               `notes_today_${staffName}`
@@ -310,14 +318,37 @@ export function KaiserStaffAssignments({
                           }
                           disabled={membersWithNotesToday === 0}
                         >
-                          <span className="text-emerald-900">Today count</span>
-                          <span
-                            className={`font-semibold ${
+                          <div className="text-emerald-900">Today count</div>
+                          <div
+                            className={`font-semibold text-right ${
                               membersWithNotesToday > 0 ? 'text-emerald-700 hover:underline' : 'text-slate-400'
                             }`}
                           >
                             {notesTodayTotal}
-                          </span>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          className="w-full rounded border border-emerald-200 bg-white px-2 py-1 text-left hover:bg-emerald-100"
+                          onClick={() =>
+                            openMemberModal(
+                              yesterdayNotedMembers,
+                              `Recent Notes — Yesterday (${staffName})`,
+                              `${notesYesterdayTotal} note(s) entered yesterday across ${membersWithNotesYesterday} members assigned to ${staffName}`,
+                              'staff_assignment',
+                              `notes_yesterday_${staffName}`
+                            )
+                          }
+                          disabled={membersWithNotesYesterday === 0}
+                        >
+                          <div className="text-emerald-900">Yesterday count</div>
+                          <div
+                            className={`font-semibold text-right ${
+                              membersWithNotesYesterday > 0 ? 'text-emerald-700 hover:underline' : 'text-slate-400'
+                            }`}
+                          >
+                            {notesYesterdayTotal}
+                          </div>
                         </button>
                       </div>
                     </div>

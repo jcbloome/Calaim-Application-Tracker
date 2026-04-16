@@ -894,10 +894,18 @@ export async function GET(request: NextRequest) {
       const notes = await getNotesFromFirestore(memberKey);
       const staffAliasMap = await getStaffAliasMap();
       const todayEt = toEtDayKey(new Date());
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayEt = toEtDayKey(yesterday);
       const notesTodayCount = notes.reduce((acc, note) => {
         if (!note?.createdAt) return acc;
         const dayKey = toEtDayKey(String(note.createdAt));
         return dayKey && dayKey === todayEt ? acc + 1 : acc;
+      }, 0);
+      const notesYesterdayCount = notes.reduce((acc, note) => {
+        if (!note?.createdAt) return acc;
+        const dayKey = toEtDayKey(String(note.createdAt));
+        return dayKey && dayKey === yesterdayEt ? acc + 1 : acc;
       }, 0);
       const closedCount = notes.reduce((acc, note) => {
         const status = String(note?.status || '').trim().toLowerCase();
@@ -911,6 +919,11 @@ export async function GET(request: NextRequest) {
         if (!note?.createdAt) return acc;
         const dayKey = toEtDayKey(String(note.createdAt));
         return dayKey && dayKey === todayEt ? acc + 1 : acc;
+      }, 0);
+      const assignedStaffNotesYesterdayCount = matchingAssignedStaffNotes.reduce((acc, note) => {
+        if (!note?.createdAt) return acc;
+        const dayKey = toEtDayKey(String(note.createdAt));
+        return dayKey && dayKey === yesterdayEt ? acc + 1 : acc;
       }, 0);
       const lastAssignedStaffActionAt = matchingAssignedStaffNotes.reduce((latest, note) => {
         const createdAt = String(note?.createdAt || '').trim();
@@ -931,6 +944,7 @@ export async function GET(request: NextRequest) {
         lastAssignedStaffActionAt,
         assignedStaffNotesCount: matchingAssignedStaffNotes.length,
         assignedStaffNotesTodayCount,
+        assignedStaffNotesYesterdayCount,
         firstSyncCompleted: hasFirstSync,
         didSync: false,
         notes: [],
@@ -940,6 +954,7 @@ export async function GET(request: NextRequest) {
         newNotesCount: Number(prevStatus?.lastNewNotesCount || 0),
         existingNotesCount: notes.length,
         notesTodayCount,
+        notesYesterdayCount,
       });
     }
 

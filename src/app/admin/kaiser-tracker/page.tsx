@@ -306,11 +306,14 @@ function KaiserTrackerPageContent() {
         criticalMembers: KaiserMember[];
         priorityMembers: KaiserMember[];
         todayNotedMembers: KaiserMember[];
+        yesterdayNotedMembers: KaiserMember[];
         total: number;
         critical: number;
         priority: number;
         notesTodayTotal: number;
+        notesYesterdayTotal: number;
         membersWithNotesToday: number;
+        membersWithNotesYesterday: number;
       }>
     ) => {
       setNoActionByStaffMap((prev) => {
@@ -334,7 +337,9 @@ function KaiserTrackerPageContent() {
             a.critical !== b.critical ||
             a.priority !== b.priority ||
             a.notesTodayTotal !== b.notesTodayTotal ||
-            a.membersWithNotesToday !== b.membersWithNotesToday
+            a.notesYesterdayTotal !== b.notesYesterdayTotal ||
+            a.membersWithNotesToday !== b.membersWithNotesToday ||
+            a.membersWithNotesYesterday !== b.membersWithNotesYesterday
           ) {
             return next;
           }
@@ -1644,7 +1649,9 @@ function KaiserTrackerPageContent() {
         openMemberModal={openMemberModal}
         noActionByStaff={noActionByStaffMap}
         noActionScopedStatuses={NO_ACTION_SCOPED_STATUSES}
-        onRefreshNoAction={() => void refreshNoActionStatuses()}
+        onRefreshNoAction={
+          isSuperAdmin || isKaiserManager ? () => void refreshNoActionStatuses() : undefined
+        }
         isRefreshingNoAction={notesGlobalSyncing && notesGlobalProgress?.scopeLabel === 'No Action 7+ Days'}
         notesSyncLastAtLabel={formatEtDateTime(notesGlobalProgress?.lastSyncAt || '')}
         onSubmitDailyUpdate={(payload) => void submitDailyUpdateForStaff(payload)}

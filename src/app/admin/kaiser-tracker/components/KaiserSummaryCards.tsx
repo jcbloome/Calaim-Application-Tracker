@@ -32,11 +32,14 @@ export interface KaiserSummaryCardsProps {
       criticalMembers: KaiserMember[];
       priorityMembers: KaiserMember[];
       todayNotedMembers: KaiserMember[];
+      yesterdayNotedMembers: KaiserMember[];
       total: number;
       critical: number;
       priority: number;
       notesTodayTotal: number;
+      notesYesterdayTotal: number;
       membersWithNotesToday: number;
+      membersWithNotesYesterday: number;
     }>
   ) => void;
 }
@@ -55,7 +58,14 @@ export function KaiserSummaryCards({
 }: KaiserSummaryCardsProps) {
   const auth = useAuth();
   const [assignedStaffMetaByClientId, setAssignedStaffMetaByClientId] = React.useState<
-    Record<string, { lastAssignedStaffActionAt: string; assignedStaffNotesTodayCount: number }>
+    Record<
+      string,
+      {
+        lastAssignedStaffActionAt: string;
+        assignedStaffNotesTodayCount: number;
+        assignedStaffNotesYesterdayCount: number;
+      }
+    >
   >({});
   const [isLoadingAssignedStaffMeta, setIsLoadingAssignedStaffMeta] = React.useState(false);
   const [assignedStaffMetaRefreshedAt, setAssignedStaffMetaRefreshedAt] = React.useState('');
@@ -193,7 +203,14 @@ export function KaiserSummaryCards({
       }
 
       setIsLoadingAssignedStaffMeta(true);
-      const nextMeta: Record<string, { lastAssignedStaffActionAt: string; assignedStaffNotesTodayCount: number }> = {};
+      const nextMeta: Record<
+        string,
+        {
+          lastAssignedStaffActionAt: string;
+          assignedStaffNotesTodayCount: number;
+          assignedStaffNotesYesterdayCount: number;
+        }
+      > = {};
       let index = 0;
       const concurrency = 8;
 
@@ -218,9 +235,14 @@ export function KaiserSummaryCards({
             nextMeta[clientId2] = {
               lastAssignedStaffActionAt: String(data?.lastAssignedStaffActionAt || ''),
               assignedStaffNotesTodayCount: Number(data?.assignedStaffNotesTodayCount || 0),
+              assignedStaffNotesYesterdayCount: Number(data?.assignedStaffNotesYesterdayCount || 0),
             };
           } catch {
-            nextMeta[clientId2] = { lastAssignedStaffActionAt: '', assignedStaffNotesTodayCount: 0 };
+            nextMeta[clientId2] = {
+              lastAssignedStaffActionAt: '',
+              assignedStaffNotesTodayCount: 0,
+              assignedStaffNotesYesterdayCount: 0,
+            };
           }
         }
       };
@@ -361,21 +383,40 @@ export function KaiserSummaryCards({
         const staffName = getAssignedStaffName(member) || 'Unassigned';
         const clientId2 = String(member?.client_ID2 || '').trim();
         const notesToday = Number(assignedStaffMetaByClientId[clientId2]?.assignedStaffNotesTodayCount || 0);
+        const notesYesterday = Number(assignedStaffMetaByClientId[clientId2]?.assignedStaffNotesYesterdayCount || 0);
         if (!acc[staffName]) {
           acc[staffName] = {
             notesTodayTotal: 0,
+            notesYesterdayTotal: 0,
             todayNotedMembers: [] as KaiserMember[],
+            yesterdayNotedMembers: [] as KaiserMember[],
             seen: new Set<string>(),
+            seenYesterday: new Set<string>(),
           };
         }
         acc[staffName].notesTodayTotal += notesToday;
+        acc[staffName].notesYesterdayTotal += notesYesterday;
         if (notesToday > 0 && !acc[staffName].seen.has(clientId2)) {
           acc[staffName].seen.add(clientId2);
           acc[staffName].todayNotedMembers.push(member);
         }
+        if (notesYesterday > 0 && !acc[staffName].seenYesterday.has(clientId2)) {
+          acc[staffName].seenYesterday.add(clientId2);
+          acc[staffName].yesterdayNotedMembers.push(member);
+        }
         return acc;
       },
-      {} as Record<string, { notesTodayTotal: number; todayNotedMembers: KaiserMember[]; seen: Set<string> }>
+      {} as Record<
+        string,
+        {
+          notesTodayTotal: number;
+          notesYesterdayTotal: number;
+          todayNotedMembers: KaiserMember[];
+          yesterdayNotedMembers: KaiserMember[];
+          seen: Set<string>;
+          seenYesterday: Set<string>;
+        }
+      >
     );
 
     const allStaffNames = new Set<string>([
@@ -387,17 +428,21 @@ export function KaiserSummaryCards({
       const noAction = noActionByStaff.get(staffName);
       const notesToday = notesTodayByStaff[staffName];
       const todayNotedMembers = notesToday?.todayNotedMembers || [];
+      const yesterdayNotedMembers = notesToday?.yesterdayNotedMembers || [];
       return {
         staffName,
         totalMembers: noAction?.totalMembers || [],
         criticalMembers: noAction?.criticalMembers || [],
         priorityMembers: noAction?.priorityMembers || [],
         todayNotedMembers,
+        yesterdayNotedMembers,
         total: Number(noAction?.total || 0),
         critical: Number(noAction?.critical || 0),
         priority: Number(noAction?.priority || 0),
         notesTodayTotal: Number(notesToday?.notesTodayTotal || 0),
+        notesYesterdayTotal: Number(notesToday?.notesYesterdayTotal || 0),
         membersWithNotesToday: todayNotedMembers.length,
+        membersWithNotesYesterday: yesterdayNotedMembers.length,
       };
     });
 
