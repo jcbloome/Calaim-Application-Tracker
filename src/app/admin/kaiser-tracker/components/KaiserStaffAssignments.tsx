@@ -14,6 +14,12 @@ const normalizeStatusText = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+const buildNoActionScopedSet = (statuses?: string[]) => {
+  const base = Array.isArray(statuses) ? statuses : [];
+  return new Set(
+    [...base, 'T2038 received, Needs First Contact', 'R B Needed'].map((status) => normalizeStatusText(status))
+  );
+};
 
 export interface StaffAssignmentData {
   count: number;
@@ -63,6 +69,11 @@ export function KaiserStaffAssignments({
   isRefreshingNoAction,
   notesSyncLastAtLabel,
 }: KaiserStaffAssignmentsProps) {
+  const noActionScopedSet = React.useMemo(
+    () => buildNoActionScopedSet(noActionScopedStatuses),
+    [noActionScopedStatuses]
+  );
+
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold text-gray-900">Kaiser Staff Assignments</h3>
@@ -111,6 +122,14 @@ export function KaiserStaffAssignments({
           const priority = Number(noAction?.priority || 0);
           const notesTodayTotal = Number(noAction?.notesTodayTotal || 0);
           const membersWithNotesToday = Number(noAction?.membersWithNotesToday || 0);
+          const activeActionMembers = assignment.members.filter((member) =>
+            noActionScopedSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
+          );
+          const activeActionCount = activeActionMembers.length;
+          const passiveMembers = assignment.members.filter((member) =>
+            !noActionScopedSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
+          );
+          const passiveCount = passiveMembers.length;
           return (
             <Card
               key={`staff-status-${staffName}`}
@@ -139,17 +158,57 @@ export function KaiserStaffAssignments({
                   <div className="space-y-3">
                     <div className="rounded border border-blue-100 bg-blue-50/50 p-2">
                       <h4 className="text-xs font-semibold text-blue-800 mb-1">Assigned Members</h4>
-                      <button
-                        type="button"
-                        className="w-full flex items-center justify-between rounded px-1 py-0.5 hover:bg-blue-100"
-                        onClick={() => openStaffMemberModal(staffName, assignment.members)}
-                        disabled={assignment.count === 0}
-                      >
-                        <span className="text-blue-900">Total</span>
-                        <span className={`font-semibold ${assignment.count > 0 ? 'text-blue-700 hover:underline' : 'text-slate-400'}`}>
-                          {assignment.count}
-                        </span>
-                      </button>
+                      <div className="space-y-1 text-xs">
+                        <button
+                          type="button"
+                          className="w-full flex items-center justify-between rounded px-1 py-0.5 hover:bg-blue-100"
+                          onClick={() => openStaffMemberModal(staffName, assignment.members)}
+                          disabled={assignment.count === 0}
+                        >
+                          <span className="text-blue-900">Total</span>
+                          <span className={`font-semibold ${assignment.count > 0 ? 'text-blue-700 hover:underline' : 'text-slate-400'}`}>
+                            {assignment.count}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="w-full flex items-center justify-between rounded px-1 py-0.5 hover:bg-blue-100"
+                          onClick={() =>
+                            openMemberModal(
+                              activeActionMembers,
+                              `Active Action Status — ${staffName}`,
+                              `${activeActionCount} members assigned to ${staffName} in active action statuses`,
+                              'staff_assignment',
+                              `active_action_${staffName}`
+                            )
+                          }
+                          disabled={activeActionCount === 0}
+                        >
+                          <span className="text-blue-900">Active</span>
+                          <span className={`font-semibold ${activeActionCount > 0 ? 'text-blue-700 hover:underline' : 'text-slate-400'}`}>
+                            {activeActionCount}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="w-full flex items-center justify-between rounded px-1 py-0.5 hover:bg-blue-100"
+                          onClick={() =>
+                            openMemberModal(
+                              passiveMembers,
+                              `Passive Status — ${staffName}`,
+                              `${passiveCount} members assigned to ${staffName} in passive statuses`,
+                              'staff_assignment',
+                              `passive_status_${staffName}`
+                            )
+                          }
+                          disabled={passiveCount === 0}
+                        >
+                          <span className="text-blue-900">Passive</span>
+                          <span className={`font-semibold ${passiveCount > 0 ? 'text-blue-700 hover:underline' : 'text-slate-400'}`}>
+                            {passiveCount}
+                          </span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="rounded border border-red-100 bg-red-50/40 p-2">
