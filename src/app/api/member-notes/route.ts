@@ -1145,43 +1145,39 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
     const { credentials, baseUrl } = getCaspioConfig();
     const token = await getCaspioToken(credentials);
     
-    // Query for new regular notes
-    const regularNotesUrl = `${baseUrl}/integrations/rest/v3/tables/connect_tbl_clientnotes/records?q.where=Client_ID2='${clientId2}' AND Time_Stamp>'${lastSyncAt}'&q.orderBy=Time_Stamp DESC`;
-    
-    // Query for new ILS notes
-    const ilsNotesUrl = `${baseUrl}/integrations/rest/v3/tables/CalAIM_Member_Notes_ILS/records?q.where=Client_ID2='${clientId2}' AND Timestamp>'${lastSyncAt}'&q.orderBy=Timestamp DESC`;
-    
-    const [regularResponse, ilsResponse] = await Promise.all([
-      fetch(regularNotesUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+    // Use a safety lookback window to avoid missing notes due to timezone/clock skew.
+    // We dedupe by note ID before writing so overlap won't duplicate stored notes.
+    const lastSyncDate = new Date(lastSyncAt);
+    const lookbackMs = 36 * 60 * 60 * 1000;
+    const safeSinceIso = Number.isNaN(lastSyncDate.getTime())
+      ? new Date(Date.now() - lookbackMs).toISOString()
+      : new Date(lastSyncDate.getTime() - lookbackMs).toISOString();
+
+    const regularWhere = `Client_ID2='${clientId2}' AND Time_Stamp>='${safeSinceIso}'`;
+    const ilsWhere = `Client_ID2='${clientId2}' AND Timestamp>='${safeSinceIso}'`;
+
+    const [newCaspioNotes, newILSNotes] = await Promise.all([
+      fetchAllRowsForMemberFromCaspio<CaspioNote>({
+        baseUrl,
+        token,
+        table: 'connect_tbl_clientnotes',
+        whereClause: regularWhere,
+        orderBy: 'Time_Stamp DESC',
+        idField: 'PK_ID',
       }),
-      fetch(ilsNotesUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      })
+      fetchAllRowsForMemberFromCaspio<CaspioILSNote>({
+        baseUrl,
+        token,
+        table: 'CalAIM_Member_Notes_ILS',
+        whereClause: ilsWhere,
+        orderBy: 'Timestamp DESC',
+        idField: 'table_ID',
+      }),
     ]);
-
-    if (!regularResponse.ok) {
-      throw new Error(`Caspio API error (regular notes): ${regularResponse.status} ${regularResponse.statusText}`);
-    }
-    if (!ilsResponse.ok) {
-      throw new Error(`Caspio API error (ILS notes): ${ilsResponse.status} ${ilsResponse.statusText}`);
-    }
-
-    const regularData = await regularResponse.json();
-    const ilsData = await ilsResponse.json();
     
-    const newCaspioNotes: CaspioNote[] = regularData.Result || [];
-    const newILSNotes: CaspioILSNote[] = ilsData.Result || [];
-    
-    console.log(`📥 Found ${newCaspioNotes.length} new regular notes + ${newILSNotes.length} new ILS notes since last sync for Client_ID2: ${clientId2}`);
+    console.log(
+      `📥 Found ${newCaspioNotes.length} candidate regular notes + ${newILSNotes.length} candidate ILS notes since ${safeSinceIso} for Client_ID2: ${clientId2}`
+    );
 
     if (newCaspioNotes.length === 0 && newILSNotes.length === 0) {
       return 0; // No new notes
@@ -1238,12 +1234,16 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
       isILSNote: true
     }));
 
-    // Combine new notes
-    const allNewNotes = [...newTransformedRegularNotes, ...newTransformedILSNotes]
+    // Combine candidate notes and remove deleted ones.
+    const candidateNotes = [...newTransformedRegularNotes, ...newTransformedILSNotes]
       .filter((note) => !deletedIds.has(note.id));
-    
-    // Add new notes to existing cache, dedupe by ID, and sort
-    const existingNotes = memberNotesCache[clientId2] || [];
+
+    // Compare against persisted notes (not only in-memory cache) to avoid re-counting overlap-window rows.
+    const existingNotes = await getNotesFromFirestore(clientId2);
+    const existingIds = new Set(existingNotes.map((note) => String(note.id)));
+    const allNewNotes = candidateNotes.filter((note) => !existingIds.has(String(note.id)));
+
+    // Add only truly new notes to existing notes, then sort.
     const combinedById = new Map<string, MemberNote>();
     [...existingNotes, ...allNewNotes].forEach((note) => {
       combinedById.set(note.id, note);
