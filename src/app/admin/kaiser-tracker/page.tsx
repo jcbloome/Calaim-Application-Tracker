@@ -78,6 +78,7 @@ const getStatusIcon = (status: string) => {
     'T2038 received, Need First Contact': <Phone className="h-3 w-3" />,
     'Tier Level Appeal': <AlertTriangle className="h-3 w-3" />,
     'Tier Level Request Needed': <FileText className="h-3 w-3" />,
+    'T2038_Auth_Email_Kaiser': <Mail className="h-3 w-3" />,
     'T2038 Auth Only Email': <Mail className="h-3 w-3" />,
     'T2038 Request Ready': <CheckCircle className="h-3 w-3" />,
     'T2038, Not Requested, Doc Collection': <FileText className="h-3 w-3" />,

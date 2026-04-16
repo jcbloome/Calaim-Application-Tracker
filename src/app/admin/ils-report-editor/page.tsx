@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/firebase';
 import { 
   FileText, 
-  Save, 
   RefreshCw,
   Calendar,
   AlertTriangle,
@@ -22,7 +21,6 @@ import {
   Loader2,
   Pencil,
   Printer,
-  MessageSquare,
   Database,
   CheckCircle2,
   Circle,
@@ -57,7 +55,32 @@ interface ILSReportMember {
   CalAIM_Status?: string;
   Authorization_Start_Date_H2022?: string;
   Authorization_End_Date_H2022?: string;
+  T2038_Auth_Email_Kaiser?: string;
 }
+
+type QueueRow = {
+  id: string;
+  memberName: string;
+  memberMrn: string;
+  birthDate?: string;
+  ilsConnected?: boolean;
+  rcfeName?: string;
+  rcfeAdminName?: string;
+  rcfeAdminEmail?: string;
+  requestedDate: string;
+};
+
+const toQueueRow = (member: ILSReportMember, requestedDate: string): QueueRow => ({
+  id: String(member.id || ''),
+  memberName: String(member.memberName || '').trim(),
+  memberMrn: String(member.memberMrn || '').trim(),
+  birthDate: toYmd(member.birthDate),
+  ilsConnected: isIlsConnected((member as any).ILS_Connected),
+  rcfeName: String(member.RCFE_Name || '').trim(),
+  rcfeAdminName: String(member.RCFE_Admin_Name || '').trim(),
+  rcfeAdminEmail: String(member.RCFE_Admin_Email || '').trim(),
+  requestedDate,
+});
 
 type MemberNote = {
   id: string;
@@ -91,9 +114,7 @@ type QueueKey =
   | 't2038_received_unreachable'
   | 'tier_level_requested'
   | 'tier_level_appeals'
-  | 'rb_sent_pending_ils_contract'
-  | 'need_more_contact_info_ils'
-  | 'final_rcfe_missing_h2022_dates';
+  | 'rb_sent_pending_ils_contract';
 
 const hasMeaningfulValue = (value: any) => {
   const s = value != null ? String(value).trim() : '';
@@ -153,6 +174,23 @@ const ymdSortKey = (value: any): string => {
   return ymd || '9999-12-31';
 };
 
+const toDateFromYmd = (value: any): Date | null => {
+  const ymd = toYmd(value);
+  if (!ymd) return null;
+  const parsed = new Date(`${ymd}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isWithinNext30Days = (value: any): boolean => {
+  const endDate = toDateFromYmd(value);
+  if (!endDate) return false;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const warningCutoff = new Date(today);
+  warningCutoff.setDate(warningCutoff.getDate() + 30);
+  return endDate >= today && endDate <= warningCutoff;
+};
+
 const normalizeStatus = (value: any) =>
   String(value ?? '')
     .trim()
@@ -164,21 +202,38 @@ const isIlsConnected = (value: any): boolean => {
   return normalized === 'yes' || normalized === 'y' || normalized === 'true' || normalized === '1';
 };
 
-const isTruthyLike = (value: any): boolean => {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  return ['1', 'true', 'yes', 'y', 'on', 'checked'].includes(normalized);
-};
-
 const isFinalMemberAtRcfe = (value: any): boolean => {
   const normalized = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
   return normalized === 'final member at rcfe' || normalized === 'final at rcfe';
 };
 
+const isRbPendingOrFinalAtRcfeStatus = (value: unknown): boolean => {
+  const compact = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  return (
+    compact === 'r b sent pending ils contract' ||
+    compact === 'r b pending ils contract' ||
+    compact === 'final member at rcfe' ||
+    compact === 'final at rcfe'
+  );
+};
+
+const isH2022AuthTrackingEligible = (member: ILSReportMember): boolean => {
+  return isRbPendingOrFinalAtRcfeStatus(getEffectiveKaiserStatus(member) || member.Kaiser_Status);
+};
+
+const isMissingRcfeName = (member: ILSReportMember): boolean => {
+  return !hasMeaningfulValue((member as any).RCFE_Name);
+};
+
 const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
   const status = normalizeStatus(member.Kaiser_Status);
   if (key === 't2038_auth_only_email') {
-    // This label is derived in getEffectiveKaiserStatus and is a known bottleneck.
-    return status === 't2038 auth only email';
+    const hasAuthEmail = hasMeaningfulValue((member as any)?.T2038_Auth_Email_Kaiser);
+    const hasOfficialAuth =
+      hasMeaningfulValue((member as any)?.Kaiser_T2038_Received_Date) ||
+      hasMeaningfulValue((member as any)?.Kaiser_T038_Received) ||
+      hasMeaningfulValue((member as any)?.Kaiser_T2038_Received);
+    return hasAuthEmail && !hasOfficialAuth;
   }
   if (key === 't2038_requested') {
     const requested = Boolean(toYmd(member.Kaiser_T2038_Requested || member.Kaiser_T2038_Requested_Date));
@@ -225,15 +280,6 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
     const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
     return compactStatus === 'tier level appeals' || compactStatus === 'tier level appeal';
   }
-  if (key === 'need_more_contact_info_ils') {
-    return isTruthyLike((member as any).Need_More_Contact_Info_ILS);
-  }
-  if (key === 'final_rcfe_missing_h2022_dates') {
-    if (!isFinalMemberAtRcfe((member as any).CalAIM_Status)) return false;
-    const hasStart = Boolean(toYmd((member as any).Authorization_Start_Date_H2022));
-    const hasEnd = Boolean(toYmd((member as any).Authorization_End_Date_H2022));
-    return !hasStart || !hasEnd;
-  }
   // R&B Sent Pending ILS Contract:
   // show only pending members (requested exists or status matches), but hide once H2022 received is set.
   const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
@@ -261,8 +307,6 @@ const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
     return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || (member as any).Kaiser_Next_Step_Date);
   if (key === 't2038_auth_only_email') return toYmd(member.Kaiser_T2038_Requested_Date);
   if (key === 'rb_sent_pending_ils_contract') return toYmd(member.Kaiser_H2022_Requested);
-  if (key === 'need_more_contact_info_ils') return toYmd((member as any).Kaiser_Next_Step_Date);
-  if (key === 'final_rcfe_missing_h2022_dates') return toYmd((member as any).Authorization_End_Date_H2022);
   return '';
 };
 
@@ -273,7 +317,7 @@ const getEffectiveKaiserStatus = (member: any): string => {
     hasMeaningfulValue(member?.Kaiser_T038_Received) ||
     hasMeaningfulValue(member?.Kaiser_T2038_Received);
 
-  if (hasAuthEmail && !hasOfficialAuth) return 'T2038 Auth Only Email';
+  if (hasAuthEmail && !hasOfficialAuth) return 'T2038_Auth_Email_Kaiser';
   return String(member?.Kaiser_Status || '');
 };
 
@@ -282,16 +326,15 @@ export default function ILSReportEditorPage() {
   const auth = useAuth();
   const [members, setMembers] = useState<ILSReportMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncingMembers, setIsSyncingMembers] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [reportDate, setReportDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [reportComments, setReportComments] = useState('');
   const [cardEditOpen, setCardEditOpen] = useState(false);
   const [cardEditQueue, setCardEditQueue] = useState<'tier_level_requested' | 'rb_sent_pending_ils_contract' | null>(null);
   const [cardEditMemberId, setCardEditMemberId] = useState('');
   const [cardEditTierLevel, setCardEditTierLevel] = useState('');
   const [cardEditTierReceivedDate, setCardEditTierReceivedDate] = useState('');
   const [cardEditRbReceivedDate, setCardEditRbReceivedDate] = useState('');
-  const [t2038ModalOpen, setT2038ModalOpen] = useState(false);
   const [isLoadingIlsLog, setIsLoadingIlsLog] = useState(false);
   const [ilsLogRows, setIlsLogRows] = useState<IlsQueueChangeLogRow[]>([]);
   const [ilsLogSearch, setIlsLogSearch] = useState('');
@@ -304,6 +347,8 @@ export default function ILSReportEditorPage() {
   const [memberNotesMeta, setMemberNotesMeta] = useState<{ didSync: boolean; count: number }>({ didSync: false, count: 0 });
   const [accessLoading, setAccessLoading] = useState(true);
   const [canAccessIlsTools, setCanAccessIlsTools] = useState(false);
+  const [summaryModal, setSummaryModal] = useState<{ title: string; rows: QueueRow[] } | null>(null);
+  const didAutoLoadRef = useRef(false);
   const { toast } = useToast();
   const currentUserEmail = String(auth?.currentUser?.email || '').trim().toLowerCase();
   const canEditIlsStaffNotes = currentUserEmail === ILS_STAFF_NOTE_EMAIL || Boolean(isAdmin);
@@ -329,24 +374,29 @@ export default function ILSReportEditorPage() {
     }
   };
 
-  // Load Kaiser members for ILS report
-  const loadMembers = async () => {
+  // Load Kaiser members for ILS report (from cache by default; optional manual sync first).
+  const loadMembers = async (opts?: { syncFirst?: boolean; silent?: boolean }) => {
+    const syncFirst = Boolean(opts?.syncFirst);
+    const silent = Boolean(opts?.silent);
     setIsLoading(true);
+    setIsSyncingMembers(syncFirst);
     try {
-      if (!auth?.currentUser) throw new Error('You must be signed in to sync.');
+      if (!auth?.currentUser) throw new Error('You must be signed in to load members.');
 
-      // On-demand full sync from Caspio → Firestore cache, then read from cache.
-      const idToken = await auth.currentUser.getIdToken();
-      // Staff without admin can still access this page; sync is best-effort for admins.
-      const syncRes = await fetch('/api/caspio/members-cache/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'full' }),
-      });
-      if (!syncRes.ok) {
-        console.warn(`Skipping members-cache sync (HTTP ${syncRes.status}); reading existing cache.`);
+      if (syncFirst) {
+        const idToken = await auth.currentUser.getIdToken();
+        // Optional manual full sync from Caspio → Firestore cache.
+        const syncRes = await fetch('/api/caspio/members-cache/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, mode: 'full' }),
+        });
+        if (!syncRes.ok) {
+          console.warn(`Skipping members-cache sync (HTTP ${syncRes.status}); reading existing cache.`);
+        }
       }
 
+      // Always read from the shared cache used by Kaiser Tracker / scheduled pulls.
       const response = await fetch('/api/kaiser-members');
       
       if (!response.ok) {
@@ -407,6 +457,7 @@ export default function ILSReportEditorPage() {
             CalAIM_Status: String(member.CalAIM_Status || '').trim(),
             Authorization_Start_Date_H2022: toYmd(member.Authorization_Start_Date_H2022),
             Authorization_End_Date_H2022: toYmd(member.Authorization_End_Date_H2022),
+            T2038_Auth_Email_Kaiser: String(member.T2038_Auth_Email_Kaiser || '').trim(),
           };
         });
 
@@ -420,8 +471,7 @@ export default function ILSReportEditorPage() {
               queueIncludes(m, 'tier_level_requested') ||
               queueIncludes(m, 'tier_level_appeals') ||
               queueIncludes(m, 'rb_sent_pending_ils_contract') ||
-              queueIncludes(m, 'need_more_contact_info_ils') ||
-              queueIncludes(m, 'final_rcfe_missing_h2022_dates')
+              isH2022AuthTrackingEligible(m)
           )
           .sort((a: ILSReportMember, b: ILSReportMember) => {
             const aDates = [
@@ -431,8 +481,6 @@ export default function ILSReportEditorPage() {
               ymdSortKey(queueRequestedDate(a, 'tier_level_requested')),
               ymdSortKey(queueRequestedDate(a, 'tier_level_appeals')),
               ymdSortKey(queueRequestedDate(a, 'rb_sent_pending_ils_contract')),
-              ymdSortKey(queueRequestedDate(a, 'need_more_contact_info_ils')),
-              ymdSortKey(queueRequestedDate(a, 'final_rcfe_missing_h2022_dates')),
             ].sort();
             const bDates = [
               ymdSortKey(queueRequestedDate(b, 't2038_auth_only_email')),
@@ -441,8 +489,6 @@ export default function ILSReportEditorPage() {
               ymdSortKey(queueRequestedDate(b, 'tier_level_requested')),
               ymdSortKey(queueRequestedDate(b, 'tier_level_appeals')),
               ymdSortKey(queueRequestedDate(b, 'rb_sent_pending_ils_contract')),
-              ymdSortKey(queueRequestedDate(b, 'need_more_contact_info_ils')),
-              ymdSortKey(queueRequestedDate(b, 'final_rcfe_missing_h2022_dates')),
             ].sort();
             const aFirst = aDates[0] || '9999-12-31';
             const bFirst = bDates[0] || '9999-12-31';
@@ -454,22 +500,29 @@ export default function ILSReportEditorPage() {
         setSelectedMemberForNotes('');
         setSelectedMemberNotes([]);
         setMemberNotesMeta({ didSync: false, count: 0 });
-        
-        toast({
-          title: 'Members Loaded',
-          description: `Found ${filtered.length} member(s) in requested queues`,
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
+
+        if (!silent) {
+          toast({
+            title: syncFirst ? 'Manual Sync Complete' : 'Members Loaded',
+            description: syncFirst
+              ? `Synced and loaded ${filtered.length} member(s) from latest Kaiser cache`
+              : `Loaded ${filtered.length} member(s) from Kaiser cache`,
+            className: 'bg-green-100 text-green-900 border-green-200',
+          });
+        }
       }
     } catch (error: any) {
       console.error('Error loading members:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Load Failed',
-        description: 'Could not load Kaiser members for ILS report',
-      });
+      if (!silent) {
+        toast({
+          variant: 'destructive',
+          title: 'Load Failed',
+          description: 'Could not load Kaiser members for ILS report',
+        });
+      }
     } finally {
       setIsLoading(false);
+      setIsSyncingMembers(false);
     }
   };
 
@@ -707,69 +760,11 @@ export default function ILSReportEditorPage() {
     setCardEditMemberId('');
   };
 
-  // Open printable report via dedicated route.
-  const openPrintableReport = (opts?: { includeT2038?: boolean; title?: string; autoPrint?: boolean }) => {
-    const includeT2038 = Boolean(opts?.includeT2038);
-    const reportTitle = opts?.title || 'ILS Member Requests';
-    const autoPrint = opts?.autoPrint !== false;
+  // Open printable report using route-based preview protocol.
+  const openPrintableReport = (opts?: { title?: string }) => {
+    const reportTitle = opts?.title || 'ILS Pending Tracker Report';
 
-    const makeRows = (key: QueueKey) => {
-      const rows = members
-        .filter((m) => queueIncludes(m, key))
-        .map((m) => ({
-          id: String(m.id || ''),
-          memberName: String(m.memberName || '').trim(),
-          memberMrn: String(m.memberMrn || '').trim(),
-          birthDate: toYmd(m.birthDate),
-          ilsConnected: isIlsConnected((m as any).ILS_Connected),
-          rcfeName: String(m.RCFE_Name || '').trim(),
-          rcfeAdminName: String(m.RCFE_Admin_Name || '').trim(),
-          rcfeAdminEmail: String(m.RCFE_Admin_Email || '').trim(),
-          requestedDate: queueRequestedDate(m, key),
-        }))
-        .sort((a, b) => {
-          const ad = ymdSortKey(a.requestedDate);
-          const bd = ymdSortKey(b.requestedDate);
-          if (ad !== bd) return ad.localeCompare(bd);
-          return a.memberName.localeCompare(b.memberName);
-        });
-      return rows;
-    };
-
-    const queues = {
-      t2038Requested: makeRows('t2038_requested'),
-      t2038ReceivedUnreachable: makeRows('t2038_received_unreachable'),
-      tierRequested: makeRows('tier_level_requested'),
-      tierAppeals: makeRows('tier_level_appeals'),
-      rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
-      t2038AuthOnly: makeRows('t2038_auth_only_email'),
-      needMoreContactInfoIls: makeRows('need_more_contact_info_ils'),
-      finalRcfeMissingH2022Dates: makeRows('final_rcfe_missing_h2022_dates'),
-    };
-
-    const uniqueMemberIds = new Set<string>([
-      ...queues.t2038Requested.map((r) => r.id).filter(Boolean),
-      ...queues.t2038ReceivedUnreachable.map((r) => r.id).filter(Boolean),
-      ...queues.tierRequested.map((r) => r.id).filter(Boolean),
-      ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
-      ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
-      ...queues.needMoreContactInfoIls.map((r) => r.id).filter(Boolean),
-      ...queues.finalRcfeMissingH2022Dates.map((r) => r.id).filter(Boolean),
-      ...(includeT2038 ? queues.t2038AuthOnly.map((r) => r.id).filter(Boolean) : []),
-    ]);
-
-    const reportData = {
-      reportDate,
-      comments: reportComments,
-      totalMembers: uniqueMemberIds.size,
-      queues,
-      includeT2038,
-      reportTitle,
-      generatedAtIso: new Date().toISOString(),
-    };
-    const reportKey = `ils-report-payload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    localStorage.setItem(reportKey, JSON.stringify(reportData));
-    const printableUrl = `/admin/ils-report-editor/printable?reportKey=${encodeURIComponent(reportKey)}${autoPrint ? '&autoprint=1' : ''}`;
+    const printableUrl = `/admin/ils-report-editor/printable?reportDate=${encodeURIComponent(reportDate)}&title=${encodeURIComponent(reportTitle)}&view=pdf`;
     const printableWindow = window.open(printableUrl, '_blank', 'noopener,noreferrer');
     if (!printableWindow) {
       window.location.href = printableUrl;
@@ -780,17 +775,7 @@ export default function ILSReportEditorPage() {
     const makeRows = (key: QueueKey) => {
       return members
         .filter((m) => queueIncludes(m, key))
-        .map((m) => ({
-          id: String(m.id || ''),
-          memberName: String(m.memberName || '').trim(),
-          memberMrn: String(m.memberMrn || '').trim(),
-          birthDate: toYmd(m.birthDate),
-          ilsConnected: isIlsConnected((m as any).ILS_Connected),
-          rcfeName: String(m.RCFE_Name || '').trim(),
-          rcfeAdminName: String(m.RCFE_Admin_Name || '').trim(),
-          rcfeAdminEmail: String(m.RCFE_Admin_Email || '').trim(),
-          requestedDate: queueRequestedDate(m, key),
-        }))
+        .map((m) => toQueueRow(m, queueRequestedDate(m, key)))
         .sort((a, b) => {
           const ad = ymdSortKey(a.requestedDate);
           const bd = ymdSortKey(b.requestedDate);
@@ -806,8 +791,56 @@ export default function ILSReportEditorPage() {
       tierAppeals: makeRows('tier_level_appeals'),
       rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
       t2038AuthOnly: makeRows('t2038_auth_only_email'),
-      needMoreContactInfoIls: makeRows('need_more_contact_info_ils'),
-      finalRcfeMissingH2022Dates: makeRows('final_rcfe_missing_h2022_dates'),
+    };
+  }, [members]);
+
+  const h2022AuthDateTracking = useMemo(() => {
+    const eligibleMembers = members.filter((m) => isH2022AuthTrackingEligible(m));
+
+    const withDates = eligibleMembers.filter(
+      (m) =>
+        Boolean(toYmd((m as any).Authorization_Start_Date_H2022)) &&
+        Boolean(toYmd((m as any).Authorization_End_Date_H2022))
+    );
+    const withDateRows = withDates
+      .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)))
+      .sort((a, b) => a.memberName.localeCompare(b.memberName));
+    const withoutDates = eligibleMembers.filter(
+      (m) =>
+        !toYmd((m as any).Authorization_Start_Date_H2022) ||
+        !toYmd((m as any).Authorization_End_Date_H2022)
+    );
+    const withoutDateRows = withoutDates
+      .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)))
+      .sort((a, b) => a.memberName.localeCompare(b.memberName));
+
+    const finalRcfeMissingDates = eligibleMembers.filter((m) => {
+      if (!isFinalMemberAtRcfe(getEffectiveKaiserStatus(m) || m.Kaiser_Status)) return false;
+      return !toYmd((m as any).Authorization_Start_Date_H2022) || !toYmd((m as any).Authorization_End_Date_H2022);
+    });
+    const finalRcfeMissingRows = finalRcfeMissingDates
+      .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)))
+      .sort((a, b) => a.memberName.localeCompare(b.memberName));
+    const expiringSoonRows = eligibleMembers
+      .filter((m) => isWithinNext30Days((m as any).Authorization_End_Date_H2022))
+      .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)))
+      .sort((a, b) => ymdSortKey(a.requestedDate).localeCompare(ymdSortKey(b.requestedDate)));
+
+    const missingRcfeNameRows = eligibleMembers
+      .filter((m) => isMissingRcfeName(m))
+      .map((m) => toQueueRow(m, toYmd((m as any).Kaiser_H2022_Requested)))
+      .sort((a, b) => a.memberName.localeCompare(b.memberName));
+
+    return {
+      eligibleMembers,
+      withDates,
+      withoutDates,
+      finalRcfeMissingDates,
+      withDateRows,
+      withoutDateRows,
+      finalRcfeMissingRows,
+      expiringSoonRows,
+      missingRcfeNameRows,
     };
   }, [members]);
 
@@ -819,8 +852,8 @@ export default function ILSReportEditorPage() {
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
       ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
-      ...queues.needMoreContactInfoIls.map((r) => r.id).filter(Boolean),
-      ...queues.finalRcfeMissingH2022Dates.map((r) => r.id).filter(Boolean),
+      ...h2022AuthDateTracking.withDateRows.map((r) => r.id).filter(Boolean),
+      ...h2022AuthDateTracking.withoutDateRows.map((r) => r.id).filter(Boolean),
     ]);
     return {
       totalInQueues: uniqueMemberIds.size,
@@ -830,8 +863,11 @@ export default function ILSReportEditorPage() {
       tierRequested: queues.tierRequested.length,
       tierAppeals: queues.tierAppeals.length,
       rbPendingIlsContract: queues.rbPendingIlsContract.length,
-      needMoreContactInfoIls: queues.needMoreContactInfoIls.length,
-      finalRcfeMissingH2022Dates: queues.finalRcfeMissingH2022Dates.length,
+      h2022AuthDatesWith: h2022AuthDateTracking.withDates.length,
+      h2022AuthDatesWithout: h2022AuthDateTracking.withoutDates.length,
+      h2022FinalRcfeMissingDates: h2022AuthDateTracking.finalRcfeMissingDates.length,
+      h2022ExpiringSoon: h2022AuthDateTracking.expiringSoonRows.length,
+      missingRcfeName: h2022AuthDateTracking.missingRcfeNameRows.length,
     };
   }, [
     queues.rbPendingIlsContract,
@@ -840,8 +876,37 @@ export default function ILSReportEditorPage() {
     queues.t2038ReceivedUnreachable,
     queues.tierRequested,
     queues.tierAppeals,
-    queues.needMoreContactInfoIls,
-    queues.finalRcfeMissingH2022Dates,
+    h2022AuthDateTracking.withDateRows.length,
+    h2022AuthDateTracking.withoutDateRows.length,
+    h2022AuthDateTracking.finalRcfeMissingDates.length,
+    h2022AuthDateTracking.expiringSoonRows.length,
+    h2022AuthDateTracking.missingRcfeNameRows.length,
+  ]);
+
+  const totalQueueRows = useMemo(() => {
+    const dedup = new Map<string, QueueRow>();
+    const addRows = (rows: QueueRow[]) => {
+      for (const row of rows) {
+        const key = String(row.id || '').trim() || `${row.memberName}-${row.memberMrn}`;
+        if (!dedup.has(key)) dedup.set(key, row);
+      }
+    };
+    addRows(queues.t2038Requested);
+    addRows(queues.t2038ReceivedUnreachable);
+    addRows(queues.tierRequested);
+    addRows(queues.tierAppeals);
+    addRows(queues.rbPendingIlsContract);
+    addRows(h2022AuthDateTracking.withDateRows);
+    addRows(h2022AuthDateTracking.withoutDateRows);
+    return Array.from(dedup.values()).sort((a, b) => a.memberName.localeCompare(b.memberName));
+  }, [
+    queues.t2038Requested,
+    queues.t2038ReceivedUnreachable,
+    queues.tierRequested,
+    queues.tierAppeals,
+    queues.rbPendingIlsContract,
+    h2022AuthDateTracking.withDateRows,
+    h2022AuthDateTracking.withoutDateRows,
   ]);
 
   const ilsLogFilteredRows = useMemo(() => {
@@ -903,32 +968,10 @@ export default function ILSReportEditorPage() {
     if (v === 'rb_sent_pending_ils_contract') return 'R & B Sent Pending ILS Contract';
     if (v === 't2038_requested') return 'T2038 Requested';
     if (v === 't2038_received_unreachable') return 'T2038 Received, Unreachable';
-    if (v === 't2038_auth_only_email') return 'T2038 Auth Only Email';
+    if (v === 't2038_auth_only_email') return 'T2038 Auth Only Email (no received auth)';
     if (v === 'ils_staff_note') return 'ILS Staff Note';
     return value || 'Unknown Queue';
   };
-
-  // Save comments to localStorage
-  const saveComments = () => {
-    if (reportComments.trim()) {
-      localStorage.setItem(`ils-report-comments-${reportDate}`, reportComments);
-      toast({
-        title: 'Comments Saved',
-        description: 'Report comments saved locally',
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
-    }
-  };
-
-  // Load comments from localStorage
-  useEffect(() => {
-    const savedComments = localStorage.getItem(`ils-report-comments-${reportDate}`);
-    if (savedComments) {
-      setReportComments(savedComments);
-    } else {
-      setReportComments('');
-    }
-  }, [reportDate]);
 
   useEffect(() => {
     loadIlsChangeLog().catch(() => {});
@@ -947,7 +990,15 @@ export default function ILSReportEditorPage() {
     setMemberNotesMeta({ didSync: false, count: 0 });
   }, [selectedMemberForNotes]);
 
-  // Removed auto-loading useEffect - now only loads when "Load Members" button is pressed
+  // Auto-load cached Kaiser data when opening this page so users do not start at zero.
+  useEffect(() => {
+    if (isAdminLoading || accessLoading) return;
+    if (!canAccessIlsTools) return;
+    if (!auth?.currentUser) return;
+    if (didAutoLoadRef.current) return;
+    didAutoLoadRef.current = true;
+    loadMembers({ syncFirst: false, silent: true });
+  }, [isAdminLoading, accessLoading, canAccessIlsTools, auth?.currentUser]);
 
   if (isAdminLoading || accessLoading) {
     return (
@@ -967,7 +1018,7 @@ export default function ILSReportEditorPage() {
               Access Denied
             </CardTitle>
             <CardDescription>
-              You need Kaiser-assigned staff access to use ILS Member Requests tools.
+              You need Kaiser-assigned staff access to use ILS Pending Tracker tools.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -980,7 +1031,7 @@ export default function ILSReportEditorPage() {
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">ILS Member Requests</h1>
+          <h1 className="text-3xl font-bold tracking-tight">ILS Pending Tracker</h1>
           <p className="text-muted-foreground">
             Review and update key Kaiser timeline dates (then generate a printable report if needed)
           </p>
@@ -1003,8 +1054,7 @@ export default function ILSReportEditorPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="space-y-4">
+          <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="report-date">Report Date</Label>
                 <Input
@@ -1018,7 +1068,7 @@ export default function ILSReportEditorPage() {
               
               <div className="flex flex-wrap gap-2">
                 <Button
-                  onClick={loadMembers}
+                  onClick={() => loadMembers({ syncFirst: false })}
                   disabled={isLoading}
                   variant="outline"
                   className="w-full sm:w-auto justify-start bg-green-50 hover:bg-green-100 border-green-200"
@@ -1028,195 +1078,218 @@ export default function ILSReportEditorPage() {
                   ) : (
                     <Database className="mr-2 h-4 w-4" />
                   )}
-                  {members.length === 0 ? 'Load Members' : 'Refresh Data'}
+                  {members.length === 0 ? 'Load Cached Data' : 'Refresh Cached Data'}
+                </Button>
+
+                <Button
+                  onClick={() => loadMembers({ syncFirst: true })}
+                  disabled={isLoading}
+                  variant="outline"
+                  className="w-full sm:w-auto justify-start"
+                >
+                  {isSyncingMembers ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Manual Sync Now
                 </Button>
                 
                 <Button
                   onClick={() =>
                     openPrintableReport({
-                      includeT2038: false,
-                      title: 'ILS Member Requests Report - Requested Queues',
-                      autoPrint: false,
-                    })
-                  }
-                  disabled={members.length === 0}
-                  variant="outline"
-                  className="w-full sm:w-auto justify-start"
-                >
-                  View PDF layout
-                </Button>
-
-                <Button
-                  onClick={() =>
-                    openPrintableReport({
-                      includeT2038: false,
-                      title: 'ILS Member Requests Report - Requested Queues',
-                      autoPrint: true,
+                      title: 'ILS Pending Tracker Report',
                     })
                   }
                   disabled={members.length === 0}
                   className="w-full sm:w-auto justify-start bg-blue-600 hover:bg-blue-700"
                 >
                   <Printer className="mr-2 h-4 w-4" />
-                  Print / Save PDF
+                  ILS Pending Tracker Report
                 </Button>
 
-                <Button
-                  onClick={() =>
-                    openPrintableReport({
-                      includeT2038: true,
-                      title: 'T2038 Auth Only Email Report',
-                      autoPrint: true,
-                    })
-                  }
-                  disabled={members.length === 0}
-                  variant="outline"
-                  className="w-full sm:w-auto justify-start"
-                >
-                  <Printer className="mr-2 h-4 w-4" />
-                  T2038 Auth Only Email Report
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full sm:w-auto justify-start"
-                  onClick={() => setT2038ModalOpen(true)}
-                  disabled={queues.t2038AuthOnly.length === 0}
-                >
-                  T2038 Auth Only Email ({queues.t2038AuthOnly.length})
-                </Button>
               </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="report-comments">Report Comments & Notes</Label>
-              <Textarea
-                id="report-comments"
-                placeholder="Add any comments, observations, or notes about this week's bottlenecks..."
-                value={reportComments}
-                onChange={(e) => setReportComments(e.target.value)}
-                rows={6}
-                className="resize-none"
-              />
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs text-muted-foreground">
-                  These comments will be included in the generated report for ILS
-                </p>
-                <Button
-                  onClick={saveComments}
-                  size="sm"
-                  variant="outline"
-                  disabled={!reportComments.trim()}
-                  className="w-full sm:w-auto"
-                >
-                  <Save className="mr-2 h-3 w-3" />
-                  Save Comments
-                </Button>
-              </div>
-            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold">{stats.totalInQueues}</p>
-                <p className="text-xs text-muted-foreground">Total in queues</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-11 gap-4">
+        {[
+          {
+            label: 'Total in queues',
+            count: stats.totalInQueues,
+            rows: totalQueueRows,
+            numberClass: 'text-2xl font-bold text-slate-900',
+            icon: <FileText className="h-4 w-4 text-muted-foreground" />,
+          },
+          {
+            label: 'Tier Level Appeals',
+            count: stats.tierAppeals,
+            rows: queues.tierAppeals,
+            numberClass: 'text-2xl font-bold text-amber-700',
+            icon: <Clock className="h-4 w-4 text-amber-700" />,
+          },
+          {
+            label: 'T2038 Requested',
+            count: stats.t2038Requested,
+            rows: queues.t2038Requested,
+            numberClass: 'text-2xl font-bold text-yellow-700',
+            icon: <Clock className="h-4 w-4 text-yellow-700" />,
+          },
+          {
+            label: 'T2038 Received, Unreachable',
+            count: stats.t2038ReceivedUnreachable,
+            rows: queues.t2038ReceivedUnreachable,
+            numberClass: 'text-2xl font-bold text-orange-700',
+            icon: <Clock className="h-4 w-4 text-orange-700" />,
+          },
+          {
+            label: 'Tier Level Requested',
+            count: stats.tierRequested,
+            rows: queues.tierRequested,
+            numberClass: 'text-2xl font-bold text-blue-600',
+            icon: <Clock className="h-4 w-4 text-blue-600" />,
+          },
+          {
+            label: 'R & B Sent Pending ILS Contract',
+            count: stats.rbPendingIlsContract,
+            rows: queues.rbPendingIlsContract,
+            numberClass: 'text-2xl font-bold text-indigo-700',
+            icon: <Clock className="h-4 w-4 text-indigo-700" />,
+          },
+          {
+            label: 'T2038 Auth Only Email (no received auth)',
+            count: stats.t2038AuthOnly,
+            rows: queues.t2038AuthOnly,
+            numberClass: 'text-2xl font-bold text-emerald-700',
+            icon: <Circle className="h-4 w-4 text-emerald-700" />,
+          },
+          {
+            label: 'H2022 Auth Dates (With)',
+            count: stats.h2022AuthDatesWith,
+            rows: h2022AuthDateTracking.withDateRows,
+            numberClass: 'text-2xl font-bold text-green-700',
+            icon: <CheckCircle2 className="h-4 w-4 text-green-700" />,
+          },
+          {
+            label: 'H2022 Auth Dates (Without)',
+            count: stats.h2022AuthDatesWithout,
+            rows: h2022AuthDateTracking.withoutDateRows,
+            numberClass: 'text-2xl font-bold text-red-700',
+            icon: <AlertTriangle className="h-4 w-4 text-red-700" />,
+          },
+          {
+            label: 'H2022 Ending Within 1 Month',
+            count: stats.h2022ExpiringSoon,
+            rows: h2022AuthDateTracking.expiringSoonRows,
+            numberClass: 'text-2xl font-bold text-rose-700',
+            icon: <AlertTriangle className="h-4 w-4 text-rose-700" />,
+          },
+          {
+            label: 'Missing RCFE Name',
+            count: stats.missingRcfeName,
+            rows: h2022AuthDateTracking.missingRcfeNameRows,
+            numberClass: 'text-2xl font-bold text-fuchsia-700',
+            icon: <AlertTriangle className="h-4 w-4 text-fuchsia-700" />,
+          },
+        ].map((card) => (
+          <Card key={card.label}>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setSummaryModal({ title: card.label, rows: card.rows })}
+                    disabled={card.rows.length === 0}
+                    className={`${card.numberClass} hover:underline disabled:no-underline disabled:opacity-60`}
+                  >
+                    {card.count}
+                  </button>
+                  <p className="text-xs text-muted-foreground">{card.label}</p>
+                </div>
+                {card.icon}
               </div>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold text-amber-700">{stats.tierAppeals}</p>
-                <p className="text-xs text-muted-foreground">Tier Level Appeals</p>
-              </div>
-              <Clock className="h-4 w-4 text-amber-700" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold text-yellow-700">{stats.t2038Requested}</p>
-                <p className="text-xs text-muted-foreground">T2038 Requested</p>
-              </div>
-              <Clock className="h-4 w-4 text-yellow-700" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold text-orange-700">{stats.t2038ReceivedUnreachable}</p>
-                <p className="text-xs text-muted-foreground">T2038 Received, Unreachable</p>
-              </div>
-              <Clock className="h-4 w-4 text-orange-700" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold text-blue-600">{stats.tierRequested}</p>
-                <p className="text-xs text-muted-foreground">Tier Level Requested</p>
-              </div>
-              <Clock className="h-4 w-4 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold text-indigo-700">{stats.rbPendingIlsContract}</p>
-                <p className="text-xs text-muted-foreground">R & B Sent Pending ILS Contract</p>
-              </div>
-              <Clock className="h-4 w-4 text-indigo-700" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold text-cyan-700">{stats.needMoreContactInfoIls}</p>
-                <p className="text-xs text-muted-foreground">Need More Contact Info (ILS)</p>
-              </div>
-              <Clock className="h-4 w-4 text-cyan-700" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold text-emerald-700">{stats.finalRcfeMissingH2022Dates}</p>
-                <p className="text-xs text-muted-foreground">Final at RCFE Missing H2022 Dates</p>
-              </div>
-              <Clock className="h-4 w-4 text-emerald-700" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ))}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>H2022 Authorization Date Tracking</CardTitle>
+          <CardDescription>
+            Scope: Kaiser members with Kaiser Status Final- Member at RCFE or R & B Sent Pending ILS Contract.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">With Dates: {h2022AuthDateTracking.withDates.length}</Badge>
+            <Badge variant="secondary">Without Dates: {h2022AuthDateTracking.withoutDates.length}</Badge>
+            <Badge variant="secondary">Final at RCFE Missing Dates: {stats.h2022FinalRcfeMissingDates}</Badge>
+            <button
+              type="button"
+              onClick={() =>
+                setSummaryModal({
+                  title: 'H2022 Ending Within 1 Month',
+                  rows: h2022AuthDateTracking.expiringSoonRows,
+                })
+              }
+              disabled={h2022AuthDateTracking.expiringSoonRows.length === 0}
+              className="disabled:opacity-60"
+            >
+              <Badge variant="destructive" className="cursor-pointer">
+                Warning: Ending Within 1 Month: {stats.h2022ExpiringSoon}
+              </Badge>
+            </button>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded border p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-medium text-green-700">With H2022 Auth Dates</div>
+              <Badge variant="secondary">{h2022AuthDateTracking.withDates.length}</Badge>
+            </div>
+            <div className="space-y-1 text-sm max-h-52 overflow-y-auto">
+              {h2022AuthDateTracking.withDates.length === 0 ? (
+                <div className="text-muted-foreground">None</div>
+              ) : (
+                h2022AuthDateTracking.withDates.map((m) => (
+                  <div key={`h2022-with-${m.id}`} className="flex items-center justify-between gap-2">
+                    <span className="truncate flex items-center gap-1">
+                      <span>{m.memberName || '—'}</span>
+                      {isWithinNext30Days((m as any).Authorization_End_Date_H2022) ? (
+                        <AlertTriangle className="h-3.5 w-3.5 text-rose-600" aria-label="Authorization expires within 1 month" />
+                      ) : null}
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {toYmd((m as any).Authorization_Start_Date_H2022)} to {toYmd((m as any).Authorization_End_Date_H2022)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="rounded border p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-medium text-red-700">Without H2022 Auth Dates</div>
+              <Badge variant="secondary">{h2022AuthDateTracking.withoutDates.length}</Badge>
+            </div>
+            <div className="space-y-1 text-sm max-h-52 overflow-y-auto">
+              {h2022AuthDateTracking.withoutDates.length === 0 ? (
+                <div className="text-muted-foreground">None</div>
+              ) : (
+                h2022AuthDateTracking.withoutDates.map((m) => (
+                  <div key={`h2022-without-${m.id}`} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{m.memberName || '—'}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">Missing Start and/or End date</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Compact visual "graph" of requested queues */}
       <Card>
@@ -1269,24 +1342,9 @@ export default function ILSReportEditorPage() {
                     editable: true,
                     showIlsConnected: true,
                   },
-                  {
-                    key: 'needMoreContactInfoIls' as const,
-                    queueKey: 'need_more_contact_info_ils' as const,
-                    label: 'Need More Contact Info (ILS)',
-                    rows: queues.needMoreContactInfoIls,
-                    editable: false,
-                    showIlsConnected: false,
-                  },
-                  {
-                    key: 'finalRcfeMissingH2022Dates' as const,
-                    queueKey: 'final_rcfe_missing_h2022_dates' as const,
-                    label: 'Final at RCFE Missing H2022 Start/End',
-                    rows: queues.finalRcfeMissingH2022Dates,
-                    editable: false,
-                    showIlsConnected: true,
-                  },
                 ] as const
-              ).map((q) => (
+              ).map((q) => {
+                return (
                 <div key={q.key} className="rounded-lg border p-3">
                   <div className="flex items-center justify-between mb-2">
                     <div className="font-medium">{q.label}</div>
@@ -1379,7 +1437,7 @@ export default function ILSReportEditorPage() {
                     ) : null}
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </CardContent>
@@ -1613,68 +1671,27 @@ export default function ILSReportEditorPage() {
         </CardContent>
       </Card>
 
-      {/* Comments Preview */}
-      {reportComments && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
-              Report Comments Preview
-            </CardTitle>
-            <CardDescription>
-              This section will appear in the generated report
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
-              <div className="whitespace-pre-wrap text-sm">{reportComments}</div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Dialog open={t2038ModalOpen} onOpenChange={setT2038ModalOpen}>
+      <Dialog open={Boolean(summaryModal)} onOpenChange={(open) => !open && setSummaryModal(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>T2038 Auth Only Email</DialogTitle>
+            <DialogTitle>{summaryModal?.title || 'Queue Members'}</DialogTitle>
             <DialogDescription>
-              {queues.t2038AuthOnly.length} member(s). This is a separate report and is not included in Tier/R&B queue totals.
+              {(summaryModal?.rows?.length || 0)} member(s). Showing up to 300 rows.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  openPrintableReport({
-                    includeT2038: true,
-                    title: 'T2038 Auth Only Email Report',
-                    autoPrint: true,
-                  })
-                }
-                disabled={queues.t2038AuthOnly.length === 0}
-              >
-                <Printer className="mr-2 h-4 w-4" />
-                Generate T2038 Auth Only Email Report
-              </Button>
-            </div>
-            <div className="max-h-[50vh] overflow-y-auto space-y-2">
-              {queues.t2038AuthOnly.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No T2038 Auth Only Email members right now.</div>
-              ) : (
-                queues.t2038AuthOnly.slice(0, 300).map((r) => (
-                  <div key={`t2038-modal-${r.id}`} className="rounded-md border p-2">
-                    <div className="font-medium">{r.memberName || '—'}</div>
-                    <div className="text-xs text-muted-foreground">
-                      MRN: {r.memberMrn || '—'} • Birth Date:{' '}
-                      {r.birthDate ? format(new Date(`${r.birthDate}T00:00:00`), 'MM/dd/yyyy') : '—'} • Request Date:{' '}
-                      {r.requestedDate ? format(new Date(`${r.requestedDate}T00:00:00`), 'MM/dd/yyyy') : '—'}
-                    </div>
+          <div className="max-h-[60vh] overflow-y-auto space-y-1 text-sm">
+            {!summaryModal || summaryModal.rows.length === 0 ? (
+              <div className="text-muted-foreground">No members in this group.</div>
+            ) : (
+              summaryModal.rows.slice(0, 300).map((row) => (
+                <div key={`summary-${summaryModal.title}-${row.id}-${row.memberMrn}`} className="rounded border p-2">
+                  <div className="font-medium">{row.memberName || '—'}</div>
+                  <div className="text-xs text-muted-foreground">
+                    MRN: {row.memberMrn || '—'} • Birth: {formatYmd(row.birthDate) || '—'} • Request/End: {formatYmd(row.requestedDate) || '—'}
                   </div>
-                ))
-              )}
-            </div>
+                </div>
+              ))
+            )}
           </div>
         </DialogContent>
       </Dialog>

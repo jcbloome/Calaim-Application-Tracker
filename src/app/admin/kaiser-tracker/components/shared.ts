@@ -47,7 +47,7 @@ export const hasMeaningfulValue = (value: unknown) => {
 
 export const getEffectiveKaiserStatus = (member: Partial<KaiserMember> & Record<string, any>): string => {
   // Preserve explicit Kaiser status first (for example, "T2038 Requested").
-  // Only use "T2038 Auth Only Email" as a fallback label when status is blank/unknown.
+  // Only use "T2038_Auth_Email_Kaiser" as a fallback label when status is blank/unknown.
   const raw =
     member?.Kaiser_Status ??
     member?.Kaiser_ID_Status ??
@@ -65,7 +65,7 @@ export const getEffectiveKaiserStatus = (member: Partial<KaiserMember> & Record<
     hasMeaningfulValue(member?.Kaiser_T038_Received) ||
     hasMeaningfulValue(member?.Kaiser_T2038_Received);
 
-  if (hasAuthEmail && !hasOfficialAuth) return 'T2038 Auth Only Email';
+  if (hasAuthEmail && !hasOfficialAuth) return 'T2038_Auth_Email_Kaiser';
   return 'Unknown';
 };
 
@@ -92,6 +92,7 @@ export const getStatusColor = (status: string): string => {
     'T2038 received, Need First Contact': 'bg-violet-50 text-violet-700 border-violet-200',
     'Tier Level Appeal': 'bg-amber-50 text-amber-700 border-amber-200',
     'Tier Level Request Needed': 'bg-slate-50 text-slate-700 border-slate-200',
+    'T2038_Auth_Email_Kaiser': 'bg-emerald-50 text-emerald-700 border-emerald-200',
     'T2038 Auth Only Email': 'bg-emerald-50 text-emerald-700 border-emerald-200',
     'T2038 Request Ready': 'bg-lime-50 text-lime-700 border-lime-200',
     'T2038, Not Requested, Doc Collection': 'bg-rose-50 text-rose-700 border-rose-200',

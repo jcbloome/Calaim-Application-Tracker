@@ -33,6 +33,7 @@ const NEXT_ACTIONS: Record<string, string> = {
   // New Kaiser Status Actions
   "T2038, Not Requested, Doc Collection": "Collect required documentation and prepare T2038 request",
   "T2038 Request Ready": "Submit T2038 request to Kaiser",
+  "T2038_Auth_Email_Kaiser": "Send authorization-only email to Kaiser",
   "T2038 Auth Only Email": "Send authorization-only email to Kaiser",
   "Tier Level Request Needed": "Prepare and submit tier level request",
   "ILS/RCFE Contract Email Needed": "Send contracting email to ILS/RCFE provider",
@@ -147,6 +148,7 @@ export class TaskProcessor {
       'T2038 Requested': 35,
       'T2038 received, Need First Contact': 25,
       'T2038 received, doc collection': 20,
+      'T2038_Auth_Email_Kaiser': 30,
       'T2038 Auth Only Email': 30,
       'RN Visit Needed': 15,
       'RN/MSW Scheduled': 10,

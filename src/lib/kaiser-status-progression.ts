@@ -34,6 +34,8 @@ export const KAISER_STATUS_ALIASES: Record<string, string> = {
   [normalizeKey('Final - Member at RCFE')]: 'Final- Member at RCFE',
   [normalizeKey('Final- ILS/RCFE Contract Completed')]: 'Final- Member at RCFE',
   [normalizeKey('ILS/RCFE_Member_At_RCFE_Confirmed')]: 'Final- Member at RCFE',
+  [normalizeKey('T2038 Auth Only Email')]: 'T2038_Auth_Email_Kaiser',
+  [normalizeKey('T2038_Auth_Email_Kaiser')]: 'T2038_Auth_Email_Kaiser',
 };
 
 export function normalizeKaiserStatusName(raw: string): string {
@@ -109,7 +111,7 @@ export const KAISER_STATUS_PROGRESSION: KaiserStatus[] = [
   },
   {
     id: 33,
-    status: 'T2038 Auth Only Email',
+    status: 'T2038_Auth_Email_Kaiser',
     sortOrder: 5.4,
     description: 'T2038 authorization only email sent',
     category: 'authorization',

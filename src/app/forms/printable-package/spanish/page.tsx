@@ -5,8 +5,8 @@ import { PrintableFullPackageSpanish } from '@/components/forms/PrintableFullPac
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
 import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
+import { PdfPreviewLayout } from '@/components/pdf/PdfPreviewLayout';
 
 function SpanishFullPackageContent() {
   const searchParams = useSearchParams();
@@ -15,7 +15,6 @@ function SpanishFullPackageContent() {
   const applicationId = searchParams.get('applicationId') || '';
   const pathway = searchParams.get('pathway') as 'SNF Transition' | 'SNF Diversion' || 'SNF Transition';
   const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
-  const autoPrint = String(searchParams.get('autoprint') || '') === '1';
 
   // Create application data from URL params
   const applicationData = {
@@ -28,41 +27,6 @@ function SpanishFullPackageContent() {
   const [pdfUrl, setPdfUrl] = useState<string>('');
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string>('');
-  const [autoPrintOpened, setAutoPrintOpened] = useState(false);
-
-  const downloadPdf = () => {
-    if (!pdfUrl) return;
-    const fileName = `CalAIM_Paquete_Completo_${applicationId || 'formulario'}.pdf`;
-    const a = document.createElement('a');
-    a.href = pdfUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  };
-
-  const openPdf = () => {
-    if (!pdfUrl) return;
-    window.open(pdfUrl, '_blank', 'noopener,noreferrer');
-  };
-
-  const openPdfAndPrint = () => {
-    if (!pdfUrl) return;
-    const w = window.open(pdfUrl, '_blank', 'noopener,noreferrer');
-    if (!w) return;
-    const timer = window.setInterval(() => {
-      try {
-        if (w.document?.readyState === 'complete') {
-          window.clearInterval(timer);
-          w.focus();
-          w.print();
-        }
-      } catch {
-        // ignore
-      }
-    }, 250);
-    window.setTimeout(() => window.clearInterval(timer), 8000);
-  };
 
   const generatePreviewPdf = async () => {
     if (!captureRef.current) return;
@@ -97,7 +61,6 @@ function SpanishFullPackageContent() {
   useEffect(() => {
     if (!isPdfView) return;
     void generatePreviewPdf();
-    setAutoPrintOpened(false);
     return () => {
       setPdfUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
@@ -106,16 +69,6 @@ function SpanishFullPackageContent() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPdfView, applicationId, memberMrn, memberName, pathway]);
-
-  useEffect(() => {
-    if (!isPdfView) return;
-    if (!autoPrint) return;
-    if (!pdfUrl || pdfLoading) return;
-    if (autoPrintOpened) return;
-    setAutoPrintOpened(true);
-    openPdfAndPrint();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPdfView, autoPrint, pdfUrl, pdfLoading, autoPrintOpened]);
 
   const viewerHref = useMemo(() => {
     const params = new URLSearchParams();
@@ -136,73 +89,38 @@ function SpanishFullPackageContent() {
     return `/forms/printable-package/spanish?${params.toString()}`;
   }, [memberName, memberMrn, applicationId, pathway]);
 
-  if (isPdfView) {
-    return (
-      <div className="mx-auto w-full max-w-5xl space-y-3">
-        <div className="mb-4 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
-          <Button variant="outline" asChild>
-            <Link href={htmlHref}>Back to editor</Link>
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => openPdfAndPrint()}
-            disabled={!pdfUrl || pdfLoading}
-          >
-            {pdfLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generating…
-              </>
-            ) : (
-              'Print / Save PDF'
-            )}
-          </Button>
-        </div>
-
-        <div className="fixed left-[-100000px] top-0" style={{ width: '1024px' }}>
-          <div ref={captureRef}>
-            <PrintableFullPackageSpanish
-              applicationData={applicationData}
-              applicationId={applicationId}
-              pathway={pathway}
-              showPrintButton={false}
-            />
-          </div>
-        </div>
-
-        {pdfError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{pdfError}</div> : null}
-
-        {pdfUrl ? (
-          <div className="rounded-md border bg-white">
-            <iframe title="Spanish full package PDF preview" src={pdfUrl} className="h-[85vh] w-full" />
-          </div>
-        ) : (
-          <div className="rounded-md border bg-white p-6 text-sm text-muted-foreground">
-            {pdfLoading ? 'Generating PDF preview…' : 'PDF preview not available yet.'}
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4">
-      <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
-        <Button variant="outline" asChild>
-          <Link href={viewerHref}>View PDF layout</Link>
-        </Button>
-        <Button variant="outline" asChild>
-          <Link href={`${viewerHref}&autoprint=1`}>Print / Save PDF</Link>
-        </Button>
-      </div>
-
-      <PrintableFullPackageSpanish
-        applicationData={applicationData}
-        applicationId={applicationId}
-        pathway={pathway}
-        showPrintButton={false}
-      />
-    </div>
+    <PdfPreviewLayout
+      isPdfView={isPdfView}
+      viewPdfHref={viewerHref}
+      backToEditorHref={htmlHref}
+      printHref={viewerHref}
+      captureRef={captureRef}
+      captureContent={
+        <PrintableFullPackageSpanish
+          applicationData={applicationData}
+          applicationId={applicationId}
+          pathway={pathway}
+          showPrintButton={false}
+        />
+      }
+      htmlContent={
+        <PrintableFullPackageSpanish
+          applicationData={applicationData}
+          applicationId={applicationId}
+          pathway={pathway}
+          showPrintButton={false}
+        />
+      }
+      pdfUrl={pdfUrl}
+      pdfLoading={pdfLoading}
+      pdfError={pdfError}
+      previewTitle="Spanish full package PDF preview"
+      loadingText={pdfLoading ? 'Generating PDF preview…' : 'PDF preview not available yet.'}
+      wrapperClassName="mx-auto w-full max-w-5xl space-y-3"
+      htmlWrapperClassName="mx-auto w-full max-w-5xl space-y-4"
+      captureWidthPx={1024}
+    />
   );
 }
 

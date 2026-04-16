@@ -80,13 +80,13 @@ export function KaiserSummaryCards({
       .trim();
 
   // Consolidated ILS request statuses:
-  // - T2038 Auth Only Email
+  // - T2038_Auth_Email_Kaiser
   // - T2038 Requested
   // - H2022 Requested
   // - Tier Level Requested
   // - Tier Level Appeals
   const ilsRequestStatusMatchers = [
-    { key: 't2038', label: 'T2038 Auth Only Email', accepts: ['t2038 auth only email', 't2308 auth only'] },
+    { key: 't2038', label: 'T2038_Auth_Email_Kaiser', accepts: ['t2038_auth_email_kaiser', 't2038 auth email kaiser'] },
     { key: 't2038_requested', label: 'T2038 Requested', accepts: ['t2038 requested'] },
     {
       key: 't2038_received_unreachable',
@@ -98,7 +98,22 @@ export function KaiserSummaryCards({
     { key: 'tier_appeals', label: 'Tier Level Appeals', accepts: ['tier level appeals', 'tier level appeal'] },
   ] as const;
 
-  const getIlsStatusRequestBucketKey = (status: string): string | null => {
+  const hasMeaningfulValue = (value: unknown) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return Boolean(normalized) && !['null', 'undefined', 'n/a', 'no status'].includes(normalized);
+  };
+
+  const isT2038AuthEmailKaiserQueueMember = (member: KaiserMember) => {
+    const hasAuthEmail = hasMeaningfulValue((member as any)?.T2038_Auth_Email_Kaiser);
+    const hasOfficialAuth =
+      hasMeaningfulValue((member as any)?.Kaiser_T2038_Received_Date) ||
+      hasMeaningfulValue((member as any)?.Kaiser_T038_Received) ||
+      hasMeaningfulValue((member as any)?.Kaiser_T2038_Received);
+    return hasAuthEmail && !hasOfficialAuth;
+  };
+
+  const getIlsStatusRequestBucketKey = (status: string, member?: KaiserMember): string | null => {
+    if (member && isT2038AuthEmailKaiserQueueMember(member)) return 't2038';
     const normalized = normalize(status);
     for (const m of ilsRequestStatusMatchers) {
       if (m.accepts.includes(normalized)) return m.key;
@@ -577,11 +592,6 @@ export function KaiserSummaryCards({
     }
   };
 
-  const isTruthyLike = (value: unknown) => {
-    const normalized = String(value || '').trim().toLowerCase();
-    return ['1', 'true', 'yes', 'y', 'on', 'checked'].includes(normalized);
-  };
-
   const hasH2022DateValue = (value: unknown) => hasDate(value);
 
   const isFinalMemberAtRcfe = (value: unknown) => {
@@ -624,9 +634,21 @@ export function KaiserSummaryCards({
     return false;
   };
 
-  const needsMoreContactInfoMembers = members.filter((m) => isTruthyLike((m as any)?.Need_More_Contact_Info_ILS));
-  const missingH2022DateMembers = members.filter((m) => {
-    if (!isFinalMemberAtRcfe((m as any)?.CalAIM_Status)) return false;
+  const h2022TrackingMembers = members.filter((m) =>
+    isRbPendingOrFinalAtRcfeStatus(getEffectiveKaiserStatus(m))
+  );
+  const h2022AuthDatesWithMembers = h2022TrackingMembers.filter((m) => {
+    const hasStart = hasH2022DateValue((m as any)?.Authorization_Start_Date_H2022);
+    const hasEnd = hasH2022DateValue((m as any)?.Authorization_End_Date_H2022);
+    return hasStart && hasEnd;
+  });
+  const h2022AuthDatesWithoutMembers = h2022TrackingMembers.filter((m) => {
+    const hasStart = hasH2022DateValue((m as any)?.Authorization_Start_Date_H2022);
+    const hasEnd = hasH2022DateValue((m as any)?.Authorization_End_Date_H2022);
+    return !hasStart || !hasEnd;
+  });
+  const missingH2022DateMembers = h2022TrackingMembers.filter((m) => {
+    if (!isFinalMemberAtRcfe(getEffectiveKaiserStatus(m))) return false;
     const hasStart = hasH2022DateValue((m as any)?.Authorization_Start_Date_H2022);
     const hasEnd = hasH2022DateValue((m as any)?.Authorization_End_Date_H2022);
     return !hasStart || !hasEnd;
@@ -641,12 +663,13 @@ export function KaiserSummaryCards({
     return Boolean(rcfeEmail);
   });
 
-  const ilsStatusRequestMembers = members.filter((m) => Boolean(getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(m))));
+  const ilsStatusRequestMembers = members.filter((m) =>
+    Boolean(getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(m), m))
+  );
   const ilsMemberRequestsMembers = members.filter((m) => {
     return (
-      Boolean(getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(m))) ||
+      Boolean(getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(m), m)) ||
       rbAndFinalIlsConnectedMembers.some((x) => x.client_ID2 === m.client_ID2) ||
-      isTruthyLike((m as any)?.Need_More_Contact_Info_ILS) ||
       missingH2022DateMembers.some((x) => x.client_ID2 === m.client_ID2)
     );
   });
@@ -655,10 +678,10 @@ export function KaiserSummaryCards({
 
   const ilsBreakdown = ilsRequestStatusMatchers.map((m) => ({
     ...m,
-    count: ilsStatusRequestMembers.filter((x) => getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(x)) === m.key).length,
+    count: ilsStatusRequestMembers.filter((x) => getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(x), x) === m.key).length,
   }));
   const getIlsStatusBucketMembers = (bucketKey: string) =>
-    ilsStatusRequestMembers.filter((x) => getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(x)) === bucketKey);
+    ilsStatusRequestMembers.filter((x) => getIlsStatusRequestBucketKey(getEffectiveKaiserStatus(x), x) === bucketKey);
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -700,12 +723,12 @@ export function KaiserSummaryCards({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-      {/* ILS Member Requests Consolidated Card */}
+      {/* ILS Pending Consolidated Card */}
       <Card id="ils-member-updates" className="bg-white border-l-4 border-l-cyan-500 shadow">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <CalendarClock className="h-4 w-4 text-gray-400" />
-            ILS Member Requests
+            ILS Pending
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-0 space-y-2">
@@ -714,7 +737,7 @@ export function KaiserSummaryCards({
               href="/admin/ils-report-editor"
               className="text-[11px] text-cyan-700 hover:underline"
             >
-              Open ILS Member Requests page
+              Open ILS Pending Tracker page
             </Link>
           </div>
           <button
@@ -723,7 +746,7 @@ export function KaiserSummaryCards({
             onClick={() =>
               openMemberModal(
                 ilsMemberRequestsMembers,
-                'ILS Member Requests',
+                'ILS Pending',
                 `${ilsMemberRequestsCount} members need weekly ILS follow-up requests`,
                 'kaiser_status',
                 'ils_member_requests'
@@ -742,7 +765,7 @@ export function KaiserSummaryCards({
                 onClick={() =>
                   openMemberModal(
                     getIlsStatusBucketMembers(row.key),
-                    `ILS Member Requests — ${row.label}`,
+                    `ILS Pending — ${row.label}`,
                     `${row.count} Kaiser members in ${row.label}`,
                     'kaiser_status',
                     `ils_member_requests_${row.key}`
@@ -760,8 +783,40 @@ export function KaiserSummaryCards({
               className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-cyan-800 hover:bg-cyan-50 hover:underline"
               onClick={() =>
                 openMemberModal(
+                  h2022AuthDatesWithMembers,
+                  'ILS Pending — H2022 Auth Dates (With)',
+                  `${h2022AuthDatesWithMembers.length} members in Final at RCFE / R & B Pending with both H2022 auth dates`,
+                  'kaiser_status',
+                  'ils_member_requests_h2022_auth_dates_with'
+                )
+              }
+            >
+              <span className="truncate pr-2">H2022 auth dates (with)</span>
+              <span className="font-semibold text-cyan-800">{h2022AuthDatesWithMembers.length}</span>
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-cyan-800 hover:bg-cyan-50 hover:underline"
+              onClick={() =>
+                openMemberModal(
+                  h2022AuthDatesWithoutMembers,
+                  'ILS Pending — H2022 Auth Dates (Without)',
+                  `${h2022AuthDatesWithoutMembers.length} members in Final at RCFE / R & B Pending missing H2022 start or end`,
+                  'kaiser_status',
+                  'ils_member_requests_h2022_auth_dates_without'
+                )
+              }
+            >
+              <span className="truncate pr-2">H2022 auth dates (without)</span>
+              <span className="font-semibold text-cyan-800">{h2022AuthDatesWithoutMembers.length}</span>
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-cyan-800 hover:bg-cyan-50 hover:underline"
+              onClick={() =>
+                openMemberModal(
                   rbAndFinalIlsConnectedMembers,
-                  'ILS Member Requests — R & B Pending / Final at RCFE',
+                  'ILS Pending — R & B Pending / Final at RCFE',
                   `${rbAndFinalIlsConnectedMembers.length} Kaiser members in R & B Sent Pending ILS Contract or Final at RCFE`,
                   'kaiser_status',
                   'ils_member_requests_rb_pending_or_final_rcfe'
@@ -776,24 +831,8 @@ export function KaiserSummaryCards({
               className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-cyan-800 hover:bg-cyan-50 hover:underline"
               onClick={() =>
                 openMemberModal(
-                  needsMoreContactInfoMembers,
-                  'ILS Member Requests — Need More Contact Info',
-                  `${needsMoreContactInfoMembers.length} Kaiser members flagged as Need_More_Contact_Info_ILS`,
-                  'kaiser_status',
-                  'ils_member_requests_need_more_contact_info'
-                )
-              }
-            >
-              <span className="truncate pr-2">Need more contact info (ILS)</span>
-              <span className="font-semibold text-cyan-800">{needsMoreContactInfoMembers.length}</span>
-            </button>
-            <button
-              type="button"
-              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-cyan-800 hover:bg-cyan-50 hover:underline"
-              onClick={() =>
-                openMemberModal(
                   missingH2022DateMembers,
-                  'ILS Member Requests — Final at RCFE Missing H2022 Dates',
+                  'ILS Pending — Final at RCFE Missing H2022 Dates',
                   `${missingH2022DateMembers.length} Final- Member at RCFE members missing H2022 start or end dates`,
                   'kaiser_status',
                   'ils_member_requests_missing_h2022_dates'

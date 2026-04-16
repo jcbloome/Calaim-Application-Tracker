@@ -234,6 +234,13 @@ export const STATUS_COLORS: Record<string, StatusStyle> = {
     textColor: 'text-emerald-700',
     icon: 'CheckCircle'
   },
+  'T2038_Auth_Email_Kaiser': {
+    color: 'bg-amber-50 text-amber-700 border-amber-200',
+    backgroundColor: 'bg-amber-50',
+    borderColor: 'border-amber-200',
+    textColor: 'text-amber-700',
+    icon: 'Mail'
+  },
   'T2038 Auth Only Email': {
     color: 'bg-amber-50 text-amber-700 border-amber-200',
     backgroundColor: 'bg-amber-50',

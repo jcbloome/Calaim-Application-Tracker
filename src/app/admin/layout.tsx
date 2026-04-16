@@ -145,7 +145,8 @@ const adminNavLinks = [
     icon: Wrench,
     isSubmenu: true,
     submenuItems: [
-      { href: '/admin/ils-report-editor', label: 'ILS Member Requests', icon: FileEdit },
+      { href: '/admin/ils-report-editor', label: 'ILS Pending', icon: FileEdit },
+      { href: '/admin/ils-log-tracker', label: 'ILS Log Tracker', icon: BarChart3 },
       { href: '/admin/tools/rcfe-data', label: 'RCFE Data Management', icon: Building2 },
       { href: '/admin/tools/ils-status-check', label: 'ILS Status Check', icon: FileText },
       { href: '/admin/tools/sw-proximity', label: 'SW Proximity (EFT setup)', icon: Navigation },

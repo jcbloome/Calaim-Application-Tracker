@@ -35,14 +35,19 @@ const hasMeaningfulValue = (value: unknown) => {
   return Boolean(normalized) && !['null', 'undefined', 'n/a'].includes(normalized);
 };
 
-const isTruthyLike = (value: unknown): boolean => {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  return ['1', 'true', 'yes', 'y', 'on', 'checked'].includes(normalized);
-};
-
 const isFinalMemberAtRcfe = (value: unknown): boolean => {
   const normalized = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
-  return normalized === 'final member at rcfe';
+  return normalized === 'final member at rcfe' || normalized === 'final at rcfe';
+};
+
+const isRbPendingOrFinalAtRcfeStatus = (value: unknown): boolean => {
+  const normalized = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  return (
+    normalized === 'r b sent pending ils contract' ||
+    normalized === 'r b pending ils contract' ||
+    normalized === 'final member at rcfe' ||
+    normalized === 'final at rcfe'
+  );
 };
 
 let resendClient: Resend | null = null;
@@ -165,9 +170,21 @@ export async function GET(request: NextRequest) {
       const rbReceived = Boolean(toYmd(m?.Kaiser_H2022_Received));
       return (byStatus || rbRequested) && !rbReceived;
     });
-    const needMoreContactInfoMembers = rows.filter((m: any) => isTruthyLike(m?.Need_More_Contact_Info_ILS));
-    const finalRcfeMissingH2022Members = rows.filter((m: any) => {
-      if (!isFinalMemberAtRcfe(m?.CalAIM_Status)) return false;
+    const h2022AuthEligibleMembers = rows.filter((m: any) =>
+      isRbPendingOrFinalAtRcfeStatus(m?.Kaiser_Status)
+    );
+    const h2022AuthDatesWithMembers = h2022AuthEligibleMembers.filter((m: any) => {
+      const hasStart = Boolean(toYmd(m?.Authorization_Start_Date_H2022));
+      const hasEnd = Boolean(toYmd(m?.Authorization_End_Date_H2022));
+      return hasStart && hasEnd;
+    });
+    const h2022AuthDatesWithoutMembers = h2022AuthEligibleMembers.filter((m: any) => {
+      const hasStart = Boolean(toYmd(m?.Authorization_Start_Date_H2022));
+      const hasEnd = Boolean(toYmd(m?.Authorization_End_Date_H2022));
+      return !hasStart || !hasEnd;
+    });
+    const finalRcfeMissingH2022Members = h2022AuthEligibleMembers.filter((m: any) => {
+      if (!isFinalMemberAtRcfe(m?.Kaiser_Status)) return false;
       const hasStart = Boolean(toYmd(m?.Authorization_Start_Date_H2022));
       const hasEnd = Boolean(toYmd(m?.Authorization_End_Date_H2022));
       return !hasStart || !hasEnd;
@@ -203,8 +220,18 @@ export async function GET(request: NextRequest) {
           )
       ),
       rbPendingIlsContract: queueRows(rbPendingIlsContractMembers, (m) => toYmd(m?.Kaiser_H2022_Requested)),
-      needMoreContactInfoIls: queueRows(needMoreContactInfoMembers, () => ''),
-      finalRcfeMissingH2022Dates: queueRows(finalRcfeMissingH2022Members, () => ''),
+      h2022AuthDatesWith: queueRows(
+        h2022AuthDatesWithMembers,
+        (m) => toYmd(m?.Authorization_End_Date_H2022 || m?.Authorization_Start_Date_H2022)
+      ),
+      h2022AuthDatesWithout: queueRows(
+        h2022AuthDatesWithoutMembers,
+        (m) => toYmd(m?.Authorization_End_Date_H2022 || m?.Authorization_Start_Date_H2022)
+      ),
+      finalRcfeMissingH2022Dates: queueRows(
+        finalRcfeMissingH2022Members,
+        (m) => toYmd(m?.Authorization_End_Date_H2022 || m?.Authorization_Start_Date_H2022)
+      ),
     };
 
     const totalUnique = new Set<string>([
@@ -214,7 +241,8 @@ export async function GET(request: NextRequest) {
       ...queues.tierRequested.map((r) => r.id).filter(Boolean),
       ...queues.tierAppeals.map((r) => r.id).filter(Boolean),
       ...queues.rbPendingIlsContract.map((r) => r.id).filter(Boolean),
-      ...queues.needMoreContactInfoIls.map((r) => r.id).filter(Boolean),
+      ...queues.h2022AuthDatesWith.map((r) => r.id).filter(Boolean),
+      ...queues.h2022AuthDatesWithout.map((r) => r.id).filter(Boolean),
       ...queues.finalRcfeMissingH2022Dates.map((r) => r.id).filter(Boolean),
     ]).size;
 
@@ -231,31 +259,33 @@ export async function GET(request: NextRequest) {
     await resend.emails.send({
       from: 'Connections CalAIM <noreply@carehomefinders.com>',
       to: recipients,
-      subject: `ILS Member Requests Weekly Report (${dateLabel})`,
+      subject: `ILS Pending Weekly Report (${dateLabel})`,
       html: `
         <div style="font-family: Arial, sans-serif; color:#111827;">
-          <h2 style="margin:0 0 8px;">ILS Member Requests Weekly Report</h2>
+          <h2 style="margin:0 0 8px;">ILS Pending Weekly Report</h2>
           <p style="margin:0 0 12px;">Total unique members in request queues: <strong>${totalUnique}</strong></p>
           <div style="margin:0 0 16px;font-size:12px;color:#374151;">
-            <div>T2038 Auth Only Email: <strong>${queues.t2038AuthOnly.length}</strong></div>
+            <div>ILS Pending (T2038_Auth_Email_Kaiser): <strong>${queues.t2038AuthOnly.length}</strong></div>
             <div>T2038 Requested: <strong>${queues.t2038Requested.length}</strong></div>
             <div>T2038 Received, Unreachable: <strong>${queues.t2038ReceivedUnreachable.length}</strong></div>
             <div>Tier Level Requested: <strong>${queues.tierRequested.length}</strong></div>
             <div>Tier Level Appeals: <strong>${queues.tierAppeals.length}</strong></div>
             <div>R &amp; B Pending ILS Contract: <strong>${queues.rbPendingIlsContract.length}</strong></div>
-            <div>Need More Contact Info (ILS): <strong>${queues.needMoreContactInfoIls.length}</strong></div>
-            <div>Final at RCFE Missing H2022 Start/End: <strong>${queues.finalRcfeMissingH2022Dates.length}</strong></div>
+            <div>H2022 Auth Dates (With): <strong>${queues.h2022AuthDatesWith.length}</strong></div>
+            <div>H2022 Auth Dates (Without): <strong>${queues.h2022AuthDatesWithout.length}</strong></div>
+            <div>Final at RCFE Missing H2022 Dates: <strong>${queues.finalRcfeMissingH2022Dates.length}</strong></div>
           </div>
 
           ${[
-            ['T2038 Auth Only Email', queues.t2038AuthOnly],
+            ['ILS Pending (T2038_Auth_Email_Kaiser)', queues.t2038AuthOnly],
             ['T2038 Requested', queues.t2038Requested],
             ['T2038 Received, Unreachable', queues.t2038ReceivedUnreachable],
             ['Tier Level Requested', queues.tierRequested],
             ['Tier Level Appeals', queues.tierAppeals],
             ['R &amp; B Pending ILS Contract', queues.rbPendingIlsContract],
-            ['Need More Contact Info (ILS)', queues.needMoreContactInfoIls],
-            ['Final at RCFE Missing H2022 Start/End', queues.finalRcfeMissingH2022Dates],
+            ['H2022 Auth Dates (With)', queues.h2022AuthDatesWith],
+            ['H2022 Auth Dates (Without) — Waiting for ILS Progress', queues.h2022AuthDatesWithout],
+            ['Final at RCFE Missing H2022 Dates', queues.finalRcfeMissingH2022Dates],
           ]
             .map(
               ([title, queue]) => `
