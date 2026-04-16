@@ -129,6 +129,14 @@ const tools: ToolCard[] = [
         href: '/admin/era-parser',
         category: 'system',
         status: 'beta'
+    },
+    {
+        title: 'Kaiser Daily Logs',
+        description: 'Review end-of-day staff productivity logs and note/status timelines',
+        icon: <FileText className="h-6 w-6" />,
+        href: '/admin/super-admin-tools/kaiser-daily-logs',
+        category: 'system',
+        status: 'active'
     }
 ];
 

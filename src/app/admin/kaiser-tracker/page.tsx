@@ -266,7 +266,7 @@ const sortKaiserMembersAlphabetically = (input: KaiserMember[]): KaiserMember[] 
 };
 
 function KaiserTrackerPageContent() {
-  const { isAdmin, isLoading: isAdminLoading, user } = useAdmin();
+  const { isAdmin, isSuperAdmin, isKaiserManager, isLoading: isAdminLoading, user } = useAdmin();
   const { toast } = useToast();
   const auth = useAuth();
   const searchParams = useSearchParams();
@@ -294,6 +294,9 @@ function KaiserTrackerPageContent() {
     recentErrors: string[];
   } | null>(null);
   const [noActionByStaffMap, setNoActionByStaffMap] = useState<Record<string, NoActionStaffSummary>>({});
+  const [dailyUpdateSubmittingStaff, setDailyUpdateSubmittingStaff] = useState('');
+  const [dailyUpdateSubmittedAtByStaff, setDailyUpdateSubmittedAtByStaff] = useState<Record<string, string>>({});
+  const [isPullingAllDailyLogs, setIsPullingAllDailyLogs] = useState(false);
 
   const handleNoActionByStaffComputed = useCallback(
     (
@@ -407,6 +410,16 @@ function KaiserTrackerPageContent() {
       }),
     []
   );
+  const etDayFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }),
+    []
+  );
 
   const formatEtDateTime = useCallback(
     (value: string) => {
@@ -430,6 +443,7 @@ function KaiserTrackerPageContent() {
       };
     }
   };
+  const getTodayEtDayKey = useCallback(() => etDayFormatter.format(new Date()), [etDayFormatter]);
 
   // Calculate status summary using the defined Kaiser status order
   const statusSummary = useMemo(() => {
@@ -513,6 +527,48 @@ function KaiserTrackerPageContent() {
       return a.localeCompare(b);
     });
   }, [staffAssignments]);
+  const noActionScopedStatusSet = useMemo(
+    () =>
+      new Set(
+        [
+          ...NO_ACTION_SCOPED_STATUSES,
+          'T2038 received, Needs First Contact',
+          'R B Needed',
+        ].map((status) => normalizeStatusText(status))
+      ),
+    []
+  );
+
+  const buildDailyUpdatePayloadForStaff = useCallback(
+    (staffName: string) => {
+      const assignment = staffAssignments[staffName];
+      if (!assignment) return null;
+      const noAction = noActionByStaffMap?.[staffName];
+      const activeAssigned = assignment.members.filter((member) =>
+        noActionScopedStatusSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
+      ).length;
+      const passiveAssigned = Math.max(0, assignment.count - activeAssigned);
+
+      return {
+        staffName,
+        members: assignment.members.map((member: any) => ({
+          clientId2: String(member?.client_ID2 || '').trim(),
+          memberName: `${String(member?.memberFirstName || '').trim()} ${String(member?.memberLastName || '').trim()}`.trim(),
+          currentStatus: String(getEffectiveKaiserStatus(member) || '').trim(),
+        })),
+        metrics: {
+          totalAssigned: assignment.count,
+          activeAssigned,
+          passiveAssigned,
+          noActionTotal: Number(noAction?.total || 0),
+          noActionCritical: Number(noAction?.critical || 0),
+          noActionPriority: Number(noAction?.priority || 0),
+          notesTodayCount: Number(noAction?.notesTodayTotal || 0),
+        },
+      };
+    },
+    [staffAssignments, noActionByStaffMap, noActionScopedStatusSet]
+  );
 
 
   // Helper function to open member list modal
@@ -685,6 +741,98 @@ function KaiserTrackerPageContent() {
         description: error?.message || 'Could not sync notes for this category.',
         variant: 'destructive',
       });
+    }
+  };
+
+  const submitDailyUpdateForStaff = async (
+    payload: {
+    staffName: string;
+    members: Array<{ clientId2: string; memberName: string; currentStatus: string }>;
+    metrics: {
+      totalAssigned: number;
+      activeAssigned: number;
+      passiveAssigned: number;
+      noActionTotal: number;
+      noActionCritical: number;
+      noActionPriority: number;
+      notesTodayCount: number;
+    };
+  },
+    opts?: { silentSuccess?: boolean }
+  ) => {
+    if (!auth?.currentUser) {
+      toast({
+        title: 'Sign in required',
+        description: 'You must be signed in to submit your daily update.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    setDailyUpdateSubmittingStaff(payload.staffName);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-tracker-daily-log/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          staffName: payload.staffName,
+          members: payload.members,
+          metrics: payload.metrics,
+        }),
+      });
+      const parsed = await parseApiJson(res);
+      if (!parsed.ok) throw new Error(parsed.error);
+      const data = parsed.data;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to submit daily update');
+      }
+
+      const submittedAt = String(data?.submittedAt || new Date().toISOString()).trim();
+      setDailyUpdateSubmittedAtByStaff((prev) => ({ ...prev, [payload.staffName]: submittedAt }));
+      if (!opts?.silentSuccess) {
+        toast({
+          title: 'Daily update submitted',
+          description: `Saved ${payload.staffName} daily log for ${getTodayEtDayKey()} (ET).`,
+        });
+      }
+      return true;
+    } catch (error: any) {
+      if (!opts?.silentSuccess) {
+        toast({
+          title: 'Daily update failed',
+          description: error?.message || 'Could not submit daily update log.',
+          variant: 'destructive',
+        });
+      }
+      return false;
+    } finally {
+      setDailyUpdateSubmittingStaff('');
+    }
+  };
+
+  const pullAllDailyLogs = async () => {
+    if (!auth?.currentUser || isPullingAllDailyLogs) return;
+    if (!isSuperAdmin && !isKaiserManager) return;
+
+    setIsPullingAllDailyLogs(true);
+    let success = 0;
+    let failed = 0;
+    try {
+      for (const staffName of allStaff) {
+        const payload = buildDailyUpdatePayloadForStaff(staffName);
+        if (!payload) continue;
+        const ok = await submitDailyUpdateForStaff(payload, { silentSuccess: true });
+        if (ok) success += 1;
+        else failed += 1;
+      }
+      toast({
+        title: 'Pulled all daily logs',
+        description: `Completed ${success} staff logs${failed > 0 ? `, failed ${failed}` : ''} for ${getTodayEtDayKey()} (ET).`,
+      });
+    } finally {
+      setIsPullingAllDailyLogs(false);
     }
   };
 
@@ -1297,6 +1445,53 @@ function KaiserTrackerPageContent() {
     void loadKaiserStatusOptions();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!auth?.currentUser || allStaff.length === 0) {
+        if (!cancelled) setDailyUpdateSubmittedAtByStaff({});
+        return;
+      }
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const res = await fetch('/api/admin/kaiser-tracker-daily-log/list', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, dateKey: getTodayEtDayKey(), limit: 500 }),
+        });
+        const parsed = await parseApiJson(res);
+        if (!parsed.ok) return;
+        const data = parsed.data;
+        if (!res.ok || !data?.success) return;
+        const rows = Array.isArray(data?.rows) ? data.rows : [];
+        const map = rows.reduce((acc: Record<string, string>, row: any) => {
+          const key = String(row?.staffName || '').trim();
+          const submittedAt = String(row?.submittedAt || row?.lastUpdatedAt || '').trim();
+          if (key && submittedAt) acc[key] = submittedAt;
+          return acc;
+        }, {});
+        if (!cancelled) setDailyUpdateSubmittedAtByStaff(map);
+      } catch {
+        if (!cancelled) setDailyUpdateSubmittedAtByStaff({});
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth?.currentUser, allStaff, getTodayEtDayKey]);
+
+  const dailySubmittedLabelByStaff = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(dailyUpdateSubmittedAtByStaff).map(([staffName, submittedAt]) => [
+          staffName,
+          formatEtDateTime(submittedAt),
+        ])
+      ),
+    [dailyUpdateSubmittedAtByStaff, formatEtDateTime]
+  );
+
   if (isAdminLoading) {
     return (
       <div className="container mx-auto py-8">
@@ -1334,6 +1529,23 @@ function KaiserTrackerPageContent() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          {(isSuperAdmin || isKaiserManager) ? (
+            <Button variant="outline" asChild className="w-full sm:w-auto">
+              <Link href="/admin/super-admin-tools/kaiser-daily-logs">
+                Kaiser Daily Logs
+              </Link>
+            </Button>
+          ) : null}
+          {(isSuperAdmin || isKaiserManager) ? (
+            <Button
+              variant="outline"
+              onClick={() => void pullAllDailyLogs()}
+              disabled={isPullingAllDailyLogs || Boolean(dailyUpdateSubmittingStaff)}
+              className="w-full sm:w-auto"
+            >
+              {isPullingAllDailyLogs ? 'Pulling Daily Logs...' : 'Pull All Daily Logs'}
+            </Button>
+          ) : null}
           <Button variant="outline" asChild className="w-full sm:w-auto">
             <Link href="/admin/kaiser-tracker/rcfe-weekly-confirm">
               RCFE Biweekly Follow-Up (R&B/Final)
@@ -1435,6 +1647,9 @@ function KaiserTrackerPageContent() {
         onRefreshNoAction={() => void refreshNoActionStatuses()}
         isRefreshingNoAction={notesGlobalSyncing && notesGlobalProgress?.scopeLabel === 'No Action 7+ Days'}
         notesSyncLastAtLabel={formatEtDateTime(notesGlobalProgress?.lastSyncAt || '')}
+        onSubmitDailyUpdate={(payload) => void submitDailyUpdateForStaff(payload)}
+        dailyUpdateSubmittingStaff={dailyUpdateSubmittingStaff}
+        dailyUpdateSubmittedAtByStaff={dailySubmittedLabelByStaff}
       />
 
       {/* Member List Modal */}

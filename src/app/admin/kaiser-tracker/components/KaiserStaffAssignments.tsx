@@ -56,6 +56,21 @@ export interface KaiserStaffAssignmentsProps {
   onRefreshNoAction?: () => void;
   isRefreshingNoAction?: boolean;
   notesSyncLastAtLabel?: string;
+  onSubmitDailyUpdate?: (payload: {
+    staffName: string;
+    members: Array<{ clientId2: string; memberName: string; currentStatus: string }>;
+    metrics: {
+      totalAssigned: number;
+      activeAssigned: number;
+      passiveAssigned: number;
+      noActionTotal: number;
+      noActionCritical: number;
+      noActionPriority: number;
+      notesTodayCount: number;
+    };
+  }) => void;
+  dailyUpdateSubmittingStaff?: string;
+  dailyUpdateSubmittedAtByStaff?: Record<string, string>;
 }
 
 export function KaiserStaffAssignments({
@@ -68,6 +83,9 @@ export function KaiserStaffAssignments({
   onRefreshNoAction,
   isRefreshingNoAction,
   notesSyncLastAtLabel,
+  onSubmitDailyUpdate,
+  dailyUpdateSubmittingStaff,
+  dailyUpdateSubmittedAtByStaff,
 }: KaiserStaffAssignmentsProps) {
   const noActionScopedSet = React.useMemo(
     () => buildNoActionScopedSet(noActionScopedStatuses),
@@ -130,6 +148,13 @@ export function KaiserStaffAssignments({
             !noActionScopedSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
           );
           const passiveCount = passiveMembers.length;
+          const dailySubmittedAt = String(dailyUpdateSubmittedAtByStaff?.[staffName] || '').trim();
+          const isSubmittingDaily = String(dailyUpdateSubmittingStaff || '').trim() === staffName;
+          const cardMembersPayload = assignment.members.map((member) => ({
+            clientId2: String((member as any)?.client_ID2 || '').trim(),
+            memberName: `${String((member as any)?.memberFirstName || '').trim()} ${String((member as any)?.memberLastName || '').trim()}`.trim(),
+            currentStatus: String(getEffectiveKaiserStatus(member) || '').trim(),
+          }));
           return (
             <Card
               key={`staff-status-${staffName}`}
@@ -335,6 +360,35 @@ export function KaiserStaffAssignments({
                               </button>
                             </div>
                           ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded border border-blue-200 bg-blue-50/60 p-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full h-8 px-3 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={() =>
+                          onSubmitDailyUpdate?.({
+                            staffName,
+                            members: cardMembersPayload,
+                            metrics: {
+                              totalAssigned: assignment.count,
+                              activeAssigned: activeActionCount,
+                              passiveAssigned: passiveCount,
+                              noActionTotal: total,
+                              noActionCritical: critical,
+                              noActionPriority: priority,
+                              notesTodayCount: notesTodayTotal,
+                            },
+                          })
+                        }
+                        disabled={!onSubmitDailyUpdate || isSubmittingDaily}
+                      >
+                        {isSubmittingDaily ? 'Submitting Daily Log...' : 'Submit Daily Log'}
+                      </Button>
+                      <div className="mt-1 text-[11px] text-blue-700 text-center">
+                        {dailySubmittedAt ? `Today: ${dailySubmittedAt}` : 'Not submitted'}
                       </div>
                     </div>
                   </div>
