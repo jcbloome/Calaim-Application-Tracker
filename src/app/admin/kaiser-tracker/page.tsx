@@ -17,6 +17,7 @@ import { formatBirthDate, getEffectiveKaiserStatus, getMemberKey, getStatusColor
 import type { KaiserMember } from './components/shared';
 import { KaiserSummaryCards } from './components/KaiserSummaryCards';
 import { KaiserStaffAssignments } from './components/KaiserStaffAssignments';
+import type { NoActionStaffSummary } from './components/KaiserStaffAssignments';
 import { MemberListModal } from './components/MemberListModal';
 import { MemberNotesModal } from './components/MemberNotesModal';
 import { StaffMemberManagementModal } from './components/StaffMemberManagementModal';
@@ -144,16 +145,12 @@ const normalizeStatusText = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
-const NO_ACTION_SCOPED_STATUS_KEYS = new Set(
-  [
-    'T2038 received, Need First Contact',
-    'T2038 received, Needs First Contact',
-    'T2038 received, doc collection',
-    'RCFE Needed',
-    'R&B Needed',
-    'R B Needed',
-  ].map((status) => normalizeStatusText(status))
-);
+const NO_ACTION_SCOPED_STATUSES = [
+  'T2038 received, Need First Contact',
+  'T2038 received, doc collection',
+  'RCFE Needed',
+  'R&B Needed',
+];
 const isCaseClosedStatus = (value: string) => {
   const normalized = normalizeStatusText(normalizeKaiserStatusName(value));
   return normalized === 'case closed' || normalized === 'case close';
@@ -296,6 +293,54 @@ function KaiserTrackerPageContent() {
     stopped: boolean;
     recentErrors: string[];
   } | null>(null);
+  const [noActionByStaffMap, setNoActionByStaffMap] = useState<Record<string, NoActionStaffSummary>>({});
+
+  const handleNoActionByStaffComputed = useCallback(
+    (
+      rows: Array<{
+        staffName: string;
+        totalMembers: KaiserMember[];
+        criticalMembers: KaiserMember[];
+        priorityMembers: KaiserMember[];
+        todayNotedMembers: KaiserMember[];
+        total: number;
+        critical: number;
+        priority: number;
+        notesTodayTotal: number;
+        membersWithNotesToday: number;
+      }>
+    ) => {
+      setNoActionByStaffMap((prev) => {
+        const next = rows.reduce((acc, row) => {
+          acc[row.staffName] = row as NoActionStaffSummary;
+          return acc;
+        }, {} as Record<string, NoActionStaffSummary>);
+
+        const prevKeys = Object.keys(prev).sort();
+        const nextKeys = Object.keys(next).sort();
+        if (prevKeys.length !== nextKeys.length) return next;
+        for (let i = 0; i < prevKeys.length; i += 1) {
+          if (prevKeys[i] !== nextKeys[i]) return next;
+        }
+        for (const key of nextKeys) {
+          const a = prev[key];
+          const b = next[key];
+          if (!a || !b) return next;
+          if (
+            a.total !== b.total ||
+            a.critical !== b.critical ||
+            a.priority !== b.priority ||
+            a.notesTodayTotal !== b.notesTodayTotal ||
+            a.membersWithNotesToday !== b.membersWithNotesToday
+          ) {
+            return next;
+          }
+        }
+        return prev;
+      });
+    },
+    []
+  );
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -917,14 +962,11 @@ function KaiserTrackerPageContent() {
   const refreshNoActionStatuses = async () => {
     if (notesGlobalSyncing) return;
     stopAllSyncRef.current = false;
-    const scope = members.filter((member) => {
-      const status = getEffectiveKaiserStatus(member);
-      return NO_ACTION_SCOPED_STATUS_KEYS.has(normalizeStatusText(status));
-    });
+    const scope = members;
     if (scope.length === 0) {
       toast({
         title: 'No members in scope',
-        description: 'No members currently match No Action 7+ Days scoped statuses.',
+        description: 'No members available to sync notes.',
       });
       return;
     }
@@ -1378,6 +1420,7 @@ function KaiserTrackerPageContent() {
         openMemberModal={openMemberModal}
         onRefreshNoAction={() => void refreshNoActionStatuses()}
         isRefreshingNoAction={notesGlobalSyncing && notesGlobalProgress?.scopeLabel === 'No Action 7+ Days'}
+        onNoActionByStaffComputed={handleNoActionByStaffComputed}
       />
 
       <KaiserStaffAssignments
@@ -1385,6 +1428,10 @@ function KaiserTrackerPageContent() {
         staffAssignments={staffAssignments as any}
         openStaffMemberModal={openStaffMemberModal}
         openMemberModal={openMemberModal}
+        noActionByStaff={noActionByStaffMap}
+        noActionScopedStatuses={NO_ACTION_SCOPED_STATUSES}
+        onRefreshNoAction={() => void refreshNoActionStatuses()}
+        isRefreshingNoAction={notesGlobalSyncing && notesGlobalProgress?.scopeLabel === 'No Action 7+ Days'}
       />
 
       {/* Member List Modal */}

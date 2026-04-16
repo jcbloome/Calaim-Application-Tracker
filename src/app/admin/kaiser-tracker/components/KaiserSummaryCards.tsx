@@ -25,6 +25,20 @@ export interface KaiserSummaryCardsProps {
   ) => void;
   onRefreshNoAction: () => void;
   isRefreshingNoAction: boolean;
+  onNoActionByStaffComputed?: (
+    rows: Array<{
+      staffName: string;
+      totalMembers: KaiserMember[];
+      criticalMembers: KaiserMember[];
+      priorityMembers: KaiserMember[];
+      todayNotedMembers: KaiserMember[];
+      total: number;
+      critical: number;
+      priority: number;
+      notesTodayTotal: number;
+      membersWithNotesToday: number;
+    }>
+  ) => void;
 }
 
 export function KaiserSummaryCards({
@@ -37,10 +51,11 @@ export function KaiserSummaryCards({
   openMemberModal,
   onRefreshNoAction,
   isRefreshingNoAction,
+  onNoActionByStaffComputed,
 }: KaiserSummaryCardsProps) {
   const auth = useAuth();
   const [assignedStaffMetaByClientId, setAssignedStaffMetaByClientId] = React.useState<
-    Record<string, { lastAssignedStaffActionAt: string }>
+    Record<string, { lastAssignedStaffActionAt: string; assignedStaffNotesTodayCount: number }>
   >({});
   const [isLoadingAssignedStaffMeta, setIsLoadingAssignedStaffMeta] = React.useState(false);
   const [assignedStaffMetaRefreshedAt, setAssignedStaffMetaRefreshedAt] = React.useState('');
@@ -94,7 +109,9 @@ export function KaiserSummaryCards({
         (member as any)?.Staff_Assignment ||
         (member as any)?.Assigned_Staff ||
         ''
-    ).trim();
+    )
+      .trim()
+      .replace(/^\d+$/, '');
 
   const isNoActionForWeek = (value: string) => {
     const raw = String(value || '').trim();
@@ -176,7 +193,7 @@ export function KaiserSummaryCards({
       }
 
       setIsLoadingAssignedStaffMeta(true);
-      const nextMeta: Record<string, { lastAssignedStaffActionAt: string }> = {};
+      const nextMeta: Record<string, { lastAssignedStaffActionAt: string; assignedStaffNotesTodayCount: number }> = {};
       let index = 0;
       const concurrency = 8;
 
@@ -200,9 +217,10 @@ export function KaiserSummaryCards({
             const data = await res.json().catch(() => ({}));
             nextMeta[clientId2] = {
               lastAssignedStaffActionAt: String(data?.lastAssignedStaffActionAt || ''),
+              assignedStaffNotesTodayCount: Number(data?.assignedStaffNotesTodayCount || 0),
             };
           } catch {
-            nextMeta[clientId2] = { lastAssignedStaffActionAt: '' };
+            nextMeta[clientId2] = { lastAssignedStaffActionAt: '', assignedStaffNotesTodayCount: 0 };
           }
         }
       };
@@ -321,6 +339,70 @@ export function KaiserSummaryCards({
       return acc;
     }, {} as Record<string, { critical: number; priority: number }>);
   }, [noActionOverviewByStaffRows]);
+
+  React.useEffect(() => {
+    if (!onNoActionByStaffComputed) return;
+    const noActionByStaff = new Map(
+      noActionOverviewByStaffRows.map((row) => [
+        row.staffName || 'Unassigned',
+        {
+          totalMembers: row.staffMembers,
+          criticalMembers: row.priorityMembers,
+          priorityMembers: row.lesserMembers,
+          total: row.staffMembers.length,
+          critical: row.priorityMembers.length,
+          priority: row.lesserMembers.length,
+        },
+      ])
+    );
+
+    const notesTodayByStaff = members.reduce(
+      (acc, member) => {
+        const staffName = getAssignedStaffName(member) || 'Unassigned';
+        const clientId2 = String(member?.client_ID2 || '').trim();
+        const notesToday = Number(assignedStaffMetaByClientId[clientId2]?.assignedStaffNotesTodayCount || 0);
+        if (!acc[staffName]) {
+          acc[staffName] = {
+            notesTodayTotal: 0,
+            todayNotedMembers: [] as KaiserMember[],
+            seen: new Set<string>(),
+          };
+        }
+        acc[staffName].notesTodayTotal += notesToday;
+        if (notesToday > 0 && !acc[staffName].seen.has(clientId2)) {
+          acc[staffName].seen.add(clientId2);
+          acc[staffName].todayNotedMembers.push(member);
+        }
+        return acc;
+      },
+      {} as Record<string, { notesTodayTotal: number; todayNotedMembers: KaiserMember[]; seen: Set<string> }>
+    );
+
+    const allStaffNames = new Set<string>([
+      ...Array.from(noActionByStaff.keys()),
+      ...Object.keys(notesTodayByStaff),
+    ]);
+
+    const rows = Array.from(allStaffNames).map((staffName) => {
+      const noAction = noActionByStaff.get(staffName);
+      const notesToday = notesTodayByStaff[staffName];
+      const todayNotedMembers = notesToday?.todayNotedMembers || [];
+      return {
+        staffName,
+        totalMembers: noAction?.totalMembers || [],
+        criticalMembers: noAction?.criticalMembers || [],
+        priorityMembers: noAction?.priorityMembers || [],
+        todayNotedMembers,
+        total: Number(noAction?.total || 0),
+        critical: Number(noAction?.critical || 0),
+        priority: Number(noAction?.priority || 0),
+        notesTodayTotal: Number(notesToday?.notesTodayTotal || 0),
+        membersWithNotesToday: todayNotedMembers.length,
+      };
+    });
+
+    onNoActionByStaffComputed(rows);
+  }, [assignedStaffMetaByClientId, noActionOverviewByStaffRows, onNoActionByStaffComputed]);
 
   const noActionAgingBuckets = React.useMemo(() => {
     const members7to13 = scopedNoActionMembers.filter((member) => {
@@ -714,250 +796,7 @@ export function KaiserSummaryCards({
         </CardContent>
       </Card>
 
-      <Card className="bg-white border-l-4 border-l-red-500 shadow">
-        <CardHeader className="pb-2">
-          <div className="flex items-start justify-between gap-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarClock className="h-4 w-4 text-red-500" />
-              Kaiser No Action 7+ Days
-            </CardTitle>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onRefreshNoAction}
-              disabled={isRefreshingNoAction}
-              className="h-7 px-2 text-[11px]"
-            >
-              {isRefreshingNoAction ? 'Refreshing...' : 'Refresh Now'}
-            </Button>
-          </div>
-          <div className="text-[11px] text-muted-foreground">
-            Last refreshed (ET):{' '}
-            {assignedStaffMetaRefreshedAt
-              ? new Intl.DateTimeFormat('en-US', {
-                  timeZone: 'America/New_York',
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                  hour12: true,
-                  timeZoneName: 'short',
-                }).format(new Date(assignedStaffMetaRefreshedAt))
-              : 'Never'}
-          </div>
-          {weeklyDigestStatus ? <div className="text-[11px] text-muted-foreground">{weeklyDigestStatus}</div> : null}
-        </CardHeader>
-        <CardContent className="pt-0 space-y-2">
-          <button
-            type="button"
-            className="w-full rounded-md border border-red-200 bg-red-50 p-3 text-left hover:bg-red-100"
-            onClick={() =>
-              openMemberModal(
-                scopedNoActionMembers,
-                'Kaiser No Action 7+ Days',
-                `${scopedNoActionMembers.length} members with no notes from their assigned Kaiser staff in 7+ days`,
-                'staff_assignment',
-                'kaiser_no_action_7_days'
-              )
-            }
-          >
-            <div className="text-xl font-bold text-red-700">
-              {isLoadingAssignedStaffMeta ? '...' : scopedNoActionMembers.length}
-            </div>
-            <div className="text-xs text-red-900/80">
-              No assigned-staff action in 7+ days (non-Kaiser Staff Assigned notes do not clear notes)
-            </div>
-          </button>
-
-          <div className="space-y-1 border-t pt-2">
-            <button
-              type="button"
-              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50 hover:underline"
-              onClick={() =>
-                openMemberModal(
-                  noActionAgingBuckets.members7to13,
-                  'No Action Aging — 7 to 13 days',
-                  `${noActionAgingBuckets.members7to13.length} members with no assigned-staff note for 7-13 days`,
-                  'staff_assignment',
-                  'kaiser_no_action_aging_7_13'
-                )
-              }
-            >
-              <span className="truncate pr-2">Aging: 7-13 days</span>
-              <span className="font-semibold">{noActionAgingBuckets.members7to13.length}</span>
-            </button>
-            <button
-              type="button"
-              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-amber-700 hover:bg-amber-50 hover:underline"
-              onClick={() =>
-                openMemberModal(
-                  noActionAgingBuckets.members14to20,
-                  'No Action Aging — 14 to 20 days',
-                  `${noActionAgingBuckets.members14to20.length} members with no assigned-staff note for 14-20 days`,
-                  'staff_assignment',
-                  'kaiser_no_action_aging_14_20'
-                )
-              }
-            >
-              <span className="truncate pr-2">Aging: 14-20 days</span>
-              <span className="font-semibold">{noActionAgingBuckets.members14to20.length}</span>
-            </button>
-            <button
-              type="button"
-              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-red-800 hover:bg-red-50 hover:underline"
-              onClick={() =>
-                openMemberModal(
-                  noActionAgingBuckets.members21plus,
-                  'No Action Aging — 21+ days',
-                  `${noActionAgingBuckets.members21plus.length} members with no assigned-staff note for 21+ days`,
-                  'staff_assignment',
-                  'kaiser_no_action_aging_21_plus'
-                )
-              }
-            >
-              <span className="truncate pr-2">Aging: 21+ days</span>
-              <span className="font-semibold">{noActionAgingBuckets.members21plus.length}</span>
-            </button>
-          </div>
-
-          <div className="space-y-1 border-t pt-2">
-            <button
-              type="button"
-              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-red-800 hover:bg-red-50 hover:underline"
-              onClick={() =>
-                openMemberModal(
-                  noActionPriorityMembers,
-                  'Critical No Action — Received T2038 / Needs First Contact',
-                  `${noActionPriorityMembers.length} critical members with no assigned-staff action in 7+ days`,
-                  'kaiser_status',
-                  'kaiser_no_action_priority'
-                )
-              }
-            >
-              <span className="truncate pr-2">Critical: Received T2038 / Needs First Contact</span>
-              <span className="font-semibold">{noActionPriorityMembers.length}</span>
-            </button>
-            <button
-              type="button"
-              className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-amber-700 hover:bg-amber-50 hover:underline"
-              onClick={() =>
-                openMemberModal(
-                  noActionLesserPriorityMembers,
-                  'Priority No Action — Doc Collection / RCFE Needed / R&B Needed',
-                  `${noActionLesserPriorityMembers.length} priority members with no assigned-staff action in 7+ days`,
-                  'kaiser_status',
-                  'kaiser_no_action_lesser_priority'
-                )
-              }
-            >
-              <span className="truncate pr-2">Priority: Doc Collection / RCFE Needed / R&amp;B Needed</span>
-              <span className="font-semibold">{noActionLesserPriorityMembers.length}</span>
-            </button>
-          </div>
-
-          <div className="space-y-1 border-t pt-2">
-            <div className="text-[11px] font-semibold text-muted-foreground">Global overview by assigned Kaiser staff</div>
-            {noActionOverviewByStaffRows.length === 0 ? (
-              <div className="text-[11px] text-muted-foreground">
-                {isLoadingAssignedStaffMeta ? 'Loading staff breakdown...' : 'No members currently flagged.'}
-              </div>
-            ) : (
-              noActionOverviewByStaffRows.map((row) => (
-                <div key={`no-action-staff-${row.staffName}`} className="rounded border border-red-100 bg-red-50/30 p-1.5">
-                  <button
-                    type="button"
-                    className="w-full flex items-center justify-between rounded px-1 py-0.5 text-[11px] text-muted-foreground hover:bg-red-50"
-                    onClick={() =>
-                      openMemberModal(
-                        row.staffMembers,
-                        `No Action 7+ Days — ${row.staffName}`,
-                        `${row.staffMembers.length} members assigned to ${row.staffName} with no assigned-staff action in 7+ days`,
-                        'staff_assignment',
-                        row.staffName
-                      )
-                    }
-                  >
-                    <span className="truncate pr-2 text-left font-medium">{row.staffName}</span>
-                    <span className="font-semibold text-red-700 hover:underline">{row.staffMembers.length}</span>
-                  </button>
-                  <div className="mt-1 grid grid-cols-3 gap-1 text-[10px]">
-                    {(() => {
-                      return (
-                        <>
-                    <button
-                      type="button"
-                      className="rounded border border-red-200 bg-white px-1 py-0.5 text-red-800 hover:bg-red-100"
-                      onClick={() =>
-                        openMemberModal(
-                          row.priorityMembers,
-                          `No Action Critical — ${row.staffName}`,
-                          `${row.priorityMembers.length} critical no-action members for ${row.staffName}`,
-                          'staff_assignment',
-                          `${row.staffName}_priority`
-                        )
-                      }
-                    >
-                      Critical: {row.priorityMembers.length}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded border border-amber-200 bg-white px-1 py-0.5 text-amber-800 hover:bg-amber-100"
-                      onClick={() =>
-                        openMemberModal(
-                          row.lesserMembers,
-                          `No Action Priority — ${row.staffName}`,
-                          `${row.lesserMembers.length} priority no-action members for ${row.staffName}`,
-                          'staff_assignment',
-                          `${row.staffName}_lesser`
-                        )
-                      }
-                    >
-                      Priority: {row.lesserMembers.length}
-                    </button>
-                    <div className="rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-center text-slate-500">
-                      Scoped statuses only
-                    </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-1 border-t pt-2">
-            <div className="text-[11px] font-semibold text-muted-foreground">Data quality checks (assignment matching)</div>
-            <div className="text-[11px] text-muted-foreground">
-              Alias table matching is enabled for assigned-staff note detection.
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              Active manager overrides: {Object.keys(activeOverrideByMemberId).length}
-            </div>
-            {staffDataQualityIssues.length > 0 ? (
-              <div className="text-[11px] text-amber-700">
-                Potential assignment-name issues: {staffDataQualityIssues.length}
-              </div>
-            ) : (
-              <div className="text-[11px] text-emerald-700">No assignment-name issues detected.</div>
-            )}
-          </div>
-
-          <div className="space-y-1 border-t pt-2">
-            <div className="text-[11px] font-semibold text-muted-foreground">Scoped Kaiser_Status values (No Action 7+ Days)</div>
-            <div className="grid grid-cols-1 gap-1 text-[11px] text-muted-foreground">
-              {noActionScopedStatuses.map((status) => (
-                <div key={`no-action-scope-${status}`} className="rounded border border-slate-200 bg-slate-50 px-2 py-1">
-                  {status}
-                </div>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* No Action 7+ Days moved to Kaiser Staff Assignments cards */}
 
       {/* Kaiser Status Summary Card */}
       <Card className="bg-white border-l-4 border-l-blue-500 shadow">

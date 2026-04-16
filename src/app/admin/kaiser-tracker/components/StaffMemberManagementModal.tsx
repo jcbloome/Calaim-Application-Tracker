@@ -43,6 +43,7 @@ export function StaffMemberManagementModal({
   const [isSyncingNotes, setIsSyncingNotes] = React.useState(false);
   const [syncProgress, setSyncProgress] = React.useState({ complete: 0, total: 0, failed: 0 });
   const [dailyMetaByClientId, setDailyMetaByClientId] = React.useState<Record<string, MemberNotesDailyMeta>>({});
+  const [showOnlyTodayMembers, setShowOnlyTodayMembers] = React.useState(false);
   const syncInFlightRef = React.useRef(false);
 
   const toEtDayKey = React.useCallback((value: string | Date) => {
@@ -166,6 +167,7 @@ export function StaffMemberManagementModal({
     if (isOpen) return;
     setSyncProgress({ complete: 0, total: 0, failed: 0 });
     setIsSyncingNotes(false);
+    setShowOnlyTodayMembers(false);
     syncInFlightRef.current = false;
     setDailyMetaByClientId({});
   }, [isOpen]);
@@ -174,6 +176,17 @@ export function StaffMemberManagementModal({
     () => Object.values(dailyMetaByClientId).reduce((sum, meta) => sum + Number(meta?.todayCount || 0), 0),
     [dailyMetaByClientId]
   );
+
+  const membersWithTodayNotes = React.useMemo(
+    () =>
+      members.filter((member) => {
+        const clientId2 = String(member?.client_ID2 || '').trim();
+        return Number(dailyMetaByClientId[clientId2]?.todayCount || 0) > 0;
+      }),
+    [dailyMetaByClientId, members]
+  );
+
+  const membersToRender = showOnlyTodayMembers ? membersWithTodayNotes : members;
 
   if (!isOpen) return null;
 
@@ -208,15 +221,31 @@ export function StaffMemberManagementModal({
         <div className="grid grid-cols-1 gap-2">
           <div className="rounded border bg-slate-50 p-2 text-xs">
             <div className="text-muted-foreground">Total notes inputted today (ET)</div>
-            <div className={`text-base font-semibold ${totalNotesToday > 0 ? 'text-emerald-700' : 'text-slate-700'}`}>
+            <button
+              type="button"
+              className={`text-base font-semibold ${
+                totalNotesToday > 0
+                  ? 'text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer'
+                  : 'text-slate-700'
+              }`}
+              disabled={totalNotesToday <= 0}
+              onClick={() => setShowOnlyTodayMembers((prev) => !prev)}
+            >
               {totalNotesToday}
+            </button>
+            <div className="text-[11px] text-muted-foreground">
+              {totalNotesToday > 0
+                ? showOnlyTodayMembers
+                  ? `Showing ${membersWithTodayNotes.length} members with notes today (click total to show all members).`
+                  : `Click total to review ${membersWithTodayNotes.length} members with notes today.`
+                : 'No member notes entered today.'}
             </div>
           </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto pr-4">
           <div className="space-y-4">
-            {members.map((member, index) => {
+            {membersToRender.map((member, index) => {
               const clientId2 = String(member?.client_ID2 || '').trim();
               const meta = dailyMetaByClientId[clientId2];
               const todayCount = Number(meta?.todayCount || 0);
@@ -281,16 +310,25 @@ export function StaffMemberManagementModal({
                       {meta ? (
                         meta.allNotes.length > 0 ? (
                           <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                            {meta.allNotes.map((note, noteIdx) => (
-                              <div key={`${clientId2}-today-note-${noteIdx}`} className="rounded border bg-white p-2 text-xs">
-                                <div className="text-slate-600">
-                                  {note.createdByName} • {formatEtDateTime(note.createdAt)}
-                                  {note.source ? ` • ${note.source}` : ''}
-                                  {toEtDayKey(note.createdAt) === toEtDayKey(new Date()) ? ' • NEW TODAY' : ''}
+                            {meta.allNotes.map((note, noteIdx) => {
+                              const isToday = toEtDayKey(note.createdAt) === toEtDayKey(new Date());
+                              return (
+                                <div
+                                  key={`${clientId2}-today-note-${noteIdx}`}
+                                  className={`rounded border p-2 text-xs ${
+                                    isToday ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'
+                                  }`}
+                                >
+                                  <div className={`flex items-center gap-1 ${isToday ? 'text-amber-900' : 'text-slate-600'}`}>
+                                    <span>{note.createdByName} • {formatEtDateTime(note.createdAt)}{note.source ? ` • ${note.source}` : ''}</span>
+                                    {isToday ? (
+                                      <Badge className="h-5 px-1.5 text-[10px] bg-amber-600 hover:bg-amber-600 text-white">TODAY</Badge>
+                                    ) : null}
+                                  </div>
+                                  <div className={`${isToday ? 'text-amber-950' : 'text-slate-800'}`}>{note.noteText}</div>
                                 </div>
-                                <div className="text-slate-800">{note.noteText}</div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         ) : (
                           <div className="text-xs text-muted-foreground">No notes found for this member.</div>

@@ -906,6 +906,11 @@ export async function GET(request: NextRequest) {
       const matchingAssignedStaffNotes = assignedStaff
         ? notes.filter((note) => noteMatchesAssignedStaff(note, assignedStaff, staffAliasMap))
         : [];
+      const assignedStaffNotesTodayCount = matchingAssignedStaffNotes.reduce((acc, note) => {
+        if (!note?.createdAt) return acc;
+        const dayKey = toEtDayKey(String(note.createdAt));
+        return dayKey && dayKey === todayEt ? acc + 1 : acc;
+      }, 0);
       const lastAssignedStaffActionAt = matchingAssignedStaffNotes.reduce((latest, note) => {
         const createdAt = String(note?.createdAt || '').trim();
         if (!createdAt) return latest;
@@ -924,6 +929,7 @@ export async function GET(request: NextRequest) {
         assignedStaff,
         lastAssignedStaffActionAt,
         assignedStaffNotesCount: matchingAssignedStaffNotes.length,
+        assignedStaffNotesTodayCount,
         firstSyncCompleted: hasFirstSync,
         didSync: false,
         notes: [],
