@@ -402,29 +402,33 @@ async function saveNotesToFirestore(notes: MemberNote[]): Promise<void> {
     }
     
     console.log(`💾 Saving ${notes.length} notes to Firestore`);
-    
-    const batch = adminDb.batch();
-    
-    notes.forEach(note => {
-      const noteRef = adminDb.collection(MEMBER_NOTES_COLLECTION).doc(note.id);
-      const noteData = {
-        ...note,
-        createdAt: note.createdAt ? Timestamp.fromDate(new Date(note.createdAt)) : Timestamp.now(),
-        updatedAt: note.updatedAt ? Timestamp.fromDate(new Date(note.updatedAt)) : Timestamp.now(),
-        followUpDate: note.followUpDate ? Timestamp.fromDate(new Date(note.followUpDate)) : null,
-        resolvedAt: note.resolvedAt ? Timestamp.fromDate(new Date(note.resolvedAt)) : null,
-        syncedAt: note.syncedAt ? Timestamp.fromDate(new Date(note.syncedAt)) : Timestamp.now()
-      };
 
-      // Firestore rejects undefined values; strip them before write.
-      const sanitized = Object.fromEntries(
-        Object.entries(noteData).filter(([, value]) => value !== undefined)
-      );
+    for (let i = 0; i < notes.length; i += FIRESTORE_BATCH_WRITE_LIMIT) {
+      const chunk = notes.slice(i, i + FIRESTORE_BATCH_WRITE_LIMIT);
+      const batch = adminDb.batch();
 
-      batch.set(noteRef, sanitized, { merge: true });
-    });
-    
-    await batch.commit();
+      chunk.forEach((note) => {
+        const noteRef = adminDb.collection(MEMBER_NOTES_COLLECTION).doc(note.id);
+        const noteData = {
+          ...note,
+          createdAt: note.createdAt ? Timestamp.fromDate(new Date(note.createdAt)) : Timestamp.now(),
+          updatedAt: note.updatedAt ? Timestamp.fromDate(new Date(note.updatedAt)) : Timestamp.now(),
+          followUpDate: note.followUpDate ? Timestamp.fromDate(new Date(note.followUpDate)) : null,
+          resolvedAt: note.resolvedAt ? Timestamp.fromDate(new Date(note.resolvedAt)) : null,
+          syncedAt: note.syncedAt ? Timestamp.fromDate(new Date(note.syncedAt)) : Timestamp.now()
+        };
+
+        // Firestore rejects undefined values; strip them before write.
+        const sanitized = Object.fromEntries(
+          Object.entries(noteData).filter(([, value]) => value !== undefined)
+        );
+
+        batch.set(noteRef, sanitized, { merge: true });
+      });
+
+      await batch.commit();
+    }
+
     console.log(`✅ Successfully saved ${notes.length} notes to Firestore`);
     
   } catch (error) {
@@ -628,6 +632,7 @@ const SYNC_STATUS_COLLECTION = 'member-notes-sync-status';
 // Search configuration
 const SEARCH_RESULTS_LIMIT = 50;
 const SEARCH_MIN_LENGTH = 2;
+const FIRESTORE_BATCH_WRITE_LIMIT = 400;
 
 const ET_DATE_FMT = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/New_York',
@@ -1214,10 +1219,15 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
     const allNewNotes = [...newTransformedRegularNotes, ...newTransformedILSNotes]
       .filter((note) => !deletedIds.has(note.id));
     
-    // Add new notes to existing cache and sort
+    // Add new notes to existing cache, dedupe by ID, and sort
     const existingNotes = memberNotesCache[clientId2] || [];
-    const combinedNotes = [...existingNotes, ...allNewNotes];
-    combinedNotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const combinedById = new Map<string, MemberNote>();
+    [...existingNotes, ...allNewNotes].forEach((note) => {
+      combinedById.set(note.id, note);
+    });
+    const combinedNotes = Array.from(combinedById.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
     
     memberNotesCache[clientId2] = combinedNotes;
     importedCount = allNewNotes.length;

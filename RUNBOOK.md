@@ -212,7 +212,6 @@ See `desktop/CODE_SIGNING.md` and set:
 - Endpoint: `GET /api/cron/kaiser-midnight-preload?mode=full`
 - Auth header: `Authorization: Bearer ${CRON_SECRET}`
 - Behavior: performs a full Kaiser members cache sync, then preloads member notes for all Kaiser members into Firestore.
-- Also captures beginning-of-day no-action snapshot (`critical`, `priority`, `byStaff`) into `admin-settings/kaiser-no-action-daily-snapshot`.
 - Schedule: `syncKaiserMidnightPreload` Firebase Scheduler function runs at **12:00 AM ET**.
 
 ---

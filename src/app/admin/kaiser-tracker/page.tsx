@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
@@ -144,6 +144,16 @@ const normalizeStatusText = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+const NO_ACTION_SCOPED_STATUS_KEYS = new Set(
+  [
+    'T2038 received, Need First Contact',
+    'T2038 received, Needs First Contact',
+    'T2038 received, doc collection',
+    'RCFE Needed',
+    'R&B Needed',
+    'R B Needed',
+  ].map((status) => normalizeStatusText(status))
+);
 const isCaseClosedStatus = (value: string) => {
   const normalized = normalizeStatusText(normalizeKaiserStatusName(value));
   return normalized === 'case closed' || normalized === 'case close';
@@ -337,11 +347,9 @@ function KaiserTrackerPageContent() {
     setModalMembers((prev) => [...prev]);
   };
 
-  const formatEtDateTime = (value: string) => {
-    if (!value) return 'Never';
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return 'Never';
-    return new Intl.DateTimeFormat('en-US', {
+  const etDateTimeFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
       year: 'numeric',
       month: '2-digit',
@@ -351,8 +359,19 @@ function KaiserTrackerPageContent() {
       second: '2-digit',
       hour12: true,
       timeZoneName: 'short',
-    }).format(parsed);
-  };
+      }),
+    []
+  );
+
+  const formatEtDateTime = useCallback(
+    (value: string) => {
+      if (!value) return 'Never';
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return 'Never';
+      return etDateTimeFormatter.format(parsed);
+    },
+    [etDateTimeFormatter]
+  );
 
   const parseApiJson = async (response: Response) => {
     const raw = await response.text();
@@ -412,10 +431,6 @@ function KaiserTrackerPageContent() {
       statusBreakdown: Record<string, number>;
     }> = {};
     
-    // Count members assigned to each staff (including unassigned)
-    const normalizeLabel = (value: any, fallback: string) =>
-      value ? String(value) : fallback;
-
     members.forEach(member => {
       // Staff cards only include members with CalAIM Authorized or Pending.
       if (!isAuthorizedOrPendingCalaim(member?.CalAIM_Status)) return;
@@ -473,7 +488,6 @@ function KaiserTrackerPageContent() {
 
   // Helper function to open staff member management modal
   const openStaffMemberModal = (staffName: string, members: KaiserMember[]) => {
-    console.log('🔍 Opening staff member modal for:', staffName, 'with', members.length, 'members');
     setStaffMemberModal({
       isOpen: true,
       staffName,
@@ -734,6 +748,88 @@ function KaiserTrackerPageContent() {
     }
   };
 
+  const transformKaiserMembers = (data: any[]): KaiserMember[] => {
+    return data.map((member: any, index: number) => {
+      const rawStaff =
+        member?.Staff_Assigned ||
+        member?.Staff_Assignment ||
+        member?.Assigned_Staff ||
+        member?.Kaiser_User_Assignment ||
+        member?.kaiser_user_assignment ||
+        member?.SW_ID ||
+        '';
+      const staffVal = rawStaff != null ? String(rawStaff).trim() : '';
+      const staffAssigned = !staffVal || /^\d+$/.test(staffVal) ? '' : staffVal;
+      return {
+        ...member,
+        id: member?.id || `frontend-member-${index}-${member?.Client_ID2 || Math.random().toString(36).substring(7)}`,
+        memberFirstName: member?.memberFirstName || 'Unknown',
+        memberLastName: member?.memberLastName || 'Member',
+        memberMrn: member?.memberMrn || '',
+        memberCounty: member?.memberCounty || 'Unknown',
+        memberPhone: member?.memberPhone || '',
+        memberEmail: member?.memberEmail || '',
+        client_ID2: member?.Client_ID2 || 'N/A',
+        pathway: member?.pathway || 'Unknown',
+        Kaiser_Status: member?.Kaiser_Status || member?.Kaiser_ID_Status || '',
+        CalAIM_Status: toCanonicalCalaimStatus(
+          member?.CalAIM_Status ??
+            member?.calaim_status ??
+            member?.CALAIM_STATUS ??
+            member?.CalAIMStatus ??
+            ''
+        ),
+        Staff_Assigned: staffAssigned,
+        RCFE_Name: member?.RCFE_Name || '',
+        RCFE_Admin_Name: member?.RCFE_Admin_Name || member?.RCFE_Administrator || member?.RCFE_Admin || '',
+        RCFE_Admin_Email: member?.RCFE_Admin_Email || member?.RCFE_Administrator_Email || '',
+        Authorization_End_Date_T2038: member?.Authorization_End_Date_T2038 || member?.Authorization_End_T2038 || '',
+        Next_Step_Due_Date: member?.Next_Step_Due_Date || '',
+        workflow_step: member?.workflow_step || '',
+        workflow_notes: member?.workflow_notes || '',
+        last_updated: member?.lastUpdated || new Date().toISOString(),
+        created_at: member?.created_at || new Date().toISOString()
+      };
+    });
+  };
+
+  const loadCachedMembers = async (opts?: { quiet?: boolean }) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/kaiser-members');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const responseData = await response.json();
+      if (!responseData.success) {
+        throw new Error(responseData.error || 'Failed to fetch Kaiser members');
+      }
+
+      const cleanMembers = transformKaiserMembers(responseData.members || []);
+      setMembers(cleanMembers);
+
+      if (!opts?.quiet) {
+        toast({
+          title: 'Members loaded',
+          description: `Loaded ${cleanMembers.length} Kaiser members from cache.`,
+        });
+      }
+      return cleanMembers as KaiserMember[];
+    } catch (error) {
+      console.error('Error loading cached Kaiser members:', error);
+      if (!opts?.quiet) {
+        toast({
+          title: 'Load failed',
+          description: 'Failed to load cached Kaiser members.',
+          variant: 'destructive',
+        });
+      }
+      return [] as KaiserMember[];
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Fetch Kaiser members from Caspio
   const fetchCaspioData = async (opts?: { quiet?: boolean }) => {
     setIsLoading(true);
@@ -767,76 +863,7 @@ function KaiserTrackerPageContent() {
         throw new Error(responseData.error || 'Failed to fetch Kaiser members');
       }
       
-      // Extract the members array from the response
-      const data = responseData.members || [];
-      
-      // Debug staff assignment fields specifically
-      if (data.length > 0) {
-        const firstMember = data[0];
-        console.log('🔍 FRONTEND STAFF ASSIGNMENT DEBUG - Available fields in first member:', {
-          Kaiser_User_Assignment: firstMember?.Kaiser_User_Assignment,
-          kaiser_user_assignment: firstMember?.kaiser_user_assignment,
-          SW_ID: firstMember?.SW_ID,
-          Staff_Assignment: firstMember?.Staff_Assignment,
-          Assigned_Staff: firstMember?.Assigned_Staff,
-          Staff_Assigned: firstMember?.Staff_Assigned,
-          allFieldsWithStaff: Object.keys(firstMember).filter(key => 
-            key.toLowerCase().includes('staff') || 
-            key.toLowerCase().includes('assign') ||
-            key.toLowerCase().includes('user')
-          )
-        });
-        
-        // Show what Staff_Assigned is actually mapped to
-        console.log('🎯 FINAL Staff_Assigned VALUE:', firstMember?.Staff_Assigned);
-        
-        // Show ALL field names in frontend data
-        console.log('🔍 FRONTEND ALL FIELDS:', Object.keys(firstMember).sort());
-      }
-      
-      // Clean and process the data (prefer explicit staff-name fields; numeric-only IDs remain unassigned)
-      const cleanMembers = data.map((member: any, index: number) => {
-        const rawStaff =
-          member?.Staff_Assigned ||
-          member?.Staff_Assignment ||
-          member?.Assigned_Staff ||
-          member?.Kaiser_User_Assignment ||
-          member?.kaiser_user_assignment ||
-          member?.SW_ID ||
-          '';
-        const staffVal = rawStaff != null ? String(rawStaff).trim() : '';
-        const staffAssigned = !staffVal || /^\d+$/.test(staffVal) ? '' : staffVal;
-        return {
-          ...member,
-          id: member?.id || `frontend-member-${index}-${member?.Client_ID2 || Math.random().toString(36).substring(7)}`,
-          memberFirstName: member?.memberFirstName || 'Unknown',
-          memberLastName: member?.memberLastName || 'Member',
-          memberMrn: member?.memberMrn || '',
-          memberCounty: member?.memberCounty || 'Unknown',
-          memberPhone: member?.memberPhone || '',
-          memberEmail: member?.memberEmail || '',
-          client_ID2: member?.Client_ID2 || 'N/A',
-          pathway: member?.pathway || 'Unknown',
-          Kaiser_Status: member?.Kaiser_Status || member?.Kaiser_ID_Status || '',
-          CalAIM_Status: toCanonicalCalaimStatus(
-            member?.CalAIM_Status ??
-              member?.calaim_status ??
-              member?.CALAIM_STATUS ??
-              member?.CalAIMStatus ??
-              ''
-          ),
-          Staff_Assigned: staffAssigned,
-          RCFE_Name: member?.RCFE_Name || '',
-          RCFE_Admin_Name: member?.RCFE_Admin_Name || member?.RCFE_Administrator || member?.RCFE_Admin || '',
-          RCFE_Admin_Email: member?.RCFE_Admin_Email || member?.RCFE_Administrator_Email || '',
-          Authorization_End_Date_T2038: member?.Authorization_End_Date_T2038 || member?.Authorization_End_T2038 || '',
-          Next_Step_Due_Date: member?.Next_Step_Due_Date || '',
-          workflow_step: member?.workflow_step || '',
-          workflow_notes: member?.workflow_notes || '',
-          last_updated: member?.lastUpdated || new Date().toISOString(),
-          created_at: member?.created_at || new Date().toISOString()
-        };
-      });
+      const cleanMembers = transformKaiserMembers(responseData.members || []);
 
       // Keep all Kaiser members so CalAIM Status Summary reflects full status distribution
       // (Authorized, Pending, Non_Active, Member Died, Denied, etc.).
@@ -885,6 +912,26 @@ function KaiserTrackerPageContent() {
       });
       return false;
     }
+  };
+
+  const refreshNoActionStatuses = async () => {
+    if (notesGlobalSyncing) return;
+    stopAllSyncRef.current = false;
+    const scope = members.filter((member) => {
+      const status = getEffectiveKaiserStatus(member);
+      return NO_ACTION_SCOPED_STATUS_KEYS.has(normalizeStatusText(status));
+    });
+    if (scope.length === 0) {
+      toast({
+        title: 'No members in scope',
+        description: 'No members currently match No Action 7+ Days scoped statuses.',
+      });
+      return;
+    }
+    await syncGlobalLatestNotes(scope, {
+      scopeLabel: 'No Action 7+ Days',
+      includeAllMembers: true,
+    });
   };
 
   const syncGlobalLatestNotes = async (
@@ -1041,41 +1088,6 @@ function KaiserTrackerPageContent() {
     }
   };
 
-  const syncStaffAssignedNotes = async (staffName: string, staffMembers: KaiserMember[]) => {
-    if (notesGlobalSyncing) return;
-    stopAllSyncRef.current = false;
-    const scope = Array.isArray(staffMembers)
-      ? staffMembers.filter((member) => isAuthorizedOrPendingCalaim(member?.CalAIM_Status))
-      : [];
-    if (scope.length === 0) {
-      toast({
-        title: 'No members in scope',
-        description: `No Authorized/Pending Kaiser members currently assigned to ${staffName}.`,
-      });
-      return;
-    }
-    try {
-      await syncGlobalLatestNotes(scope, { quiet: true, scopeLabel: `Staff: ${staffName}` });
-      if (stopAllSyncRef.current) {
-        toast({
-          title: 'Notes sync stopped',
-          description: `Stopped sync for ${staffName}.`,
-        });
-        return;
-      }
-      toast({
-        title: 'Staff notes synced',
-        description: `${staffName}: processed ${scope.length} assigned member${scope.length === 1 ? '' : 's'} (historical + incremental notes).`,
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Staff notes sync failed',
-        description: error?.message || `Could not sync notes for ${staffName}.`,
-        variant: 'destructive',
-      });
-    }
-  };
-
   const stopSyncAll = () => {
     stopAllSyncRef.current = true;
     if (notesFetchControllerRef.current) {
@@ -1086,9 +1098,9 @@ function KaiserTrackerPageContent() {
     setNotesGlobalProgress((prev) => (prev ? { ...prev, stopped: true, currentMember: '' } : prev));
   };
 
-  // Filter and sort functions
-  const filteredMembers = () => {
-    return members.filter(member => {
+  // Filter and sort results
+  const filteredMembers = useMemo(() => {
+    return members.filter((member) => {
       if (filters.kaiserStatus !== 'all' && getEffectiveKaiserStatus(member) !== filters.kaiserStatus) return false;
       if (filters.calaimStatus !== 'all') {
         const normalized = normalizeCalaimStatus(member.CalAIM_Status || '');
@@ -1098,43 +1110,47 @@ function KaiserTrackerPageContent() {
       if (filters.staffAssigned !== 'all' && getStaffAssignmentValue(member) !== filters.staffAssigned) return false;
       return true;
     });
-  };
+  }, [members, filters, normalizeCalaimStatus]);
 
-  const sortedMembers = filteredMembers().sort((a, b) => {
+  const sortedMembers = useMemo(
+    () =>
+      [...filteredMembers].sort((a, b) => {
         if (!sortField) return 0;
         
-    let aValue: any = '';
-    let bValue: any = '';
+        let aValue: any = '';
+        let bValue: any = '';
         
-          switch (sortField) {
-            case 'name':
-        aValue = `${a.memberFirstName} ${a.memberLastName}`;
-        bValue = `${b.memberFirstName} ${b.memberLastName}`;
-              break;
-            case 'county':
-        aValue = a.memberCounty;
-        bValue = b.memberCounty;
-              break;
-            case 'kaiser_status':
-        aValue = getEffectiveKaiserStatus(a);
-        bValue = getEffectiveKaiserStatus(b);
-              break;
-            case 'calaim_status':
-        aValue = a.CalAIM_Status;
-        bValue = b.CalAIM_Status;
-              break;
-      case 'staff':
-        aValue = getStaffAssignmentValue(a);
-        bValue = getStaffAssignmentValue(b);
-              break;
-            default:
-              return 0;
-          }
+        switch (sortField) {
+          case 'name':
+            aValue = `${a.memberFirstName} ${a.memberLastName}`;
+            bValue = `${b.memberFirstName} ${b.memberLastName}`;
+            break;
+          case 'county':
+            aValue = a.memberCounty;
+            bValue = b.memberCounty;
+            break;
+          case 'kaiser_status':
+            aValue = getEffectiveKaiserStatus(a);
+            bValue = getEffectiveKaiserStatus(b);
+            break;
+          case 'calaim_status':
+            aValue = a.CalAIM_Status;
+            bValue = b.CalAIM_Status;
+            break;
+          case 'staff':
+            aValue = getStaffAssignmentValue(a);
+            bValue = getStaffAssignmentValue(b);
+            break;
+          default:
+            return 0;
+        }
           
-    if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-    if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-          return 0;
-  });
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      }),
+    [filteredMembers, sortField, sortDirection]
+  );
 
   // Handle sorting
   const handleSort = (field: string) => {
@@ -1232,9 +1248,9 @@ function KaiserTrackerPageContent() {
 
   // Load data on component mount
   useEffect(() => {
-    // Only fetch data when user manually clicks sync button, not on page load
-    // fetchCaspioData();
-    loadKaiserStatusOptions();
+    // Morning load path: read from Firestore cache without forcing a full Caspio sync.
+    void loadCachedMembers({ quiet: true });
+    void loadKaiserStatusOptions();
   }, []);
 
   if (isAdminLoading) {
@@ -1267,7 +1283,7 @@ function KaiserTrackerPageContent() {
             Overview of {members.length} Kaiser members | Members cache sync (ET): {formatEtDateTime(membersCacheLastSyncAt)}
           </p>
           <p className="text-muted-foreground text-xs mt-1">
-            Midnight auto-sync handles the full preload. Use manual sync when you want an immediate member/status refresh.
+            Midnight auto-sync preloads Firestore and this page auto-loads cached records. Use manual sync for an immediate full Caspio member/status refresh.
           </p>
           <p className="text-muted-foreground text-xs mt-1">
             {statusListLoading ? 'Loading Kaiser status list…' : (kaiserStatusListUpdatedAtLabel || ' ')}
@@ -1360,6 +1376,8 @@ function KaiserTrackerPageContent() {
         calaimStatusMap={CALAIM_STATUS_MAP}
         normalizeCalaimStatus={normalizeCalaimStatus}
         openMemberModal={openMemberModal}
+        onRefreshNoAction={() => void refreshNoActionStatuses()}
+        isRefreshingNoAction={notesGlobalSyncing && notesGlobalProgress?.scopeLabel === 'No Action 7+ Days'}
       />
 
       <KaiserStaffAssignments

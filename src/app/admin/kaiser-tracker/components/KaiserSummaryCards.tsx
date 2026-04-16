@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { CheckCircle, Database, MapPin, CalendarClock } from 'lucide-react';
 import { useAuth } from '@/firebase';
 import type { KaiserMember } from './shared';
@@ -22,6 +23,8 @@ export interface KaiserSummaryCardsProps {
     filterType: 'kaiser_status' | 'county' | 'staff' | 'calaim_status' | 'staff_assignment' | 'staff_members',
     filterValue: string
   ) => void;
+  onRefreshNoAction: () => void;
+  isRefreshingNoAction: boolean;
 }
 
 export function KaiserSummaryCards({
@@ -32,6 +35,8 @@ export function KaiserSummaryCards({
   calaimStatusMap,
   normalizeCalaimStatus,
   openMemberModal,
+  onRefreshNoAction,
+  isRefreshingNoAction,
 }: KaiserSummaryCardsProps) {
   const auth = useAuth();
   const [assignedStaffMetaByClientId, setAssignedStaffMetaByClientId] = React.useState<
@@ -539,6 +544,33 @@ export function KaiserSummaryCards({
     return endDay >= startOfToday && endDay <= oneMonthOut;
   });
 
+  const kaiserSummaryMembersByStatus = React.useMemo(() => {
+    const grouped: Record<string, KaiserMember[]> = {};
+    allKaiserStatuses.forEach((status) => {
+      grouped[status] = members.filter((m) => matchesKaiserSummaryStatus(m, status));
+    });
+    return grouped;
+  }, [allKaiserStatuses, members]);
+
+  const calaimSummaryMembersByStatus = React.useMemo(() => {
+    const grouped: Record<string, KaiserMember[]> = {};
+    calaimStatusOptions.forEach((status) => {
+      grouped[status] = members.filter((m) => {
+        const normalized = normalizeCalaimStatus(m.CalAIM_Status || '');
+        return calaimStatusMap[normalized] === status;
+      });
+    });
+    return grouped;
+  }, [calaimStatusMap, calaimStatusOptions, members, normalizeCalaimStatus]);
+
+  const countySummaryMembers = React.useMemo(() => {
+    const grouped: Record<string, KaiserMember[]> = {};
+    counties.forEach((county) => {
+      grouped[county] = members.filter((m) => m.memberCounty === county);
+    });
+    return grouped;
+  }, [counties, members]);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {/* ILS Member Requests Consolidated Card */}
@@ -684,10 +716,22 @@ export function KaiserSummaryCards({
 
       <Card className="bg-white border-l-4 border-l-red-500 shadow">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarClock className="h-4 w-4 text-red-500" />
-            Kaiser No Action 7+ Days
-          </CardTitle>
+          <div className="flex items-start justify-between gap-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarClock className="h-4 w-4 text-red-500" />
+              Kaiser No Action 7+ Days
+            </CardTitle>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRefreshNoAction}
+              disabled={isRefreshingNoAction}
+              className="h-7 px-2 text-[11px]"
+            >
+              {isRefreshingNoAction ? 'Refreshing...' : 'Refresh Now'}
+            </Button>
+          </div>
           <div className="text-[11px] text-muted-foreground">
             Last refreshed (ET):{' '}
             {assignedStaffMetaRefreshedAt
@@ -926,17 +970,17 @@ export function KaiserSummaryCards({
         <CardContent className="pt-0">
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {allKaiserStatuses.map((status, index) => {
-              const count = members.filter((m) => matchesKaiserSummaryStatus(m, status)).length;
+              const statusMembers = kaiserSummaryMembersByStatus[status] || [];
+              const count = statusMembers.length;
               const percentage = members.length > 0 ? ((count / members.length) * 100).toFixed(1) : '0';
               return (
                 <div
                   key={`kaiser-${index}-${status}`}
                   className="flex items-center justify-between py-0.5 px-1 hover:bg-gray-50 rounded cursor-pointer text-xs"
                   onClick={() => {
-                    if (members.length > 0) {
-                      const filteredMembers = members.filter((m) => matchesKaiserSummaryStatus(m, status));
+                    if (statusMembers.length > 0) {
                       openMemberModal(
-                        filteredMembers,
+                        statusMembers,
                         `${status} Members`,
                         `${count} members with status: ${status}`,
                         'kaiser_status',
@@ -973,23 +1017,17 @@ export function KaiserSummaryCards({
         <CardContent className="pt-0">
           <div className="space-y-1">
             {calaimStatusOptions.map((status, index) => {
-              const count = members.filter((m) => {
-                const normalized = normalizeCalaimStatus(m.CalAIM_Status || '');
-                return calaimStatusMap[normalized] === status;
-              }).length;
+              const statusMembers = calaimSummaryMembersByStatus[status] || [];
+              const count = statusMembers.length;
               const percentage = members.length > 0 ? ((count / members.length) * 100).toFixed(1) : '0';
               return (
                 <div
                   key={`calaim-${index}-${status}`}
                   className="flex items-center justify-between py-0.5 px-1 hover:bg-gray-50 rounded cursor-pointer text-xs"
                   onClick={() => {
-                    if (members.length > 0) {
-                      const filteredMembers = members.filter((m) => {
-                        const normalized = normalizeCalaimStatus(m.CalAIM_Status || '');
-                        return calaimStatusMap[normalized] === status;
-                      });
+                    if (statusMembers.length > 0) {
                       openMemberModal(
-                        filteredMembers,
+                        statusMembers,
                         `${status} Members`,
                         `${count} members with CalAIM status: ${status}`,
                         'calaim_status',
@@ -1024,17 +1062,17 @@ export function KaiserSummaryCards({
         <CardContent className="pt-0">
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {counties.map((county, index) => {
-              const count = members.filter((m) => m.memberCounty === county).length;
+              const countyMembers = countySummaryMembers[county] || [];
+              const count = countyMembers.length;
               const percentage = members.length > 0 ? ((count / members.length) * 100).toFixed(1) : '0';
               return (
                 <div
                   key={`county-${index}-${county}`}
                   className="flex items-center justify-between py-0.5 px-1 hover:bg-gray-50 rounded cursor-pointer text-xs"
                   onClick={() => {
-                    if (members.length > 0) {
-                      const filteredMembers = members.filter((m) => m.memberCounty === county);
+                    if (countyMembers.length > 0) {
                       openMemberModal(
-                        filteredMembers,
+                        countyMembers,
                         `${county} County Members`,
                         `${count} members in ${county} County`,
                         'county',
