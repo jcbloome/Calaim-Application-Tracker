@@ -47,32 +47,33 @@ export function PdfPreviewLayout({
   const previewFrameRef = useRef<HTMLIFrameElement>(null);
 
   const handlePrintFromPreview = () => {
-    const frameWindow = previewFrameRef.current?.contentWindow || null;
+    if (!pdfUrl) return;
+    
+    // Try to print directly from the iframe first
+    const frameWindow = previewFrameRef.current?.contentWindow;
     if (frameWindow) {
       try {
         frameWindow.focus();
         frameWindow.print();
         return;
-      } catch {
-        // fall through to popup fallback
+      } catch (e) {
+        console.warn('Could not print from iframe, trying download fallback', e);
       }
     }
-
-    if (!pdfUrl) return;
-    const w = window.open(pdfUrl, '_blank', 'noopener,noreferrer');
-    if (!w) return;
-    const timer = window.setInterval(() => {
-      try {
-        if (w.document?.readyState === 'complete') {
-          window.clearInterval(timer);
-          w.focus();
-          w.print();
-        }
-      } catch {
-        // ignore
-      }
-    }, 250);
-    window.setTimeout(() => window.clearInterval(timer), 8000);
+    
+    // Fallback: trigger download
+    try {
+      const link = document.createElement('a');
+      link.href = pdfUrl;
+      link.download = 'ILS_Pending_Tracker_Report.pdf';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error('Could not download PDF', e);
+      alert('Unable to print or download PDF. Please try using the PDF viewer controls below.');
+    }
   };
 
   if (isPdfView) {
