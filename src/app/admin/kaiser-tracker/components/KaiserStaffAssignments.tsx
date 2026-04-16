@@ -114,7 +114,7 @@ export function KaiserStaffAssignments({
         <div className="text-xs text-muted-foreground mt-2">
           {onRefreshNoAction
             ? 'Pulls notes from Caspio (historical + new) into Firestore and refreshes Recent Notes + No Action 7+ Days.'
-            : 'Recent Notes sync is available to Super Admin and Kaiser Admin only.'}
+            : 'Recent Notes sync is available to Super Admin and Kaiser Manager only.'}
         </div>
         <div className="text-xs text-muted-foreground mt-1">
           Notes sync (ET): {notesSyncLastAtLabel || 'Never'}

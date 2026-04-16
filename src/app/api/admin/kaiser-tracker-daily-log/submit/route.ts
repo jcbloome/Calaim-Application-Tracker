@@ -106,6 +106,56 @@ const noteMatchesStaff = (staffName: string, note: any): boolean => {
   return false;
 };
 
+async function refreshMemberNotesFromCaspio(params: {
+  origin: string;
+  clientIds: string[];
+}): Promise<{ refreshed: number; failedClientIds: string[] }> {
+  const uniqueClientIds = Array.from(
+    new Set(
+      (Array.isArray(params.clientIds) ? params.clientIds : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+  );
+  if (!uniqueClientIds.length) return { refreshed: 0, failedClientIds: [] };
+
+  const failedClientIds: string[] = [];
+  let refreshed = 0;
+  let cursor = 0;
+  const workerCount = Math.min(4, Math.max(1, uniqueClientIds.length));
+
+  const worker = async () => {
+    while (true) {
+      const idx = cursor;
+      cursor += 1;
+      if (idx >= uniqueClientIds.length) return;
+      const clientId2 = uniqueClientIds[idx];
+      const query = new URLSearchParams({
+        clientId2,
+        forceSync: 'false',
+        skipSync: 'false',
+        repairIfEmpty: 'true',
+        summaryOnly: 'true',
+      });
+      const syncUrl = `${params.origin}/api/member-notes?${query.toString()}`;
+      try {
+        const response = await fetch(syncUrl, { method: 'GET', cache: 'no-store' });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) {
+          failedClientIds.push(clientId2);
+          continue;
+        }
+        refreshed += 1;
+      } catch {
+        failedClientIds.push(clientId2);
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return { refreshed, failedClientIds };
+}
+
 async function requireAdmin(idToken: string) {
   const adminModule = await import('@/firebase-admin');
   const adminAuth = adminModule.adminAuth;
@@ -204,6 +254,23 @@ export async function POST(req: NextRequest) {
       .filter((row: any) => row.clientId2);
     const memberMap = new Map(memberRows.map((row: any) => [row.clientId2, row]));
     const clientIds = Array.from(memberMap.keys());
+    const requestOrigin = req.nextUrl.origin;
+
+    const refreshResult = await refreshMemberNotesFromCaspio({
+      origin: requestOrigin,
+      clientIds,
+    });
+    if (refreshResult.failedClientIds.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Could not refresh Caspio notes for all assigned members. Please retry submit after sync completes.',
+          failedClientIds: refreshResult.failedClientIds,
+        },
+        { status: 502 }
+      );
+    }
 
     const notesToday = [] as Array<{
       id: string;
@@ -281,7 +348,7 @@ export async function POST(req: NextRequest) {
       noActionTotal: Number(metrics?.noActionTotal || 0),
       noActionCritical: Number(metrics?.noActionCritical || 0),
       noActionPriority: Number(metrics?.noActionPriority || 0),
-      notesTodayCount: Number(metrics?.notesTodayCount || notesToday.length),
+      notesTodayCount: notesToday.length,
     };
 
     let startActive = endTotals.activeAssigned;
@@ -369,6 +436,7 @@ export async function POST(req: NextRequest) {
       staffName,
       submittedAt: nowIso,
       notesTodayCount: notesToday.length,
+      refreshedMembersCount: refreshResult.refreshed,
       statusChangesCount: statusChangesToday.length,
       noActionChangesCount: noActionTransitionsToday.length,
     });
