@@ -1432,6 +1432,7 @@ function KaiserTrackerPageContent() {
         noActionScopedStatuses={NO_ACTION_SCOPED_STATUSES}
         onRefreshNoAction={() => void refreshNoActionStatuses()}
         isRefreshingNoAction={notesGlobalSyncing && notesGlobalProgress?.scopeLabel === 'No Action 7+ Days'}
+        notesSyncLastAtLabel={formatEtDateTime(notesGlobalProgress?.lastSyncAt || '')}
       />
 
       {/* Member List Modal */}

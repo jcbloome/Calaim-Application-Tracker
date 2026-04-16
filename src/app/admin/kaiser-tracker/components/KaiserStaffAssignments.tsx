@@ -49,6 +49,7 @@ export interface KaiserStaffAssignmentsProps {
   noActionScopedStatuses?: string[];
   onRefreshNoAction?: () => void;
   isRefreshingNoAction?: boolean;
+  notesSyncLastAtLabel?: string;
 }
 
 export function KaiserStaffAssignments({
@@ -60,6 +61,7 @@ export function KaiserStaffAssignments({
   noActionScopedStatuses,
   onRefreshNoAction,
   isRefreshingNoAction,
+  notesSyncLastAtLabel,
 }: KaiserStaffAssignmentsProps) {
   return (
     <div className="space-y-4">
@@ -79,6 +81,9 @@ export function KaiserStaffAssignments({
         ) : null}
         <div className="text-xs text-muted-foreground mt-2">
           Pulls notes from Caspio (historical + new) into Firestore and refreshes Notes Today + No Action 7+ Days.
+        </div>
+        <div className="text-xs text-muted-foreground mt-1">
+          Notes sync (ET): {notesSyncLastAtLabel || 'Never'}
         </div>
         {Array.isArray(noActionScopedStatuses) && noActionScopedStatuses.length > 0 ? (
           <div className="text-xs text-muted-foreground mt-1">
