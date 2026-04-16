@@ -862,6 +862,7 @@ export async function GET(request: NextRequest) {
     const skipSync = searchParams.get('skipSync') === 'true';
     const repairIfEmpty = searchParams.get('repairIfEmpty') === 'true';
     const metaOnly = searchParams.get('metaOnly') === 'true';
+    const summaryOnly = searchParams.get('summaryOnly') === 'true';
     const assignedStaff = String(searchParams.get('assignedStaff') || '').trim();
     const searchQuery = searchParams.get('search');
 
@@ -975,7 +976,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      notes: notes,
+      notes: summaryOnly ? [] : notes,
       count: notes.length,
       source: 'legacy-caspio-rest',
       timestamp: new Date().toISOString(),
@@ -991,7 +992,8 @@ export async function GET(request: NextRequest) {
       repairedFromEmptyStore,
       repairImportedCount,
       syncLastAt,
-      firstSyncCompleted
+      firstSyncCompleted,
+      summaryOnly
     });
 
   } catch (error: any) {

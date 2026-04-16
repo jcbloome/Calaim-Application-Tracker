@@ -357,7 +357,7 @@ function KaiserTrackerPageContent() {
   }>({ isOpen: false, staffName: '', members: [] });
   const deepLinkHandledRef = useRef(false);
   const stopAllSyncRef = useRef(false);
-  const notesFetchControllerRef = useRef<AbortController | null>(null);
+  const notesFetchControllersRef = useRef<Set<AbortController>>(new Set());
 
   // Member notes modal state
   const [memberNotesModal, setMemberNotesModal] = useState<{
@@ -1024,79 +1024,80 @@ function KaiserTrackerPageContent() {
       );
 
     try {
-      for (const member of scope) {
-        if (stopAllSyncRef.current) {
-          setNotesGlobalProgress((prev) => (prev ? { ...prev, currentMember: '', stopped: true } : prev));
-          break;
-        }
-        setNotesGlobalProgress((prev) =>
-          prev ? { ...prev, currentMember: `${member.memberLastName}, ${member.memberFirstName}` } : prev
-        );
-
-        let completed = false;
-        let lastError: any = null;
-        for (let attempt = 1; attempt <= 4 && !completed; attempt++) {
-          if (stopAllSyncRef.current) {
-            setNotesGlobalProgress((prev) => (prev ? { ...prev, currentMember: '', stopped: true } : prev));
-            break;
-          }
-          try {
-            const controller = new AbortController();
-            notesFetchControllerRef.current = controller;
-            const res = await fetch(
-              `/api/member-notes?clientId2=${encodeURIComponent(
-                member.client_ID2
-              )}&forceSync=false&skipSync=false&repairIfEmpty=true`,
-              { signal: controller.signal }
-            );
-            notesFetchControllerRef.current = null;
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data?.success) {
-              throw new Error(data?.error || 'Failed to sync notes');
-            }
-            const existingCount = Number(data?.existingNotesCount || 0);
-            const newCount = Number(data?.newNotesCount || 0);
-            aggExisting += existingCount;
-            aggNew += newCount;
-            aggSuccess += 1;
-            setNotesGlobalProgress((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    complete: prev.complete + 1,
-                    success: prev.success + 1,
-                    existingNotes: prev.existingNotes + existingCount,
-                    newNotes: prev.newNotes + newCount,
-                  }
-                : prev
-            );
-            completed = true;
-            await delay(250);
-          } catch (error: any) {
-            notesFetchControllerRef.current = null;
-            if (String(error?.name || '').toLowerCase() === 'aborterror') {
-              setNotesGlobalProgress((prev) => (prev ? { ...prev, currentMember: '', stopped: true } : prev));
-              break;
-            }
-            lastError = error;
-            if (attempt < 4 && String(error?.message || '').toLowerCase().includes('429')) {
-              const backoffMs = Math.min(30000, 5000 * Math.pow(2, attempt - 1));
-              await delay(backoffMs);
-            } else if (attempt < 4) {
-              await delay(600);
-            }
-          }
-        }
-
-        if (!completed && !stopAllSyncRef.current) {
-          const label = `${member.memberLastName}, ${member.memberFirstName} (${member.client_ID2})`;
-          addRecentError(`${label}: ${String(lastError?.message || 'Unknown sync error')}`);
-          aggFailed += 1;
+      let cursor = 0;
+      const workerCount = Math.min(6, Math.max(1, scope.length));
+      const worker = async () => {
+        while (true) {
+          if (stopAllSyncRef.current) return;
+          const idx = cursor;
+          cursor += 1;
+          if (idx >= scope.length) return;
+          const member = scope[idx];
+          if (stopAllSyncRef.current) return;
           setNotesGlobalProgress((prev) =>
-            prev ? { ...prev, complete: prev.complete + 1, failed: prev.failed + 1 } : prev
+            prev ? { ...prev, currentMember: `${member.memberLastName}, ${member.memberFirstName}` } : prev
           );
+
+          let completed = false;
+          let lastError: any = null;
+          for (let attempt = 1; attempt <= 3 && !completed; attempt++) {
+            if (stopAllSyncRef.current) return;
+            const controller = new AbortController();
+            notesFetchControllersRef.current.add(controller);
+            try {
+              const res = await fetch(
+                `/api/member-notes?clientId2=${encodeURIComponent(
+                  member.client_ID2
+                )}&forceSync=false&skipSync=false&repairIfEmpty=true&summaryOnly=true`,
+                { signal: controller.signal }
+              );
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok || !data?.success) {
+                throw new Error(data?.error || 'Failed to sync notes');
+              }
+              const existingCount = Number(data?.existingNotesCount || 0);
+              const newCount = Number(data?.newNotesCount || 0);
+              aggExisting += existingCount;
+              aggNew += newCount;
+              aggSuccess += 1;
+              setNotesGlobalProgress((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      complete: prev.complete + 1,
+                      success: prev.success + 1,
+                      existingNotes: prev.existingNotes + existingCount,
+                      newNotes: prev.newNotes + newCount,
+                    }
+                  : prev
+              );
+              completed = true;
+            } catch (error: any) {
+              if (String(error?.name || '').toLowerCase() === 'aborterror') return;
+              lastError = error;
+              if (attempt < 3 && String(error?.message || '').toLowerCase().includes('429')) {
+                const backoffMs = Math.min(10000, 2000 * Math.pow(2, attempt - 1));
+                await delay(backoffMs);
+              } else if (attempt < 3) {
+                await delay(200);
+              }
+            } finally {
+              notesFetchControllersRef.current.delete(controller);
+            }
+          }
+
+          if (!completed && !stopAllSyncRef.current) {
+            const label = `${member.memberLastName}, ${member.memberFirstName} (${member.client_ID2})`;
+            addRecentError(`${label}: ${String(lastError?.message || 'Unknown sync error')}`);
+            aggFailed += 1;
+            setNotesGlobalProgress((prev) =>
+              prev ? { ...prev, complete: prev.complete + 1, failed: prev.failed + 1 } : prev
+            );
+          }
         }
-      }
+      };
+
+      await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
       const completedAt = new Date().toISOString();
       setNotesGlobalProgress((prev) =>
@@ -1124,7 +1125,7 @@ function KaiserTrackerPageContent() {
         });
       }
     } finally {
-      notesFetchControllerRef.current = null;
+      notesFetchControllersRef.current.clear();
       setNotesGlobalSyncing(false);
       bumpNotesMetaRefresh();
     }
@@ -1132,11 +1133,12 @@ function KaiserTrackerPageContent() {
 
   const stopSyncAll = () => {
     stopAllSyncRef.current = true;
-    if (notesFetchControllerRef.current) {
+    notesFetchControllersRef.current.forEach((controller) => {
       try {
-        notesFetchControllerRef.current.abort();
+        controller.abort();
       } catch {}
-    }
+    });
+    notesFetchControllersRef.current.clear();
     setNotesGlobalProgress((prev) => (prev ? { ...prev, stopped: true, currentMember: '' } : prev));
   };
 
