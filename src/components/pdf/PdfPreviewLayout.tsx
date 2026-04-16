@@ -46,56 +46,44 @@ export function PdfPreviewLayout({
 }: PdfPreviewLayoutProps) {
   const previewFrameRef = useRef<HTMLIFrameElement>(null);
 
-  const handlePrintFromPreview = () => {
+  const handleDownloadPdf = () => {
     if (!pdfUrl) return;
-    
-    // Try to print directly from the iframe first
-    const frameWindow = previewFrameRef.current?.contentWindow;
-    if (frameWindow) {
-      try {
-        frameWindow.focus();
-        frameWindow.print();
-        return;
-      } catch (e) {
-        console.warn('Could not print from iframe, trying download fallback', e);
-      }
-    }
-    
-    // Fallback: trigger download
-    try {
-      const link = document.createElement('a');
-      link.href = pdfUrl;
-      link.download = 'ILS_Pending_Tracker_Report.pdf';
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (e) {
-      console.error('Could not download PDF', e);
-      alert('Unable to print or download PDF. Please try using the PDF viewer controls below.');
-    }
+    const link = document.createElement('a');
+    link.href = pdfUrl;
+    link.download = `${previewTitle.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (isPdfView) {
     return (
       <div className={wrapperClassName}>
-        <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
-          <Button variant="outline" asChild>
-            <Link href={backToEditorHref}>{backButtonLabel}</Link>
-          </Button>
-          <Button variant="outline" onClick={handlePrintFromPreview} disabled={!pdfUrl || pdfLoading}>
-            {pdfLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generating…
-              </>
-            ) : (
-              <>
-                <Printer className="mr-2 h-4 w-4" />
-                Print / Save PDF
-              </>
-            )}
-          </Button>
+        <div className="mb-2 rounded-md border bg-white p-3 print:hidden">
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" asChild>
+              <Link href={backToEditorHref}>{backButtonLabel}</Link>
+            </Button>
+            <Button variant="outline" onClick={handleDownloadPdf} disabled={!pdfUrl || pdfLoading}>
+              {pdfLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating…
+                </>
+              ) : (
+                <>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Download PDF
+                </>
+              )}
+            </Button>
+          </div>
+          {pdfUrl && !pdfLoading ? (
+            <div className="mt-2 text-xs text-muted-foreground text-right">
+              Tip: Use the PDF viewer controls below to print directly from your browser
+            </div>
+          ) : null}
         </div>
 
         <div className="fixed left-[-100000px] top-0" style={{ width: `${captureWidthPx}px` }}>
@@ -127,7 +115,7 @@ export function PdfPreviewLayout({
           <Link href={viewPdfHref}>View PDF layout</Link>
         </Button>
         <Button variant="outline" asChild>
-          <Link href={printHref || viewPdfHref}>Print / Save PDF</Link>
+          <Link href={printHref || viewPdfHref}>Download PDF</Link>
         </Button>
       </div>
       {htmlContent}
