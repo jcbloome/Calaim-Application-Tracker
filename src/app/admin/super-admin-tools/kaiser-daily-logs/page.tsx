@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 type DailyLogRow = {
   id: string;
@@ -90,7 +91,9 @@ export default function KaiserDailyLogsPage() {
   const { isSuperAdmin, isKaiserManager, isLoading: isAdminLoading } = useAdmin();
   const auth = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isPullingAll, setIsPullingAll] = useState(false);
   const [dateKey, setDateKey] = useState(todayEt());
   const [staffNameFilter, setStaffNameFilter] = useState('');
   const [rows, setRows] = useState<DailyLogRow[]>([]);
@@ -138,6 +141,38 @@ export default function KaiserDailyLogsPage() {
     }
   }, [isAdminLoading, isSuperAdmin, isKaiserManager]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pullAllDailyLogs = async () => {
+    if (!auth?.currentUser || isPullingAll) return;
+    setIsPullingAll(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/kaiser-tracker-daily-log/pull-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to pull all daily logs');
+      }
+      const success = Number(data?.success || 0);
+      const failed = Number(data?.failed || 0);
+      toast({
+        title: 'Pulled all daily logs',
+        description: `Completed ${success} staff logs${failed > 0 ? `, failed ${failed}` : ''}.`,
+      });
+      await loadRows();
+    } catch (err: any) {
+      toast({
+        title: 'Pull all failed',
+        description: err?.message || 'Could not pull all daily logs.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsPullingAll(false);
+    }
+  };
+
   const totals = useMemo(() => {
     return rows.reduce(
       (acc, row) => {
@@ -169,9 +204,18 @@ export default function KaiserDailyLogsPage() {
             Staff end-of-day productivity logs with today notes, status changes, and no-action movement.
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.push('/admin/super-admin-tools')}>
-          Back to Super Admin Tools
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            variant="outline"
+            onClick={() => void pullAllDailyLogs()}
+            disabled={isPullingAll}
+          >
+            {isPullingAll ? 'Pulling Daily Logs...' : 'Pull All Daily Logs'}
+          </Button>
+          <Button variant="outline" onClick={() => router.push('/admin/super-admin-tools')}>
+            Back to Super Admin Tools
+          </Button>
+        </div>
       </div>
 
       <Card>

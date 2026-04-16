@@ -296,7 +296,6 @@ function KaiserTrackerPageContent() {
   const [noActionByStaffMap, setNoActionByStaffMap] = useState<Record<string, NoActionStaffSummary>>({});
   const [dailyUpdateSubmittingStaff, setDailyUpdateSubmittingStaff] = useState('');
   const [dailyUpdateSubmittedAtByStaff, setDailyUpdateSubmittedAtByStaff] = useState<Record<string, string>>({});
-  const [isPullingAllDailyLogs, setIsPullingAllDailyLogs] = useState(false);
 
   const handleNoActionByStaffComputed = useCallback(
     (
@@ -532,50 +531,10 @@ function KaiserTrackerPageContent() {
       return a.localeCompare(b);
     });
   }, [staffAssignments]);
-  const noActionScopedStatusSet = useMemo(
-    () =>
-      new Set(
-        [
-          ...NO_ACTION_SCOPED_STATUSES,
-          'T2038 received, Needs First Contact',
-          'R B Needed',
-        ].map((status) => normalizeStatusText(status))
-      ),
-    []
+  const authorizedCalaimCount = useMemo(
+    () => members.filter((member) => toCanonicalCalaimStatus(member?.CalAIM_Status) === 'Authorized').length,
+    [members]
   );
-
-  const buildDailyUpdatePayloadForStaff = useCallback(
-    (staffName: string) => {
-      const assignment = staffAssignments[staffName];
-      if (!assignment) return null;
-      const noAction = noActionByStaffMap?.[staffName];
-      const activeAssigned = assignment.members.filter((member) =>
-        noActionScopedStatusSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
-      ).length;
-      const passiveAssigned = Math.max(0, assignment.count - activeAssigned);
-
-      return {
-        staffName,
-        members: assignment.members.map((member: any) => ({
-          clientId2: String(member?.client_ID2 || '').trim(),
-          memberName: `${String(member?.memberFirstName || '').trim()} ${String(member?.memberLastName || '').trim()}`.trim(),
-          currentStatus: String(getEffectiveKaiserStatus(member) || '').trim(),
-        })),
-        metrics: {
-          totalAssigned: assignment.count,
-          activeAssigned,
-          passiveAssigned,
-          noActionTotal: Number(noAction?.total || 0),
-          noActionCritical: Number(noAction?.critical || 0),
-          noActionPriority: Number(noAction?.priority || 0),
-          notesTodayCount: Number(noAction?.notesTodayTotal || 0),
-        },
-      };
-    },
-    [staffAssignments, noActionByStaffMap, noActionScopedStatusSet]
-  );
-
-
   // Helper function to open member list modal
   const openMemberModal = (
     memberList: KaiserMember[],
@@ -814,30 +773,6 @@ function KaiserTrackerPageContent() {
       return false;
     } finally {
       setDailyUpdateSubmittingStaff('');
-    }
-  };
-
-  const pullAllDailyLogs = async () => {
-    if (!auth?.currentUser || isPullingAllDailyLogs) return;
-    if (!isSuperAdmin && !isKaiserManager) return;
-
-    setIsPullingAllDailyLogs(true);
-    let success = 0;
-    let failed = 0;
-    try {
-      for (const staffName of allStaff) {
-        const payload = buildDailyUpdatePayloadForStaff(staffName);
-        if (!payload) continue;
-        const ok = await submitDailyUpdateForStaff(payload, { silentSuccess: true });
-        if (ok) success += 1;
-        else failed += 1;
-      }
-      toast({
-        title: 'Pulled all daily logs',
-        description: `Completed ${success} staff logs${failed > 0 ? `, failed ${failed}` : ''} for ${getTodayEtDayKey()} (ET).`,
-      });
-    } finally {
-      setIsPullingAllDailyLogs(false);
     }
   };
 
@@ -1524,7 +1459,8 @@ function KaiserTrackerPageContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Kaiser Tracker Dashboard</h1>
           <p className="text-muted-foreground text-sm">
-            Overview of {members.length} Kaiser members | Members cache sync (ET): {formatEtDateTime(membersCacheLastSyncAt)}
+            Overview of {members.length} Kaiser members | Authorized CalAIM: {authorizedCalaimCount} | Members cache sync (ET):{' '}
+            {formatEtDateTime(membersCacheLastSyncAt)}
           </p>
           <p className="text-muted-foreground text-xs mt-1">
             Midnight auto-sync preloads Firestore and this page auto-loads cached records. Use manual sync for an immediate full Caspio member/status refresh.
@@ -1534,23 +1470,6 @@ function KaiserTrackerPageContent() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-          {(isSuperAdmin || isKaiserManager) ? (
-            <Button variant="outline" asChild className="w-full sm:w-auto">
-              <Link href="/admin/super-admin-tools/kaiser-daily-logs">
-                Kaiser Daily Logs
-              </Link>
-            </Button>
-          ) : null}
-          {(isSuperAdmin || isKaiserManager) ? (
-            <Button
-              variant="outline"
-              onClick={() => void pullAllDailyLogs()}
-              disabled={isPullingAllDailyLogs || Boolean(dailyUpdateSubmittingStaff)}
-              className="w-full sm:w-auto"
-            >
-              {isPullingAllDailyLogs ? 'Pulling Daily Logs...' : 'Pull All Daily Logs'}
-            </Button>
-          ) : null}
           <Button variant="outline" asChild className="w-full sm:w-auto">
             <Link href="/admin/kaiser-tracker/rcfe-weekly-confirm">
               RCFE Biweekly Follow-Up (R&B/Final)
