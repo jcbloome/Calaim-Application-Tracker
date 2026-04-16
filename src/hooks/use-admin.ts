@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { useUser, useFirestore } from '@/firebase';
+import { FirebaseContext } from '@/firebase/provider';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
 import type { User } from 'firebase/auth';
@@ -19,8 +19,11 @@ interface AdminStatus {
 }
 
 export function useAdmin(): AdminStatus {
-  const { user, isUserLoading } = useUser();
-  const firestore = useFirestore();
+  const firebaseContext = useContext(FirebaseContext);
+  const user = firebaseContext?.user || null;
+  const isUserLoading = firebaseContext?.isUserLoading ?? true;
+  const firestore = firebaseContext?.firestore || null;
+  const hasFirebaseContext = firebaseContext !== undefined;
   const lastKnownRoleRef = useRef<{ isAdmin: boolean; isSuperAdmin: boolean; isKaiserManager: boolean; isClaimsStaff: boolean }>({
     isAdmin: false,
     isSuperAdmin: false,
@@ -43,6 +46,16 @@ export function useAdmin(): AdminStatus {
   };
 
   useEffect(() => {
+    if (!hasFirebaseContext) {
+      // Defensive fallback so admin screens do not crash when provider is temporarily unavailable.
+      setIsLoading(false);
+      setIsAdmin(false);
+      setIsSuperAdmin(false);
+      setIsKaiserManager(false);
+      setIsClaimsStaff(false);
+      return;
+    }
+
     console.log('🔍 useAdmin Debug:', {
       isUserLoading,
       userEmail: user?.email,
@@ -203,7 +216,7 @@ export function useAdmin(): AdminStatus {
     };
 
     checkAdminRoles();
-  }, [user, isUserLoading, firestore]);
+  }, [user, isUserLoading, firestore, hasFirebaseContext]);
 
   return {
     user,

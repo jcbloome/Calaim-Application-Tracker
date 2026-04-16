@@ -49,6 +49,44 @@ async function triggerMembersCacheSync(params: { mode: "incremental" | "full" })
   }
 }
 
+async function triggerKaiserMidnightPreload() {
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl.replace(/\/$/, "")}/api/cron/kaiser-midnight-preload?mode=full`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 55 * 60 * 1000);
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${cronSecret.value()}`,
+      },
+      signal: controller.signal,
+    });
+
+    const text = await res.text().catch(() => "");
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // ignore
+    }
+
+    if (!res.ok) {
+      throw new Error(`kaiser-midnight-preload failed (HTTP ${res.status}): ${text || res.statusText}`);
+    }
+
+    if (json && json.success === false) {
+      throw new Error(`kaiser-midnight-preload reported failure: ${json.error || text || "unknown error"}`);
+    }
+
+    return json || { success: true, raw: text };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // Daily: incremental sync for SW roster freshness.
 export const syncCaspioMembersCacheIncremental = onSchedule(
   {
@@ -76,6 +114,20 @@ export const syncCaspioMembersCacheFull = onSchedule(
     console.log("🌙 Starting Caspio members cache FULL sync...");
     const result = await triggerMembersCacheSync({ mode: "full" });
     console.log("✅ Caspio members cache FULL sync complete:", result);
+  }
+);
+
+// Nightly midnight ET preload for Kaiser tracker + 7-day no-action notes.
+export const syncKaiserMidnightPreload = onSchedule(
+  {
+    schedule: "0 0 * * *",
+    timeZone: "America/New_York",
+    secrets: [cronSecret],
+  },
+  async () => {
+    console.log("🌙 Starting Kaiser midnight preload (members + notes)...");
+    const result = await triggerKaiserMidnightPreload();
+    console.log("✅ Kaiser midnight preload complete:", result);
   }
 );
 
