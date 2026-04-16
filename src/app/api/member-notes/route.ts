@@ -426,7 +426,10 @@ async function saveNotesToFirestore(notes: MemberNote[]): Promise<void> {
         batch.set(noteRef, sanitized, { merge: true });
       });
 
-      await batch.commit();
+      await commitBatchWithBackoff(batch, `member notes chunk ${Math.floor(i / FIRESTORE_BATCH_WRITE_LIMIT) + 1}`);
+      if (i + FIRESTORE_BATCH_WRITE_LIMIT < notes.length) {
+        await wait(120);
+      }
     }
 
     console.log(`✅ Successfully saved ${notes.length} notes to Firestore`);
@@ -452,10 +455,25 @@ async function saveSyncStatusToFirestore(clientId2: string, syncStatus: any): Pr
       updatedAt: Timestamp.now()
     };
     
-    await adminDb
-      .collection(SYNC_STATUS_COLLECTION)
-      .doc(clientId2)
-      .set(syncData, { merge: true });
+    const maxAttempts = 5;
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await adminDb
+          .collection(SYNC_STATUS_COLLECTION)
+          .doc(clientId2)
+          .set(syncData, { merge: true });
+        lastError = null;
+        break;
+      } catch (error: any) {
+        lastError = error;
+        if (!isFirestoreResourceExhausted(error) || attempt === maxAttempts) break;
+        const delay = Math.min(12000, 350 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 400));
+        console.warn(`⚠️ Firestore backoff (sync status ${clientId2}) attempt ${attempt}/${maxAttempts}: retrying in ${delay}ms`);
+        await wait(delay);
+      }
+    }
+    if (lastError) throw lastError;
       
     console.log(`✅ Sync status saved to Firestore for Client_ID2: ${clientId2}`);
     
@@ -619,6 +637,38 @@ async function withRetry<T>(
   }
   
   throw lastError;
+}
+
+function isFirestoreResourceExhausted(error: any): boolean {
+  const code = String(error?.code ?? '').toLowerCase();
+  const message = String(error?.message ?? '').toLowerCase();
+  return (
+    code === '8' ||
+    code.includes('resource-exhausted') ||
+    code.includes('resource exhausted') ||
+    message.includes('resource-exhausted') ||
+    message.includes('resource exhausted') ||
+    message.includes('maximum request rate')
+  );
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function commitBatchWithBackoff(batch: any, context: string): Promise<void> {
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await batch.commit();
+      return;
+    } catch (error: any) {
+      if (!isFirestoreResourceExhausted(error) || attempt === maxAttempts) {
+        throw error;
+      }
+      const delay = Math.min(15000, 400 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 500));
+      console.warn(`⚠️ Firestore backoff (${context}) attempt ${attempt}/${maxAttempts}: retrying in ${delay}ms`);
+      await wait(delay);
+    }
+  }
 }
 
 // Temporary in-memory storage as fallback

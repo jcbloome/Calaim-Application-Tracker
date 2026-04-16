@@ -1114,7 +1114,8 @@ function KaiserTrackerPageContent() {
 
     try {
       let cursor = 0;
-      const workerCount = Math.min(6, Math.max(1, scope.length));
+      // Keep worker fan-out conservative to avoid Firestore write-rate spikes during bulk note sync.
+      const workerCount = Math.min(3, Math.max(1, scope.length));
       const worker = async () => {
         while (true) {
           if (stopAllSyncRef.current) return;
