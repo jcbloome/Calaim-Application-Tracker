@@ -121,6 +121,7 @@ function ProgressTrackerPageClient() {
   const [lastNameSearch, setLastNameSearch] = useState('');
   const [missingDocReminderFilter, setMissingDocReminderFilter] = useState<'all' | 'on' | 'off'>('all');
   const [statusReminderFilter, setStatusReminderFilter] = useState<'all' | 'on' | 'off'>('all');
+  const [mcoFilter, setMcoFilter] = useState<'all' | 'kaiser' | 'health-net'>('all');
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [trackers, setTrackers] = useState<Map<string, StaffTracker>>(new Map());
@@ -337,14 +338,23 @@ function ProgressTrackerPageClient() {
       return matchesMissingDocReminder && matchesStatusReminder;
     });
 
-    const searchTerm = lastNameSearch.trim().toLowerCase();
-    if (!searchTerm) return reminderFiltered;
+    const mcoFiltered = reminderFiltered.filter((app) => {
+      if (mcoFilter === 'all') return true;
+      const rawMco = String((app as any)?.CalAIM_MCO || (app as any)?.calaimMco || app.healthPlan || '').trim().toLowerCase();
+      if (mcoFilter === 'kaiser') {
+        return rawMco.includes('kaiser');
+      }
+      return rawMco.includes('health net') || rawMco.includes('healthnet');
+    });
 
-    return reminderFiltered.filter((app) =>
+    const searchTerm = lastNameSearch.trim().toLowerCase();
+    if (!searchTerm) return mcoFiltered;
+
+    return mcoFiltered.filter((app) =>
       String(app.memberLastName || '').trim().toLowerCase().includes(searchTerm)
     );
 
-  }, [applications, filters, showMissingOnly, lastNameSearch, missingDocReminderFilter, statusReminderFilter])
+  }, [applications, filters, showMissingOnly, lastNameSearch, missingDocReminderFilter, statusReminderFilter, mcoFilter])
 
   return (
     <div className="space-y-6">
@@ -405,6 +415,24 @@ function ProgressTrackerPageClient() {
                         ))}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="mco-filter" className="text-sm font-medium">
+                          CalAIM_MCO
+                        </Label>
+                        <Select
+                          value={mcoFilter}
+                          onValueChange={(value: 'all' | 'kaiser' | 'health-net') => setMcoFilter(value)}
+                        >
+                          <SelectTrigger id="mco-filter">
+                            <SelectValue placeholder="All" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            <SelectItem value="kaiser">Kaiser</SelectItem>
+                            <SelectItem value="health-net">Health Net</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="space-y-2">
                         <Label htmlFor="missing-doc-reminder-filter" className="text-sm font-medium">
                           Missing Doc Reminders

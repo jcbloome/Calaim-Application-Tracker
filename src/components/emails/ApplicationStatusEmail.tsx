@@ -103,7 +103,7 @@ const ApplicationStatusEmail: React.FC<Readonly<ApplicationStatusEmailProps>> = 
   <div style={container}>
     <div style={card}>
       <h1 style={heading}>An Update on Your CalAIM Application</h1>
-      <p style={paragraph}>Hello {memberName},</p>
+      <p style={paragraph}>Dear {memberName},</p>
       <p style={paragraph}>
         This email is to inform you that your CalAIM application {getStatusMessage(status)}
       </p>

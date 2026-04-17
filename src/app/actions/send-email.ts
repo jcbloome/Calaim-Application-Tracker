@@ -69,6 +69,7 @@ interface ApplicationStatusPayload {
   includeBcc?: boolean;
   portalUrl?: string;
   surveyUrl?: string;
+  healthPlan?: string;
 }
 
 interface ReminderPayload {
@@ -202,6 +203,7 @@ interface RoomBoardIlsSubmissionPayload {
 type EmailLogStatus = 'success' | 'failure';
 
 const APPLICATION_STATUS_REPLY_TO = 'calaim@carehomefinders.com';
+const HEALTH_NET_MANAGER_REPLY_TO = 'leidy@carehomefinders.com';
 
 function deriveMemberCaseName(subject: string, fallback: string): string {
     const safeSubject = String(subject || '').trim();
@@ -348,7 +350,7 @@ async function getBccRecipients(): Promise<string[]> {
 
 
 export const sendApplicationStatusEmail = async (payload: ApplicationStatusPayload) => {
-    const { to, subject, memberName, staffName, message, status, includeBcc = true, portalUrl, surveyUrl } = payload;
+    const { to, subject, memberName, staffName, message, status, includeBcc = true, portalUrl, surveyUrl, healthPlan } = payload;
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
@@ -356,6 +358,9 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
     const bccList = includeBcc ? await getBccRecipients() : [];
     const memberCaseName = deriveMemberCaseName(subject, memberName);
     const supportSubject = `CalAIM Question Regarding ${memberCaseName}`;
+    const normalizedPlan = String(healthPlan || '').trim().toLowerCase();
+    const isHealthNet = normalizedPlan.includes('health net') || normalizedPlan.includes('healthnet');
+    const supportEmail = isHealthNet ? HEALTH_NET_MANAGER_REPLY_TO : APPLICATION_STATUS_REPLY_TO;
     const resolvedPortalUrl = resolvePortalLoginUrl(
         portalUrl ||
         process.env.NEXT_PUBLIC_APP_URL ||
@@ -371,7 +376,7 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
             status,
             surveyUrl,
             portalUrl: resolvedPortalUrl,
-            supportEmail: APPLICATION_STATUS_REPLY_TO,
+            supportEmail,
             supportSubject,
         }));
 
@@ -384,8 +389,8 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
             html: emailHtml,
             template: 'application_status',
             source: 'sendApplicationStatusEmail',
-            metadata: { status, includeBcc },
-            replyTo: [APPLICATION_STATUS_REPLY_TO],
+            metadata: { status, includeBcc, healthPlan: healthPlan || '' },
+            replyTo: [supportEmail],
         });
     } catch (error) {
         console.error('Failed to send email:', error);

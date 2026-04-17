@@ -1629,6 +1629,10 @@ function AdminActions({ application }: { application: Application }) {
         setIsSending(true);
 
         try {
+            const assignedStaffSignature =
+              String((application as any)?.assignedStaffName || '').trim() ||
+              String((application as any)?.assignedToName || '').trim() ||
+              String(adminUser?.displayName || adminUser?.email || 'The Connections Team').trim();
             const surveyUrl =
               status === 'Approved'
                 ? `${window.location.origin.replace(/\/$/, '')}/forms/customer-feedback?applicationId=${encodeURIComponent(String(application.id || ''))}`
@@ -1643,10 +1647,11 @@ function AdminActions({ application }: { application: Application }) {
                     includeBcc: false,
                     subject: `Update on CalAIM Application for ${application.memberFirstName} ${application.memberLastName}`,
                     memberName: application.referrerName || 'there',
-                    staffName: "The Connections Team",
+                    staffName: assignedStaffSignature,
                     message: notes || 'Your application status has been updated. Please log in to your dashboard for more details.',
                     status: status as any, // Cast because we know it's valid
                     surveyUrl,
+                    healthPlan: String(application.healthPlan || ''),
                 }),
             });
             
@@ -6047,6 +6052,10 @@ function ApplicationDetailPageContent() {
     const composedMessage = `${reasonSection}${note}${screenshotSection}`.trim();
     setIsSendingEligibilityNote(true);
     try {
+      const assignedStaffSignature =
+        String((application as any)?.assignedStaffName || '').trim() ||
+        String((application as any)?.assignedToName || '').trim() ||
+        String(user?.displayName || user?.email || 'The Connections Team').trim();
       const response = await fetch('/api/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6054,10 +6063,14 @@ function ApplicationDetailPageContent() {
           to: application.referrerEmail,
           includeBcc: false,
           subject: `${isNotEligible ? 'CalAIM Ineligibility Notice' : 'CalAIM Eligibility Update'} for ${application.memberFirstName} ${application.memberLastName}`,
-          memberName: application.referrerName || 'there',
-          staffName: 'The Connections Team',
+          memberName:
+            String(application.referrerName || '').trim() ||
+            `${String(application.referrerFirstName || '').trim()} ${String(application.referrerLastName || '').trim()}`.trim() ||
+            'there',
+          staffName: assignedStaffSignature,
           message: composedMessage,
-          status: (application.status || 'In Progress') as any
+          status: (application.status || 'In Progress') as any,
+          healthPlan: String(application.healthPlan || ''),
         })
       });
       const result = await response.json();
@@ -6258,6 +6271,23 @@ function ApplicationDetailPageContent() {
       setIsUpdatingProgression(false);
     }
   };
+
+  const eligibilitySupportContacts = (() => {
+    const plan = String((application as any)?.healthPlan || '').trim().toLowerCase();
+    if (plan.includes('health net') || plan.includes('healthnet')) {
+      return [
+        { label: 'California Health Care Options', phone: '800-430-4263' },
+        { label: 'Health Net Member Services', phone: '1-800-675-6110' },
+      ];
+    }
+    if (plan.includes('kaiser')) {
+      return [
+        { label: 'Kaiser South Member Services', phone: '1-800-464-4000' },
+        { label: 'Kaiser North Member Services', phone: '1-800-464-4000' },
+      ];
+    }
+    return [] as Array<{ label: string; phone: string }>;
+  })();
   
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
@@ -6746,6 +6776,23 @@ function ApplicationDetailPageContent() {
                        ))}
                      </div>
                    ) : null}
+                  {req.id === 'eligibility-screenshot' && eligibilitySupportContacts.length > 0 ? (
+                    <div className="rounded-md border bg-muted/30 p-2">
+                      <div className="text-xs font-medium text-muted-foreground mb-1">
+                        Eligibility support phone numbers
+                      </div>
+                      <div className="space-y-1">
+                        {eligibilitySupportContacts.map((contact) => (
+                          <div key={`${contact.label}-${contact.phone}`} className="text-xs">
+                            <span className="font-medium">{contact.label}:</span>{' '}
+                            <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} className="underline decoration-dotted">
+                              {contact.phone}
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                    {uploads.length > 0 ? (
                      <div className="space-y-2 rounded-md border p-2">
@@ -6940,6 +6987,23 @@ function ApplicationDetailPageContent() {
                             ))}
                         </div>
                     )}
+                    {req.id === 'eligibility-screenshot' && eligibilitySupportContacts.length > 0 ? (
+                      <div className="rounded-md border bg-muted/30 p-2">
+                        <div className="text-xs font-medium text-muted-foreground mb-1">
+                          Eligibility support phone numbers
+                        </div>
+                        <div className="space-y-1">
+                          {eligibilitySupportContacts.map((contact) => (
+                            <div key={`${contact.label}-${contact.phone}`} className="text-xs">
+                              <span className="font-medium">{contact.label}:</span>{' '}
+                              <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} className="underline decoration-dotted">
+                                {contact.phone}
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     {isRoomBoardAgreementReq ? (
                       <div className="space-y-2 rounded-md border p-2 bg-muted/20">
                         <Button
