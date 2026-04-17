@@ -2334,7 +2334,7 @@ export default function SocialWorkerAssignmentsPage() {
                 Geo assignment suggestions
               </CardTitle>
               <CardDescription>
-                Suggest member assignments by proximity to SW base addresses (from <span className="font-mono">connect_tbl_usersregistration</span>), capped by capacity. Export only (no Caspio updates).
+                Suggest member assignments by proximity to SW base addresses (from <span className="font-mono">connect_tbl_userregistration</span>), capped by capacity. Export only (no Caspio updates).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

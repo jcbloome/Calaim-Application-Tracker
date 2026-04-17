@@ -363,7 +363,7 @@ async function fetchFromCaspioAndSave(
     console.log(`✅ Found ${allNotes.length} total client notes from ${pageNumber - 1} pages`);
     
     // Fetch user registration data for staff names and roles
-    const userTable = 'connect_tbl_usersregistration';
+    const userTable = 'connect_tbl_userregistration';
     let allUsers: any[] = [];
     pageNumber = 1;
     pageRecords = [];

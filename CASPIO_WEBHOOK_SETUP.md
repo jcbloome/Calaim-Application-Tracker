@@ -5,8 +5,8 @@ This guide explains how to connect your Caspio note tables to the CalAIM Tracker
 ## Overview
 
 The system connects to two Caspio tables:
-1. **CalAIM_Members_Notes_ILS** - Member-specific notes
-2. **connect_tbl_client_notes** - General client notes
+1. **CalAIM_Member_Notes_ILS** - Member-specific notes
+2. **connect_tbl_clientnotes** - General client notes
 
 When new notes are added to these tables, the system will:
 - Send email notifications to designated staff
@@ -33,9 +33,9 @@ POST https://your-project.web.app/caspioClientNotesWebhook
 
 For each table, you need to set up a webhook that triggers when new records are inserted:
 
-#### CalAIM_Members_Notes_ILS Table:
+#### CalAIM_Member_Notes_ILS Table:
 1. Go to your Caspio account
-2. Navigate to the CalAIM_Members_Notes_ILS table
+2. Navigate to the CalAIM_Member_Notes_ILS table
 3. Go to **Configure > Triggered Actions**
 4. Create a new **Webhook** triggered action
 5. Set trigger to **On Insert**
@@ -55,8 +55,8 @@ For each table, you need to set up a webhook that triggers when new records are 
    }
    ```
 
-#### connect_tbl_client_notes Table:
-1. Navigate to the connect_tbl_client_notes table
+#### connect_tbl_clientnotes Table:
+1. Navigate to the connect_tbl_clientnotes table
 2. Go to **Configure > Triggered Actions**
 3. Create a new **Webhook** triggered action
 4. Set trigger to **On Insert**

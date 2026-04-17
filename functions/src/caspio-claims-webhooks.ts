@@ -308,7 +308,7 @@ export const caspioH2022ClaimsWebhook = onRequest(
     await processClaimsWebhook({
       req,
       res,
-      expectedTableNames: ["CalAIM_Claim_Submit_RCFE_H2022", "CalAIM_Claim_Submit__RCFE_H2022"],
+      expectedTableNames: ["CalAIM_Claim_Submit_RCFE_H2022"],
       collectionName: CLAIMS_H2022_COLLECTION,
       docPrefix: "claim",
     });

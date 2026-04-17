@@ -144,7 +144,7 @@ export const caspioUsersRegistrationWebhook = onRequest(
 
       const tableName = getTableName(payload);
       const normalizedTableName = tableName.toLowerCase().replace(/_+/g, "_");
-      const expected = "connect_tbl_usersregistration".toLowerCase().replace(/_+/g, "_");
+      const expected = "connect_tbl_userregistration".toLowerCase().replace(/_+/g, "_");
       if (tableName && normalizedTableName !== expected) {
         res.status(200).json({ message: "Webhook received but ignored", tableName });
         return;
@@ -168,7 +168,7 @@ export const caspioUsersRegistrationWebhook = onRequest(
       try {
         await eventRef.create({
           source: "caspio",
-          table: "connect_tbl_usersregistration",
+          table: "connect_tbl_userregistration",
           operation,
           userId: String(recordData?.User_ID || "").trim() || null,
           email: String(recordData?.Email || "").trim().toLowerCase() || null,
@@ -216,7 +216,7 @@ export const caspioUsersRegistrationWebhook = onRequest(
 
       await db.collection(WEBHOOK_LOGS_COLLECTION).add({
         source: "caspio",
-        table: "connect_tbl_usersregistration",
+        table: "connect_tbl_userregistration",
         operation: operation || null,
         eventId,
         changedFields,
@@ -242,7 +242,7 @@ export const caspioUsersRegistrationWebhook = onRequest(
     } catch (error: any) {
       await db.collection(WEBHOOK_LOGS_COLLECTION).add({
         source: "caspio",
-        table: "connect_tbl_usersregistration",
+        table: "connect_tbl_userregistration",
         error: error?.message || String(error),
         requestBody: req.body,
         processedAt: admin.firestore.FieldValue.serverTimestamp(),

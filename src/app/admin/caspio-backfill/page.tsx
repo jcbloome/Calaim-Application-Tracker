@@ -18,6 +18,7 @@ type BackfillRow = {
   skippedMissingId: number;
   skippedTestMarkers: number;
   pages: number;
+  warning?: string;
 };
 
 type BackfillResponse = {
@@ -183,6 +184,7 @@ export default function CaspioBackfillPage() {
                     <div className="mt-1">
                       fetched={row.fetched}, upserted={row.upserted}, missingId={row.skippedMissingId}, testMarkers={row.skippedTestMarkers}
                     </div>
+                    {row.warning ? <div className="mt-1 text-amber-700">{row.warning}</div> : null}
                   </div>
                 ))}
               </div>

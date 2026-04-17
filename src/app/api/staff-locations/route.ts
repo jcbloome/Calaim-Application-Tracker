@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
     // Try multiple possible staff table names
     const possibleStaffTables = [
-      'connect_tbl_usersregistration',
+      'connect_tbl_userregistration',
       'tbl_usersregistration',
       'usersregistration',
       'staff_registration',

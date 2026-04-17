@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
 
-    const tableName = 'connect_tbl_usersregistration';
+    const tableName = 'connect_tbl_userregistration';
     const pageSize = 200;
     const maxPages = 50;
     const select = ['SW_ID', 'Street_Address', 'City', 'State', 'Zip', 'Email'].join(',');

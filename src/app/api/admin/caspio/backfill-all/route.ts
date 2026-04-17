@@ -18,6 +18,7 @@ type BackfillResult = {
   skippedMissingId: number;
   skippedTestMarkers: number;
   pages: number;
+  warning?: string;
 };
 
 type LooseRecord = Record<string, unknown>;
@@ -36,9 +37,11 @@ type AdminDbLike = {
 type TableConfig = {
   key: string;
   table: string;
+  tableAliases?: string[];
   collection: string;
   toDocId: (record: LooseRecord) => string;
   toWriteData?: (record: LooseRecord) => LooseRecord;
+  optional?: boolean;
 };
 
 function readBearerToken(request: NextRequest): string {
@@ -95,6 +98,11 @@ async function fetchTablePage(params: {
   return Array.isArray(payload?.Result) ? payload.Result : [];
 }
 
+function isTableNotFoundError(error: unknown): boolean {
+  const message = String(error instanceof Error ? error.message : error || '').toLowerCase();
+  return message.includes('tablenotfound') || message.includes('cannot perform operation because');
+}
+
 async function backfillTable(params: {
   adminDb: AdminDbLike;
   credentialsBaseUrl: string;
@@ -103,83 +111,124 @@ async function backfillTable(params: {
   nowIso: string;
 }) {
   const { adminDb, credentialsBaseUrl, accessToken, config, nowIso } = params;
+  const candidateTables = [config.table, ...(config.tableAliases || [])].filter(Boolean);
+  let selectedTable = '';
   let fetched = 0;
   let upserted = 0;
   let skippedMissingId = 0;
   let skippedTestMarkers = 0;
   let pages = 0;
+  let tableMissingWarning = '';
 
-  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
-    const pageRowsRaw = await fetchTablePage({
-      baseUrl: credentialsBaseUrl,
-      accessToken,
-      tableName: config.table,
-      pageNumber,
-    });
-    const pageRows = pageRowsRaw.map((row) => normalizeCaspioBlankValue((row as LooseRecord) || {}));
-    pages += 1;
-    if (pageRows.length === 0) break;
-    fetched += pageRows.length;
+  for (const tableName of candidateTables) {
+    try {
+      fetched = 0;
+      upserted = 0;
+      skippedMissingId = 0;
+      skippedTestMarkers = 0;
+      pages = 0;
 
-    for (let idx = 0; idx < pageRows.length; idx += FIRESTORE_BATCH_LIMIT) {
-      const chunk = pageRows.slice(idx, idx + FIRESTORE_BATCH_LIMIT);
-      const batch = adminDb.batch();
+      for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
+        const pageRowsRaw = await fetchTablePage({
+          baseUrl: credentialsBaseUrl,
+          accessToken,
+          tableName,
+          pageNumber,
+        });
+        const pageRows = pageRowsRaw.map((row) => normalizeCaspioBlankValue((row as LooseRecord) || {}));
+        pages += 1;
+        if (pageRows.length === 0) break;
+        fetched += pageRows.length;
 
-      chunk.forEach((record: LooseRecord) => {
-        if (
-          hasWebhookTestMarker(
-            record?.Client_ID2,
-            record?.client_ID2,
-            record?.Note_ID,
-            record?.User_ID,
-            record?.RCFE_Registered_ID,
-            record?.PK_ID,
-            record?.Record_ID
-          )
-        ) {
-          skippedTestMarkers += 1;
-          return;
+        for (let idx = 0; idx < pageRows.length; idx += FIRESTORE_BATCH_LIMIT) {
+          const chunk = pageRows.slice(idx, idx + FIRESTORE_BATCH_LIMIT);
+          const batch = adminDb.batch();
+
+          chunk.forEach((record: LooseRecord) => {
+            if (
+              hasWebhookTestMarker(
+                record?.Client_ID2,
+                record?.client_ID2,
+                record?.Note_ID,
+                record?.User_ID,
+                record?.RCFE_Registered_ID,
+                record?.PK_ID,
+                record?.Record_ID
+              )
+            ) {
+              skippedTestMarkers += 1;
+              return;
+            }
+
+            const docId = toSafeSuffix(config.toDocId(record));
+            if (!docId) {
+              skippedMissingId += 1;
+              return;
+            }
+
+            const docRef = adminDb.collection(config.collection).doc(docId);
+            const extra = config.toWriteData ? config.toWriteData(record) : {};
+            batch.set(
+              docRef,
+              {
+                ...record,
+                ...extra,
+                deletedFromCaspio: false,
+                caspioBackfillAt: nowIso,
+                caspioBackfillSourceTable: tableName,
+                caspioBackfillDocId: docId,
+                updatedAt: nowIso,
+              },
+              { merge: true }
+            );
+            upserted += 1;
+          });
+
+          await batch.commit();
         }
 
-        const docId = toSafeSuffix(config.toDocId(record));
-        if (!docId) {
-          skippedMissingId += 1;
-          return;
-        }
+        if (pageRows.length < PAGE_SIZE) break;
+      }
 
-        const docRef = adminDb.collection(config.collection).doc(docId);
-        const extra = config.toWriteData ? config.toWriteData(record) : {};
-        batch.set(
-          docRef,
-          {
-            ...record,
-            ...extra,
-            deletedFromCaspio: false,
-            caspioBackfillAt: nowIso,
-            caspioBackfillSourceTable: config.table,
-            caspioBackfillDocId: docId,
-            updatedAt: nowIso,
-          },
-          { merge: true }
-        );
-        upserted += 1;
-      });
-
-      await batch.commit();
+      selectedTable = tableName;
+      break;
+    } catch (error) {
+      if (isTableNotFoundError(error)) {
+        tableMissingWarning = `Table not found in Caspio: ${tableName}`;
+        continue;
+      }
+      throw error;
     }
+  }
 
-    if (pageRows.length < PAGE_SIZE) break;
+  if (!selectedTable) {
+    return {
+      key: config.key,
+      table: config.table,
+      collection: config.collection,
+      fetched: 0,
+      upserted: 0,
+      skippedMissingId: 0,
+      skippedTestMarkers: 0,
+      pages: 0,
+      warning:
+        tableMissingWarning ||
+        `Skipped. None of these tables were found: ${candidateTables.join(', ')}`,
+    } satisfies BackfillResult;
   }
 
   const result: BackfillResult = {
     key: config.key,
-    table: config.table,
+    table: selectedTable,
     collection: config.collection,
     fetched,
     upserted,
     skippedMissingId,
     skippedTestMarkers,
     pages,
+    ...(selectedTable !== config.table
+      ? { warning: `Using alias table "${selectedTable}" (configured default: "${config.table}")` }
+      : {}),
   };
   return result;
 }
@@ -246,7 +295,7 @@ export async function POST(request: NextRequest) {
       },
       {
         key: 'usersRegistration',
-        table: 'connect_tbl_usersregistration',
+        table: 'connect_tbl_userregistration',
         collection: 'caspio_usersregistration_cache',
         toDocId: (record) =>
           `userreg_${toSafeSuffix(record?.User_ID || record?.Table_ID || record?.table_ID || record?.Email || '')}`,
@@ -268,17 +317,19 @@ export async function POST(request: NextRequest) {
       },
       {
         key: 'memberNotes',
-        table: 'CalAIM_Members_Notes_ILS',
+        table: 'CalAIM_Member_Notes_ILS',
         collection: 'caspio_notes',
         toDocId: (record) => `caspio_member_note_${toSafeSuffix(record?.Note_ID || `${record?.Client_ID2 || ''}_${record?.Note_Date || ''}`)}`,
         toWriteData: () => ({ tableType: 'calaim_members', isRead: false, notificationsSent: [] }),
+        optional: true,
       },
       {
         key: 'clientNotes',
-        table: 'connect_tbl_client_notes',
+        table: 'connect_tbl_clientnotes',
         collection: 'caspio_notes',
         toDocId: (record) => `caspio_client_note_${toSafeSuffix(record?.Note_ID || `${record?.Client_ID2 || record?.Client_ID || ''}_${record?.Note_Date || ''}`)}`,
         toWriteData: () => ({ tableType: 'client_notes', isRead: false, notificationsSent: [] }),
+        optional: true,
       },
     ];
 
@@ -290,6 +341,9 @@ export async function POST(request: NextRequest) {
         config,
         nowIso,
       });
+      if (result.warning && !config.optional && result.fetched === 0 && result.upserted === 0) {
+        throw new Error(result.warning);
+      }
       results.push(result);
     }
 

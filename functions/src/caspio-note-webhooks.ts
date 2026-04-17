@@ -16,7 +16,7 @@ const getDb = () => {
   return _db;
 };
 
-// Interface for CalAIM_Members_Notes_ILS table
+// Interface for CalAIM_Member_Notes_ILS table
 interface CalAIMNoteData {
   Note_ID?: string | number;
   Client_ID2?: string;
@@ -32,7 +32,7 @@ interface CalAIMNoteData {
   Immediate_Check?: string | boolean;
 }
 
-// Interface for connect_tbl_client_notes table
+// Interface for connect_tbl_clientnotes table
 interface ClientNoteData {
   Note_ID?: string | number;
   Client_ID?: string;
@@ -507,7 +507,7 @@ async function resolveStaffEmailsForAssignment(assignment?: string): Promise<str
   return [];
 }
 
-// Webhook endpoint for CalAIM_Members_Notes_ILS table
+// Webhook endpoint for CalAIM_Member_Notes_ILS table
 export const caspioCalAIMNotesWebhook = onRequest(
   { 
     cors: true,
@@ -565,7 +565,7 @@ export const caspioCalAIMNotesWebhook = onRequest(
   }
 );
 
-// Webhook endpoint for connect_tbl_client_notes table
+// Webhook endpoint for connect_tbl_clientnotes table
 export const caspioClientNotesWebhook = onRequest(
   { 
     cors: true,

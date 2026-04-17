@@ -32,7 +32,7 @@ A comprehensive interoffice communication system for CalAIM Application Tracker 
 #### 3. **Database Integration**
 - **Caspio Tables**:
   - `connect_tbl_clientnotes` - Store client notes
-  - `connect_tbl_usersregistration` - Staff user lookup
+  - `connect_tbl_userregistration` - Staff user lookup
   - `connect_tbl_clients` - Client information lookup
 - **Firebase Firestore**:
   - `notifications` - Real-time notification storage
@@ -127,7 +127,7 @@ interface ClientNote {
 ### 1. **Database Setup**
 Ensure these Caspio tables exist with proper field names:
 - `connect_tbl_clientnotes` with fields: Note_ID, Client_ID2, User_ID, Comments, Time_Stamp, Follow_Up_Date, Follow_Up_Assignment, Follow_Up_Status
-- `connect_tbl_usersregistration` with fields: User_ID, User_Full_Name, Role
+- `connect_tbl_userregistration` with fields: User_ID, User_Full_Name, Role
 - `connect_tbl_clients` with fields: Client_ID2, Senior_First, Senior_Last, Senior_Full_Name
 
 ### 2. **Firebase Configuration**
