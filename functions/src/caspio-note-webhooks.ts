@@ -483,7 +483,7 @@ async function resolveStaffEmailsForAssignment(assignment?: string): Promise<str
 export const caspioCalAIMNotesWebhook = onRequest(
   { 
     cors: true,
-    secrets: [caspioWebhookSecret]
+    secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret, caspioWebhookSecret]
   },
   async (request, response) => {
     try {

@@ -64,7 +64,10 @@ const CORS_ORIGINS = [
 ];
 
 export const fetchKaiserMembersFromCaspio = onCall(
-  { cors: CORS_ORIGINS },
+  {
+    cors: CORS_ORIGINS,
+    secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret],
+  },
   async (request) => {
     const includeAllMembers = request.data?.includeAllMembers === true;
     try {

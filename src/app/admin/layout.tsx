@@ -90,6 +90,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 import { collection, collectionGroup, doc, documentId, getDocs, limit, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
+import { AuthGuard } from '@/components/AuthGuard';
 import {
   isNotificationClosedLike,
   isNotificationSoftDeleted,
@@ -2443,22 +2444,42 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       </>
     );
   }
+
+  const allowNonAdmin =
+    pathname?.startsWith('/admin/my-notes') ||
+    pathname?.startsWith('/admin/reports/ils') ||
+    pathname?.startsWith('/admin/ils-report-editor') ||
+    pathname?.startsWith('/admin/tools/ils-status-check');
+
+  // Prevent a brief 2FA flash before the login redirect settles.
+  if (!user || (!isAdmin && !allowNonAdmin)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Redirecting to admin login...</p>
+        </div>
+      </div>
+    );
+  }
   
   // If loading is done and user is an admin, show the full admin layout.
   return (
-    <>
-      <SocialWorkerRedirect />
-      <DesktopNotificationsDevShim />
-      <WebNotificationsDevTester />
-      <RealTimeNotifications />
-      <CaspioUsageAlert />
-      <DesktopPresenceBeacon />
-      <div className="flex flex-col min-h-screen">
-        <AdminHeader />
-        <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden">
-          {children}
-        </main>
-      </div>
-    </>
+    <AuthGuard require2FA>
+      <>
+        <SocialWorkerRedirect />
+        <DesktopNotificationsDevShim />
+        <WebNotificationsDevTester />
+        <RealTimeNotifications />
+        <CaspioUsageAlert />
+        <DesktopPresenceBeacon />
+        <div className="flex flex-col min-h-screen">
+          <AdminHeader />
+          <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden">
+            {children}
+          </main>
+        </div>
+      </>
+    </AuthGuard>
   );
 }
