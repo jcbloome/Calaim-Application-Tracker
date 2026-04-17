@@ -34,6 +34,31 @@ function getResendClient(): Resend | null {
   return resendClient;
 }
 
+const DEFAULT_PORTAL_LOGIN_URL = 'https://connectcalaim.com/login';
+
+function resolvePortalLoginUrl(rawPortalUrl?: string): string {
+    const raw = String(rawPortalUrl || '').trim();
+    if (!raw) return DEFAULT_PORTAL_LOGIN_URL;
+
+    try {
+        const parsed = new URL(raw);
+        const host = parsed.hostname.toLowerCase();
+        if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) {
+            return DEFAULT_PORTAL_LOGIN_URL;
+        }
+        const path = parsed.pathname || '';
+        if (/\/login\/?$/i.test(path)) {
+            return parsed.toString();
+        }
+        parsed.pathname = `${path.replace(/\/$/, '')}/login`;
+        parsed.search = '';
+        parsed.hash = '';
+        return parsed.toString();
+    } catch {
+        return DEFAULT_PORTAL_LOGIN_URL;
+    }
+}
+
 interface ApplicationStatusPayload {
   to: string;
   subject: string;
@@ -176,6 +201,16 @@ interface RoomBoardIlsSubmissionPayload {
 
 type EmailLogStatus = 'success' | 'failure';
 
+const APPLICATION_STATUS_REPLY_TO = 'calaim@carehomefinders.com';
+
+function deriveMemberCaseName(subject: string, fallback: string): string {
+    const safeSubject = String(subject || '').trim();
+    const safeFallback = String(fallback || '').trim();
+    const match = safeSubject.match(/\bfor\s+(.+)$/i);
+    const fromSubject = String(match?.[1] || '').trim();
+    return fromSubject || safeFallback || 'Member';
+}
+
 async function logEmailDelivery(params: {
     status: EmailLogStatus;
     template: string;
@@ -217,8 +252,9 @@ async function sendViaResendWithLog(params: {
     template: string;
     source: string;
     metadata?: Record<string, unknown>;
+    replyTo?: string[];
 }) {
-    const { resend, from, to, bcc = [], subject, html, text, template, source, metadata } = params;
+    const { resend, from, to, bcc = [], subject, html, text, template, source, metadata, replyTo = [] } = params;
     if (!resend) {
         await logEmailDelivery({
             status: 'failure',
@@ -239,6 +275,7 @@ async function sendViaResendWithLog(params: {
             from,
             to,
             bcc,
+            ...(replyTo.length ? { replyTo } : {}),
             subject,
             html,
             ...(text ? { text } : {}),
@@ -317,6 +354,14 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
     if (!resend) throw new Error('Resend API key is not configured.');
 
     const bccList = includeBcc ? await getBccRecipients() : [];
+    const memberCaseName = deriveMemberCaseName(subject, memberName);
+    const supportSubject = `CalAIM Question Regarding ${memberCaseName}`;
+    const resolvedPortalUrl = resolvePortalLoginUrl(
+        portalUrl ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.NEXT_PUBLIC_BASE_URL ||
+        DEFAULT_PORTAL_LOGIN_URL
+    );
 
     try {
         const emailHtml = await renderAsync(ApplicationStatusEmail({
@@ -325,24 +370,9 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
             message,
             status,
             surveyUrl,
-            portalUrl: String(
-              portalUrl ||
-              process.env.NEXT_PUBLIC_APP_URL ||
-              process.env.NEXT_PUBLIC_BASE_URL ||
-              'https://connectcalaim.com/login'
-            ).replace(/\/$/, '').includes('/login')
-              ? String(
-                  portalUrl ||
-                  process.env.NEXT_PUBLIC_APP_URL ||
-                  process.env.NEXT_PUBLIC_BASE_URL ||
-                  'https://connectcalaim.com/login'
-                )
-              : `${String(
-                  portalUrl ||
-                  process.env.NEXT_PUBLIC_APP_URL ||
-                  process.env.NEXT_PUBLIC_BASE_URL ||
-                  'https://connectcalaim.com'
-                ).replace(/\/$/, '')}/login`,
+            portalUrl: resolvedPortalUrl,
+            supportEmail: APPLICATION_STATUS_REPLY_TO,
+            supportSubject,
         }));
 
         return await sendViaResendWithLog({
@@ -355,6 +385,7 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
             template: 'application_status',
             source: 'sendApplicationStatusEmail',
             metadata: { status, includeBcc },
+            replyTo: [APPLICATION_STATUS_REPLY_TO],
         });
     } catch (error) {
         console.error('Failed to send email:', error);
