@@ -49,7 +49,6 @@ export async function GET(request: NextRequest) {
       const adminDb = adminModule.adminDb;
       const snapshot = await adminDb
         .collection('caspio_members_cache')
-        .where('CalAIM_Status', '==', 'Authorized')
         .limit(5000)
         .get();
       allMembers = snapshot.docs.map((doc) => doc.data());
@@ -73,7 +72,7 @@ export async function GET(request: NextRequest) {
           { status: 409 }
         );
       }
-      console.log(`✅ Loaded ${allMembers.length} authorized members from Firestore cache`);
+      console.log(`✅ Loaded ${allMembers.length} members from Firestore cache`);
     } else {
       const credentials = getCaspioCredentialsFromEnv();
       console.log('🔄 Refresh/debug: Fetching ALL CalAIM members with partition strategy...');
@@ -214,7 +213,8 @@ export async function GET(request: NextRequest) {
     };
     const isAuthorizedStatus = (status: any) => {
       if (!status) return false;
-      return String(status).trim().toLowerCase() === 'authorized';
+      const normalized = String(status).trim().toLowerCase();
+      return normalized === 'authorized' || normalized.startsWith('authorized ');
     };
 
     // Filter to authorized members only (do not require valid names)
