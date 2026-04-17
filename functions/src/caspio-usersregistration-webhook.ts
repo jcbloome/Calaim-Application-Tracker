@@ -145,9 +145,12 @@ export const caspioUsersRegistrationWebhook = onRequest(
       const tableName = getTableName(payload);
       const normalizedTableName = tableName.toLowerCase().replace(/_+/g, "_");
       const expected = "connect_tbl_userregistration".toLowerCase().replace(/_+/g, "_");
+      const expectedLegacy = "connect_tbl_usersregistration".toLowerCase().replace(/_+/g, "_");
       if (tableName && normalizedTableName !== expected) {
-        res.status(200).json({ message: "Webhook received but ignored", tableName });
-        return;
+        if (normalizedTableName !== expectedLegacy) {
+          res.status(200).json({ message: "Webhook received but ignored", tableName });
+          return;
+        }
       }
 
       const operation = getOperation(payload);

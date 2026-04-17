@@ -318,6 +318,7 @@ export async function POST(request: NextRequest) {
       {
         key: 'usersRegistration',
         table: 'connect_tbl_userregistration',
+        tableAliases: ['connect_tbl_usersregistration'],
         collection: 'caspio_usersregistration_cache',
         toDocId: (record) =>
           `userreg_${toSafeSuffix(record?.User_ID || record?.Table_ID || record?.table_ID || record?.Email || '')}`,
