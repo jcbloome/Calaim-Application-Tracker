@@ -51,6 +51,7 @@ interface ILSReportMember {
   RCFE_Admin_Name?: string;
   RCFE_Admin_Email?: string;
   ILS_Connected?: string;
+  SUA_or_Contract?: string;
   Need_More_Contact_Info_ILS?: string;
   CalAIM_Status?: string;
   Authorization_Start_Date_H2022?: string;
@@ -63,7 +64,7 @@ type QueueRow = {
   memberName: string;
   memberMrn: string;
   birthDate?: string;
-  ilsConnected?: boolean;
+  suaOrContract?: string;
   rcfeName?: string;
   rcfeAdminName?: string;
   rcfeAdminEmail?: string;
@@ -75,7 +76,7 @@ const toQueueRow = (member: ILSReportMember, requestedDate: string): QueueRow =>
   memberName: String(member.memberName || '').trim(),
   memberMrn: String(member.memberMrn || '').trim(),
   birthDate: toYmd(member.birthDate),
-  ilsConnected: isIlsConnected((member as any).ILS_Connected),
+  suaOrContract: String((member as any).SUA_or_Contract || '').trim(),
   rcfeName: String(member.RCFE_Name || '').trim(),
   rcfeAdminName: String(member.RCFE_Admin_Name || '').trim(),
   rcfeAdminEmail: String(member.RCFE_Admin_Email || '').trim(),
@@ -197,7 +198,7 @@ const normalizeStatus = (value: any) =>
     .toLowerCase()
     .replace(/\s+/g, ' ');
 
-const isIlsConnected = (value: any): boolean => {
+const isSUAConfirmedYes = (value: unknown): boolean => {
   const normalized = String(value ?? '').trim().toLowerCase();
   return normalized === 'yes' || normalized === 'y' || normalized === 'true' || normalized === '1';
 };
@@ -330,11 +331,14 @@ export default function ILSReportEditorPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [reportDate, setReportDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [cardEditOpen, setCardEditOpen] = useState(false);
-  const [cardEditQueue, setCardEditQueue] = useState<'tier_level_requested' | 'rb_sent_pending_ils_contract' | null>(null);
+  const [cardEditQueue, setCardEditQueue] = useState<
+    'tier_level_requested' | 't2038_received_unreachable' | 'rb_sent_pending_ils_contract' | null
+  >(null);
   const [cardEditMemberId, setCardEditMemberId] = useState('');
   const [cardEditTierLevel, setCardEditTierLevel] = useState('');
   const [cardEditTierReceivedDate, setCardEditTierReceivedDate] = useState('');
   const [cardEditRbReceivedDate, setCardEditRbReceivedDate] = useState('');
+  const [cardEditNeedMoreContactInfo, setCardEditNeedMoreContactInfo] = useState('');
   const [isLoadingIlsLog, setIsLoadingIlsLog] = useState(false);
   const [ilsLogRows, setIlsLogRows] = useState<IlsQueueChangeLogRow[]>([]);
   const [ilsLogSearch, setIlsLogSearch] = useState('');
@@ -453,6 +457,7 @@ export default function ILSReportEditorPage() {
             RCFE_Admin_Name: String(member.RCFE_Admin_Name || member.RCFE_Administrator || '').trim(),
             RCFE_Admin_Email: String(member.RCFE_Admin_Email || member.RCFE_Administrator_Email || '').trim(),
             ILS_Connected: String(member.ILS_Connected || '').trim(),
+            SUA_or_Contract: String((member as any).SUA_or_Contract || '').trim(),
             Need_More_Contact_Info_ILS: String(member.Need_More_Contact_Info_ILS || '').trim(),
             CalAIM_Status: String(member.CalAIM_Status || '').trim(),
             Authorization_Start_Date_H2022: toYmd(member.Authorization_Start_Date_H2022),
@@ -720,7 +725,10 @@ export default function ILSReportEditorPage() {
     }
   };
 
-  const openCardEdit = (queue: 'tier_level_requested' | 'rb_sent_pending_ils_contract', memberId: string) => {
+  const openCardEdit = (
+    queue: 'tier_level_requested' | 't2038_received_unreachable' | 'rb_sent_pending_ils_contract',
+    memberId: string
+  ) => {
     const member = members.find((m) => String(m.id || '') === String(memberId || ''));
     if (!member) return;
     setCardEditQueue(queue);
@@ -728,6 +736,7 @@ export default function ILSReportEditorPage() {
     setCardEditTierLevel(String(member.Kaiser_Tier_Level || '').trim());
     setCardEditTierReceivedDate(toYmd(member.Kaiser_Tier_Level_Received_Date));
     setCardEditRbReceivedDate(toYmd(member.Kaiser_H2022_Received));
+    setCardEditNeedMoreContactInfo(String(member.Need_More_Contact_Info_ILS || '').trim());
     setCardEditOpen(true);
   };
 
@@ -742,6 +751,9 @@ export default function ILSReportEditorPage() {
       updates.Kaiser_Tier_Level_Received_Date = toYmd(cardEditTierReceivedDate);
       changes.Kaiser_Tier_Level = updates.Kaiser_Tier_Level || '';
       changes.Kaiser_Tier_Level_Received_Date = updates.Kaiser_Tier_Level_Received_Date || '';
+    } else if (cardEditQueue === 't2038_received_unreachable') {
+      updates.Need_More_Contact_Info_ILS = String(cardEditNeedMoreContactInfo || '').trim();
+      changes.Need_More_Contact_Info_ILS = updates.Need_More_Contact_Info_ILS || '';
     } else if (cardEditQueue === 'rb_sent_pending_ils_contract') {
       updates.Kaiser_H2022_Received = toYmd(cardEditRbReceivedDate);
       changes.Kaiser_H2022_Received = updates.Kaiser_H2022_Received || '';
@@ -792,6 +804,14 @@ export default function ILSReportEditorPage() {
       rbPendingIlsContract: makeRows('rb_sent_pending_ils_contract'),
       t2038AuthOnly: makeRows('t2038_auth_only_email'),
     };
+  }, [members]);
+
+  const memberById = useMemo(() => {
+    const map = new Map<string, ILSReportMember>();
+    members.forEach((m) => {
+      map.set(String(m.id || '').trim(), m);
+    });
+    return map;
   }, [members]);
 
   const h2022AuthDateTracking = useMemo(() => {
@@ -1323,7 +1343,7 @@ export default function ILSReportEditorPage() {
                     queueKey: 't2038_received_unreachable' as const,
                     label: 'T2038 Received, Unreachable',
                     rows: queues.t2038ReceivedUnreachable,
-                    editable: false,
+                    editable: true,
                     showIlsConnected: false,
                   },
                   {
@@ -1339,7 +1359,7 @@ export default function ILSReportEditorPage() {
                     queueKey: 'rb_sent_pending_ils_contract' as const,
                     label: 'R & B Sent Pending ILS Contract / Final at RCFE',
                     rows: queues.rbPendingIlsContract,
-                    editable: true,
+                    editable: false,
                     showIlsConnected: true,
                   },
                 ] as const
@@ -1353,7 +1373,7 @@ export default function ILSReportEditorPage() {
                   <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>Member / MRN / Birth Date</span>
                     <span className="hidden sm:inline font-medium">
-                      {q.showIlsConnected ? 'ILS Connected • Request Date' : 'Request Date'}
+                      {q.showIlsConnected ? 'Confirmed • Request Date' : 'Request Date'}
                     </span>
                   </div>
                   <div className="space-y-1 text-sm">
@@ -1362,18 +1382,12 @@ export default function ILSReportEditorPage() {
                     ) : (
                       q.rows.slice(0, 60).map((r) => {
                         const latestIlsNote = latestIlsStaffNoteByMember.get(String(r.id || '').trim());
+                        const rowMember = memberById.get(String(r.id || '').trim());
                         return (
                         <div key={`${q.key}-${r.id}`} className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
                             <div className="truncate font-medium flex items-center gap-2">
                               <span className="truncate">{r.memberName || '—'}</span>
-                              {q.showIlsConnected
-                                ? r.ilsConnected ? (
-                                    <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-label="ILS connected: yes" />
-                                  ) : (
-                                    <Circle className="h-4 w-4 shrink-0 text-red-500 fill-red-500" aria-label="ILS connected: no" />
-                                  )
-                                : null}
                               {latestIlsNote?.isNewForKaiserAdmin ? (
                                 <Badge className="bg-green-100 text-green-900 border-green-200">New ILS note</Badge>
                               ) : null}
@@ -1397,6 +1411,18 @@ export default function ILSReportEditorPage() {
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   RCFE Admin Email: <span className="font-mono">{(r as any).rcfeAdminEmail || '—'}</span>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  <span className="inline-flex items-center gap-1">
+                                    <span>SUA or Contract Confirmed:</span>
+                                    <span className="font-medium">{(r as any).suaOrContract || '—'}</span>
+                                  </span>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  H2022 Start: <span className="font-mono">{formatYmd(String(rowMember?.Authorization_Start_Date_H2022 || ''))}</span>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  H2022 End: <span className="font-mono">{formatYmd(String(rowMember?.Authorization_End_Date_H2022 || ''))}</span>
                                 </div>
                               </>
                             ) : null}
@@ -1705,7 +1731,11 @@ export default function ILSReportEditorPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {cardEditQueue === 'tier_level_requested' ? 'Edit Tier Level Requested' : 'Edit R & B Sent Pending ILS Contract'}
+              {cardEditQueue === 'tier_level_requested'
+                ? 'Edit Tier Level Requested'
+                : cardEditQueue === 't2038_received_unreachable'
+                  ? 'Edit T2038 Received, Unreachable'
+                  : 'Edit R & B Sent Pending ILS Contract'}
             </DialogTitle>
             <DialogDescription>
               Update ILS fields directly from this queue row.
@@ -1739,6 +1769,16 @@ export default function ILSReportEditorPage() {
                   />
                 </div>
               </>
+            ) : cardEditQueue === 't2038_received_unreachable' ? (
+              <div className="space-y-2">
+                <Label>Need More Contact Info (ILS)</Label>
+                <Textarea
+                  value={cardEditNeedMoreContactInfo}
+                  onChange={(e) => setCardEditNeedMoreContactInfo(e.target.value)}
+                  placeholder="Add better contact information or outreach guidance..."
+                  rows={4}
+                />
+              </div>
             ) : (
               <div className="space-y-2">
                 <Label>R &amp; B Sent Pending ILS Contract Received Date</Label>
