@@ -1,106 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb, default as admin } from '@/firebase-admin';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { adminDb, default as admin } from '@/firebase-admin';
+import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
-const SPECIAL_ILS_STAFF_EMAILS = new Set<string>(['jocelyn@ilshealth.com']);
-const normalizeText = (value: unknown) =>
-  String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const isLikelyClinicalLabel = (...values: unknown[]) => {
-  const merged = values
-    .map((value) => normalizeText(value))
-    .filter(Boolean)
-    .join(' ');
-  if (!merged) return false;
-  return /\b(rn|nurse|social worker|msw|lcsw|lmft|clinical|therapist)\b/.test(merged);
-};
-
-async function canAccessIlsLog(idToken: string) {
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = normalizeEmail((decoded as any)?.email);
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  if (
-    Boolean((decoded as any)?.admin) ||
-    Boolean((decoded as any)?.superAdmin) ||
-    isHardcodedAdminEmail(email) ||
-    SPECIAL_ILS_STAFF_EMAILS.has(email)
-  ) {
-    return { ok: true as const, uid, email };
-  }
-
-  const [adminRole, superAdminRole, ilsAccess] = await Promise.all([
-    adminDb.collection('roles_admin').doc(uid).get(),
-    adminDb.collection('roles_super_admin').doc(uid).get(),
-    adminDb.collection('system_settings').doc('ils_member_access').get(),
-  ]);
-
-  let isAdmin = adminRole.exists || superAdminRole.exists;
-  if (!isAdmin && email) {
-    const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(email).get(),
-      adminDb.collection('roles_super_admin').doc(email).get(),
-    ]);
-    isAdmin = emailAdminRole.exists || emailSuperAdminRole.exists;
-  }
-  if (isAdmin) return { ok: true as const, uid, email };
-
-  const allowedEmails = ilsAccess.exists ? ((ilsAccess.data()?.allowedEmails || []) as unknown[]) : [];
-  const allowed = allowedEmails.map(normalizeEmail).includes(email);
-  if (allowed || SPECIAL_ILS_STAFF_EMAILS.has(email)) return { ok: true as const, uid, email };
-
-  const [userByUid, userByEmail, swByUid, swByEmail] = await Promise.all([
-    adminDb.collection('users').doc(uid).get(),
-    adminDb.collection('users').doc(email).get(),
-    adminDb.collection('socialWorkers').doc(uid).get(),
-    adminDb.collection('socialWorkers').doc(email).get(),
-  ]);
-  const userData = userByUid.exists
-    ? (userByUid.data() as any)
-    : userByEmail.exists
-      ? (userByEmail.data() as any)
-      : null;
-  const hasStaffFlag = Boolean(
-    userData?.isStaff ||
-    userData?.isKaiserStaff ||
-    userData?.isHealthNetStaff ||
-    userData?.isClaimsStaff ||
-    userData?.isKaiserAssignmentManager
-  );
-  const socialWorkerData = swByUid.exists
-    ? (swByUid.data() as any)
-    : swByEmail.exists
-      ? (swByEmail.data() as any)
-      : null;
-  const isSocialWorker = Boolean(socialWorkerData && socialWorkerData.isActive !== false);
-  const clinicalLike = isLikelyClinicalLabel(
-    (decoded as any)?.name,
-    email,
-    userData?.firstName,
-    userData?.lastName,
-    userData?.displayName,
-    userData?.role,
-    userData?.roleType,
-    userData?.title,
-    userData?.jobTitle,
-    userData?.discipline,
-    userData?.credentials
-  );
-  if (!hasStaffFlag || isSocialWorker || clinicalLike) {
-    return { ok: false as const, status: 403, error: 'Unauthorized' };
-  }
-  return { ok: true as const, uid, email };
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -109,7 +12,7 @@ export async function POST(req: NextRequest) {
     const action = String(body?.action || '').trim().toLowerCase();
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
 
-    const authz = await canAccessIlsLog(idToken);
+    const authz = await requireAdminApiAuthFromIdToken(idToken, { requireTwoFactor: true });
     if (!authz.ok) return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
 
     if (action === 'create') {

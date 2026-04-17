@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/firebase-admin';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { adminDb } from '@/firebase-admin';
+import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 import { Resend } from 'resend';
 
 export const runtime = 'nodejs';
@@ -70,33 +70,6 @@ const buildDeydryMailtoUrl = (memberName: string, rcfeName: string, authEndT2038
   return `mailto:${DEYDRY_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 };
 
-async function requireAdmin(idToken: string) {
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = normalizeEmail((decoded as any)?.email);
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  if (Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin) || isHardcodedAdminEmail(email)) {
-    return { ok: true as const, uid, email };
-  }
-
-  const [adminRole, superAdminRole] = await Promise.all([
-    adminDb.collection('roles_admin').doc(uid).get(),
-    adminDb.collection('roles_super_admin').doc(uid).get(),
-  ]);
-
-  let isAdmin = adminRole.exists || superAdminRole.exists;
-  if (!isAdmin && email) {
-    const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(email).get(),
-      adminDb.collection('roles_super_admin').doc(email).get(),
-    ]);
-    isAdmin = emailAdminRole.exists || emailSuperAdminRole.exists;
-  }
-  if (!isAdmin) return { ok: false as const, status: 403, error: 'Admin privileges required' };
-  return { ok: true as const, uid, email };
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({} as any));
@@ -104,7 +77,7 @@ export async function POST(req: NextRequest) {
     const action = String(body?.action || '').trim().toLowerCase();
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
 
-    const authz = await requireAdmin(idToken);
+    const authz = await requireAdminApiAuthFromIdToken(idToken, { requireTwoFactor: true });
     if (!authz.ok) return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
 
     const settingsRef = adminDb.collection('system_settings').doc('kaiser_rcfe_weekly_confirm');

@@ -70,7 +70,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
       
       if (data.success) {
         setStatus(data);
-        setSelectedMethod(data.preferredMethod);
+        setSelectedMethod(data.preferredMethod === 'sms' ? 'email' : data.preferredMethod);
         setPhone(data.phone || '');
         
         if (data.isVerified) {
@@ -262,13 +262,16 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="sms" id="sms" />
+                  <RadioGroupItem value="sms" id="sms" disabled />
                   <Label htmlFor="sms" className="flex items-center gap-2 cursor-pointer">
                     <MessageSquare className="h-4 w-4" />
-                    SMS
+                    SMS (coming soon)
                   </Label>
                 </div>
               </RadioGroup>
+              <p className="text-xs text-muted-foreground">
+                SMS verification is currently disabled. Use email verification for now.
+              </p>
               
               {selectedMethod === 'sms' && (
                 <div className="space-y-2">

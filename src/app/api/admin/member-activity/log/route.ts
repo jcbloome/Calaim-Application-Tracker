@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,50 +43,6 @@ type MemberActivityInput = {
   source: ActivitySource;
 };
 
-async function requireAdmin(idToken: string) {
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = decoded.uid;
-  const email = String((decoded as any)?.email || '').trim().toLowerCase();
-
-  if (!uid) {
-    return { ok: false as const, status: 401, error: 'Invalid token' };
-  }
-
-  const hasAdminClaim = Boolean((decoded as any)?.admin);
-  const hasSuperAdminClaim = Boolean((decoded as any)?.superAdmin);
-  if (hasAdminClaim || hasSuperAdminClaim) {
-    return { ok: true as const, uid, email, adminDb };
-  }
-
-  if (isHardcodedAdminEmail(email)) {
-    return { ok: true as const, uid, email, adminDb };
-  }
-
-  const [adminRole, superAdminRole] = await Promise.all([
-    adminDb.collection('roles_admin').doc(uid).get(),
-    adminDb.collection('roles_super_admin').doc(uid).get(),
-  ]);
-
-  let isAdmin = adminRole.exists || superAdminRole.exists;
-  if (!isAdmin && email) {
-    const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(email).get(),
-      adminDb.collection('roles_super_admin').doc(email).get(),
-    ]);
-    isAdmin = emailAdminRole.exists || emailSuperAdminRole.exists;
-  }
-
-  if (!isAdmin) {
-    return { ok: false as const, status: 403, error: 'Admin privileges required' };
-  }
-
-  return { ok: true as const, uid, email, adminDb };
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -100,13 +56,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing activity payload' }, { status: 400 });
     }
 
-    const adminCheck = await requireAdmin(idToken);
+    const adminCheck = await requireAdminApiAuthFromIdToken(idToken, { requireTwoFactor: true });
     if (!adminCheck.ok) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }
 
-    const { adminDb, uid, email } = adminCheck;
     const adminModule = await import('@/firebase-admin');
+    const adminDb = adminModule.adminDb;
+    const uid = adminCheck.uid;
+    const email = adminCheck.email;
     const admin = adminModule.default;
     const nowIso = new Date().toISOString();
 

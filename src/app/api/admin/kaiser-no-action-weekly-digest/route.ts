@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,43 +20,6 @@ const normalizeText = (value: unknown) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-
-function getBearerToken(req: NextRequest): string {
-  const authHeader = req.headers.get('authorization') || '';
-  const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-  return tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
-}
-
-async function requireAdmin(idToken: string) {
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-  const decoded = await adminAuth.verifyIdToken(idToken);
-
-  const uid = String(decoded?.uid || '').trim();
-  const email = String((decoded as any)?.email || '').trim().toLowerCase();
-
-  if (!uid) {
-    return { ok: false as const, status: 401, error: 'Invalid token' };
-  }
-
-  let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
-  if (!isAdmin && isHardcodedAdminEmail(email)) isAdmin = true;
-
-  if (!isAdmin) {
-    const [adminRole, superAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(uid).get(),
-    ]);
-    isAdmin = adminRole.exists || superAdminRole.exists;
-  }
-
-  if (!isAdmin) {
-    return { ok: false as const, status: 403, error: 'Admin privileges required' };
-  }
-
-  return { ok: true as const, adminDb, uid, email };
-}
 
 const slug = (value: string) =>
   String(value || '')
@@ -114,12 +77,7 @@ async function resolveManagerUids(adminDb: any): Promise<string[]> {
 
 export async function POST(req: NextRequest) {
   try {
-    const idToken = getBearerToken(req);
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
-    }
-
-    const adminCheck = await requireAdmin(idToken);
+    const adminCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!adminCheck.ok) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }

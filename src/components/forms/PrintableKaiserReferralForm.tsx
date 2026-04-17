@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
 
 type ReferralPrefill = {
   memberName?: string;
@@ -344,29 +345,25 @@ export function PrintableKaiserReferralForm({
     }
     setIsSendingToKaiser(true);
     try {
-      const mod: any = await import('html2pdf.js');
-      const html2pdf = mod?.default ?? mod;
-      if (typeof html2pdf !== 'function') throw new Error('PDF generator failed to load.');
+      const pages = Array.from(packetRef.current.querySelectorAll<HTMLElement>('.kaiser-packet-page'));
+      if (!pages.length) {
+        throw new Error('Printable packet pages were not found.');
+      }
 
-      const options = {
-        margin: [0.75, 0.5, 0.5, 0.5],
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          letterRendering: true,
-          allowTaint: false,
-          backgroundColor: '#ffffff'
-        },
-        jsPDF: {
-          unit: 'in',
+      const pdfBytes = await generatePdfFromHtmlSections(pages, {
+        stampPageNumbers: false,
+        options: {
+          marginIn: 0.08,
+          scale: 3,
+          orientation: 'portrait',
           format: 'letter',
-          orientation: 'portrait'
-        }
-      };
-
-      const worker = html2pdf().set(options).from(packetRef.current).toPdf();
-      const pdfBlob = await worker.outputPdf('blob');
+          topBufferPts: 4,
+          treatEachSectionAsSinglePage: true,
+          imageFormat: 'png',
+          fitSafetyScale: 0.998,
+        },
+      });
+      const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
       const pdfBase64 = await blobToBase64(pdfBlob);
 
       const response = await fetch('/api/forms/kaiser-referral/send-intake', {
@@ -885,7 +882,7 @@ export function PrintableKaiserReferralForm({
           </div>
           <div className="mt-2 text-[13px]">
             <div className="font-bold">1.1) THE MEMBER MUST MEET ONE OF THE FOLLOWING CRITERIA.</div>
-            <div className="ml-4">-> Select the <span className="underline">one</span> that applies:</div>
+            <div className="ml-4">-&gt; Select the <span className="underline">one</span> that applies:</div>
             <div className="mt-1"><Checkbox checked={false} /> A) Lives in the community and is compromised with ADLs and dependent on caregiver support to avoid institutional placement;</div>
             <div className="mt-1 text-center font-bold">OR</div>
             <div><Checkbox checked={false} /> B) Other subsets include children who belong to any of the following categories:</div>
@@ -944,7 +941,7 @@ export function PrintableKaiserReferralForm({
           </div>
           <div className="mt-3 text-[13px]">
             <div className="font-bold">2.1) WHICH SERVICE IS THE MEMBER BEING REFERRED FOR?</div>
-            <div className="ml-4">-> Select the <span className="underline">one</span> that applies:</div>
+            <div className="ml-4">-&gt; Select the <span className="underline">one</span> that applies:</div>
             <div className="mt-1"><Checkbox checked /> A) Time-Limited transition services and expenses</div>
             <div><Checkbox checked={false} /> B) Ongoing ALF services (<span className="font-semibold">Note:</span> Member MUST first be approved for Time-Limited transition services and expenses <span className="underline">before</span> starting Ongoing ALF services)</div>
           </div>
@@ -956,26 +953,26 @@ export function PrintableKaiserReferralForm({
             <div className="font-bold"><Checkbox checked /> 2. Assisted Living Facility Transitions (Page 2 of 2)</div>
             <div className="mt-1 h-[2px] w-full bg-black" />
             <div className="font-semibold">2.2) WHERE IS THE MEMBER CURRENTLY LIVING?</div>
-            <div className="ml-4">-> Select the one that applies:</div>
+            <div className="ml-4">-&gt; Select the one that applies:</div>
             <div className="mt-2 space-y-2">
               <div><InteractiveCheckbox checked={currentLivingLocation === 'A'} onToggle={() => setCurrentLivingLocation((prev) => (prev === 'A' ? '' : 'A'))} className="mr-1" />A) Skilled Nursing Facility (SNF)</div>
-              <div className="ml-8">-> To be eligible, Member must meet <span className="underline">all</span> of the following criteria:</div>
+              <div className="ml-8">-&gt; To be eligible, Member must meet <span className="underline">all</span> of the following criteria:</div>
               <div className="ml-12">- Has lived in a nursing facility for 60 days or more; <span className="font-semibold">AND</span></div>
               <div className="ml-12">- Is willing to live in an ALF setting instead of nursing facility; <span className="font-semibold">AND</span></div>
               <div className="ml-12">- Is able to reside safely in an ALF</div>
               <div className="text-center font-semibold">OR</div>
               <div><InteractiveCheckbox checked={currentLivingLocation === 'B'} onToggle={() => setCurrentLivingLocation((prev) => (prev === 'B' ? '' : 'B'))} className="mr-1" />B) At home or in public subsidized housing</div>
-              <div className="ml-8">-> To be eligible, Member must meet <span className="underline">all</span> of the following criteria:</div>
+              <div className="ml-8">-&gt; To be eligible, Member must meet <span className="underline">all</span> of the following criteria:</div>
               <div className="ml-12">- Is interested in remaining in the community; <span className="font-semibold">AND</span></div>
               <div className="ml-12">- Is willing and able to reside safely in an ALF; <span className="font-semibold">AND</span></div>
               <div className="ml-12">- Meets nursing facility level of care (LOC) criteria and chooses to stay in the community and continue to receive medically necessary LOC services in an ALF</div>
               <div className="text-center font-semibold">OR</div>
               <div><InteractiveCheckbox checked={currentLivingLocation === 'C'} onToggle={() => setCurrentLivingLocation((prev) => (prev === 'C' ? '' : 'C'))} className="mr-1" />C) In an Assisted Living Facility (ALF) or a Board and Care Facility</div>
-              <div className="ml-8">-> To be eligible, the Member must meet <span className="underline">all</span> of the following criteria:</div>
+              <div className="ml-8">-&gt; To be eligible, the Member must meet <span className="underline">all</span> of the following criteria:</div>
               <div className="ml-12">- Is interested in remaining in the community; <span className="font-semibold">AND</span></div>
               <div className="ml-12">- Is willing and able to reside safely in an ALF; <span className="font-semibold">AND</span></div>
               <div className="ml-12">- Meets nursing facility level of care (LOC) criteria and chooses to stay in the community and continue to receive medically necessary LOC services in an ALF</div>
-              <div className="ml-8">-> If selected, please provide the following information on the ALF/Board and Care:</div>
+              <div className="ml-8">-&gt; If selected, please provide the following information on the ALF/Board and Care:</div>
             </div>
             <div className="mt-2 space-y-1">
               <div className="font-semibold">Facility Name:</div>
@@ -1017,7 +1014,7 @@ export function PrintableKaiserReferralForm({
               <div className="mt-2"><span className="font-semibold">Name Change:</span> As of April 2025 (DHCS Policy Guide), this service is now called Community or Home Transition Services (previously, &quot;Community Transition Services/Nursing Facility Transition to a Home&quot;).</div>
             </div>
             <div className="mt-3 font-bold">3.1) TO BE ELIGIBLE, THE MEMBER MUST MEET <span className="underline">ALL</span> OF THE FOLLOWING CRITERIA:</div>
-            <div className="ml-4">-> Select <span className="underline">all</span> that apply:</div>
+            <div className="ml-4">-&gt; Select <span className="underline">all</span> that apply:</div>
             <div className="mt-1 ml-4"><Checkbox checked={false} /> Member is receiving medically necessary nursing facility Level of care (LOC) services and in lieu of remaining in the nursing facility or Recuperative Care setting are choosing to transition home and continue to receive medically necessary nursing facility LOC services;</div>
             <div className="text-center font-semibold">AND</div>
             <div className="ml-4"><Checkbox checked={false} /> Member has lived 60+ days in a nursing home and/or Recuperative Care setting;</div>
@@ -1049,7 +1046,7 @@ export function PrintableKaiserReferralForm({
               </ul>
             </div>
             <div className="mt-3 font-bold">4.1) TO BE ELIGIBLE, THE MEMBER MUST MEET <span className="underline">ONE</span> OF THE FOLLOWING CRITERIA.</div>
-            <div className="ml-4">-> Select the one that applies:</div>
+            <div className="ml-4">-&gt; Select the one that applies:</div>
             <div className="ml-4"><Checkbox checked={false} /> A) Member is at risk of hospitalization or institutionalization in a nursing facility; <span className="font-semibold">OR</span></div>
             <div className="ml-4 mt-2"><Checkbox checked={false} /> B) Member has functional deficits and no other adequate support system; <span className="font-semibold">OR</span></div>
             <div className="ml-4 mt-2"><Checkbox checked={false} /> C) Member approved for IHSS</div>
@@ -1062,9 +1059,9 @@ export function PrintableKaiserReferralForm({
             <div className="font-bold"><Checkbox checked={false} /> 4. Personal Care and Homemaker Services (Page 2 of 2)</div>
             <div className="mt-1 h-[2px] w-full bg-black" />
             <div className="mt-2 font-bold">4.2) WHAT IS THE MEMBER&apos;S IHSS APPLICATION STATUS?</div>
-            <div className="ml-4">-> Select the one that applies:</div>
+            <div className="ml-4">-&gt; Select the one that applies:</div>
             <div className="ml-6 mt-1"><Checkbox checked={false} /> A) Member has applied for IHSS and is waiting for a decision;</div>
-            <div className="ml-10">-> If selected, please provide the following information.</div>
+            <div className="ml-10">-&gt; If selected, please provide the following information.</div>
             <div className="ml-10 mt-1 grid grid-cols-[220px_1fr] items-center gap-2">
               <div className="text-right font-semibold">IHSS application date:</div>
               <div className="min-h-[34px] border-2 border-black bg-[#d9e8f7]">
@@ -1073,7 +1070,7 @@ export function PrintableKaiserReferralForm({
             </div>
             <div className="my-1 text-center font-semibold">OR</div>
             <div className="ml-6"><Checkbox checked={false} /> B) Member is currently receiving IHSS, needs additional IHSS hours, reassessment request pending.</div>
-            <div className="ml-10">-> If selected, please provide the following information.</div>
+            <div className="ml-10">-&gt; If selected, please provide the following information.</div>
             <div className="ml-10 mt-1 grid grid-cols-[220px_1fr] items-center gap-2">
               <div className="text-right font-semibold">IHSS reassessment application date:</div>
               <div className="min-h-[34px] border-2 border-black bg-[#d9e8f7]">
@@ -1086,13 +1083,13 @@ export function PrintableKaiserReferralForm({
             </div>
             <div className="my-1 text-center font-semibold">OR</div>
             <div className="ml-6"><Checkbox checked={false} /> C) Member has been approved for the maximum IHSS hours, but needs additional support.</div>
-            <div className="ml-10">-> If selected, please explain why additional support is needed.</div>
+            <div className="ml-10">-&gt; If selected, please explain why additional support is needed.</div>
             <div className="ml-10 mt-1 min-h-[34px] border-2 border-black bg-[#d9e8f7]">
               <EditableBox className="h-[28px]" />
             </div>
             <div className="my-1 text-center font-semibold">OR</div>
             <div className="ml-6"><Checkbox checked={false} /> D) Member is <span className="font-semibold">not</span> eligible for IHSS and needs services to help avoid a short-term stay in a skilled nursing facility.</div>
-            <div className="ml-10">-> If selected, please explain the Member&apos;s clinical status and why these services are needed.</div>
+            <div className="ml-10">-&gt; If selected, please explain the Member&apos;s clinical status and why these services are needed.</div>
             <div className="ml-10 mt-1 min-h-[34px] border-2 border-black bg-[#d9e8f7]">
               <EditableBox className="h-[28px]" />
             </div>
@@ -1125,7 +1122,7 @@ export function PrintableKaiserReferralForm({
             <div className="ml-6 mt-1"><Checkbox checked={false} /> No - If selected, do not continue, Member is not eligible for Home Modifications</div>
             <div className="ml-6"><Checkbox checked={false} /> Yes - If selected, continue and question in this section 5.2 and 5.3</div>
             <div className="mt-3 font-bold">5.2) WHAT IS THE MEMBER REQUESTING?</div>
-            <div className="ml-6">-> Select <span className="underline">all</span> that apply:</div>
+            <div className="ml-6">-&gt; Select <span className="underline">all</span> that apply:</div>
             <div className="ml-8 mt-1"><Checkbox checked={false} /> Home Modification/Adaptation (such as doorway widening to accommodate a wheelchair, tub cut, roll-in shower)</div>
             <div className="ml-8"><Checkbox checked={false} /> Personal Emergency Response System (also known as PERS)</div>
             <div className="ml-8"><Checkbox checked={false} /> Other, please specify:</div>
@@ -1133,7 +1130,7 @@ export function PrintableKaiserReferralForm({
               <EditableBox className="h-[28px]" />
             </div>
             <div className="mt-3 font-bold">5.3) WHAT IS THE MEMBER&apos;S HOME OWNERSHIP STATUS?</div>
-            <div className="ml-6">-> Select the <span className="underline">one</span> that applies:</div>
+            <div className="ml-6">-&gt; Select the <span className="underline">one</span> that applies:</div>
             <div className="ml-8 mt-1"><Checkbox checked={false} /> A) Owns their home</div>
             <div className="ml-8"><Checkbox checked={false} /> B) Rents their home</div>
             <div className="ml-8"><Checkbox checked={false} /> C) Other, please specify:</div>
@@ -1208,12 +1205,12 @@ export function PrintableKaiserReferralForm({
               </ul>
             </div>
             <div className="mt-3 font-bold">7.1) THE MEMBER MUST HAVE POORLY CONTROLLED ASTHMA AS DOCUMENTED BY:</div>
-            <div className="ml-6">-> Select the one that applies:</div>
+            <div className="ml-6">-&gt; Select the one that applies:</div>
             <div className="ml-8 mt-1"><Checkbox checked={false} /> A) ED visit, or hospitalization or two sick/urgent care visits in the past 12 months; <span className="font-semibold">OR</span></div>
             <div className="ml-8"><Checkbox checked={false} /> B) Asthma Control Test score of 19 or lower; <span className="font-semibold">OR</span></div>
             <div className="ml-8"><Checkbox checked={false} /> C) Have a recommendation from a licensed health care provider that the service will likely avoid asthma-related hospitalizations, ED visits, and other high-cost services</div>
             <div className="mt-3 font-bold">7.2) WHAT IS THE MEMBER REQUESTING?</div>
-            <div className="ml-6">-> Select <span className="underline">all</span> that apply:</div>
+            <div className="ml-6">-&gt; Select <span className="underline">all</span> that apply:</div>
             <div className="ml-8 mt-1"><Checkbox checked={false} /> Allergen-impermeable mattress and pillow dustcovers</div>
             <div className="ml-8"><Checkbox checked={false} /> High-efficiency particulate air (HEPA) filtered vacuums</div>
             <div className="ml-8"><Checkbox checked={false} /> Integrated Pest Management (IPM) services</div>
@@ -1228,7 +1225,7 @@ export function PrintableKaiserReferralForm({
               <EditableBox className="h-[28px]" />
             </div>
             <div className="mt-3 font-bold">7.3) WHAT IS THE MEMBER&apos;S HOME OWNERSHIP STATUS?</div>
-            <div className="ml-6">-> Select the <span className="underline">one</span> that applies:</div>
+            <div className="ml-6">-&gt; Select the <span className="underline">one</span> that applies:</div>
             <div className="ml-8 mt-1"><Checkbox checked={false} /> A) Owns their home</div>
             <div className="ml-8"><Checkbox checked={false} /> B) Rents their home</div>
             <div className="ml-8"><Checkbox checked={false} /> C) Other, please specify:</div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 // Initialize Firebase Admin
 let adminDb: any;
@@ -20,6 +21,11 @@ try {
 
 export async function POST(request: NextRequest) {
   try {
+    const adminCheck = await requireAdminApiAuth(request, { requireSuperAdmin: false, requireTwoFactor: true });
+    if (!adminCheck.ok) {
+      return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
+    }
+
     const { applicationId, userId, reminderType = 'email' } = await request.json();
 
     if (!applicationId) {
@@ -29,8 +35,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // For now, return a simple success response since Firebase Admin is not properly configured
+    // In non-production development, allow a simulated response if admin SDK is unavailable.
     if (!adminDb) {
+      if (process.env.NODE_ENV === 'production') {
+        return NextResponse.json(
+          { success: false, error: 'Server misconfiguration: Firebase Admin is unavailable.' },
+          { status: 500 }
+        );
+      }
       console.log('Firebase Admin not available, simulating CS Summary reminder');
       return NextResponse.json({
         success: true,

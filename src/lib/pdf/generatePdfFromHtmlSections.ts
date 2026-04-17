@@ -3,6 +3,11 @@ export type PdfFromHtmlOptions = {
   scale?: number;
   orientation?: 'portrait' | 'landscape';
   format?: 'letter';
+  topBufferPts?: number;
+  treatEachSectionAsSinglePage?: boolean;
+  imageFormat?: 'jpeg' | 'png';
+  jpegQuality?: number;
+  fitSafetyScale?: number;
 };
 
 async function waitForPrintableAssets(root: HTMLElement) {
@@ -51,6 +56,20 @@ async function canvasToJpegBytes(canvas: HTMLCanvasElement, quality = 0.92): Pro
       },
       'image/jpeg',
       quality
+    );
+  });
+  const ab = await blob.arrayBuffer();
+  return new Uint8Array(ab);
+}
+
+async function canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+  const blob: Blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => {
+        if (!b) reject(new Error('Failed to encode PDF page image.'));
+        else resolve(b);
+      },
+      'image/png'
     );
   });
   const ab = await blob.arrayBuffer();
@@ -224,6 +243,9 @@ export async function generatePdfFromHtmlSections(
   const scale = params.options?.scale ?? 2;
   const orientation = params.options?.orientation ?? 'portrait';
   const format = params.options?.format ?? 'letter';
+  const imageFormat = params.options?.imageFormat ?? 'jpeg';
+  const jpegQuality = params.options?.jpegQuality ?? 0.92;
+  const fitSafetyScale = params.options?.fitSafetyScale ?? 0.999;
   if (format !== 'letter') {
     throw new Error('Only letter format is supported.');
   }
@@ -233,9 +255,10 @@ export async function generatePdfFromHtmlSections(
   const headerBlockPts = params.headerText ? 24 : 0;
   // Extra breathing room above the captured content to prevent any "top clipped" look
   // caused by renderer rounding or tight fit-to-page scaling.
-  const topBufferPts = 30;
+  const topBufferPts = params.options?.topBufferPts ?? 30;
   const contentWidthPts = pageSize.width - marginPts * 2;
   const contentHeightPts = pageSize.height - marginPts * 2 - headerBlockPts - topBufferPts;
+  const treatEachSectionAsSinglePage = params.options?.treatEachSectionAsSinglePage === true;
 
   const finalDoc = await PDFDocument.create();
   const MAX_CANVAS_HEIGHT = 24000;
@@ -281,6 +304,41 @@ export async function generatePdfFromHtmlSections(
     }
 
     if (fullCanvas) {
+      if (treatEachSectionAsSinglePage) {
+        const image =
+          imageFormat === 'png'
+            ? await finalDoc.embedPng(await canvasToPngBytes(fullCanvas))
+            : await finalDoc.embedJpg(await canvasToJpegBytes(fullCanvas, jpegQuality));
+
+        const page = finalDoc.addPage([pageSize.width, pageSize.height]);
+        if (params.headerText) {
+          const headerFont = await finalDoc.embedFont(StandardFonts.Helvetica);
+          const headerSize = 9;
+          const headerY = pageSize.height - marginPts - 12;
+          page.drawText(String(params.headerText), {
+            x: marginPts,
+            y: headerY,
+            size: headerSize,
+            font: headerFont,
+            color: rgb(0.25, 0.25, 0.25),
+          });
+          page.drawLine({
+            start: { x: marginPts, y: pageSize.height - marginPts - 18 },
+            end: { x: pageSize.width - marginPts, y: pageSize.height - marginPts - 18 },
+            thickness: 0.5,
+            color: rgb(0.7, 0.7, 0.7),
+          });
+        }
+
+        const fitScale = Math.min(contentWidthPts / fullCanvas.width, contentHeightPts / fullCanvas.height) * fitSafetyScale;
+        const drawWidth = fullCanvas.width * fitScale;
+        const drawHeight = fullCanvas.height * fitScale;
+        const x = marginPts;
+        const y = marginPts + Math.max(0, contentHeightPts - drawHeight);
+        page.drawImage(image, { x, y, width: drawWidth, height: drawHeight });
+        continue;
+      }
+
       const fullCtx = fullCanvas.getContext('2d');
       let yPx = 0;
       while (yPx < fullCanvas.height) {
@@ -308,8 +366,10 @@ export async function generatePdfFromHtmlSections(
           ctx.drawImage(fullCanvas, 0, yPx, fullCanvas.width, sliceH, 0, 0, fullCanvas.width, sliceH);
         }
 
-        const jpgBytes = await canvasToJpegBytes(sliceCanvas, 0.92);
-        const jpg = await finalDoc.embedJpg(jpgBytes);
+        const image =
+          imageFormat === 'png'
+            ? await finalDoc.embedPng(await canvasToPngBytes(sliceCanvas))
+            : await finalDoc.embedJpg(await canvasToJpegBytes(sliceCanvas, jpegQuality));
 
         const page = finalDoc.addPage([pageSize.width, pageSize.height]);
         if (params.headerText) {
@@ -331,12 +391,12 @@ export async function generatePdfFromHtmlSections(
           });
         }
 
-        const fitScale = Math.min(contentWidthPts / sliceCanvas.width, contentHeightPts / sliceCanvas.height) * 0.999;
+        const fitScale = Math.min(contentWidthPts / sliceCanvas.width, contentHeightPts / sliceCanvas.height) * fitSafetyScale;
         const drawWidth = sliceCanvas.width * fitScale;
         const drawHeight = sliceCanvas.height * fitScale;
         const x = marginPts;
         const y = marginPts + Math.max(0, contentHeightPts - drawHeight);
-        page.drawImage(jpg, { x, y, width: drawWidth, height: drawHeight });
+        page.drawImage(image, { x, y, width: drawWidth, height: drawHeight });
 
         if (yPx + sliceH >= fullCanvas.height) break;
         yPx += sliceH;
@@ -405,8 +465,10 @@ export async function generatePdfFromHtmlSections(
         }
       }
 
-      const jpgBytes = await canvasToJpegBytes(finalCanvas, 0.92);
-      const jpg = await finalDoc.embedJpg(jpgBytes);
+      const image =
+        imageFormat === 'png'
+          ? await finalDoc.embedPng(await canvasToPngBytes(finalCanvas))
+          : await finalDoc.embedJpg(await canvasToJpegBytes(finalCanvas, jpegQuality));
 
       const page = finalDoc.addPage([pageSize.width, pageSize.height]);
       if (params.headerText) {
@@ -429,12 +491,12 @@ export async function generatePdfFromHtmlSections(
         });
       }
       // Slightly under-fit to avoid any edge clipping from floating point rounding.
-      const fitScale = Math.min(contentWidthPts / finalCanvas.width, contentHeightPts / finalCanvas.height) * 0.999;
+      const fitScale = Math.min(contentWidthPts / finalCanvas.width, contentHeightPts / finalCanvas.height) * fitSafetyScale;
       const drawWidth = finalCanvas.width * fitScale;
       const drawHeight = finalCanvas.height * fitScale;
       const x = marginPts;
       const y = marginPts + Math.max(0, contentHeightPts - drawHeight);
-      page.drawImage(jpg, { x, y, width: drawWidth, height: drawHeight });
+      page.drawImage(image, { x, y, width: drawWidth, height: drawHeight });
 
       // Advance to next slice.
       if (offsetY + desiredSliceHeightPx >= sourceHeightPx) break;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 
 type CommandBody = {
   idToken?: string;
@@ -8,27 +8,6 @@ type CommandBody = {
   targetUids?: string[];
   resumeNotifications?: boolean;
 };
-
-async function requireSuperAdmin(idToken: string) {
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = String(decoded?.email || '').trim().toLowerCase();
-  if (!uid || !email) throw new Error('Invalid token');
-
-  let isSuperAdmin = Boolean((decoded as any)?.superAdmin) || isHardcodedAdminEmail(email);
-  if (!isSuperAdmin) {
-    const [byUid, byEmail] = await Promise.all([
-      adminDb.collection('roles_super_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(email).get(),
-    ]);
-    isSuperAdmin = byUid.exists || byEmail.exists;
-  }
-  if (!isSuperAdmin) throw new Error('Super admin access required');
-  return { adminDb, uid, email };
-}
 
 async function resolveTargetUids(params: {
   adminDb: any;
@@ -69,7 +48,11 @@ export async function POST(request: NextRequest) {
     const resumeNotifications = body?.resumeNotifications !== false;
     const targetUidsInput = Array.isArray(body?.targetUids) ? body!.targetUids! : [];
 
-    const { adminDb, uid, email } = await requireSuperAdmin(idToken);
+    const authz = await requireAdminApiAuthFromIdToken(idToken, { requireSuperAdmin: true, requireTwoFactor: true });
+    if (!authz.ok) {
+      return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+    }
+    const { adminDb, uid, email } = authz;
     const targetUids = await resolveTargetUids({
       adminDb,
       applyAll,

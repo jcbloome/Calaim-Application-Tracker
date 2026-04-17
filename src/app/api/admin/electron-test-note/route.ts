@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 
 type Body = {
   idToken?: string;
@@ -7,34 +7,6 @@ type Body = {
   message?: string;
   priority?: 'General' | 'Priority' | 'Urgent' | string;
 };
-
-async function requireSuperAdmin(idToken: string) {
-  const adminModule = await import('@/firebase-admin');
-  const admin = adminModule.default;
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = String(decoded?.email || '').trim().toLowerCase();
-  if (!uid || !email) throw new Error('Invalid token');
-
-  let isSuperAdmin = Boolean((decoded as any)?.superAdmin) || isHardcodedAdminEmail(email);
-  if (!isSuperAdmin) {
-    const [uidDoc, emailDoc] = await Promise.all([
-      adminDb.collection('roles_super_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(email).get(),
-    ]);
-    isSuperAdmin = uidDoc.exists || emailDoc.exists;
-  }
-  if (!isSuperAdmin) throw new Error('Super admin access required');
-  return {
-    admin,
-    adminDb,
-    uid,
-    email,
-    senderName: String(decoded?.name || decoded?.email || 'Super Admin').trim() || 'Super Admin'
-  };
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -50,7 +22,15 @@ export async function POST(request: NextRequest) {
 
     const message = String(body?.message || 'Test Electron popup from Super Admin').trim();
     const priority = String(body?.priority || 'Priority').trim() || 'Priority';
-    const { admin, adminDb, uid, senderName } = await requireSuperAdmin(idToken);
+    const authz = await requireAdminApiAuthFromIdToken(idToken, { requireSuperAdmin: true, requireTwoFactor: true });
+    if (!authz.ok) {
+      return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+    }
+    const adminModule = await import('@/firebase-admin');
+    const admin = adminModule.default;
+    const adminDb = adminModule.adminDb;
+    const uid = authz.uid;
+    const senderName = String(authz.name || authz.email || 'Super Admin').trim() || 'Super Admin';
     const nowTs = admin.firestore.FieldValue.serverTimestamp();
 
     await Promise.all(

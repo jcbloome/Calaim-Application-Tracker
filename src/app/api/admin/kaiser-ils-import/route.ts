@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/firebase-admin';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { adminDb } from '@/firebase-admin';
+import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
 
@@ -8,33 +8,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
-
-async function requireAdminFromToken(idToken: string) {
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = normalizeEmail((decoded as any)?.email);
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
-  if (!isAdmin && isHardcodedAdminEmail(email)) isAdmin = true;
-  if (!isAdmin) {
-    const [adminRole, superAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(uid).get(),
-    ]);
-    isAdmin = adminRole.exists || superAdminRole.exists;
-    if (!isAdmin && email) {
-      const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-        adminDb.collection('roles_admin').doc(email).get(),
-        adminDb.collection('roles_super_admin').doc(email).get(),
-      ]);
-      isAdmin = emailAdminRole.exists || emailSuperAdminRole.exists;
-    }
-  }
-
-  if (!isAdmin) return { ok: false as const, status: 403, error: 'Admin privileges required' };
-  return { ok: true as const, uid, email };
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -48,7 +21,7 @@ export async function POST(req: NextRequest) {
     if (!idToken) {
       return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 401 });
     }
-    const authz = await requireAdminFromToken(idToken);
+    const authz = await requireAdminApiAuthFromIdToken(idToken, { requireTwoFactor: true });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }

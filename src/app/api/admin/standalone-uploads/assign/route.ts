@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,40 +22,6 @@ type AssignBody = {
 
 const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
 
-async function requireAdmin(params: { idToken: string }) {
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-
-  const decoded = await adminAuth.verifyIdToken(params.idToken);
-  const uid = clean(decoded?.uid, 128);
-  const email = clean((decoded as any)?.email, 200).toLowerCase();
-
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
-  if (isHardcodedAdminEmail(email)) isAdmin = true;
-
-  if (!isAdmin) {
-    const [adminRole, superAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(uid).get(),
-    ]);
-    isAdmin = adminRole.exists || superAdminRole.exists;
-    if (!isAdmin && email) {
-      const [adminRoleByEmail, superAdminRoleByEmail] = await Promise.all([
-        adminDb.collection('roles_admin').doc(email).get(),
-        adminDb.collection('roles_super_admin').doc(email).get(),
-      ]);
-      isAdmin = adminRoleByEmail.exists || superAdminRoleByEmail.exists;
-    }
-  }
-
-  if (!isAdmin) return { ok: false as const, status: 403, error: 'Admin privileges required' };
-
-  return { ok: true as const, adminDb, decoded: decoded as any };
-}
-
 function splitMemberName(fullName: string) {
   const parts = String(fullName || '')
     .trim()
@@ -68,13 +34,6 @@ function splitMemberName(fullName: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization') || '';
-    const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-    const idToken = tokenMatch?.[1] ? clean(tokenMatch[1], 5000) : '';
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
-    }
-
     const body = (await req.json().catch(() => ({}))) as AssignBody;
     const uploadId = clean(body?.uploadId, 200);
     const mode = body?.mode === 'new' ? 'new' : 'existing';
@@ -88,7 +47,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'target.applicationId is required for existing mode' }, { status: 400 });
     }
 
-    const adminCheck = await requireAdmin({ idToken });
+    const adminCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!adminCheck.ok) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }
@@ -97,8 +56,8 @@ export async function POST(req: NextRequest) {
     const adminDb = adminModule.adminDb;
     const admin = adminModule.default;
 
-    const assignedByUid = clean(adminCheck.decoded?.uid, 128);
-    const assignedByEmail = clean(adminCheck.decoded?.email, 200).toLowerCase() || null;
+    const assignedByUid = clean(adminCheck.uid, 128);
+    const assignedByEmail = clean(adminCheck.email, 200).toLowerCase() || null;
 
     const uploadRef = adminDb.collection('standalone_upload_submissions').doc(uploadId);
     const uploadSnap = await uploadRef.get();

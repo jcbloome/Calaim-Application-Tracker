@@ -1,45 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
-import { adminAuth, adminDb, default as admin } from '@/firebase-admin';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { adminDb, default as admin } from '@/firebase-admin';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
-
-async function requireAdminFromToken(idToken: string) {
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = normalizeEmail((decoded as any)?.email);
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
-  if (!isAdmin && isHardcodedAdminEmail(email)) isAdmin = true;
-  if (!isAdmin) {
-    const [adminRole, superAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(uid).get(),
-    ]);
-    isAdmin = adminRole.exists || superAdminRole.exists;
-    if (!isAdmin && email) {
-      const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-        adminDb.collection('roles_admin').doc(email).get(),
-        adminDb.collection('roles_super_admin').doc(email).get(),
-      ]);
-      isAdmin = emailAdminRole.exists || emailSuperAdminRole.exists;
-    }
-  }
-
-  if (!isAdmin) return { ok: false as const, status: 403, error: 'Admin privileges required' };
-  return { ok: true as const, uid, email };
-}
-
-function getBearerToken(authHeader: string) {
-  const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-  return tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
-}
 
 type RcfeDirectoryStatusDoc = {
   rcfeRegisteredId: string;
@@ -156,13 +122,7 @@ async function fetchRcfeRegistryBedMaps() {
 
 export async function GET(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization') || '';
-    const idToken = getBearerToken(authHeader);
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
-    }
-
-    const authz = await requireAdminFromToken(idToken);
+    const authz = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }
@@ -286,13 +246,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(caspioWriteBlockedResponse(), { status: 423 });
     }
 
-    const authHeader = req.headers.get('authorization') || '';
-    const idToken = getBearerToken(authHeader);
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
-    }
-
-    const authz = await requireAdminFromToken(idToken);
+    const authz = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }

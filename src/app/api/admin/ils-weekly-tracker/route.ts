@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/firebase-admin';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { adminDb } from '@/firebase-admin';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -67,35 +67,6 @@ const getWeekStartYmd = (date = new Date()): string => {
   const diffToMonday = day === 0 ? -6 : 1 - day;
   d.setUTCDate(d.getUTCDate() + diffToMonday);
   return d.toISOString().slice(0, 10);
-};
-
-const authenticate = async (request: NextRequest) => {
-  const authHeader = request.headers.get('authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  if (!token) return { ok: false as const, status: 401, error: 'Missing authorization token' };
-
-  try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    const uid = String(decoded?.uid || '').trim();
-    const email = String((decoded as any)?.email || '').trim().toLowerCase();
-    if (!uid || !email) return { ok: false as const, status: 401, error: 'Unauthorized' };
-
-    let isAllowed = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin) || isHardcodedAdminEmail(email);
-    if (!isAllowed) {
-      const [adminByUid, adminByEmail, superByUid, superByEmail] = await Promise.all([
-        adminDb.collection('roles_admin').doc(uid).get(),
-        adminDb.collection('roles_admin').doc(email).get(),
-        adminDb.collection('roles_super_admin').doc(uid).get(),
-        adminDb.collection('roles_super_admin').doc(email).get(),
-      ]);
-      isAllowed = adminByUid.exists || adminByEmail.exists || superByUid.exists || superByEmail.exists;
-    }
-
-    if (!isAllowed) return { ok: false as const, status: 403, error: 'Admin access required' };
-    return { ok: true as const, uid, email };
-  } catch {
-    return { ok: false as const, status: 401, error: 'Unauthorized' };
-  }
 };
 
 const computeCurrentCounts = async () => {
@@ -198,7 +169,7 @@ const computeCurrentCounts = async () => {
 
 export async function POST(request: NextRequest) {
   try {
-    const authz = await authenticate(request);
+    const authz = await requireAdminApiAuth(request, { requireTwoFactor: true });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }

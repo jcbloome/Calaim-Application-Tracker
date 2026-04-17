@@ -6319,6 +6319,7 @@ function ApplicationDetailPageContent() {
       const referralQuery = new URLSearchParams({
         applicationId: String(applicationId || ''),
         userId: String(appUserId || ''),
+        returnTo: `/admin/applications/${encodeURIComponent(String(applicationId || ''))}?userId=${encodeURIComponent(String(appUserId || ''))}`,
         memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String(
           (application as any)?.memberLastName || ''
         ).trim()}`.trim(),
@@ -8033,6 +8034,7 @@ function ApplicationDetailPageContent() {
               const qaReferralQuery = new URLSearchParams({
                 applicationId: String(applicationId || ''),
                 userId: String(appUserId || ''),
+                returnTo: `/admin/applications/${encodeURIComponent(String(applicationId || ''))}?userId=${encodeURIComponent(String(appUserId || ''))}`,
                 memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
                 memberDob: String((application as any)?.memberDob || '').trim(),
                 memberPhone: qaMemberPhone,

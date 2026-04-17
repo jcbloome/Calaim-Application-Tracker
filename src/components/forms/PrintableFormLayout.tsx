@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { Printer, Download, FileText, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import Image from 'next/image';
+import { generatePdfFromHtmlSections } from '@/lib/pdf/generatePdfFromHtmlSections';
 
 interface PrintableFormLayoutProps {
   title: string;
@@ -77,6 +78,37 @@ export function PrintableFormLayout({
     setIsGeneratingPDF(true);
     
     try {
+      const sectionNodes = Array.from(
+        printableRef.current.querySelectorAll<HTMLElement>('.kaiser-packet-page, [data-pdf-page]')
+      );
+
+      if (sectionNodes.length > 0) {
+        const pdfBytes = await generatePdfFromHtmlSections(sectionNodes, {
+          stampPageNumbers: false,
+          options: {
+            marginIn: 0.08,
+            scale: 3,
+            orientation: 'portrait',
+            format: 'letter',
+            topBufferPts: 4,
+            treatEachSectionAsSinglePage: true,
+            imageFormat: 'png',
+            fitSafetyScale: 0.998,
+          },
+        });
+
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
       // Dynamically import html2pdf to avoid SSR issues
       const mod: any = await import('html2pdf.js');
       const html2pdf = mod?.default ?? mod;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import crypto from 'crypto';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -99,69 +99,8 @@ async function attachSignoffToClaims(params: {
   }
 }
 
-async function requireAdmin(params: { idToken: string }) {
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-
-  const decoded = await adminAuth.verifyIdToken(params.idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = String((decoded as any)?.email || '').trim().toLowerCase();
-  const name = String((decoded as any)?.name || '').trim();
-
-  if (!uid) {
-    return { ok: false as const, status: 401, error: 'Invalid token' };
-  }
-
-  const hasAdminClaim = Boolean((decoded as any)?.admin);
-  const hasSuperAdminClaim = Boolean((decoded as any)?.superAdmin);
-  let isAdmin = hasAdminClaim || hasSuperAdminClaim;
-  let isSuperAdmin = hasSuperAdminClaim;
-
-  // Email allow-list always wins.
-  if (isHardcodedAdminEmail(email)) {
-    isAdmin = true;
-    isSuperAdmin = true;
-  }
-
-  // Even if the token only has `admin` (not `superAdmin`), upgrade to superadmin
-  // when the Firestore role indicates it. This avoids false 403s for true superadmins.
-  if (!isAdmin || !isSuperAdmin) {
-    const [adminRole, superAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(uid).get(),
-    ]);
-
-    isAdmin = isAdmin || adminRole.exists || superAdminRole.exists;
-    isSuperAdmin = isSuperAdmin || superAdminRole.exists;
-
-    // Backward-compat: some roles were stored by email instead of UID.
-    if (email && (!isAdmin || !isSuperAdmin)) {
-      const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-        adminDb.collection('roles_admin').doc(email).get(),
-        adminDb.collection('roles_super_admin').doc(email).get(),
-      ]);
-      isAdmin = isAdmin || emailAdminRole.exists || emailSuperAdminRole.exists;
-      isSuperAdmin = isSuperAdmin || emailSuperAdminRole.exists;
-    }
-  }
-
-  if (!isAdmin) {
-    return { ok: false as const, status: 403, error: 'Admin privileges required' };
-  }
-
-  return { ok: true as const, uid, email, name, adminDb, isSuperAdmin };
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization') || '';
-    const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-    const idToken = tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
-    }
-
     const body = (await req.json().catch(() => ({}))) as any;
     const visitIds: string[] = Array.isArray(body?.visitIds)
       ? body.visitIds.map((v: any) => String(v || '').trim()).filter(Boolean)
@@ -174,7 +113,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'No visitIds provided' }, { status: 400 });
     }
 
-    const adminCheck = await requireAdmin({ idToken });
+    const adminCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!adminCheck.ok) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }

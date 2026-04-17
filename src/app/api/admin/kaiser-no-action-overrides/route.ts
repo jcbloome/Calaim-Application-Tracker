@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,58 +14,6 @@ const normalizeText = (value: unknown) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-async function requireAdmin(idToken: string) {
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-  const decoded = await adminAuth.verifyIdToken(idToken);
-
-  const uid = String(decoded?.uid || '').trim();
-  const email = String((decoded as any)?.email || '').trim().toLowerCase();
-  const claimSuperAdmin = Boolean((decoded as any)?.superAdmin);
-  const claimKaiserManager = Boolean((decoded as any)?.kaiserManager);
-
-  if (!uid) {
-    return { ok: false as const, status: 401, error: 'Invalid token' };
-  }
-
-  let isAdmin = Boolean((decoded as any)?.admin) || claimSuperAdmin;
-  if (!isAdmin && isHardcodedAdminEmail(email)) isAdmin = true;
-  let isSuperAdmin = claimSuperAdmin || isHardcodedAdminEmail(email);
-  let isKaiserManager = claimKaiserManager;
-
-  if (!isAdmin) {
-    const [adminRole, superAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(uid).get(),
-    ]);
-    isAdmin = adminRole.exists || superAdminRole.exists;
-    isSuperAdmin = isSuperAdmin || superAdminRole.exists;
-  }
-
-  if (!isAdmin) {
-    return { ok: false as const, status: 403, error: 'Admin privileges required' };
-  }
-
-  const userDoc = await adminDb.collection('users').doc(uid).get().catch(() => null as any);
-  const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
-  const roleLabel = String(userData?.role || '').trim().toLowerCase();
-  isKaiserManager = Boolean(
-    isKaiserManager ||
-      userData?.isKaiserManager ||
-      roleLabel.includes('kaiser manager')
-  );
-  const displayName = String(
-    userData?.displayName ||
-      `${String(userData?.firstName || '').trim()} ${String(userData?.lastName || '').trim()}`.trim() ||
-      String((decoded as any)?.name || '').trim() ||
-      email ||
-      uid
-  ).trim();
-
-  return { ok: true as const, adminDb, uid, email, isSuperAdmin, isKaiserManager, displayName };
-}
-
 function getBearerToken(req: NextRequest): string {
   const authHeader = req.headers.get('authorization') || '';
   const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
@@ -74,17 +22,13 @@ function getBearerToken(req: NextRequest): string {
 
 export async function GET(req: NextRequest) {
   try {
-    const idToken = getBearerToken(req);
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
-    }
-
-    const adminCheck = await requireAdmin(idToken);
+    const adminCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!adminCheck.ok) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }
 
-    const { adminDb } = adminCheck;
+    const adminModule = await import('@/firebase-admin');
+    const adminDb = adminModule.adminDb;
     const clientIdsParam = String(req.nextUrl.searchParams.get('clientIds') || '').trim();
     const activeOnly = req.nextUrl.searchParams.get('activeOnly') !== 'false';
     const nowMs = Date.now();
@@ -136,11 +80,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const idToken = getBearerToken(req);
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
-    }
-    const adminCheck = await requireAdmin(idToken);
+    const adminCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!adminCheck.ok) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }
@@ -162,14 +102,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'expiresAt must be a future date' }, { status: 400 });
     }
 
-    const { adminDb, uid, email, isSuperAdmin, isKaiserManager, displayName } = adminCheck;
+    const adminModule = await import('@/firebase-admin');
+    const adminDb = adminModule.adminDb;
+    const uid = adminCheck.uid;
+    const email = adminCheck.email;
+    const isSuperAdmin = adminCheck.isSuperAdmin;
+    const userDoc = await adminDb.collection('users').doc(uid).get().catch(() => null as any);
+    const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
+    const roleLabel = String(userData?.role || '').trim().toLowerCase();
+    const isKaiserManager = Boolean(
+      userData?.isKaiserManager ||
+      roleLabel.includes('kaiser manager')
+    );
+    const displayName = String(
+      userData?.displayName ||
+      `${String(userData?.firstName || '').trim()} ${String(userData?.lastName || '').trim()}`.trim() ||
+      adminCheck.name ||
+      email ||
+      uid
+    ).trim();
     if (!isSuperAdmin && !isKaiserManager) {
       return NextResponse.json(
         { success: false, error: 'Only Super Admin or Kaiser Manager can set manager overrides' },
         { status: 403 }
       );
     }
-    const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
 
     const nowMs = Date.now();
@@ -200,11 +157,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const idToken = getBearerToken(req);
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
-    }
-    const adminCheck = await requireAdmin(idToken);
+    const adminCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!adminCheck.ok) {
       return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }
@@ -215,14 +168,31 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'memberId is required' }, { status: 400 });
     }
 
-    const { adminDb, uid, email, isSuperAdmin, isKaiserManager, displayName } = adminCheck;
+    const adminModule = await import('@/firebase-admin');
+    const adminDb = adminModule.adminDb;
+    const uid = adminCheck.uid;
+    const email = adminCheck.email;
+    const isSuperAdmin = adminCheck.isSuperAdmin;
+    const userDoc = await adminDb.collection('users').doc(uid).get().catch(() => null as any);
+    const userData = userDoc && typeof userDoc?.exists === 'function' && userDoc.exists() ? (userDoc.data() as any) : null;
+    const roleLabel = String(userData?.role || '').trim().toLowerCase();
+    const isKaiserManager = Boolean(
+      userData?.isKaiserManager ||
+      roleLabel.includes('kaiser manager')
+    );
+    const displayName = String(
+      userData?.displayName ||
+      `${String(userData?.firstName || '').trim()} ${String(userData?.lastName || '').trim()}`.trim() ||
+      adminCheck.name ||
+      email ||
+      uid
+    ).trim();
     if (!isSuperAdmin && !isKaiserManager) {
       return NextResponse.json(
         { success: false, error: 'Only Super Admin or Kaiser Manager can clear manager overrides' },
         { status: 403 }
       );
     }
-    const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
     const nowMs = Date.now();
 

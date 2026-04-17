@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,18 +25,13 @@ const ET_DATE_FMT = new Intl.DateTimeFormat('en-CA', {
 const todayEt = () => ET_DATE_FMT.format(new Date());
 
 async function requireLogReader(idToken: string) {
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-  const decoded = await adminAuth.verifyIdToken(idToken);
+  const adminCheck = await requireAdminApiAuthFromIdToken(idToken, { requireTwoFactor: true });
+  if (!adminCheck.ok) return adminCheck;
+  const { adminDb, uid, email, decodedClaims } = adminCheck;
 
-  const uid = String(decoded?.uid || '').trim();
-  const email = String((decoded as any)?.email || '').trim().toLowerCase();
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  const claimSuperAdmin = Boolean((decoded as any)?.superAdmin);
-  const claimAdmin = Boolean((decoded as any)?.admin);
-  const claimKaiserManager = Boolean((decoded as any)?.kaiserManager);
+  const claimSuperAdmin = Boolean((decodedClaims as any)?.superAdmin);
+  const claimAdmin = Boolean((decodedClaims as any)?.admin);
+  const claimKaiserManager = Boolean((decodedClaims as any)?.kaiserManager);
   let isSuperAdmin = claimSuperAdmin || isHardcodedAdminEmail(email);
   let isAdmin = claimAdmin || isSuperAdmin;
   let isKaiserManager = claimKaiserManager;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import { adminAuth, adminDb, default as admin } from '@/firebase-admin';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { adminDb, default as admin } from '@/firebase-admin';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,33 +38,6 @@ function getResendClient(): Resend | null {
   return resendClient;
 }
 
-async function requireAdminFromToken(idToken: string) {
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = normalizeEmail((decoded as any)?.email);
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
-  if (!isAdmin && isHardcodedAdminEmail(email)) isAdmin = true;
-  if (!isAdmin) {
-    const [adminRole, superAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(uid).get(),
-      adminDb.collection('roles_super_admin').doc(uid).get(),
-    ]);
-    isAdmin = adminRole.exists || superAdminRole.exists;
-    if (!isAdmin && email) {
-      const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-        adminDb.collection('roles_admin').doc(email).get(),
-        adminDb.collection('roles_super_admin').doc(email).get(),
-      ]);
-      isAdmin = emailAdminRole.exists || emailSuperAdminRole.exists;
-    }
-  }
-
-  if (!isAdmin) return { ok: false as const, status: 403, error: 'Admin privileges required' };
-  return { ok: true as const, uid, email };
-}
-
 const toStatusLabel = (status?: string) => {
   if (status === 'there') return 'Confirmed There';
   if (status === 'not_there') return 'Told Not There';
@@ -86,16 +59,6 @@ const escapeHtml = (value: unknown) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-
-async function requireAdminFromAuthHeader(req: NextRequest) {
-  const authHeader = req.headers.get('authorization') || '';
-  const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-  const idToken = tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
-  if (!idToken) {
-    return { ok: false as const, status: 401, error: 'Missing Authorization Bearer token' };
-  }
-  return requireAdminFromToken(idToken);
-}
 
 const uniqueNonEmpty = (values: unknown[]) =>
   Array.from(new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean)));
@@ -144,7 +107,7 @@ async function loadReplyToContacts() {
 
 export async function GET(req: NextRequest) {
   try {
-    const authz = await requireAdminFromAuthHeader(req);
+    const authz = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }
@@ -265,7 +228,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const authz = await requireAdminFromAuthHeader(req);
+    const authz = await requireAdminApiAuth(req, { requireTwoFactor: true });
     if (!authz.ok) {
       return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
     }

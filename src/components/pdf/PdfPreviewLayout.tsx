@@ -11,6 +11,8 @@ type PdfPreviewLayoutProps = {
   backToEditorHref: string;
   backButtonLabel?: string;
   showBackButtonInHtmlView?: boolean;
+  showDownloadButtonInPdfView?: boolean;
+  showDownloadButtonInHtmlView?: boolean;
   printHref?: string;
   captureRef: RefObject<HTMLDivElement>;
   captureContent: ReactNode;
@@ -31,6 +33,8 @@ export function PdfPreviewLayout({
   backToEditorHref,
   backButtonLabel = 'Back to editor',
   showBackButtonInHtmlView = false,
+  showDownloadButtonInPdfView = true,
+  showDownloadButtonInHtmlView = true,
   printHref,
   captureRef,
   captureContent,
@@ -65,21 +69,23 @@ export function PdfPreviewLayout({
             <Button variant="outline" asChild>
               <Link href={backToEditorHref}>{backButtonLabel}</Link>
             </Button>
-            <Button variant="outline" onClick={handleDownloadPdf} disabled={!pdfUrl || pdfLoading}>
-              {pdfLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generating…
-                </>
-              ) : (
-                <>
-                  <Printer className="mr-2 h-4 w-4" />
-                  Download PDF
-                </>
-              )}
-            </Button>
+            {showDownloadButtonInPdfView ? (
+              <Button variant="outline" onClick={handleDownloadPdf} disabled={!pdfUrl || pdfLoading}>
+                {pdfLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>
+                    <Printer className="mr-2 h-4 w-4" />
+                    Download PDF
+                  </>
+                )}
+              </Button>
+            ) : null}
           </div>
-          {pdfUrl && !pdfLoading ? (
+          {showDownloadButtonInPdfView && pdfUrl && !pdfLoading ? (
             <div className="mt-2 text-xs text-muted-foreground text-right">
               Tip: Use the PDF viewer controls below to print directly from your browser
             </div>
@@ -114,9 +120,11 @@ export function PdfPreviewLayout({
         <Button variant="outline" asChild>
           <Link href={viewPdfHref}>View PDF layout</Link>
         </Button>
-        <Button variant="outline" asChild>
-          <Link href={printHref || viewPdfHref}>Download PDF</Link>
-        </Button>
+        {showDownloadButtonInHtmlView ? (
+          <Button variant="outline" asChild>
+            <Link href={printHref || viewPdfHref}>Download PDF</Link>
+          </Button>
+        ) : null}
       </div>
       {htmlContent}
     </div>

@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 import { adminAuth, adminDb, default as admin } from '@/firebase-admin';
+import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
 const normalizeDate = (value: unknown) => {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -25,37 +24,6 @@ const fmtDate = (value: string) => {
     return value;
   }
 };
-
-async function canUpdateIlsDates(idToken: string) {
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = normalizeEmail((decoded as any)?.email);
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  const hasAdminClaim = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
-  if (hasAdminClaim || isHardcodedAdminEmail(email)) return { ok: true as const, uid, email };
-
-  const [adminRole, superAdminRole, ilsAccess] = await Promise.all([
-    adminDb.collection('roles_admin').doc(uid).get(),
-    adminDb.collection('roles_super_admin').doc(uid).get(),
-    adminDb.collection('system_settings').doc('ils_member_access').get(),
-  ]);
-
-  let isAdmin = adminRole.exists || superAdminRole.exists;
-  if (!isAdmin && email) {
-    const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-      adminDb.collection('roles_admin').doc(email).get(),
-      adminDb.collection('roles_super_admin').doc(email).get(),
-    ]);
-    isAdmin = emailAdminRole.exists || emailSuperAdminRole.exists;
-  }
-  if (isAdmin) return { ok: true as const, uid, email };
-
-  const allowedEmails = ilsAccess.exists ? ((ilsAccess.data()?.allowedEmails || []) as unknown[]) : [];
-  const allowed = allowedEmails.map(normalizeEmail).includes(email);
-  if (!allowed) return { ok: false as const, status: 403, error: 'Unauthorized' };
-  return { ok: true as const, uid, email };
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -95,7 +63,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'No valid date updates provided' }, { status: 400 });
     }
 
-    const authz = await canUpdateIlsDates(idToken);
+    const authz = await requireAdminApiAuthFromIdToken(idToken, { requireTwoFactor: true });
     if (!authz.ok) return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
 
     const updates: Record<string, string> = {};

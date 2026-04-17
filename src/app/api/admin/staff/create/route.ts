@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 function normalizeEmail(email: string) {
   return String(email || '').trim().toLowerCase();
@@ -16,11 +16,9 @@ function randomPassword(length = 14) {
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization') || '';
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    const idToken = match?.[1];
-    if (!idToken) {
-      return NextResponse.json({ error: 'Missing Authorization Bearer token' }, { status: 401 });
+    const authz = await requireAdminApiAuth(request, { requireSuperAdmin: true, requireTwoFactor: true });
+    if (!authz.ok) {
+      return NextResponse.json({ error: authz.error }, { status: authz.status });
     }
 
     const { email, firstName, lastName, role } = await request.json().catch(() => ({}));
@@ -35,25 +33,7 @@ export async function POST(request: NextRequest) {
     const admin = adminModule.default;
     const adminDb = adminModule.adminDb;
     const adminAuth = adminModule.adminAuth;
-
-    const decoded = await adminAuth.verifyIdToken(idToken);
-    const callerUid = decoded.uid;
-    const callerEmail = normalizeEmail(decoded.email || '');
-
-    let callerIsSuperAdmin = false;
-    if (isHardcodedAdminEmail(callerEmail)) {
-      callerIsSuperAdmin = true;
-    } else {
-      const [superByUid, superByEmail] = await Promise.all([
-        adminDb.collection('roles_super_admin').doc(callerUid).get(),
-        callerEmail ? adminDb.collection('roles_super_admin').doc(callerEmail).get() : Promise.resolve({ exists: false } as any)
-      ]);
-      callerIsSuperAdmin = Boolean(superByUid.exists || superByEmail.exists);
-    }
-
-    if (!callerIsSuperAdmin) {
-      return NextResponse.json({ error: 'Super Admin access required' }, { status: 403 });
-    }
+    const callerUid = authz.uid;
 
     const displayName = `${String(firstName || '').trim()} ${String(lastName || '').trim()}`.trim();
     const tempPassword = randomPassword();

@@ -1,44 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
-import { adminAuth, adminDb } from '@/firebase-admin';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-async function requireSuperAdmin(request: NextRequest) {
-  const authHeader = request.headers.get('authorization') || '';
-  const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-  const idToken = tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
-  if (!idToken) {
-    return { ok: false as const, status: 401, error: 'Missing Authorization Bearer token' };
-  }
-
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = String((decoded as any)?.email || '').trim().toLowerCase();
-  if (!uid) {
-    return { ok: false as const, status: 401, error: 'Invalid token' };
-  }
-
-  let isSuperAdmin = Boolean((decoded as any)?.superAdmin);
-  if (isHardcodedAdminEmail(email)) isSuperAdmin = true;
-
-  if (!isSuperAdmin) {
-    const uidDoc = await adminDb.collection('roles_super_admin').doc(uid).get();
-    isSuperAdmin = uidDoc.exists;
-    if (!isSuperAdmin && email) {
-      const emailDoc = await adminDb.collection('roles_super_admin').doc(email).get();
-      isSuperAdmin = emailDoc.exists;
-    }
-  }
-
-  if (!isSuperAdmin) {
-    return { ok: false as const, status: 403, error: 'Super Admin privileges required' };
-  }
-
-  return { ok: true as const };
-}
 
 function toBool(value: unknown, fallback = false): boolean {
   if (typeof value === 'boolean') return value;
@@ -59,7 +24,7 @@ function toInt(value: unknown, fallback: number, min: number, max: number): numb
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireSuperAdmin(request);
+    const auth = await requireAdminApiAuth(request, { requireSuperAdmin: true, requireTwoFactor: true });
     if (!auth.ok) {
       return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
     }

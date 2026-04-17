@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/firebase-admin';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
-import { isBlockedPortalEmail } from '@/lib/blocked-portal-emails';
+import { adminDb } from '@/firebase-admin';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 const SETTINGS_DOC = adminDb.collection('system_settings').doc('ils_member_access');
 const SPECIAL_ILS_STAFF_EMAILS = new Set<string>(['jocelyn@ilshealth.com']);
@@ -134,40 +133,16 @@ async function hasCoreStaffAccess(requester: Requester): Promise<boolean> {
   }
 }
 
-async function getRequester(request: NextRequest): Promise<Requester | null> {
-  const authHeader = request.headers.get('authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  if (!token) return null;
-
-  try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    const uid = String(decoded.uid || '').trim();
-    const email = normalizeEmail((decoded as any).email);
-    const displayName = String((decoded as any).name || '').trim();
-    if (!uid || !email) return null;
-    if (isBlockedPortalEmail(email)) return null;
-
-    let isSuperAdmin = Boolean((decoded as any).superAdmin) || isHardcodedAdminEmail(email);
-    if (!isSuperAdmin) {
-      const [byUid, byEmail] = await Promise.all([
-        adminDb.collection('roles_super_admin').doc(uid).get(),
-        adminDb.collection('roles_super_admin').doc(email).get(),
-      ]);
-      isSuperAdmin = byUid.exists || byEmail.exists;
-    }
-
-    return { uid, email, displayName, isSuperAdmin };
-  } catch {
-    return null;
-  }
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const requester = await getRequester(request);
-    if (!requester) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    }
+    const authz = await requireAdminApiAuth(request, { requireTwoFactor: true });
+    if (!authz.ok) return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+    const requester: Requester = {
+      uid: authz.uid,
+      email: authz.email,
+      displayName: authz.name,
+      isSuperAdmin: authz.isSuperAdmin,
+    };
 
     const doc = await SETTINGS_DOC.get();
     const data = (doc.exists ? doc.data() : {}) as any;
@@ -211,8 +186,15 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const requester = await getRequester(request);
-    if (!requester?.isSuperAdmin) {
+    const authz = await requireAdminApiAuth(request, { requireTwoFactor: true });
+    if (!authz.ok) return NextResponse.json({ success: false, error: authz.error }, { status: authz.status });
+    const requester: Requester = {
+      uid: authz.uid,
+      email: authz.email,
+      displayName: authz.name,
+      isSuperAdmin: authz.isSuperAdmin,
+    };
+    if (!requester.isSuperAdmin) {
       return NextResponse.json({ success: false, error: 'Super Admin required' }, { status: 403 });
     }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuthFromIdToken } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -157,19 +158,15 @@ async function refreshMemberNotesFromCaspio(params: {
 }
 
 async function requireAdmin(idToken: string) {
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-  const decoded = await adminAuth.verifyIdToken(idToken);
-
-  const uid = String(decoded?.uid || '').trim();
-  const email = String((decoded as any)?.email || '').trim().toLowerCase();
-  const claimSuperAdmin = Boolean((decoded as any)?.superAdmin);
-  const claimKaiserManager = Boolean((decoded as any)?.kaiserManager);
+  const adminCheck = await requireAdminApiAuthFromIdToken(idToken, { requireTwoFactor: true });
+  if (!adminCheck.ok) return adminCheck;
+  const { adminDb, uid, email, decodedClaims } = adminCheck;
+  const claimSuperAdmin = Boolean((decodedClaims as any)?.superAdmin);
+  const claimKaiserManager = Boolean((decodedClaims as any)?.kaiserManager);
 
   if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
 
-  let isAdmin = Boolean((decoded as any)?.admin) || claimSuperAdmin;
+  let isAdmin = Boolean((decodedClaims as any)?.admin) || claimSuperAdmin;
   if (!isAdmin && isHardcodedAdminEmail(email)) isAdmin = true;
   let isSuperAdmin = claimSuperAdmin || isHardcodedAdminEmail(email);
   let isKaiserManager = claimKaiserManager;
@@ -199,11 +196,21 @@ async function requireAdmin(idToken: string) {
   const displayName = String(
     userData?.displayName ||
       `${String(userData?.firstName || '').trim()} ${String(userData?.lastName || '').trim()}`.trim() ||
-      String((decoded as any)?.name || '').trim() ||
+      String((decodedClaims as any)?.name || '').trim() ||
       email
   ).trim();
 
-  return { ok: true as const, adminDb, uid, email, displayName, userData, decoded, isSuperAdmin, isKaiserManager };
+  return {
+    ok: true as const,
+    adminDb,
+    uid,
+    email,
+    displayName,
+    userData,
+    decoded: decodedClaims,
+    isSuperAdmin,
+    isKaiserManager,
+  };
 }
 
 function canSubmitForStaff(staffName: string, authz: { email: string; displayName: string; userData: any; decoded: any }) {

@@ -57,7 +57,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 text-blue-800">
             <Shield className="h-4 w-4" />
             <span className="text-sm font-medium">Admin Session Active</span>
-            <span className="text-xs text-blue-600">• Testing mode - 2FA temporarily disabled</span>
+            <span className="text-xs text-blue-600">• Two-factor authentication is required for protected admin routes</span>
           </div>
         </CardContent>
       </Card>

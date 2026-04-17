@@ -1,63 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-async function requireAdmin(params: { idToken: string }) {
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-
-  const decoded = await adminAuth.verifyIdToken(params.idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = String((decoded as any)?.email || '').trim().toLowerCase();
-  const name = String((decoded as any)?.name || '').trim();
-
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  const hasAdminClaim = Boolean((decoded as any)?.admin);
-  const hasSuperAdminClaim = Boolean((decoded as any)?.superAdmin);
-  let isAdmin = hasAdminClaim || hasSuperAdminClaim;
-  let isSuperAdmin = hasSuperAdminClaim;
-
-  if (isHardcodedAdminEmail(email)) {
-    isAdmin = true;
-    isSuperAdmin = true;
-  }
-
-  if (!isAdmin || !isSuperAdmin) {
-    const adminModule2 = await import('@/firebase-admin');
-    const db = adminModule2.adminDb;
-    const [adminRole, superAdminRole] = await Promise.all([
-      db.collection('roles_admin').doc(uid).get(),
-      db.collection('roles_super_admin').doc(uid).get(),
-    ]);
-    isAdmin = isAdmin || adminRole.exists || superAdminRole.exists;
-    isSuperAdmin = isSuperAdmin || superAdminRole.exists;
-
-    if (email && (!isAdmin || !isSuperAdmin)) {
-      const [emailAdminRole, emailSuperAdminRole] = await Promise.all([
-        db.collection('roles_admin').doc(email).get(),
-        db.collection('roles_super_admin').doc(email).get(),
-      ]);
-      isAdmin = isAdmin || emailAdminRole.exists || emailSuperAdminRole.exists;
-      isSuperAdmin = isSuperAdmin || emailSuperAdminRole.exists;
-    }
-  }
-
-  if (!isAdmin) return { ok: false as const, status: 403, error: 'Admin privileges required' };
-
-  return { ok: true as const, uid, email, name, adminDb, isSuperAdmin };
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization') || '';
-    const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-    const idToken = tokenMatch?.[1] ? String(tokenMatch[1]).trim() : '';
-    if (!idToken) {
-      return NextResponse.json({ success: false, error: 'Missing Authorization Bearer token' }, { status: 401 });
+    const adminCheck = await requireAdminApiAuth(req, { requireTwoFactor: true });
+    if (!adminCheck.ok) {
+      return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
     }
 
     const body = (await req.json().catch(() => ({}))) as any;
@@ -66,16 +17,13 @@ export async function POST(req: NextRequest) {
     if (!visitId) return NextResponse.json({ success: false, error: 'visitId is required' }, { status: 400 });
     if (!reason) return NextResponse.json({ success: false, error: 'Delete reason is required' }, { status: 400 });
 
-    const adminCheck = await requireAdmin({ idToken });
-    if (!adminCheck.ok) {
-      return NextResponse.json({ success: false, error: adminCheck.error }, { status: adminCheck.status });
-    }
-
     const adminModule = await import('@/firebase-admin');
     const admin = adminModule.default;
     const adminDb = adminModule.adminDb;
 
-    const { uid: actorUid, email: actorEmail, name: actorName } = adminCheck;
+    const actorUid = adminCheck.uid;
+    const actorEmail = adminCheck.email;
+    const actorName = adminCheck.name;
     const actorLabel = String(actorName || actorEmail || 'Admin').trim();
 
     // Allow delete if Super Admin OR explicitly granted permission in Staff Management.

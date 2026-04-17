@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
-import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 import { Resend } from 'resend';
 
 export const runtime = 'nodejs';
@@ -224,38 +224,17 @@ function buildRejectionEmailTemplate(params: {
 }
 
 async function requireClaimsAccess(request: NextRequest) {
-  const authHeader = request.headers.get('authorization') || '';
-  const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  if (!idToken) {
-    return { ok: false as const, status: 401, error: 'Missing bearer token' };
+  const adminCheck = await requireAdminApiAuth(request, { requireTwoFactor: true });
+  if (!adminCheck.ok) {
+    return adminCheck;
   }
+  const { adminDb, uid, email, decodedClaims, isSuperAdmin } = adminCheck;
+  const claimsFromToken = Boolean((decodedClaims as Record<string, unknown>)?.isClaimsStaff);
 
-  const adminModule = await import('@/firebase-admin');
-  const adminAuth = adminModule.adminAuth;
-  const adminDb = adminModule.adminDb;
-  const decoded = await adminAuth.verifyIdToken(idToken);
-  const uid = String(decoded?.uid || '').trim();
-  const email = String((decoded as Record<string, unknown>)?.email || '').trim().toLowerCase();
-  if (!uid) return { ok: false as const, status: 401, error: 'Invalid token' };
-
-  let isSuperAdmin = Boolean((decoded as Record<string, unknown>)?.superAdmin) || isHardcodedAdminEmail(email);
-  const claimsFromToken = Boolean((decoded as Record<string, unknown>)?.isClaimsStaff);
-  const adminFromToken = Boolean((decoded as Record<string, unknown>)?.admin);
-
-  const [adminByUid, superByUid, adminByEmail, superByEmail, userByUid, userByEmail] = await Promise.all([
-    adminDb.collection('roles_admin').doc(uid).get(),
-    adminDb.collection('roles_super_admin').doc(uid).get(),
-    adminDb.collection('roles_admin').doc(email).get(),
-    adminDb.collection('roles_super_admin').doc(email).get(),
+  const [userByUid, userByEmail] = await Promise.all([
     adminDb.collection('users').doc(uid).get(),
     adminDb.collection('users').doc(email).get(),
   ]);
-
-  if (!isSuperAdmin) {
-    isSuperAdmin = superByUid.exists || superByEmail.exists;
-  }
-
-  const isAdmin = adminFromToken || adminByUid.exists || adminByEmail.exists || isSuperAdmin;
   const userData = userByUid.exists
     ? (userByUid.data() as Record<string, unknown>)
     : userByEmail.exists
@@ -263,9 +242,6 @@ async function requireClaimsAccess(request: NextRequest) {
       : null;
   const isClaimsStaff = claimsFromToken || Boolean(userData?.isClaimsStaff) || isSuperAdmin;
 
-  if (!isAdmin) {
-    return { ok: false as const, status: 403, error: 'Admin privileges required' };
-  }
   if (!isClaimsStaff && !isSuperAdmin) {
     return { ok: false as const, status: 403, error: 'Claims-access staff privileges required' };
   }
