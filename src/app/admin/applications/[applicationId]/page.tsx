@@ -468,6 +468,12 @@ const notEligibleReasonOptions = [
   'Other'
 ];
 
+const STRICT_UPLOAD_REQUIRED_FOR_COMPLETION = new Set([
+  "LIC 602A - Physician's Report",
+  'Medicine List',
+  'Declaration of Eligibility',
+]);
+
 const getAuthorizationTypes = (healthPlan?: string) => {
   const normalized = String(healthPlan || '').toLowerCase();
   if (normalized.includes('health net')) {
@@ -480,6 +486,9 @@ const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
   healthPlan?: string
 ) => {
+  const normalizedPlan = String(healthPlan || '').trim().toLowerCase();
+  const isHealthNet = normalizedPlan.includes('health net');
+  const isKaiser = normalizedPlan.includes('kaiser');
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/admin/forms/review', editHref: '/admin/forms/edit', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, Freedom of Choice, and Room & Board Commitment waiver form.', type: 'online-form', href: '/admin/forms/waivers', icon: FileText },
@@ -495,12 +504,29 @@ const getPathwayRequirements = (
       icon: LinkIcon,
       links: [
         { name: 'Health Net Portal', url: 'https://sso.entrykeyid.com/as/authorization.oauth2?response_type=code&client_id=44eb17c3-cf1e-4479-a811-61d23ae8ffbd&scope=openid%20profile&state=AHTpvDa32bFDvM5ov3mwyNx0K75Gqqp4McPzc6oUgds%3D&redirect_uri=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&code_challenge_method=S256&nonce=maCZdZx6F1X7mug7ZQiIcWILmxz29uLnBvZQ6mNj4LE&code_challenge=45qFtSM3GXeNCBHkpyU9vJmOwqtKUwYdcb7VJBbw6YA&app_origin=https://provider.healthnetcalifornia.com/careconnect/login/oauth2/code/pingcloud&brand=healthnet' },
+        { name: 'Availity (Health Net double-check)', url: 'https://essentials.availity.com/static/public/onb/onboarding-ui-apps/availity-fr-ui/#/login' },
         { name: 'Kaiser South Portal', url: 'https://healthy.kaiserpermanente.org/southern-california/community-providers/eligibility' },
         { name: 'Kaiser North Portal', url: 'https://healthy.kaiserpermanente.org/northern-california/community-providers/eligibility' },
       ],
       href: '#'
     },
   ];
+
+  const eligibilityReq = commonRequirements.find((req) => req.id === 'eligibility-screenshot') as
+    | { links?: Array<{ name: string; url: string }> }
+    | undefined;
+  if (eligibilityReq && Array.isArray(eligibilityReq.links)) {
+    if (isHealthNet) {
+      eligibilityReq.links = eligibilityReq.links.filter((link) => {
+        const name = String(link?.name || '').toLowerCase();
+        return name.includes('health net') || name.includes('availity');
+      });
+    } else if (isKaiser) {
+      eligibilityReq.links = eligibilityReq.links.filter((link) =>
+        String(link?.name || '').toLowerCase().includes('kaiser')
+      );
+    }
+  }
 
   // Proof of income is required for Kaiser but not required for Health Net.
   const normalizedHealthPlan = String(healthPlan || '').trim();
@@ -4214,7 +4240,18 @@ function ApplicationDetailPageContent() {
       return 'Pending';
     }
 
+    const requiresStrictUpload = STRICT_UPLOAD_REQUIRED_FOR_COMPLETION.has(componentKey);
     const hasCompleted = statuses.some((status) => status === 'completed');
+    if (requiresStrictUpload && hasCompleted) {
+      const hasUploadedFile = matchingForms.some((form: any) => {
+        const formStatus = String(form?.status || '').trim().toLowerCase();
+        if (formStatus !== 'completed') return false;
+        const filePath = String(form?.filePath || '').trim();
+        const fileUrl = String(form?.downloadURL || '').trim();
+        return Boolean(filePath || fileUrl);
+      });
+      return hasUploadedFile ? 'Completed' : 'Pending';
+    }
     if (hasCompleted) {
       return 'Completed';
     }
@@ -4683,6 +4720,14 @@ function ApplicationDetailPageContent() {
 
   const markFormAsComplete = async (formName: string) => {
     if (!application || !applicationId || !appUserId) return;
+    if (STRICT_UPLOAD_REQUIRED_FOR_COMPLETION.has(formName)) {
+      toast({
+        variant: 'destructive',
+        title: 'Upload required',
+        description: `${formName} cannot be marked complete without uploading the required document.`,
+      });
+      return;
+    }
     
     try {
       await handleFormStatusUpdate([{
@@ -5981,10 +6026,25 @@ function ApplicationDetailPageContent() {
       return;
     }
     const note = String((application as any)?.calaimTrackingReason || '').trim();
+    const isNotEligible = String((application as any)?.calaimTrackingStatus || '').trim() === 'Not CalAIM Eligible';
+    const notEligibleReason = String((application as any)?.calaimNotEligibleReason || '').trim();
     if (!note) {
       toast({ variant: 'destructive', title: 'Missing Note', description: 'Add a note before sending.' });
       return;
     }
+    if (isNotEligible && !notEligibleReason) {
+      toast({ variant: 'destructive', title: 'Missing Reason', description: 'Select a not-eligible reason before sending.' });
+      return;
+    }
+    const screenshotLinks = getEligibilityScreenshotUploads()
+      .map((upload) => String(upload.downloadURL || '').trim())
+      .filter(Boolean);
+    const screenshotSection =
+      screenshotLinks.length > 0
+        ? `\n\nEligibility screenshot link(s):\n${screenshotLinks.map((url) => `- ${url}`).join('\n')}`
+        : '';
+    const reasonSection = isNotEligible && notEligibleReason ? `Reason: ${notEligibleReason}\n\n` : '';
+    const composedMessage = `${reasonSection}${note}${screenshotSection}`.trim();
     setIsSendingEligibilityNote(true);
     try {
       const response = await fetch('/api/email/send', {
@@ -5993,10 +6053,10 @@ function ApplicationDetailPageContent() {
         body: JSON.stringify({
           to: application.referrerEmail,
           includeBcc: false,
-          subject: `CalAIM Eligibility Update for ${application.memberFirstName} ${application.memberLastName}`,
+          subject: `${isNotEligible ? 'CalAIM Ineligibility Notice' : 'CalAIM Eligibility Update'} for ${application.memberFirstName} ${application.memberLastName}`,
           memberName: application.referrerName || 'there',
           staffName: 'The Connections Team',
-          message: note,
+          message: composedMessage,
           status: (application.status || 'In Progress') as any
         })
       });
@@ -6004,9 +6064,41 @@ function ApplicationDetailPageContent() {
       if (!result.success) {
         throw new Error(result.message || 'Failed to send note');
       }
+      if (isNotEligible && docRef) {
+        const historyEntry = {
+          status: 'On Hold',
+          reason: `Auto hold after ineligibility notice. ${note}`.trim(),
+          updatedBy: user?.displayName || user?.email || 'Admin',
+          updatedByUid: user?.uid || null,
+          updatedAtIso: new Date().toISOString(),
+        };
+        const holdPatch = {
+          adminProcessingStatus: 'On Hold',
+          adminProcessingReason: `Ineligible: ${notEligibleReason || 'No reason selected'}${note ? ` - ${note}` : ''}`.trim(),
+          adminProcessingUpdatedAt: serverTimestamp(),
+          adminProcessingUpdatedBy: user?.displayName || user?.email || 'Admin',
+          adminProcessingUpdatedByUid: user?.uid || null,
+          adminProcessingHistory: arrayUnion(historyEntry),
+          lastUpdated: serverTimestamp(),
+        } as Record<string, any>;
+        await setDoc(docRef, holdPatch, { merge: true });
+        setApplication((prev) =>
+          prev
+            ? ({
+                ...(prev as any),
+                adminProcessingStatus: 'On Hold',
+                adminProcessingReason: `Ineligible: ${notEligibleReason || 'No reason selected'}${note ? ` - ${note}` : ''}`.trim(),
+                adminProcessingUpdatedBy: user?.displayName || user?.email || 'Admin',
+                adminProcessingUpdatedByUid: user?.uid || null,
+              } as any)
+            : prev
+        );
+      }
       toast({
         title: 'Note Sent',
-        description: 'Your eligibility note was sent to the referrer.',
+        description: isNotEligible
+          ? 'Ineligibility notice sent. Application has been moved to On Hold.'
+          : 'Your eligibility note was sent to the referrer.',
         className: 'bg-green-100 text-green-900 border-green-200'
       });
     } catch (error: any) {

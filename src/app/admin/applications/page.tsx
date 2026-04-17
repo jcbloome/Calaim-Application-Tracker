@@ -9,7 +9,7 @@ import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
-import { Filter, Trash2, Database, AlertTriangle, Plus } from 'lucide-react';
+import { Filter, Trash2, Database, AlertTriangle, Plus, FolderArchive } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -248,6 +248,7 @@ function AdminApplicationsPageContent() {
     const member = String(searchParams.get('member') || '').trim();
     const staff = String(searchParams.get('staff') || '').trim();
     const intakeSource = String(searchParams.get('intakeSource') || '').trim().toLowerCase();
+    const internalStatus = String(searchParams.get('internalStatus') || '').trim();
 
     if (plan) {
       if (plan.includes('kaiser')) setHealthPlanFilter('Kaiser');
@@ -264,6 +265,9 @@ function AdminApplicationsPageContent() {
       intakeSource === 'ils_spreadsheet_batch'
     ) {
       setIntakeFilter(intakeSource);
+    }
+    if (internalStatus) {
+      setInternalStatusFilter(internalStatus);
     }
   }, [searchParams]);
 
@@ -501,6 +505,12 @@ function AdminApplicationsPageContent() {
             <p className="text-muted-foreground">Browse and manage all applications submitted to the platform.</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button asChild variant="outline">
+              <Link href="/admin/applications?internalStatus=On%20Hold">
+                <FolderArchive className="mr-2 h-4 w-4" />
+                On Hold Applications
+              </Link>
+            </Button>
             <Button asChild variant="outline">
               <Link href="/admin/applications/intake-processing">
                 <Database className="mr-2 h-4 w-4" />
