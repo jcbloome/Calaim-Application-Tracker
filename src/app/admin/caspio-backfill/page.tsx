@@ -7,6 +7,7 @@ import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
 import { Loader2, Database, Play, ShieldAlert } from 'lucide-react';
 
 type BackfillRow = {
@@ -34,6 +35,28 @@ type BackfillResponse = {
   error?: string;
 };
 
+const TABLE_STEPS: Array<{ key: string; table: string }> = [
+  { key: 'h2022Claims', table: 'CalAIM_Claim_Submit_RCFE_H2022' },
+  { key: 't2038Claims', table: 'CalAIM_Claim_Submit_T2038' },
+  { key: 'usersRegistration', table: 'connect_tbl_userregistration' },
+  { key: 'rcfeRegistration', table: 'CalAIM_tbl_New_RCFE_Registration' },
+  { key: 'memberNotes', table: 'CalAIM_Member_Notes_ILS' },
+  { key: 'clientNotes', table: 'connect_tbl_clientnotes' },
+];
+
+function mergeTotals(rows: BackfillRow[]) {
+  return rows.reduce(
+    (acc, row) => {
+      acc.fetched += row.fetched;
+      acc.upserted += row.upserted;
+      acc.skippedMissingId += row.skippedMissingId;
+      acc.skippedTestMarkers += row.skippedTestMarkers;
+      return acc;
+    },
+    { fetched: 0, upserted: 0, skippedMissingId: 0, skippedTestMarkers: 0 }
+  );
+}
+
 export default function CaspioBackfillPage() {
   const { isSuperAdmin, isLoading } = useAdmin();
   const auth = useAuth();
@@ -41,6 +64,9 @@ export default function CaspioBackfillPage() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BackfillResponse | null>(null);
   const [includeMembers, setIncludeMembers] = useState(true);
+  const [progressTotal, setProgressTotal] = useState(0);
+  const [progressCompleted, setProgressCompleted] = useState(0);
+  const [progressCurrent, setProgressCurrent] = useState('');
 
   if (isLoading) {
     return (
@@ -75,25 +101,57 @@ export default function CaspioBackfillPage() {
     if (running) return;
     setRunning(true);
     setResult(null);
+    setProgressTotal(0);
+    setProgressCompleted(0);
+    setProgressCurrent('');
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) {
         throw new Error('You must be signed in as a Super Admin.');
       }
       const idToken = await currentUser.getIdToken();
-      const res = await fetch('/api/admin/caspio/backfill-all', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ includeMembers }),
-      });
-      const payload = (await res.json().catch(() => ({}))) as BackfillResponse;
-      if (!res.ok || !payload?.success) {
-        throw new Error(payload?.error || 'Backfill request failed');
+      const steps: Array<{ label: string; body: Record<string, unknown> }> = [
+        ...(includeMembers ? [{ label: 'CalAIM_tbl_Members', body: { runMembersOnly: true } }] : []),
+        ...TABLE_STEPS.map((step) => ({
+          label: step.table,
+          body: {
+            includeMembers: false,
+            tableKeys: [step.key],
+          },
+        })),
+      ];
+
+      setProgressTotal(steps.length);
+      const allRows: BackfillRow[] = [];
+      const startedAtIso = new Date().toISOString();
+
+      for (let index = 0; index < steps.length; index += 1) {
+        const step = steps[index];
+        setProgressCurrent(step.label);
+        const res = await fetch('/api/admin/caspio/backfill-all', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(step.body),
+        });
+        const payload = (await res.json().catch(() => ({}))) as BackfillResponse;
+        if (!res.ok || !payload?.success) {
+          throw new Error(payload?.error || `Backfill step failed: ${step.label}`);
+        }
+        const stepRows = Array.isArray(payload.results) ? payload.results : [];
+        allRows.push(...stepRows);
+        setProgressCompleted(index + 1);
+        setResult({
+          success: true,
+          startedAt: startedAtIso,
+          results: allRows,
+          totals: mergeTotals(allRows),
+        });
       }
-      setResult(payload);
+
+      setProgressCurrent('');
     } catch (error: unknown) {
       setResult({
         success: false,
@@ -137,6 +195,20 @@ export default function CaspioBackfillPage() {
             {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
             {running ? 'Running Backfill...' : 'Run One-Time Backfill'}
           </Button>
+          {running && progressTotal > 0 ? (
+            <div className="space-y-2 rounded border bg-muted/40 p-3">
+              <div className="flex items-center justify-between text-sm">
+                <span>
+                  Progress: {progressCompleted}/{progressTotal}
+                </span>
+                <span>{Math.round((progressCompleted / progressTotal) * 100)}%</span>
+              </div>
+              <Progress value={(progressCompleted / progressTotal) * 100} />
+              <div className="text-xs text-muted-foreground">
+                {progressCurrent ? `Currently processing: ${progressCurrent}` : 'Preparing next step...'}
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

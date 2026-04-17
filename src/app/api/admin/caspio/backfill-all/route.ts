@@ -242,13 +242,16 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json().catch(() => ({}))) as {
       includeMembers?: boolean;
+      runMembersOnly?: boolean;
+      tableKeys?: string[];
     };
+    const runMembersOnly = body?.runMembersOnly === true;
     const includeMembers = body?.includeMembers !== false;
     const nowIso = new Date().toISOString();
     const results: BackfillResult[] = [];
     const token = readBearerToken(request);
 
-    if (includeMembers) {
+    if (runMembersOnly || (includeMembers && (!Array.isArray(body?.tableKeys) || body.tableKeys.length === 0))) {
       const memberSyncUrl = new URL('/api/caspio/members-cache/sync', request.nextUrl.origin).toString();
       const memberRes = await fetch(memberSyncUrl, {
         method: 'POST',
@@ -277,10 +280,29 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (runMembersOnly) {
+      const totals = results.reduce(
+        (acc, row) => {
+          acc.fetched += row.fetched;
+          acc.upserted += row.upserted;
+          acc.skippedMissingId += row.skippedMissingId;
+          acc.skippedTestMarkers += row.skippedTestMarkers;
+          return acc;
+        },
+        { fetched: 0, upserted: 0, skippedMissingId: 0, skippedTestMarkers: 0 }
+      );
+      return NextResponse.json({
+        success: true,
+        startedAt: nowIso,
+        results,
+        totals,
+      });
+    }
+
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
 
-    const tables: TableConfig[] = [
+    const allTables: TableConfig[] = [
       {
         key: 'h2022Claims',
         table: 'CalAIM_Claim_Submit_RCFE_H2022',
@@ -332,6 +354,14 @@ export async function POST(request: NextRequest) {
         optional: true,
       },
     ];
+
+    const requestedKeys = Array.isArray(body?.tableKeys) ? body.tableKeys.map((k) => String(k || '').trim()).filter(Boolean) : [];
+    const unknownKeys = requestedKeys.filter((key) => !allTables.some((table) => table.key === key));
+    if (unknownKeys.length > 0) {
+      throw new Error(`Unknown backfill table key(s): ${unknownKeys.join(', ')}`);
+    }
+
+    const tables = requestedKeys.length > 0 ? allTables.filter((table) => requestedKeys.includes(table.key)) : allTables;
 
     for (const config of tables) {
       const result = await backfillTable({
