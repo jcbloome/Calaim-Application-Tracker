@@ -92,6 +92,27 @@ export interface CaspioSocialWorker {
   isActive: boolean;
 }
 
+export function normalizeCaspioBlankValue<T = any>(value: T): any {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') {
+    return value
+      .replace(/&nbsp;|&#160;/gi, ' ')
+      .replace(/\u00a0/g, ' ')
+      .trim();
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeCaspioBlankValue(entry));
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, any> = {};
+    Object.entries(value as Record<string, any>).forEach(([k, v]) => {
+      out[k] = normalizeCaspioBlankValue(v);
+    });
+    return out;
+  }
+  return value;
+}
+
 /**
  * Get OAuth token from Caspio
  */
@@ -205,7 +226,7 @@ export async function fetchCaspioRecords(
   }
   
   console.log(`   📊 Total records for partition: ${allRecords.length}`);
-  return allRecords;
+  return allRecords.map((record) => normalizeCaspioBlankValue(record));
 }
 
 /**
@@ -324,15 +345,20 @@ export function normalizeSocialWorkerName(name: string): string {
  * Transform raw Caspio member data to application format
  */
 export function transformCaspioMember(member: CaspioMember): any {
-  const clientId2 = (member as any)?.client_ID2 ?? (member as any)?.Client_ID2 ?? (member as any)?.clientId2 ?? '';
+  const normalizedMember = normalizeCaspioBlankValue(member || {}) as CaspioMember;
+  const clientId2 =
+    (normalizedMember as any)?.client_ID2 ??
+    (normalizedMember as any)?.Client_ID2 ??
+    (normalizedMember as any)?.clientId2 ??
+    '';
   const holdCandidates = [
-    (member as any)?.Hold_For_Social_Worker_Visit,
-    (member as any)?.Hold_for_Social_Worker_Visit,
-    (member as any)?.hold_for_social_worker_visit,
-    (member as any)?.Hold_For_Social_Worker,
-    (member as any)?.Hold_for_Social_Worker,
-    (member as any)?.hold_for_social_worker,
-    (member as any)?.Hold,
+    (normalizedMember as any)?.Hold_For_Social_Worker_Visit,
+    (normalizedMember as any)?.Hold_for_Social_Worker_Visit,
+    (normalizedMember as any)?.hold_for_social_worker_visit,
+    (normalizedMember as any)?.Hold_For_Social_Worker,
+    (normalizedMember as any)?.Hold_for_Social_Worker,
+    (normalizedMember as any)?.hold_for_social_worker,
+    (normalizedMember as any)?.Hold,
   ];
   const hold =
     holdCandidates
@@ -342,37 +368,37 @@ export function transformCaspioMember(member: CaspioMember): any {
   return {
     id: clientId2 || Math.random().toString(),
     Client_ID2: clientId2,
-    memberName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),
-    memberFirstName: member.Senior_First || '',
-    memberLastName: member.Senior_Last || '',
-    memberCounty: member.Member_County || 'Los Angeles',
-    CalAIM_MCO: member.CalAIM_MCO || 'Unknown',
-    CalAIM_Status: member.CalAIM_Status || 'Unknown',
-    Social_Worker_Assigned: normalizeSocialWorkerName(member.Social_Worker_Assigned || ''),
-    Staff_Assigned: member.Kaiser_User_Assignment || '',
+    memberName: `${normalizedMember.Senior_First || ''} ${normalizedMember.Senior_Last || ''}`.trim(),
+    memberFirstName: normalizedMember.Senior_First || '',
+    memberLastName: normalizedMember.Senior_Last || '',
+    memberCounty: normalizedMember.Member_County || 'Los Angeles',
+    CalAIM_MCO: normalizedMember.CalAIM_MCO || 'Unknown',
+    CalAIM_Status: normalizedMember.CalAIM_Status || 'Unknown',
+    Social_Worker_Assigned: normalizeSocialWorkerName(normalizedMember.Social_Worker_Assigned || ''),
+    Staff_Assigned: normalizedMember.Kaiser_User_Assignment || '',
     // Authorization fields (needed to suspend SW visits when auth ends; especially Kaiser T2038).
-    Authorization_Start_Date_T2038: (member as any)?.Authorization_Start_Date_T2038 || '',
-    Authorization_End_Date_T2038: (member as any)?.Authorization_End_Date_T2038 || '',
-    Authorization_Start_Date_H2022: (member as any)?.Authorization_Start_Date_H2022 || '',
-    Authorization_End_Date_H2022: (member as any)?.Authorization_End_Date_H2022 || '',
+    Authorization_Start_Date_T2038: (normalizedMember as any)?.Authorization_Start_Date_T2038 || '',
+    Authorization_End_Date_T2038: (normalizedMember as any)?.Authorization_End_Date_T2038 || '',
+    Authorization_Start_Date_H2022: (normalizedMember as any)?.Authorization_Start_Date_H2022 || '',
+    Authorization_End_Date_H2022: (normalizedMember as any)?.Authorization_End_Date_H2022 || '',
     // Normalize hold so downstream UIs can be consistent even if Caspio values vary.
     Hold_For_Social_Worker: hold,
     Hold_For_Social_Worker_Visit: hold,
-    RCFE_Name: member.RCFE_Name || '',
-    RCFE_Address: member.RCFE_Address || '',
-    RCFE_Street: (member as any)?.RCFE_Street || (member as any)?.RCFE_Street_Address || (member as any)?.RCFE_Address || '',
-    RCFE_City: (member as any)?.RCFE_City || '',
-    RCFE_Zip: (member as any)?.RCFE_Zip || '',
-    RCFE_City_RCFE_Zip: [String((member as any)?.RCFE_City || '').trim(), String((member as any)?.RCFE_Zip || '').trim()].filter(Boolean).join(', '),
-    RCFE_Administrator: (member as any)?.RCFE_Administrator || '',
+    RCFE_Name: normalizedMember.RCFE_Name || '',
+    RCFE_Address: normalizedMember.RCFE_Address || '',
+    RCFE_Street: (normalizedMember as any)?.RCFE_Street || (normalizedMember as any)?.RCFE_Street_Address || (normalizedMember as any)?.RCFE_Address || '',
+    RCFE_City: (normalizedMember as any)?.RCFE_City || '',
+    RCFE_Zip: (normalizedMember as any)?.RCFE_Zip || '',
+    RCFE_City_RCFE_Zip: [String((normalizedMember as any)?.RCFE_City || '').trim(), String((normalizedMember as any)?.RCFE_Zip || '').trim()].filter(Boolean).join(', '),
+    RCFE_Administrator: (normalizedMember as any)?.RCFE_Administrator || '',
     RCFE_Administrator_Email:
-      (member as any)?.RCFE_Administrator_Email ||
-      (member as any)?.RCFE_Admin_Email ||
+      (normalizedMember as any)?.RCFE_Administrator_Email ||
+      (normalizedMember as any)?.RCFE_Admin_Email ||
       '',
-    RCFE_Administrator_Phone: (member as any)?.RCFE_Administrator_Phone || '',
-    Number_of_Beds: String((member as any)?.Number_of_Beds || '').trim(),
-    pathway: (member as any)?.SNF_Diversion_or_Transition || member.Pathway || 'Unknown',
-    last_updated: member.last_updated || new Date().toISOString()
+    RCFE_Administrator_Phone: (normalizedMember as any)?.RCFE_Administrator_Phone || '',
+    Number_of_Beds: String((normalizedMember as any)?.Number_of_Beds || '').trim(),
+    pathway: (normalizedMember as any)?.SNF_Diversion_or_Transition || normalizedMember.Pathway || 'Unknown',
+    last_updated: normalizedMember.last_updated || new Date().toISOString()
   };
 }
 

@@ -1,6 +1,9 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import { validateFunctionTargetEnvironment } from "./env-validation";
+
+validateFunctionTargetEnvironment();
 
 // Export Google Drive migration functions
 export { authenticateGoogleDrive, scanCalAIMDriveFolders, migrateDriveFoldersToFirebase } from './google-drive';
@@ -25,6 +28,9 @@ export { performAutoSync, getPendingSyncs, performBatchSync } from './auto-batch
 
 // Export Caspio Webhook functions
 export { caspioWebhook } from './caspio-webhooks';
+export { caspioH2022ClaimsWebhook, caspioT2038ClaimsWebhook } from './caspio-claims-webhooks';
+export { caspioRcfeRegistrationWebhook } from './caspio-rcfe-webhook';
+export { caspioUsersRegistrationWebhook } from './caspio-usersregistration-webhook';
 
 // Export Caspio note monitoring functions (READ-ONLY)
 export {

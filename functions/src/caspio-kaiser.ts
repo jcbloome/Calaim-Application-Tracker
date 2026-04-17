@@ -6,6 +6,27 @@ const caspioBaseUrl = defineSecret('CASPIO_BASE_URL');
 const caspioClientId = defineSecret('CASPIO_CLIENT_ID');
 const caspioClientSecret = defineSecret('CASPIO_CLIENT_SECRET');
 
+function normalizeCaspioBlankValue(value: any): any {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') {
+    return value
+      .replace(/&nbsp;|&#160;/gi, ' ')
+      .replace(/\u00a0/g, ' ')
+      .trim();
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeCaspioBlankValue(entry));
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, any> = {};
+    Object.entries(value as Record<string, any>).forEach(([k, v]) => {
+      out[k] = normalizeCaspioBlankValue(v);
+    });
+    return out;
+  }
+  return value;
+}
+
 function getRuntimeCaspioConfig() {
   const fallback = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com/integrations/rest/v3';
   const rawBase = (() => {
@@ -106,7 +127,8 @@ export const fetchKaiserMembersFromCaspio = onCall(
               m.Kaiser_Status
           );
 
-      const members = membersToProcess.map((member: any, index: number) => {
+      const members = membersToProcess.map((rawMember: any, index: number) => {
+        const member = normalizeCaspioBlankValue(rawMember || {});
         const id2 =
           member.client_ID2 || member.Client_ID2 || member.CLIENT_ID2 || member.clientID2 || member.ClientID2 || '';
         return {

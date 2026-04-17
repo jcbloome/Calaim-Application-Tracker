@@ -56,6 +56,33 @@ const caspioClientId = defineSecret("CASPIO_CLIENT_ID");
 const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
 const caspioWebhookSecret = defineSecret("CASPIO_WEBHOOK_SECRET");
 
+const normalizeCaspioBlankValue = (value: any): any => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') {
+    return value
+      .replace(/&nbsp;|&#160;/gi, ' ')
+      .replace(/\u00a0/g, ' ')
+      .trim();
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeCaspioBlankValue(entry));
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, any> = {};
+    Object.entries(value as Record<string, any>).forEach(([k, v]) => {
+      out[k] = normalizeCaspioBlankValue(v);
+    });
+    return out;
+  }
+  return value;
+};
+
+const hasWebhookTestMarker = (...values: Array<unknown>) =>
+  values.some((value) => {
+    const text = String(value || "").toUpperCase();
+    return text.includes("WEBHOOK_TEST") || text.includes("WEBHOOK SMOKE TEST");
+  });
+
 // Staff email mapping
 const STAFF_EMAIL_MAPPING: { [key: string]: string[] } = {
   'JHernandez': ['JHernandez@ilshealth.com'],
@@ -178,8 +205,9 @@ const getAdminUserDocs = async (): Promise<admin.firestore.QueryDocumentSnapshot
 // Function to store note in Firestore
 async function storeNoteInFirestore(noteData: any, tableType: 'calaim_members' | 'client_notes') {
   const db = getDb();
+  const normalizedNote = normalizeCaspioBlankValue(noteData || {});
   const noteDoc = {
-    ...noteData,
+    ...normalizedNote,
     tableType,
     timestamp: admin.firestore.FieldValue.serverTimestamp(),
     isRead: false,
@@ -494,7 +522,11 @@ export const caspioCalAIMNotesWebhook = onRequest(
         return;
       }
 
-      const noteData: CalAIMNoteData & { secret?: string } = request.body;
+      const noteData: CalAIMNoteData & { secret?: string } = normalizeCaspioBlankValue(request.body || {});
+      if (hasWebhookTestMarker(noteData.Note_ID, noteData.Client_ID2, noteData.Member_Name, noteData.Note_Content)) {
+        response.status(200).json({ success: true, message: 'Webhook test marker ignored' });
+        return;
+      }
       const secretCheck = verifyWebhookSecret(noteData);
       if (!secretCheck.ok) {
         console.warn(`❌ CalAIM webhook secret check failed: ${secretCheck.reason}`);
@@ -548,7 +580,11 @@ export const caspioClientNotesWebhook = onRequest(
         return;
       }
 
-      const noteData: ClientNoteData & { secret?: string } = request.body;
+      const noteData: ClientNoteData & { secret?: string } = normalizeCaspioBlankValue(request.body || {});
+      if (hasWebhookTestMarker(noteData.Note_ID, noteData.Client_ID2, noteData.Client_Name, noteData.Note_Text)) {
+        response.status(200).json({ success: true, message: 'Webhook test marker ignored' });
+        return;
+      }
       const secretCheck = verifyWebhookSecret(noteData);
       if (!secretCheck.ok) {
         console.warn(`❌ Client webhook secret check failed: ${secretCheck.reason}`);

@@ -270,6 +270,7 @@ export default function SwKaiserAlftPage() {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitPending, setSubmitPending] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [swSignature, setSwSignature] = useState(''); // typed signature before submit
 
@@ -409,32 +410,47 @@ export default function SwKaiserAlftPage() {
         files: [], // digital form — no file upload required
       };
 
-      const res = await fetch('/api/alft/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) throw new Error(data?.error || `Submission failed (HTTP ${res.status})`);
-
-      // Update the Firestore assignment status to 'submitted'
-      if (firestore && selectedMember.id) {
-        try {
-          await updateDoc(doc(firestore, 'alft_assignments', selectedMember.id), {
-            status: 'submitted',
-            submittedAt: new Date().toISOString(),
-            intakeId: data.id || null,
-          });
-        } catch { /* best-effort */ }
-      }
-
-      clearDraftLocally(selectedMember.id);
+      // Optimistic UX: show success immediately while server save finalizes.
+      const memberAtSubmit = selectedMember;
       setSubmitted(true);
-      toast({ title: 'ALFT submitted', description: `${selectedMember.memberName}'s assessment has been sent to the admin team for RN review.` });
+      setSubmitPending(true);
+      toast({ title: 'Submission received', description: 'Finalizing your ALFT in the background...' });
+
+      const persistSubmission = async () => {
+        const res = await fetch('/api/alft/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.success) {
+          throw new Error(data?.error || `Submission failed (HTTP ${res.status})`);
+        }
+
+        // Update the Firestore assignment status to 'submitted'
+        if (firestore && memberAtSubmit.id) {
+          try {
+            await updateDoc(doc(firestore, 'alft_assignments', memberAtSubmit.id), {
+              status: 'submitted',
+              submittedAt: new Date().toISOString(),
+              intakeId: data.id || null,
+            });
+          } catch {
+            // best-effort
+          }
+        }
+
+        clearDraftLocally(memberAtSubmit.id);
+        toast({ title: 'ALFT submitted', description: `${memberAtSubmit.memberName}'s assessment has been sent to the admin team for RN review.` });
+      };
+
+      await persistSubmission();
     } catch (e: any) {
+      setSubmitted(false);
       toast({ title: 'Submission failed', description: e?.message || 'Please try again.', variant: 'destructive' });
     } finally {
       setSubmitting(false);
+      setSubmitPending(false);
     }
   }, [answers, auth, firestore, selectedMember, swEmail, swName, swSignature, toast]);
 
@@ -475,8 +491,16 @@ export default function SwKaiserAlftPage() {
         <CheckCircle2 className="mx-auto h-14 w-14 text-green-500" />
         <h1 className="text-2xl font-bold">ALFT Submitted</h1>
         <p className="text-muted-foreground">
-          {selectedMember.memberName}'s assessment has been sent to the admin team for review.
+          {submitPending
+            ? `${selectedMember.memberName}'s assessment is being finalized now.`
+            : `${selectedMember.memberName}'s assessment has been sent to the admin team for review.`}
         </p>
+        {submitPending && (
+          <div className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Saving in the background. You can stay on this page while we finish.
+          </div>
+        )}
         <div className="flex flex-wrap justify-center gap-3">
           <Button onClick={() => { setSelectedMember(null); setSubmitted(false); }}>
             Start Another

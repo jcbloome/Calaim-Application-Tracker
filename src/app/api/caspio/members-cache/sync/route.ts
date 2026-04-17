@@ -37,6 +37,7 @@ type MemberActivityPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 50; // safety cap
+const FIRESTORE_BATCH_LIMIT = 500;
 
 const MEMBERS_SELECT_FIELDS: string[] = [
   'Client_ID2',
@@ -216,12 +217,37 @@ async function writeCachedCaspioTableFields(params: { adminDb: any; tableName: s
 }
 
 function normalizeRawMember(raw: any) {
-  const clientId2 = String(raw?.Client_ID2 || raw?.client_ID2 || raw?.clientId2 || '').trim();
+  const sanitizedRaw = normalizeCaspioBlankValue(raw || {});
+  const clientId2 = String(
+    sanitizedRaw?.Client_ID2 || sanitizedRaw?.client_ID2 || sanitizedRaw?.clientId2 || ''
+  ).trim();
   const normalized = {
-    ...raw,
-    client_ID2: raw?.client_ID2 ?? raw?.Client_ID2 ?? raw?.clientId2 ?? clientId2,
+    ...sanitizedRaw,
+    client_ID2: sanitizedRaw?.client_ID2 ?? sanitizedRaw?.Client_ID2 ?? sanitizedRaw?.clientId2 ?? clientId2,
   };
   return { clientId2, normalized };
+}
+
+function normalizeCaspioBlankValue(value: any): any {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') {
+    const normalized = value
+      .replace(/&nbsp;|&#160;/gi, ' ')
+      .replace(/\u00a0/g, ' ')
+      .trim();
+    return normalized;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeCaspioBlankValue(entry));
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, any> = {};
+    Object.entries(value as Record<string, any>).forEach(([k, v]) => {
+      out[k] = normalizeCaspioBlankValue(v);
+    });
+    return out;
+  }
+  return value;
 }
 
 function buildSwSearchKeys(member: Record<string, any>): string[] {
@@ -552,7 +578,7 @@ export async function POST(req: NextRequest) {
     let maxModified: Date | null = since ? new Date(since) : null;
     const seenClientIds = new Set<string>();
 
-    const chunkSize = 400; // keep under Firestore batch limits safely
+    const chunkSize = FIRESTORE_BATCH_LIMIT;
     for (let i = 0; i < rawMembers.length; i += chunkSize) {
       const slice = rawMembers.slice(i, i + chunkSize);
       const batch = adminDb.batch();
@@ -571,7 +597,7 @@ export async function POST(req: NextRequest) {
         }
         seenClientIds.add(clientId2);
 
-        const transformed = transformCaspioMember(normalized as any);
+        const transformed = normalizeCaspioBlankValue(transformCaspioMember(normalized as any));
         const calaimStatusRaw = String((normalized as any)?.CalAIM_Status ?? (normalized as any)?.calaim_status ?? '').trim();
         const calaimStatus =
           calaimStatusRaw && calaimStatusRaw.toLowerCase() === 'authorized'
@@ -788,8 +814,8 @@ export async function POST(req: NextRequest) {
         // Persist assignment change metadata back to the cache docs.
         // Keep it separate from activity logs so we don't exceed write limits.
         if (assignmentChangeUpdates.length > 0) {
-          for (let j = 0; j < assignmentChangeUpdates.length; j += 400) {
-            const chunk = assignmentChangeUpdates.slice(j, j + 400);
+          for (let j = 0; j < assignmentChangeUpdates.length; j += FIRESTORE_BATCH_LIMIT) {
+            const chunk = assignmentChangeUpdates.slice(j, j + FIRESTORE_BATCH_LIMIT);
             const ub = adminDb.batch();
             chunk.forEach((u) => {
               ub.set(
@@ -809,8 +835,8 @@ export async function POST(req: NextRequest) {
 
         // Persist hold change metadata back to the cache docs (for "reactivated this week" roster badges).
         if (holdChangeUpdates.length > 0) {
-          for (let j = 0; j < holdChangeUpdates.length; j += 400) {
-            const chunk = holdChangeUpdates.slice(j, j + 400);
+          for (let j = 0; j < holdChangeUpdates.length; j += FIRESTORE_BATCH_LIMIT) {
+            const chunk = holdChangeUpdates.slice(j, j + FIRESTORE_BATCH_LIMIT);
             const ub = adminDb.batch();
             chunk.forEach((u) => {
               ub.set(
@@ -829,8 +855,8 @@ export async function POST(req: NextRequest) {
         }
 
         // Write activities in batches under Firestore limits.
-        for (let j = 0; j < activityDocs.length; j += 450) {
-          const chunk = activityDocs.slice(j, j + 450);
+        for (let j = 0; j < activityDocs.length; j += FIRESTORE_BATCH_LIMIT) {
+          const chunk = activityDocs.slice(j, j + FIRESTORE_BATCH_LIMIT);
           const ab = adminDb.batch();
           chunk.forEach((doc) => {
             const ref = adminDb.collection('member_activities').doc();
@@ -851,8 +877,8 @@ export async function POST(req: NextRequest) {
         .filter((id: string) => !!id && !seenClientIds.has(id));
       pruned = staleIds.length;
 
-      for (let i = 0; i < staleIds.length; i += 450) {
-        const chunk = staleIds.slice(i, i + 450);
+      for (let i = 0; i < staleIds.length; i += FIRESTORE_BATCH_LIMIT) {
+        const chunk = staleIds.slice(i, i + FIRESTORE_BATCH_LIMIT);
         const dbBatch = adminDb.batch();
         chunk.forEach((id: string) => {
           dbBatch.delete(adminDb.collection(CACHE_COLLECTION).doc(id));
