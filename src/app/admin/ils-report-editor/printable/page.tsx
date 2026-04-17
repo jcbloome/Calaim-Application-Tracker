@@ -375,7 +375,7 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
         <span className="rounded-full border px-3 py-1 text-xs"><strong>Final- At RCFE Without H2022 Dates:</strong> {Array.isArray(payload.h2022AuthDates?.finalAtRcfeWithoutDates) ? payload.h2022AuthDates!.finalAtRcfeWithoutDates!.length : 0}</span>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-3">
         {cards.map((card) => (
           <div key={card.key} className="rounded border p-3">
             <h2 className="mb-2 text-sm font-semibold">{card.label} ({card.rows.length})</h2>
