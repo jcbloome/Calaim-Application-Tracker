@@ -474,6 +474,9 @@ const STRICT_UPLOAD_REQUIRED_FOR_COMPLETION = new Set([
   'Declaration of Eligibility',
 ]);
 
+const PROGRAM_INFO_GUIDE_URL = 'https://connectcalaim.com/info/eligibility';
+const HEALTH_NET_MANAGER_SIGNATURE = 'Leidy Kanjanapitak';
+
 const getAuthorizationTypes = (healthPlan?: string) => {
   const normalized = String(healthPlan || '').toLowerCase();
   if (normalized.includes('health net')) {
@@ -2438,6 +2441,7 @@ function ApplicationDetailPageContent() {
   const [rcfeSignerEmailInput, setRcfeSignerEmailInput] = useState('');
   const [agreedRoomBoardAmountInput, setAgreedRoomBoardAmountInput] = useState('');
   const [isSendingEligibilityNote, setIsSendingEligibilityNote] = useState(false);
+  const [eligibilityTemplateSelection, setEligibilityTemplateSelection] = useState<string>('none');
   const [isUpdatingReminderControls, setIsUpdatingReminderControls] = useState(false);
   const [isSendingTestReminder, setIsSendingTestReminder] = useState(false);
   const [isLoadingReminderPreview, setIsLoadingReminderPreview] = useState(false);
@@ -6025,6 +6029,56 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const getReferrerDisplayName = () => {
+    const fromFullName = String((application as any)?.referrerName || '').trim();
+    if (fromFullName) return fromFullName;
+    const combined = `${String((application as any)?.referrerFirstName || '').trim()} ${String(
+      (application as any)?.referrerLastName || ''
+    ).trim()}`.trim();
+    return combined || 'there';
+  };
+
+  const applyEligibilityTemplate = async (templateKey: string) => {
+    if (!application || !docRef) return;
+    let nextMessage = '';
+    const recipientName = getReferrerDisplayName();
+    const assignedStaffSignature =
+      String((application as any)?.assignedStaffName || '').trim() ||
+      String((application as any)?.assignedToName || '').trim() ||
+      String(user?.displayName || user?.email || 'The Connections Team').trim();
+    const normalizedPlan = String((application as any)?.healthPlan || '').trim().toLowerCase();
+    const planLabel = normalizedPlan.includes('kaiser')
+      ? 'Kaiser'
+      : normalizedPlan.includes('health net') || normalizedPlan.includes('healthnet')
+        ? 'Health Net'
+        : String((application as any)?.healthPlan || 'the selected health plan').trim();
+    const templateSignature = planLabel === 'Health Net' ? HEALTH_NET_MANAGER_SIGNATURE : assignedStaffSignature;
+    if (templateKey === 'health-net-molina-switch') {
+      nextMessage = [
+        `Hi ${recipientName}:`,
+        '',
+        "Unfortunately, this member's Medi-Cal through Health Net is currently assigned to Molina.",
+        'We do not work with Molina and, should you choose to work with us, you should call Health Net Member Services at 800-675-6110 and request the Medi-Cal be switched from Molina to Health Net.',
+        'Any requested changes take effect at the end of the month.',
+        `Please see our Program Information guide (${PROGRAM_INFO_GUIDE_URL}) for more information.`,
+        '',
+        `Sincerely, ${HEALTH_NET_MANAGER_SIGNATURE}`,
+      ].join('\n');
+    } else if (templateKey === 'no-medi-cal-assigned-plan') {
+      nextMessage = [
+        `Hi ${recipientName}:`,
+        '',
+        `Unfortunately, this member does not currently have Medi-Cal assigned with ${planLabel}.`,
+        '',
+        `Sincerely, ${templateSignature}`,
+      ].join('\n');
+    }
+    if (!nextMessage) return;
+
+    setApplication((prev) => (prev ? ({ ...(prev as any), calaimTrackingReason: nextMessage } as any) : prev));
+    await updateTrackingReason(nextMessage);
+  };
+
   const sendEligibilityNote = async () => {
     if (!application?.referrerEmail) {
       toast({ variant: 'destructive', title: 'Error', description: 'Referrer email is not available for this application.' });
@@ -8363,6 +8417,34 @@ function ApplicationDetailPageContent() {
                       )}
                       <div className="space-y-2 pt-2">
                         <Label className="text-sm font-medium">Note to Member (optional)</Label>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                          <Select
+                            value={eligibilityTemplateSelection}
+                            onValueChange={(value) => setEligibilityTemplateSelection(value)}
+                            disabled={isUpdatingTracking}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choose a template (optional)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No template</SelectItem>
+                              <SelectItem value="health-net-molina-switch">
+                                Health Net: Member assigned to Molina
+                              </SelectItem>
+                              <SelectItem value="no-medi-cal-assigned-plan">
+                                Generic: No Medi-Cal assigned with plan
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => void applyEligibilityTemplate(eligibilityTemplateSelection)}
+                            disabled={isUpdatingTracking || eligibilityTemplateSelection === 'none'}
+                          >
+                            Use Template
+                          </Button>
+                        </div>
                         <Textarea
                           rows={3}
                           placeholder="Add a message that explains the eligibility outcome..."
