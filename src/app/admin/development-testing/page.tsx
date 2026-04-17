@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TestTube2, Mail, Map, Bell, ArrowRight } from 'lucide-react';
+import { TestTube2, Mail, Map, Bell, ArrowRight, Database } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -51,7 +51,14 @@ const testingTools = [
     icon: Bell,
     href: '/admin/notification-demo',
     color: 'text-purple-600'
-  }
+  },
+  {
+    title: 'Caspio One-Time Backfill',
+    description: 'Run initial full pull from webhook-backed Caspio tables into Firestore caches',
+    icon: Database,
+    href: '/admin/caspio-backfill',
+    color: 'text-cyan-600'
+  },
 ];
 
 export default function DevelopmentTestingPage() {
