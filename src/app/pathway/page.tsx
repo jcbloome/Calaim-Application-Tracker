@@ -26,6 +26,7 @@ import {
   Package,
   ArrowLeft,
   AlertTriangle,
+  Bell,
   MessageSquareHeart,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
@@ -50,6 +51,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 
 const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
@@ -224,6 +226,27 @@ function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser So
   return kaiserNorthCounties.has(normalized) ? 'Kaiser North' : 'Kaiser South';
 }
 
+type CommunicationNoteLogEntry = {
+  id: string;
+  category: 'user_staff' | 'interoffice';
+  channel: 'eligibility_note' | 'portal_note' | 'interoffice_note' | string;
+  direction: 'staff_to_user' | 'user_to_staff' | 'staff_to_staff';
+  healthPlanTag: 'H' | 'K' | '';
+  status: 'success' | 'failed' | 'blocked_duplicate';
+  subject: string;
+  messagePreview: string;
+  fullMessage?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  authorUid?: string | null;
+  authorName?: string;
+  requiresResponse?: boolean;
+  respondedAtIso?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAtIso: string;
+  timestampMs: number;
+};
+
 function PathwayPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -239,6 +262,13 @@ function PathwayPageContent() {
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [isSendingProofIncomeSocWarning, setIsSendingProofIncomeSocWarning] = useState(false);
+  const [portalNoteMessage, setPortalNoteMessage] = useState('');
+  const [isSendingPortalNote, setIsSendingPortalNote] = useState(false);
+  const [portalNoteStatus, setPortalNoteStatus] = useState<{
+    state: 'idle' | 'sending' | 'success' | 'failed';
+    message: string;
+    atIso?: string;
+  }>({ state: 'idle', message: '' });
 
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -259,6 +289,56 @@ function PathwayPageContent() {
       const name = String((item as any)?.name || '').trim();
       return name.length > 0;
     });
+  };
+
+  const getHealthPlanTag = (): 'H' | 'K' | '' => {
+    const plan = String((application as any)?.healthPlan || '').trim().toLowerCase();
+    if (plan.includes('health net') || plan.includes('healthnet')) return 'H';
+    if (plan.includes('kaiser')) return 'K';
+    return '';
+  };
+
+  const getCommunicationNoteLog = (): CommunicationNoteLogEntry[] => {
+    const raw = (application as any)?.communicationNoteLog;
+    if (!Array.isArray(raw)) return [];
+    const parsed = raw
+      .map((entry: any) => ({
+        id: String(entry?.id || '').trim(),
+        category: String(entry?.category || '').trim() === 'interoffice' ? 'interoffice' : 'user_staff',
+        channel: String(entry?.channel || '').trim() || 'portal_note',
+        direction:
+          String(entry?.direction || '').trim() === 'staff_to_user'
+            ? 'staff_to_user'
+            : String(entry?.direction || '').trim() === 'staff_to_staff'
+              ? 'staff_to_staff'
+              : 'user_to_staff',
+        healthPlanTag: (String(entry?.healthPlanTag || '').trim() === 'H'
+          ? 'H'
+          : String(entry?.healthPlanTag || '').trim() === 'K'
+            ? 'K'
+            : '') as 'H' | 'K' | '',
+        status:
+          String(entry?.status || '').trim() === 'failed'
+            ? 'failed'
+            : String(entry?.status || '').trim() === 'blocked_duplicate'
+              ? 'blocked_duplicate'
+              : 'success',
+        subject: String(entry?.subject || '').trim() || 'Communication note',
+        messagePreview: String(entry?.messagePreview || '').trim(),
+        fullMessage: String(entry?.fullMessage || '').trim() || undefined,
+        recipientName: String(entry?.recipientName || '').trim() || undefined,
+        recipientEmail: String(entry?.recipientEmail || '').trim() || undefined,
+        authorUid: String(entry?.authorUid || '').trim() || undefined,
+        authorName: String(entry?.authorName || '').trim() || undefined,
+        requiresResponse: Boolean(entry?.requiresResponse),
+        respondedAtIso: String(entry?.respondedAtIso || '').trim() || null,
+        metadata: entry?.metadata && typeof entry.metadata === 'object' ? entry.metadata : undefined,
+        createdAtIso: String(entry?.createdAtIso || '').trim(),
+        timestampMs: Number(entry?.timestampMs || 0),
+      }))
+      .filter((entry) => Boolean(entry.id));
+    parsed.sort((a, b) => Number(b.timestampMs || 0) - Number(a.timestampMs || 0));
+    return parsed;
   };
   
   const docRef = useMemoFirebase(() => {
@@ -967,6 +1047,12 @@ function PathwayPageContent() {
   const feedbackFormStatus = formStatusMap.get('Customer Feedback Survey') as FormStatusType | undefined;
   const feedbackCompleted = feedbackFormStatus?.status === 'Completed';
   const showFeedbackCard = application.status === 'Completed & Submitted' || application.status === 'Approved';
+  const communicationNoteLog = getCommunicationNoteLog();
+  const portalVisibleNoteLog = communicationNoteLog.filter((entry) => entry.category === 'user_staff');
+  const portalPendingResponseCount = portalVisibleNoteLog.filter(
+    (entry) => entry.direction === 'user_to_staff' && entry.requiresResponse && !entry.respondedAtIso
+  ).length;
+  const portalPlanTag = getHealthPlanTag();
 
   const consolidatedMedicalDocuments = [
       { id: 'lic-602a-check', name: "LIC 602A - Physician's Report" },
@@ -1066,6 +1152,81 @@ function PathwayPageContent() {
       });
     } finally {
       setIsSendingProofIncomeSocWarning(false);
+    }
+  };
+
+  const sendPortalNoteToStaff = async () => {
+    if (!docRef || !application) return;
+    const message = String(portalNoteMessage || '').trim();
+    if (!message) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing note',
+        description: 'Enter a note before sending.',
+      });
+      return;
+    }
+    const now = Date.now();
+    const memberName = `${String(application.memberFirstName || '').trim()} ${String(application.memberLastName || '').trim()}`.trim() || 'Member';
+    const entry: CommunicationNoteLogEntry = {
+      id: `comm-note-${now}-${Math.random().toString(16).slice(2)}`,
+      category: 'user_staff',
+      channel: 'portal_note',
+      direction: 'user_to_staff',
+      healthPlanTag: getHealthPlanTag(),
+      status: 'success',
+      subject: `Portal note from family/referrer for ${memberName}`,
+      messagePreview: message.slice(0, 300),
+      fullMessage: message,
+      recipientName: String((application as any)?.assignedStaffName || '').trim() || undefined,
+      recipientEmail: String((application as any)?.assignedStaffEmail || '').trim() || undefined,
+      authorUid: String(user?.uid || '').trim() || null,
+      authorName: String(user?.displayName || user?.email || 'Portal User').trim(),
+      requiresResponse: true,
+      respondedAtIso: null,
+      metadata: {
+        source: 'pathway_portal',
+      },
+      createdAtIso: new Date(now).toISOString(),
+      timestampMs: now,
+    };
+
+    setIsSendingPortalNote(true);
+    setPortalNoteStatus({ state: 'sending', message: 'Sending note...', atIso: new Date(now).toISOString() });
+    try {
+      const nextLog = [entry, ...getCommunicationNoteLog()].sort((a, b) => Number(b.timestampMs || 0) - Number(a.timestampMs || 0)).slice(0, 300);
+      await setDoc(
+        docRef,
+        {
+          communicationNoteLog: nextLog,
+          lastUpdated: serverTimestamp(),
+        } as any,
+        { merge: true }
+      );
+      setApplication((prev) => (prev ? ({ ...(prev as any), communicationNoteLog: nextLog } as Application) : prev));
+      setPortalNoteMessage('');
+      setPortalNoteStatus({
+        state: 'success',
+        message: 'Note sent to staff and logged with timestamp.',
+        atIso: new Date().toISOString(),
+      });
+      toast({
+        title: 'Note sent',
+        description: 'Your note was sent and added to the communication log.',
+      });
+    } catch (error: any) {
+      setPortalNoteStatus({
+        state: 'failed',
+        message: String(error?.message || 'Could not send note.'),
+        atIso: new Date().toISOString(),
+      });
+      toast({
+        variant: 'destructive',
+        title: 'Send failed',
+        description: String(error?.message || 'Could not send note.'),
+      });
+    } finally {
+      setIsSendingPortalNote(false);
     }
   };
 
@@ -1660,6 +1821,108 @@ function PathwayPageContent() {
                         </div>
                     </CardFooter>
                 )}
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <MessageSquareHeart className="h-5 w-5 text-blue-600" />
+                  Quick actions: notes
+                </CardTitle>
+                <CardDescription>
+                  Send a note to staff and review recent communication updates for this application.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                    <Bell className="mr-1 h-3 w-3" />
+                    User/Staff ({portalPlanTag || '-'}) pending response: {portalPendingResponseCount}
+                  </Badge>
+                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                    Interoffice ({portalPlanTag || '-'}) hidden from portal
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="portal-note-message">Note to assigned staff</Label>
+                  <Textarea
+                    id="portal-note-message"
+                    rows={3}
+                    placeholder="Type your question or update for staff..."
+                    value={portalNoteMessage}
+                    onChange={(event) => setPortalNoteMessage(event.target.value)}
+                    disabled={isSendingPortalNote}
+                  />
+                  {portalNoteStatus.state !== 'idle' ? (
+                    <div
+                      className={cn(
+                        'rounded-md border p-2 text-xs',
+                        portalNoteStatus.state === 'success'
+                          ? 'border-green-200 bg-green-50 text-green-800'
+                          : portalNoteStatus.state === 'sending'
+                            ? 'border-blue-200 bg-blue-50 text-blue-800'
+                            : 'border-red-200 bg-red-50 text-red-800'
+                      )}
+                    >
+                      {portalNoteStatus.message}
+                      {portalNoteStatus.atIso ? ` (${format(new Date(portalNoteStatus.atIso), 'MMM d, h:mm a')})` : ''}
+                    </div>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void sendPortalNoteToStaff()}
+                    disabled={isSendingPortalNote || !portalNoteMessage.trim()}
+                  >
+                    {isSendingPortalNote ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Sending note...
+                      </>
+                    ) : (
+                      'Send Note to Staff'
+                    )}
+                  </Button>
+                </div>
+                <div className="space-y-2 rounded-md border p-3">
+                  <div className="text-sm font-medium">Recent communication log</div>
+                  {portalVisibleNoteLog.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">No communication notes yet.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {portalVisibleNoteLog.slice(0, 10).map((entry) => (
+                        <div key={entry.id} className="rounded border bg-muted/20 p-2 text-xs">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={entry.direction === 'user_to_staff' ? 'border-blue-200 text-blue-700' : 'border-green-200 text-green-700'}
+                            >
+                              {entry.direction === 'user_to_staff' ? 'User -> Staff' : 'Staff -> User'}
+                            </Badge>
+                            <span className="text-muted-foreground">
+                              {(() => {
+                                try {
+                                  const d = new Date(entry.createdAtIso || '');
+                                  return Number.isNaN(d.getTime()) ? '' : format(d, 'MMM d, yyyy h:mm a');
+                                } catch {
+                                  return '';
+                                }
+                              })()}
+                            </span>
+                          </div>
+                          <div className="mt-1 font-medium">{entry.subject}</div>
+                          <div className="mt-1 whitespace-pre-wrap text-muted-foreground">{entry.messagePreview}</div>
+                          {entry.requiresResponse && !entry.respondedAtIso ? (
+                            <Badge variant="outline" className="mt-2 border-red-200 bg-red-50 text-red-700">
+                              Response pending
+                            </Badge>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

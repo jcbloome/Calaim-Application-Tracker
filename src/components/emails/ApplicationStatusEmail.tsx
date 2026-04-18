@@ -4,6 +4,8 @@ import * as React from 'react';
 interface ApplicationStatusEmailProps {
   memberName: string;
   staffName: string;
+  staffTitle?: string;
+  staffEmail?: string;
   message: string;
   status: 'Deleted' | 'Approved' | 'Submitted' | 'Requires Revision' | 'In Progress' | 'Completed & Submitted';
   portalUrl?: string;
@@ -73,6 +75,14 @@ const footer = {
   color: '#888',
 };
 
+const signatureBlock = {
+  marginTop: '8px',
+  marginBottom: '8px',
+  fontSize: '14px',
+  color: '#334155',
+  lineHeight: '1.5',
+};
+
 const getStatusMessage = (status: ApplicationStatusEmailProps['status']) => {
   switch (status) {
     case 'Deleted':
@@ -93,6 +103,8 @@ const getStatusMessage = (status: ApplicationStatusEmailProps['status']) => {
 const ApplicationStatusEmail: React.FC<Readonly<ApplicationStatusEmailProps>> = ({
   memberName,
   staffName,
+  staffTitle,
+  staffEmail,
   message,
   status,
   portalUrl,
@@ -114,6 +126,17 @@ const ApplicationStatusEmail: React.FC<Readonly<ApplicationStatusEmailProps>> = 
             <p style={highlightText}>
               {message}
             </p>
+            <div style={signatureBlock}>
+              {staffTitle ? <div>{staffTitle}</div> : null}
+              <div>
+                <a href={`mailto:${staffEmail || supportEmail || 'calaim@carehomefinders.com'}`}>
+                  {staffEmail || supportEmail || 'calaim@carehomefinders.com'}
+                </a>
+              </div>
+              <div>
+                <a href="https://connectcalaim.com">connectcalaim.com</a>
+              </div>
+            </div>
           </div>
       )}
 
@@ -142,7 +165,8 @@ const ApplicationStatusEmail: React.FC<Readonly<ApplicationStatusEmailProps>> = 
         </div>
       ) : null}
       <p style={footer}>
-        This is an automated message from Connect CalAIM.
+        Connect CalAIM | Connections Care Home Consultants <br />
+        <a href="https://connectcalaim.com">https://connectcalaim.com</a>
       </p>
     </div>
   </div>

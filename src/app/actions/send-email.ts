@@ -64,6 +64,8 @@ interface ApplicationStatusPayload {
   subject: string;
   memberName: string;
   staffName: string;
+  staffTitle?: string;
+  staffEmail?: string;
   message: string;
   status: 'Deleted' | 'Approved' | 'Submitted' | 'Requires Revision' | 'In Progress' | 'Completed & Submitted';
   includeBcc?: boolean;
@@ -350,7 +352,7 @@ async function getBccRecipients(): Promise<string[]> {
 
 
 export const sendApplicationStatusEmail = async (payload: ApplicationStatusPayload) => {
-    const { to, subject, memberName, staffName, message, status, includeBcc = true, portalUrl, surveyUrl, healthPlan } = payload;
+    const { to, subject, memberName, staffName, staffTitle, staffEmail, message, status, includeBcc = true, portalUrl, surveyUrl, healthPlan } = payload;
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
@@ -359,8 +361,13 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
     const memberCaseName = deriveMemberCaseName(subject, memberName);
     const supportSubject = `CalAIM Question Regarding ${memberCaseName}`;
     const normalizedPlan = String(healthPlan || '').trim().toLowerCase();
+    const isKaiser = normalizedPlan.includes('kaiser');
     const isHealthNet = normalizedPlan.includes('health net') || normalizedPlan.includes('healthnet');
     const supportEmail = isHealthNet ? HEALTH_NET_MANAGER_REPLY_TO : APPLICATION_STATUS_REPLY_TO;
+    const resolvedStaffTitle =
+      String(staffTitle || '').trim() ||
+      (isHealthNet ? 'Health Net Care Coordinator' : isKaiser ? 'Kaiser Care Coordinator' : 'Care Coordinator');
+    const resolvedStaffEmail = String(staffEmail || '').trim() || supportEmail;
     const resolvedPortalUrl = resolvePortalLoginUrl(
         portalUrl ||
         process.env.NEXT_PUBLIC_APP_URL ||
@@ -378,6 +385,8 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
             portalUrl: resolvedPortalUrl,
             supportEmail,
             supportSubject,
+            staffTitle: resolvedStaffTitle,
+            staffEmail: resolvedStaffEmail,
         }));
 
         return await sendViaResendWithLog({

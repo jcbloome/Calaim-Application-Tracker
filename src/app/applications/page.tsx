@@ -51,6 +51,7 @@ interface ApplicationData {
     revisionRequestedAt?: unknown;
     revisionRequestedReason?: string;
   }>;
+  communicationNoteLog?: Array<any>;
 }
 
 type ApplicationStatus = 'In Progress' | 'Completed & Submitted' | 'Requires Revision' | 'Approved';
@@ -130,6 +131,26 @@ const getActionText = (app: ApplicationData) => {
   return 'Continue Application';
 };
 
+const getHealthPlanTag = (healthPlan: unknown): 'H' | 'K' | '' => {
+  const normalized = String(healthPlan || '').trim().toLowerCase();
+  if (normalized.includes('health net') || normalized.includes('healthnet')) return 'H';
+  if (normalized.includes('kaiser')) return 'K';
+  return '';
+};
+
+const getPendingCommunicationCounts = (app: ApplicationData): { userStaff: number; interoffice: number; planTag: 'H' | 'K' | '' } => {
+  const log = Array.isArray((app as any)?.communicationNoteLog) ? ((app as any).communicationNoteLog as any[]) : [];
+  const userStaff = log.filter((entry) => {
+    if (String(entry?.category || '').trim() !== 'user_staff') return false;
+    return Boolean(entry?.requiresResponse) && !String(entry?.respondedAtIso || '').trim();
+  }).length;
+  const interoffice = log.filter((entry) => {
+    if (String(entry?.category || '').trim() !== 'interoffice') return false;
+    return Boolean(entry?.requiresResponse) && !String(entry?.respondedAtIso || '').trim();
+  }).length;
+  return { userStaff, interoffice, planTag: getHealthPlanTag(app.healthPlan) };
+};
+
 function ApplicationCard({
   app,
   onDelete,
@@ -143,6 +164,7 @@ function ApplicationCard({
   const { completed, total } = getCompletionProgress(app);
   const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
   const isActive = app.status === 'In Progress' || app.status === 'Requires Revision';
+  const pendingCommunication = getPendingCommunicationCounts(app);
 
   return (
     <Card className={`transition-shadow hover:shadow-md ${app.status === 'Requires Revision' ? 'border-yellow-300' : app.status === 'Approved' ? 'border-green-300' : ''}`}>
@@ -157,6 +179,18 @@ function ApplicationCard({
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {(pendingCommunication.userStaff > 0 || pendingCommunication.interoffice > 0) && (
+              <>
+                <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-[10px]">
+                  <Bell className="mr-1 h-3 w-3" />
+                  {pendingCommunication.planTag || '-'} U/S {pendingCommunication.userStaff}
+                </Badge>
+                <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-[10px]">
+                  <Bell className="mr-1 h-3 w-3" />
+                  {pendingCommunication.planTag || '-'} IO {pendingCommunication.interoffice}
+                </Badge>
+              </>
+            )}
             {app.statusRemindersEnabled !== false && (
               <Bell className="h-4 w-4 text-blue-400" title="Status reminders on" />
             )}

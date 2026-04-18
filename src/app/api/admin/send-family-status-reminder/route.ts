@@ -139,8 +139,10 @@ export async function POST(request: NextRequest) {
       subject,
       memberName: referrerName,
       staffName: senderName,
+      staffEmail: String(appData?.assignedStaffEmail || '').trim() || String(appData?.calaimCoordinatorEmail || '').trim() || undefined,
       message,
       status: 'In Progress',
+      healthPlan: String(appData?.healthPlan || '').trim(),
     });
 
     if (Boolean(testOnly)) {

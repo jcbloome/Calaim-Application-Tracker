@@ -476,6 +476,9 @@ const STRICT_UPLOAD_REQUIRED_FOR_COMPLETION = new Set([
 
 const PROGRAM_INFO_GUIDE_URL = 'https://connectcalaim.com/info/eligibility';
 const HEALTH_NET_MANAGER_SIGNATURE = 'Leidy Kanjanapitak';
+const HEALTH_NET_MANAGER_EMAIL = 'leidy@carehomefinders.com';
+const DEFAULT_COORDINATOR_EMAIL = 'calaim@carehomefinders.com';
+const CONNECT_CALAIM_WEBSITE = 'https://connectcalaim.com';
 
 const getAuthorizationTypes = (healthPlan?: string) => {
   const normalized = String(healthPlan || '').toLowerCase();
@@ -1632,10 +1635,7 @@ function AdminActions({ application }: { application: Application }) {
         setIsSending(true);
 
         try {
-            const assignedStaffSignature =
-              String((application as any)?.assignedStaffName || '').trim() ||
-              String((application as any)?.assignedToName || '').trim() ||
-              String(adminUser?.displayName || adminUser?.email || 'The Connections Team').trim();
+            const signatureMeta = getManagerSignatureMeta();
             const surveyUrl =
               status === 'Approved'
                 ? `${window.location.origin.replace(/\/$/, '')}/forms/customer-feedback?applicationId=${encodeURIComponent(String(application.id || ''))}`
@@ -1650,7 +1650,9 @@ function AdminActions({ application }: { application: Application }) {
                     includeBcc: false,
                     subject: `Update on CalAIM Application for ${application.memberFirstName} ${application.memberLastName}`,
                     memberName: application.referrerName || 'there',
-                    staffName: assignedStaffSignature,
+                    staffName: signatureMeta.managerName,
+                    staffTitle: signatureMeta.managerTitle,
+                    staffEmail: signatureMeta.managerEmail,
                     message: notes || 'Your application status has been updated. Please log in to your dashboard for more details.',
                     status: status as any, // Cast because we know it's valid
                     surveyUrl,
@@ -2441,6 +2443,12 @@ function ApplicationDetailPageContent() {
   const [rcfeSignerEmailInput, setRcfeSignerEmailInput] = useState('');
   const [agreedRoomBoardAmountInput, setAgreedRoomBoardAmountInput] = useState('');
   const [isSendingEligibilityNote, setIsSendingEligibilityNote] = useState(false);
+  const [eligibilityNoteSendStatus, setEligibilityNoteSendStatus] = useState<{
+    state: 'idle' | 'sending' | 'success' | 'failed' | 'blocked_duplicate';
+    message: string;
+    atIso?: string;
+  }>({ state: 'idle', message: '' });
+  const [selectedEligibilityScreenshotIds, setSelectedEligibilityScreenshotIds] = useState<string[]>([]);
   const [eligibilityTemplateSelection, setEligibilityTemplateSelection] = useState<string>('none');
   const [isUpdatingReminderControls, setIsUpdatingReminderControls] = useState(false);
   const [isSendingTestReminder, setIsSendingTestReminder] = useState(false);
@@ -3530,6 +3538,24 @@ function ApplicationDetailPageContent() {
         );
       }
 
+      await appendCommunicationNoteLog({
+        category: 'interoffice',
+        channel: 'interoffice_note',
+        direction: 'staff_to_staff',
+        status: 'success',
+        subject: `Interoffice note for ${memberName}`,
+        messagePreview: interofficeNote.message.trim().slice(0, 300),
+        fullMessage: interofficeNote.message.trim(),
+        recipientName: recipients.map((recipient) => recipient.name).join(', '),
+        requiresResponse: Boolean(followUpDateStr),
+        respondedAtIso: null,
+        metadata: {
+          recipientCount: recipients.length,
+          followUpDate: followUpDateStr || null,
+          priority: interofficeNote.priority,
+        },
+      });
+
       toast({
         title: 'Interoffice Note Sent',
         description: followUpDateStr
@@ -4409,6 +4435,27 @@ function ApplicationDetailPageContent() {
     uploadedByName: string | null;
   };
 
+  type CommunicationNoteLogEntry = {
+    id: string;
+    category: 'user_staff' | 'interoffice';
+    channel: 'eligibility_note' | 'portal_note' | 'interoffice_note' | string;
+    direction: 'staff_to_user' | 'user_to_staff' | 'staff_to_staff';
+    healthPlanTag: 'H' | 'K' | '';
+    status: 'success' | 'failed' | 'blocked_duplicate';
+    subject: string;
+    messagePreview: string;
+    fullMessage?: string;
+    recipientName?: string;
+    recipientEmail?: string;
+    authorUid?: string | null;
+    authorName?: string;
+    requiresResponse?: boolean;
+    respondedAtIso?: string | null;
+    metadata?: Record<string, unknown>;
+    createdAtIso: string;
+    timestampMs: number;
+  };
+
   const getEligibilityScreenshotUploads = (): EligibilityScreenshotUpload[] => {
     const raw = (application as any)?.eligibilityScreenshotUploads;
     if (!Array.isArray(raw)) return [];
@@ -4424,6 +4471,108 @@ function ApplicationDetailPageContent() {
       }))
       .filter((r: EligibilityScreenshotUpload) => Boolean(r.fileName));
   };
+
+  const getHealthPlanTag = (): 'H' | 'K' | '' => {
+    const plan = String((application as any)?.healthPlan || '').trim().toLowerCase();
+    if (plan.includes('health net') || plan.includes('healthnet')) return 'H';
+    if (plan.includes('kaiser')) return 'K';
+    return '';
+  };
+
+  const getCommunicationNoteLog = (): CommunicationNoteLogEntry[] => {
+    const raw = (application as any)?.communicationNoteLog;
+    if (!Array.isArray(raw)) return [];
+    const parsed = raw
+      .map((entry: any) => ({
+        id: String(entry?.id || '').trim(),
+        category: String(entry?.category || '') === 'interoffice' ? 'interoffice' : 'user_staff',
+        channel: String(entry?.channel || '').trim() || 'eligibility_note',
+        direction:
+          String(entry?.direction || '').trim() === 'user_to_staff'
+            ? 'user_to_staff'
+            : String(entry?.direction || '').trim() === 'staff_to_staff'
+              ? 'staff_to_staff'
+              : 'staff_to_user',
+        healthPlanTag: (String(entry?.healthPlanTag || '').trim() === 'H'
+          ? 'H'
+          : String(entry?.healthPlanTag || '').trim() === 'K'
+            ? 'K'
+            : '') as 'H' | 'K' | '',
+        status:
+          String(entry?.status || '').trim() === 'failed'
+            ? 'failed'
+            : String(entry?.status || '').trim() === 'blocked_duplicate'
+              ? 'blocked_duplicate'
+              : 'success',
+        subject: String(entry?.subject || '').trim() || 'Communication note',
+        messagePreview: String(entry?.messagePreview || '').trim(),
+        fullMessage: String(entry?.fullMessage || '').trim() || undefined,
+        recipientName: String(entry?.recipientName || '').trim() || undefined,
+        recipientEmail: String(entry?.recipientEmail || '').trim() || undefined,
+        authorUid: String(entry?.authorUid || '').trim() || undefined,
+        authorName: String(entry?.authorName || '').trim() || undefined,
+        requiresResponse: Boolean(entry?.requiresResponse),
+        respondedAtIso: String(entry?.respondedAtIso || '').trim() || null,
+        metadata: entry?.metadata && typeof entry.metadata === 'object' ? entry.metadata : undefined,
+        createdAtIso: String(entry?.createdAtIso || '').trim(),
+        timestampMs: Number(entry?.timestampMs || 0),
+      }))
+      .filter((entry) => Boolean(entry.id));
+    parsed.sort((a, b) => {
+      const aMs = Number(a.timestampMs || new Date(a.createdAtIso || '').getTime() || 0);
+      const bMs = Number(b.timestampMs || new Date(b.createdAtIso || '').getTime() || 0);
+      return bMs - aMs;
+    });
+    return parsed;
+  };
+
+  const saveCommunicationNoteLog = async (entries: CommunicationNoteLogEntry[]) => {
+    if (!docRef) return;
+    const next = [...entries]
+      .sort((a, b) => Number(b.timestampMs || 0) - Number(a.timestampMs || 0))
+      .slice(0, 300);
+    await setDoc(
+      docRef,
+      {
+        communicationNoteLog: next,
+        lastUpdated: serverTimestamp(),
+      } as any,
+      { merge: true }
+    );
+    setApplication((prev) => (prev ? ({ ...(prev as any), communicationNoteLog: next } as any) : prev));
+  };
+
+  const appendCommunicationNoteLog = async (
+    input: Omit<CommunicationNoteLogEntry, 'id' | 'createdAtIso' | 'timestampMs' | 'healthPlanTag' | 'authorUid' | 'authorName'>
+  ): Promise<CommunicationNoteLogEntry | null> => {
+    if (!docRef) return null;
+    const now = Date.now();
+    const entry: CommunicationNoteLogEntry = {
+      ...input,
+      id: `comm-note-${now}-${Math.random().toString(16).slice(2)}`,
+      createdAtIso: new Date(now).toISOString(),
+      timestampMs: now,
+      healthPlanTag: getHealthPlanTag(),
+      authorUid: String(user?.uid || '').trim() || null,
+      authorName: String(user?.displayName || user?.email || 'Staff').trim(),
+    };
+    const next = [entry, ...getCommunicationNoteLog()];
+    await saveCommunicationNoteLog(next);
+    return entry;
+  };
+
+  useEffect(() => {
+    const uploadsWithUrls = getEligibilityScreenshotUploads().filter((upload) =>
+      Boolean(String(upload.downloadURL || '').trim())
+    );
+    const validIds = new Set(uploadsWithUrls.map((upload) => upload.id));
+    setSelectedEligibilityScreenshotIds((prev) => {
+      const kept = prev.filter((id) => validIds.has(id));
+      if (kept.length > 0) return kept;
+      if (uploadsWithUrls.length === 0) return [];
+      return uploadsWithUrls.map((upload) => upload.id);
+    });
+  }, [(application as any)?.eligibilityScreenshotUploads]);
 
   const upsertEligibilityScreenshotUploads = async (next: EligibilityScreenshotUpload[]) => {
     if (!docRef) return;
@@ -5282,6 +5431,7 @@ function ApplicationDetailPageContent() {
 
       const reviewerName = user?.displayName || user?.email || 'Admin';
       const reviewerUid = user?.uid || null;
+      const signatureMeta = getManagerSignatureMeta();
       const isSummary = formName === 'CS Member Summary' || formName === 'CS Summary';
       const rejectedAtIso = new Date().toISOString();
       let sentAtIso: string | null = null;
@@ -5311,10 +5461,13 @@ function ApplicationDetailPageContent() {
             includeBcc: false,
             subject,
             memberName: application.referrerName || 'there',
-            staffName: reviewerName,
+            staffName: signatureMeta.managerName || reviewerName,
+            staffTitle: signatureMeta.managerTitle,
+            staffEmail: signatureMeta.managerEmail,
             message: emailMessage,
             status: 'Requires Revision',
             portalUrl: applicantPortalLoginUrl,
+            healthPlan: String(application.healthPlan || ''),
           }),
         });
         const result = await response.json().catch(() => null);
@@ -6038,21 +6191,38 @@ function ApplicationDetailPageContent() {
     return combined || 'there';
   };
 
+  const getManagerSignatureMeta = () => {
+    const normalizedPlan = String((application as any)?.healthPlan || '').trim().toLowerCase();
+    const isKaiser = normalizedPlan.includes('kaiser');
+    const isHealthNet = normalizedPlan.includes('health net') || normalizedPlan.includes('healthnet');
+    const managerName =
+      isHealthNet
+        ? HEALTH_NET_MANAGER_SIGNATURE
+        : String((application as any)?.assignedStaffName || '').trim() ||
+          String((application as any)?.assignedToName || '').trim() ||
+          String(user?.displayName || user?.email || 'The Connections Team').trim();
+    const managerEmail =
+      isHealthNet
+        ? HEALTH_NET_MANAGER_EMAIL
+        : String((application as any)?.assignedStaffEmail || '').trim() ||
+          String(user?.email || '').trim() ||
+          DEFAULT_COORDINATOR_EMAIL;
+    const managerTitle = isKaiser ? 'Kaiser Care Coordinator' : 'Health Net Care Coordinator';
+    return { managerName, managerEmail, managerTitle, isHealthNet };
+  };
+
   const applyEligibilityTemplate = async (templateKey: string) => {
     if (!application || !docRef) return;
     let nextMessage = '';
     const recipientName = getReferrerDisplayName();
-    const assignedStaffSignature =
-      String((application as any)?.assignedStaffName || '').trim() ||
-      String((application as any)?.assignedToName || '').trim() ||
-      String(user?.displayName || user?.email || 'The Connections Team').trim();
     const normalizedPlan = String((application as any)?.healthPlan || '').trim().toLowerCase();
     const planLabel = normalizedPlan.includes('kaiser')
       ? 'Kaiser'
       : normalizedPlan.includes('health net') || normalizedPlan.includes('healthnet')
         ? 'Health Net'
         : String((application as any)?.healthPlan || 'the selected health plan').trim();
-    const templateSignature = planLabel === 'Health Net' ? HEALTH_NET_MANAGER_SIGNATURE : assignedStaffSignature;
+    const signatureMeta = getManagerSignatureMeta();
+    const templateSignature = signatureMeta.managerName;
     if (templateKey === 'health-net-molina-switch') {
       nextMessage = [
         `Hi ${recipientName}:`,
@@ -6062,7 +6232,11 @@ function ApplicationDetailPageContent() {
         'Any requested changes take effect at the end of the month.',
         `Please see our Program Information guide (${PROGRAM_INFO_GUIDE_URL}) for more information.`,
         '',
-        `Sincerely, ${HEALTH_NET_MANAGER_SIGNATURE}`,
+        'Sincerely,',
+        templateSignature,
+        signatureMeta.managerTitle,
+        signatureMeta.managerEmail,
+        `Website: ${CONNECT_CALAIM_WEBSITE}`,
       ].join('\n');
     } else if (templateKey === 'no-medi-cal-assigned-plan') {
       nextMessage = [
@@ -6070,13 +6244,42 @@ function ApplicationDetailPageContent() {
         '',
         `Unfortunately, this member does not currently have Medi-Cal assigned with ${planLabel}.`,
         '',
-        `Sincerely, ${templateSignature}`,
+        'Sincerely,',
+        templateSignature,
+        signatureMeta.managerTitle,
+        signatureMeta.managerEmail,
+        `Website: ${CONNECT_CALAIM_WEBSITE}`,
       ].join('\n');
     }
     if (!nextMessage) return;
 
     setApplication((prev) => (prev ? ({ ...(prev as any), calaimTrackingReason: nextMessage } as any) : prev));
     await updateTrackingReason(nextMessage);
+  };
+
+  const markCommunicationNoteResponded = async (noteId: string) => {
+    if (!noteId) return;
+    const current = getCommunicationNoteLog();
+    const nowIso = new Date().toISOString();
+    const next = current.map((entry) =>
+      entry.id === noteId
+        ? {
+            ...entry,
+            requiresResponse: false,
+            respondedAtIso: nowIso,
+            metadata: {
+              ...(entry.metadata || {}),
+              respondedByUid: String(user?.uid || '').trim() || null,
+              respondedByName: String(user?.displayName || user?.email || 'Staff').trim(),
+            },
+          }
+        : entry
+    );
+    await saveCommunicationNoteLog(next);
+    toast({
+      title: 'Marked responded',
+      description: 'This note was marked as responded.',
+    });
   };
 
   const sendEligibilityNote = async () => {
@@ -6095,9 +6298,56 @@ function ApplicationDetailPageContent() {
       toast({ variant: 'destructive', title: 'Missing Reason', description: 'Select a not-eligible reason before sending.' });
       return;
     }
+    const selectedScreenshotIdSet = new Set(selectedEligibilityScreenshotIds);
     const screenshotLinks = getEligibilityScreenshotUploads()
+      .filter((upload) => selectedScreenshotIdSet.has(upload.id))
       .map((upload) => String(upload.downloadURL || '').trim())
       .filter(Boolean);
+    const noteFingerprint = JSON.stringify({
+      note,
+      notEligibleReason: isNotEligible ? notEligibleReason : '',
+      screenshotLinks: [...screenshotLinks].sort(),
+    });
+    const latestSuccessFingerprint = String(
+      latestEligibilitySuccessNote?.metadata && typeof latestEligibilitySuccessNote.metadata === 'object'
+        ? (latestEligibilitySuccessNote.metadata as any).fingerprint || ''
+        : ''
+    ).trim();
+    if (latestSuccessFingerprint && latestSuccessFingerprint === noteFingerprint) {
+      const blockedAtIso = new Date().toISOString();
+      setEligibilityNoteSendStatus({
+        state: 'blocked_duplicate',
+        message: 'This exact note was already sent. Update the note before sending again.',
+        atIso: blockedAtIso,
+      });
+      await appendCommunicationNoteLog({
+        category: 'user_staff',
+        channel: 'eligibility_note',
+        direction: 'staff_to_user',
+        status: 'blocked_duplicate',
+        subject: `${isNotEligible ? 'CalAIM Ineligibility Notice' : 'CalAIM Eligibility Update'} for ${application.memberFirstName} ${application.memberLastName}`,
+        messagePreview: note.slice(0, 300),
+        fullMessage: note,
+        recipientName:
+          String(application.referrerName || '').trim() ||
+          `${String(application.referrerFirstName || '').trim()} ${String(application.referrerLastName || '').trim()}`.trim() ||
+          'there',
+        recipientEmail: String(application.referrerEmail || '').trim() || undefined,
+        requiresResponse: false,
+        respondedAtIso: null,
+        metadata: {
+          fingerprint: noteFingerprint,
+          duplicateOfId: latestEligibilitySuccessNote?.id || null,
+          screenshotCount: screenshotLinks.length,
+        },
+      });
+      toast({
+        variant: 'destructive',
+        title: 'Duplicate note blocked',
+        description: 'This note already exists in the note log and was not sent again.',
+      });
+      return;
+    }
     const screenshotSection =
       screenshotLinks.length > 0
         ? `\n\nEligibility screenshot link(s):\n${screenshotLinks.map((url) => `- ${url}`).join('\n')}`
@@ -6105,23 +6355,29 @@ function ApplicationDetailPageContent() {
     const reasonSection = isNotEligible && notEligibleReason ? `Reason: ${notEligibleReason}\n\n` : '';
     const composedMessage = `${reasonSection}${note}${screenshotSection}`.trim();
     setIsSendingEligibilityNote(true);
+    setEligibilityNoteSendStatus({
+      state: 'sending',
+      message: 'Sending note...',
+      atIso: new Date().toISOString(),
+    });
     try {
-      const assignedStaffSignature =
-        String((application as any)?.assignedStaffName || '').trim() ||
-        String((application as any)?.assignedToName || '').trim() ||
-        String(user?.displayName || user?.email || 'The Connections Team').trim();
+      const signatureMeta = getManagerSignatureMeta();
+      const subjectLine = `${isNotEligible ? 'CalAIM Ineligibility Notice' : 'CalAIM Eligibility Update'} for ${application.memberFirstName} ${application.memberLastName}`;
+      const recipientName =
+        String(application.referrerName || '').trim() ||
+        `${String(application.referrerFirstName || '').trim()} ${String(application.referrerLastName || '').trim()}`.trim() ||
+        'there';
       const response = await fetch('/api/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: application.referrerEmail,
           includeBcc: false,
-          subject: `${isNotEligible ? 'CalAIM Ineligibility Notice' : 'CalAIM Eligibility Update'} for ${application.memberFirstName} ${application.memberLastName}`,
-          memberName:
-            String(application.referrerName || '').trim() ||
-            `${String(application.referrerFirstName || '').trim()} ${String(application.referrerLastName || '').trim()}`.trim() ||
-            'there',
-          staffName: assignedStaffSignature,
+          subject: subjectLine,
+          memberName: recipientName,
+          staffName: signatureMeta.managerName,
+          staffTitle: signatureMeta.managerTitle,
+          staffEmail: signatureMeta.managerEmail,
           message: composedMessage,
           status: (application.status || 'In Progress') as any,
           healthPlan: String(application.healthPlan || ''),
@@ -6131,6 +6387,23 @@ function ApplicationDetailPageContent() {
       if (!result.success) {
         throw new Error(result.message || 'Failed to send note');
       }
+      await appendCommunicationNoteLog({
+        category: 'user_staff',
+        channel: 'eligibility_note',
+        direction: 'staff_to_user',
+        status: 'success',
+        subject: subjectLine,
+        messagePreview: composedMessage.slice(0, 300),
+        fullMessage: composedMessage,
+        recipientName,
+        recipientEmail: String(application.referrerEmail || '').trim() || undefined,
+        requiresResponse: false,
+        respondedAtIso: null,
+        metadata: {
+          screenshotCount: screenshotLinks.length,
+          fingerprint: noteFingerprint,
+        },
+      });
       if (isNotEligible && docRef) {
         const historyEntry = {
           status: 'On Hold',
@@ -6168,7 +6441,39 @@ function ApplicationDetailPageContent() {
           : 'Your eligibility note was sent to the referrer.',
         className: 'bg-green-100 text-green-900 border-green-200'
       });
+      setEligibilityNoteSendStatus({
+        state: 'success',
+        message: 'Sent successfully. The note log has been updated.',
+        atIso: new Date().toISOString(),
+      });
     } catch (error: any) {
+      const failAtIso = new Date().toISOString();
+      await appendCommunicationNoteLog({
+        category: 'user_staff',
+        channel: 'eligibility_note',
+        direction: 'staff_to_user',
+        status: 'failed',
+        subject: `${isNotEligible ? 'CalAIM Ineligibility Notice' : 'CalAIM Eligibility Update'} for ${application.memberFirstName} ${application.memberLastName}`,
+        messagePreview: composedMessage.slice(0, 300),
+        fullMessage: composedMessage,
+        recipientName:
+          String(application.referrerName || '').trim() ||
+          `${String(application.referrerFirstName || '').trim()} ${String(application.referrerLastName || '').trim()}`.trim() ||
+          'there',
+        recipientEmail: String(application.referrerEmail || '').trim() || undefined,
+        requiresResponse: false,
+        respondedAtIso: null,
+        metadata: {
+          screenshotCount: screenshotLinks.length,
+          errorMessage: String(error?.message || 'Unknown send error'),
+          fingerprint: noteFingerprint,
+        },
+      });
+      setEligibilityNoteSendStatus({
+        state: 'failed',
+        message: String(error?.message || 'Could not send the eligibility note.'),
+        atIso: failAtIso,
+      });
       toast({
         variant: 'destructive',
         title: 'Send Failed',
@@ -6213,6 +6518,7 @@ function ApplicationDetailPageContent() {
     }
     setIsSendingProofIncomeSocWarning(true);
     try {
+      const signatureMeta = getManagerSignatureMeta();
       const response = await fetch('/api/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6221,9 +6527,12 @@ function ApplicationDetailPageContent() {
           includeBcc: false,
           subject: socWarningSubject,
           memberName: String(application.referrerName || 'there'),
-          staffName: String(user?.displayName || user?.email || 'The Connections Team'),
+          staffName: signatureMeta.managerName,
+          staffTitle: signatureMeta.managerTitle,
+          staffEmail: signatureMeta.managerEmail,
           status: String(application.status || 'In Progress'),
           message: socWarningMessage,
+          healthPlan: String(application.healthPlan || ''),
         }),
       });
       const result = await response.json().catch(() => null);
@@ -6342,6 +6651,37 @@ function ApplicationDetailPageContent() {
     }
     return [] as Array<{ label: string; phone: string }>;
   })();
+  const selectableEligibilityScreenshots = getEligibilityScreenshotUploads().filter((upload) =>
+    Boolean(String(upload.downloadURL || '').trim())
+  );
+  const communicationNoteLog = getCommunicationNoteLog();
+  const latestEligibilitySuccessNote = communicationNoteLog.find(
+    (entry) => entry.channel === 'eligibility_note' && entry.direction === 'staff_to_user' && entry.status === 'success'
+  );
+  const pendingUserStaffResponses = communicationNoteLog.filter(
+    (entry) => entry.category === 'user_staff' && entry.requiresResponse && !entry.respondedAtIso
+  ).length;
+  const pendingInterofficeResponses = communicationNoteLog.filter(
+    (entry) => entry.category === 'interoffice' && entry.requiresResponse && !entry.respondedAtIso
+  ).length;
+  const currentEligibilityDraftFingerprint = JSON.stringify({
+    note: String((application as any)?.calaimTrackingReason || '').trim(),
+    notEligibleReason:
+      String((application as any)?.calaimTrackingStatus || '').trim() === 'Not CalAIM Eligible'
+        ? String((application as any)?.calaimNotEligibleReason || '').trim()
+        : '',
+    screenshotLinks: getEligibilityScreenshotUploads()
+      .filter((upload) => selectedEligibilityScreenshotIds.includes(upload.id))
+      .map((upload) => String(upload.downloadURL || '').trim())
+      .filter(Boolean)
+      .sort(),
+  });
+  const isEligibilityDraftDuplicate =
+    String(
+      latestEligibilitySuccessNote?.metadata && typeof latestEligibilitySuccessNote.metadata === 'object'
+        ? (latestEligibilitySuccessNote.metadata as any).fingerprint || ''
+        : ''
+    ).trim() === currentEligibilityDraftFingerprint;
   
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
@@ -8456,11 +8796,113 @@ function ApplicationDetailPageContent() {
                           onBlur={(event) => updateTrackingReason(event.target.value)}
                           disabled={isUpdatingTracking}
                         />
+                        {latestEligibilitySuccessNote ? (
+                          <div className="rounded-md border bg-muted/20 p-2 text-xs text-muted-foreground">
+                            Last sent:{' '}
+                            {(() => {
+                              try {
+                                const d = new Date(latestEligibilitySuccessNote.createdAtIso || '');
+                                return Number.isNaN(d.getTime()) ? 'recently' : format(d, 'MMM d, yyyy h:mm a');
+                              } catch {
+                                return 'recently';
+                              }
+                            })()}
+                            {latestEligibilitySuccessNote.recipientEmail
+                              ? ` to ${latestEligibilitySuccessNote.recipientEmail}`
+                              : ''}
+                          </div>
+                        ) : null}
+                        {eligibilityNoteSendStatus.state !== 'idle' ? (
+                          <div
+                            className={cn(
+                              'rounded-md border p-2 text-xs',
+                              eligibilityNoteSendStatus.state === 'success'
+                                ? 'border-green-200 bg-green-50 text-green-800'
+                                : eligibilityNoteSendStatus.state === 'sending'
+                                  ? 'border-blue-200 bg-blue-50 text-blue-800'
+                                  : eligibilityNoteSendStatus.state === 'blocked_duplicate'
+                                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                                    : 'border-red-200 bg-red-50 text-red-800'
+                            )}
+                          >
+                            {eligibilityNoteSendStatus.message}
+                            {eligibilityNoteSendStatus.atIso
+                              ? ` (${format(new Date(eligibilityNoteSendStatus.atIso), 'MMM d, h:mm a')})`
+                              : ''}
+                          </div>
+                        ) : null}
+                        {isEligibilityDraftDuplicate ? (
+                          <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                            This draft matches the last sent note. Sending is blocked until you change the content.
+                          </div>
+                        ) : null}
+                        {selectableEligibilityScreenshots.length > 0 ? (
+                          <div className="space-y-2 rounded-md border p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <Label className="text-xs font-medium">Screenshots to include in email</Label>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() =>
+                                    setSelectedEligibilityScreenshotIds(
+                                      selectableEligibilityScreenshots.map((upload) => upload.id)
+                                    )
+                                  }
+                                >
+                                  Select All
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => setSelectedEligibilityScreenshotIds([])}
+                                >
+                                  Clear
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              {selectableEligibilityScreenshots.map((upload) => {
+                                const checked = selectedEligibilityScreenshotIds.includes(upload.id);
+                                return (
+                                  <label
+                                    key={upload.id}
+                                    className="flex items-start gap-2 rounded-md border bg-muted/20 p-2 text-xs"
+                                  >
+                                    <Checkbox
+                                      checked={checked}
+                                      onCheckedChange={(next) => {
+                                        const shouldCheck = next === true;
+                                        setSelectedEligibilityScreenshotIds((prev) => {
+                                          if (shouldCheck) {
+                                            if (prev.includes(upload.id)) return prev;
+                                            return [...prev, upload.id];
+                                          }
+                                          return prev.filter((id) => id !== upload.id);
+                                        });
+                                      }}
+                                    />
+                                    <span className="min-w-0 truncate" title={upload.fileName}>
+                                      {upload.fileName}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Selected screenshots are appended as links in the note email.
+                            </p>
+                          </div>
+                        ) : null}
                         <Button
                           variant="outline"
                           className="w-full"
                           onClick={sendEligibilityNote}
-                          disabled={isSendingEligibilityNote}
+                          disabled={isSendingEligibilityNote || isEligibilityDraftDuplicate}
                         >
                           {isSendingEligibilityNote ? (
                             <>
@@ -8517,6 +8959,122 @@ function ApplicationDetailPageContent() {
                           );
                         })}
                       </div>
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <Bell className={cn('h-4 w-4', pendingUserStaffResponses > 0 ? 'text-blue-600' : 'text-muted-foreground')} />
+                  Note log and responses
+                  <span className="ml-auto flex items-center gap-1">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'text-[10px]',
+                        pendingUserStaffResponses > 0 ? 'border-blue-200 bg-blue-50 text-blue-700' : ''
+                      )}
+                    >
+                      User/Staff ({getHealthPlanTag() || '-'}) {pendingUserStaffResponses}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'text-[10px]',
+                        pendingInterofficeResponses > 0 ? 'border-amber-200 bg-amber-50 text-amber-700' : ''
+                      )}
+                    >
+                      Interoffice ({getHealthPlanTag() || '-'}) {pendingInterofficeResponses}
+                    </Badge>
+                  </span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Application note log</DialogTitle>
+                  <DialogDescription>
+                    Timeline of user/staff communications and interoffice notes, including send status and timestamps.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                      User/Staff pending responses: {pendingUserStaffResponses}
+                    </Badge>
+                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                      Interoffice pending responses: {pendingInterofficeResponses}
+                    </Badge>
+                    <Badge variant="outline">Plan tag: {getHealthPlanTag() || '-'}</Badge>
+                  </div>
+                  {communicationNoteLog.length === 0 ? (
+                    <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                      No communication notes have been logged for this application yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {communicationNoteLog.slice(0, 80).map((entry) => {
+                        const isUserStaff = entry.category === 'user_staff';
+                        const statusLabel =
+                          entry.status === 'success'
+                            ? 'Sent'
+                            : entry.status === 'blocked_duplicate'
+                              ? 'Blocked duplicate'
+                              : 'Send failed';
+                        return (
+                          <div
+                            key={entry.id}
+                            className={cn(
+                              'rounded-md border p-3',
+                              isUserStaff ? 'border-blue-200 bg-blue-50/40' : 'border-amber-200 bg-amber-50/40'
+                            )}
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className={isUserStaff ? 'border-blue-200 text-blue-700' : 'border-amber-200 text-amber-700'}>
+                                {isUserStaff ? 'User/Staff' : 'Interoffice'}
+                              </Badge>
+                              <Badge variant="outline">{statusLabel}</Badge>
+                              <Badge variant="outline">{entry.direction.replaceAll('_', ' ')}</Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {(() => {
+                                  try {
+                                    const d = new Date(entry.createdAtIso || '');
+                                    return Number.isNaN(d.getTime()) ? '' : format(d, 'MMM d, yyyy h:mm a');
+                                  } catch {
+                                    return '';
+                                  }
+                                })()}
+                              </span>
+                            </div>
+                            <div className="mt-2 text-sm font-medium">{entry.subject}</div>
+                            {entry.messagePreview ? (
+                              <div className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{entry.messagePreview}</div>
+                            ) : null}
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              {entry.recipientEmail ? <span>Recipient: {entry.recipientEmail}</span> : null}
+                              {entry.authorName ? <span>By: {entry.authorName}</span> : null}
+                              {entry.requiresResponse && !entry.respondedAtIso ? (
+                                <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">Response needed</Badge>
+                              ) : entry.respondedAtIso ? (
+                                <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700">Responded</Badge>
+                              ) : null}
+                            </div>
+                            {entry.requiresResponse && !entry.respondedAtIso ? (
+                              <div className="mt-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => void markCommunicationNoteResponded(entry.id)}
+                                >
+                                  Mark responded
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
