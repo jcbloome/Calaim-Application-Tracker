@@ -38,6 +38,17 @@ import { useAdmin } from '@/hooks/use-admin';
 import { ApplicationTrackerInline } from '@/components/admin/ApplicationTrackerInline';
 
 type ApplicationStatusType = Application['status'];
+type IncomingDocumentSummary = {
+  name: string;
+  flaggedCount: number;
+  totalCount: number;
+};
+type GroupedApplicationRow = {
+  key: string;
+  primaryApp: WithId<Application & FormValues>;
+  appIds: string[];
+  incomingDocuments: IncomingDocumentSummary[];
+};
 
 const getBadgeVariant = (status: ApplicationStatusType) => {
   switch (status) {
@@ -92,6 +103,69 @@ const getUnacknowledgedDocsCount = (app: WithId<Application & FormValues>) => {
     const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
     return isCompleted && !isSummary && !form.acknowledged;
   }).length;
+};
+
+const normalizeLookup = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+const getMemberGroupingKey = (app: WithId<Application & FormValues>) => {
+  const mrn = normalizeLookup((app as any)?.memberMrn);
+  if (mrn) return `mrn:${mrn}`;
+  const mediCal = normalizeLookup((app as any)?.memberMediCalNum);
+  if (mediCal) return `medi:${mediCal}`;
+  const dob = normalizeLookup((app as any)?.memberDob);
+  const first = normalizeLookup((app as any)?.memberFirstName);
+  const last = normalizeLookup((app as any)?.memberLastName);
+  const fullName = `${first} ${last}`.trim();
+  if (fullName && dob) return `name_dob:${fullName}|${dob}`;
+  if (fullName) return `name:${fullName}`;
+  return `app:${String(app.id || '')}`;
+};
+
+const getIncomingDocumentSummaries = (
+  app: WithId<Application & FormValues>
+): IncomingDocumentSummary[] => {
+  const forms = Array.isArray((app as any)?.forms) ? ((app as any).forms as any[]) : [];
+  return forms
+    .filter((form: any) => {
+      const isCompleted = String(form?.status || '').trim() === 'Completed';
+      if (!isCompleted) return false;
+      const formName = String(form?.name || '').trim();
+      const isSummary = formName === 'CS Member Summary' || formName === 'CS Summary';
+      if (isSummary) return false;
+      return form?.acknowledged !== true;
+    })
+    .map((form: any) => {
+      const formName = String(form?.name || '').trim();
+      const fileName = String(form?.fileName || '').trim();
+      const name = fileName || formName || 'Incoming document';
+      return {
+        name,
+        flaggedCount: 1,
+        totalCount: 1,
+      };
+    });
+};
+
+const mergeIncomingDocuments = (docs: IncomingDocumentSummary[]): IncomingDocumentSummary[] => {
+  const byName = new Map<string, IncomingDocumentSummary>();
+  docs.forEach((doc) => {
+    const docKey = normalizeLookup(doc.name);
+    const prev = byName.get(docKey);
+    if (!prev) {
+      byName.set(docKey, { ...doc });
+      return;
+    }
+    byName.set(docKey, {
+      name: prev.name,
+      flaggedCount: prev.flaggedCount + doc.flaggedCount,
+      totalCount: prev.totalCount + doc.totalCount,
+    });
+  });
+  return Array.from(byName.values());
 };
 
 const getPlanBadgeLabel = (app: WithId<Application & FormValues>) => {
@@ -614,6 +688,34 @@ export const AdminApplicationsTable = ({
         });
     }, [applications]);
 
+    const groupedApplications = useMemo(() => {
+      const grouped = new Map<string, GroupedApplicationRow>();
+
+      sortedApplications.forEach((app) => {
+        const key = getMemberGroupingKey(app);
+        const existing = grouped.get(key);
+        const incomingDocs = getIncomingDocumentSummaries(app);
+
+        if (!existing) {
+          grouped.set(key, {
+            key,
+            primaryApp: app,
+            appIds: [app.id],
+            incomingDocuments: mergeIncomingDocuments(incomingDocs),
+          });
+          return;
+        }
+
+        existing.appIds.push(app.id);
+        existing.incomingDocuments = mergeIncomingDocuments([
+          ...existing.incomingDocuments,
+          ...incomingDocs,
+        ]);
+      });
+
+      return Array.from(grouped.values());
+    }, [sortedApplications]);
+
   return (
     <>
       {/* Desktop Table View */}
@@ -645,8 +747,9 @@ export const AdminApplicationsTable = ({
                 Loading applications...
               </TableCell>
             </TableRow>
-          ) : sortedApplications.length > 0 ? (
-            sortedApplications.map(app => {
+          ) : groupedApplications.length > 0 ? (
+            groupedApplications.map(group => {
+              const app = group.primaryApp;
               const referrerName = app.referrerName || `${app.referrerFirstName || ''} ${app.referrerLastName || ''}`.trim() || 'N/A';
               const submissionDate = app.submissionDate ? (app.submissionDate as Timestamp).toDate() : null;
               const lastUpdatedDate = app.lastUpdated ? (app.lastUpdated as Timestamp).toDate() : null;
@@ -660,7 +763,6 @@ export const AdminApplicationsTable = ({
               const planLabel = getPlanBadgeLabel(app);
               const planBadgeClass = getPlanBadgeClass(app);
               const csSummaryIsNew = isNewCsSummary(app);
-              const processStatus = getProcessStatusFromApp(app);
               const adminProcessingStatus = getAdminProcessingStatus(app);
               const adminProcessingReason = getAdminProcessingReason(app);
               const staffLabel = getAssignedStaffLabel(app);
@@ -669,17 +771,22 @@ export const AdminApplicationsTable = ({
                 String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
                 String((app as any)?.status || '').trim() === 'Authorization Received (Doc Collection)'
               );
+              const isGroupSelected = Boolean(
+                selected && group.appIds.length > 0 && group.appIds.every((id) => selected.includes(id))
+              );
 
               return (
-              <TableRow key={app.uniqueKey || `app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
+              <TableRow key={group.key} className={cn(
                 isNew && "bg-blue-50 border-l-4 border-l-blue-400",
                 isRecentlyUpdated && "bg-amber-50 border-l-4 border-l-amber-400"
               )}>
                 {onSelectionChange && selected && (
                   <TableCell>
                       <Checkbox
-                          checked={selected.includes(app.id)}
-                          onCheckedChange={(checked) => onSelectionChange(app.id, !!checked)}
+                          checked={isGroupSelected}
+                          onCheckedChange={(checked) => {
+                            group.appIds.forEach((id) => onSelectionChange(id, !!checked));
+                          }}
                           aria-label={`Select application for ${app.memberFirstName}`}
                       />
                   </TableCell>
@@ -741,6 +848,20 @@ export const AdminApplicationsTable = ({
                       • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
                       {` • Staff: ${staffLabel}`}
                     </div>
+                    <div className="mt-2 space-y-1">
+                      {group.incomingDocuments.length > 0 ? (
+                        group.incomingDocuments.map((doc) => (
+                          <div key={`${group.key}-${normalizeLookup(doc.name)}`} className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">Incoming:</span>
+                            <span>{doc.name}</span>
+                            <Badge variant="secondary">Flagged</Badge>
+                            {doc.totalCount > 1 ? (
+                              <span className="text-muted-foreground">x{doc.totalCount}</span>
+                            ) : null}
+                          </div>
+                        ))
+                      ) : null}
+                    </div>
                     {showInlineTracker && (
                       <div className="mt-2">
                         <ApplicationTrackerInline application={app} />
@@ -761,11 +882,6 @@ export const AdminApplicationsTable = ({
                         >
                           Internal: {adminProcessingStatus}
                         </Badge>
-                        {adminProcessingReason ? (
-                          <p className="text-[10px] text-muted-foreground max-w-[220px] break-words" title={adminProcessingReason}>
-                            {adminProcessingReason}
-                          </p>
-                        ) : null}
                       </div>
                     ) : null}
                   </div>
@@ -773,9 +889,6 @@ export const AdminApplicationsTable = ({
                  <TableCell className="hidden lg:table-cell">
                     <div className="flex items-center gap-2">
                       <span>{app.healthPlan}</span>
-                      {processStatus ? (
-                        <span className="text-xs text-muted-foreground">• {processStatus}</span>
-                      ) : null}
                     </div>
                     <div className="text-xs text-muted-foreground">{app.pathway}</div>
                 </TableCell>
@@ -889,8 +1002,9 @@ export const AdminApplicationsTable = ({
       <div className="lg:hidden space-y-2">
         {isLoading ? (
           <div className="text-center py-8">Loading applications...</div>
-        ) : sortedApplications.length > 0 ? (
-          sortedApplications.map(app => {
+        ) : groupedApplications.length > 0 ? (
+          groupedApplications.map(group => {
+            const app = group.primaryApp;
             const referrerName = app.referrerName || `${app.referrerFirstName || ''} ${app.referrerLastName || ''}`.trim();
             const submissionDate = app.submissionDate ? (app.submissionDate as Timestamp).toDate() : null;
             const lastUpdatedDate = app.lastUpdated ? (app.lastUpdated as Timestamp).toDate() : null;
@@ -903,18 +1017,19 @@ export const AdminApplicationsTable = ({
             const planLabel = getPlanBadgeLabel(app);
             const planBadgeClass = getPlanBadgeClass(app);
             const csSummaryIsNew = isNewCsSummary(app);
-            const processStatus = getProcessStatusFromApp(app);
             const adminProcessingStatus = getAdminProcessingStatus(app);
-            const adminProcessingReason = getAdminProcessingReason(app);
             const staffLabel = getAssignedStaffLabel(app);
             const isAuthReceivedIntake = Boolean(
               (app as any)?.kaiserAuthReceivedViaIls ||
               String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
               String((app as any)?.status || '').trim() === 'Authorization Received (Doc Collection)'
             );
+            const isGroupSelected = Boolean(
+              selected && group.appIds.length > 0 && group.appIds.every((id) => selected.includes(id))
+            );
 
             return (
-              <div key={app.uniqueKey || `mobile-app-${app.id}-${Date.now()}-${Math.random()}`} className={cn(
+              <div key={group.key} className={cn(
                 "bg-white border rounded-lg p-3 shadow-sm",
                 isNew && "border-l-4 border-l-blue-400 bg-blue-50",
                 isRecentlyUpdated && "border-l-4 border-l-amber-400 bg-amber-50"
@@ -924,8 +1039,10 @@ export const AdminApplicationsTable = ({
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       {onSelectionChange && selected && (
                         <Checkbox
-                          checked={selected.includes(app.id)}
-                          onCheckedChange={(checked) => onSelectionChange(app.id, !!checked)}
+                          checked={isGroupSelected}
+                          onCheckedChange={(checked) => {
+                            group.appIds.forEach((id) => onSelectionChange(id, !!checked));
+                          }}
                           aria-label={`Select application for ${app.memberFirstName} ${app.memberLastName}`}
                         />
                       )}
@@ -969,7 +1086,21 @@ export const AdminApplicationsTable = ({
                       {` • Staff: ${staffLabel}`}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-                      <span>{app.healthPlan}{processStatus ? ` • ${processStatus}` : ''}</span>
+                      <span>{app.healthPlan}</span>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {group.incomingDocuments.length > 0 ? (
+                        group.incomingDocuments.map((doc) => (
+                          <div key={`${group.key}-mobile-${normalizeLookup(doc.name)}`} className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">Incoming:</span>
+                            <span>{doc.name}</span>
+                            <Badge variant="secondary">Flagged</Badge>
+                            {doc.totalCount > 1 ? (
+                              <span className="text-muted-foreground">x{doc.totalCount}</span>
+                            ) : null}
+                          </div>
+                        ))
+                      ) : null}
                     </div>
                     {showInlineTracker && (
                       <div className="mt-2">
@@ -985,7 +1116,7 @@ export const AdminApplicationsTable = ({
                       <Badge
                         variant="outline"
                         className={cn('text-[10px] px-1.5 py-0.5', getAdminProcessingBadgeClass(adminProcessingStatus))}
-                        title={adminProcessingReason || adminProcessingStatus}
+                        title={adminProcessingStatus}
                       >
                         Internal: {adminProcessingStatus}
                       </Badge>
@@ -998,11 +1129,6 @@ export const AdminApplicationsTable = ({
                       </Link>
                     </Button>
                   </div>
-                  {adminProcessingStatus && adminProcessingReason ? (
-                    <p className="text-[10px] text-muted-foreground pt-1 break-words" title={adminProcessingReason}>
-                      Reason: {adminProcessingReason}
-                    </p>
-                  ) : null}
                 </div>
               </div>
             );

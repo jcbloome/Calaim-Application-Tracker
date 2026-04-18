@@ -17,6 +17,12 @@ import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { Checkbox } from '@/components/ui/checkbox';
 
+const normalizeLookup = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
 export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
@@ -360,6 +366,77 @@ export default function AdminDashboardPage() {
     });
   }, [logEndDate, logFilterMode, logMonth, logSort.dir, logSort.key, logStartDate, newItemLog]);
 
+  const groupedDashboardLog = useMemo(() => {
+    type LogItem = (typeof filteredAndSortedLog)[number];
+    type GroupedLogRow = {
+      rowKey: string;
+      kind: LogItem['kind'];
+      memberName: string;
+      healthPlan: string;
+      pathway: string;
+      byName: string;
+      createdAtMs: number;
+      openHref: string;
+      items: LogItem[];
+    };
+
+    const groupedDocs = new Map<string, GroupedLogRow>();
+    const rows: GroupedLogRow[] = [];
+
+    filteredAndSortedLog.forEach((item) => {
+      if (item.kind !== 'doc') {
+        rows.push({
+          rowKey: item.key,
+          kind: item.kind,
+          memberName: item.memberName,
+          healthPlan: item.healthPlan,
+          pathway: item.pathway,
+          byName: item.byName,
+          createdAtMs: item.createdAtMs,
+          openHref: item.openHref,
+          items: [item],
+        });
+        return;
+      }
+
+      const groupKey = [
+        normalizeLookup(item.memberName),
+        normalizeLookup(item.healthPlan),
+        normalizeLookup(item.pathway),
+      ].join('|');
+
+      const existing = groupedDocs.get(groupKey);
+      if (!existing) {
+        groupedDocs.set(groupKey, {
+          rowKey: `doc-group-${groupKey}`,
+          kind: 'doc',
+          memberName: item.memberName,
+          healthPlan: item.healthPlan,
+          pathway: item.pathway,
+          byName: item.byName,
+          createdAtMs: item.createdAtMs,
+          openHref: item.openHref,
+          items: [item],
+        });
+        return;
+      }
+
+      existing.items.push(item);
+      if (item.createdAtMs > existing.createdAtMs) {
+        existing.createdAtMs = item.createdAtMs;
+        existing.byName = item.byName;
+        existing.openHref = item.openHref;
+      }
+    });
+
+    const docRows = Array.from(groupedDocs.values()).map((row) => ({
+      ...row,
+      items: [...row.items].sort((a, b) => b.createdAtMs - a.createdAtMs),
+    }));
+
+    return [...rows, ...docRows].sort((a, b) => b.createdAtMs - a.createdAtMs);
+  }, [filteredAndSortedLog]);
+
   const csSummaryStats = useMemo(() => {
     const result = {
       received: 0,
@@ -660,11 +737,11 @@ export default function AdminDashboardPage() {
             </Button>
 
             <div className="ml-auto text-xs text-muted-foreground">
-              Showing <span className="font-medium text-foreground">{filteredAndSortedLog.length}</span> items
+              Showing <span className="font-medium text-foreground">{groupedDashboardLog.length}</span> rows
             </div>
           </div>
 
-          {filteredAndSortedLog.length === 0 ? (
+          {groupedDashboardLog.length === 0 ? (
             <div className="text-sm text-muted-foreground">No new items right now.</div>
           ) : (
             <div className="w-full overflow-x-auto">
@@ -724,54 +801,76 @@ export default function AdminDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAndSortedLog.map((e) => (
-                    <tr key={e.key} className="border-t">
+                  {groupedDashboardLog.map((row) => {
+                    const e = row.items[0];
+                    const isDocGroup = row.kind === 'doc';
+                    const allSeen = row.items.every((item) => Boolean(seenMap[item.key]));
+                    const byNames = Array.from(new Set(row.items.map((item) => String(item.byName || '').trim()).filter(Boolean)));
+                    return (
+                    <tr key={row.rowKey} className="border-t">
                       <td className="py-2 pr-3 whitespace-nowrap">
-                        {new Date(e.createdAtMs).toLocaleString()}
+                        {new Date(row.createdAtMs).toLocaleString()}
                       </td>
                       <td className="py-2 pr-3">
-                        <div className="font-medium">{e.memberName}</div>
+                        <div className="font-medium">{row.memberName}</div>
                       </td>
-                      <td className="py-2 pr-3">{e.healthPlan || '-'}</td>
-                      <td className="py-2 pr-3">{e.pathway || '-'}</td>
+                      <td className="py-2 pr-3">{row.healthPlan || '-'}</td>
+                      <td className="py-2 pr-3">{row.pathway || '-'}</td>
                       <td className="py-2 pr-3">
-                        <Badge
-                          variant="outline"
-                          className={
-                            e.kind === 'doc'
-                              ? 'bg-green-50 border-green-200 text-green-800'
-                              : e.kind === 'cs'
-                                ? 'bg-amber-50 border-amber-200 text-amber-800'
-                                : e.kind === 'elig'
-                                  ? 'bg-purple-50 border-purple-200 text-purple-800'
-                                  : 'bg-orange-50 border-orange-200 text-orange-800'
-                          }
-                        >
-                          {e.kind === 'doc'
-                            ? 'Document'
-                            : e.kind === 'cs'
-                              ? 'CS Summary'
-                              : e.kind === 'elig'
-                                ? 'Eligibility'
-                                : 'Standalone'}
-                        </Badge>
-                        <span className="ml-2">{e.itemName}</span>
+                        {isDocGroup ? (
+                          <div className="space-y-1">
+                            {row.items.map((item) => (
+                              <div key={item.key} className="flex flex-wrap items-center gap-2">
+                                <span>{item.itemName}</span>
+                                <Badge variant="outline" className="bg-red-50 border-red-200 text-red-800">
+                                  Flagged
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            <Badge
+                              variant="outline"
+                              className={
+                                e.kind === 'doc'
+                                  ? 'bg-green-50 border-green-200 text-green-800'
+                                  : e.kind === 'cs'
+                                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                    : e.kind === 'elig'
+                                      ? 'bg-purple-50 border-purple-200 text-purple-800'
+                                      : 'bg-orange-50 border-orange-200 text-orange-800'
+                              }
+                            >
+                              {e.kind === 'doc'
+                                ? 'Document'
+                                : e.kind === 'cs'
+                                  ? 'CS Summary'
+                                  : e.kind === 'elig'
+                                    ? 'Eligibility'
+                                    : 'Standalone'}
+                            </Badge>
+                            <span className="ml-2">{e.itemName}</span>
+                          </>
+                        )}
                       </td>
-                      <td className="py-2 pr-3">{e.byName || '-'}</td>
+                      <td className="py-2 pr-3">{byNames.join(', ') || row.byName || '-'}</td>
                       <td className="py-2 pr-3 text-center">
                         <Checkbox
-                          checked={Boolean(seenMap[e.key])}
-                          onCheckedChange={(checked) => setSeen(e.key, Boolean(checked))}
-                          aria-label={`Mark seen for ${e.memberName}`}
+                          checked={allSeen}
+                          onCheckedChange={(checked) => {
+                            row.items.forEach((item) => setSeen(item.key, Boolean(checked)));
+                          }}
+                          aria-label={`Mark seen for ${row.memberName}`}
                         />
                       </td>
                       <td className="py-2 text-right whitespace-nowrap space-x-2">
                         <Button asChild size="sm" variant="outline">
-                          <Link href={e.openHref}>Open</Link>
+                          <Link href={row.openHref}>Open</Link>
                         </Button>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>

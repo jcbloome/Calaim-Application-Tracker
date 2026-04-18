@@ -11,6 +11,21 @@ import { Loader2, PhoneCall, FileText, Sheet } from 'lucide-react';
 
 type IntakeSource = 'family_call' | 'ils_single_authorization_sheet' | 'ils_spreadsheet_batch';
 type IntakeAppRow = WithId<Record<string, unknown>> & { __ownerUid?: string | null };
+type IncomingDocumentSummary = {
+  name: string;
+  pendingCount: number;
+  totalCount: number;
+};
+type GroupedMemberRow = {
+  key: string;
+  memberName: string;
+  status: string;
+  plan: string;
+  staff: string;
+  isActive: boolean;
+  primaryAppId: string;
+  incomingDocuments: IncomingDocumentSummary[];
+};
 
 const SOURCE_LABELS: Record<IntakeSource, string> = {
   family_call: 'Families call us (manual assisted application)',
@@ -51,6 +66,49 @@ const isActiveIntake = (app: Record<string, unknown>) => {
   if (status === 'completed & submitted' || status === 'approved') return false;
   if (app?.isComplete === true) return false;
   return true;
+};
+
+const normalizeText = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+const getMemberKey = (app: Record<string, unknown>) => {
+  const mrn = normalizeText(app?.memberMrn);
+  if (mrn) return `mrn:${mrn}`;
+  const mediCal = normalizeText(app?.memberMediCalNum);
+  if (mediCal) return `medi:${mediCal}`;
+  const dob = normalizeText(app?.memberDob);
+  const firstName = normalizeText(app?.memberFirstName);
+  const lastName = normalizeText(app?.memberLastName);
+  const fullName = `${firstName} ${lastName}`.trim();
+  if (fullName && dob) return `name_dob:${fullName}|${dob}`;
+  if (fullName) return `name:${fullName}`;
+  return `app:${String(app?.id || 'unknown')}`;
+};
+
+const getIncomingDocumentsFromApp = (app: Record<string, unknown>): IncomingDocumentSummary[] => {
+  const forms = Array.isArray(app?.forms) ? (app.forms as Record<string, unknown>[]) : [];
+  return forms
+    .filter((form) => {
+      const status = String(form?.status || '').trim().toLowerCase();
+      if (status !== 'completed') return false;
+      const formName = String(form?.name || '').trim().toLowerCase();
+      const isSummary = formName === 'cs member summary' || formName === 'cs summary';
+      return !isSummary;
+    })
+    .map((form) => {
+      const formName = String(form?.name || '').trim();
+      const fileName = String(form?.fileName || '').trim();
+      const displayName = fileName || formName || 'Incoming document';
+      const acknowledged = form?.acknowledged === true;
+      return {
+        name: displayName,
+        pendingCount: acknowledged ? 0 : 1,
+        totalCount: 1,
+      };
+    });
 };
 
 export default function ApplicationsIntakeProcessingPage() {
@@ -106,8 +164,8 @@ export default function ApplicationsIntakeProcessingPage() {
     return stats;
   }, [rows]);
 
-  const visibleRows = useMemo(() => {
-    return rows
+  const groupedRows = useMemo(() => {
+    const visibleRows = rows
       .filter((app) => normalizeIntakeSource(app) === selectedSource)
       .sort((a, b) => {
         const aMs = toMillis(a?.lastUpdated || a?.createdAt || a?.submissionDate);
@@ -115,6 +173,55 @@ export default function ApplicationsIntakeProcessingPage() {
         return bMs - aMs;
       })
       .slice(0, 75);
+
+    const grouped = new Map<string, GroupedMemberRow>();
+    visibleRows.forEach((app) => {
+      const memberKey = getMemberKey(app);
+      const memberName =
+        `${String(app?.memberFirstName || '').trim()} ${String(app?.memberLastName || '').trim()}`.trim() ||
+        'Unknown member';
+      const currentDocs = getIncomingDocumentsFromApp(app);
+      const appStatus = String(app?.status || '').trim() || '—';
+      const appPlan = String(app?.healthPlan || '').trim() || '—';
+      const appStaff = String(app?.assignedStaffName || '').trim() || 'Unassigned';
+      const appIsActive = isActiveIntake(app);
+      const existing = grouped.get(memberKey);
+
+      if (!existing) {
+        grouped.set(memberKey, {
+          key: memberKey,
+          memberName,
+          status: appStatus,
+          plan: appPlan,
+          staff: appStaff,
+          isActive: appIsActive,
+          primaryAppId: String(app?.id || ''),
+          incomingDocuments: currentDocs,
+        });
+        return;
+      }
+
+      // Merge incoming document names so one member appears once.
+      const docsByName = new Map<string, IncomingDocumentSummary>();
+      [...existing.incomingDocuments, ...currentDocs].forEach((doc) => {
+        const docKey = normalizeText(doc.name);
+        const prev = docsByName.get(docKey);
+        if (!prev) {
+          docsByName.set(docKey, { ...doc });
+          return;
+        }
+        docsByName.set(docKey, {
+          name: prev.name,
+          pendingCount: prev.pendingCount + doc.pendingCount,
+          totalCount: prev.totalCount + doc.totalCount,
+        });
+      });
+
+      existing.incomingDocuments = Array.from(docsByName.values());
+      existing.isActive = existing.isActive || appIsActive;
+    });
+
+    return Array.from(grouped.values());
   }, [rows, selectedSource]);
 
   return (
@@ -169,7 +276,7 @@ export default function ApplicationsIntakeProcessingPage() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading intake queue...
             </div>
-          ) : visibleRows.length === 0 ? (
+          ) : groupedRows.length === 0 ? (
             <div className="py-8 text-sm text-muted-foreground">No records in this lane yet.</div>
           ) : (
             <div className="overflow-auto rounded border bg-white">
@@ -177,6 +284,7 @@ export default function ApplicationsIntakeProcessingPage() {
                 <thead className="bg-muted/40">
                   <tr className="text-left">
                     <th className="px-3 py-2">Member</th>
+                    <th className="px-3 py-2">Incoming Documents</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2">Plan</th>
                     <th className="px-3 py-2">Assigned Staff</th>
@@ -184,23 +292,39 @@ export default function ApplicationsIntakeProcessingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleRows.map((app) => {
-                    const memberName = `${String(app?.memberFirstName || '').trim()} ${String(app?.memberLastName || '').trim()}`.trim() || 'Unknown member';
-                    const status = String(app?.status || '').trim() || '—';
-                    const plan = String(app?.healthPlan || '').trim() || '—';
-                    const staff = String(app?.assignedStaffName || '').trim() || 'Unassigned';
-                    const isActive = isActiveIntake(app);
+                  {groupedRows.map((member) => {
                     return (
-                      <tr key={`${String(app.__ownerUid || 'admin')}:${app.id}`} className="border-t">
-                        <td className="px-3 py-2 font-medium">{memberName}</td>
+                      <tr key={member.key} className="border-t">
+                        <td className="px-3 py-2 font-medium">{member.memberName}</td>
                         <td className="px-3 py-2">
-                          <Badge variant={isActive ? 'secondary' : 'outline'}>{status}</Badge>
+                          {member.incomingDocuments.length === 0 ? (
+                            <span className="text-muted-foreground">No incoming documents</span>
+                          ) : (
+                            <div className="space-y-1">
+                              {member.incomingDocuments.map((doc) => (
+                                <div key={`${member.key}-${normalizeText(doc.name)}`} className="flex flex-wrap items-center gap-2">
+                                  <span>{doc.name}</span>
+                                  {doc.pendingCount > 0 ? (
+                                    <Badge variant="secondary">Flagged</Badge>
+                                  ) : (
+                                    <Badge variant="outline">Reviewed</Badge>
+                                  )}
+                                  {doc.totalCount > 1 ? (
+                                    <span className="text-xs text-muted-foreground">x{doc.totalCount}</span>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </td>
-                        <td className="px-3 py-2">{plan}</td>
-                        <td className="px-3 py-2">{staff}</td>
+                        <td className="px-3 py-2">
+                          <Badge variant={member.isActive ? 'secondary' : 'outline'}>{member.status}</Badge>
+                        </td>
+                        <td className="px-3 py-2">{member.plan}</td>
+                        <td className="px-3 py-2">{member.staff}</td>
                         <td className="px-3 py-2">
                           <Button asChild size="sm" variant="outline">
-                            <Link href={`/admin/applications/${encodeURIComponent(String(app.id || ''))}`}>Open</Link>
+                            <Link href={`/admin/applications/${encodeURIComponent(member.primaryAppId)}`}>Open</Link>
                           </Button>
                         </td>
                       </tr>
