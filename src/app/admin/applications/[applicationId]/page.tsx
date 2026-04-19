@@ -80,6 +80,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
 import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
+import ActivityLog from '@/components/admin/ActivityLog';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
 
 const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
@@ -7520,9 +7521,6 @@ function ApplicationDetailPageContent() {
     <div className="grid w-full min-w-0 grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-3 sticky top-2 z-30 rounded-lg border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="text-xs text-muted-foreground">
-            Admin quick actions {hasUnsavedDrafts ? '• Draft changes in progress (autosaved)' : '• No draft changes'}
-          </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => router.push('/admin/applications')}>
               Back to Applications
@@ -8587,6 +8585,23 @@ function ApplicationDetailPageContent() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <List className="h-4 w-4" />
+                  Application Log
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-6xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Application Log</DialogTitle>
+                  <DialogDescription>
+                    Full change history for this application, including document reviews, revision requests, Kaiser referral actions, and staff notes.
+                  </DialogDescription>
+                </DialogHeader>
+                <ActivityLog embedded applicationIdFilter={String(application.id || '')} />
+              </DialogContent>
+            </Dialog>
             {isKaiserPlan ? (() => {
               const qaMemberAddress = [
                 String((application as any)?.currentAddress || '').trim(),

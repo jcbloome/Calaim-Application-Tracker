@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
@@ -106,9 +106,11 @@ const isNewCsSummaryActivity = (activity: ActivityLogEntry) => {
 export default function ActivityLog({
   embedded = false,
   className,
+  applicationIdFilter,
 }: {
   embedded?: boolean;
   className?: string;
+  applicationIdFilter?: string;
 }) {
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
   const { toast } = useToast();
@@ -176,6 +178,77 @@ export default function ActivityLog({
                 healthPlan: appData.healthPlan,
               });
             }
+
+            if (form.revisionEmailSentAt) {
+              allActivities.push({
+                id: `${snap.id}-${form.name}-revision-${form.revisionEmailSentAt?.seconds || Date.now()}`,
+                date: form.revisionEmailSentAt.toDate
+                  ? form.revisionEmailSentAt.toDate()
+                  : new Date(form.revisionEmailSentAt),
+                memberName,
+                memberId: appData.client_ID2 || snap.id,
+                applicationId: snap.id,
+                appUserId,
+                activityType: 'email_sent',
+                description: `Revision requested: ${form.name}`,
+                staffMember: form.revisionEmailSentByName || form.revisionEmailSentBy || 'System',
+                userName: form.revisionEmailSentByName || '',
+                notes: form.revisionReason || form.revisionNotes || '',
+                formName: form.name,
+                source: 'application',
+                priority: 'high',
+                formIndex,
+                appPath: snap.ref.path,
+                healthPlan: appData.healthPlan,
+              });
+            }
+          });
+        }
+
+        if (appData?.kaiserReferralSubmission?.submittedAt || appData?.kaiserReferralSubmission?.submittedAtIso) {
+          const submittedAt = appData.kaiserReferralSubmission.submittedAt || appData.kaiserReferralSubmission.submittedAtIso;
+          allActivities.push({
+            id: `${snap.id}-kaiser-referral-submitted-${appData.kaiserReferralSubmission.providerMessageId || Date.now()}`,
+            date: submittedAt?.toDate ? submittedAt.toDate() : new Date(submittedAt),
+            memberName,
+            memberId: appData.client_ID2 || snap.id,
+            applicationId: snap.id,
+            appUserId,
+            activityType: 'email_sent',
+            description: 'Kaiser authorization request sent',
+            staffMember: appData.kaiserReferralSubmission.submittedByName || 'System',
+            userName: appData.kaiserReferralSubmission.submittedByEmail || '',
+            notes: [
+              appData.kaiserReferralSubmission.region ? `Region: ${appData.kaiserReferralSubmission.region}` : '',
+              appData.kaiserReferralSubmission.overrideResubmit ? 'Resent with override enabled' : '',
+            ]
+              .filter(Boolean)
+              .join(' • '),
+            source: 'application',
+            priority: 'high',
+            healthPlan: appData.healthPlan,
+          });
+        }
+
+        if (appData?.kaiserReferralStep5?.acknowledgedAt || appData?.kaiserReferralStep5?.acknowledgedAtIso) {
+          const step5At = appData.kaiserReferralStep5.acknowledgedAt || appData.kaiserReferralStep5.acknowledgedAtIso;
+          allActivities.push({
+            id: `${snap.id}-kaiser-step5-${appData.kaiserReferralStep5.acknowledgedAtIso || Date.now()}`,
+            date: step5At?.toDate ? step5At.toDate() : new Date(step5At),
+            memberName,
+            memberId: appData.client_ID2 || snap.id,
+            applicationId: snap.id,
+            appUserId,
+            activityType: 'status_change',
+            description: appData?.kaiserReferralStep5?.required
+              ? 'Kaiser send acknowledgment completed'
+              : 'Kaiser send acknowledgment not required',
+            staffMember: appData.kaiserReferralStep5.acknowledgedBy || 'System',
+            userName: appData.kaiserReferralStep5.acknowledgedBy || '',
+            notes: appData.kaiserReferralStep5.note || '',
+            source: 'application',
+            priority: 'medium',
+            healthPlan: appData.healthPlan,
           });
         }
 
@@ -232,6 +305,74 @@ export default function ActivityLog({
                 healthPlan: appData.healthPlan,
               });
             }
+
+            if (form.revisionEmailSentAt) {
+              allActivities.push({
+                id: `admin-${snap.id}-${form.name}-revision-${form.revisionEmailSentAt?.seconds || Date.now()}`,
+                date: form.revisionEmailSentAt.toDate
+                  ? form.revisionEmailSentAt.toDate()
+                  : new Date(form.revisionEmailSentAt),
+                memberName,
+                memberId: appData.client_ID2 || snap.id,
+                applicationId: snap.id,
+                activityType: 'email_sent',
+                description: `Revision requested: ${form.name}`,
+                staffMember: form.revisionEmailSentByName || form.revisionEmailSentBy || 'Admin',
+                userName: form.revisionEmailSentByName || '',
+                notes: form.revisionReason || form.revisionNotes || '',
+                formName: form.name,
+                source: 'application',
+                priority: 'high',
+                formIndex,
+                appPath: snap.ref.path,
+                healthPlan: appData.healthPlan,
+              });
+            }
+          });
+        }
+
+        if (appData?.kaiserReferralSubmission?.submittedAt || appData?.kaiserReferralSubmission?.submittedAtIso) {
+          const submittedAt = appData.kaiserReferralSubmission.submittedAt || appData.kaiserReferralSubmission.submittedAtIso;
+          allActivities.push({
+            id: `admin-${snap.id}-kaiser-referral-submitted-${appData.kaiserReferralSubmission.providerMessageId || Date.now()}`,
+            date: submittedAt?.toDate ? submittedAt.toDate() : new Date(submittedAt),
+            memberName,
+            memberId: appData.client_ID2 || snap.id,
+            applicationId: snap.id,
+            activityType: 'email_sent',
+            description: 'Kaiser authorization request sent',
+            staffMember: appData.kaiserReferralSubmission.submittedByName || 'Admin',
+            userName: appData.kaiserReferralSubmission.submittedByEmail || '',
+            notes: [
+              appData.kaiserReferralSubmission.region ? `Region: ${appData.kaiserReferralSubmission.region}` : '',
+              appData.kaiserReferralSubmission.overrideResubmit ? 'Resent with override enabled' : '',
+            ]
+              .filter(Boolean)
+              .join(' • '),
+            source: 'application',
+            priority: 'high',
+            healthPlan: appData.healthPlan,
+          });
+        }
+
+        if (appData?.kaiserReferralStep5?.acknowledgedAt || appData?.kaiserReferralStep5?.acknowledgedAtIso) {
+          const step5At = appData.kaiserReferralStep5.acknowledgedAt || appData.kaiserReferralStep5.acknowledgedAtIso;
+          allActivities.push({
+            id: `admin-${snap.id}-kaiser-step5-${appData.kaiserReferralStep5.acknowledgedAtIso || Date.now()}`,
+            date: step5At?.toDate ? step5At.toDate() : new Date(step5At),
+            memberName,
+            memberId: appData.client_ID2 || snap.id,
+            applicationId: snap.id,
+            activityType: 'status_change',
+            description: appData?.kaiserReferralStep5?.required
+              ? 'Kaiser send acknowledgment completed'
+              : 'Kaiser send acknowledgment not required',
+            staffMember: appData.kaiserReferralStep5.acknowledgedBy || 'Admin',
+            userName: appData.kaiserReferralStep5.acknowledgedBy || '',
+            notes: appData.kaiserReferralStep5.note || '',
+            source: 'application',
+            priority: 'medium',
+            healthPlan: appData.healthPlan,
           });
         }
 
@@ -331,8 +472,15 @@ export default function ActivityLog({
     }
   };
 
+  useEffect(() => {
+    if (!firestore || !isAdmin) return;
+    void fetchActivityData();
+    // Intentionally load once per auth/db context for auto-opened embedded logs.
+  }, [firestore, isAdmin]);
+
   const filteredActivities = useMemo(() => {
     return activities.filter((activity) => {
+      if (applicationIdFilter && activity.applicationId !== applicationIdFilter) return false;
       if (filters.member && !activity.memberName.toLowerCase().includes(filters.member.toLowerCase())) return false;
       if (filters.staff !== 'all' && activity.staffMember !== filters.staff) return false;
       if (filters.activityType !== 'all' && activity.activityType !== filters.activityType) return false;
@@ -364,7 +512,7 @@ export default function ActivityLog({
       if (filters.source !== 'all' && activity.source !== filters.source) return false;
       return true;
     });
-  }, [activities, filters]);
+  }, [activities, filters, applicationIdFilter]);
 
   const clearFilters = () => {
     setFilters({
@@ -457,23 +605,25 @@ export default function ActivityLog({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Filter className="h-5 w-5" />
-            Filters
+            {embedded ? 'Application Filters' : 'Filters'}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-1 block">Member Name</label>
-              <Input
-                placeholder="Search member..."
-                value={filters.member}
-                onChange={(e) => setFilters((p) => ({ ...p, member: e.target.value }))}
-                className="h-9"
-              />
-            </div>
+          <div className={cn('grid gap-3', embedded ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5' : 'grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4')}>
+            {!applicationIdFilter ? (
+              <div>
+                <label className={cn('mb-1 block font-medium', embedded ? 'text-xs' : 'text-sm')}>Member Name</label>
+                <Input
+                  placeholder="Search member..."
+                  value={filters.member}
+                  onChange={(e) => setFilters((p) => ({ ...p, member: e.target.value }))}
+                  className="h-9"
+                />
+              </div>
+            ) : null}
 
             <div>
-              <label className="text-sm font-medium mb-1 block">Staff Member</label>
+              <label className={cn('mb-1 block font-medium', embedded ? 'text-xs' : 'text-sm')}>Staff Member</label>
               <Select value={filters.staff} onValueChange={(value) => setFilters((p) => ({ ...p, staff: value }))}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="All Staff" />
@@ -490,7 +640,7 @@ export default function ActivityLog({
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-1 block">Activity Type</label>
+              <label className={cn('mb-1 block font-medium', embedded ? 'text-xs' : 'text-sm')}>Activity Type</label>
               <Select
                 value={filters.activityType}
                 onValueChange={(value) => setFilters((p) => ({ ...p, activityType: value }))}
@@ -509,7 +659,7 @@ export default function ActivityLog({
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-1 block">Date Range</label>
+              <label className={cn('mb-1 block font-medium', embedded ? 'text-xs' : 'text-sm')}>Date Range</label>
               <Select value={filters.dateRange} onValueChange={(value) => setFilters((p) => ({ ...p, dateRange: value }))}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="All Time" />
@@ -525,7 +675,7 @@ export default function ActivityLog({
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-1 block">Source</label>
+              <label className={cn('mb-1 block font-medium', embedded ? 'text-xs' : 'text-sm')}>Source</label>
               <Select value={filters.source} onValueChange={(value) => setFilters((p) => ({ ...p, source: value }))}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="All Sources" />
@@ -541,11 +691,11 @@ export default function ActivityLog({
               </Select>
             </div>
 
-            <div className="flex items-end gap-2">
-              <Button variant="outline" onClick={clearFilters} className="h-9">
+            <div className={cn('flex items-end gap-2', embedded ? 'sm:col-span-2 lg:col-span-1' : '')}>
+              <Button variant="outline" onClick={clearFilters} className={cn('h-9', embedded ? 'flex-1' : '')}>
                 Clear
               </Button>
-              <Button onClick={fetchActivityData} disabled={isLoading} className="h-9">
+              <Button onClick={fetchActivityData} disabled={isLoading} className={cn('h-9', embedded ? 'w-10 px-0' : '')}>
                 {isLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
             </div>
@@ -556,11 +706,13 @@ export default function ActivityLog({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>Activity Log ({filteredActivities.length} entries)</span>
-            <Button variant="outline" size="sm" disabled>
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
+            <span>{embedded ? `Application Log (${filteredActivities.length} entries)` : `Activity Log (${filteredActivities.length} entries)`}</span>
+            {!embedded ? (
+              <Button variant="outline" size="sm" disabled>
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+            ) : null}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -576,115 +728,162 @@ export default function ActivityLog({
               <p className="mt-1 text-sm text-gray-500">Try adjusting your filters or refresh the data.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[140px]">Date</TableHead>
-                    <TableHead className="w-[180px]">Member</TableHead>
-                    <TableHead className="w-[60px]">Type</TableHead>
-                    <TableHead className="w-[70px]">Alert</TableHead>
-                    <TableHead>Activity</TableHead>
-                    <TableHead className="w-[120px]">Staff</TableHead>
-                    <TableHead className="w-[110px]">Acknowledged</TableHead>
-                    <TableHead className="w-[100px]">Priority</TableHead>
-                    <TableHead>Notes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredActivities.map((activity) => (
-                    <TableRow key={activity.id} className="hover:bg-gray-50">
-                      <TableCell className="text-xs">{formatDate(activity.date)}</TableCell>
-                      <TableCell className="font-medium text-sm">
-                        <div>
-                          {activity.applicationId ? (
-                            <Link
-                              href={
-                                activity.appUserId
-                                  ? `/admin/applications/${activity.applicationId}?userId=${activity.appUserId}`
-                                  : `/admin/applications/${activity.applicationId}`
-                              }
-                              className="font-medium text-blue-700 hover:underline"
-                            >
-                              {activity.memberName}
-                            </Link>
-                          ) : (
-                            <div className="font-medium">{activity.memberName}</div>
-                          )}
-                          {activity.memberId && <div className="text-xs text-gray-500">ID: {activity.memberId}</div>}
+            embedded ? (
+              <div className="space-y-3">
+                {filteredActivities.map((activity) => (
+                  <div key={activity.id} className="rounded-md border p-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{formatDate(activity.date)}</span>
+                      <Badge variant="outline" className={cn('text-[10px]', getPriorityColor(activity.priority))}>
+                        {activity.priority}
+                      </Badge>
+                      {activity.needsReviewType ? (
+                        <Badge variant="outline" className={cn('text-[10px]', getPlanBadgeClass(activity.healthPlan))}>
+                          {getPlanBadgeLabel(activity.healthPlan)} {activity.needsReviewType === 'cs_summary' ? 'CS' : 'Doc'}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 flex items-start gap-2">
+                      <div className="mt-0.5">{getActivityIcon(activity.activityType)}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">{activity.description}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {activity.memberName || 'Member'} • {activity.staffMember || 'System'}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-center">{getActivityIcon(activity.activityType)}</div>
-                      </TableCell>
-                      <TableCell>
-                        {activity.needsReviewType ? (
-                          <div className="flex items-center gap-1.5">
-                            {isNewCsSummaryActivity(activity) && (
-                              <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] px-1.5 py-0.5">
-                                New
-                              </Badge>
-                            )}
-                            <Link
-                              href={getPlanFilterLink(activity.healthPlan, activity.needsReviewType) || '#'}
-                              className="inline-flex items-center"
-                            >
-                              <Badge
-                                variant="outline"
-                                className={cn('text-[10px] px-1.5 py-0.5', getPlanBadgeClass(activity.healthPlan))}
-                              >
-                                {getPlanBadgeLabel(activity.healthPlan)}(
-                                {activity.needsReviewType === 'cs_summary' ? 'CS' : 'D'})
-                              </Badge>
-                            </Link>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <div className="font-medium">{activity.description}</div>
-                        {activity.formName && <div className="text-xs text-gray-500">Form: {activity.formName}</div>}
-                        {activity.oldValue && activity.newValue && (
-                          <div className="text-xs text-gray-500">
+                        {activity.formName ? (
+                          <div className="mt-1 text-xs text-muted-foreground">Form: {activity.formName}</div>
+                        ) : null}
+                        {activity.oldValue && activity.newValue ? (
+                          <div className="mt-1 text-xs text-muted-foreground">
                             {activity.oldValue} → {activity.newValue}
                           </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <div className="font-medium">{activity.staffMember}</div>
-                        {activity.userName && activity.userName !== activity.staffMember && (
-                          <div className="text-xs text-gray-500">by {activity.userName}</div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {activity.activityType === 'form_completed' || activity.activityType === 'form_uploaded' ? (
-                          <Checkbox
-                            checked={activity.acknowledged || false}
-                            onCheckedChange={(value) => handleAcknowledge(activity, Boolean(value))}
-                            aria-label="Acknowledge document"
-                          />
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={cn('text-xs', getPriorityColor(activity.priority))}>
-                          {activity.priority}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-gray-600 max-w-xs">
-                        {activity.notes && (
-                          <div className="truncate" title={activity.notes}>
-                            {activity.notes}
-                          </div>
-                        )}
-                      </TableCell>
+                        ) : null}
+                        {activity.notes ? (
+                          <div className="mt-2 text-xs text-slate-700 break-words">{activity.notes}</div>
+                        ) : null}
+                      </div>
+                      {(activity.activityType === 'form_completed' || activity.activityType === 'form_uploaded') && (
+                        <Checkbox
+                          checked={activity.acknowledged || false}
+                          onCheckedChange={(value) => handleAcknowledge(activity, Boolean(value))}
+                          aria-label="Acknowledge document"
+                        />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[140px]">Date</TableHead>
+                      <TableHead className="w-[180px]">Member</TableHead>
+                      <TableHead className="w-[60px]">Type</TableHead>
+                      <TableHead className="w-[70px]">Alert</TableHead>
+                      <TableHead>Activity</TableHead>
+                      <TableHead className="w-[120px]">Staff</TableHead>
+                      <TableHead className="w-[110px]">Acknowledged</TableHead>
+                      <TableHead className="w-[100px]">Priority</TableHead>
+                      <TableHead>Notes</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredActivities.map((activity) => (
+                      <TableRow key={activity.id} className="hover:bg-gray-50">
+                        <TableCell className="text-xs">{formatDate(activity.date)}</TableCell>
+                        <TableCell className="font-medium text-sm">
+                          <div>
+                            {activity.applicationId ? (
+                              <Link
+                                href={
+                                  activity.appUserId
+                                    ? `/admin/applications/${activity.applicationId}?userId=${activity.appUserId}`
+                                    : `/admin/applications/${activity.applicationId}`
+                                }
+                                className="font-medium text-blue-700 hover:underline"
+                              >
+                                {activity.memberName}
+                              </Link>
+                            ) : (
+                              <div className="font-medium">{activity.memberName}</div>
+                            )}
+                            {activity.memberId && <div className="text-xs text-gray-500">ID: {activity.memberId}</div>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-center">{getActivityIcon(activity.activityType)}</div>
+                        </TableCell>
+                        <TableCell>
+                          {activity.needsReviewType ? (
+                            <div className="flex items-center gap-1.5">
+                              {isNewCsSummaryActivity(activity) && (
+                                <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] px-1.5 py-0.5">
+                                  New
+                                </Badge>
+                              )}
+                              <Link
+                                href={getPlanFilterLink(activity.healthPlan, activity.needsReviewType) || '#'}
+                                className="inline-flex items-center"
+                              >
+                                <Badge
+                                  variant="outline"
+                                  className={cn('text-[10px] px-1.5 py-0.5', getPlanBadgeClass(activity.healthPlan))}
+                                >
+                                  {getPlanBadgeLabel(activity.healthPlan)}(
+                                  {activity.needsReviewType === 'cs_summary' ? 'CS' : 'D'})
+                                </Badge>
+                              </Link>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <div className="font-medium">{activity.description}</div>
+                          {activity.formName && <div className="text-xs text-gray-500">Form: {activity.formName}</div>}
+                          {activity.oldValue && activity.newValue && (
+                            <div className="text-xs text-gray-500">
+                              {activity.oldValue} → {activity.newValue}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <div className="font-medium">{activity.staffMember}</div>
+                          {activity.userName && activity.userName !== activity.staffMember && (
+                            <div className="text-xs text-gray-500">by {activity.userName}</div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {activity.activityType === 'form_completed' || activity.activityType === 'form_uploaded' ? (
+                            <Checkbox
+                              checked={activity.acknowledged || false}
+                              onCheckedChange={(value) => handleAcknowledge(activity, Boolean(value))}
+                              aria-label="Acknowledge document"
+                            />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={cn('text-xs', getPriorityColor(activity.priority))}>
+                            {activity.priority}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-gray-600 max-w-xs">
+                          {activity.notes && (
+                            <div className="truncate" title={activity.notes}>
+                              {activity.notes}
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )
           )}
         </CardContent>
       </Card>

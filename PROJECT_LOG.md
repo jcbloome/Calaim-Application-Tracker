@@ -16,6 +16,9 @@
 
 ## 🗓️ **Development History**
 
+### **April 19, 2026 - Updates**
+- ✅ **UI/UX**: Added per-application `Application Log` quick action with embedded timeline (form completions, revision send-backs, Kaiser send/acknowledgment events, and staff notes), plus Kaiser authorization mode controls on the application page.
+
 ### **January 30, 2026 - Updates**
 - ✅ **Build**: Verified production build after recent changes
 - ✅ **Forms**: Added Current/Customary Location Name fields to CS Summary (online + printables)
