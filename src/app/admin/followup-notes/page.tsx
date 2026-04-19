@@ -210,44 +210,6 @@ export default function FollowUpNotesPage() {
     [kaiserOnly, onlyDated, statusFilter, toast, user?.uid]
   );
 
-  const syncFromCaspio = useCallback(async () => {
-    if (!user?.uid) return;
-    setLoadingNotes(true);
-    setError(null);
-    try {
-      // Sync follow-up notes (open + has Follow_Up_Date) into Firestore cache.
-      // This is the same sync used by the Daily Task Tracker follow-up calendar.
-      const monthStart = new Date();
-      monthStart.setDate(1);
-      monthStart.setHours(0, 0, 0, 0);
-      const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
-      monthEnd.setHours(23, 59, 59, 999);
-
-      const res = await fetch('/api/staff/followups/sync', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.uid,
-          start: monthStart.toISOString(),
-          end: monthEnd.toISOString(),
-          mode: 'full',
-        }),
-      });
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) throw new Error(data?.error || `Sync failed (HTTP ${res.status})`);
-      toast({
-        title: 'Synced from Caspio',
-        description: `Synced ${Number(data?.synced || 0)} note(s)`,
-      });
-      await loadNotes();
-    } catch (e: any) {
-      setError(e?.message || 'Sync failed.');
-      toast({ title: 'Sync failed', description: e?.message || 'Could not sync notes.', variant: 'destructive' });
-    } finally {
-      setLoadingNotes(false);
-    }
-  }, [loadNotes, toast, user?.uid]);
-
   const importAllOpenFollowUps = useCallback(async () => {
     if (!user?.uid) return;
     const ok =
@@ -467,10 +429,6 @@ export default function FollowUpNotesPage() {
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => void loadNotes({ toastOnSuccess: true })} disabled={loadingNotes}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loadingNotes ? 'animate-spin' : ''}`} />
             Refresh list
-          </Button>
-          <Button className="w-full sm:w-auto" onClick={() => void syncFromCaspio()} disabled={loadingNotes}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loadingNotes ? 'animate-spin' : ''}`} />
-            Sync from Caspio
           </Button>
           <Button className="w-full sm:w-auto" variant="outline" onClick={() => void importAllOpenFollowUps()} disabled={loadingNotes}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loadingNotes ? 'animate-spin' : ''}`} />

@@ -105,7 +105,6 @@ export default function AdminAlftAssignmentPage() {
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [socialWorkers, setSocialWorkers] = useState<SocialWorker[]>([]);
@@ -250,29 +249,6 @@ export default function AdminAlftAssignmentPage() {
     [auth, firestore, pickedSw, socialWorkers, toast, user]
   );
 
-  // ── Sync from Caspio ──────────────────────────────────────────────────────────
-
-  const syncFromCaspio = useCallback(async () => {
-    if (!auth?.currentUser) return;
-    setSyncing(true);
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/caspio/members-cache/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'full' }),
-      });
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) throw new Error(data?.error || `HTTP ${res.status}`);
-      await loadMembers();
-      toast({ title: 'Sync complete', description: 'Members refreshed from Caspio.' });
-    } catch (e: any) {
-      toast({ title: 'Sync failed', description: e?.message || 'Could not sync.', variant: 'destructive' });
-    } finally {
-      setSyncing(false);
-    }
-  }, [auth, loadMembers, toast]);
-
   // ── Derived ───────────────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => {
@@ -345,13 +321,9 @@ export default function AdminAlftAssignmentPage() {
               placeholder="Search by name, MRN, location, or SW…"
               className="w-60"
             />
-            <Button variant="outline" size="sm" onClick={() => void loadMembers()} disabled={loading || syncing}>
+            <Button variant="outline" size="sm" onClick={() => void loadMembers()} disabled={loading}>
               {loading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
               Load from Cache
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void syncFromCaspio()} disabled={syncing || loading}>
-              {syncing ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-              Sync from Caspio
             </Button>
             <div className="flex gap-2 ml-auto text-sm text-muted-foreground">
               <Badge variant="outline">{filtered.length} shown</Badge>
@@ -364,7 +336,7 @@ export default function AdminAlftAssignmentPage() {
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Click <strong>Load from Cache</strong> to view RN Visit Needed members, or <strong>Sync from Caspio</strong> to pull fresh data.
+                Click <strong>Load from Cache</strong> to view RN Visit Needed members from the latest shared cache.
               </AlertDescription>
             </Alert>
           )}

@@ -18,6 +18,8 @@
 
 ### **April 19, 2026 - Updates**
 - ✅ **UI/UX**: Added per-application `Application Log` quick action with embedded timeline (form completions, revision send-backs, Kaiser send/acknowledgment events, and staff notes), plus Kaiser authorization mode controls on the application page.
+- ✅ **UI/UX**: Moved Kaiser Tracker manual sync controls under a dedicated Troubleshooting-only panel and updated copy to emphasize automatic API-driven updates for normal operations.
+- ✅ **Architecture**: Fully removed manual sync UI entry points (Kaiser tracker/app detail/data integration), retired `BatchSyncManager` and `SyncStatusIndicator`, and left sync endpoints for automated backfill/cron/webhook flows only.
 
 ### **January 30, 2026 - Updates**
 - ✅ **Build**: Verified production build after recent changes

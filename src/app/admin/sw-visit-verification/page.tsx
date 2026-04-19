@@ -67,7 +67,6 @@ export default function SWVisitVerificationPage() {
   const [selectedRCFE, setSelectedRCFE] = useState<string>('');
   const [visitMembers, setVisitMembers] = useState<VisitMember[]>([]);
   const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [generalNotes, setGeneralNotes] = useState('');
   const [signature, setSignature] = useState('');
   const [visitDate, setVisitDate] = useState(new Date().toISOString().split('T')[0]);
@@ -176,40 +175,6 @@ export default function SWVisitVerificationPage() {
     }
   };
 
-  const syncFromCaspio = async () => {
-    setSyncing(true);
-    try {
-      // Fetch RCFE facilities and members assigned to this social worker
-      const idToken = user ? await user.getIdToken() : '';
-      const response = await fetch(`/api/sw-assignments?email=${encodeURIComponent(user?.email || '')}`, {
-        headers: idToken ? { authorization: `Bearer ${idToken}` } : undefined,
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch assignments from Caspio');
-      }
-      
-      const data = await response.json();
-      console.log('📊 Synced SW assignments from Caspio:', data);
-      
-      // Transform data (will implement when API is ready)
-      
-      toast({
-        title: "Sync Complete",
-        description: `Synced assignments from Caspio`,
-      });
-      
-    } catch (error) {
-      console.error('❌ Error syncing from Caspio:', error);
-      toast({
-        title: "Sync Failed",
-        description: "Failed to sync data from Caspio. Using local data.",
-        variant: "destructive"
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const handleMemberVisitToggle = (memberId: string, visited: boolean) => {
     setVisitMembers(prev => prev.map(member => 
       member.id === memberId ? { ...member, visited } : member
@@ -304,16 +269,16 @@ export default function SWVisitVerificationPage() {
         </div>
         <div className="flex gap-2">
           <Button 
-            onClick={syncFromCaspio} 
-            disabled={syncing}
+            onClick={loadRCFEFacilities} 
+            disabled={loading}
             variant="outline"
           >
-            {syncing ? (
+            {loading ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <RefreshCw className="h-4 w-4 mr-2" />
             )}
-            {syncing ? 'Syncing...' : 'Sync Assignments'}
+            {loading ? 'Loading...' : 'Refresh Assignments'}
           </Button>
         </div>
       </div>
@@ -613,11 +578,11 @@ export default function SWVisitVerificationPage() {
             <MapPin className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-semibold mb-2">No RCFE Assignments</h3>
             <p className="text-muted-foreground mb-4">
-              Click "Sync from Caspio" to load your RCFE facility assignments.
+              Click "Refresh Assignments" to load your RCFE facility assignments.
             </p>
-            <Button onClick={loadRCFEFacilities} disabled={syncing}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-              Sync from Caspio
+            <Button onClick={loadRCFEFacilities} disabled={loading}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh Assignments
             </Button>
           </CardContent>
         </Card>

@@ -4,7 +4,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useAuth, useFirestore } from '@/firebase';
+import { useFirestore } from '@/firebase';
 import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import { Loader2, RefreshCw, Users, Building2, Stethoscope, UserCheck, Activity, BarChart3 } from 'lucide-react';
@@ -27,7 +27,6 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useAdmin } from '@/hooks/use-admin';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
-import { useToast } from '@/hooks/use-toast';
 
 
 const StatCard = ({ title, children, borderColor }: { title: string, children: React.ReactNode, borderColor?: string }) => (
@@ -57,10 +56,8 @@ const DataList = ({ data, emptyText = "No data available." }: { data: { name: st
 
 
 export default function AdminStatisticsPage() {
-  const auth = useAuth();
   const firestore = useFirestore();
   const { isAdmin, isLoading: isAdminLoading } = useAdmin();
-  const { toast } = useToast();
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
 
   const [applications, setApplications] = useState<Application[]>([]);
@@ -81,7 +78,6 @@ export default function AdminStatisticsPage() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
 
-  const [isSyncingMembers, setIsSyncingMembers] = useState(false);
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<'authorized' | 'rcfe' | 'social_worker' | 'rn' | null>(null);
 
   const fetchApps = useCallback(async () => {
@@ -217,41 +213,6 @@ export default function AdminStatisticsPage() {
       fetchStatusStats()
     ]);
   };
-
-  const syncMembersFromCaspio = useCallback(async () => {
-    if (!isAdmin) return;
-    if (!auth?.currentUser) return;
-
-    setIsSyncingMembers(true);
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/caspio/members-cache/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'full' }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !(data as any)?.success) {
-        throw new Error((data as any)?.error || 'Failed to sync members cache');
-      }
-      toast({
-        title: 'Members synced',
-        description: `Fetched ${(data as any)?.fetched ?? '—'} • Upserted ${(data as any)?.upserted ?? '—'}`,
-      });
-      // Refresh the dashboard so member/resource counts update.
-      setHasLoaded(true);
-      await Promise.all([fetchResourceData(), fetchStatusStats()]);
-    } catch (e) {
-      console.error('Failed to sync members cache:', e);
-      toast({
-        title: 'Sync failed',
-        description: e instanceof Error ? e.message : 'Failed to sync members cache',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSyncingMembers(false);
-    }
-  }, [auth, fetchResourceData, fetchStatusStats, isAdmin, toast]);
 
   // Calculate resource statistics
   const resourceStats = useMemo(() => {
@@ -416,25 +377,6 @@ export default function AdminStatisticsPage() {
                 </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={syncMembersFromCaspio}
-                disabled={isSyncingMembers || isAdminLoading || !isAdmin}
-                className="w-full sm:w-auto"
-              >
-                {isSyncingMembers ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Syncing members...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Sync members (Caspio)
-                  </>
-                )}
-              </Button>
               <Button
                 type="button"
                 variant="outline"

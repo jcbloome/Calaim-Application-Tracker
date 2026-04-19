@@ -182,7 +182,7 @@ export default function IlsReportPage() {
     }
   }, [accessLoading, canAccessIlsPage, fetchIlsComments, isAdminLoading]);
 
-  // Disabled automatic loading - only load when user clicks sync button
+  // Disabled automatic loading - only load when user clicks refresh
   // useEffect(() => {
   //   fetchILSMembers();
   // }, [fetchILSMembers]);
@@ -231,7 +231,7 @@ export default function IlsReportPage() {
                 ) : (
                   <RefreshCw className="mr-2 h-4 w-4" />
                 )}
-                {isLoading ? 'Syncing...' : 'Sync from Caspio'}
+                {isLoading ? 'Loading...' : 'Refresh ILS Data'}
               </Button>
               <Button onClick={() => window.print()}>
                 <Printer className="mr-2 h-4 w-4" />
@@ -364,14 +364,14 @@ export default function IlsReportPage() {
               <div className="text-center text-muted-foreground py-10">
                 <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p className="text-lg font-medium mb-2">No ILS Data Loaded</p>
-                <p className="mb-4">Click "Sync from Caspio" to load ILS members data</p>
+                <p className="mb-4">Click "Refresh ILS Data" to load ILS members data</p>
                 <Button onClick={fetchILSMembers} disabled={isLoading}>
                   {isLoading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <RefreshCw className="mr-2 h-4 w-4" />
                   )}
-                  {isLoading ? 'Syncing...' : 'Sync from Caspio'}
+                  {isLoading ? 'Loading...' : 'Refresh ILS Data'}
                 </Button>
               </div>
             )}

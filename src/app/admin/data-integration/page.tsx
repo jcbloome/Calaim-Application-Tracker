@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Brain, Map, Database, FolderSync, ArrowRight } from 'lucide-react';
+import { Brain, Map, Database, FolderSync, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -10,13 +10,6 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 const integrationTools = [
-  {
-    title: 'Members Cache Sync',
-    description: 'Run incremental refreshes or full reconcile from Caspio into Firebase cache',
-    icon: RefreshCw,
-    href: '/admin/batch-sync',
-    color: 'text-blue-600'
-  },
   {
     title: 'Intelligent Matching',
     description: 'AI-powered member matching and data correlation tools',

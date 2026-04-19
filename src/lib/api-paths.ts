@@ -5,7 +5,6 @@ export const API_PATHS = {
   caspioStaff: '/api/caspio-staff',
   caspioEftSetup: '/api/caspio/eft-setup',
   allMembers: '/api/all-members',
-  caspioMembersCacheSync: '/api/caspio/members-cache/sync',
   caspioMembersCacheStatus: '/api/caspio/members-cache/status',
   swGeoAssignSuggest: '/api/tools/sw-geo-assign/suggest',
   swAssignmentsOverrideUpsert: '/api/admin/sw-assignments/override-upsert',

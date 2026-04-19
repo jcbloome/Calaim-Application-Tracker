@@ -79,7 +79,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { format } from 'date-fns';
-import { SyncStatusIndicator } from '@/components/SyncStatusIndicator';
 import ActivityLog from '@/components/admin/ActivityLog';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
 
@@ -1998,17 +1997,6 @@ function AdminActions({ application }: { application: Application }) {
                             </span>
                         </div>
                     )}
-                    
-                    {/* Sync Status */}
-                    <SyncStatusIndicator
-                      applicationId={application.id}
-                      clientId={(application as any)?.client_ID2}
-                      memberData={application}
-                      onSyncComplete={() => {
-                        // Refresh data or show success message
-                        window.location.reload();
-                      }}
-                    />
                     
                 </CardContent>
                 )}

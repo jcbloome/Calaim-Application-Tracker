@@ -327,7 +327,6 @@ export default function ILSReportEditorPage() {
   const auth = useAuth();
   const [members, setMembers] = useState<ILSReportMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSyncingMembers, setIsSyncingMembers] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [reportDate, setReportDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [cardEditOpen, setCardEditOpen] = useState(false);
@@ -378,28 +377,11 @@ export default function ILSReportEditorPage() {
     }
   };
 
-  // Load Kaiser members for ILS report (from cache by default; optional manual sync first).
-  const loadMembers = async (opts?: { syncFirst?: boolean; silent?: boolean }) => {
-    const syncFirst = Boolean(opts?.syncFirst);
+  // Load Kaiser members for ILS report from Firebase cache.
+  const loadMembers = async (opts?: { silent?: boolean }) => {
     const silent = Boolean(opts?.silent);
     setIsLoading(true);
-    setIsSyncingMembers(syncFirst);
     try {
-      if (!auth?.currentUser) throw new Error('You must be signed in to load members.');
-
-      if (syncFirst) {
-        const idToken = await auth.currentUser.getIdToken();
-        // Optional manual full sync from Caspio → Firestore cache.
-        const syncRes = await fetch('/api/caspio/members-cache/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken, mode: 'full' }),
-        });
-        if (!syncRes.ok) {
-          console.warn(`Skipping members-cache sync (HTTP ${syncRes.status}); reading existing cache.`);
-        }
-      }
-
       // Always read from the shared cache used by Kaiser Tracker / scheduled pulls.
       const response = await fetch('/api/kaiser-members');
       
@@ -508,10 +490,8 @@ export default function ILSReportEditorPage() {
 
         if (!silent) {
           toast({
-            title: syncFirst ? 'Manual Sync Complete' : 'Members Loaded',
-            description: syncFirst
-              ? `Synced and loaded ${filtered.length} member(s) from latest Kaiser cache`
-              : `Loaded ${filtered.length} member(s) from Kaiser cache`,
+            title: 'Members Loaded',
+            description: `Loaded ${filtered.length} member(s) from Kaiser cache`,
             className: 'bg-green-100 text-green-900 border-green-200',
           });
         }
@@ -527,7 +507,6 @@ export default function ILSReportEditorPage() {
       }
     } finally {
       setIsLoading(false);
-      setIsSyncingMembers(false);
     }
   };
 
@@ -1017,7 +996,7 @@ export default function ILSReportEditorPage() {
     if (!auth?.currentUser) return;
     if (didAutoLoadRef.current) return;
     didAutoLoadRef.current = true;
-    loadMembers({ syncFirst: false, silent: true });
+    loadMembers({ silent: true });
   }, [isAdminLoading, accessLoading, canAccessIlsTools, auth?.currentUser]);
 
   if (isAdminLoading || accessLoading) {
@@ -1088,7 +1067,7 @@ export default function ILSReportEditorPage() {
               
               <div className="flex flex-wrap gap-2">
                 <Button
-                  onClick={() => loadMembers({ syncFirst: false })}
+                  onClick={() => loadMembers()}
                   disabled={isLoading}
                   variant="outline"
                   className="w-full sm:w-auto justify-start bg-green-50 hover:bg-green-100 border-green-200"
@@ -1099,20 +1078,6 @@ export default function ILSReportEditorPage() {
                     <Database className="mr-2 h-4 w-4" />
                   )}
                   {members.length === 0 ? 'Load Cached Data' : 'Refresh Cached Data'}
-                </Button>
-
-                <Button
-                  onClick={() => loadMembers({ syncFirst: true })}
-                  disabled={isLoading}
-                  variant="outline"
-                  className="w-full sm:w-auto justify-start"
-                >
-                  {isSyncingMembers ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                  )}
-                  Manual Sync Now
                 </Button>
                 
                 <Button

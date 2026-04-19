@@ -907,25 +907,6 @@ export default function SocialWorkerAssignmentsPage() {
   const fetchAllMembers = async () => {
     setIsLoadingMembers(true);
     try {
-      if (!auth?.currentUser) {
-        throw new Error('You must be signed in to sync.');
-      }
-
-      const idToken = await auth.currentUser.getIdToken();
-      const syncRes = await fetch(API_PATHS.caspioMembersCacheSync, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'full' }),
-      });
-      const syncData = await syncRes.json().catch(() => ({} as any));
-      if (!syncRes.ok || !(syncData as any)?.success) {
-        const msg =
-          (syncData as any)?.error ||
-          (syncData as any)?.details ||
-          `Failed to sync members cache (HTTP ${syncRes.status})`;
-        throw new Error(msg);
-      }
-
       const response = await fetch(API_PATHS.allMembers);
       const responseData = await response.json().catch(() => ({} as any));
       if (!response.ok) {
@@ -1093,7 +1074,7 @@ export default function SocialWorkerAssignmentsPage() {
     URL.revokeObjectURL(url);
   }, [geoData]);
 
-  // Disabled automatic loading - only sync when user clicks "Sync from Caspio" button
+  // Disabled automatic loading - only load cache when user clicks the button
   // useEffect(() => {
   //   if (isAdmin) {
   //     fetchAllMembers();
@@ -1400,7 +1381,7 @@ export default function SocialWorkerAssignmentsPage() {
         </div>
         <Button onClick={fetchAllMembers} disabled={isLoadingMembers}>
           <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingMembers ? 'animate-spin' : ''}`} />
-          Sync from Caspio
+          Load Cached Members
         </Button>
       </div>
 
@@ -1623,7 +1604,7 @@ export default function SocialWorkerAssignmentsPage() {
                   <Users className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No Data Loaded</h3>
                   <p className="text-muted-foreground max-w-md">
-                    Click "Sync from Caspio" to load member data and social worker assignments.
+                    Click "Load Cached Members" to load member data and social worker assignments.
                   </p>
                 </CardContent>
               </Card>

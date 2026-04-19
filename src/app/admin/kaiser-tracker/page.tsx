@@ -275,7 +275,6 @@ function KaiserTrackerPageContent() {
   // State declarations
   const [isLoading, setIsLoading] = useState(false);
   const [statusListLoading, setStatusListLoading] = useState(false);
-  const [statusListSyncing, setStatusListSyncing] = useState(false);
   const [kaiserStatusOptions, setKaiserStatusOptions] = useState<string[]>([...FALLBACK_KAISER_STATUS_ORDER]);
   const [kaiserStatusListUpdatedAtLabel, setKaiserStatusListUpdatedAtLabel] = useState<string>('');
   const [members, setMembers] = useState<KaiserMember[]>([]);
@@ -751,54 +750,6 @@ function KaiserTrackerPageContent() {
     }
   };
 
-  const syncKaiserStatusOptions = async (opts?: { quiet?: boolean }) => {
-    setStatusListSyncing(true);
-    try {
-      if (!auth?.currentUser) {
-        throw new Error('You must be signed in to sync.');
-      }
-      const idToken = await auth.currentUser.getIdToken();
-      const res = await fetch('/api/admin/kaiser-statuses/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !(data as any)?.success) {
-        throw new Error((data as any)?.error || 'Failed to sync Kaiser status list');
-      }
-
-      const rows = Array.isArray((data as any)?.rows) ? (data as any).rows : [];
-      const options = rows
-        .map((r: any) => String(r?.status || '').trim())
-        .filter(Boolean)
-        .map((s: string) => normalizeKaiserStatusName(s));
-      const unique = Array.from(new Set(options));
-      const next = unique.length > 0 ? unique : [...FALLBACK_KAISER_STATUS_ORDER];
-      setKaiserStatusOptions(ensureCaseClosedStatusOption(next));
-
-      if (!opts?.quiet) {
-        toast({
-          title: 'Kaiser status list synced',
-          description: `Loaded ${unique.length || rows.length || 0} statuses from Caspio`,
-        });
-      }
-
-      await loadKaiserStatusOptions();
-    } catch (e: any) {
-      console.error('Failed to sync Kaiser statuses:', e);
-      if (!opts?.quiet) {
-        toast({
-          title: 'Status sync failed',
-          description: e?.message || 'Could not sync Kaiser statuses from Caspio',
-          variant: 'destructive',
-        });
-      }
-    } finally {
-      setStatusListSyncing(false);
-    }
-  };
-
   const transformKaiserMembers = (data: any[]): KaiserMember[] => {
     return data.map((member: any, index: number) => {
       const rawStaff =
@@ -878,90 +829,6 @@ function KaiserTrackerPageContent() {
       return [] as KaiserMember[];
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Fetch Kaiser members from Caspio
-  const fetchCaspioData = async (opts?: { quiet?: boolean }) => {
-    setIsLoading(true);
-    try {
-      if (!auth?.currentUser) {
-        throw new Error('You must be signed in to sync.');
-      }
-
-      // On-demand full sync from Caspio → Firestore cache.
-      const idToken = await auth.currentUser.getIdToken();
-      const syncRes = await fetch('/api/caspio/members-cache/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // Use full sync for Kaiser Tracker to avoid stale status counts when Caspio Date_Modified is not updated.
-        body: JSON.stringify({ idToken, mode: 'full' }),
-      });
-      const syncData = await syncRes.json().catch(() => ({}));
-      if (!syncRes.ok || !(syncData as any)?.success) {
-        throw new Error((syncData as any)?.error || 'Failed to sync members cache');
-      }
-      setMembersCacheLastSyncAt(String((syncData as any)?.lastSyncAt || ''));
-
-      const response = await fetch('/api/kaiser-members');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const responseData = await response.json();
-      
-      // Check if the response has the expected structure
-      if (!responseData.success) {
-        throw new Error(responseData.error || 'Failed to fetch Kaiser members');
-      }
-      
-      const cleanMembers = transformKaiserMembers(responseData.members || []);
-
-      // Keep all Kaiser members so CalAIM Status Summary reflects full status distribution
-      // (Authorized, Pending, Non_Active, Member Died, Denied, etc.).
-      setMembers(cleanMembers);
-      
-      if (!opts?.quiet) {
-        toast({
-          title: "Data synced",
-          description: `Loaded ${cleanMembers.length} Kaiser members`,
-        });
-      }
-      return cleanMembers as KaiserMember[];
-    } catch (error) {
-      console.error('Error fetching Kaiser members:', error);
-      if (!opts?.quiet) {
-        toast({
-          title: "Sync failed",
-          description: "Failed to load Kaiser members. Please try again.",
-          variant: "destructive",
-        });
-      }
-      return [] as KaiserMember[];
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const syncAll = async () => {
-    if (isLoading || statusListSyncing || notesGlobalSyncing) return false;
-    stopAllSyncRef.current = false;
-    try {
-      await Promise.all([
-        syncKaiserStatusOptions({ quiet: true }),
-        fetchCaspioData({ quiet: true }),
-      ]);
-      toast({
-        title: 'Synced',
-        description: 'Updated members cache + Kaiser status list.',
-      });
-      return true;
-    } catch (e: any) {
-      toast({
-        title: 'Sync failed',
-        description: e?.message || 'Could not sync members and statuses.',
-        variant: 'destructive',
-      });
-      return false;
     }
   };
 
@@ -1136,17 +1003,6 @@ function KaiserTrackerPageContent() {
       setNotesGlobalSyncing(false);
       bumpNotesMetaRefresh();
     }
-  };
-
-  const stopSyncAll = () => {
-    stopAllSyncRef.current = true;
-    notesFetchControllersRef.current.forEach((controller) => {
-      try {
-        controller.abort();
-      } catch {}
-    });
-    notesFetchControllersRef.current.clear();
-    setNotesGlobalProgress((prev) => (prev ? { ...prev, stopped: true, currentMember: '' } : prev));
   };
 
   // Filter and sort results
@@ -1335,7 +1191,7 @@ function KaiserTrackerPageContent() {
             {formatEtDateTime(membersCacheLastSyncAt)}
           </p>
           <p className="text-muted-foreground text-xs mt-1">
-            Midnight auto-sync preloads Firestore and this page auto-loads cached records. Use manual sync for an immediate full Caspio member/status refresh.
+            Automatic updates are enabled: Caspio sync + cached member/status refresh run without manual pulls in normal operations.
           </p>
           <p className="text-muted-foreground text-xs mt-1">
             {statusListLoading ? 'Loading Kaiser status list…' : (kaiserStatusListUpdatedAtLabel || ' ')}
@@ -1347,23 +1203,6 @@ function KaiserTrackerPageContent() {
               RCFE Biweekly Follow-Up (R&B/Final)
             </Link>
           </Button>
-          <Button
-            onClick={() => void syncAll()}
-            disabled={isLoading || statusListSyncing || statusListLoading || notesGlobalSyncing}
-            className="w-full sm:w-auto flex items-center gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading || statusListSyncing || notesGlobalSyncing ? 'animate-spin' : ''}`} />
-            {isLoading || statusListSyncing || notesGlobalSyncing ? 'Syncing…' : 'Manual Sync Now'}
-          </Button>
-          {notesGlobalSyncing ? (
-            <Button
-              onClick={stopSyncAll}
-              variant="destructive"
-              className="w-full sm:w-auto"
-            >
-              Stop Sync
-            </Button>
-          ) : null}
         </div>
       </div>
 
@@ -1472,7 +1311,7 @@ function KaiserTrackerPageContent() {
         staffName={staffMemberModal.staffName}
         members={staffMemberModal.members}
         onMemberUpdate={() => {
-          fetchCaspioData();
+          void loadCachedMembers({ quiet: true });
         }}
       />
 

@@ -539,67 +539,37 @@ export default function RcfeDataToolsPage() {
 
   const loadMembers = useCallback(async () => {
     setIsLoadingMembers(true);
-    let syncErrorMessage = '';
-    let syncSucceeded = false;
     try {
-      if (!auth?.currentUser) throw new Error('You must be signed in to sync.');
-      const idToken = await auth.currentUser.getIdToken();
-
-      const syncRes = await fetch('/api/caspio/members-cache/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, mode: 'full' }),
-      });
-      const syncData = (await syncRes.json().catch(() => ({}))) as any;
-      if (!syncRes.ok || !syncData?.success) {
-        throw new Error(syncData?.error || syncData?.details || `Sync failed (HTTP ${syncRes.status})`);
-      }
-      syncSucceeded = true;
-    } catch (syncError: any) {
-      syncErrorMessage = String(syncError?.message || 'Sync failed.');
-    }
-
-    try {
-      const count = await fetchCachedMembers(!syncErrorMessage);
+      const count = await fetchCachedMembers(true);
       await loadRcfePersistentStatus();
-      if (syncSucceeded) {
-        // Manual Caspio pulls become the new baseline for this tool view.
-        // Keep verification/notes state, but clear field overrides/drafts so pulled values show.
-        setRcfeDrafts({});
-        setRcfeFieldOverrides({});
-        setUpdatedRowTimestamps({});
-        if (progressDocRef && auth?.currentUser) {
-          await setDoc(
-            progressDocRef,
-            {
-              rcfeFieldOverrides: {},
-              lastManualCaspioPullAt: serverTimestamp(),
-              lastManualCaspioPullByUid: auth.currentUser.uid || null,
-              lastManualCaspioPullByEmail: auth.currentUser.email || null,
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true }
-          );
-        }
+      // Keep verification/notes state, but clear field overrides/drafts so latest cache values show.
+      setRcfeDrafts({});
+      setRcfeFieldOverrides({});
+      setUpdatedRowTimestamps({});
+      if (progressDocRef) {
+        await setDoc(
+          progressDocRef,
+          {
+            rcfeFieldOverrides: {},
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
       }
-      if (syncErrorMessage) {
-        toast({
-          title: 'Sync failed, loaded cached data',
-          description: `${syncErrorMessage} Showing ${count} existing authorized members.`,
-          variant: 'destructive',
-        });
-      }
+      toast({
+        title: 'RCFE data loaded',
+        description: `Loaded ${count} authorized members from shared cache.`,
+      });
     } catch (fetchError: any) {
-      const baseMessage = String(fetchError?.message || 'Could not load RCFE data.');
       toast({
         title: 'Load failed',
-        description: syncErrorMessage ? `${syncErrorMessage} Also failed to load cache: ${baseMessage}` : baseMessage,
+        description: String(fetchError?.message || 'Could not load RCFE data.'),
         variant: 'destructive',
       });
     } finally {
       setIsLoadingMembers(false);
     }
-  }, [auth?.currentUser, fetchCachedMembers, loadRcfePersistentStatus, progressDocRef, toast]);
+  }, [fetchCachedMembers, loadRcfePersistentStatus, progressDocRef, toast]);
 
   useEffect(() => {
     if (!isAdmin) return;
