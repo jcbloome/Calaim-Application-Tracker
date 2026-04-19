@@ -20,11 +20,8 @@ export {
   autoImportHighConfidenceMatches
 } from './intelligent-name-matching';
 
-// Export Smart Sync and Duplicate Prevention functions
-export { checkSyncStatus, performManualSync, checkForDuplicateClients, resolveDuplicateClients } from './smart-sync';
-
-// Export Auto-Sync and Batch Sync functions
-export { performAutoSync, getPendingSyncs, performBatchSync } from './auto-batch-sync';
+// Export Duplicate Prevention functions
+export { checkForDuplicateClients, resolveDuplicateClients } from './smart-sync';
 
 // Export Caspio Webhook functions
 export { caspioWebhook } from './caspio-webhooks';

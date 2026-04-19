@@ -11,8 +11,8 @@ import { useEffect } from 'react';
 
 const integrationTools = [
   {
-    title: 'Batch Sync',
-    description: 'Bulk synchronize data between Firebase and Caspio systems',
+    title: 'Members Cache Sync',
+    description: 'Run incremental refreshes or full reconcile from Caspio into Firebase cache',
     icon: RefreshCw,
     href: '/admin/batch-sync',
     color: 'text-blue-600'

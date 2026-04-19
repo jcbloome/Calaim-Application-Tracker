@@ -39,14 +39,14 @@ export default function BatchSyncPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Batch Sync Manager</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Members Cache Sync</h1>
           <p className="text-muted-foreground">
-            Manage bulk synchronization operations between Firestore and Caspio
+            Run manual cache refresh/reconcile operations from Caspio into Firebase
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Database className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Caspio Integration</span>
+          <span className="text-sm text-muted-foreground">Caspio Source of Truth</span>
         </div>
       </div>
 
@@ -56,29 +56,29 @@ export default function BatchSyncPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Zap className="h-5 w-5 text-blue-600" />
-              Auto-Sync Features
+              Current Sync Model
             </CardTitle>
             <CardDescription>
-              Automatic synchronization capabilities
+              How data propagation works now
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2 text-sm">
               <li className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>Kaiser Status changes sync automatically</span>
+                <span>Caspio webhooks push changes into Firebase cache</span>
               </li>
               <li className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>CalAIM Status updates trigger sync</span>
+                <span>Daily incremental sync keeps cache fresh</span>
               </li>
               <li className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>Staff assignment changes sync instantly</span>
+                <span>Weekly full reconcile prunes stale records</span>
               </li>
               <li className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <span>2-second debounce prevents rapid-fire syncs</span>
+                <span>UI reads from Firebase cache for speed and consistency</span>
               </li>
             </ul>
           </CardContent>
@@ -88,29 +88,29 @@ export default function BatchSyncPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Database className="h-5 w-5 text-purple-600" />
-              Batch Operations
+              Manual Operations
             </CardTitle>
             <CardDescription>
-              Bulk synchronization management
+              On-demand recovery and backfill tools
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2 text-sm">
               <li className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                <span>Process multiple members simultaneously</span>
+                <span>Incremental refresh from last watermark</span>
               </li>
               <li className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                <span>Priority-based sync ordering</span>
+                <span>Full reconcile with stale-doc pruning</span>
               </li>
               <li className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                <span>Failed sync retry capabilities</span>
+                <span>Run summary metrics for fetched/upserted/pruned</span>
               </li>
               <li className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                <span>Rate limiting to prevent API overload</span>
+                <span>No per-field queue or manual push-to-Caspio actions</span>
               </li>
             </ul>
           </CardContent>
