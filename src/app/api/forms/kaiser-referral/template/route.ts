@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import { NextRequest, NextResponse } from 'next/server';
-import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -111,6 +111,7 @@ export async function GET(req: NextRequest) {
       currentLocationAddress: normalizeAddress(params.get('currentLocationAddress')),
       alft21Choice: clean(params.get('alft21Choice')).toUpperCase(),
       alft22Choice: clean(params.get('alft22Choice')).toUpperCase(),
+      section1AlfUsage: clean(params.get('section1AlfUsage')).toLowerCase(),
     };
 
     const hasPrefillValues = Object.values(prefill).some(Boolean);
@@ -162,14 +163,82 @@ export async function GET(req: NextRequest) {
       const selectWidgetOptionByIndex = (name: string, index: number) => {
         try {
           const field: unknown = form.getFieldMaybe(name);
-          if (!isMultiWidgetChoiceField(field)) return;
-          const widgets = field.acroField.getWidgets();
-          const safeIndex = Math.max(0, Math.min(index, widgets.length - 1));
-          const onValue = widgets[safeIndex]?.getOnValue?.();
-          if (!onValue) return;
-          field.acroField.setValue(onValue);
+          if (isRadioFieldLike(field)) {
+            const options = field.getOptions();
+            if (!Array.isArray(options) || options.length === 0) return;
+            const safeIndex = Math.max(0, Math.min(index, options.length - 1));
+            field.select(options[safeIndex]);
+            return;
+          }
+          if (isMultiWidgetChoiceField(field)) {
+            const widgets = field.acroField.getWidgets();
+            if (!Array.isArray(widgets) || widgets.length === 0) return;
+            const safeIndex = Math.max(0, Math.min(index, widgets.length - 1));
+            const onValue = widgets[safeIndex]?.getOnValue?.();
+            if (!onValue) return;
+            try {
+              field.acroField.setValue(onValue);
+              return;
+            } catch {
+              // Some grouped checkbox fields (ex: ALF 2.2) reject setValue(onValue).
+              // Force parent value + widget appearance state to keep deterministic selection.
+              const parentDict = (field as { acroField?: { dict?: { set: (key: unknown, value: unknown) => void } } })
+                ?.acroField?.dict;
+              parentDict?.set(PDFName.of('V'), onValue);
+              widgets.forEach((widget, idx) => {
+                (
+                  widget as { dict?: { set: (key: unknown, value: unknown) => void } }
+                ).dict?.set(PDFName.of('AS'), idx === safeIndex ? onValue : PDFName.of('Off'));
+              });
+            }
+          }
         } catch {
           // ignore unmapped fields
+        }
+      };
+
+      const setFirstMatchingCheckField = (tokens: string[], checked: boolean) => {
+        const loweredTokens = tokens.map((t) => t.toLowerCase());
+        for (const candidate of form.getFields()) {
+          const fieldName = String(candidate.getName() || '');
+          const loweredName = fieldName.toLowerCase();
+          if (!loweredTokens.every((token) => loweredName.includes(token))) continue;
+          if (!isCheckFieldLike(candidate)) continue;
+          if (checked) candidate.check();
+          else candidate.uncheck();
+          return true;
+        }
+        return false;
+      };
+
+      const selectCheckWidgetByIndex = (name: string, index: number) => {
+        type WidgetLike = {
+          getOnValue?: () => unknown;
+          dict?: { set: (key: unknown, value: unknown) => void };
+        };
+        type FieldLike = {
+          acroField?: {
+            getWidgets?: () => WidgetLike[];
+            setValue?: (value: unknown) => void;
+            dict?: { set: (key: unknown, value: unknown) => void };
+          };
+        };
+        try {
+          const field = form.getFieldMaybe(name) as FieldLike | undefined;
+          const widgets = field?.acroField?.getWidgets?.();
+          if (!Array.isArray(widgets) || widgets.length === 0) return false;
+          const safeIndex = Math.max(0, Math.min(index, widgets.length - 1));
+          const onValue = widgets[safeIndex]?.getOnValue?.();
+          if (!onValue || typeof field?.acroField?.setValue !== 'function') return false;
+          // Some Kaiser template check-groups reject setValue(onValue) even when widget values differ.
+          // Set parent value + widget appearances directly to ensure deterministic selection.
+          field.acroField.dict?.set(PDFName.of('V'), onValue);
+          widgets.forEach((widget, idx: number) => {
+            widget.dict?.set(PDFName.of('AS'), idx === safeIndex ? onValue : PDFName.of('Off'));
+          });
+          return true;
+        } catch {
+          return false;
         }
       };
 
@@ -198,16 +267,55 @@ export async function GET(req: NextRequest) {
       const alft21Index = prefill.alft21Choice === 'B' ? 1 : 0;
       selectWidgetOptionByIndex('ALF - 2.1', alft21Index);
 
-      if (prefill.alft22Choice === 'A' || prefill.alft22Choice === 'B' || prefill.alft22Choice === 'C') {
-        const alft22Index = prefill.alft22Choice === 'B' ? 1 : prefill.alft22Choice === 'C' ? 2 : 0;
+      const resolvedAlft22Choice =
+        prefill.alft22Choice === 'A' || prefill.alft22Choice === 'B' || prefill.alft22Choice === 'C'
+          ? prefill.alft22Choice
+          : prefill.currentLocationName || prefill.currentLocationAddress
+            ? 'C'
+            : '';
+      if (resolvedAlft22Choice === 'A' || resolvedAlft22Choice === 'B' || resolvedAlft22Choice === 'C') {
+        const alft22Index = resolvedAlft22Choice === 'B' ? 1 : resolvedAlft22Choice === 'C' ? 2 : 0;
         selectWidgetOptionByIndex('ALF 2.2', alft22Index);
       }
 
-      setChecked('Assisted Living Facility Transitions', true);
+      // Section 1 ("Current Service Usage") should remain unchecked by default.
+      // Best-effort clear: unknown names are safely ignored by setChecked().
+      [
+        'A. ECM',
+        'B. CCM',
+        'C. CHW',
+        'D. CS Services',
+        'Respite Services (Caregiver Respite)',
+        'Assisted Living Facility Transitions',
+        'Community or Home Transition Services',
+        'Personal Care and Homemaker Services',
+        'Environmental Accessibility Adaptations (Home Modifications)',
+        'Medically Tailored Meals/Medically-Supportive Food',
+        'Sobering Centers',
+        'Asthma Remediation',
+        'Housing Transition Navigation Services',
+        'Housing Deposits',
+        'Housing Tenancy and Sustaining Services',
+        'Day Habilitation Programs',
+        'Recuperative Care (Medical Respite)',
+        'Short-Term Post-Hospitalization Housing',
+      ].forEach((name) => setChecked(name, false));
+      // Explicitly control Section 1 "Assisted Living Facility Transitions" checkbox by required selector.
+      // Apply this after clear to avoid stale checked state.
+      setChecked('Assisted Living Facility Transitions', prefill.section1AlfUsage === 'yes');
+
+      // Section 2 must always be checked (template field name is `2` on both pages).
+      setChecked('2', true);
       // Referrer relationship: force "Other please specify".
       selectWidgetOptionByIndex('Referrer Relationship', 3);
-      // External referral by: force "Other community-based provider" option.
-      selectWidgetOptionByIndex('External referral by', 9);
+      // External referral by: force "Other, please specify" option.
+      // This template uses a 12-widget checkbox group for this field.
+      // Index 11 is the bottom "Other, please specify" option.
+      const externalOtherSet = selectCheckWidgetByIndex('External referral by', 11);
+      // Fallback for templates where "External referral by" is implemented as discrete checkboxes.
+      if (!externalOtherSet) {
+        setFirstMatchingCheckField(['external', 'other', 'specify'], true);
+      }
       setChecked('By checking this box you confirm that all informat', true);
 
       form.updateFieldAppearances(font);

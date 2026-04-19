@@ -21,6 +21,7 @@ interface PrintableFormLayoutProps {
   disableMonochrome?: boolean;
   extraControls?: React.ReactNode;
   extraControlsBelow?: React.ReactNode;
+  controlsPlacement?: 'top' | 'bottom';
 }
 
 export function PrintableFormLayout({
@@ -35,6 +36,7 @@ export function PrintableFormLayout({
   disableMonochrome = false,
   extraControls,
   extraControlsBelow,
+  controlsPlacement = 'top',
 }: PrintableFormLayoutProps) {
   const printableRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -153,39 +155,45 @@ export function PrintableFormLayout({
     }
   };
 
+  const controlsBlock =
+    showPrintButton || extraControls || extraControlsBelow ? (
+      <div className="mb-6 print:hidden">
+        <div className="flex flex-col sm:flex-row gap-3">
+          {showPrintButton ? (
+            <>
+              <Button onClick={handlePrint} className="flex-1 sm:flex-none">
+                <Printer className="h-4 w-4 mr-2" />
+                Print Form
+              </Button>
+              <Button
+                onClick={handleDownloadPDF}
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                disabled={isGeneratingPDF}
+              >
+                {isGeneratingPDF ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Generating PDF...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </>
+                )}
+              </Button>
+            </>
+          ) : null}
+          {extraControls}
+        </div>
+        {extraControlsBelow ? <div className="mt-2">{extraControlsBelow}</div> : null}
+      </div>
+    ) : null;
+
   return (
     <div className={`max-w-4xl mx-auto ${className}`}>
-      {/* Print Controls - Hidden in print */}
-      {showPrintButton && (
-        <div className="mb-6 print:hidden">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button onClick={handlePrint} className="flex-1 sm:flex-none">
-              <Printer className="h-4 w-4 mr-2" />
-              Print Form
-            </Button>
-            <Button 
-              onClick={handleDownloadPDF} 
-              variant="outline" 
-              className="flex-1 sm:flex-none"
-              disabled={isGeneratingPDF}
-            >
-              {isGeneratingPDF ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Generating PDF...
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4 mr-2" />
-                  Download PDF
-                </>
-              )}
-            </Button>
-            {extraControls}
-          </div>
-          {extraControlsBelow ? <div className="mt-2">{extraControlsBelow}</div> : null}
-        </div>
-      )}
+      {controlsPlacement === 'top' ? controlsBlock : null}
 
       {/* Printable Form */}
       <div
@@ -268,6 +276,7 @@ export function PrintableFormLayout({
           </>
         )}
       </div>
+      {controlsPlacement === 'bottom' ? controlsBlock : null}
 
       {!disableMonochrome ? (
         <style jsx global>{`

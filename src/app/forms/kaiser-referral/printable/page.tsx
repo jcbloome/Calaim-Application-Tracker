@@ -7,9 +7,36 @@ import { PrintableKaiserReferralForm } from '@/components/forms/PrintableKaiserR
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 
+const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
+
+function normalizeCountyName(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/ county$/i, '')
+    .replace(/[^a-z]/g, '');
+}
+
+function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser South' | '' {
+  const normalized = normalizeCountyName(county);
+  if (!normalized) return '';
+
+  const kaiserNorthCounties = new Set([
+    'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
+    'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',
+    'sanjoaquin', 'stanislaus', 'merced', 'madera', 'fresno', 'kings',
+    'butte', 'shasta', 'tehama', 'glenn', 'colusa', 'humboldt', 'delnorte', 'siskiyou', 'trinity',
+    'mendocino', 'lake', 'lassen', 'modoc', 'plumas',
+  ]);
+
+  return kaiserNorthCounties.has(normalized) ? 'Kaiser North' : 'Kaiser South';
+}
+
 function KaiserReferralPrintableContent() {
   const searchParams = useSearchParams();
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [hasReviewedPdfPreview, setHasReviewedPdfPreview] = useState(false);
 
   const formPrefill = useMemo(
     () => ({
@@ -81,14 +108,27 @@ function KaiserReferralPrintableContent() {
     };
   }, [formPrefill]);
 
+  const kaiserRegion = useMemo(() => getKaiserRegionFromCounty(printableProps.memberCounty), [printableProps.memberCounty]);
+  const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
+
   const [alft21Choice, setAlft21Choice] = useState<'A' | 'B'>(
     formPrefill.alft21Choice === 'B' ? 'B' : 'A'
   );
   const [alft22Choice, setAlft22Choice] = useState<'A' | 'B' | 'C' | ''>(
     formPrefill.alft22Choice === 'A' || formPrefill.alft22Choice === 'B' || formPrefill.alft22Choice === 'C'
       ? (formPrefill.alft22Choice as 'A' | 'B' | 'C')
-      : ''
+      : (String(formPrefill.currentLocationName || '').trim() || String(formPrefill.currentLocationAddress || '').trim())
+        ? 'C'
+        : ''
   );
+  const [section1AlfUsage, setSection1AlfUsage] = useState<'yes' | 'no' | ''>(() => {
+    const raw = String(searchParams.get('section1AlfUsage') || '').trim().toLowerCase();
+    if (raw === 'yes' || raw === 'no') return raw;
+    return '';
+  });
+  const hasRequiredLocation = Boolean(alft22Choice);
+  const hasRequiredSection1Usage = section1AlfUsage === 'yes' || section1AlfUsage === 'no';
+  const hasRequiredSelectionsForPdf = hasRequiredLocation && hasRequiredSection1Usage;
 
   const buildTemplateUrl = useCallback(
     (download = false) => {
@@ -103,10 +143,13 @@ function KaiserReferralPrintableContent() {
       if (alft22Choice) {
         params.set('alft22Choice', alft22Choice);
       }
+      if (section1AlfUsage) {
+        params.set('section1AlfUsage', section1AlfUsage);
+      }
       const query = params.toString();
       return `/api/forms/kaiser-referral/template${query ? `?${query}` : ''}`;
     },
-    [alft21Choice, alft22Choice, printableProps]
+    [alft21Choice, alft22Choice, section1AlfUsage, printableProps]
   );
 
   const openExternalPdfUrl = useCallback((url: string) => {
@@ -126,21 +169,30 @@ function KaiserReferralPrintableContent() {
       window.alert('Section 2.2 is required: select where the member is currently living.');
       return;
     }
+    if (!section1AlfUsage) {
+      window.alert('Section 1 Current Service Usage is required: select Yes or No for Assisted Living Facility Transitions.');
+      return;
+    }
     setIsGeneratingPdf(true);
     try {
       const absoluteUrl = `${window.location.origin}${buildTemplateUrl(false)}`;
       openExternalPdfUrl(absoluteUrl);
+      setHasReviewedPdfPreview(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate PDF.';
       window.alert(message);
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [alft22Choice, buildTemplateUrl, openExternalPdfUrl]);
+  }, [alft22Choice, section1AlfUsage, buildTemplateUrl, openExternalPdfUrl]);
 
   const handleDownloadPdf = useCallback(async () => {
     if (!alft22Choice) {
       window.alert('Section 2.2 is required: select where the member is currently living.');
+      return;
+    }
+    if (!section1AlfUsage) {
+      window.alert('Section 1 Current Service Usage is required: select Yes or No for Assisted Living Facility Transitions.');
       return;
     }
     setIsGeneratingPdf(true);
@@ -157,25 +209,43 @@ function KaiserReferralPrintableContent() {
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [alft22Choice, buildTemplateUrl]);
+  }, [alft22Choice, section1AlfUsage, buildTemplateUrl]);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4">
+      <div className="rounded-md border bg-white p-3 print:hidden">
+        <h1 className="text-lg font-semibold text-slate-900">Kaiser Authorization Request Template</h1>
+      </div>
       <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
         <Button variant="outline" asChild>
           <Link href={pathwayHref}>Back to Application Pathway</Link>
         </Button>
-        <Button variant="outline" onClick={() => void handleViewPdf()} disabled={isGeneratingPdf}>
-          {isGeneratingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          View PDF
-        </Button>
-        <Button variant="outline" onClick={() => void handleDownloadPdf()} disabled={isGeneratingPdf}>
-          {isGeneratingPdf ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Download PDF
-        </Button>
+      </div>
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 print:hidden">
+        <div className="font-medium">Flow Status (Before Step 1)</div>
+        <div className="mt-1 text-xs text-muted-foreground">
+          Detected region: {kaiserRegion || 'Kaiser South'} ({kaiserIntakeEmail})
+        </div>
+        <div className="mt-1 text-xs text-emerald-700">
+          Staff reminder: Section 2.2 <span className="font-semibold">Where member is currently living</span> is required before sending.
+          {hasRequiredLocation ? ' (Completed)' : ' (Please complete)'}
+        </div>
+        {!hasReviewedPdfPreview ? (
+          <div className="mt-1 text-xs text-amber-700">
+            PDF preview required: complete Step 2 View PDF before continuing.
+          </div>
+        ) : null}
+        {!hasRequiredSection1Usage ? (
+          <div className="mt-1 text-xs text-amber-700">
+            Section 1 current service usage is required: choose Yes/No for Assisted Living Facility Transitions.
+          </div>
+        ) : null}
       </div>
       <div className="rounded-md border bg-amber-50 p-3 text-sm print:hidden">
-        <div className="font-medium text-amber-900">Required Kaiser fields</div>
+        <div className="font-medium text-amber-900">Step 1: Complete required Kaiser fields</div>
+        <div className="mt-1 text-xs text-amber-900">
+          Select required values before moving to PDF review.
+        </div>
         <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
           <label className="space-y-1">
             <span className="text-xs font-medium text-amber-900">2.1 Service requested</span>
@@ -205,12 +275,40 @@ function KaiserReferralPrintableContent() {
               <option value="C">C - In an Assisted Living Facility / Board and Care</option>
             </select>
           </label>
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-amber-900">
+              1) Current service usage: Assisted Living Facility Transitions
+            </span>
+            <select
+              className="w-full rounded border bg-white px-2 py-1"
+              value={section1AlfUsage}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (next === 'yes' || next === 'no') setSection1AlfUsage(next);
+                else setSection1AlfUsage('');
+              }}
+            >
+              <option value="">Select one...</option>
+              <option value="no">No (initial referral)</option>
+              <option value="yes">Yes (reauthorization)</option>
+            </select>
+          </label>
         </div>
         <div className="mt-2 text-xs text-amber-900">
-          Always enforced: External referral by = <strong>Other community-based provider</strong>, Attestation = <strong>checked</strong>, and Section 2 = <strong>Assisted Living Facility Transitions</strong>.
+          Always enforced: External referral by = <strong>Other, please specify</strong>, and attestation = <strong>checked</strong>.
         </div>
       </div>
-      <PrintableKaiserReferralForm {...printableProps} showPrintButton={false} />
+      <PrintableKaiserReferralForm
+        {...printableProps}
+        showPrintButton={false}
+        hasReviewedPdfPreview={hasReviewedPdfPreview}
+        onOpenPdfPreview={handleViewPdf}
+        onDownloadPdfPreview={handleDownloadPdf}
+        isGeneratingPdfPreview={isGeneratingPdf}
+        isPdfPreviewStepEnabled={hasRequiredSelectionsForPdf}
+        requiredAlft22Choice={alft22Choice}
+        requiredSection1AlfUsage={section1AlfUsage}
+      />
     </div>
   );
 }

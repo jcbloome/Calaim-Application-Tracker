@@ -43,6 +43,13 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
   applicationId?: string;
   userId?: string;
   showPrintButton?: boolean;
+  hasReviewedPdfPreview?: boolean;
+  onOpenPdfPreview?: () => Promise<void> | void;
+  onDownloadPdfPreview?: () => Promise<void> | void;
+  isGeneratingPdfPreview?: boolean;
+  isPdfPreviewStepEnabled?: boolean;
+  requiredAlft22Choice?: 'A' | 'B' | 'C' | '';
+  requiredSection1AlfUsage?: 'yes' | 'no' | '';
 }
 
 const Checkbox = ({ checked, editable = true }: { checked?: boolean; editable?: boolean }) => {
@@ -215,11 +222,12 @@ function PageShell({
   pageNumber: number;
   breakAfter?: boolean;
 }) {
+  const hideSecondaryCsOnScreen = pageNumber >= 7 && pageNumber <= 14;
   return (
     <section
       className={`kaiser-packet-page flex flex-col bg-white px-5 py-4 ${
         breakAfter ? 'mb-6 break-after-page print:mb-0 print:break-after-page' : ''
-      }`}
+      } ${hideSecondaryCsOnScreen ? 'screen-secondary-cs-hidden' : ''}`}
     >
       {children}
       <div className="mt-auto pt-6 flex items-center text-[11px] leading-4">
@@ -247,6 +255,13 @@ export function PrintableKaiserReferralForm({
   applicationId,
   userId,
   showPrintButton = true,
+  hasReviewedPdfPreview = true,
+  onOpenPdfPreview,
+  onDownloadPdfPreview,
+  isGeneratingPdfPreview = false,
+  isPdfPreviewStepEnabled = true,
+  requiredAlft22Choice = '',
+  requiredSection1AlfUsage = '',
   ...prefill
 }: PrintableKaiserReferralFormProps) {
   const packetRef = React.useRef<HTMLDivElement>(null);
@@ -276,7 +291,7 @@ export function PrintableKaiserReferralForm({
     chw: false,
     cs: false,
     respite: false,
-    alfTransitions: true,
+    alfTransitions: requiredSection1AlfUsage === 'yes',
     homeTransition: false,
     personalCare: false,
     envAdaptations: false,
@@ -290,13 +305,22 @@ export function PrintableKaiserReferralForm({
     recuperativeCare: false,
     shortTermHousing: false,
   });
-  const [currentLivingLocation, setCurrentLivingLocation] = React.useState<'A' | 'B' | 'C' | ''>('');
+  const [currentLivingLocation, setCurrentLivingLocation] = React.useState<'A' | 'B' | 'C' | ''>(() => {
+    if (requiredAlft22Choice === 'A' || requiredAlft22Choice === 'B' || requiredAlft22Choice === 'C') {
+      return requiredAlft22Choice;
+    }
+    const hasAlfLocationDetails = Boolean(
+      String(prefill.currentLocationName || '').trim() || String(prefill.currentLocationAddress || '').trim()
+    );
+    return hasAlfLocationDetails ? 'C' : '';
+  });
   const [isSendingToKaiser, setIsSendingToKaiser] = React.useState(false);
+  const [isStep3Confirmed, setIsStep3Confirmed] = React.useState(false);
   const [emailPreviewOpen, setEmailPreviewOpen] = React.useState(false);
   const [duplicateSubmissionMessage, setDuplicateSubmissionMessage] = React.useState('');
   const [overrideResubmit, setOverrideResubmit] = React.useState(false);
   const [overrideReason, setOverrideReason] = React.useState('');
-  const [wasSubmittedInSession, setWasSubmittedInSession] = React.useState(false);
+  const [isPdfConfirmedForSend, setIsPdfConfirmedForSend] = React.useState(false);
   const [emailDescription, setEmailDescription] = React.useState(
     'Please review the attached referral form for authorization request processing.'
   );
@@ -329,28 +353,43 @@ export function PrintableKaiserReferralForm({
   const resolvedMrn = formValues.memberMrn || 'N/A';
   const subjectLine = `Authorization Request for ${resolvedMemberName} and MRN: ${resolvedMrn}`;
   const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
+  const hasRequiredLocation = Boolean(currentLivingLocation);
+  const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
+  const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && hasReviewedPdfPreview && !isSendingToKaiser;
+  const canOpenEmailTemplate = canOpenSendDialog && isStep3Confirmed;
 
-  const handleOpenEmailPreview = () => {
-    if (!currentLivingLocation) {
-      window.alert('Section 2.2 is required: select either A, B, or C for where the member is currently living.');
-      return;
+  React.useEffect(() => {
+    if (requiredAlft22Choice === 'A' || requiredAlft22Choice === 'B' || requiredAlft22Choice === 'C') {
+      setCurrentLivingLocation(requiredAlft22Choice);
     }
-    setEmailPreviewOpen(true);
-  };
+  }, [requiredAlft22Choice]);
 
-  const handleSendToKaiserIntake = async () => {
+  React.useEffect(() => {
+    setServiceUsage((prev) => ({
+      ...prev,
+      alfTransitions: requiredSection1AlfUsage === 'yes',
+    }));
+  }, [requiredSection1AlfUsage]);
+
+  const buildPacketPdfBlob = async () => {
     if (!packetRef.current) {
-      window.alert('Form preview is not ready yet. Please wait a moment and try again.');
-      return;
+      throw new Error('Form preview is not ready yet. Please wait a moment and try again.');
     }
-    setIsSendingToKaiser(true);
-    try {
-      const pages = Array.from(packetRef.current.querySelectorAll<HTMLElement>('.kaiser-packet-page'));
-      if (!pages.length) {
-        throw new Error('Printable packet pages were not found.');
-      }
+    const pages = Array.from(packetRef.current.querySelectorAll<HTMLElement>('.kaiser-packet-page'));
+    if (!pages.length) {
+      throw new Error('Printable packet pages were not found.');
+    }
 
-      const pdfBytes = await generatePdfFromHtmlSections(pages, {
+    // Keep pages 7-14 hidden on-screen, but include them in generated PDFs.
+    const hiddenSecondaryPages = pages.filter((page) => page.classList.contains('screen-secondary-cs-hidden'));
+    const previousInlineDisplayValues = hiddenSecondaryPages.map((page) => page.style.display);
+    hiddenSecondaryPages.forEach((page) => {
+      page.style.display = 'flex';
+    });
+
+    let pdfBytes: Uint8Array;
+    try {
+      pdfBytes = await generatePdfFromHtmlSections(pages, {
         stampPageNumbers: false,
         options: {
           marginIn: 0.08,
@@ -363,7 +402,44 @@ export function PrintableKaiserReferralForm({
           fitSafetyScale: 0.998,
         },
       });
-      const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+    } finally {
+      hiddenSecondaryPages.forEach((page, index) => {
+        page.style.display = previousInlineDisplayValues[index];
+      });
+    }
+
+    return new Blob([pdfBytes], { type: 'application/pdf' });
+  };
+
+  const handleOpenEmailPreview = () => {
+    if (!currentLivingLocation) {
+      window.alert('Section 2.2 is required: select either A, B, or C for where the member is currently living.');
+      return;
+    }
+    if (!hasReviewedPdfPreview) {
+      window.alert('Please click "View PDF" and review the exact Kaiser PDF format before sending.');
+      return;
+    }
+    if (!hasRequiredSection1Usage) {
+      window.alert('Section 1 Current Service Usage is required: choose Yes or No for Assisted Living Facility Transitions.');
+      return;
+    }
+    if (!isStep3Confirmed) {
+      window.alert('Please check "Confirm PDF view is correct" before continuing.');
+      return;
+    }
+    setIsPdfConfirmedForSend(true);
+    setEmailPreviewOpen(true);
+  };
+
+  const handleSendToKaiserIntake = async () => {
+    if (!packetRef.current) {
+      window.alert('Form preview is not ready yet. Please wait a moment and try again.');
+      return;
+    }
+    setIsSendingToKaiser(true);
+    try {
+      const pdfBlob = await buildPacketPdfBlob();
       const pdfBase64 = await blobToBase64(pdfBlob);
 
       const response = await fetch('/api/forms/kaiser-referral/send-intake', {
@@ -404,7 +480,6 @@ export function PrintableKaiserReferralForm({
 
       setEmailPreviewOpen(false);
       setDuplicateSubmissionMessage('');
-      setWasSubmittedInSession(true);
       window.alert(`Sent to ${kaiserIntakeEmail} successfully.`);
     } catch (error: any) {
       window.alert(`Send failed: ${String(error?.message || error)}`);
@@ -415,13 +490,24 @@ export function PrintableKaiserReferralForm({
 
   return (
     <>
-      <Dialog open={emailPreviewOpen} onOpenChange={setEmailPreviewOpen}>
+      <Dialog
+        open={emailPreviewOpen}
+        onOpenChange={(open) => {
+          setEmailPreviewOpen(open);
+          if (!open) {
+            setIsPdfConfirmedForSend(false);
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Kaiser Referral Email Preview</DialogTitle>
-            <DialogDescription>Review the subject and preview before sending.</DialogDescription>
+            <DialogTitle>Kaiser Pre-Email Send Template</DialogTitle>
+            <DialogDescription>Add any custom message, confirm PDF was reviewed, then send.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+              PDF view was acknowledged. You can now customize message and send.
+            </div>
             {duplicateSubmissionMessage ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
                 <div className="font-semibold">Referral already submitted</div>
@@ -481,7 +567,7 @@ export function PrintableKaiserReferralForm({
             </Button>
             <Button
               onClick={() => void handleSendToKaiserIntake()}
-              disabled={isSendingToKaiser || (overrideResubmit && !overrideReason.trim())}
+              disabled={isSendingToKaiser || !isPdfConfirmedForSend || (overrideResubmit && !overrideReason.trim())}
             >
               {isSendingToKaiser ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {overrideResubmit ? 'Resend to Kaiser Intake (Override)' : 'Send to Kaiser Intake'}
@@ -491,49 +577,93 @@ export function PrintableKaiserReferralForm({
       </Dialog>
 
       <PrintableFormLayout
-      title="Kaiser Community Supports Member Referral Form"
+      title="Kaiser Authorization Request Template"
       subtitle="Initial or Renewal Authorization Referral (Pre-Populated)"
       formType="generic"
       applicationData={{ id: applicationId }}
       showPrintButton={showPrintButton}
       hideDocumentChrome
       disableMonochrome
+      controlsPlacement="bottom"
       extraControlsBelow={
-        <div className="space-y-1">
-          <div className="text-xs text-muted-foreground">
-            Detected region: {kaiserRegion || 'Kaiser South'} ({kaiserIntakeEmail})
-          </div>
-          <div className="text-xs text-emerald-700">
-            Staff reminder: Section 2.2 "Where member is currently living" is required before sending.
-            {currentLivingLocation ? ' (Completed)' : ' (Please complete)'}
-          </div>
-          {wasSubmittedInSession ? (
-            <div className="text-xs text-blue-700">
-              Kaiser referral was sent in this session. Any additional send requires an override.
+        <div className="space-y-3">
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            <div className="font-medium">Step 2: View PDF</div>
+            <div className="mt-1 text-xs">Open external printable preview, review it, then close it and continue.</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void onOpenPdfPreview?.()}
+                disabled={!isPdfPreviewStepEnabled || isGeneratingPdfPreview || !onOpenPdfPreview}
+              >
+                {isGeneratingPdfPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                View PDF
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void onDownloadPdfPreview?.()}
+                disabled={!isPdfPreviewStepEnabled || isGeneratingPdfPreview || !onDownloadPdfPreview}
+              >
+                {isGeneratingPdfPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Download PDF
+              </Button>
+              <span className={`text-xs ${isPdfPreviewStepEnabled ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {isPdfPreviewStepEnabled
+                  ? 'Activated: required selections above are complete.'
+                  : 'Activates after required selections above are completed.'}
+              </span>
             </div>
-          ) : null}
+          </div>
+
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            <div className="font-medium">Step 3: Confirm PDF View is Correct</div>
+            <div className="mt-1 text-xs">Check this after reviewing the external PDF preview from Step 2.</div>
+            <label className="mt-2 flex items-center gap-2 rounded border border-blue-200 bg-white p-2 text-xs text-blue-900">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={isStep3Confirmed}
+                onChange={(event) => setIsStep3Confirmed(event.target.checked)}
+                disabled={!hasReviewedPdfPreview || isSendingToKaiser}
+              />
+              Confirm PDF view is correct
+            </label>
+          </div>
+
+          <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+            <div className="font-medium">Step 4: Go to Send to Kaiser Pre-Email Template</div>
+            <div className="mt-1 text-xs">This activates only after all prior steps are complete.</div>
+            <div className="mt-2">
+              <Button
+                onClick={handleOpenEmailPreview}
+                variant="outline"
+                className="w-full sm:w-auto"
+                disabled={!canOpenEmailTemplate}
+              >
+                {isSendingToKaiser ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Sending to Kaiser Intake...
+                  </>
+                ) : canOpenEmailTemplate ? (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    Step 4: Go to Send to Kaiser Pre-Email Template
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    Complete All Steps First
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         </div>
       }
-      extraControls={(
-        <Button
-          onClick={handleOpenEmailPreview}
-          variant="outline"
-          className="flex-1 sm:flex-none"
-          disabled={isSendingToKaiser}
-        >
-          {isSendingToKaiser ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Sending to Kaiser Intake...
-            </>
-          ) : (
-            <>
-              <Send className="h-4 w-4 mr-2" />
-              Send to {kaiserRegion === 'Kaiser North' ? 'Kaiser North' : 'Kaiser South'} Intake
-            </>
-          )}
-        </Button>
-      )}
+      extraControls={null}
     >
       <div ref={packetRef} className="kaiser-referral-packet space-y-0 font-['Arial'] text-[11px] leading-[1.35] print:text-[10.5px] print:leading-[1.3]">
         <PageShell pageNumber={1}>
@@ -717,13 +847,13 @@ export function PrintableKaiserReferralForm({
                 <div><Checkbox checked={false} /> Hospital or Emergency Room care team</div>
                 <div><Checkbox checked={false} /> County or other government organization</div>
                 <div><Checkbox checked={false} /> Schools/Local Education Agencies (LEAs)</div>
-                <div><Checkbox checked /> Other community-based provider</div>
+                <div><Checkbox checked={false} /> Other community-based provider</div>
                 <div><Checkbox checked={false} /> Legal aid organizations</div>
                 <div><Checkbox checked={false} /> Justice involved organizations</div>
                 <div className="mt-1 flex items-center gap-2">
-                  <span><Checkbox checked={false} /> Other, please specify:</span>
+                  <span><Checkbox checked /> Other, please specify:</span>
                   <span className="inline-block min-w-[340px] border border-black px-1">
-                    <EditableBox />
+                    <EditableBox initialValue="Community Support (CalAim)" />
                   </span>
                 </div>
               </div>
@@ -1273,6 +1403,12 @@ export function PrintableKaiserReferralForm({
         .kaiser-referral-packet {
           padding: 12px 0;
           background: #f3f4f6;
+        }
+
+        @media screen {
+          .kaiser-referral-packet .screen-secondary-cs-hidden {
+            display: none;
+          }
         }
 
         .kaiser-referral-packet .kaiser-packet-page {
