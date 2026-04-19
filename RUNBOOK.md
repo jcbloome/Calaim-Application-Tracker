@@ -208,11 +208,10 @@ See `desktop/CODE_SIGNING.md` and set:
   - SW portal refreshes read only from this admin-synced Firestore cache.
   - Use `mode=full` only for occasional backfills or schema-change recovery.
 
-### Nightly Kaiser tracker preload (recommended)
-- Endpoint: `GET /api/cron/kaiser-midnight-preload?mode=full`
-- Auth header: `Authorization: Bearer ${CRON_SECRET}`
-- Behavior: performs a full Kaiser members cache sync, then preloads member notes for all Kaiser members into Firestore.
-- Schedule: `syncKaiserMidnightPreload` Firebase Scheduler function runs at **12:00 AM ET**.
+### Nightly Kaiser tracker preload (retired)
+- The automated midnight preload scheduler has been removed.
+- Reason: webhook-driven cache updates + scheduled members-cache sync provide complete coverage post-backfill.
+- If needed for one-off recovery, an admin can still run manual members-cache full reconcile from the sync tools.
 
 ---
 

@@ -10,7 +10,6 @@ const FUNCTION_SECRET_REQUIREMENTS: Record<string, string[]> = {
   caspioUsersRegistrationWebhook: ['CASPIO_WEBHOOK_SECRET'],
   syncCaspioMembersCacheIncremental: ['CRON_SECRET'],
   syncCaspioMembersCacheFull: ['CRON_SECRET'],
-  syncKaiserMidnightPreload: ['CRON_SECRET'],
   sendDocumentReminders: ['RESEND_API_KEY'],
   triggerDocumentReminders: ['RESEND_API_KEY'],
   sendCsSummaryReminders: ['RESEND_API_KEY'],

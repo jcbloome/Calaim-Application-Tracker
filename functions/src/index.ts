@@ -181,8 +181,7 @@ export {
 // Export Caspio members cache sync schedulers (SW portal freshness)
 export {
   syncCaspioMembersCacheIncremental,
-  syncCaspioMembersCacheFull,
-  syncKaiserMidnightPreload
+  syncCaspioMembersCacheFull
 } from './caspio-members-cache-sync';
 
 if (!admin.apps.length) {
