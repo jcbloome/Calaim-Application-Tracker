@@ -8640,11 +8640,11 @@ function ApplicationDetailPageContent() {
                     </Link>
                   </Button>
                   {kaiserStep5Required ? (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
                       {kaiserStep5Acknowledged ? (
                         <>
                           Step 5 acknowledged {kaiserStep5AcknowledgedAtLabel ? `at ${kaiserStep5AcknowledgedAtLabel}` : ''}.<br />
-                          Resend attempts are blocked unless override is enabled in the pre-email dialog.
+                          Resend is available when override is enabled in the pre-email dialog.
                         </>
                       ) : (
                         'Step 5 pending: referral send acknowledgment timestamp will appear after successful send.'
