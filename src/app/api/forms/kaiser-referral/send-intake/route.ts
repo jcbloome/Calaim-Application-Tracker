@@ -105,6 +105,18 @@ function formatSubmissionDate(value: unknown): string | null {
   return raw;
 }
 
+function isKaiserAuthReceivedIntake(data: Record<string, any> | undefined): boolean {
+  if (!data) return false;
+  const mode = String(data?.kaiserAuthorizationMode || '').trim().toLowerCase();
+  if (mode === 'authorization_received') return true;
+  if (mode === 'authorization_needed') return false;
+  return (
+    Boolean(data?.kaiserAuthReceivedViaIls) ||
+    String(data?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils' ||
+    String(data?.status || '').trim().toLowerCase() === 'authorization received (doc collection)'
+  );
+}
+
 async function resolveApplicationDoc(params: {
   applicationId: string;
   userId?: string;
@@ -302,13 +314,16 @@ export async function POST(request: NextRequest) {
       metadata,
     });
 
+    const submittedAtIso = new Date().toISOString();
+
     if (resolvedApp) {
+      const step5Required = !isKaiserAuthReceivedIntake(resolvedApp.data);
       await resolvedApp.ref.set(
         {
           kaiserReferralSubmission: {
             submitted: true,
             submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-            submittedAtIso: new Date().toISOString(),
+            submittedAtIso,
             from: fromAddress,
             to,
             cc: ccRecipients,
@@ -320,6 +335,20 @@ export async function POST(request: NextRequest) {
             overrideResubmit,
             overrideReason: overrideReason || null,
           },
+          kaiserStatus: 'T2038 Requested',
+          kaiserStatusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          kaiserStatusUpdatedAtIso: submittedAtIso,
+          kaiserStatusUpdatedBy: referrerName || referrerEmail || null,
+          kaiserReferralStep5: {
+            required: step5Required,
+            acknowledged: true,
+            acknowledgedAt: admin.firestore.FieldValue.serverTimestamp(),
+            acknowledgedAtIso: submittedAtIso,
+            acknowledgedBy: referrerName || referrerEmail || null,
+            note: step5Required
+              ? 'Kaiser referral sent and Step 5 acknowledged.'
+              : 'Step 5 not required because authorization was already received at intake.',
+          },
           kaiserReferralSubmissionCount: admin.firestore.FieldValue.increment(1),
           lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
         },
@@ -327,7 +356,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, submittedAtIso });
   } catch (error: any) {
     await logKaiserReferralEmail({
       status: 'failure',

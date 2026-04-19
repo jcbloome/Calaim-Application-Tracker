@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { PrintableKaiserReferralForm } from '@/components/forms/PrintableKaiserReferralForm';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
 
 const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
@@ -65,6 +64,8 @@ function KaiserReferralPrintableContent() {
       memberCounty: searchParams.get('memberCounty') || '',
       alft21Choice: searchParams.get('alft21Choice') || '',
       alft22Choice: searchParams.get('alft22Choice') || '',
+      kaiserAuthAlreadyReceived: searchParams.get('kaiserAuthAlreadyReceived') || '',
+      kaiserReferralSubmittedAtIso: searchParams.get('kaiserReferralSubmittedAtIso') || '',
       returnTo: searchParams.get('returnTo') || '',
     }),
     [searchParams]
@@ -129,6 +130,9 @@ function KaiserReferralPrintableContent() {
   const hasRequiredLocation = Boolean(alft22Choice);
   const hasRequiredSection1Usage = section1AlfUsage === 'yes' || section1AlfUsage === 'no';
   const hasRequiredSelectionsForPdf = hasRequiredLocation && hasRequiredSection1Usage;
+  const requiresKaiserReferralSendFlow = !['1', 'true', 'yes'].includes(
+    String(formPrefill.kaiserAuthAlreadyReceived || '').trim().toLowerCase()
+  );
 
   const buildTemplateUrl = useCallback(
     (download = false) => {
@@ -226,6 +230,11 @@ function KaiserReferralPrintableContent() {
         <div className="mt-1 text-xs text-muted-foreground">
           Detected region: {kaiserRegion || 'Kaiser South'} ({kaiserIntakeEmail})
         </div>
+        {!requiresKaiserReferralSendFlow ? (
+          <div className="mt-1 text-xs text-slate-700">
+            Authorization already received at intake. Referral send steps (Step 3-5) are not required.
+          </div>
+        ) : null}
         <div className="mt-1 text-xs text-emerald-700">
           Staff reminder: Section 2.2 <span className="font-semibold">Where member is currently living</span> is required before sending.
           {hasRequiredLocation ? ' (Completed)' : ' (Please complete)'}
@@ -306,6 +315,8 @@ function KaiserReferralPrintableContent() {
         onDownloadPdfPreview={handleDownloadPdf}
         isGeneratingPdfPreview={isGeneratingPdf}
         isPdfPreviewStepEnabled={hasRequiredSelectionsForPdf}
+        requiresKaiserReferralSendFlow={requiresKaiserReferralSendFlow}
+        initialStep5AcknowledgedAtIso={formPrefill.kaiserReferralSubmittedAtIso}
         requiredAlft22Choice={alft22Choice}
         requiredSection1AlfUsage={section1AlfUsage}
       />

@@ -865,16 +865,19 @@ function PushToCaspioDialog({
       (application as any)?.Hold_For_Social_Worker ||
       ''
     ).trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
-    const appHealthPlan = String((application as any)?.healthPlan || (application as any)?.CalAIM_MCO || '').trim().toLowerCase();
     const existingClientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
     const hasExistingClientId2 = Boolean(existingClientId2);
     const clientIdConflictWarning =
       'This application already has Client_ID2. Delete the existing record in Caspio Clients Table and CalAIM Members tables before pushing again.';
     const hasAssignedStaff = Boolean(assignedStaffId || assignedStaffName);
+    const kaiserAuthorizationMode = String((application as any)?.kaiserAuthorizationMode || '').trim().toLowerCase();
     const isKaiserAuthReceivedIntake =
-      Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
-      String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils';
-    const requiresKaiserStatus = isKaiserAuthReceivedIntake || appHealthPlan.includes('kaiser');
+      kaiserAuthorizationMode === 'authorization_received'
+        ? true
+        : kaiserAuthorizationMode === 'authorization_needed'
+          ? false
+          : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
+            String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils';
     const toClean = (value: unknown) => String(value ?? '').trim();
     const readinessChecks = [
       { key: 'memberFirstName', label: 'Member first name', required: true, ready: Boolean(toClean((application as any)?.memberFirstName)) },
@@ -884,8 +887,8 @@ function PushToCaspioDialog({
       { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
       { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
-      { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(caspioCalAIMStatus) },
-      { key: 'kaiserStatus', label: 'Kaiser Status', required: requiresKaiserStatus, ready: Boolean(requestedKaiserStatus) },
+      { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: false, ready: Boolean(caspioCalAIMStatus) },
+      { key: 'kaiserStatus', label: 'Kaiser Status', required: false, ready: Boolean(requestedKaiserStatus) },
       { key: 'socialWorkerHold', label: 'SW Hold for Caspio', required: true, ready: Boolean(requestedSocialWorkerHold) },
       {
         key: 'familyEmail',
@@ -1044,22 +1047,6 @@ function PushToCaspioDialog({
         }
     };
     const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
-        if (!caspioCalAIMStatus) {
-            toast({
-                variant: 'destructive',
-                title: 'CalAIM status required',
-                description: 'Select CalAIM Status (Authorized or Pending) in the main application card before pushing to Caspio.',
-            });
-            return;
-        }
-        if (requiresKaiserStatus && !requestedKaiserStatus) {
-            toast({
-                variant: 'destructive',
-                title: 'Kaiser status required',
-                description: 'Select Kaiser Status in the main application card before pushing to Caspio.',
-            });
-            return;
-        }
         if (hasExistingClientId2 && !isAlreadySent) {
             toast({
                 variant: 'destructive',
@@ -1101,7 +1088,6 @@ function PushToCaspioDialog({
                 body: JSON.stringify({
                     applicationData: {
                       ...application,
-                      caspioCalAIMStatus,
                       kaiserStatus: requestedKaiserStatus,
                       holdForSocialWorkerStatus: requestedSocialWorkerHold,
                     },
@@ -1130,7 +1116,6 @@ function PushToCaspioDialog({
                     const effectiveMapping = (mappingOverride || caspioMappingPreview || {}) as Record<string, string>;
                     const pushedMappedSnapshot: Record<string, string> = {};
                     const pushedSpecialSnapshot: Record<string, string> = {
-                        CalAIM_Status: String(caspioCalAIMStatus || '').trim(),
                         Kaiser_Status: String(requestedKaiserStatus || '').trim(),
                         Hold_For_Social_Worker_Visit: String(requestedSocialWorkerHold || '').trim(),
                         Monthly_Income: String(
@@ -1324,24 +1309,6 @@ function PushToCaspioDialog({
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle>Client_ID2 already exists: {existingClientId2}</AlertTitle>
                         <AlertDescription>{clientIdConflictWarning}</AlertDescription>
-                    </Alert>
-                )}
-                {!caspioCalAIMStatus && (
-                    <Alert variant="destructive">
-                        <AlertTriangle className="h-4 w-4" />
-                        <AlertTitle>CalAIM Status for Caspio is required</AlertTitle>
-                        <AlertDescription>
-                            Set CalAIM Status (Authorized or Pending) in the main application card before pushing.
-                        </AlertDescription>
-                    </Alert>
-                )}
-                {requiresKaiserStatus && !requestedKaiserStatus && (
-                    <Alert variant="destructive">
-                        <AlertTriangle className="h-4 w-4" />
-                        <AlertTitle>Kaiser Status is required</AlertTitle>
-                        <AlertDescription>
-                            Set Kaiser Status in the main application card before pushing this Kaiser application.
-                        </AlertDescription>
                     </Alert>
                 )}
                 {!hasAssignedStaff && (
@@ -2418,6 +2385,7 @@ function ApplicationDetailPageContent() {
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
   const [isUpdatingCaspioStatus, setIsUpdatingCaspioStatus] = useState(false);
   const [isUpdatingSocialWorkerHold, setIsUpdatingSocialWorkerHold] = useState(false);
+  const [isUpdatingKaiserAuthorizationMode, setIsUpdatingKaiserAuthorizationMode] = useState(false);
   const [isSendingProofIncomeSocWarning, setIsSendingProofIncomeSocWarning] = useState(false);
   const [isSocWarningPreviewOpen, setIsSocWarningPreviewOpen] = useState(false);
   const [isUpdatingKaiserTierLevel, setIsUpdatingKaiserTierLevel] = useState(false);
@@ -3010,7 +2978,16 @@ function ApplicationDetailPageContent() {
   }, [application]);
   const roomBoardAgreementMeta = (application as any)?.roomBoardTierAgreement || null;
 
-  const kaiserCurrentStatus = String((application as any)?.kaiserStatus || '').trim();
+  const kaiserCurrentStatus = (() => {
+    const submitted = Boolean(
+      (application as any)?.kaiserReferralSubmission?.submitted ||
+        (application as any)?.kaiserReferralSubmission?.submittedAt ||
+        (application as any)?.kaiserReferralSubmission?.submittedAtIso ||
+        (application as any)?.kaiserReferralSubmission?.providerMessageId
+    );
+    if (submitted) return 'T2038 Requested';
+    return String((application as any)?.kaiserStatus || '').trim();
+  })();
   const kaiserWorkflowOptions = useMemo(() => {
     return getKaiserStatusesInOrder()
       .filter((s) => Boolean((s as any)?.isActive))
@@ -5062,42 +5039,23 @@ function ApplicationDetailPageContent() {
     (application as any)?.caspioSentByEmail ||
     ''
   ).trim();
-  const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
-  const currentCaspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
+  const currentKaiserStatus = (() => {
+    const submitted = Boolean(
+      (application as any)?.kaiserReferralSubmission?.submitted ||
+        (application as any)?.kaiserReferralSubmission?.submittedAt ||
+        (application as any)?.kaiserReferralSubmission?.submittedAtIso ||
+        (application as any)?.kaiserReferralSubmission?.providerMessageId
+    );
+    if (submitted) return 'T2038 Requested';
+    return String((application as any)?.kaiserStatus || '').trim();
+  })();
   const currentSocialWorkerHold = String(
     (application as any)?.holdForSocialWorkerStatus ||
     (application as any)?.Hold_For_Social_Worker_Visit ||
     (application as any)?.Hold_For_Social_Worker ||
     ''
   ).trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
-  const lastPushedSpecialData = ((application as any)?.caspioLastPushedSpecialData || {}) as Record<string, unknown>;
-  const lastPushedCalAIMStatus = String(lastPushedSpecialData?.CalAIM_Status || '').trim();
-  const lastPushedKaiserStatus = String(lastPushedSpecialData?.Kaiser_Status || '').trim();
-  const lastPushedSocialWorkerHold = String(
-    lastPushedSpecialData?.Hold_For_Social_Worker_Visit ||
-    lastPushedSpecialData?.Hold_For_Social_Worker ||
-    ''
-  ).trim();
-  const hasPendingStatusPushWarning =
-    Boolean((application as any)?.caspioSent) &&
-    (
-      lastPushedCalAIMStatus !== currentCaspioCalAIMStatus ||
-      (isKaiserPlan && lastPushedKaiserStatus !== currentKaiserStatus) ||
-      (lastPushedSocialWorkerHold && lastPushedSocialWorkerHold !== currentSocialWorkerHold)
-    );
-  const pendingStatusFields = [
-    lastPushedCalAIMStatus !== currentCaspioCalAIMStatus ? 'CalAIM Status' : '',
-    isKaiserPlan && lastPushedKaiserStatus !== currentKaiserStatus ? 'Kaiser Status' : '',
-    lastPushedSocialWorkerHold && lastPushedSocialWorkerHold !== currentSocialWorkerHold ? 'SW Hold' : '',
-  ].filter(Boolean);
-  const firstPushKaiserStatusOptions = kaiserSteps.filter((status) =>
-    String(status || '').trim().toLowerCase().startsWith('t2038')
-  );
-  // Manual picker stays scoped to T2038 statuses; downstream statuses auto-update via workflow progression.
-  const kaiserStatusSelectionOptions = firstPushKaiserStatusOptions;
-  const kaiserStatusPickerValue = kaiserStatusSelectionOptions.includes(currentKaiserStatus)
-    ? currentKaiserStatus
-    : '';
+  const kaiserStatusPickerValue = currentKaiserStatus;
   const memberFirstNameDisplay = String(
     (application as any)?.memberFirstName ||
     (application as any)?.Member_First_Name ||
@@ -5225,16 +5183,39 @@ function ApplicationDetailPageContent() {
     return Number.isNaN(parsed.getTime()) ? '' : format(parsed, 'PPP p');
   };
   const kaiserReferralSubmission = (application as any)?.kaiserReferralSubmission || null;
+  const kaiserReferralStep5 = (application as any)?.kaiserReferralStep5 || null;
+  const kaiserAuthorizationMode = String((application as any)?.kaiserAuthorizationMode || '').trim().toLowerCase();
+  const isKaiserAuthReceivedIntake =
+    kaiserAuthorizationMode === 'authorization_received'
+      ? true
+      : kaiserAuthorizationMode === 'authorization_needed'
+        ? false
+        : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
+          String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils' ||
+          String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
   const kaiserReferralSubmitted = Boolean(
     kaiserReferralSubmission?.submitted ||
       kaiserReferralSubmission?.submittedAt ||
       kaiserReferralSubmission?.submittedAtIso ||
       kaiserReferralSubmission?.providerMessageId
   );
+  const kaiserStep5Required = isKaiserPlan && !isKaiserAuthReceivedIntake;
+  const kaiserStep5Acknowledged = kaiserStep5Required
+    ? Boolean(
+        kaiserReferralStep5?.acknowledged ||
+          kaiserReferralStep5?.acknowledgedAt ||
+          kaiserReferralStep5?.acknowledgedAtIso ||
+          kaiserReferralSubmitted
+      )
+    : false;
   const kaiserReferralSubmittedAtLabel =
     formatDateTimeValue(kaiserReferralSubmission?.submittedAt) ||
     formatDateTimeValue(kaiserReferralSubmission?.submittedAtIso) ||
     '';
+  const kaiserStep5AcknowledgedAtLabel =
+    formatDateTimeValue(kaiserReferralStep5?.acknowledgedAt) ||
+    formatDateTimeValue(kaiserReferralStep5?.acknowledgedAtIso) ||
+    kaiserReferralSubmittedAtLabel;
   const isNewCsSummary =
     Boolean(csSummaryCompletedAt) &&
     !application.applicationChecked &&
@@ -5814,6 +5795,37 @@ function ApplicationDetailPageContent() {
       });
     } finally {
       setIsUpdatingSocialWorkerHold(false);
+    }
+  };
+
+  const updateKaiserAuthorizationMode = async (mode: 'authorization_received' | 'authorization_needed') => {
+    if (!docRef || !application || !isKaiserPlan) return;
+    setIsUpdatingKaiserAuthorizationMode(true);
+    try {
+      const isAuthorized = mode === 'authorization_received';
+      const updateData = {
+        kaiserAuthorizationMode: mode,
+        kaiserAuthReceivedViaIls: isAuthorized,
+        lastUpdated: serverTimestamp(),
+      };
+      await setDoc(docRef, updateData, { merge: true });
+      setApplication((prev) => (prev ? ({ ...prev, ...updateData } as any) : prev));
+      toast({
+        title: 'Kaiser authorization mode updated',
+        description: isAuthorized
+          ? 'Set to Authorized member; Kaiser referral form is not required.'
+          : 'Set to Authorization needed; Kaiser referral form is required.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error) {
+      console.error('Error updating Kaiser authorization mode:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not update Kaiser authorization mode.',
+      });
+    } finally {
+      setIsUpdatingKaiserAuthorizationMode(false);
     }
   };
 
@@ -6863,6 +6875,8 @@ function ApplicationDetailPageContent() {
         currentLocationAddress: memberAddress,
         healthPlan: String((application as any)?.healthPlan || '').trim(),
         memberCounty: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
+        kaiserAuthAlreadyReceived: isKaiserAuthReceivedIntake ? '1' : '0',
+        kaiserReferralSubmittedAtIso: String(kaiserReferralSubmission?.submittedAtIso || '').trim(),
       });
 
       return (
@@ -7513,16 +7527,6 @@ function ApplicationDetailPageContent() {
             <Button type="button" variant="outline" size="sm" onClick={() => router.push('/admin/applications')}>
               Back to Applications
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                document.getElementById('member-quick-actions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-            >
-              Open Quick Actions
-            </Button>
           </div>
         </div>
         {missingQuickFixes.length > 0 && (
@@ -7816,6 +7820,9 @@ function ApplicationDetailPageContent() {
             <AlertTitle>Kaiser referral form already submitted</AlertTitle>
             <AlertDescription>
               Submitted {kaiserReferralSubmittedAtLabel ? `on ${kaiserReferralSubmittedAtLabel}` : 'previously'}.
+              {kaiserStep5Required && kaiserStep5AcknowledgedAtLabel
+                ? ` Step 5 acknowledged at ${kaiserStep5AcknowledgedAtLabel}.`
+                : ''}
               Additional sends are blocked unless override is explicitly enabled.
             </AlertDescription>
           </Alert>
@@ -7868,6 +7875,44 @@ function ApplicationDetailPageContent() {
                 </div>
                 <div><strong>Submission Status:</strong> <span className="font-semibold">{application.status}</span></div>
             </div>
+
+            {isKaiserPlan ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3">
+                <div className="text-sm font-medium text-blue-900">Kaiser Authorization Type (controls referral requirement)</div>
+                <div className="mt-2 flex flex-col gap-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <Checkbox
+                      checked={isKaiserAuthReceivedIntake}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          void updateKaiserAuthorizationMode('authorization_received');
+                        }
+                      }}
+                      disabled={isUpdatingKaiserAuthorizationMode}
+                    />
+                    <span>Authorized member (authorization already received)</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <Checkbox
+                      checked={!isKaiserAuthReceivedIntake}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          void updateKaiserAuthorizationMode('authorization_needed');
+                        }
+                      }}
+                      disabled={isUpdatingKaiserAuthorizationMode}
+                    />
+                    <span>Authorization needed (Kaiser referral form required)</span>
+                  </label>
+                </div>
+                {isUpdatingKaiserAuthorizationMode ? (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-blue-800">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Saving authorization type...
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             
             {/* Application Progression Field */}
             {/* Application progression moved to Quick actions */}
@@ -7924,25 +7969,25 @@ function ApplicationDetailPageContent() {
                     )}
                     <span>
                       {String((application as any)?.caspioCalAIMStatus || '').trim()
-                        ? `CalAIM Status for Caspio: ${String((application as any)?.caspioCalAIMStatus || '').trim()}`
-                        : 'CalAIM Status for Caspio: Pending selection'}
+                        ? `CalAIM Status (Caspio sync): ${String((application as any)?.caspioCalAIMStatus || '').trim()}`
+                        : 'CalAIM Status (Caspio sync): Waiting for Caspio update'}
                     </span>
                   </div>
                   {isKaiserPlan ? (
                     <div
                       className={cn(
                         'flex items-center gap-2 text-base font-semibold',
-                        String((application as any)?.kaiserStatus || '').trim() ? 'text-green-700' : 'text-amber-700'
+                        currentKaiserStatus ? 'text-green-700' : 'text-amber-700'
                       )}
                     >
-                      {String((application as any)?.kaiserStatus || '').trim() ? (
+                      {currentKaiserStatus ? (
                         <CheckCircle2 className="h-5 w-5" />
                       ) : (
                         <XCircle className="h-5 w-5" />
                       )}
                       <span>
-                        {String((application as any)?.kaiserStatus || '').trim()
-                          ? `Kaiser Status: ${String((application as any)?.kaiserStatus || '').trim()}`
+                        {currentKaiserStatus
+                          ? `Kaiser Status: ${currentKaiserStatus}`
                           : 'Kaiser Status: Pending selection'}
                       </span>
                     </div>
@@ -8065,10 +8110,10 @@ function ApplicationDetailPageContent() {
                             void updateCaspioCalAIMStatus(value);
                           }
                         }}
-                        disabled={isUpdatingCaspioStatus}
+                        disabled
                       >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Select status" />
+                          <SelectValue placeholder="Synced from Caspio" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Authorized">Authorized</SelectItem>
@@ -8076,7 +8121,7 @@ function ApplicationDetailPageContent() {
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        Required before Push to Caspio from this page.
+                        Synced from Caspio. Manual CalAIM status push from this page is disabled.
                       </p>
                     </div>
                     <div className="space-y-2">
@@ -8105,41 +8150,15 @@ function ApplicationDetailPageContent() {
                     {isKaiserPlan ? (
                       <div className="space-y-2">
                         <Label className="text-xs font-medium text-muted-foreground">Kaiser Status</Label>
-                        <Select
-                          value={kaiserStatusPickerValue}
-                          onValueChange={(value) => {
-                            if (value) {
-                              void updateProgressionStatus(value, 'kaiser');
-                            }
-                          }}
-                          disabled={isUpdatingProgression}
-                        >
-                          <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Select Kaiser status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {kaiserStatusSelectionOptions.map((status) => (
-                              <SelectItem key={`main-kaiser-status-${status}`} value={status}>
-                                {status}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
+                          {kaiserStatusPickerValue || 'Synced from Kaiser workflow'}
+                        </div>
                         <p className="text-xs text-muted-foreground">
-                          Only T2038 Kaiser statuses are manually selectable here. Later statuses update through tracker progression.
+                          Read only. Initial status is set to T2038 Requested after Kaiser referral is sent.
                         </p>
                       </div>
                     ) : null}
                   </div>
-                  {hasPendingStatusPushWarning ? (
-                    <Alert variant="destructive" className="ml-7">
-                      <AlertTriangle className="h-4 w-4" />
-                      <AlertTitle>Status change pending Caspio push</AlertTitle>
-                      <AlertDescription>
-                        {pendingStatusFields.join(' and ')} changed after last push. Open "Already pushed to Caspio (manage)" and use Confirm & Push Changes.
-                      </AlertDescription>
-                    </Alert>
-                  ) : null}
                   {familyStatusLastSentLabel ? (
                     <div className="text-xs text-muted-foreground pl-7">
                       Last family status email: {familyStatusLastSentLabel}
@@ -8152,7 +8171,7 @@ function ApplicationDetailPageContent() {
                   <div className="text-right">
                     <div className="text-xs text-muted-foreground">
                       {application.healthPlan?.toLowerCase().includes('kaiser')
-                        ? `Progression: ${(application as any)?.kaiserStatus || 'Not set'}`
+                        ? `Progression: ${currentKaiserStatus || 'Not set'}`
                         : application.healthPlan?.toLowerCase().includes('health net')
                           ? `Progression: ${healthNetCurrentStatus || 'Not set'}`
                           : null}
@@ -8606,14 +8625,34 @@ function ApplicationDetailPageContent() {
                 currentLocationAddress: qaMemberAddress,
                 healthPlan: String((application as any)?.healthPlan || '').trim(),
                 memberCounty: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
+                kaiserAuthAlreadyReceived: isKaiserAuthReceivedIntake ? '1' : '0',
+                kaiserReferralSubmittedAtIso: String(kaiserReferralSubmission?.submittedAtIso || '').trim(),
               });
               return (
-                <Button asChild variant="outline" className="w-full justify-start gap-2 border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100">
-                  <Link href={`/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`} target="_blank" rel="noopener noreferrer">
-                    <FileText className="h-4 w-4 shrink-0" />
-                    Generate Kaiser Referral Form (Pre-Filled)
-                  </Link>
-                </Button>
+                <div className="space-y-2">
+                  <Button asChild variant="outline" className="w-full justify-start gap-2 border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100">
+                    <Link href={`/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`} target="_blank" rel="noopener noreferrer">
+                      <FileText className="h-4 w-4 shrink-0" />
+                      Generate Kaiser Referral Form (Pre-Filled)
+                    </Link>
+                  </Button>
+                  {kaiserStep5Required ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                      {kaiserStep5Acknowledged ? (
+                        <>
+                          Step 5 acknowledged {kaiserStep5AcknowledgedAtLabel ? `at ${kaiserStep5AcknowledgedAtLabel}` : ''}.<br />
+                          Resend attempts are blocked unless override is enabled in the pre-email dialog.
+                        </>
+                      ) : (
+                        'Step 5 pending: referral send acknowledgment timestamp will appear after successful send.'
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                      Authorization already received at intake. Referral send workflow is not required for this member.
+                    </div>
+                  )}
+                </div>
               );
             })() : null}
             <Dialog>

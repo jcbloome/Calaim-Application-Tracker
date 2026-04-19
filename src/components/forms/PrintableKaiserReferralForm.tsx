@@ -48,6 +48,8 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
   onDownloadPdfPreview?: () => Promise<void> | void;
   isGeneratingPdfPreview?: boolean;
   isPdfPreviewStepEnabled?: boolean;
+  requiresKaiserReferralSendFlow?: boolean;
+  initialStep5AcknowledgedAtIso?: string;
   requiredAlft22Choice?: 'A' | 'B' | 'C' | '';
   requiredSection1AlfUsage?: 'yes' | 'no' | '';
 }
@@ -260,6 +262,8 @@ export function PrintableKaiserReferralForm({
   onDownloadPdfPreview,
   isGeneratingPdfPreview = false,
   isPdfPreviewStepEnabled = true,
+  requiresKaiserReferralSendFlow = true,
+  initialStep5AcknowledgedAtIso = '',
   requiredAlft22Choice = '',
   requiredSection1AlfUsage = '',
   ...prefill
@@ -321,6 +325,7 @@ export function PrintableKaiserReferralForm({
   const [overrideResubmit, setOverrideResubmit] = React.useState(false);
   const [overrideReason, setOverrideReason] = React.useState('');
   const [isPdfConfirmedForSend, setIsPdfConfirmedForSend] = React.useState(false);
+  const [step5AcknowledgedAtIso, setStep5AcknowledgedAtIso] = React.useState(String(initialStep5AcknowledgedAtIso || '').trim());
   const [emailDescription, setEmailDescription] = React.useState(
     'Please review the attached referral form for authorization request processing.'
   );
@@ -356,7 +361,13 @@ export function PrintableKaiserReferralForm({
   const hasRequiredLocation = Boolean(currentLivingLocation);
   const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
   const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && hasReviewedPdfPreview && !isSendingToKaiser;
-  const canOpenEmailTemplate = canOpenSendDialog && isStep3Confirmed;
+  const canOpenEmailTemplate = requiresKaiserReferralSendFlow && canOpenSendDialog && isStep3Confirmed;
+  const step5AcknowledgedAtLabel = React.useMemo(() => {
+    const raw = String(step5AcknowledgedAtIso || '').trim();
+    if (!raw) return '';
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString();
+  }, [step5AcknowledgedAtIso]);
 
   React.useEffect(() => {
     if (requiredAlft22Choice === 'A' || requiredAlft22Choice === 'B' || requiredAlft22Choice === 'C') {
@@ -480,6 +491,8 @@ export function PrintableKaiserReferralForm({
 
       setEmailPreviewOpen(false);
       setDuplicateSubmissionMessage('');
+      const acknowledgedAt = String(result?.submittedAtIso || '').trim() || new Date().toISOString();
+      setStep5AcknowledgedAtIso(acknowledgedAt);
       window.alert(`Sent to ${kaiserIntakeEmail} successfully.`);
     } catch (error: any) {
       window.alert(`Send failed: ${String(error?.message || error)}`);
@@ -619,47 +632,80 @@ export function PrintableKaiserReferralForm({
 
           <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
             <div className="font-medium">Step 3: Confirm PDF View is Correct</div>
-            <div className="mt-1 text-xs">Check this after reviewing the external PDF preview from Step 2.</div>
-            <label className="mt-2 flex items-center gap-2 rounded border border-blue-200 bg-white p-2 text-xs text-blue-900">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={isStep3Confirmed}
-                onChange={(event) => setIsStep3Confirmed(event.target.checked)}
-                disabled={!hasReviewedPdfPreview || isSendingToKaiser}
-              />
-              Confirm PDF view is correct
-            </label>
+            {requiresKaiserReferralSendFlow ? (
+              <>
+                <div className="mt-1 text-xs">Check this after reviewing the external PDF preview from Step 2.</div>
+                <label className="mt-2 flex items-center gap-2 rounded border border-blue-200 bg-white p-2 text-xs text-blue-900">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={isStep3Confirmed}
+                    onChange={(event) => setIsStep3Confirmed(event.target.checked)}
+                    disabled={!hasReviewedPdfPreview || isSendingToKaiser}
+                  />
+                  Confirm PDF view is correct
+                </label>
+              </>
+            ) : (
+              <div className="mt-1 text-xs">
+                Not required. Authorization already exists at intake for this member.
+              </div>
+            )}
           </div>
 
           <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
             <div className="font-medium">Step 4: Go to Send to Kaiser Pre-Email Template</div>
-            <div className="mt-1 text-xs">This activates only after all prior steps are complete.</div>
-            <div className="mt-2">
-              <Button
-                onClick={handleOpenEmailPreview}
-                variant="outline"
-                className="w-full sm:w-auto"
-                disabled={!canOpenEmailTemplate}
-              >
-                {isSendingToKaiser ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Sending to Kaiser Intake...
-                  </>
-                ) : canOpenEmailTemplate ? (
-                  <>
-                    <Send className="h-4 w-4 mr-2" />
-                    Step 4: Go to Send to Kaiser Pre-Email Template
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4 mr-2" />
-                    Complete All Steps First
-                  </>
-                )}
-              </Button>
-            </div>
+            {requiresKaiserReferralSendFlow ? (
+              <>
+                <div className="mt-1 text-xs">This activates only after all prior steps are complete.</div>
+                <div className="mt-2">
+                  <Button
+                    onClick={handleOpenEmailPreview}
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    disabled={!canOpenEmailTemplate}
+                  >
+                    {isSendingToKaiser ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Sending to Kaiser Intake...
+                      </>
+                    ) : canOpenEmailTemplate ? (
+                      <>
+                        <Send className="h-4 w-4 mr-2" />
+                        Step 4: Go to Send to Kaiser Pre-Email Template
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-2" />
+                        Complete All Steps First
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="mt-1 text-xs">
+                Not required. Authorization already exists at intake for this member.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+            <div className="font-medium">Step 5: Sent Acknowledgment</div>
+            {requiresKaiserReferralSendFlow ? (
+              step5AcknowledgedAtLabel ? (
+                <div className="mt-1 text-xs">
+                  Kaiser referral acknowledged as sent at <span className="font-semibold">{step5AcknowledgedAtLabel}</span>.
+                </div>
+              ) : (
+                <div className="mt-1 text-xs">Pending. This step is completed automatically after successful send.</div>
+              )
+            ) : (
+              <div className="mt-1 text-xs">
+                Not required for this member because Kaiser authorization was already received at intake.
+              </div>
+            )}
           </div>
         </div>
       }
