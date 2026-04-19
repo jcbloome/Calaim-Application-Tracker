@@ -198,8 +198,10 @@ export async function GET(req: NextRequest) {
       const alft21Index = prefill.alft21Choice === 'B' ? 1 : 0;
       selectWidgetOptionByIndex('ALF - 2.1', alft21Index);
 
-      const alft22Index = prefill.alft22Choice === 'B' ? 1 : prefill.alft22Choice === 'C' ? 2 : 0;
-      selectWidgetOptionByIndex('ALF 2.2', alft22Index);
+      if (prefill.alft22Choice === 'A' || prefill.alft22Choice === 'B' || prefill.alft22Choice === 'C') {
+        const alft22Index = prefill.alft22Choice === 'B' ? 1 : prefill.alft22Choice === 'C' ? 2 : 0;
+        selectWidgetOptionByIndex('ALF 2.2', alft22Index);
+      }
 
       setChecked('Assisted Living Facility Transitions', true);
       // Referrer relationship: force "Other please specify".

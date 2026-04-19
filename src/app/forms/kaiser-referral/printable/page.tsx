@@ -84,8 +84,10 @@ function KaiserReferralPrintableContent() {
   const [alft21Choice, setAlft21Choice] = useState<'A' | 'B'>(
     formPrefill.alft21Choice === 'B' ? 'B' : 'A'
   );
-  const [alft22Choice, setAlft22Choice] = useState<'A' | 'B' | 'C'>(
-    formPrefill.alft22Choice === 'B' || formPrefill.alft22Choice === 'C' ? (formPrefill.alft22Choice as 'B' | 'C') : 'A'
+  const [alft22Choice, setAlft22Choice] = useState<'A' | 'B' | 'C' | ''>(
+    formPrefill.alft22Choice === 'A' || formPrefill.alft22Choice === 'B' || formPrefill.alft22Choice === 'C'
+      ? (formPrefill.alft22Choice as 'A' | 'B' | 'C')
+      : ''
   );
 
   const buildTemplateUrl = useCallback(
@@ -98,7 +100,9 @@ function KaiserReferralPrintableContent() {
         params.set(key, text);
       }
       params.set('alft21Choice', alft21Choice);
-      params.set('alft22Choice', alft22Choice);
+      if (alft22Choice) {
+        params.set('alft22Choice', alft22Choice);
+      }
       const query = params.toString();
       return `/api/forms/kaiser-referral/template${query ? `?${query}` : ''}`;
     },
@@ -118,6 +122,10 @@ function KaiserReferralPrintableContent() {
   }, []);
 
   const handleViewPdf = useCallback(async () => {
+    if (!alft22Choice) {
+      window.alert('Section 2.2 is required: select where the member is currently living.');
+      return;
+    }
     setIsGeneratingPdf(true);
     try {
       const absoluteUrl = `${window.location.origin}${buildTemplateUrl(false)}`;
@@ -128,9 +136,13 @@ function KaiserReferralPrintableContent() {
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [buildTemplateUrl, openExternalPdfUrl]);
+  }, [alft22Choice, buildTemplateUrl, openExternalPdfUrl]);
 
   const handleDownloadPdf = useCallback(async () => {
+    if (!alft22Choice) {
+      window.alert('Section 2.2 is required: select where the member is currently living.');
+      return;
+    }
     setIsGeneratingPdf(true);
     try {
       const link = document.createElement('a');
@@ -145,7 +157,7 @@ function KaiserReferralPrintableContent() {
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [buildTemplateUrl]);
+  }, [alft22Choice, buildTemplateUrl]);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4">
@@ -183,10 +195,11 @@ function KaiserReferralPrintableContent() {
               value={alft22Choice}
               onChange={(e) => {
                 const next = e.target.value;
-                if (next === 'B' || next === 'C') setAlft22Choice(next);
-                else setAlft22Choice('A');
+                if (next === 'A' || next === 'B' || next === 'C') setAlft22Choice(next);
+                else setAlft22Choice('');
               }}
             >
+              <option value="">Select one...</option>
               <option value="A">A - Skilled Nursing Facility (SNF)</option>
               <option value="B">B - At home or in public subsidized housing</option>
               <option value="C">C - In an Assisted Living Facility / Board and Care</option>
