@@ -74,6 +74,7 @@ function CsSummaryFormComponent() {
   const [hasInteracted, setHasInteracted] = useState(false);
   const [lastEditedAt, setLastEditedAt] = useState(0);
   const [isDeletingDraft, setIsDeletingDraft] = useState(false);
+  const [isKaiserSkeletonDraftFlow, setIsKaiserSkeletonDraftFlow] = useState(false);
   const initialWatchCompleteRef = useRef(false);
   const lastSnapshotRef = useRef('');
 
@@ -179,6 +180,22 @@ function CsSummaryFormComponent() {
         if (docSnap.exists()) {
           const data = docSnap.data() as Application;
           reset(data as FormValues);
+          const healthPlan = String((data as any)?.healthPlan || '').trim().toLowerCase();
+          const intakeType = String((data as any)?.intakeType || '').trim().toLowerCase();
+          const isKaiserIntake =
+            Boolean((data as any)?.kaiserAuthReceivedViaIls) ||
+            intakeType === 'kaiser_auth_received_via_ils' ||
+            healthPlan.includes('kaiser');
+          const isHealthNetIntake =
+            healthPlan.includes('health net') ||
+            healthPlan.includes('healthnet') ||
+            healthPlan === 'hn';
+          const isSkeletonSeed =
+            Boolean((data as any)?.createdByAdmin) ||
+            Boolean((data as any)?.intakeSource) ||
+            String((data as any)?.id || '').startsWith('admin_app_') ||
+            Boolean(internalApplicationId?.startsWith('admin_app_'));
+          setIsKaiserSkeletonDraftFlow(isAdminView && (isKaiserIntake || isHealthNetIntake) && isSkeletonSeed);
           
           // Check if CS Summary is already completed and show skip option
           const csSummaryForm = data.forms?.find(form => 
@@ -189,6 +206,7 @@ function CsSummaryFormComponent() {
           }
         } else {
             setInternalApplicationId(null);
+            setIsKaiserSkeletonDraftFlow(false);
             if (user && !isAdminView) { // Only reset referrer for new user forms
                 const displayName = user.displayName || '';
                 const nameParts = displayName.split(' ');
@@ -203,6 +221,7 @@ function CsSummaryFormComponent() {
             }
         }
       } else if (user && !internalApplicationId && !isAdminView) {
+          setIsKaiserSkeletonDraftFlow(false);
           const displayName = user.displayName || '';
           const nameParts = displayName.split(' ');
           const firstName = nameParts[0] || '';
@@ -443,16 +462,19 @@ function CsSummaryFormComponent() {
   };
 
   const nextStep = async () => {
-    const fields = steps[currentStep - 1].fields;
-    const isValid = await trigger(fields as FieldPath<FormValues>[], { shouldFocus: true });
-    
-    if (!isValid) {
-      setValidationError("Please correct the errors on this page. Required fields are marked with a red asterisk (*).");
-      const firstErrorField = fields.find((field) => errors[field]);
-      if (firstErrorField) {
-        setTimeout(() => setFocus(firstErrorField), 0);
+    const allowDraftNavigationWithoutStepValidation = isKaiserSkeletonDraftFlow;
+    if (!allowDraftNavigationWithoutStepValidation) {
+      const fields = steps[currentStep - 1].fields;
+      const isValid = await trigger(fields as FieldPath<FormValues>[], { shouldFocus: true });
+      
+      if (!isValid) {
+        setValidationError("Please correct the errors on this page. Required fields are marked with a red asterisk (*).");
+        const firstErrorField = fields.find((field) => errors[field]);
+        if (firstErrorField) {
+          setTimeout(() => setFocus(firstErrorField), 0);
+        }
+        return;
       }
-      return;
     }
 
     setValidationError(null);
@@ -755,6 +777,11 @@ function CsSummaryFormComponent() {
                         <p className="mt-0.5 text-blue-800">
                           You can safely leave and return later without losing your CS Summary progress.
                         </p>
+                        {isKaiserSkeletonDraftFlow ? (
+                          <p className="mt-1 text-blue-800">
+                            Admin draft mode (Kaiser/Health Net): you can move between steps without filling all required fields. Required fields are still enforced when you click Review &amp; Complete.
+                          </p>
+                        ) : null}
                       </div>
                   </div>
               </div>

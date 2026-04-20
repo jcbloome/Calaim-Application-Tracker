@@ -90,6 +90,27 @@ const parseMemberName = (rawValue: unknown): { firstName: string; lastName: stri
   };
 };
 
+const sanitizeParsedName = (name: { firstName: string; lastName: string }) => {
+  const blockedTokens = new Set([
+    'mrn',
+    'cin',
+    'plan',
+    'id',
+    'member',
+    'name',
+    'dob',
+    'age',
+    'phone',
+    'email',
+  ]);
+  const first = String(name.firstName || '').trim();
+  const last = String(name.lastName || '').trim();
+  if (!first) return { firstName: '', lastName: '' };
+  if (blockedTokens.has(first.toLowerCase())) return { firstName: '', lastName: '' };
+  if (blockedTokens.has(last.toLowerCase())) return { firstName: first, lastName: '' };
+  return { firstName: first, lastName: last };
+};
+
 const extractNameFromFileName = (rawFileName: unknown) => {
   const fileBase = String(rawFileName || '').replace(/\.pdf$/i, '').trim();
   if (!fileBase) return '';
@@ -643,14 +664,14 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     /email\s*:\s*([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
   ]);
 
-  const parsedName = parseMemberName(memberNameRaw);
+  const parsedName = sanitizeParsedName(parseMemberName(memberNameRaw));
   const tableFields = extractMemberTableFieldsFromLines(lines);
   let updates: Record<string, string> = {};
-  if (parsedName.firstName || tableFields.memberFirstName) {
-    updates.memberFirstName = toNameCase(parsedName.firstName || tableFields.memberFirstName || '');
+  if (tableFields.memberFirstName || parsedName.firstName) {
+    updates.memberFirstName = toNameCase(tableFields.memberFirstName || parsedName.firstName || '');
   }
-  if (parsedName.lastName || tableFields.memberLastName) {
-    updates.memberLastName = toNameCase(parsedName.lastName || tableFields.memberLastName || '');
+  if (tableFields.memberLastName || parsedName.lastName) {
+    updates.memberLastName = toNameCase(tableFields.memberLastName || parsedName.lastName || '');
   }
   if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
   if (tableFields.memberDob) updates.memberDob = tableFields.memberDob;
@@ -779,7 +800,7 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     /(?:member|patient)?\s*email\s*[:#-]?\s*(?:\r?\n\s*)?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
   ]);
 
-  const parsedName = parseMemberName(memberNameRaw);
+  const parsedName = sanitizeParsedName(parseMemberName(memberNameRaw));
   const tableFields = extractMemberTableFieldsFromLines(lines);
   const parsedAddress = parseAddressParts(memberAddress);
 
@@ -803,11 +824,11 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     contactEmail: string;
   }> = {};
 
-  if (parsedName.firstName || tableFields.memberFirstName) {
-    updates.memberFirstName = toNameCase(parsedName.firstName || tableFields.memberFirstName || '');
+  if (tableFields.memberFirstName || parsedName.firstName) {
+    updates.memberFirstName = toNameCase(tableFields.memberFirstName || parsedName.firstName || '');
   }
-  if (parsedName.lastName || tableFields.memberLastName) {
-    updates.memberLastName = toNameCase(parsedName.lastName || tableFields.memberLastName || '');
+  if (tableFields.memberLastName || parsedName.lastName) {
+    updates.memberLastName = toNameCase(tableFields.memberLastName || parsedName.lastName || '');
   }
   if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
   if (authorizationNumber) updates.Authorization_Number_T038 = authorizationNumber;
