@@ -19,15 +19,27 @@ try {
 }
 
 interface CaspioNote {
-  PK_ID: number;
+  PK_ID?: number;
+  Note_ID?: number;
+  ID?: number;
   Client_ID2: number;
   Comments: string;
-  User_ID: number;
+  User_ID?: number;
+  User_ID2?: number;
   Time_Stamp: string;
+  Time?: string;
   Follow_Up_Date?: string;
   Note_Status?: string;
   Follow_Up_Status?: string;
   User_Full_Name?: string;
+  User_FullName?: string;
+  User_First?: string;
+  User_Last?: string;
+  First_Name?: string;
+  Last_Name?: string;
+  Staff_Name?: string;
+  Created_By?: string;
+  Entered_By?: string;
   Senior_Full_Name?: string;
   Follow_Up_Assignment?: string;
   Assigned_First?: string;
@@ -99,8 +111,21 @@ async function fetchAllRowsForMemberFromCaspio<T extends Record<string, any>>(pa
     const pageRows = Array.isArray(data?.Result) ? (data.Result as T[]) : [];
     if (pageRows.length === 0) break;
 
-    const firstId = String(pageRows[0]?.[idField] ?? '');
-    const lastId = String(pageRows[pageRows.length - 1]?.[idField] ?? '');
+    const resolveRowId = (row: any) =>
+      String(
+        row?.[idField] ??
+          row?.PK_ID ??
+          row?.Note_ID ??
+          row?.ID ??
+          row?.table_ID ??
+          row?.Time_Stamp ??
+          row?.Time ??
+          row?.Timestamp ??
+          ''
+      );
+
+    const firstId = resolveRowId(pageRows[0]);
+    const lastId = resolveRowId(pageRows[pageRows.length - 1]);
     const pageSignature = `${firstId}|${lastId}|${pageRows.length}`;
     if (pageNumber > 1 && pageSignature === previousPageSignature) {
       // Defensive guard for environments where pageNumber can return duplicate pages.
@@ -719,6 +744,14 @@ function getNameVariants(value: unknown): string[] {
 
 type StaffAliasMap = Record<string, string[]>;
 let staffAliasCache: { data: StaffAliasMap; expiresAt: number } = { data: {}, expiresAt: 0 };
+type StaffUserIdLookup = {
+  byNormalizedName: Record<string, string[]>;
+  byUserId: Record<string, string[]>;
+};
+let staffUserIdLookupCache: { data: StaffUserIdLookup; expiresAt: number } = {
+  data: { byNormalizedName: {}, byUserId: {} },
+  expiresAt: 0,
+};
 
 async function getStaffAliasMap(): Promise<StaffAliasMap> {
   if (!adminDb) return {};
@@ -746,7 +779,103 @@ async function getStaffAliasMap(): Promise<StaffAliasMap> {
   }
 }
 
-function noteMatchesAssignedStaff(note: MemberNote, assignedStaff: string, aliasMap?: StaffAliasMap): boolean {
+async function getStaffUserIdLookup(): Promise<StaffUserIdLookup> {
+  const now = Date.now();
+  if (staffUserIdLookupCache.expiresAt > now) return staffUserIdLookupCache.data;
+
+  const empty: StaffUserIdLookup = { byNormalizedName: {}, byUserId: {} };
+  try {
+    const { credentials, baseUrl } = getCaspioConfig();
+    const token = await getCaspioToken(credentials);
+    const possibleTables = ['connect_tbl_usersregistration', 'tbl_usersregistration', 'usersregistration'];
+
+    for (const table of possibleTables) {
+      try {
+        const url = `${baseUrl}/tables/${table}/records?q.pageSize=500&q.pageNumber=1`;
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+        });
+        if (!response.ok) continue;
+        const data = await response.json().catch(() => ({}));
+        const rows = Array.isArray(data?.Result) ? data.Result : [];
+        if (!rows.length) continue;
+
+        const byNormalizedName: Record<string, Set<string>> = {};
+        const byUserId: Record<string, Set<string>> = {};
+        const push = (nameValue: unknown, userIdValue: unknown) => {
+          const normalizedName = normalizePersonName(nameValue);
+          const userId = String(userIdValue || '').trim();
+          if (!normalizedName || !userId) return;
+          if (!byNormalizedName[normalizedName]) byNormalizedName[normalizedName] = new Set<string>();
+          byNormalizedName[normalizedName].add(userId);
+          if (!byUserId[userId]) byUserId[userId] = new Set<string>();
+          byUserId[userId].add(normalizedName);
+        };
+
+        rows.forEach((row: Record<string, any>) => {
+          const userId =
+            row?.User_ID ??
+            row?.connect_tbl_usersregistration_User_ID ??
+            row?.user_id ??
+            row?.ID ??
+            row?.Table_ID;
+          const first =
+            row?.User_First ??
+            row?.connect_tbl_usersregistration_User_First ??
+            row?.First_Name ??
+            row?.FirstName ??
+            '';
+          const last =
+            row?.User_Last ??
+            row?.connect_tbl_usersregistration_User_Last ??
+            row?.Last_Name ??
+            row?.LastName ??
+            '';
+          const full =
+            row?.User_First_Last ??
+            row?.User_Full_Name ??
+            row?.connect_tbl_usersregistration_User_First_Last ??
+            `${String(first || '').trim()} ${String(last || '').trim()}`.trim();
+
+          push(full, userId);
+          push(`${String(last || '').trim()} ${String(first || '').trim()}`.trim(), userId);
+          push(first, userId);
+          push(last, userId);
+        });
+
+        const finalized: StaffUserIdLookup = {
+          byNormalizedName: Object.fromEntries(
+            Object.entries(byNormalizedName).map(([k, v]) => [k, Array.from(v)])
+          ),
+          byUserId: Object.fromEntries(
+            Object.entries(byUserId).map(([k, v]) => [k, Array.from(v)])
+          ),
+        };
+        staffUserIdLookupCache = { data: finalized, expiresAt: now + 10 * 60 * 1000 };
+        return finalized;
+      } catch {
+        continue;
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to load staff user-id lookup:', error);
+  }
+
+  staffUserIdLookupCache = { data: empty, expiresAt: now + 60 * 1000 };
+  return empty;
+}
+
+function noteMatchesAssignedStaff(
+  note: MemberNote,
+  assignedStaff: string,
+  aliasMap?: StaffAliasMap,
+  userIdLookup?: StaffUserIdLookup
+): boolean {
   const assignedVariants = getNameVariants(assignedStaff);
   const canonicalAssigned = normalizePersonName(assignedStaff);
   const aliases = canonicalAssigned && aliasMap?.[canonicalAssigned] ? aliasMap[canonicalAssigned] : [];
@@ -764,6 +893,20 @@ function noteMatchesAssignedStaff(note: MemberNote, assignedStaff: string, alias
   const finalAssignedVariants = Array.from(assignedVariantSet);
   const expandedNoteNames: string[] = [];
   if (assignedVariants.length === 0) return false;
+
+  const assignedUserIdSet = new Set<string>();
+  finalAssignedVariants.forEach((variant) => {
+    const ids = userIdLookup?.byNormalizedName?.[variant] || [];
+    ids.forEach((id) => assignedUserIdSet.add(String(id || '').trim()));
+  });
+  if (canonicalAssigned) {
+    const ids = userIdLookup?.byNormalizedName?.[canonicalAssigned] || [];
+    ids.forEach((id) => assignedUserIdSet.add(String(id || '').trim()));
+  }
+  const noteCreatorUserId = String(note?.createdBy || '').trim();
+  if (noteCreatorUserId && assignedUserIdSet.has(noteCreatorUserId)) {
+    return true;
+  }
 
   // Strict no-action matching: only count note authorship fields.
   // Do not treat assignment targets or other staff touches as assigned-staff action.
@@ -830,21 +973,81 @@ function sanitizeText(text: any): string {
   return text.trim().replace(/\s+/g, ' ').substring(0, 10000); // Limit length
 }
 
+function resolveCaspioNoteId(rawNote: any): string {
+  const preferredId =
+    rawNote?.PK_ID ??
+    rawNote?.Note_ID ??
+    rawNote?.ID ??
+    rawNote?.table_ID ??
+    rawNote?.id;
+
+  if (preferredId !== undefined && preferredId !== null && String(preferredId).trim()) {
+    return String(preferredId).trim();
+  }
+
+  const fallback = [
+    String(rawNote?.Client_ID2 || '').trim(),
+    String(rawNote?.Time_Stamp || rawNote?.Time || rawNote?.Timestamp || '').trim(),
+    String(rawNote?.Comments || rawNote?.Note || '').trim().slice(0, 120),
+  ]
+    .filter(Boolean)
+    .join('|');
+
+  return fallback || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function resolveNoteCreatorUserId(rawNote: any): string {
+  const userId =
+    rawNote?.createdBy ??
+    rawNote?.User_ID2 ??
+    rawNote?.Created_By_ID ??
+    rawNote?.Entered_By_ID;
+  return String(userId ?? '').trim();
+}
+
+function resolveNoteCreatorName(rawNote: any): string {
+  const preferred =
+    rawNote?.createdByName ||
+    rawNote?.User_Full_Name ||
+    rawNote?.User_FullName ||
+    rawNote?.User_First_Last ||
+    rawNote?.Staff_Name ||
+    rawNote?.Created_By ||
+    rawNote?.Entered_By;
+  if (typeof preferred === 'string' && preferred.trim()) {
+    return preferred.trim();
+  }
+
+  const first = String(
+    rawNote?.User_First || rawNote?.First_Name || rawNote?.user_first || rawNote?.first_name || ''
+  ).trim();
+  const last = String(
+    rawNote?.User_Last || rawNote?.Last_Name || rawNote?.user_last || rawNote?.last_name || ''
+  ).trim();
+  return `${first} ${last}`.trim();
+}
+
 function validateAndCleanNote(rawNote: any): MemberNote {
   const now = new Date().toISOString();
+  const creatorUserId = resolveNoteCreatorUserId(rawNote);
+  const creatorName = resolveNoteCreatorName(rawNote);
   
   return {
-    id: rawNote.id || `generated_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+    id: String(rawNote.id || '').trim() || `generated_${resolveCaspioNoteId(rawNote)}`,
     clientId2: String(rawNote.clientId2 || rawNote.Client_ID2 || '').trim(),
     memberName: sanitizeText(rawNote.memberName || rawNote.Senior_Full_Name || rawNote.Senior_First_Last) || 'Unknown Member',
     noteText: sanitizeText(rawNote.noteText || rawNote.Comments || rawNote.Note) || '',
     noteType: validateNoteType(rawNote.noteType || rawNote.Note_Status),
-    createdBy: String(rawNote.createdBy || rawNote.User_ID || 'unknown').trim(),
-    createdByName: sanitizeText(rawNote.createdByName || rawNote.User_Full_Name || rawNote.User_First_Last) || 'Unknown User',
-    assignedTo: rawNote.assignedTo ? String(rawNote.assignedTo).trim() : undefined,
-    assignedToName: rawNote.assignedToName ? sanitizeText(rawNote.assignedToName) : undefined,
-    createdAt: isValidDate(rawNote.createdAt || rawNote.Time_Stamp || rawNote.Timestamp) 
-      ? new Date(rawNote.createdAt || rawNote.Time_Stamp || rawNote.Timestamp).toISOString() 
+    createdBy: creatorUserId || 'unknown',
+    createdByName: sanitizeText(creatorName) || (creatorUserId ? `User ${creatorUserId}` : 'Unknown User'),
+    assignedTo: rawNote.assignedTo
+      ? String(rawNote.assignedTo).trim()
+      : (sanitizeText(rawNote.Follow_Up_Assignment || rawNote.Assigned_To) || undefined),
+    assignedToName: rawNote.assignedToName
+      ? sanitizeText(rawNote.assignedToName)
+      : (sanitizeText(rawNote.Assigned_First) || undefined),
+    createdAt: isValidDate(rawNote.createdAt || rawNote.Time_Stamp || rawNote.Time || rawNote.Timestamp)
+      ? new Date(rawNote.createdAt || rawNote.Time_Stamp || rawNote.Time || rawNote.Timestamp).toISOString()
       : now,
     updatedAt: isValidDate(rawNote.updatedAt) ? new Date(rawNote.updatedAt).toISOString() : now,
     source: validateSource(rawNote.source),
@@ -943,6 +1146,7 @@ export async function GET(request: NextRequest) {
     if (metaOnly) {
       const notes = await getNotesFromFirestore(memberKey);
       const staffAliasMap = await getStaffAliasMap();
+      const staffUserIdLookup = await getStaffUserIdLookup();
       const todayEt = toEtDayKey(new Date());
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -963,18 +1167,24 @@ export async function GET(request: NextRequest) {
       }, 0);
       const openCount = Math.max(0, notes.length - closedCount);
       const matchingAssignedStaffNotes = assignedStaff
-        ? notes.filter((note) => noteMatchesAssignedStaff(note, assignedStaff, staffAliasMap))
+        ? notes.filter((note) => noteMatchesAssignedStaff(note, assignedStaff, staffAliasMap, staffUserIdLookup))
         : [];
-      const assignedStaffNotesTodayCount = matchingAssignedStaffNotes.reduce((acc, note) => {
-        if (!note?.createdAt) return acc;
+      // Per-member follow-up metric: count at most one action per member per day,
+      // even if staff added multiple notes on that member that day.
+      const assignedStaffNotesTodayCount = matchingAssignedStaffNotes.some((note) => {
+        if (!note?.createdAt) return false;
         const dayKey = toEtDayKey(String(note.createdAt));
-        return dayKey && dayKey === todayEt ? acc + 1 : acc;
-      }, 0);
-      const assignedStaffNotesYesterdayCount = matchingAssignedStaffNotes.reduce((acc, note) => {
-        if (!note?.createdAt) return acc;
+        return Boolean(dayKey && dayKey === todayEt);
+      })
+        ? 1
+        : 0;
+      const assignedStaffNotesYesterdayCount = matchingAssignedStaffNotes.some((note) => {
+        if (!note?.createdAt) return false;
         const dayKey = toEtDayKey(String(note.createdAt));
-        return dayKey && dayKey === yesterdayEt ? acc + 1 : acc;
-      }, 0);
+        return Boolean(dayKey && dayKey === yesterdayEt);
+      })
+        ? 1
+        : 0;
       const lastAssignedStaffActionAt = matchingAssignedStaffNotes.reduce((latest, note) => {
         const createdAt = String(note?.createdAt || '').trim();
         if (!createdAt) return latest;
@@ -1120,7 +1330,7 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
     const transformedRegularNotes: MemberNote[] = caspioNotes.map(caspioNote => 
       validateAndCleanNote({
         ...caspioNote,
-        id: `caspio_${caspioNote.PK_ID}`,
+        id: `caspio_${resolveCaspioNoteId(caspioNote)}`,
         source: 'Caspio',
         isRead: true, // Legacy notes are considered read
         isLegacy: true,
@@ -1134,6 +1344,8 @@ async function syncAllNotesFromCaspio(clientId2: string): Promise<number> {
       validateAndCleanNote({
         ...ilsNote,
         id: `ils_${ilsNote.table_ID}`,
+        createdBy: String(ilsNote.User_ID ?? 'unknown').trim(),
+        createdByName: ilsNote.User_First_Last || `${ilsNote.User_First} ${ilsNote.User_Last}` || `User ${ilsNote.User_ID}`,
         noteType: 'Administrative', // ILS notes are administrative
         source: 'ILS',
         isRead: true, // Legacy notes are considered read
@@ -1203,7 +1415,7 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
       ? new Date(Date.now() - lookbackMs).toISOString()
       : new Date(lastSyncDate.getTime() - lookbackMs).toISOString();
 
-    const regularWhere = `Client_ID2='${clientId2}' AND Time_Stamp>='${safeSinceIso}'`;
+    const regularWhere = `Client_ID2='${clientId2}' AND (Time_Stamp>='${safeSinceIso}' OR Time>='${safeSinceIso}')`;
     const ilsWhere = `Client_ID2='${clientId2}' AND Timestamp>='${safeSinceIso}'`;
 
     const [newCaspioNotes, newILSNotes] = await Promise.all([
@@ -1238,28 +1450,21 @@ async function syncNewNotesFromCaspio(clientId2: string, lastSyncAt: string): Pr
 
     const deletedIds = await getDeletedMemberNoteIds(clientId2);
 
-    // Transform new regular notes
-    const newTransformedRegularNotes: MemberNote[] = newCaspioNotes.map(caspioNote => ({
-      id: `caspio_${caspioNote.PK_ID}`,
-      clientId2: String(caspioNote.Client_ID2 ?? '').trim(),
-      memberName: caspioNote.Senior_Full_Name || 'Unknown Member',
-      noteText: caspioNote.Comments || '',
-      noteType: 'General',
-      createdBy: String(caspioNote.User_ID ?? 'unknown').trim(),
-      createdByName: caspioNote.User_Full_Name || `User ${caspioNote.User_ID}`,
-      assignedTo: caspioNote.Follow_Up_Assignment || undefined,
-      assignedToName: caspioNote.Assigned_First || undefined,
-      createdAt: caspioNote.Time_Stamp || syncTime,
-      updatedAt: caspioNote.Time_Stamp || syncTime,
-      source: 'Caspio',
-      isRead: false, // New notes are unread
-      priority: caspioNote.Follow_Up_Status?.includes('🔴') ? 'Urgent' : 'General',
-      followUpDate: caspioNote.Follow_Up_Date,
-      tags: [],
-      isLegacy: false, // These are new notes, not legacy
-      syncedAt: syncTime,
-      isILSNote: false
-    }));
+    // Transform new regular notes with resilient field mapping.
+    const newTransformedRegularNotes: MemberNote[] = newCaspioNotes.map((caspioNote) =>
+      validateAndCleanNote({
+        ...caspioNote,
+        id: `caspio_${resolveCaspioNoteId(caspioNote)}`,
+        noteType: 'General',
+        source: 'Caspio',
+        isRead: false, // New notes are unread
+        priority: caspioNote.Follow_Up_Status?.includes('🔴') ? 'Urgent' : 'General',
+        tags: [],
+        isLegacy: false, // These are new notes, not legacy
+        syncedAt: syncTime,
+        isILSNote: false
+      })
+    );
 
     // Transform new ILS notes
     const newTransformedILSNotes: MemberNote[] = newILSNotes.map(ilsNote => ({

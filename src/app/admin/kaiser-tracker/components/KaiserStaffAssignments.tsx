@@ -303,7 +303,7 @@ export function KaiserStaffAssignments({
                     </div>
 
                     <div className="rounded border border-emerald-100 bg-emerald-50/50 p-2">
-                      <h4 className="text-xs font-semibold text-emerald-800 mb-1">Recent Notes</h4>
+                      <h4 className="text-xs font-semibold text-emerald-800 mb-1">Recent Notes (Active members only)</h4>
                       <div className="space-y-2 text-xs">
                         <button
                           type="button"
@@ -312,14 +312,14 @@ export function KaiserStaffAssignments({
                             openMemberModal(
                               todayNotedMembers,
                               `Recent Notes — Today (${staffName})`,
-                              `${notesTodayTotal} note(s) entered today across ${membersWithNotesToday} members assigned to ${staffName}`,
+                              `${notesTodayTotal} note(s) entered today across ${membersWithNotesToday} active members assigned to ${staffName}`,
                               'staff_assignment',
                               `notes_today_${staffName}`
                             )
                           }
                           disabled={membersWithNotesToday === 0}
                         >
-                          <div className="text-emerald-900">Today count</div>
+                          <div className="text-emerald-900">Today count (active)</div>
                           <div
                             className={`font-semibold text-right ${
                               membersWithNotesToday > 0 ? 'text-emerald-700 hover:underline' : 'text-slate-400'
@@ -335,14 +335,14 @@ export function KaiserStaffAssignments({
                             openMemberModal(
                               yesterdayNotedMembers,
                               `Recent Notes — Yesterday (${staffName})`,
-                              `${notesYesterdayTotal} note(s) entered yesterday across ${membersWithNotesYesterday} members assigned to ${staffName}`,
+                              `${notesYesterdayTotal} note(s) entered yesterday across ${membersWithNotesYesterday} active members assigned to ${staffName}`,
                               'staff_assignment',
                               `notes_yesterday_${staffName}`
                             )
                           }
                           disabled={membersWithNotesYesterday === 0}
                         >
-                          <div className="text-emerald-900">Yesterday count</div>
+                          <div className="text-emerald-900">Yesterday count (active)</div>
                           <div
                             className={`font-semibold text-right ${
                               membersWithNotesYesterday > 0 ? 'text-emerald-700 hover:underline' : 'text-slate-400'

@@ -34,6 +34,13 @@
 - ✅ **Bug Fixed**: Wrapped all admin Email Logs pages with `FirebaseClientProvider` to prevent runtime crashes where `useFirestore` mounted before Firebase context initialization.
 - ✅ **UI/UX**: Added explicit “Active vs Passive” status definitions under Kaiser Staff Assignments notes-sync guidance so staff card interpretation aligns with weekly ILS list handling.
 - ✅ **Bug Fixed**: Updated Kaiser Staff Assignment card counts to classify Active vs Passive members using the explicit status-definition list (instead of no-action scoped statuses) for consistent weekly ILS reporting.
+- ✅ **Bug Fixed**: Hardened member-notes Caspio sync field mapping to support alternate note IDs (`Note_ID`/`ID`) and creator fields (`User_ID2`/`Created_By`/`Staff_Name`) so assigned-staff "notes today" counts include notes like Nick's that were previously skipped.
+- ✅ **Bug Fixed**: Prioritized Caspio `User_ID2` over `User_ID` as the authoritative note creator field in member-notes normalization so assigned-staff authored-note counts match Caspio "Created By" behavior.
+- ✅ **Bug Fixed**: Removed `User_ID` fallback from regular note creator resolution so `connect_tbl_clientnotes` authorship is sourced strictly from `User_ID2`, while preserving ILS imports by explicitly mapping their `User_ID` into normalized notes.
+- ✅ **Bug Fixed**: Added `Time` as a fallback timestamp source (for ID signature, `createdAt` parsing, and incremental Caspio sync filtering) so notes stored with `Time` instead of `Time_Stamp` are included in same-day staff note counts.
+- ✅ **UI/UX**: Updated assigned-staff daily note metric to count a maximum of one follow-up per member per day (0/1), preventing multiple same-day notes on the same member from inflating staff follow-up totals.
+- ✅ **UI/UX**: Restricted Kaiser staff note totals to active members only by applying the Active status set filter during per-staff notes aggregation, excluding Passive member notes from Recent Notes Today/Yesterday cards.
+- ✅ **UI/UX**: Clarified Kaiser staff card note labels/descriptions to explicitly indicate that Today/Yesterday note counts are calculated for active members only.
 
 ### **April 19, 2026 - Updates**
 - ✅ **UI/UX**: Added per-application `Application Log` quick action with embedded timeline (form completions, revision send-backs, Kaiser send/acknowledgment events, and staff notes), plus Kaiser authorization mode controls on the application page.

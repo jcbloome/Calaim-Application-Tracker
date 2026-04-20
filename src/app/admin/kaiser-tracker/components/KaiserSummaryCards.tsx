@@ -62,6 +62,8 @@ export function KaiserSummaryCards({
       string,
       {
         lastAssignedStaffActionAt: string;
+        notesTodayCount: number;
+        notesYesterdayCount: number;
         assignedStaffNotesTodayCount: number;
         assignedStaffNotesYesterdayCount: number;
       }
@@ -78,6 +80,20 @@ export function KaiserSummaryCards({
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
+
+  const ACTIVE_STATUS_DEFINITIONS = [
+    'T2028 Received, Needs First Contact',
+    'T2038 Received, Need First Contact',
+    'T2038 Received, Needs First Contact',
+    'T2038 Received, Doc Collection',
+    'RCFE Needed',
+    'R&B Needed',
+    'RN Needed',
+  ];
+  const activeStatusSet = React.useMemo(
+    () => new Set(ACTIVE_STATUS_DEFINITIONS.map((status) => normalize(status))),
+    []
+  );
 
   // Consolidated ILS request statuses:
   // - T2038_Auth_Email_Kaiser
@@ -222,6 +238,8 @@ export function KaiserSummaryCards({
         string,
         {
           lastAssignedStaffActionAt: string;
+          notesTodayCount: number;
+          notesYesterdayCount: number;
           assignedStaffNotesTodayCount: number;
           assignedStaffNotesYesterdayCount: number;
         }
@@ -249,12 +267,16 @@ export function KaiserSummaryCards({
             const data = await res.json().catch(() => ({}));
             nextMeta[clientId2] = {
               lastAssignedStaffActionAt: String(data?.lastAssignedStaffActionAt || ''),
+              notesTodayCount: Number(data?.notesTodayCount || 0),
+              notesYesterdayCount: Number(data?.notesYesterdayCount || 0),
               assignedStaffNotesTodayCount: Number(data?.assignedStaffNotesTodayCount || 0),
               assignedStaffNotesYesterdayCount: Number(data?.assignedStaffNotesYesterdayCount || 0),
             };
           } catch {
             nextMeta[clientId2] = {
               lastAssignedStaffActionAt: '',
+              notesTodayCount: 0,
+              notesYesterdayCount: 0,
               assignedStaffNotesTodayCount: 0,
               assignedStaffNotesYesterdayCount: 0,
             };
@@ -395,8 +417,13 @@ export function KaiserSummaryCards({
 
     const notesTodayByStaff = members.reduce(
       (acc, member) => {
+        const status = getEffectiveKaiserStatus(member);
+        const isActiveMember = activeStatusSet.has(normalize(status));
+        if (!isActiveMember) return acc;
+
         const staffName = getAssignedStaffName(member) || 'Unassigned';
         const clientId2 = String(member?.client_ID2 || '').trim();
+        // Recent Notes card totals should reflect notes authored by the assigned staff member for that member.
         const notesToday = Number(assignedStaffMetaByClientId[clientId2]?.assignedStaffNotesTodayCount || 0);
         const notesYesterday = Number(assignedStaffMetaByClientId[clientId2]?.assignedStaffNotesYesterdayCount || 0);
         if (!acc[staffName]) {
@@ -462,7 +489,7 @@ export function KaiserSummaryCards({
     });
 
     onNoActionByStaffComputed(rows);
-  }, [assignedStaffMetaByClientId, noActionOverviewByStaffRows, onNoActionByStaffComputed]);
+  }, [activeStatusSet, assignedStaffMetaByClientId, noActionOverviewByStaffRows, onNoActionByStaffComputed]);
 
   const noActionAgingBuckets = React.useMemo(() => {
     const members7to13 = scopedNoActionMembers.filter((member) => {
