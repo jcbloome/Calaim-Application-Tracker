@@ -29,6 +29,9 @@
 - ✅ **UI/UX**: Added a clarifying note under the eligibility page title explaining that other managed care plans and community support providers may cover overlapping and additional counties beyond Connections' Health Net/Kaiser CalAIM coverage.
 - ✅ **UI/UX**: Updated Eligibility Check page SOC threshold messaging from `$1,800/month` to `$1,856/month` in both the primary threshold note and SNF resident guidance.
 - ✅ **UI/UX**: Updated SNF resident SOC guidance on the Eligibility Check page to clarify that SNF residents with any income may show no SOC because the SNF receives most of the member's income.
+- ✅ **Feature Added**: Added an admin-only introductory email workflow on `Create Application` with preview/edit/send controls plus a new authenticated API endpoint that logs success/failure to `emailLogs` for audit visibility.
+- ✅ **UI/UX**: Added a dedicated `Introductory Email Logs` admin page filtered to introductory invite sends and linked it from the main Email Logs screen for faster audit access.
+- ✅ **Bug Fixed**: Wrapped all admin Email Logs pages with `FirebaseClientProvider` to prevent runtime crashes where `useFirestore` mounted before Firebase context initialization.
 
 ### **April 19, 2026 - Updates**
 - ✅ **UI/UX**: Added per-application `Application Log` quick action with embedded timeline (form completions, revision send-backs, Kaiser send/acknowledgment events, and staff notes), plus Kaiser authorization mode controls on the application page.

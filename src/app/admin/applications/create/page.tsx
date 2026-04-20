@@ -565,7 +565,13 @@ export default function CreateApplicationPage() {
   const [isDeletingCreatedIlsRecords, setIsDeletingCreatedIlsRecords] = useState(false);
   const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
   const [isPushingSingleAuthToCaspio, setIsPushingSingleAuthToCaspio] = useState(false);
-  const [isSendingFamilyInviteEmail, setIsSendingFamilyInviteEmail] = useState(false);
+  const [isLoadingIntroEmailPreview, setIsLoadingIntroEmailPreview] = useState(false);
+  const [isSendingIntroEmail, setIsSendingIntroEmail] = useState(false);
+  const [introEmailDraft, setIntroEmailDraft] = useState<{
+    to: string;
+    subject: string;
+    message: string;
+  } | null>(null);
   const [lastCreatedSkeleton, setLastCreatedSkeleton] = useState<{ applicationId: string; memberName: string; clientId2: string } | null>(null);
   const [lockedCaspioPushMapping, setLockedCaspioPushMapping] = useState<Record<string, string> | null>(null);
   const ilsSpreadsheetInputRef = useRef<HTMLInputElement | null>(null);
@@ -1317,6 +1323,7 @@ export default function CreateApplicationPage() {
     setIlsImportRows([]);
     setIlsImportSelected({});
     setLastCreatedSkeleton(null);
+    setIntroEmailDraft(null);
     if (serviceRequestFileInputRef.current) {
       serviceRequestFileInputRef.current.value = '';
     }
@@ -1522,6 +1529,7 @@ export default function CreateApplicationPage() {
       }
       const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
       setLastCreatedSkeleton({ applicationId, memberName, clientId2: '' });
+      setIntroEmailDraft(null);
       const shouldSkipNavigate = options?.skipNavigate ?? isKaiserAuthReceived;
       if (!shouldSkipNavigate) {
         if (isKaiserAuthReceived) {
@@ -1570,40 +1578,114 @@ export default function CreateApplicationPage() {
     }
   };
 
-  const sendFamilyInviteEmail = async () => {
+  const loadIntroEmailPreview = async () => {
     const applicationId = String(lastCreatedSkeleton?.applicationId || '').trim();
     if (!applicationId) {
       toast({ title: 'No skeleton application', description: 'Create a skeleton application first.' });
       return;
     }
-    const fallbackEmail = String(memberData.contactEmail || '').trim();
-    setIsSendingFamilyInviteEmail(true);
+    if (!user) {
+      toast({ title: 'Not signed in', description: 'Please refresh and try again.', variant: 'destructive' });
+      return;
+    }
+    setIsLoadingIntroEmailPreview(true);
     try {
-      const res = await fetch('/api/admin/send-cs-reminder', {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/send-introductory-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           applicationId,
-          reminderType: 'email',
-          overrideEmail: fallbackEmail || undefined,
+          mode: 'preview',
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || 'Failed to send invite email.');
+        throw new Error(data?.error || 'Failed to load introductory email preview.');
       }
+      setIntroEmailDraft({
+        to: String(data?.draft?.to || '').trim(),
+        subject: String(data?.draft?.subject || '').trim(),
+        message: String(data?.draft?.message || '').trim(),
+      });
       toast({
-        title: 'Invite email sent',
-        description: `Family invite sent for application ${applicationId}.`,
+        title: 'Preview loaded',
+        description: `Introductory email draft is ready for review.`,
       });
     } catch (error: any) {
       toast({
-        title: 'Invite email failed',
-        description: String(error?.message || 'Unable to send family invite email.'),
+        title: 'Preview failed',
+        description: String(error?.message || 'Unable to load introductory email preview.'),
         variant: 'destructive',
       });
     } finally {
-      setIsSendingFamilyInviteEmail(false);
+      setIsLoadingIntroEmailPreview(false);
+    }
+  };
+
+  const sendIntroductoryEmail = async () => {
+    const applicationId = String(lastCreatedSkeleton?.applicationId || '').trim();
+    if (!applicationId) {
+      toast({ title: 'No skeleton application', description: 'Create a skeleton application first.' });
+      return;
+    }
+    if (!introEmailDraft) {
+      toast({ title: 'No preview loaded', description: 'Load an introductory email preview first.' });
+      return;
+    }
+    if (!user) {
+      toast({ title: 'Not signed in', description: 'Please refresh and try again.', variant: 'destructive' });
+      return;
+    }
+
+    const to = String(introEmailDraft.to || '').trim();
+    const subject = String(introEmailDraft.subject || '').trim();
+    const message = String(introEmailDraft.message || '').trim();
+    if (!to || !subject || !message) {
+      toast({
+        title: 'Missing email content',
+        description: 'Recipient, subject, and message are required before sending.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSendingIntroEmail(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/send-introductory-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          applicationId,
+          mode: 'send',
+          to,
+          subject,
+          message,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to send introductory email.');
+      }
+      toast({
+        title: 'Introductory email sent',
+        description: `Email sent to ${to} and logged in Email Logs.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Send failed',
+        description: String(error?.message || 'Unable to send introductory email.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingIntroEmail(false);
     }
   };
 
@@ -2054,13 +2136,62 @@ export default function CreateApplicationPage() {
                           <Button
                             type="button"
                             size="sm"
-                            onClick={() => void sendFamilyInviteEmail()}
-                            disabled={isSendingFamilyInviteEmail}
+                            variant="secondary"
+                            onClick={() => void loadIntroEmailPreview()}
+                            disabled={isLoadingIntroEmailPreview || isSendingIntroEmail}
                           >
-                            {isSendingFamilyInviteEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            Send Family Invite Email
+                            {isLoadingIntroEmailPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Preview Introductory Email
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => void sendIntroductoryEmail()}
+                            disabled={!introEmailDraft || isSendingIntroEmail || isLoadingIntroEmailPreview}
+                          >
+                            {isSendingIntroEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Send Introductory Email
                           </Button>
                         </div>
+                        {introEmailDraft ? (
+                          <div className="rounded-md border bg-white p-3 space-y-2">
+                            <div className="text-xs font-medium">Edit Introductory Email Before Sending</div>
+                            <div className="space-y-1">
+                              <Label htmlFor="intro-email-to" className="text-xs">To</Label>
+                              <Input
+                                id="intro-email-to"
+                                value={introEmailDraft.to}
+                                onChange={(event) =>
+                                  setIntroEmailDraft((prev) => (prev ? { ...prev, to: event.target.value } : prev))
+                                }
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="intro-email-subject" className="text-xs">Subject</Label>
+                              <Input
+                                id="intro-email-subject"
+                                value={introEmailDraft.subject}
+                                onChange={(event) =>
+                                  setIntroEmailDraft((prev) => (prev ? { ...prev, subject: event.target.value } : prev))
+                                }
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="intro-email-message" className="text-xs">Message</Label>
+                              <Textarea
+                                id="intro-email-message"
+                                value={introEmailDraft.message}
+                                rows={10}
+                                onChange={(event) =>
+                                  setIntroEmailDraft((prev) => (prev ? { ...prev, message: event.target.value } : prev))
+                                }
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              This email is logged in <span className="font-medium">Admin &gt; Email Logs</span> after sending.
+                            </p>
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

@@ -37,7 +37,7 @@ function toDateLabel(value: any): string {
   return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
 }
 
-function KaiserReferralEmailLogsPageContent() {
+function IntroductoryEmailLogsPageContent() {
   const { isAdmin, isUserLoading } = useAdmin();
   const firestore = useFirestore();
   const [logs, setLogs] = useState<EmailLogEntry[]>([]);
@@ -73,7 +73,10 @@ function KaiserReferralEmailLogsPageContent() {
       .filter((row) => {
         const template = String(row.template || '').toLowerCase();
         const source = String(row.source || '').toLowerCase();
-        return template === 'kaiser-referral-intake' || source.includes('/kaiser-referral/send-intake');
+        return (
+          template === 'introductory_application_invite' ||
+          source.includes('/admin/send-introductory-email')
+        );
       })
       .filter((row) => {
         const status = String(row.status || '').toLowerCase();
@@ -85,6 +88,7 @@ function KaiserReferralEmailLogsPageContent() {
           String(row.errorMessage || ''),
           String(row.providerMessageId || ''),
           String((row.metadata?.applicationId as string) || ''),
+          String((row.metadata?.memberName as string) || ''),
           ...(Array.isArray(row.to) ? row.to : []),
           ...(Array.isArray(row.cc) ? row.cc : []),
         ]
@@ -106,9 +110,9 @@ function KaiserReferralEmailLogsPageContent() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Kaiser Referral Email Logs</h1>
+          <h1 className="text-2xl font-semibold">Introductory Email Logs</h1>
           <p className="text-sm text-muted-foreground">
-            Audit Kaiser referral email delivery attempts and outcomes.
+            Audit introductory family invite email delivery attempts and outcomes.
           </p>
         </div>
         <Link href="/admin/email-logs">
@@ -118,9 +122,9 @@ function KaiserReferralEmailLogsPageContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Kaiser Referral Delivery History</CardTitle>
+          <CardTitle>Introductory Delivery History</CardTitle>
           <CardDescription>
-            Includes sent time, sender, recipients, status, provider id, and failure details.
+            Includes sent time, sender, recipients, application id, status, provider id, and failure details.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -137,15 +141,15 @@ function KaiserReferralEmailLogsPageContent() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by application id, recipient, sender, or error..."
+              placeholder="Search by application id, member, recipient, sender, or error..."
               className="min-w-[260px] max-w-md"
             />
           </div>
 
           {isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading Kaiser referral email logs...</div>
+            <div className="text-sm text-muted-foreground">Loading introductory email logs...</div>
           ) : filtered.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No Kaiser referral email logs found.</div>
+            <div className="text-sm text-muted-foreground">No introductory email logs found.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -155,8 +159,8 @@ function KaiserReferralEmailLogsPageContent() {
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2 pr-3">Sender</th>
                     <th className="py-2 pr-3">To</th>
-                    <th className="py-2 pr-3">CC</th>
                     <th className="py-2 pr-3">Application ID</th>
+                    <th className="py-2 pr-3">Member</th>
                     <th className="py-2 pr-3">Subject</th>
                     <th className="py-2 pr-3">Provider Message ID</th>
                     <th className="py-2 pr-3">Error</th>
@@ -180,8 +184,8 @@ function KaiserReferralEmailLogsPageContent() {
                       </td>
                       <td className="py-2 pr-3">{String(row.from || 'N/A')}</td>
                       <td className="py-2 pr-3">{Array.isArray(row.to) && row.to.length > 0 ? row.to.join(', ') : 'N/A'}</td>
-                      <td className="py-2 pr-3">{Array.isArray(row.cc) && row.cc.length > 0 ? row.cc.join(', ') : 'N/A'}</td>
                       <td className="py-2 pr-3">{String((row.metadata?.applicationId as string) || 'N/A')}</td>
+                      <td className="py-2 pr-3">{String((row.metadata?.memberName as string) || 'N/A')}</td>
                       <td className="py-2 pr-3">{String(row.subject || 'N/A')}</td>
                       <td className="py-2 pr-3">{String(row.providerMessageId || 'N/A')}</td>
                       <td className="py-2 pr-3 text-red-700">{row.errorMessage ? String(row.errorMessage) : '-'}</td>
@@ -197,10 +201,10 @@ function KaiserReferralEmailLogsPageContent() {
   );
 }
 
-export default function KaiserReferralEmailLogsPage() {
+export default function IntroductoryEmailLogsPage() {
   return (
     <FirebaseClientProvider>
-      <KaiserReferralEmailLogsPageContent />
+      <IntroductoryEmailLogsPageContent />
     </FirebaseClientProvider>
   );
 }

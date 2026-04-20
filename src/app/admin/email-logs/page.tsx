@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
+import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -37,7 +38,7 @@ function toDateLabel(value: any): string {
   return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
 }
 
-export default function AdminEmailLogsPage() {
+function AdminEmailLogsPageContent() {
   const { isAdmin, isUserLoading } = useAdmin();
   const firestore = useFirestore();
   const [logs, setLogs] = useState<EmailLogEntry[]>([]);
@@ -104,9 +105,14 @@ export default function AdminEmailLogsPage() {
           <h1 className="text-2xl font-semibold">Email Logs</h1>
           <p className="text-sm text-muted-foreground">Track all outbound emails with success/failure status.</p>
         </div>
-        <Link href="/admin/email-logs/kaiser-referrals">
-          <Button variant="outline" size="sm">Kaiser Referral Logs</Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/admin/email-logs/introductory-emails">
+            <Button variant="outline" size="sm">Introductory Email Logs</Button>
+          </Link>
+          <Link href="/admin/email-logs/kaiser-referrals">
+            <Button variant="outline" size="sm">Kaiser Referral Logs</Button>
+          </Link>
+        </div>
       </div>
 
       <Card>
@@ -183,6 +189,14 @@ export default function AdminEmailLogsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function AdminEmailLogsPage() {
+  return (
+    <FirebaseClientProvider>
+      <AdminEmailLogsPageContent />
+    </FirebaseClientProvider>
   );
 }
 
