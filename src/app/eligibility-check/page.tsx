@@ -331,7 +331,7 @@ export default function EligibilityCheckPage() {
                 {/* SOC Threshold */}
                 <div className="p-3 bg-orange-100 rounded-md border border-orange-300">
                   <p className="font-semibold text-orange-900 mb-1">SOC Threshold:</p>
-                  <p>Share of Cost is usually triggered if a member receives more than <strong>$1,800/month</strong>, although this can vary by county and circumstances.</p>
+                  <p>Share of Cost is usually triggered if a member receives more than <strong>$1,856/month</strong>, although this can vary by county and circumstances.</p>
                 </div>
                 
                 {/* SNF Considerations */}
@@ -340,7 +340,7 @@ export default function EligibilityCheckPage() {
                     <Home className="h-4 w-4" />
                     SNF Residents:
                   </p>
-                  <p>Members in Skilled Nursing Facilities with income above $1,800/month may not show a SOC since the SNF receives most income. This may change when transitioning to community living.</p>
+                  <p>SNF residents with any income might not show any SOC since the SNF receives most of the member's income.</p>
                 </div>
                 
                 {/* BenefitsCal Link */}
