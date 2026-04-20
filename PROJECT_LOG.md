@@ -32,6 +32,8 @@
 - ✅ **Feature Added**: Added an admin-only introductory email workflow on `Create Application` with preview/edit/send controls plus a new authenticated API endpoint that logs success/failure to `emailLogs` for audit visibility.
 - ✅ **UI/UX**: Added a dedicated `Introductory Email Logs` admin page filtered to introductory invite sends and linked it from the main Email Logs screen for faster audit access.
 - ✅ **Bug Fixed**: Wrapped all admin Email Logs pages with `FirebaseClientProvider` to prevent runtime crashes where `useFirestore` mounted before Firebase context initialization.
+- ✅ **UI/UX**: Added explicit “Active vs Passive” status definitions under Kaiser Staff Assignments notes-sync guidance so staff card interpretation aligns with weekly ILS list handling.
+- ✅ **Bug Fixed**: Updated Kaiser Staff Assignment card counts to classify Active vs Passive members using the explicit status-definition list (instead of no-action scoped statuses) for consistent weekly ILS reporting.
 
 ### **April 19, 2026 - Updates**
 - ✅ **UI/UX**: Added per-application `Application Log` quick action with embedded timeline (form completions, revision send-backs, Kaiser send/acknowledgment events, and staff notes), plus Kaiser authorization mode controls on the application page.

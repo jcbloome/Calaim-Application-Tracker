@@ -21,6 +21,18 @@ const buildNoActionScopedSet = (statuses?: string[]) => {
   );
 };
 
+const ACTIVE_STATUS_DEFINITIONS = [
+  'T2028 Received, Needs First Contact',
+  'T2038 Received, Need First Contact',
+  'T2038 Received, Needs First Contact',
+  'T2038 Received, Doc Collection',
+  'RCFE Needed',
+  'R&B Needed',
+  'RN Needed',
+];
+
+const buildActiveStatusSet = () => new Set(ACTIVE_STATUS_DEFINITIONS.map((status) => normalizeStatusText(status)));
+
 export interface StaffAssignmentData {
   count: number;
   members: KaiserMember[];
@@ -76,6 +88,7 @@ export function KaiserStaffAssignments({
     () => buildNoActionScopedSet(noActionScopedStatuses),
     [noActionScopedStatuses]
   );
+  const activeStatusSet = React.useMemo(() => buildActiveStatusSet(), []);
 
   return (
     <div className="space-y-4">
@@ -106,6 +119,19 @@ export function KaiserStaffAssignments({
             No Action 7+ Days scoped fields: {noActionScopedStatuses.join(' | ')}
           </div>
         ) : null}
+        <div className="text-xs text-muted-foreground mt-2 space-y-1">
+          <div>
+            <span className="font-medium text-slate-700">Active:</span>{' '}
+            T2028 Received, Needs First Contact; T2038 Received, Doc Collection; RCFE Needed; R&amp;B Needed; RN Needed.
+          </div>
+          <div>
+            <span className="font-medium text-slate-700">Passive:</span>{' '}
+            Non-active, Final-Member at RCFE, RN/MSW Scheduled, Tier Level Appeal, T2038 Received, Unreachable.
+          </div>
+          <div>
+            Passive statuses remain on the weekly ILS list.
+          </div>
+        </div>
       </div>
 
       {/* Staff Status Breakdown Cards */}
@@ -131,11 +157,11 @@ export function KaiserStaffAssignments({
           const membersWithNotesToday = Number(noAction?.membersWithNotesToday || 0);
           const membersWithNotesYesterday = Number(noAction?.membersWithNotesYesterday || 0);
           const activeActionMembers = assignment.members.filter((member) =>
-            noActionScopedSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
+            activeStatusSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
           );
           const activeActionCount = activeActionMembers.length;
           const passiveMembers = assignment.members.filter((member) =>
-            !noActionScopedSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
+            !activeStatusSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
           );
           const passiveCount = passiveMembers.length;
           return (
