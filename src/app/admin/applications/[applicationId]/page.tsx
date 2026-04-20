@@ -1770,8 +1770,11 @@ function AdminActions({ application }: { application: Application }) {
         }
 
         try {
-            if (application.userId) {
-                const userDocRef = doc(firestore, `users/${application.userId}/applications`, application.id);
+            const rawUserId = String(application.userId || '').trim();
+            const normalizedUserId = ['undefined', 'null', 'nan'].includes(rawUserId.toLowerCase()) ? '' : rawUserId;
+
+            if (normalizedUserId) {
+                const userDocRef = doc(firestore, `users/${normalizedUserId}/applications`, application.id);
                 await deleteDoc(userDocRef);
             }
 

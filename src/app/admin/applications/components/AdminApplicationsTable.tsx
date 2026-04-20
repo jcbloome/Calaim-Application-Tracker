@@ -111,6 +111,48 @@ const normalizeLookup = (value: unknown) =>
     .toLowerCase()
     .replace(/\s+/g, ' ');
 
+const sanitizeUserId = (value: unknown) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const lowered = raw.toLowerCase();
+  if (lowered === 'undefined' || lowered === 'null' || lowered === 'nan') return '';
+  return raw;
+};
+
+const isAdminStoredApplication = (app: WithId<Application & FormValues>) =>
+  String(app.id || '').startsWith('admin_app_') ||
+  String((app as any)?.source || '').trim().toLowerCase() === 'admin' ||
+  !sanitizeUserId((app as any)?.userId);
+
+const buildAdminApplicationHref = (
+  app: WithId<Application & FormValues>,
+  extraParams?: Record<string, string>
+) => {
+  const params = new URLSearchParams();
+  const cleanUserId = sanitizeUserId((app as any)?.userId);
+  if (cleanUserId && !isAdminStoredApplication(app)) {
+    params.set('userId', cleanUserId);
+  }
+  Object.entries(extraParams || {}).forEach(([key, value]) => {
+    if (String(value || '').trim()) params.set(key, String(value));
+  });
+  const query = params.toString();
+  return `/admin/applications/${app.id}${query ? `?${query}` : ''}`;
+};
+
+const getDisplayMemberName = (app: WithId<Application & FormValues>) => {
+  const firstRaw = String((app as any)?.memberFirstName || '').trim();
+  const lastRaw = String((app as any)?.memberLastName || '').trim();
+  const invalidToken = (value: string) => {
+    const lowered = value.toLowerCase();
+    return lowered === 'undefined' || lowered === 'null' || lowered === 'nan';
+  };
+  const first = invalidToken(firstRaw) ? '' : firstRaw;
+  const last = invalidToken(lastRaw) ? '' : lastRaw;
+  const full = `${first} ${last}`.trim();
+  return full || 'Unnamed Member';
+};
+
 const getMemberGroupingKey = (app: WithId<Application & FormValues>) => {
   const mrn = normalizeLookup((app as any)?.memberMrn);
   if (mrn) return `mrn:${mrn}`;
@@ -316,7 +358,7 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             <Button variant="outline" size="sm" asChild>
-                                <Link href={`/admin/applications/${application.id}?userId=${application.userId}`}>
+                                <Link href={buildAdminApplicationHref(application)}>
                                     <ExternalLink className="h-4 w-4 mr-2" />
                                     Full Details
                                 </Link>
@@ -794,7 +836,7 @@ export const AdminApplicationsTable = ({
                 <TableCell className="font-medium">
                   <div>
                     <div className="flex items-center gap-2">
-                      {`${app.memberFirstName} ${app.memberLastName}`}
+                      {getDisplayMemberName(app)}
                       {isNew && <Badge className="bg-blue-100 text-blue-800 border-blue-200"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
                       {isRecentlyUpdated && <Badge className="bg-amber-100 text-amber-800 border-amber-200">Updated</Badge>}
                       {csSummaryIsNew && (
@@ -845,7 +887,7 @@ export const AdminApplicationsTable = ({
                     <div className="text-xs text-muted-foreground mt-1 break-words">
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy')}` : 'Created: N/A'}
                       {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yyyy')}`}
-                      • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
+                      • By: {referrerName || (sanitizeUserId(app.userId) ? `user-ID: ...${sanitizeUserId(app.userId).substring(sanitizeUserId(app.userId).length - 4)}` : 'Unknown')}
                       {` • Staff: ${staffLabel}`}
                     </div>
                     <div className="mt-2 space-y-1">
@@ -899,7 +941,7 @@ export const AdminApplicationsTable = ({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link
-                            href={`/admin/applications/${app.id}?userId=${app.userId}&quickAction=reminders&reminderTab=status`}
+                            href={buildAdminApplicationHref(app, { quickAction: 'reminders', reminderTab: 'status' })}
                             aria-label="Open status reminders"
                             className="inline-flex items-center"
                           >
@@ -926,7 +968,7 @@ export const AdminApplicationsTable = ({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link
-                            href={`/admin/applications/${app.id}?userId=${app.userId}&quickAction=reminders&reminderTab=email`}
+                            href={buildAdminApplicationHref(app, { quickAction: 'reminders', reminderTab: 'email' })}
                             aria-label="Open missing documents reminders"
                             className="inline-flex items-center"
                           >
@@ -976,7 +1018,7 @@ export const AdminApplicationsTable = ({
                     <QuickViewDialog application={app} />
                     <FilesQuickViewDialog application={app} />
                     <Button asChild variant="link" className="text-sm font-medium text-primary hover:underline p-0 h-auto">
-                        <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>View Details</Link>
+                        <Link href={buildAdminApplicationHref(app)}>View Details</Link>
                     </Button>
                   </div>
                 </TableCell>
@@ -1047,7 +1089,7 @@ export const AdminApplicationsTable = ({
                         />
                       )}
                       <h3 className="font-medium truncate">
-                        {app.memberFirstName} {app.memberLastName}
+                        {getDisplayMemberName(app)}
                       </h3>
                       {isNew && <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs"><Sparkles className="h-3 w-3 mr-1" /> New</Badge>}
                       {isRecentlyUpdated && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs">Updated</Badge>}
@@ -1082,7 +1124,7 @@ export const AdminApplicationsTable = ({
                     <div className="text-xs text-muted-foreground break-words">
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yy')}` : 'Created: N/A'}
                       {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yy')}`}
-                      • By: {referrerName || (app.userId ? `user-ID: ...${app.userId.substring(app.userId.length - 4)}` : 'Unknown')}
+                      • By: {referrerName || (sanitizeUserId(app.userId) ? `user-ID: ...${sanitizeUserId(app.userId).substring(sanitizeUserId(app.userId).length - 4)}` : 'Unknown')}
                       {` • Staff: ${staffLabel}`}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
@@ -1124,7 +1166,7 @@ export const AdminApplicationsTable = ({
                     <QuickViewDialog application={app} />
                     <FilesQuickViewDialog application={app} />
                     <Button asChild size="sm" variant="outline">
-                      <Link href={`/admin/applications/${app.id}?userId=${app.userId}`}>
+                      <Link href={buildAdminApplicationHref(app)}>
                         View Details
                       </Link>
                     </Button>

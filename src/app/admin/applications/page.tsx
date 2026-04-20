@@ -353,10 +353,15 @@ function AdminApplicationsPageContent() {
       if (!appToDelete) return;
 
       let didQueueDelete = false;
-      const isAdminSource = appToDelete.source === 'admin' || appToDelete.id.startsWith('admin_app_');
+      const rawUserId = String(appToDelete.userId || '').trim();
+      const normalizedUserId = ['undefined', 'null', 'nan'].includes(rawUserId.toLowerCase()) ? '' : rawUserId;
+      const isAdminSource =
+        appToDelete.source === 'admin' ||
+        appToDelete.id.startsWith('admin_app_') ||
+        !normalizedUserId;
 
-      if (appToDelete.userId) {
-        const docRef = doc(firestore, `users/${appToDelete.userId}/applications`, id);
+      if (normalizedUserId) {
+        const docRef = doc(firestore, `users/${normalizedUserId}/applications`, id);
         batch.delete(docRef);
         didQueueDelete = true;
       }
