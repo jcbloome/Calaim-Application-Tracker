@@ -516,6 +516,22 @@ const getPathwayRequirements = (
       ],
       href: '#'
     },
+    {
+      id: 'primary-contact-screenshot',
+      title: 'Primary Contact Screenshot',
+      description: 'Upload screenshot(s) from Kaiser website/documents showing the primary contact details used for outreach.',
+      type: 'Upload',
+      icon: UploadCloud,
+      href: '#',
+    },
+    {
+      id: 'alternative-contact-screenshot',
+      title: 'Alternative Contact Screenshot',
+      description: 'Upload screenshot(s) showing alternate contact details for outreach fallback.',
+      type: 'Upload',
+      icon: UploadCloud,
+      href: '#',
+    },
   ];
 
   const eligibilityReq = commonRequirements.find((req) => req.id === 'eligibility-screenshot') as
@@ -4906,10 +4922,14 @@ function ApplicationDetailPageContent() {
     application.pathway as 'SNF Transition' | 'SNF Diversion',
     application.healthPlan
   );
-  const eligibilityRequirementIds = new Set(['eligibility-screenshot']);
+  const eligibilityRequirementIds = new Set([
+    'eligibility-screenshot',
+    'primary-contact-screenshot',
+    'alternative-contact-screenshot',
+  ]);
   const eligibilityRequirements = pathwayRequirements.filter(req => eligibilityRequirementIds.has(req.id));
   const displayedPathwayRequirements = (() => {
-    const items = pathwayRequirements.filter((req) => req.id !== 'eligibility-screenshot');
+    const items = pathwayRequirements.filter((req) => !eligibilityRequirementIds.has(req.id));
     const roomBoardIdx = items.findIndex((req) => req.id === 'room-board-obligation');
     if (roomBoardIdx > -1) {
       const [roomBoard] = items.splice(roomBoardIdx, 1);

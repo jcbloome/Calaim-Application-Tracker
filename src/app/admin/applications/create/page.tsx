@@ -90,6 +90,38 @@ const parseMemberName = (rawValue: unknown): { firstName: string; lastName: stri
   };
 };
 
+const extractNameFromFileName = (rawFileName: unknown) => {
+  const fileBase = String(rawFileName || '').replace(/\.pdf$/i, '').trim();
+  if (!fileBase) return '';
+  const noDatePrefix = fileBase.replace(/^\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}\s+/, '');
+  const candidate = noDatePrefix.split('-')[0].replace(/\(.*?\)/g, '').trim();
+  if (!candidate) return '';
+
+  const noiseTokens = new Set([
+    'nft',
+    'cc',
+    'auth',
+    'authorization',
+    'sheet',
+    'single',
+    'ils',
+    'kaiser',
+    'received',
+    'via',
+  ]);
+
+  const tokens = candidate
+    .replace(/[_]+/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.replace(/[^A-Za-z'-]/g, '').trim())
+    .filter((token) => token.length > 1)
+    .filter((token) => !noiseTokens.has(token.toLowerCase()));
+
+  if (tokens.length >= 2) return `${tokens[0]} ${tokens[1]}`;
+  if (tokens.length === 1) return tokens[0];
+  return '';
+};
+
 const toNameCase = (value: unknown) =>
   String(value || '')
     .trim()
@@ -126,6 +158,45 @@ const truncateAtNextLabel = (value: string) => {
   );
   if (!nextLabel || typeof nextLabel.index !== 'number') return text;
   return text.slice(0, nextLabel.index).trim().replace(/[,:;\-]+$/, '').trim();
+};
+
+const extractAddressFromLines = (lines: string[]) => {
+  const stopLinePattern =
+    /\b(?:member|patient)?\s*(?:phone|cell(?:ular)?|mobile|email|population|provider|authorization|care\s*manager|contact\s*person|special\s*instructions|dob|date\s*of\s*birth)\b/i;
+  const phonePattern = /(?:\(\d{3}\)\s*|\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)/;
+  const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] || '').trim();
+    if (!line) continue;
+    if (!/\b(?:member|patient)\s*address\b/i.test(line)) continue;
+
+    const inlineValue = truncateAtNextLabel(
+      line.replace(/^.*?\b(?:member|patient)\s*address\s*[:#-]?\s*/i, '').trim()
+    );
+    if (
+      inlineValue &&
+      !stopLinePattern.test(inlineValue) &&
+      !phonePattern.test(inlineValue) &&
+      !emailPattern.test(inlineValue)
+    ) {
+      return inlineValue;
+    }
+
+    const addressParts: string[] = [];
+    for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
+      const next = String(lines[j] || '').replace(/\s+/g, ' ').trim();
+      if (!next) continue;
+      if (stopLinePattern.test(next) || emailPattern.test(next) || phonePattern.test(next)) break;
+      addressParts.push(next);
+    }
+
+    if (addressParts.length > 0) {
+      return addressParts.join(', ');
+    }
+  }
+
+  return '';
 };
 
 const parseAddressParts = (rawValue: unknown) => {
@@ -175,18 +246,7 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     findFirst(flattened, [
       /(?:member|patient|beneficiary)\s*name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})/i,
       /name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})\s*(?:dob|date of birth|mrn|member id|auth|authorization)/i,
-    ]) ||
-    (() => {
-      const fileBase = String(params.fileName || '').replace(/\.pdf$/i, '').trim();
-      const noDatePrefix = fileBase.replace(/^\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}\s+/, '');
-      const candidate = noDatePrefix.split('-')[0].replace(/\(.*?\)/g, '').trim();
-      if (!candidate) return '';
-      return candidate
-        .split(' ')
-        .filter((w) => /^[A-Za-z'-]+$/.test(w))
-        .slice(0, 3)
-        .join(' ');
-    })();
+    ]) || extractNameFromFileName(params.fileName);
 
   const authorizationNumber = findFirst(flattened, [
     /authorization\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
@@ -216,7 +276,9 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
   ]);
 
-  const memberAddress = findLabeledValue(flattened, 'member\\s*address', [
+  const memberAddress =
+    extractAddressFromLines(lines) ||
+    findLabeledValue(flattened, 'member\\s*address', [
     'member\\s*phone',
     'cell\\s*phone',
     'email',
@@ -224,7 +286,7 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     'provider',
     'authorization',
     'care\\s*manager',
-  ]);
+    ]);
 
   const memberPhone = findFirst(flattened, [
     /member\s*phone\s*:\s*([()0-9.\-\s]{7,})/i,
@@ -273,19 +335,7 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     findFirst(flattened, [
       /(?:member|patient|beneficiary)\s*name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})/i,
       /name\s*[:#-]?\s*([A-Z][A-Z ,.'-]{2,})\s*(?:dob|date of birth|mrn|member id|auth|authorization)/i,
-    ]) ||
-    (() => {
-      const fileBase = String(params.fileName || '').replace(/\.pdf$/i, '').trim();
-      const noDatePrefix = fileBase.replace(/^\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}\s+/, '');
-      const candidate = noDatePrefix.split('-')[0].replace(/\(.*?\)/g, '').trim();
-      if (!candidate) return '';
-      const uppercaseWords = candidate
-        .split(' ')
-        .filter((w) => /^[A-Za-z'-]+$/.test(w))
-        .slice(0, 3)
-        .join(' ');
-      return uppercaseWords;
-    })();
+    ]) || extractNameFromFileName(params.fileName);
 
   const authorizationNumber = findFirst(flattened, [
     /authorization\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
@@ -321,6 +371,7 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
   ]);
 
   const memberAddressRaw =
+    extractAddressFromLines(lines) ||
     findLabeledValue(flattened, '(?:member|patient)?\\s*address', [
       'member\\s*phone',
       'patient\\s*phone',
@@ -870,6 +921,8 @@ export default function CreateApplicationPage() {
         { name: 'CS Member Summary', status: 'Pending', type: 'online-form', href: '/admin/forms/edit' },
         { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
         { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
+        { name: 'Primary Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
+        { name: 'Alternative Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
         { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
@@ -1107,8 +1160,9 @@ export default function CreateApplicationPage() {
     return limitedPhoneNumber;
   };
 
-  const parseServiceRequestPdfAndApply = async () => {
-    if (!serviceRequestFile) {
+  const parseServiceRequestPdfAndApply = async (fileOverride?: File | null) => {
+    const targetFile = fileOverride instanceof File ? fileOverride : serviceRequestFile;
+    if (!targetFile) {
       toast({ title: 'No PDF selected', description: 'Choose a Service Request Form PDF first.', variant: 'destructive' });
       return;
     }
@@ -1122,7 +1176,7 @@ export default function CreateApplicationPage() {
     setServiceRequestParseMode('none');
     try {
       const pdfjs = await loadPdfJs();
-      const bytes = await serviceRequestFile.arrayBuffer();
+      const bytes = await targetFile.arrayBuffer();
       const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true });
       const pdf = await loadingTask.promise;
       const lines: string[] = [];
@@ -1234,7 +1288,7 @@ export default function CreateApplicationPage() {
         return;
       }
 
-      const parsed = extractServiceRequestFields({ text, fileName: serviceRequestFile.name });
+      const parsed = extractServiceRequestFields({ text, fileName: targetFile.name });
       const updates = parsed.updates;
       const parsedFieldKeys = parsed.parsedFields;
       warnings.push(...parsed.warnings);
@@ -1412,7 +1466,7 @@ export default function CreateApplicationPage() {
         // Application metadata
         createdAt: serverTimestamp(),
         createdByAdmin: true,
-        status: isKaiserAuthReceived ? 'Authorization Received (Doc Collection)' : 'draft',
+        status: isKaiserAuthReceived ? 'T2038 Received, Needs First Contact' : 'draft',
         currentStep: 1,
         adminNotes: memberData.notes,
 
@@ -1424,6 +1478,8 @@ export default function CreateApplicationPage() {
         { name: 'CS Member Summary', status: 'Pending', type: 'online-form', href: '/admin/forms/edit' },
         { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
         { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
+        { name: 'Primary Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
+        { name: 'Alternative Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
         { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
@@ -1434,14 +1490,16 @@ export default function CreateApplicationPage() {
         ...baseApplication,
         healthPlan: isKaiserAuthReceived ? 'Kaiser' : '',
         pathway: isKaiserAuthReceived ? 'SNF Transition' : '',
-        kaiserStatus: isKaiserAuthReceived ? 'Authorization Received (Doc Collection)' : '',
+        kaiserStatus: isKaiserAuthReceived ? 'T2038 Received, Needs First Contact' : '',
         forms: isKaiserAuthReceived ? authReceivedForms : [],
         ...(isKaiserAuthReceived
-          ? {
+          ? (selectedAssignedStaffId
+              ? {
               assignedStaffId: selectedAssignedStaffId,
               assignedStaffName: selectedAssignedStaffName,
               assignedDate: new Date().toISOString(),
-            }
+                }
+              : {})
           : {}),
       });
 
@@ -1706,15 +1764,6 @@ export default function CreateApplicationPage() {
       });
       return;
     }
-    if (!selectedAssignedStaffName && !selectedAssignedStaffId) {
-      toast({
-        title: 'Assign staff first',
-        description: 'Select Kaiser staff before pushing this record to Caspio.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setIsPushingSingleAuthToCaspio(true);
     try {
       let createdApplicationId: string | null = null;
@@ -2045,7 +2094,7 @@ export default function CreateApplicationPage() {
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={parseServiceRequestPdfAndApply}
+                        onClick={() => void parseServiceRequestPdfAndApply()}
                         disabled={!serviceRequestFile || isParsingServiceRequest}
                       >
                         {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
@@ -2086,6 +2135,9 @@ export default function CreateApplicationPage() {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Single-auth flow: Parse PDF -> Create skeleton -> Open main application page -> Push to Caspio.
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Protocol: Upload single-auth PDF first, then click Parse Single Auth PDF to fill member name/details.
                     </div>
                     {serviceRequestParsedFields.length > 0 ? (
                       <div className="text-xs text-green-700">
