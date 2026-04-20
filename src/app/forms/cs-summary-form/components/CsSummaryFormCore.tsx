@@ -52,6 +52,13 @@ function formatFieldLabel(fieldName: string) {
     .trim();
 }
 
+function isValidMemberNameValue(value: unknown) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return false;
+  const lowered = normalized.toLowerCase();
+  return !['undefined', 'null', 'nan'].includes(lowered);
+}
+
 function CsSummaryFormComponent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -364,6 +371,22 @@ function CsSummaryFormComponent() {
         }
 
         const currentData = getValues();
+        const hasValidMemberNames =
+          isValidMemberNameValue(currentData.memberFirstName) &&
+          isValidMemberNameValue(currentData.memberLastName);
+        if (!hasValidMemberNames) {
+          setValidationError('Member first and last name are required before saving this draft.');
+          if (!isNavigating) {
+            toast({
+              variant: 'destructive',
+              title: 'Member name required',
+              description: 'Enter member first and last name before saving.',
+            });
+          }
+          setTimeout(() => setFocus('memberFirstName' as FieldPath<FormValues>), 0);
+          return resolve(null);
+        }
+        setValidationError(null);
         let docId = internalApplicationId;
         let isNewDoc = false;
 

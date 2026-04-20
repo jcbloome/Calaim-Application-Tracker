@@ -16,6 +16,7 @@ import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ToastAction } from '@/components/ui/toast';
 
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -1828,6 +1829,15 @@ export default function CreateApplicationPage() {
     });
   };
 
+  const hasValidMemberName = (value: unknown) => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return false;
+    const lowered = normalized.toLowerCase();
+    return !['undefined', 'null', 'nan'].includes(lowered);
+  };
+
+  const hasRequiredMemberName = hasValidMemberName(memberData.memberFirstName) && hasValidMemberName(memberData.memberLastName);
+
   const createApplicationForMember = async (options?: { skipNavigate?: boolean; suppressSuccessToast?: boolean }) => {
     const isKaiserAuthReceived = intakeType === 'kaiser_auth_received_via_ils';
     const hasStandardRequired = memberData.contactPhone && memberData.contactFirstName && memberData.contactLastName;
@@ -1835,8 +1845,7 @@ export default function CreateApplicationPage() {
 
     if (
       !firestore ||
-      !memberData.memberFirstName ||
-      !memberData.memberLastName ||
+      !hasRequiredMemberName ||
       (!isKaiserAuthReceived && !hasStandardRequired) ||
       (isKaiserAuthReceived && !hasKaiserRequired)
     ) {
@@ -2021,6 +2030,11 @@ export default function CreateApplicationPage() {
           description: isKaiserAuthReceived
             ? `Kaiser auth-received intake created for ${memberData.memberFirstName} ${memberData.memberLastName}.`
             : `Application created for ${memberData.memberFirstName} ${memberData.memberLastName}. Redirecting to CS Summary form.`,
+          action: isKaiserAuthReceived ? (
+            <ToastAction altText="Go to this application" onClick={() => router.push(`/admin/applications/${applicationId}`)}>
+              Go to this application
+            </ToastAction>
+          ) : undefined,
         });
       }
       const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
@@ -2194,7 +2208,7 @@ export default function CreateApplicationPage() {
       });
       return;
     }
-    if (!memberData.memberFirstName || !memberData.memberLastName) {
+    if (!hasRequiredMemberName) {
       toast({
         title: 'Missing member name',
         description: 'Parse the single auth PDF (or enter member first/last name) before creating/opening the main application record.',
@@ -2216,6 +2230,11 @@ export default function CreateApplicationPage() {
         description: createdApplicationId
           ? `Open application ${createdApplicationId} and push to Caspio from the main application page.`
           : 'Create a skeleton first, then push from the main application page.',
+        action: createdApplicationId ? (
+          <ToastAction altText="Go to this application" onClick={() => router.push(`/admin/applications/${createdApplicationId}`)}>
+            Go to this application
+          </ToastAction>
+        ) : undefined,
       });
       if (createdApplicationId) {
         router.push(`/admin/applications/${createdApplicationId}`);
@@ -2231,8 +2250,7 @@ export default function CreateApplicationPage() {
     }
   };
 
-  const isFormValid = memberData.memberFirstName && 
-                     memberData.memberLastName && (
+  const isFormValid = hasRequiredMemberName && (
                        intakeType === 'kaiser_auth_received_via_ils'
                          ? true
                          : Boolean(
@@ -2609,6 +2627,14 @@ export default function CreateApplicationPage() {
                         <div className="text-xs font-medium">
                           Skeleton created: <span className="font-semibold">{lastCreatedSkeleton.applicationId}</span> ({lastCreatedSkeleton.memberName})
                         </div>
+                        <div className="text-xs">
+                          <Link
+                            href={`/admin/applications/${lastCreatedSkeleton.applicationId}`}
+                            className="font-medium text-primary underline underline-offset-2"
+                          >
+                            Go to this application
+                          </Link>
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           Client_ID2: <span className="font-mono">{lastCreatedSkeleton.clientId2 || 'Pending (set after Caspio push)'}</span>
                         </div>
@@ -2637,7 +2663,7 @@ export default function CreateApplicationPage() {
                           </Button>
                           <Button type="button" size="sm" asChild>
                             <Link href={`/admin/applications/${lastCreatedSkeleton.applicationId}`}>
-                              Open Created Skeleton
+                              Go to This Application
                             </Link>
                           </Button>
                           <Button
