@@ -41,26 +41,32 @@ export function PublicHeader() {
           />
         </Link>
 
-        <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
-          {navLinks.map((link) => (
-            <Button key={link.href} variant="ghost" size="sm" asChild>
-              <Link href={link.href} className="text-sm">
-                {link.label}
+        <nav className="hidden lg:flex min-w-0 flex-1 items-center justify-end gap-3">
+          <div className="min-w-0 flex-1 overflow-x-auto pr-1">
+            <div className="flex w-max items-center gap-1 xl:gap-2">
+              {navLinks.map((link) => (
+                <Button key={link.href} variant="ghost" size="sm" asChild>
+                  <Link href={link.href} className="text-sm">
+                    {link.label}
+                  </Link>
+                </Button>
+              ))}
+            </div>
+          </div>
+          <div className="shrink-0 flex items-center gap-2">
+            <LanguageSwitcher className="h-9 w-9" />
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/contact" className="text-sm">
+                Contact Us
               </Link>
             </Button>
-          ))}
-          <LanguageSwitcher className="h-9 w-9 ml-2" />
-          <Button variant="outline" size="sm" asChild className="ml-2 xl:ml-4">
-            <Link href="/contact" className="text-sm">
-              Contact Us
-            </Link>
-          </Button>
-          <div className="flex items-center gap-2 ml-2">
-            <Button asChild>
-              <Link href="/login?fresh=1" className="text-sm">
-                Login
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild>
+                <Link href="/login?fresh=1" className="text-sm">
+                  Login
+                </Link>
+              </Button>
+            </div>
           </div>
         </nav>
 

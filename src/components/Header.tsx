@@ -119,58 +119,67 @@ export function Header() {
               priority
             />
         </Link>
-        <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
-            {navLinks.map(link => (
-                 <Button key={link.href} variant="ghost" size="sm" asChild>
-                    <Link href={link.href} className="text-sm">{link.label}</Link>
+        <nav className="hidden lg:flex min-w-0 flex-1 items-center justify-end gap-3">
+          <div className="min-w-0 flex-1 overflow-x-auto pr-1">
+            <div className="flex w-max items-center gap-1 xl:gap-2">
+              {navLinks.map(link => (
+                <Button key={link.href} variant="ghost" size="sm" asChild>
+                  <Link href={link.href} className="text-sm">{link.label}</Link>
                 </Button>
-            ))}
+              ))}
+            </div>
+          </div>
 
-            {!isAdmin && !isSuperAdmin ? <LanguageSwitcher className="h-9 w-9 ml-2" /> : null}
-            
-            {/* Contact Us on the right side */}
-            <Button variant="outline" size="sm" asChild className="ml-2 xl:ml-4">
-                <Link href="/contact" className="text-sm">Contact Us</Link>
+          <div className="shrink-0 flex items-center gap-2">
+            {/* Keep right-side actions fixed so long translations don't push them off-screen. */}
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/contact" className="text-sm">Contact Us</Link>
             </Button>
 
-           {(isUserLoading || isAdminLoading) ? (
-            <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
-          ) : showUserSession ? ( 
-            <div className='flex items-center gap-3'>
-             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="rounded-full h-11 w-11">
-                  <User className="h-6 w-6" />
-                  <span className="sr-only">User menu</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>{user.displayName || user.email}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                 <DropdownMenuItem onSelect={() => router.push('/profile')}>
-                  <UserCog className="mr-2 h-4 w-4" />
-                  <span>My Profile</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSwitchRole}>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  <span>Switch Role</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleSignOut}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Log out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
+            {(isUserLoading || isAdminLoading) ? (
+              <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
+            ) : showUserSession ? (
+              <div className='flex items-center gap-3'>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="rounded-full h-11 w-11">
+                      <User className="h-6 w-6" />
+                      <span className="sr-only">User menu</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>{user.displayName || user.email}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => router.push('/profile')}>
+                      <UserCog className="mr-2 h-4 w-4" />
+                      <span>My Profile</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSwitchRole}>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      <span>Switch Role</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleSignOut}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Log out</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
                 <Button asChild>
-                    <Link href="/login?fresh=1"><LogIn className="mr-2 h-4 w-4" />Login</Link>
+                  <Link href="/login?fresh=1"><LogIn className="mr-2 h-4 w-4" />Login</Link>
                 </Button>
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </nav>
+        {!isAdmin && !isSuperAdmin ? (
+          <div className="hidden lg:block ml-2 shrink-0">
+            <LanguageSwitcher className="h-9 w-9" />
+          </div>
+        ) : null}
         <div className="lg:hidden">
           <Button
             type="button"

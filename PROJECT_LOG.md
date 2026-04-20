@@ -16,6 +16,13 @@
 
 ## 🗓️ **Development History**
 
+### **April 20, 2026 - Updates**
+- ✅ **UI/UX**: Refactored the desktop portal header nav to keep right-side actions visible on narrower screens by isolating primary links in a scrollable section, preventing Spanish translations from pushing controls off-screen.
+- ✅ **UI/UX**: Added a dedicated desktop language switcher slot outside the nav link row so users can always switch back to English even when translated labels overflow.
+- ✅ **UI/UX**: Applied the same overflow-safe desktop header pattern to `PublicHeader` so the language toggle remains visible for logged-out users after switching to Spanish.
+- ✅ **Integration**: Added protected translation term handling in `/api/translate` so `CalAIM`, `California Advancing and Innovating Medi-Cal`, and `Connections Care Home Consultants` always remain unchanged in Spanish mode.
+- ✅ **Integration**: Expanded proactive translation protections for branded/system terms (e.g., `Connect CalAIM`, `Medi-Cal`, `CalOptima`, `Caspio`, `RCFE`, `CCL`, `ILS`) and now applies longest-match-first masking to prevent partial term translation.
+
 ### **April 19, 2026 - Updates**
 - ✅ **UI/UX**: Added per-application `Application Log` quick action with embedded timeline (form completions, revision send-backs, Kaiser send/acknowledgment events, and staff notes), plus Kaiser authorization mode controls on the application page.
 - ✅ **UI/UX**: Moved Kaiser Tracker manual sync controls under a dedicated Troubleshooting-only panel and updated copy to emphasize automatic API-driven updates for normal operations.

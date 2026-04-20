@@ -6,6 +6,61 @@ type TranslateRequest = {
   source?: unknown;
 };
 
+const PROTECTED_TRANSLATION_TERMS = [
+  'Connect CalAIM',
+  'CalAIM Application Tracker',
+  'California Advancing and Innovating Medi-Cal',
+  'California Advancing and Innovating Medi Cal',
+  'Connections Care Home Consultants',
+  'Social Worker Portal',
+  'Admin Portal',
+  'Medi-Cal',
+  'CalOptima',
+  'Caspio',
+  'Firebase',
+  'Google Drive',
+  'Kaiser',
+  'HNRC',
+  'RCFE',
+  'CCL',
+  'ILS',
+  'CalAIM',
+];
+
+type MaskedTranslationText = {
+  masked: string;
+  tokens: Array<{ token: string; value: string }>;
+};
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function maskProtectedTerms(value: string): MaskedTranslationText {
+  let masked = value;
+  const tokens: Array<{ token: string; value: string }> = [];
+  let tokenIndex = 0;
+
+  const protectedTermsByLength = [...PROTECTED_TRANSLATION_TERMS].sort(
+    (a, b) => b.length - a.length
+  );
+  protectedTermsByLength.forEach((term) => {
+    const matcher = new RegExp(escapeRegExp(term), 'gi');
+    masked = masked.replace(matcher, (match) => {
+      const token = `__CALAIM_KEEP_${tokenIndex}__`;
+      tokenIndex += 1;
+      tokens.push({ token, value: match });
+      return token;
+    });
+  });
+
+  return { masked, tokens };
+}
+
+function unmaskProtectedTerms(value: string, tokens: Array<{ token: string; value: string }>): string {
+  return tokens.reduce((result, tokenInfo) => result.replaceAll(tokenInfo.token, tokenInfo.value), value);
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as TranslateRequest;
@@ -40,13 +95,16 @@ export async function POST(request: Request) {
       );
     }
 
+    const maskedTexts = texts.map((text) => maskProtectedTerms(text));
+    const translationInputs = maskedTexts.map((item) => item.masked);
+
     const response = await fetch(
       `https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(apiKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          q: texts,
+          q: translationInputs,
           target,
           source,
           format: 'text',
@@ -63,11 +121,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const translations = Array.isArray((payload as any)?.data?.translations)
+    const rawTranslations = Array.isArray((payload as any)?.data?.translations)
       ? (payload as any).data.translations.map((item: any) =>
           String(item?.translatedText ?? '')
         )
       : [];
+
+    const translations = maskedTexts.map((maskedText, index) =>
+      unmaskProtectedTerms(rawTranslations[index] ?? maskedText.masked, maskedText.tokens)
+    );
 
     return NextResponse.json({ translations });
   } catch (error: any) {
