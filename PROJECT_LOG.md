@@ -22,6 +22,11 @@
 - ✅ **UI/UX**: Applied the same overflow-safe desktop header pattern to `PublicHeader` so the language toggle remains visible for logged-out users after switching to Spanish.
 - ✅ **Integration**: Added protected translation term handling in `/api/translate` so `CalAIM`, `California Advancing and Innovating Medi-Cal`, and `Connections Care Home Consultants` always remain unchanged in Spanish mode.
 - ✅ **Integration**: Expanded proactive translation protections for branded/system terms (e.g., `Connect CalAIM`, `Medi-Cal`, `CalOptima`, `Caspio`, `RCFE`, `CCL`, `ILS`) and now applies longest-match-first masking to prevent partial term translation.
+- ✅ **UI/UX**: Added an explicit subtitle under `CalAIM Eligibility Check` (“For Health Net and Kaiser Members”) and protected `Health Net` from translation to keep plan naming consistent in Spanish mode.
+- ✅ **UI/UX**: Updated the eligibility page heading so “for Health Net and Kaiser Members” renders at the same title size as “CalAIM Eligibility Check.”
+- ✅ **UI/UX**: Replaced “Kaiser active in all counties” on the eligibility page with a contracted county list and aligned both UI/API eligibility validation to enforce Kaiser county support (Los Angeles, Sacramento, Riverside, San Bernardino, Ventura, San Diego, Orange).
+- ✅ **UI/UX**: Updated Kaiser contracted county support to the expanded 32-county list (Alameda through Yuba) and synchronized list display plus UI/API eligibility validation messages.
+- ✅ **UI/UX**: Added a clarifying note under the eligibility page title explaining that other managed care plans and community support providers may cover overlapping and additional counties beyond Connections' Health Net/Kaiser CalAIM coverage.
 
 ### **April 19, 2026 - Updates**
 - ✅ **UI/UX**: Added per-application `Application Log` quick action with embedded timeline (form completions, revision send-backs, Kaiser send/acknowledgment events, and staff notes), plus Kaiser authorization mode controls on the application page.

@@ -44,6 +44,45 @@ const CALIFORNIA_COUNTIES = [
   'Tulare', 'Tuolumne', 'Ventura', 'Yolo', 'Yuba'
 ];
 
+const KAISER_CONTRACTED_COUNTIES = [
+  'Alameda',
+  'Amador',
+  'Contra Costa',
+  'El Dorado',
+  'Fresno',
+  'Imperial',
+  'Kern',
+  'Kings',
+  'Los Angeles',
+  'Madera',
+  'Marin',
+  'Mariposa',
+  'Napa',
+  'Orange',
+  'Placer',
+  'Riverside',
+  'Sacramento',
+  'San Bernardino',
+  'San Diego',
+  'San Francisco',
+  'San Joaquin',
+  'San Mateo',
+  'Santa Clara',
+  'Santa Cruz',
+  'Solano',
+  'Sonoma',
+  'Stanislaus',
+  'Sutter',
+  'Tulare',
+  'Ventura',
+  'Yolo',
+  'Yuba',
+] as const;
+
+const HEALTH_NET_SUPPORTED_COUNTIES = ['Los Angeles', 'Sacramento'] as const;
+const KAISER_CONTRACTED_COUNTIES_TEXT =
+  'Alameda, Amador, Contra Costa, El Dorado, Fresno, Imperial, Kern, Kings, Los Angeles, Madera, Marin, Mariposa, Napa, Orange, Placer, Riverside, Sacramento, San Bernardino, San Diego, San Francisco, San Joaquin, San Mateo, Santa Clara, Santa Cruz, Solano, Sonoma, Stanislaus, Sutter, Tulare, Ventura, Yolo, and Yuba';
+
 // Form validation schema
 const eligibilityCheckSchema = z.object({
   // Member Information
@@ -114,9 +153,11 @@ export default function EligibilityCheckPage() {
 
   // Check if county is supported for selected health plan
   const isCountySupported = (county: string, healthPlan: string): boolean => {
-    if (healthPlan === 'Kaiser') return true; // Kaiser active in all counties
+    if (healthPlan === 'Kaiser') {
+      return KAISER_CONTRACTED_COUNTIES.includes(county as typeof KAISER_CONTRACTED_COUNTIES[number]);
+    }
     if (healthPlan === 'Health Net') {
-      return county === 'Los Angeles' || county === 'Sacramento';
+      return HEALTH_NET_SUPPORTED_COUNTIES.includes(county as typeof HEALTH_NET_SUPPORTED_COUNTIES[number]);
     }
     return false;
   };
@@ -172,11 +213,17 @@ export default function EligibilityCheckPage() {
         {/* Page Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">
-            CalAIM Eligibility Check
+            <span className="block">CalAIM Eligibility Check</span>
+            <span className="block">for Health Net and Kaiser Members</span>
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             We're happy to help verify if a member is eligible for CalAIM Community Supports services.
             Simply provide the member's information below and we'll check their eligibility status.
+          </p>
+          <p className="text-sm text-gray-600 max-w-3xl mx-auto mt-3">
+            Please note: while Connections is active for CalAIM with Health Net and Kaiser in various counties,
+            other managed care plans and community support providers may cover the same counties and additional
+            counties as well.
           </p>
         </div>
 
@@ -241,9 +288,12 @@ export default function EligibilityCheckPage() {
                     <Building className="h-4 w-4" />
                     Kaiser Permanente
                   </div>
-                  <p className="ml-6 mb-2">Connections is active in all California counties</p>
+                  <p className="ml-6 mb-2">Connections is active in contracted Kaiser counties:</p>
+                  <p className="ml-6 text-xs text-green-800 mb-2">
+                    {KAISER_CONTRACTED_COUNTIES_TEXT}
+                  </p>
                   <p className="ml-6 text-xs text-green-800">
-                    Connections serves Kaiser members statewide with CalAIM Community Supports
+                    Coverage is limited to Kaiser contracted counties listed above
                   </p>
                 </div>
                 
@@ -254,7 +304,7 @@ export default function EligibilityCheckPage() {
                   </div>
                   <p className="ml-6 mb-2">Connections is active only in Los Angeles and Sacramento counties</p>
                   <p className="ml-6 text-xs text-green-800">
-                    Limited geographic coverage — verify county before applying
+                    Limited geographic coverage - verify county before applying
                   </p>
                 </div>
                 
@@ -396,8 +446,8 @@ export default function EligibilityCheckPage() {
                       onValueChange={(value) => {
                         setSelectedHealthPlan(value);
                         setValue('healthPlan', value as 'Kaiser' | 'Health Net');
-                        // Reset county when health plan changes
-                        if (value === 'Health Net' && selectedCounty && !['Los Angeles', 'Sacramento'].includes(selectedCounty)) {
+                        // Reset county when health plan changes to an unsupported option.
+                        if (selectedCounty && !isCountySupported(selectedCounty, value)) {
                           setSelectedCounty('');
                           setValue('county', '');
                         }
@@ -436,10 +486,10 @@ export default function EligibilityCheckPage() {
                             <SelectItem 
                               key={county} 
                               value={county}
-                              disabled={selectedHealthPlan === 'Health Net' && !isSupported}
+                              disabled={Boolean(selectedHealthPlan) && !isSupported}
                             >
                               {county}
-                              {selectedHealthPlan === 'Health Net' && !isSupported && ' (Not Available)'}
+                              {Boolean(selectedHealthPlan) && !isSupported && ' (Not Available)'}
                             </SelectItem>
                           );
                         })}
@@ -453,6 +503,14 @@ export default function EligibilityCheckPage() {
                         <AlertTriangle className="h-4 w-4" />
                         <AlertDescription className="text-orange-800">
                           Health Net services are only available in Los Angeles and Sacramento counties.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {selectedHealthPlan === 'Kaiser' && selectedCounty && !isCountySupported(selectedCounty, selectedHealthPlan) && (
+                      <Alert className="mt-2 border-orange-200 bg-orange-50">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription className="text-orange-800">
+                          Kaiser services are only available in contracted counties: {KAISER_CONTRACTED_COUNTIES_TEXT}
                         </AlertDescription>
                       </Alert>
                     )}

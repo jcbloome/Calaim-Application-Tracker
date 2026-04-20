@@ -8,6 +8,45 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+const KAISER_CONTRACTED_COUNTIES = [
+  'Alameda',
+  'Amador',
+  'Contra Costa',
+  'El Dorado',
+  'Fresno',
+  'Imperial',
+  'Kern',
+  'Kings',
+  'Los Angeles',
+  'Madera',
+  'Marin',
+  'Mariposa',
+  'Napa',
+  'Orange',
+  'Placer',
+  'Riverside',
+  'Sacramento',
+  'San Bernardino',
+  'San Diego',
+  'San Francisco',
+  'San Joaquin',
+  'San Mateo',
+  'Santa Clara',
+  'Santa Cruz',
+  'Solano',
+  'Sonoma',
+  'Stanislaus',
+  'Sutter',
+  'Tulare',
+  'Ventura',
+  'Yolo',
+  'Yuba',
+] as const;
+
+const HEALTH_NET_SUPPORTED_COUNTIES = ['Los Angeles', 'Sacramento'] as const;
+const KAISER_CONTRACTED_COUNTIES_TEXT =
+  'Alameda, Amador, Contra Costa, El Dorado, Fresno, Imperial, Kern, Kings, Los Angeles, Madera, Marin, Mariposa, Napa, Orange, Placer, Riverside, Sacramento, San Bernardino, San Diego, San Francisco, San Joaquin, San Mateo, Santa Clara, Santa Cruz, Solano, Sonoma, Stanislaus, Sutter, Tulare, Ventura, Yolo, and Yuba';
+
 // Validation schema for eligibility check submission
 const eligibilityCheckSchema = z.object({
   // Member Information
@@ -68,15 +107,27 @@ export async function POST(request: NextRequest) {
     const memberName = `${String(data.memberFirstName || '').trim()} ${String(data.memberLastName || '').trim()}`.trim();
     const requesterName = `${String(data.requesterFirstName || '').trim()} ${String(data.requesterLastName || '').trim()}`.trim();
     
-    // Validate service area for Health Net
+    // Validate service area by plan.
     if (data.healthPlan === 'Health Net') {
-      const supportedCounties = ['Los Angeles', 'Sacramento'];
-      if (!supportedCounties.includes(data.county)) {
+      if (!HEALTH_NET_SUPPORTED_COUNTIES.includes(data.county as typeof HEALTH_NET_SUPPORTED_COUNTIES[number])) {
         return NextResponse.json(
           {
             success: false,
             error: 'Service area not supported',
             message: 'Health Net services are only available in Los Angeles and Sacramento counties.'
+          },
+          { status: 400 }
+        );
+      }
+    }
+    if (data.healthPlan === 'Kaiser') {
+      if (!KAISER_CONTRACTED_COUNTIES.includes(data.county as typeof KAISER_CONTRACTED_COUNTIES[number])) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Service area not supported',
+            message:
+              `Kaiser services are only available in contracted counties: ${KAISER_CONTRACTED_COUNTIES_TEXT}`
           },
           { status: 400 }
         );

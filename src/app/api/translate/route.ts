@@ -20,6 +20,7 @@ const PROTECTED_TRANSLATION_TERMS = [
   'Firebase',
   'Google Drive',
   'Kaiser',
+  'Health Net',
   'HNRC',
   'RCFE',
   'CCL',
