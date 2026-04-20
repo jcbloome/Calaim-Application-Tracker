@@ -2071,7 +2071,13 @@ function ApplicationDetailPageContent() {
   const { toast } = useToast();
   
   const applicationId = params.applicationId as string;
-  const appUserId = searchParams.get('userId');
+  const appUserId = useMemo(() => {
+    const raw = String(searchParams.get('userId') || '').trim();
+    if (!raw) return '';
+    const lowered = raw.toLowerCase();
+    if (lowered === 'undefined' || lowered === 'null' || lowered === 'nan') return '';
+    return raw;
+  }, [searchParams]);
   const quickActionTarget = String(searchParams.get('quickAction') || '').trim().toLowerCase();
   const reminderTabTarget = String(searchParams.get('reminderTab') || '').trim().toLowerCase();
 
@@ -2867,7 +2873,11 @@ function ApplicationDetailPageContent() {
   };
 
   docRef = useMemoFirebase(() => {
-    if (isUserLoading || !firestore || !applicationId || !appUserId) return null;
+    if (isUserLoading || !firestore || !applicationId) return null;
+    const isAdminStored = applicationId.startsWith('admin_app_') || !appUserId;
+    if (isAdminStored) {
+      return doc(firestore, 'applications', applicationId);
+    }
     return doc(firestore, `users/${appUserId}/applications`, applicationId);
   }, [firestore, applicationId, appUserId, isUserLoading]);
 

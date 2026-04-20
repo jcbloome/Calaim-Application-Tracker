@@ -160,6 +160,184 @@ const truncateAtNextLabel = (value: string) => {
   return text.slice(0, nextLabel.index).trim().replace(/[,:;\-]+$/, '').trim();
 };
 
+const normalizePhoneDigits = (rawValue: unknown) => {
+  const digits = String(rawValue || '').replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) return digits.slice(1);
+  if (digits.length >= 10) return digits.slice(0, 10);
+  return digits;
+};
+
+const formatPhoneDashed = (rawValue: unknown) => {
+  const digits = normalizePhoneDigits(rawValue);
+  if (digits.length !== 10) return String(rawValue || '').trim();
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+};
+
+const stripContactInfoFromAddressLine = (rawValue: unknown) => {
+  let value = String(rawValue || '').replace(/\s+/g, ' ').trim();
+  if (!value) return '';
+  value = value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
+  value = value.replace(/\(\d{3}\)\s*\d{3}[-.\s]?\d{4}/g, ' ');
+  value = value.replace(/\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b/g, ' ');
+  value = value.replace(/\b\d{10}\b/g, ' ');
+  value = value.replace(/\s{2,}/g, ' ').trim();
+  return value.replace(/[,\s]+$/g, '').trim();
+};
+
+const extractPhonesFromLines = (lines: string[]) => {
+  const phonePattern = /\(\d{3}\)\s*\d{3}[-.\s]?\d{4}|\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b|\b\d{10}\b/g;
+  const stopLinePattern = /\b(?:population\s*of\s*focus|provider|authorization|care\s*manager|special\s*instructions|page\s+\d+\s+of)\b/i;
+  const numbers: string[] = [];
+
+  const pushMatches = (line: string) => {
+    const matches = String(line || '').match(phonePattern) || [];
+    matches.forEach((m) => {
+      const normalized = normalizePhoneDigits(m);
+      if (normalized.length === 10) numbers.push(normalized);
+    });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] || '').trim();
+    if (!line) continue;
+    if (!/(?:member|patient)\s*phone|cell\s*phone|mobile\s*phone/i.test(line)) continue;
+
+    pushMatches(line);
+    for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
+      const next = String(lines[j] || '').replace(/\s+/g, ' ').trim();
+      if (!next) continue;
+      if (stopLinePattern.test(next)) break;
+      pushMatches(next);
+    }
+    if (numbers.length > 0) break;
+  }
+
+  return {
+    memberPhone: numbers[0] || '',
+    cellPhone: numbers[1] || numbers[0] || '',
+  };
+};
+
+const findNextNonEmptyLine = (lines: string[], startIndex: number) => {
+  for (let i = startIndex; i < lines.length; i++) {
+    const value = String(lines[i] || '').replace(/\s+/g, ' ').trim();
+    if (value) return value;
+  }
+  return '';
+};
+
+const extractMemberTableFieldsFromLines = (lines: string[]) => {
+  const result: Partial<{
+    memberFirstName: string;
+    memberLastName: string;
+    memberMrn: string;
+    memberDob: string;
+    memberPhone: string;
+    contactPhone: string;
+    memberCustomaryAddress: string;
+    memberCustomaryCity: string;
+    memberCustomaryState: string;
+    memberCustomaryZip: string;
+    memberCustomaryCounty: string;
+  }> = {};
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] || '').replace(/\s+/g, ' ').trim();
+    if (!line) continue;
+
+    if (/member\s*name\s*:.*\bmrn\b\s*:.*\bcin\b\s*:.*plan\s*id\s*:/i.test(line)) {
+      const valueLine = findNextNonEmptyLine(lines, i + 1);
+      if (valueLine) {
+        const namePart = valueLine.replace(/\s+\S*\d[\s\S]*$/, '').trim();
+        if (namePart) {
+          const parsedName = parseMemberName(namePart);
+          if (parsedName.firstName) result.memberFirstName = toNameCase(parsedName.firstName);
+          if (parsedName.lastName) result.memberLastName = toNameCase(parsedName.lastName);
+        }
+
+        const tokens = valueLine.split(/\s+/).filter(Boolean);
+        const firstTokenWithDigit = tokens.find((token) => /\d/.test(token));
+        if (firstTokenWithDigit && /^[A-Z0-9-]{6,}$/i.test(firstTokenWithDigit)) {
+          result.memberMrn = firstTokenWithDigit;
+        }
+      }
+    }
+
+    if (/\bdob\s*:.*\bage\s*:.*preferred\s*language/i.test(line)) {
+      const valueLine = findNextNonEmptyLine(lines, i + 1);
+      const dobMatch = valueLine.match(/(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/);
+      if (dobMatch?.[1]) {
+        result.memberDob = toMmDdYyyy(dobMatch[1]);
+      }
+    }
+
+    if (/(?:member|patient)\s*address\s*:.*(?:member|patient)\s*phone\s*:.*cell\s*phone\s*:.*email\s*:/i.test(line)) {
+      const blockLines: string[] = [];
+      for (let j = i + 1; j < Math.min(lines.length, i + 7); j++) {
+        const next = String(lines[j] || '').replace(/\s+/g, ' ').trim();
+        if (!next) continue;
+        if (/\bpopulation\s*of\s*focus\b|\bprovider\b|\bauthorization\b/i.test(next)) break;
+        blockLines.push(next);
+      }
+      const joined = blockLines.join(' ');
+      const phonePattern = /\(\d{3}\)\s*\d{3}[-.\s]?\d{4}|\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b|\b\d{10}\b/g;
+      const matches = joined.match(phonePattern) || [];
+      const normalizedPhones = matches
+        .map((value) => normalizePhoneDigits(value))
+        .filter((value) => value.length === 10);
+      if (normalizedPhones[0]) result.memberPhone = formatPhoneDashed(normalizedPhones[0]);
+      if (normalizedPhones[1]) result.contactPhone = formatPhoneDashed(normalizedPhones[1]);
+      else if (normalizedPhones[0]) result.contactPhone = formatPhoneDashed(normalizedPhones[0]);
+
+      const addressOnlyLines = blockLines.filter((entry) => !phonePattern.test(entry) && !/@/.test(entry));
+      if (addressOnlyLines.length > 0) {
+        const cleanedAddressLines = addressOnlyLines
+          .map((entry) => String(entry || '').replace(/[,\s]+$/g, '').trim())
+          .filter(Boolean);
+
+        const cityStateRegex = /^([A-Za-z .'-]+?)(?:,\s*|\s+)([A-Za-z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/;
+        const looksLikeStreet = (value: string) =>
+          /\d/.test(value) ||
+          /\b(?:st|street|ave|avenue|dr|drive|rd|road|ln|lane|blvd|boulevard|ct|court|way|pl|place|hwy|highway)\b/i.test(value);
+
+        const streetLine = cleanedAddressLines.find((value) => looksLikeStreet(value)) || cleanedAddressLines[0] || '';
+        const nonStreetLines = cleanedAddressLines.filter((value) => value !== streetLine);
+        const cityStateLine = nonStreetLines.find((value) => cityStateRegex.test(value)) || nonStreetLines[0] || '';
+        const zipLine = nonStreetLines.find((value) => /\d{5}(?:-\d{4})?/.test(value)) || '';
+
+        let cityStateMatch = cityStateLine.match(cityStateRegex);
+        let zipMatch = zipLine.match(/(\d{5}(?:-\d{4})?)/);
+
+        // Guard against city/state accidentally being placed in the street slot.
+        if (!looksLikeStreet(streetLine) && cityStateRegex.test(streetLine)) {
+          cityStateMatch = streetLine.match(cityStateRegex);
+          if (!zipMatch && cityStateMatch?.[3]) {
+            zipMatch = [cityStateMatch[3], cityStateMatch[3]] as RegExpMatchArray;
+          }
+        }
+
+        const countyMatch = addressOnlyLines.join(' ').match(/([A-Za-z .'-]+)\s+County\b/i);
+
+        const cleanedStreet = stripContactInfoFromAddressLine(streetLine);
+        if (cleanedStreet && looksLikeStreet(cleanedStreet)) result.memberCustomaryAddress = cleanedStreet;
+        if (cityStateMatch?.[1]) result.memberCustomaryCity = cityStateMatch[1].trim();
+        if (cityStateMatch?.[2]) result.memberCustomaryState = cityStateMatch[2].trim().toUpperCase();
+        if (zipMatch?.[1]) result.memberCustomaryZip = zipMatch[1].trim();
+
+        const explicitCounty = String(countyMatch?.[1] || '').trim();
+        if (explicitCounty) {
+          result.memberCustomaryCounty = explicitCounty;
+        } else if (zipMatch?.[1]) {
+          const inferredCounty = inferCountyFromZip(zipMatch[1].trim());
+          if (inferredCounty) result.memberCustomaryCounty = inferredCounty;
+        }
+      }
+    }
+  }
+
+  return result;
+};
+
 const extractAddressFromLines = (lines: string[]) => {
   const stopLinePattern =
     /\b(?:member|patient)?\s*(?:phone|cell(?:ular)?|mobile|email|population|provider|authorization|care\s*manager|contact\s*person|special\s*instructions|dob|date\s*of\s*birth)\b/i;
@@ -199,6 +377,71 @@ const extractAddressFromLines = (lines: string[]) => {
   return '';
 };
 
+const splitAddressFromLines = (lines: string[]) => {
+  const stopLinePattern =
+    /\b(?:member|patient)?\s*(?:phone|cell(?:ular)?|mobile|email|population|provider|authorization|care\s*manager|contact\s*person|special\s*instructions|dob|date\s*of\s*birth)\b/i;
+  const phonePattern = /(?:\(\d{3}\)\s*|\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b)/;
+  const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] || '').trim();
+    if (!line) continue;
+    if (!/\b(?:member|patient)\s*address\b/i.test(line)) continue;
+
+    const rawParts: string[] = [];
+    for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
+      const next = String(lines[j] || '').replace(/\s+/g, ' ').trim();
+      if (!next) continue;
+      if (stopLinePattern.test(next) || emailPattern.test(next) || phonePattern.test(next)) break;
+      rawParts.push(next);
+    }
+
+    if (rawParts.length === 0) continue;
+    const cleanedParts = rawParts.map((part) => part.replace(/[,\s]+$/g, '').trim()).filter(Boolean);
+    if (cleanedParts.length === 0) continue;
+
+    const street = cleanedParts[0] || '';
+    let city = '';
+    let state = '';
+    let zip = '';
+    let county = '';
+
+    const countyMatch = cleanedParts.join(' ').match(/([A-Za-z .'-]+)\s+County\b/i);
+    if (countyMatch?.[1]) county = countyMatch[1].trim();
+
+    if (cleanedParts.length >= 2) {
+      const cityStateZipMatch = cleanedParts[1].match(
+        /^([A-Za-z .'-]+?)(?:,\s*|\s+)([A-Za-z]{2})(?:,\s*|\s+)?(\d{5}(?:-\d{4})?)?$/
+      );
+      if (cityStateZipMatch) {
+        city = cityStateZipMatch[1].trim();
+        state = cityStateZipMatch[2].trim().toUpperCase();
+        zip = String(cityStateZipMatch[3] || '').trim();
+      } else {
+        city = cleanedParts[1].replace(/[,\s]+$/g, '').trim();
+      }
+    }
+
+    if (!zip && cleanedParts.length >= 3) {
+      const zipCandidate = cleanedParts[2].match(/(\d{5}(?:-\d{4})?)/);
+      if (zipCandidate?.[1]) zip = zipCandidate[1];
+    }
+
+    return { street, city, state, zip, county };
+  }
+
+  return { street: '', city: '', state: '', zip: '', county: '' };
+};
+
+const inferCountyFromZip = (zipRaw: unknown) => {
+  const zip = String(zipRaw || '').match(/\d{5}/)?.[0] || '';
+  if (!zip) return '';
+  const countyByZip: Record<string, string> = {
+    '90210': 'Los Angeles',
+  };
+  return countyByZip[zip] || '';
+};
+
 const parseAddressParts = (rawValue: unknown) => {
   const raw = String(rawValue || '').replace(/\s+/g, ' ').trim();
   if (!raw) {
@@ -206,32 +449,130 @@ const parseAddressParts = (rawValue: unknown) => {
   }
 
   const cleaned = raw.replace(/\s{2,}/g, ' ').trim();
-  const cityStateZipMatch = cleaned.match(/(.+?),\s*([A-Za-z .'-]+?)\s+([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  const countyMatch = cleaned.match(/([A-Za-z .'-]+)\s+County\b/i);
+  const inferredCounty = countyMatch?.[1] ? countyMatch[1].trim() : '';
+
+  const cityStateZipMatch = cleaned.match(/(.+?),\s*([A-Za-z .'-]+?)\s+([A-Za-z]{2})[, ]+\s*(\d{5}(?:-\d{4})?)$/);
   if (cityStateZipMatch) {
     return {
       street: cityStateZipMatch[1].trim(),
       city: cityStateZipMatch[2].trim(),
       state: cityStateZipMatch[3].trim().toUpperCase(),
       zip: cityStateZipMatch[4].trim(),
-      county: '',
+      county: inferredCounty || inferCountyFromZip(cityStateZipMatch[4].trim()),
     };
   }
 
   const commaParts = cleaned.split(',').map((p) => p.trim()).filter(Boolean);
+  if (commaParts.length >= 4) {
+    const street = commaParts[0];
+    const city = commaParts[1];
+    const state = String(commaParts[2] || '').toUpperCase();
+    const zip = String(commaParts[3] || '').match(/\d{5}(?:-\d{4})?/)?.[0] || '';
+    return {
+      street,
+      city,
+      state: /^[A-Za-z]{2}$/.test(state) ? state : '',
+      zip,
+      county: inferredCounty || inferCountyFromZip(zip),
+    };
+  }
   if (commaParts.length >= 3) {
     const street = commaParts[0];
     const city = commaParts[1];
-    const stateZip = commaParts[2].match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    const stateZip = commaParts[2].match(/^([A-Za-z]{2})[, ]+\s*(\d{5}(?:-\d{4})?)$/);
+    const zip = String(stateZip?.[2] || '').trim();
     return {
       street,
       city,
       state: String(stateZip?.[1] || '').toUpperCase(),
-      zip: String(stateZip?.[2] || ''),
-      county: '',
+      zip,
+      county: inferredCounty || inferCountyFromZip(zip),
     };
   }
 
-  return { street: cleaned, city: '', state: '', zip: '', county: '' };
+  return { street: cleaned, city: '', state: '', zip: '', county: inferredCounty };
+};
+
+const normalizeAddressFieldPlacement = <T extends Record<string, string>>(updates: T): T => {
+  const next = { ...updates };
+  const street = stripContactInfoFromAddressLine(next.memberCustomaryAddress || '');
+  const city = String(next.memberCustomaryCity || '').trim();
+  const state = String(next.memberCustomaryState || '').trim();
+  const zip = String(next.memberCustomaryZip || '').trim();
+
+  const zipOnly = /^\d{5}(?:-\d{4})?$/.test(street);
+  if (street !== String(next.memberCustomaryAddress || '').trim()) {
+    next.memberCustomaryAddress = street;
+  }
+
+  if (zipOnly) {
+    if (!zip) next.memberCustomaryZip = street;
+    next.memberCustomaryAddress = '';
+  }
+
+  const cityStateOnlyMatch = street.match(/^([A-Za-z .'-]+),\s*([A-Za-z]{2})$/);
+  if (cityStateOnlyMatch) {
+    if (!city) next.memberCustomaryCity = cityStateOnlyMatch[1].trim();
+    if (!state) next.memberCustomaryState = cityStateOnlyMatch[2].trim().toUpperCase();
+    next.memberCustomaryAddress = '';
+  }
+
+  if (!next.memberCustomaryCounty && next.memberCustomaryZip) {
+    const inferredCounty = inferCountyFromZip(next.memberCustomaryZip);
+    if (inferredCounty) next.memberCustomaryCounty = inferredCounty;
+  }
+
+  return next;
+};
+
+const inferStreetFromCityStateContext = (params: {
+  lines: string[];
+  city?: string;
+  state?: string;
+  zip?: string;
+}) => {
+  const city = String(params.city || '').trim();
+  const state = String(params.state || '').trim().toUpperCase();
+  const zip = String(params.zip || '').trim();
+  if (!city || !state) return '';
+
+  const normalizedLines = (params.lines || [])
+    .map((line) => String(line || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const cityStatePattern = new RegExp(`^${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*,\\s*${state}(?:\\s+\\d{5}(?:-\\d{4})?)?$`, 'i');
+  const cityStateAnywherePattern = new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b.*\\b${state}\\b`, 'i');
+  const zipOnlyPattern = /^\d{5}(?:-\d{4})?$/;
+  const looksLikeStreet = (value: string) =>
+    /\d/.test(value) &&
+    !zipOnlyPattern.test(value) &&
+    /\b(?:st|street|ave|avenue|dr|drive|rd|road|ln|lane|blvd|boulevard|ct|court|way|pl|place|hwy|highway|apt|unit)\b/i.test(value);
+
+  for (let i = 0; i < normalizedLines.length; i++) {
+    const current = normalizedLines[i];
+    if (!cityStatePattern.test(current) && !cityStateAnywherePattern.test(current)) continue;
+    for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+      const previous = normalizedLines[j];
+      if (!previous || zipOnlyPattern.test(previous)) continue;
+      const cleaned = stripContactInfoFromAddressLine(previous);
+      if (looksLikeStreet(cleaned)) return cleaned;
+    }
+  }
+
+  if (zip) {
+    const zipPattern = new RegExp(`^${zip.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+    const zipIndex = normalizedLines.findIndex((line) => zipPattern.test(line));
+    if (zipIndex > 0) {
+      for (let j = zipIndex - 1; j >= Math.max(0, zipIndex - 3); j--) {
+        const previous = normalizedLines[j];
+        const cleaned = stripContactInfoFromAddressLine(previous);
+        if (looksLikeStreet(cleaned)) return cleaned;
+      }
+    }
+  }
+
+  return '';
 };
 
 const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: string }) => {
@@ -296,30 +637,54 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
   const cellPhone = findFirst(flattened, [
     /cell\s*phone\s*:\s*([()0-9.\-\s]{7,})/i,
   ]);
+  const linePhones = extractPhonesFromLines(lines);
 
   const memberEmail = findFirst(flattened, [
     /email\s*:\s*([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
   ]);
 
   const parsedName = parseMemberName(memberNameRaw);
-  const updates: Record<string, string> = {};
-  if (parsedName.firstName) updates.memberFirstName = toNameCase(parsedName.firstName);
-  if (parsedName.lastName) updates.memberLastName = toNameCase(parsedName.lastName);
-  if (memberMrn) updates.memberMrn = memberMrn;
+  const tableFields = extractMemberTableFieldsFromLines(lines);
+  let updates: Record<string, string> = {};
+  if (parsedName.firstName || tableFields.memberFirstName) {
+    updates.memberFirstName = toNameCase(parsedName.firstName || tableFields.memberFirstName || '');
+  }
+  if (parsedName.lastName || tableFields.memberLastName) {
+    updates.memberLastName = toNameCase(parsedName.lastName || tableFields.memberLastName || '');
+  }
+  if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
+  if (tableFields.memberDob) updates.memberDob = tableFields.memberDob;
   if (authorizationNumber) updates.Authorization_Number_T038 = authorizationNumber;
   if (authorizationStart) updates.Authorization_Start_T2038 = toMmDdYyyy(authorizationStart);
   if (authorizationEnd) updates.Authorization_End_T2038 = toMmDdYyyy(authorizationEnd);
   if (diagnosticCode) updates.Diagnostic_Code = diagnosticCode;
   if (memberAddress) updates.memberCustomaryAddress = memberAddress;
-  if (cellPhone || memberPhone) {
-    const normalizedPhone = String(cellPhone || memberPhone || '').replace(/[^\d-]/g, '').trim();
-    if (normalizedPhone) updates.memberPhone = normalizedPhone;
+  if (tableFields.memberCustomaryAddress) updates.memberCustomaryAddress = tableFields.memberCustomaryAddress;
+  if (tableFields.memberCustomaryCity) updates.memberCustomaryCity = tableFields.memberCustomaryCity;
+  if (tableFields.memberCustomaryState) updates.memberCustomaryState = tableFields.memberCustomaryState;
+  if (tableFields.memberCustomaryZip) updates.memberCustomaryZip = tableFields.memberCustomaryZip;
+  if (tableFields.memberCustomaryCounty) updates.memberCustomaryCounty = tableFields.memberCustomaryCounty;
+  if (tableFields.memberPhone || linePhones.cellPhone || linePhones.memberPhone || cellPhone || memberPhone) {
+    const normalizedPhone = normalizePhoneDigits(
+      tableFields.memberPhone || linePhones.cellPhone || linePhones.memberPhone || cellPhone || memberPhone
+    );
+    if (normalizedPhone) updates.memberPhone = formatPhoneDashed(normalizedPhone);
   }
-  if (memberPhone) {
-    const normalizedContactPhone = String(memberPhone || '').replace(/[^\d.()-]/g, '').trim();
-    if (normalizedContactPhone) updates.contactPhone = normalizedContactPhone;
+  if (tableFields.contactPhone || linePhones.memberPhone || memberPhone) {
+    const normalizedContactPhone = normalizePhoneDigits(tableFields.contactPhone || linePhones.memberPhone || memberPhone);
+    if (normalizedContactPhone) updates.contactPhone = formatPhoneDashed(normalizedContactPhone);
   }
   if (memberEmail) updates.contactEmail = memberEmail.toLowerCase();
+  updates = normalizeAddressFieldPlacement(updates);
+  if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
+    const inferredStreet = inferStreetFromCityStateContext({
+      lines,
+      city: updates.memberCustomaryCity,
+      state: updates.memberCustomaryState,
+      zip: updates.memberCustomaryZip,
+    });
+    if (inferredStreet) updates.memberCustomaryAddress = inferredStreet;
+  }
   return updates;
 };
 
@@ -391,6 +756,7 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
       /\baddress\s*[:#-]?\s*([^\n]{8,})/i,
     ]);
   const memberAddress = truncateAtNextLabel(memberAddressRaw);
+  const splitAddress = splitAddressFromLines(lines);
 
   const memberDob = findFirst(flattened, [
     /(?:member|patient|beneficiary)?\s*(?:dob|date\s*of\s*birth)\s*[:#-]?\s*(?:\r?\n\s*)?(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
@@ -407,15 +773,17 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     /cell\s*phone\s*[:#-]?\s*(?:\r?\n\s*)?([+()0-9.\-\s]{7,})/i,
     /mobile\s*phone\s*[:#-]?\s*(?:\r?\n\s*)?([+()0-9.\-\s]{7,})/i,
   ]);
+  const linePhones = extractPhonesFromLines(lines);
 
   const memberEmail = findFirst(flattened, [
     /(?:member|patient)?\s*email\s*[:#-]?\s*(?:\r?\n\s*)?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
   ]);
 
   const parsedName = parseMemberName(memberNameRaw);
+  const tableFields = extractMemberTableFieldsFromLines(lines);
   const parsedAddress = parseAddressParts(memberAddress);
 
-  const updates: Partial<{
+  let updates: Partial<{
     memberFirstName: string;
     memberLastName: string;
     memberMrn: string;
@@ -435,30 +803,63 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     contactEmail: string;
   }> = {};
 
-  if (parsedName.firstName) updates.memberFirstName = toNameCase(parsedName.firstName);
-  if (parsedName.lastName) updates.memberLastName = toNameCase(parsedName.lastName);
-  if (memberMrn) updates.memberMrn = memberMrn;
+  if (parsedName.firstName || tableFields.memberFirstName) {
+    updates.memberFirstName = toNameCase(parsedName.firstName || tableFields.memberFirstName || '');
+  }
+  if (parsedName.lastName || tableFields.memberLastName) {
+    updates.memberLastName = toNameCase(parsedName.lastName || tableFields.memberLastName || '');
+  }
+  if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
   if (authorizationNumber) updates.Authorization_Number_T038 = authorizationNumber;
   if (authorizationStart) updates.Authorization_Start_T2038 = toMmDdYyyy(authorizationStart);
   if (authorizationEnd) updates.Authorization_End_T2038 = toMmDdYyyy(authorizationEnd);
   if (diagnosticCode) updates.Diagnostic_Code = diagnosticCode;
-  if (memberDob) updates.memberDob = toMmDdYyyy(memberDob);
-  if (memberAddress) {
-    updates.memberCustomaryAddress = parsedAddress.street || memberAddress;
-    if (parsedAddress.city) updates.memberCustomaryCity = parsedAddress.city;
-    if (parsedAddress.state) updates.memberCustomaryState = parsedAddress.state;
-    if (parsedAddress.zip) updates.memberCustomaryZip = parsedAddress.zip;
-    if (parsedAddress.county) updates.memberCustomaryCounty = parsedAddress.county;
+  if (memberDob || tableFields.memberDob) updates.memberDob = toMmDdYyyy(memberDob || tableFields.memberDob || '');
+  const hasSplitAddressParts = Boolean(
+    splitAddress.street || splitAddress.city || splitAddress.state || splitAddress.zip || splitAddress.county
+  );
+  const resolvedStreetAddress =
+    tableFields.memberCustomaryAddress ||
+    splitAddress.street ||
+    parsedAddress.street ||
+    memberAddress;
+  if (resolvedStreetAddress) updates.memberCustomaryAddress = resolvedStreetAddress;
+  if (tableFields.memberCustomaryCity || splitAddress.city || parsedAddress.city) {
+    updates.memberCustomaryCity = tableFields.memberCustomaryCity || splitAddress.city || parsedAddress.city || '';
   }
-  if (cellPhone || memberPhone) {
-    const normalizedPhone = String(cellPhone || memberPhone || '').replace(/[^\d-]/g, '').trim();
-    if (normalizedPhone) updates.memberPhone = normalizedPhone;
+  if (tableFields.memberCustomaryState || splitAddress.state || parsedAddress.state) {
+    updates.memberCustomaryState = tableFields.memberCustomaryState || splitAddress.state || parsedAddress.state || '';
   }
-  if (memberPhone) {
-    const normalizedContactPhone = String(memberPhone || '').replace(/[^\d.()-]/g, '').trim();
-    if (normalizedContactPhone) updates.contactPhone = normalizedContactPhone;
+  if (tableFields.memberCustomaryZip || splitAddress.zip || parsedAddress.zip) {
+    updates.memberCustomaryZip = tableFields.memberCustomaryZip || splitAddress.zip || parsedAddress.zip || '';
+  }
+  if (tableFields.memberCustomaryCounty || splitAddress.county || parsedAddress.county) {
+    updates.memberCustomaryCounty = tableFields.memberCustomaryCounty || splitAddress.county || parsedAddress.county || '';
+  }
+  if (!resolvedStreetAddress && hasSplitAddressParts && memberAddress) {
+    updates.memberCustomaryAddress = memberAddress;
+  }
+  if (tableFields.memberPhone || linePhones.cellPhone || linePhones.memberPhone || cellPhone || memberPhone) {
+    const normalizedPhone = normalizePhoneDigits(
+      tableFields.memberPhone || linePhones.cellPhone || linePhones.memberPhone || cellPhone || memberPhone
+    );
+    if (normalizedPhone) updates.memberPhone = formatPhoneDashed(normalizedPhone);
+  }
+  if (tableFields.contactPhone || linePhones.memberPhone || memberPhone) {
+    const normalizedContactPhone = normalizePhoneDigits(tableFields.contactPhone || linePhones.memberPhone || memberPhone);
+    if (normalizedContactPhone) updates.contactPhone = formatPhoneDashed(normalizedContactPhone);
   }
   if (memberEmail) updates.contactEmail = memberEmail.toLowerCase();
+  updates = normalizeAddressFieldPlacement(updates as Record<string, string>);
+  if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
+    const inferredStreet = inferStreetFromCityStateContext({
+      lines,
+      city: updates.memberCustomaryCity,
+      state: updates.memberCustomaryState,
+      zip: updates.memberCustomaryZip,
+    });
+    if (inferredStreet) updates.memberCustomaryAddress = inferredStreet;
+  }
 
   // Safety fallback: preserve original fast extraction behavior for core fields.
   const legacyUpdates = extractServiceRequestFieldsLegacy(params);
@@ -509,6 +910,17 @@ const normalizeMemberPatch = (patch: Record<string, unknown>) => {
     normalized[key] = typeof value === 'string' ? value : String(value);
   }
   return normalized;
+};
+
+const extractSingleAuthContactPreview = (patch: Record<string, string>) => ({
+  memberPhone: String(patch.memberPhone || '').trim(),
+  cellPhone: String(patch.contactPhone || '').trim(),
+  email: String(patch.contactEmail || '').trim().toLowerCase(),
+});
+
+const removeUnreliableSingleAuthContactFields = (patch: Record<string, string>) => {
+  const { memberPhone: _memberPhone, contactPhone: _contactPhone, contactEmail: _contactEmail, ...rest } = patch;
+  return rest;
 };
 
 type KaiserIlsImportRow = {
@@ -607,6 +1019,11 @@ export default function CreateApplicationPage() {
   const [serviceRequestWarnings, setServiceRequestWarnings] = useState<string[]>([]);
   const [, setServiceRequestParseMode] = useState<'none' | 'text' | 'vision'>('none');
   const [serviceRequestTextPreview, setServiceRequestTextPreview] = useState('');
+  const [singleAuthContactPreview, setSingleAuthContactPreview] = useState<{
+    memberPhone: string;
+    cellPhone: string;
+    email: string;
+  }>({ memberPhone: '', cellPhone: '', email: '' });
   const [ilsSpreadsheetFileName, setIlsSpreadsheetFileName] = useState('');
   const [ilsImportRows, setIlsImportRows] = useState<KaiserIlsImportRow[]>([]);
   const [ilsImportSelected, setIlsImportSelected] = useState<Record<string, boolean>>({});
@@ -1267,6 +1684,7 @@ export default function CreateApplicationPage() {
         const visionWarnings = visionResult.warnings || [];
 
         if (parsedFieldKeys.length === 0) {
+          setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
           setServiceRequestWarnings(visionWarnings);
           setServiceRequestParseMode('vision');
           toast({
@@ -1277,7 +1695,11 @@ export default function CreateApplicationPage() {
           return;
         }
 
-        setMemberData((prev) => ({ ...prev, ...normalizeMemberPatch(updates as Record<string, unknown>) }));
+        const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
+        const contactPreview = extractSingleAuthContactPreview(normalizedPatch);
+        const reliablePatch = removeUnreliableSingleAuthContactFields(normalizedPatch);
+        setSingleAuthContactPreview(contactPreview);
+        setMemberData((prev) => ({ ...prev, ...reliablePatch }));
         setServiceRequestParsedFields(parsedFieldKeys);
         setServiceRequestWarnings(visionWarnings);
         setServiceRequestParseMode('vision');
@@ -1294,6 +1716,7 @@ export default function CreateApplicationPage() {
       warnings.push(...parsed.warnings);
 
       if (parsedFieldKeys.length === 0) {
+        setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
         setServiceRequestWarnings(warnings);
         setServiceRequestParseMode('text');
         toast({
@@ -1304,7 +1727,11 @@ export default function CreateApplicationPage() {
         return;
       }
 
-      setMemberData((prev) => ({ ...prev, ...normalizeMemberPatch(updates as Record<string, unknown>) }));
+      const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
+      const contactPreview = extractSingleAuthContactPreview(normalizedPatch);
+      const reliablePatch = removeUnreliableSingleAuthContactFields(normalizedPatch);
+      setSingleAuthContactPreview(contactPreview);
+      setMemberData((prev) => ({ ...prev, ...reliablePatch }));
       setServiceRequestParsedFields(parsedFieldKeys);
       setServiceRequestWarnings(warnings);
       setServiceRequestParseMode('text');
@@ -1349,18 +1776,7 @@ export default function CreateApplicationPage() {
   };
 
   const clearServiceRequestFile = () => {
-    setServiceRequestFile(null);
-    setServiceRequestParsedFields([]);
-    setServiceRequestWarnings([]);
-    setServiceRequestParseMode('none');
-    setServiceRequestTextPreview('');
-    if (serviceRequestFileInputRef.current) {
-      serviceRequestFileInputRef.current.value = '';
-    }
-    toast({
-      title: 'Service request file removed',
-      description: 'You can choose a different PDF.',
-    });
+    resetAllCreateFields();
   };
 
   const resetAllCreateFields = () => {
@@ -1373,6 +1789,7 @@ export default function CreateApplicationPage() {
     setServiceRequestParsedFields([]);
     setServiceRequestWarnings([]);
     setServiceRequestTextPreview('');
+    setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
     setIlsSpreadsheetFileName('');
     setIlsImportRows([]);
     setIlsImportSelected({});
@@ -2080,6 +2497,7 @@ export default function CreateApplicationPage() {
                         setServiceRequestFile(selected);
                         setServiceRequestParsedFields([]);
                         setServiceRequestWarnings([]);
+                        setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
                       }}
                     />
                     <div className="flex flex-wrap items-center gap-2">
@@ -2127,14 +2545,14 @@ export default function CreateApplicationPage() {
                         onClick={clearServiceRequestFile}
                         disabled={!serviceRequestFile || isParsingServiceRequest}
                       >
-                        Delete Single Auth PDF
+                        Delete Single Auth PDF + Reset Form
                       </Button>
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Spreadsheet file: {ilsSpreadsheetFileName || 'None'} • Single auth PDF: {serviceRequestFile?.name || 'None'}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Single-auth flow: Parse PDF -> Create skeleton -> Open main application page -> Push to Caspio.
+                      Single-auth flow: Parse PDF -&gt; Create skeleton -&gt; Open main application page -&gt; Push to Caspio.
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Protocol: Upload single-auth PDF first, then click Parse Single Auth PDF to fill member name/details.
@@ -2147,6 +2565,22 @@ export default function CreateApplicationPage() {
                     {serviceRequestWarnings.length > 0 ? (
                       <div className="text-xs text-amber-700">
                         {serviceRequestWarnings.join(' ')}
+                      </div>
+                    ) : null}
+                    {(singleAuthContactPreview.memberPhone || singleAuthContactPreview.cellPhone || singleAuthContactPreview.email) ? (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs space-y-1">
+                        <div className="font-medium text-amber-900">
+                          Parsed contact preview (not auto-applied to skeleton)
+                        </div>
+                        <div className="text-amber-800">
+                          Member Phone: {singleAuthContactPreview.memberPhone || 'Not found'}
+                        </div>
+                        <div className="text-amber-800">
+                          Cell Phone: {singleAuthContactPreview.cellPhone || 'Not found'}
+                        </div>
+                        <div className="text-amber-800">
+                          Email: {singleAuthContactPreview.email || 'Not found'}
+                        </div>
                       </div>
                     ) : null}
                     {lastCreatedSkeleton ? (
