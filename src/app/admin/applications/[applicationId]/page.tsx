@@ -7813,10 +7813,6 @@ function ApplicationDetailPageContent() {
   if (!String((application as any)?.healthPlan || '').trim()) {
     missingQuickFixes.push({ label: 'MCP / Health Plan', href: `/admin/applications/${applicationId}?userId=${encodeURIComponent(String(appUserId || ''))}` });
   }
-  if (!String((application as any)?.pathway || '').trim()) {
-    missingQuickFixes.push({ label: 'Pathway', href: `/admin/applications/${applicationId}?userId=${encodeURIComponent(String(appUserId || ''))}` });
-  }
-
   return (
     <div className="grid w-full min-w-0 grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-3 sticky top-2 z-30 rounded-lg border bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90">

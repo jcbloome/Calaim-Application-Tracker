@@ -2867,7 +2867,7 @@ export default function CreateApplicationPage() {
             )}
             {intakeType === 'kaiser_auth_received_via_ils' && (
               <p className="text-xs text-blue-700 mt-1">
-                Workflow order: complete eligibility check details first on this page, confirm the correct primary contact from Kaiser portal, then enter primary contact on the CS Summary flow.
+                Workflow order: create skeleton draft first, then complete eligibility check and uploads from Quick Actions on the main application page.
               </p>
             )}
           </div>
@@ -3579,45 +3579,6 @@ export default function CreateApplicationPage() {
                     value={toDateInputValue(memberData.Authorization_End_T2038)}
                     onChange={(e) => setMemberData({ ...memberData, Authorization_End_T2038: toMmDdYyyy(e.target.value) })}
                   />
-                </div>
-                <div className="md:col-span-2 p-3 border rounded-md bg-muted/20">
-                  <Label htmlFor="eligibilityScreenshots">Eligibility Check Screenshots (optional, multiple pages)</Label>
-                  <Input
-                    id="eligibilityScreenshots"
-                    type="file"
-                    multiple
-                    accept=".png,.jpg,.jpeg,.webp,.pdf"
-                    className="mt-2"
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      setEligibilityScreenshotFiles(files);
-                    }}
-                  />
-                  <div className="text-xs text-muted-foreground mt-2 flex items-center gap-2">
-                    <Upload className="h-3.5 w-3.5" />
-                    {eligibilityScreenshotFiles.length > 0
-                      ? `${eligibilityScreenshotFiles.length} file(s) selected`
-                      : 'Upload one or more screenshot pages.'}
-                  </div>
-                  <div className="mt-3">
-                    <Label>Eligibility Check Result (optional)</Label>
-                    <Select
-                      value={String(memberData.eligibilityCheckStatus || 'Pending')}
-                      onValueChange={(value) => setMemberData({ ...memberData, eligibilityCheckStatus: value })}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Select eligibility result" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="CalAIM Eligible">CalAIM Eligible</SelectItem>
-                        <SelectItem value="Not CalAIM Eligible">Not CalAIM Eligible</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Saved on draft create and used for pathway readiness tracking.
-                    </p>
-                  </div>
                 </div>
               </div>
             )}

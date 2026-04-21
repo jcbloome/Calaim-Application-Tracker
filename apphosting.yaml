@@ -32,3 +32,7 @@ env:
     secret: GOOGLE_API_KEY
     availability:
       - RUNTIME
+  - variable: GEMINI_API_KEY
+    secret: GOOGLE_API_KEY
+    availability:
+      - RUNTIME
