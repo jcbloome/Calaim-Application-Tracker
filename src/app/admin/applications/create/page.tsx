@@ -11,7 +11,7 @@ import { ArrowLeft, Bell, Database, FileText, Loader2, RotateCcw, Upload, Users 
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -947,6 +947,8 @@ const removeUnreliableSingleAuthContactFields = (patch: Record<string, string>) 
 
 type KaiserIlsImportRow = {
   rowId: string;
+  sourceType: 'spreadsheet' | 'single_auth_pdf';
+  sourceFileName: string;
   memberFirstName: string;
   memberLastName: string;
   memberMrn: string;
@@ -968,6 +970,13 @@ type KaiserIlsImportRow = {
   statusNote: string;
   applicationId: string;
   pushedClientId2: string;
+};
+
+type IlsDuplicateMatch = {
+  source: 'application';
+  sourceId: string;
+  sourceLabel: string;
+  matchedAuthorization: string;
 };
 
 const CASPIO_CLIENT_ID_CONFLICT_WARNING =
@@ -1036,11 +1045,13 @@ export default function CreateApplicationPage() {
   const [selectedStaffActionItemCount, setSelectedStaffActionItemCount] = useState(0);
   const [eligibilityScreenshotFiles, setEligibilityScreenshotFiles] = useState<File[]>([]);
   const [serviceRequestFile, setServiceRequestFile] = useState<File | null>(null);
+  const [serviceRequestFiles, setServiceRequestFiles] = useState<File[]>([]);
   const [isParsingServiceRequest, setIsParsingServiceRequest] = useState(false);
   const [serviceRequestParsedFields, setServiceRequestParsedFields] = useState<string[]>([]);
   const [serviceRequestWarnings, setServiceRequestWarnings] = useState<string[]>([]);
   const [, setServiceRequestParseMode] = useState<'none' | 'text' | 'vision'>('none');
   const [serviceRequestTextPreview, setServiceRequestTextPreview] = useState('');
+  const [ilsRowEligibilityFiles, setIlsRowEligibilityFiles] = useState<Record<string, File[]>>({});
   const [singleAuthContactPreview, setSingleAuthContactPreview] = useState<{
     memberPhone: string;
     cellPhone: string;
@@ -1051,6 +1062,8 @@ export default function CreateApplicationPage() {
   const [ilsImportSelected, setIlsImportSelected] = useState<Record<string, boolean>>({});
   const [quickViewIlsRowId, setQuickViewIlsRowId] = useState('');
   const [isParsingIlsSpreadsheet, setIsParsingIlsSpreadsheet] = useState(false);
+  const [checkingRowDuplicates, setCheckingRowDuplicates] = useState<Record<string, boolean>>({});
+  const [ilsRowDuplicateMatches, setIlsRowDuplicateMatches] = useState<Record<string, IlsDuplicateMatch[]>>({});
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
   const [isDeletingCreatedIlsRecords, setIsDeletingCreatedIlsRecords] = useState(false);
   const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
@@ -1067,6 +1080,7 @@ export default function CreateApplicationPage() {
   const ilsSpreadsheetInputRef = useRef<HTMLInputElement | null>(null);
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
   const parseAbortControllerRef = useRef<AbortController | null>(null);
+  const parsedSingleAuthFilesRef = useRef<Record<string, File>>({});
   const createApplicationRef = useRef<() => Promise<string | null> | string | null>(() => null);
   const [memberData, setMemberData] = useState(getEmptyMemberData);
 
@@ -1184,6 +1198,123 @@ export default function CreateApplicationPage() {
     return Promise.all(uploads);
   };
 
+  const uploadIlsRowEligibilityFiles = async (applicationId: string, rowId: string) => {
+    const files = Array.isArray(ilsRowEligibilityFiles[rowId]) ? ilsRowEligibilityFiles[rowId] : [];
+    if (!storage || files.length === 0) return [];
+    const uploads = files.map((file) => {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `applications/${applicationId}/eligibility-screenshots/${Date.now()}-${safeName}`;
+      const storageRef = ref(storage, storagePath);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+      return new Promise<{ fileName: string; filePath: string; downloadURL: string }>((resolve, reject) => {
+        uploadTask.on(
+          'state_changed',
+          undefined,
+          reject,
+          async () => {
+            try {
+              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve({ fileName: file.name, filePath: storagePath, downloadURL });
+            } catch (error) {
+              reject(error);
+            }
+          }
+        );
+      });
+    });
+    return Promise.all(uploads);
+  };
+
+  const normalizeAuthorizationValue = (value: string) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+
+  const checkRowDuplicateAuthorizationByMrn = async (row: KaiserIlsImportRow) => {
+    const rowId = String(row?.rowId || '').trim();
+    const mrn = String(row?.memberMrn || '').trim();
+    const authNumber = String(row?.authorizationNumberT2038 || '').trim();
+    const authStart = String(row?.authorizationStartT2038 || '').trim();
+    const authEnd = String(row?.authorizationEndT2038 || '').trim();
+    const normalizedAuth = normalizeAuthorizationValue(authNumber);
+    const fallbackAuthKey =
+      authStart && authEnd ? `${normalizeAuthorizationValue(authStart)}|${normalizeAuthorizationValue(authEnd)}` : '';
+    if (!rowId) return;
+    if (!firestore || !mrn || (!normalizedAuth && !fallbackAuthKey)) {
+      setIlsRowDuplicateMatches((prev) => ({ ...prev, [rowId]: [] }));
+      return;
+    }
+
+    setCheckingRowDuplicates((prev) => ({ ...prev, [rowId]: true }));
+    try {
+      const [adminAppsSnap, userAppsSnap] = await Promise.all([
+        getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', mrn))),
+        getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', mrn))),
+      ]);
+
+      const matches: IlsDuplicateMatch[] = [];
+
+      adminAppsSnap.docs.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        const existingAuth = String(data?.Authorization_Number_T038 || '').trim();
+        const existingStart = String(data?.Authorization_Start_T2038 || '').trim();
+        const existingEnd = String(data?.Authorization_End_T2038 || '').trim();
+        const normalizedExistingAuth = normalizeAuthorizationValue(existingAuth);
+        const existingFallbackAuthKey =
+          existingStart && existingEnd
+            ? `${normalizeAuthorizationValue(existingStart)}|${normalizeAuthorizationValue(existingEnd)}`
+            : '';
+
+        const authMatches =
+          (normalizedAuth && normalizedExistingAuth && normalizedAuth === normalizedExistingAuth) ||
+          (!normalizedAuth && fallbackAuthKey && existingFallbackAuthKey && fallbackAuthKey === existingFallbackAuthKey);
+        if (!authMatches) return;
+        matches.push({
+          source: 'application',
+          sourceId: docSnap.id,
+          sourceLabel: `Application ${docSnap.id}`,
+          matchedAuthorization: existingAuth || `${existingStart} - ${existingEnd}` || 'Authorization match',
+        });
+      });
+
+      userAppsSnap.docs.forEach((docSnap) => {
+        const data = docSnap.data() as any;
+        const existingAuth = String(data?.Authorization_Number_T038 || '').trim();
+        const existingStart = String(data?.Authorization_Start_T2038 || '').trim();
+        const existingEnd = String(data?.Authorization_End_T2038 || '').trim();
+        const normalizedExistingAuth = normalizeAuthorizationValue(existingAuth);
+        const existingFallbackAuthKey =
+          existingStart && existingEnd
+            ? `${normalizeAuthorizationValue(existingStart)}|${normalizeAuthorizationValue(existingEnd)}`
+            : '';
+
+        const authMatches =
+          (normalizedAuth && normalizedExistingAuth && normalizedAuth === normalizedExistingAuth) ||
+          (!normalizedAuth && fallbackAuthKey && existingFallbackAuthKey && fallbackAuthKey === existingFallbackAuthKey);
+        if (!authMatches) return;
+        matches.push({
+          source: 'application',
+          sourceId: docSnap.id,
+          sourceLabel: `Application ${docSnap.id}`,
+          matchedAuthorization: existingAuth || `${existingStart} - ${existingEnd}` || 'Authorization match',
+        });
+      });
+
+      const dedup = new Map<string, IlsDuplicateMatch>();
+      matches.forEach((match) => {
+        dedup.set(`${match.source}:${match.sourceId}:${normalizeAuthorizationValue(match.matchedAuthorization)}`, match);
+      });
+
+      setIlsRowDuplicateMatches((prev) => ({ ...prev, [rowId]: Array.from(dedup.values()) }));
+    } catch (error) {
+      console.warn('Duplicate check failed:', error);
+      setIlsRowDuplicateMatches((prev) => ({ ...prev, [rowId]: [] }));
+    } finally {
+      setCheckingRowDuplicates((prev) => ({ ...prev, [rowId]: false }));
+    }
+  };
+
   const selectedIlsRows = useMemo(
     () => ilsImportRows.filter((row) => Boolean(ilsImportSelected[row.rowId])),
     [ilsImportRows, ilsImportSelected]
@@ -1266,6 +1397,8 @@ export default function CreateApplicationPage() {
           const ready = Boolean(memberFirstName && memberLastName);
           return {
             rowId: `ils-${Date.now()}-${idx}`,
+            sourceType: 'spreadsheet',
+            sourceFileName: String(file?.name || '').trim(),
             memberFirstName,
             memberLastName,
             memberMrn,
@@ -1301,6 +1434,7 @@ export default function CreateApplicationPage() {
       setIlsImportRows(parsed);
       setIlsImportSelected(nextSelected);
       setQuickViewIlsRowId(parsed[0]?.rowId || '');
+      void Promise.all(parsed.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
       toast({
         title: 'Spreadsheet parsed',
         description: `Loaded ${parsed.length} Kaiser ILS row(s).`,
@@ -1319,8 +1453,12 @@ export default function CreateApplicationPage() {
   const clearIlsSpreadsheetImport = () => {
     setIlsImportRows([]);
     setIlsImportSelected({});
+    setIlsRowEligibilityFiles({});
+    setIlsRowDuplicateMatches({});
+    setCheckingRowDuplicates({});
     setQuickViewIlsRowId('');
     setIlsSpreadsheetFileName('');
+    parsedSingleAuthFilesRef.current = {};
     if (ilsSpreadsheetInputRef.current) {
       ilsSpreadsheetInputRef.current.value = '';
     }
@@ -1354,6 +1492,15 @@ export default function CreateApplicationPage() {
       toast({ title: 'No selected rows', description: 'Select one or more imported rows first.' });
       return;
     }
+    const rowsWithDuplicateAuthorization = selectedIlsRows.filter((row) => (ilsRowDuplicateMatches[row.rowId] || []).length > 0);
+    if (rowsWithDuplicateAuthorization.length > 0) {
+      toast({
+        title: 'Remove duplicate authorizations first',
+        description: `${rowsWithDuplicateAuthorization.length} selected row(s) match an existing authorization for this MRN.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsCreatingIlsRecords(true);
     try {
       const authReceivedForms = [
@@ -1372,6 +1519,54 @@ export default function CreateApplicationPage() {
         try {
           const applicationId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
           const applicationRef = doc(firestore, 'applications', applicationId);
+          const formsForRow = authReceivedForms.map((form) => ({ ...form }));
+          const sourcePdf = row.sourceType === 'single_auth_pdf' ? parsedSingleAuthFilesRef.current[row.rowId] : null;
+          if (sourcePdf && storage) {
+            try {
+              const safeFileName = sourcePdf.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+              const storagePath = `applications/${applicationId}/parsed-intake/${Date.now()}-${safeFileName}`;
+              const storageRef = ref(storage, storagePath);
+              const uploadTask = uploadBytesResumable(storageRef, sourcePdf);
+              await new Promise<void>((resolve, reject) => {
+                uploadTask.on('state_changed', undefined, reject, () => resolve());
+              });
+              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+              formsForRow.unshift({
+                name: 'ILS Authorization Sheet PDF',
+                status: 'Completed',
+                type: 'Upload',
+                href: '#',
+                fileName: sourcePdf.name,
+                filePath: storagePath,
+                downloadURL,
+                dateCompleted: new Date().toISOString(),
+                source: 'single_auth_pdf',
+              } as any);
+            } catch (uploadError) {
+              console.warn('Failed to upload parsed source PDF:', uploadError);
+            }
+          }
+          const rowEligibilityUploads = await uploadIlsRowEligibilityFiles(applicationId, row.rowId);
+          if (rowEligibilityUploads.length > 0) {
+            const completedEligibilityForm = {
+              name: 'Eligibility Screenshot',
+              status: 'Completed',
+              type: 'Upload',
+              href: '#',
+              fileName: rowEligibilityUploads[0].fileName,
+              filePath: rowEligibilityUploads[0].filePath,
+              downloadURL: rowEligibilityUploads[0].downloadURL,
+              uploadedFiles: rowEligibilityUploads,
+              dateCompleted: new Date().toISOString(),
+              source: 'batch_row_eligibility_upload',
+            };
+            const eligibilityIndex = formsForRow.findIndex((form) => String(form?.name || '').trim() === 'Eligibility Screenshot');
+            if (eligibilityIndex >= 0) {
+              formsForRow[eligibilityIndex] = completedEligibilityForm as any;
+            } else {
+              formsForRow.push(completedEligibilityForm as any);
+            }
+          }
           await setDoc(applicationRef, {
             memberFirstName: row.memberFirstName,
             memberLastName: row.memberLastName,
@@ -1399,13 +1594,15 @@ export default function CreateApplicationPage() {
             kaiserAuthReceivedDate: serverTimestamp(),
             createdAt: serverTimestamp(),
             createdByAdmin: true,
-            status: 'T2038 Received, Needs First Contact',
+            status: 'draft',
             currentStep: 1,
             isComplete: false,
             healthPlan: 'Kaiser',
             pathway: 'SNF Transition',
             kaiserStatus: 'T2038 Received, Needs First Contact',
-            forms: authReceivedForms,
+            caspioCalAIMStatus: 'Pending',
+            allowDraftCaspioPush: true,
+            forms: formsForRow,
             assignedStaffId: row.assignedStaffId || '',
             assignedStaffName: row.assignedStaffName || '',
             assignedDate: row.assignedStaffId ? new Date().toISOString() : '',
@@ -1465,6 +1662,20 @@ export default function CreateApplicationPage() {
         }
       }
       toast({ title: 'Batch create finished', description: `Processed ${selectedIlsRows.length} selected row(s).` });
+      setIlsRowEligibilityFiles((prev) => {
+        const next = { ...prev };
+        selectedIlsRows.forEach((row) => {
+          delete next[row.rowId];
+        });
+        return next;
+      });
+      setIlsRowDuplicateMatches((prev) => {
+        const next = { ...prev };
+        selectedIlsRows.forEach((row) => {
+          delete next[row.rowId];
+        });
+        return next;
+      });
     } finally {
       setIsCreatingIlsRecords(false);
     }
@@ -1786,6 +1997,141 @@ export default function CreateApplicationPage() {
     }
   };
 
+  const parseSingleAuthPdfToIlsRows = async (files: File[]) => {
+    const pdfFiles = files.filter((file) => file && /\.pdf$/i.test(file.name));
+    if (pdfFiles.length === 0) {
+      toast({
+        title: 'No PDF files selected',
+        description: 'Choose one or more single-auth PDF files to parse.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const rowsToAppend: KaiserIlsImportRow[] = [];
+    const warnings: string[] = [];
+    setIsParsingServiceRequest(true);
+    parseAbortControllerRef.current = new AbortController();
+
+    try {
+      for (const file of pdfFiles) {
+        if (parseAbortControllerRef.current?.signal.aborted) break;
+        try {
+          const pdfjs = await loadPdfJs();
+          const bytes = await file.arrayBuffer();
+          const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes), disableWorker: true });
+          const pdf = await loadingTask.promise;
+          const lines: string[] = [];
+          const maxPagesForText = Math.min(pdf.numPages, 8);
+
+          for (let pageNum = 1; pageNum <= maxPagesForText; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const tc = await page.getTextContent();
+            const items = (tc.items || []) as Array<any>;
+            const pageRows: Array<{ str: string; x: number; y: number }> = [];
+            for (const it of items) {
+              const str = String(it?.str || '').trim();
+              if (!str) continue;
+              const tr = it?.transform || [];
+              const x = Number(tr?.[4] ?? 0);
+              const y = Number(tr?.[5] ?? 0);
+              pageRows.push({ str, x, y });
+            }
+
+            const byY = new Map<number, Array<{ str: string; x: number }>>();
+            for (const row of pageRows) {
+              const yk = Math.round(row.y);
+              const arr = byY.get(yk) || [];
+              arr.push({ str: row.str, x: row.x });
+              byY.set(yk, arr);
+            }
+            const yKeys = Array.from(byY.keys()).sort((a, b) => b - a);
+            for (const yk of yKeys) {
+              const parts = (byY.get(yk) || []).sort((a, b) => a.x - b.x).map((p) => p.str);
+              const line = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
+              if (line) lines.push(line);
+            }
+          }
+
+          const text = lines.join('\n').trim();
+          if (!text) {
+            warnings.push(`${file.name}: no text layer found`);
+            continue;
+          }
+          const parsed = extractServiceRequestFields({ text, fileName: file.name });
+          const normalizedPatch = normalizeMemberPatch((parsed?.updates || {}) as Record<string, unknown>);
+          const parsedName = sanitizeParsedName({
+            firstName: toNameCase(normalizedPatch.memberFirstName || ''),
+            lastName: toNameCase(normalizedPatch.memberLastName || ''),
+          });
+          if (!parsedName.firstName || !parsedName.lastName) {
+            warnings.push(`${file.name}: missing member first/last name`);
+            continue;
+          }
+
+          const rowId = `ils-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          parsedSingleAuthFilesRef.current[rowId] = file;
+          rowsToAppend.push({
+            rowId,
+            sourceType: 'single_auth_pdf',
+            sourceFileName: file.name,
+            memberFirstName: parsedName.firstName,
+            memberLastName: parsedName.lastName,
+            memberMrn: String(normalizedPatch.memberMrn || '').trim(),
+            clientId2: '',
+            memberAddress: String(normalizedPatch.memberCustomaryAddress || '').trim(),
+            memberCounty: String(normalizedPatch.memberCustomaryCounty || '').trim(),
+            memberDob: toMmDdYyyy(normalizedPatch.memberDob || ''),
+            memberPhone: String(normalizedPatch.memberPhone || '').trim(),
+            authorizationNumberT2038: String(normalizedPatch.Authorization_Number_T038 || '').trim(),
+            authorizationStartT2038: toMmDdYyyy(normalizedPatch.Authorization_Start_T2038 || ''),
+            authorizationEndT2038: toMmDdYyyy(normalizedPatch.Authorization_End_T2038 || ''),
+            cptCode: '',
+            diagnosticCode: String(normalizedPatch.Diagnostic_Code || '').trim(),
+            assignedStaffId: selectedAssignedStaffId,
+            assignedStaffName: selectedAssignedStaffName,
+            createStatus: 'idle',
+            pushStatus: 'idle',
+            deleteStatus: 'idle',
+            statusNote: '',
+            applicationId: '',
+            pushedClientId2: '',
+          });
+        } catch (error: any) {
+          warnings.push(`${file.name}: ${String(error?.message || 'Parse failed')}`);
+        }
+      }
+
+      if (rowsToAppend.length === 0) {
+        toast({
+          title: 'No usable PDF rows found',
+          description: warnings[0] || 'Could not parse member fields from selected PDFs.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setIlsImportRows((prev) => [...rowsToAppend, ...prev]);
+      setIlsImportSelected((prev) => {
+        const next = { ...prev };
+        rowsToAppend.forEach((row) => {
+          next[row.rowId] = true;
+        });
+        return next;
+      });
+      setQuickViewIlsRowId(rowsToAppend[0]?.rowId || '');
+      void Promise.all(rowsToAppend.map((row) => checkRowDuplicateAuthorizationByMrn(row)));
+      setServiceRequestWarnings(warnings.slice(0, 10));
+      toast({
+        title: 'Single-auth PDFs parsed',
+        description: `Added ${rowsToAppend.length} parsed row(s) to the batch table.`,
+      });
+    } finally {
+      setIsParsingServiceRequest(false);
+      parseAbortControllerRef.current = null;
+    }
+  };
+
   const cancelParsing = () => {
     if (parseAbortControllerRef.current) {
       parseAbortControllerRef.current.abort();
@@ -1808,15 +2154,20 @@ export default function CreateApplicationPage() {
     setSelectedStaffActionItemCount(0);
     setEligibilityScreenshotFiles([]);
     setServiceRequestFile(null);
+    setServiceRequestFiles([]);
     setServiceRequestParsedFields([]);
     setServiceRequestWarnings([]);
     setServiceRequestTextPreview('');
+    setIlsRowEligibilityFiles({});
+    setIlsRowDuplicateMatches({});
+    setCheckingRowDuplicates({});
     setSingleAuthContactPreview({ memberPhone: '', cellPhone: '', email: '' });
     setIlsSpreadsheetFileName('');
     setIlsImportRows([]);
     setIlsImportSelected({});
     setLastCreatedSkeleton(null);
     setIntroEmailDraft(null);
+    parsedSingleAuthFilesRef.current = {};
     if (serviceRequestFileInputRef.current) {
       serviceRequestFileInputRef.current.value = '';
     }
@@ -1913,7 +2264,7 @@ export default function CreateApplicationPage() {
         // Application metadata
         createdAt: serverTimestamp(),
         createdByAdmin: true,
-        status: isKaiserAuthReceived ? 'T2038 Received, Needs First Contact' : 'draft',
+        status: 'draft',
         currentStep: 1,
         adminNotes: memberData.notes,
 
@@ -1938,6 +2289,8 @@ export default function CreateApplicationPage() {
         healthPlan: isKaiserAuthReceived ? 'Kaiser' : '',
         pathway: isKaiserAuthReceived ? 'SNF Transition' : '',
         kaiserStatus: isKaiserAuthReceived ? 'T2038 Received, Needs First Contact' : '',
+        caspioCalAIMStatus: isKaiserAuthReceived ? 'Pending' : '',
+        allowDraftCaspioPush: isKaiserAuthReceived ? true : false,
         forms: isKaiserAuthReceived ? authReceivedForms : [],
         ...(isKaiserAuthReceived
           ? (selectedAssignedStaffId
@@ -2467,7 +2820,7 @@ export default function CreateApplicationPage() {
                     <div>
                       <div className="font-medium">Kaiser (ILS) Spreadsheet Parser</div>
                       <div className="text-xs text-muted-foreground">
-                        Upload an Excel file from Kaiser ILS or a single authorization-sheet PDF to parse fields, create application records, assign staff, and push to Caspio.
+                        Upload Excel files from Kaiser ILS or bulk single authorization-sheet PDFs to parse fields, create draft application records, assign staff, and push to Caspio when ready.
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -2531,8 +2884,11 @@ export default function CreateApplicationPage() {
                       type="file"
                       accept=".pdf,application/pdf"
                       className="hidden"
+                      multiple
                       onChange={(e) => {
-                        const selected = e.target.files?.[0] || null;
+                        const selectedList = Array.from(e.target.files || []);
+                        const selected = selectedList[0] || null;
+                        setServiceRequestFiles(selectedList);
                         setServiceRequestFile(selected);
                         setServiceRequestParsedFields([]);
                         setServiceRequestWarnings([]);
@@ -2556,6 +2912,15 @@ export default function CreateApplicationPage() {
                       >
                         {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
                         {isParsingServiceRequest ? 'Parsing...' : 'Parse Single Auth PDF'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void parseSingleAuthPdfToIlsRows(serviceRequestFiles)}
+                        disabled={serviceRequestFiles.length === 0 || isParsingServiceRequest}
+                      >
+                        {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4" />}
+                        Parse Selected PDFs Into Batch
                       </Button>
                       <Button
                         type="button"
@@ -2588,10 +2953,10 @@ export default function CreateApplicationPage() {
                       </Button>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Spreadsheet file: {ilsSpreadsheetFileName || 'None'} • Single auth PDF: {serviceRequestFile?.name || 'None'}
+                      Spreadsheet file: {ilsSpreadsheetFileName || 'None'} • Single auth PDFs selected: {serviceRequestFiles.length || 0}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Single-auth flow: Parse PDF -&gt; Create skeleton -&gt; Open main application page -&gt; Push to Caspio.
+                      Single-auth flow: Parse PDF(s) -&gt; Create skeleton(s) (draft) -&gt; Open main application page -&gt; Push to Caspio.
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Protocol: Upload single-auth PDF first, then click Parse Single Auth PDF to fill member name/details.
@@ -2766,9 +3131,11 @@ export default function CreateApplicationPage() {
                           <tr className="text-left">
                             <th className="px-2 py-1.5">Pick / Quick View</th>
                             <th className="px-2 py-1.5">Member</th>
+                            <th className="px-2 py-1.5">Source</th>
                             <th className="px-2 py-1.5">Auth #</th>
                             <th className="px-2 py-1.5">Start</th>
                             <th className="px-2 py-1.5">End</th>
+                            <th className="px-2 py-1.5">Eligibility / Support Files</th>
                             <th className="px-2 py-1.5">Assigned Staff</th>
                             <th className="px-2 py-1.5">Status</th>
                           </tr>
@@ -2796,9 +3163,74 @@ export default function CreateApplicationPage() {
                                 </div>
                               </td>
                               <td className="px-2 py-1.5 whitespace-nowrap">{`${row.memberLastName}, ${row.memberFirstName}`}</td>
+                              <td className="px-2 py-1.5 whitespace-nowrap">{row.sourceFileName || row.sourceType}</td>
                               <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationNumberT2038 || '—'}</td>
                               <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationStartT2038 || '—'}</td>
                               <td className="px-2 py-1.5 whitespace-nowrap">{row.authorizationEndT2038 || '—'}</td>
+                              <td className="px-2 py-1.5 min-w-[260px]">
+                                <div className="space-y-1">
+                                  <Input
+                                    type="file"
+                                    multiple
+                                    accept=".pdf,.png,.jpg,.jpeg,.webp"
+                                    className="h-8 text-[11px]"
+                                    onChange={(event) => {
+                                      const picked = Array.from(event.target.files || []);
+                                      setIlsRowEligibilityFiles((prev) => ({
+                                        ...prev,
+                                        [row.rowId]: picked,
+                                      }));
+                                    }}
+                                  />
+                                  <div className="text-[11px] text-muted-foreground">
+                                    {(ilsRowEligibilityFiles[row.rowId] || []).length > 0
+                                      ? `${(ilsRowEligibilityFiles[row.rowId] || []).length} file(s) queued`
+                                      : 'Optional'}
+                                  </div>
+                                  {checkingRowDuplicates[row.rowId] ? (
+                                    <div className="text-[11px] text-amber-700">Checking duplicate authorizations by MRN...</div>
+                                  ) : null}
+                                  {(ilsRowEligibilityFiles[row.rowId] || []).length > 0 ? (
+                                    <div className="space-y-1">
+                                      {(ilsRowEligibilityFiles[row.rowId] || []).map((file, idx) => {
+                                        return (
+                                          <div key={`${row.rowId}-${file.name}-${idx}`} className="flex items-center justify-between gap-2 rounded border px-2 py-1 text-[11px]">
+                                            <span className="text-muted-foreground">{file.name}</span>
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-6 px-2 text-[11px]"
+                                              onClick={() => {
+                                                const next = (ilsRowEligibilityFiles[row.rowId] || []).filter((_, i) => i !== idx);
+                                                setIlsRowEligibilityFiles((prev) => ({ ...prev, [row.rowId]: next }));
+                                              }}
+                                            >
+                                              Remove
+                                            </Button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                  {(ilsRowDuplicateMatches[row.rowId] || []).length > 0 ? (
+                                    <div className="rounded border border-red-200 bg-red-50 p-2 text-[11px] text-red-700 space-y-1">
+                                      <div>
+                                        Duplicate authorization found for this member MRN ({(ilsRowDuplicateMatches[row.rowId] || []).length}).
+                                        Remove this row before creating records.
+                                      </div>
+                                      {(ilsRowDuplicateMatches[row.rowId] || []).slice(0, 3).map((match) => (
+                                        <div key={`${row.rowId}-${match.sourceId}-${match.matchedAuthorization}`} className="text-[11px]">
+                                          Match: {match.matchedAuthorization} •{' '}
+                                          <Link className="underline" href={`/admin/applications/${encodeURIComponent(match.sourceId)}`} target="_blank" rel="noreferrer">
+                                            {match.sourceLabel}
+                                          </Link>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </td>
                               <td className="px-2 py-1.5 min-w-[220px]">
                                 <Select
                                   value={row.assignedStaffId || 'unassigned'}
@@ -2832,7 +3264,45 @@ export default function CreateApplicationPage() {
                                 </Select>
                               </td>
                               <td className="px-2 py-1.5">
-                                {row.statusNote || [row.createStatus, row.pushStatus, row.deleteStatus].filter((x) => x !== 'idle').join(' • ') || 'Ready'}
+                                <div className="space-y-1">
+                                  <div>
+                                    {row.statusNote || [row.createStatus, row.pushStatus, row.deleteStatus].filter((x) => x !== 'idle').join(' • ') || 'Ready'}
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-[11px]"
+                                    onClick={() => {
+                                      setIlsImportRows((prev) => prev.filter((r) => r.rowId !== row.rowId));
+                                      setIlsImportSelected((prev) => {
+                                        const next = { ...prev };
+                                        delete next[row.rowId];
+                                        return next;
+                                      });
+                                      setIlsRowEligibilityFiles((prev) => {
+                                        const next = { ...prev };
+                                        delete next[row.rowId];
+                                        return next;
+                                      });
+                                      setIlsRowDuplicateMatches((prev) => {
+                                        const next = { ...prev };
+                                        delete next[row.rowId];
+                                        return next;
+                                      });
+                                      setCheckingRowDuplicates((prev) => {
+                                        const next = { ...prev };
+                                        delete next[row.rowId];
+                                        return next;
+                                      });
+                                      if (quickViewIlsRowId === row.rowId) {
+                                        setQuickViewIlsRowId('');
+                                      }
+                                    }}
+                                  >
+                                    Delete Row
+                                  </Button>
+                                </div>
                               </td>
                             </tr>
                           ))}

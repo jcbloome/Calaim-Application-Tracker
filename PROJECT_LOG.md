@@ -16,6 +16,12 @@
 
 ## 🗓️ **Development History**
 
+### **April 21, 2026 - Updates**
+- ✅ **Feature Added**: Expanded Kaiser ILS intake to support bulk single-auth PDF parsing into batch rows, auto-create draft skeleton applications (with early Caspio push enabled), and attach parsed source PDFs to each created application for individual follow-up work.
+- ✅ **Feature Added**: Added per-row eligibility/support document upload in the Kaiser ILS batch table so each parsed row can carry its own PDF/image evidence and auto-mark `Eligibility Screenshot` completed when its draft application is created.
+- ✅ **Feature Added**: Added MRN-based duplicate document detection for Kaiser ILS batch row uploads (with per-file remove controls and create-blocking when duplicates remain) and made Caspio push readiness require family/POA contact name + email + phone to support automatic reminders.
+- ✅ **Feature Added**: Refined Kaiser ILS duplicate guardrails to detect duplicate **authorizations** (same member MRN + auth number/date match) instead of duplicate files, with explicit row deletion controls before batch create.
+
 ### **April 20, 2026 - Updates**
 - ✅ **UI/UX**: Refactored the desktop portal header nav to keep right-side actions visible on narrower screens by isolating primary links in a scrollable section, preventing Spanish translations from pushing controls off-screen.
 - ✅ **UI/UX**: Added a dedicated desktop language switcher slot outside the nav link row so users can always switch back to English even when translated labels overflow.

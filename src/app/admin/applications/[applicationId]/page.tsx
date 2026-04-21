@@ -894,28 +894,47 @@ function PushToCaspioDialog({
           ? false
           : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
             String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils';
+    const allowDraftCaspioPush = Boolean((application as any)?.allowDraftCaspioPush);
     const toClean = (value: unknown) => String(value ?? '').trim();
+    const contactFirstName = toClean(
+      (application as any)?.bestContactFirstName ||
+      (application as any)?.referrerFirstName ||
+      (application as any)?.repFirstName
+    );
+    const contactLastName = toClean(
+      (application as any)?.bestContactLastName ||
+      (application as any)?.referrerLastName ||
+      (application as any)?.repLastName
+    );
+    const contactPhone = toClean(
+      (application as any)?.bestContactPhone ||
+      (application as any)?.referrerPhone ||
+      (application as any)?.repPhone
+    );
+    const contactEmail = toClean(
+      (application as any)?.bestContactEmail ||
+      (application as any)?.referrerEmail ||
+      (application as any)?.repEmail
+    );
     const readinessChecks = [
       { key: 'memberFirstName', label: 'Member first name', required: true, ready: Boolean(toClean((application as any)?.memberFirstName)) },
       { key: 'memberLastName', label: 'Member last name', required: true, ready: Boolean(toClean((application as any)?.memberLastName)) },
-      { key: 'authorizationNumber', label: 'Authorization Number T038', required: isKaiserAuthReceivedIntake, ready: Boolean(toClean((application as any)?.Authorization_Number_T038)) },
-      { key: 'authorizationStart', label: 'Authorization Start T2038', required: isKaiserAuthReceivedIntake, ready: Boolean(toClean((application as any)?.Authorization_Start_T2038)) },
-      { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
+      { key: 'authorizationNumber', label: 'Authorization Number T038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush, ready: Boolean(toClean((application as any)?.Authorization_Number_T038)) },
+      { key: 'authorizationStart', label: 'Authorization Start T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush, ready: Boolean(toClean((application as any)?.Authorization_Start_T2038)) },
+      { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
       { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
       { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: false, ready: Boolean(caspioCalAIMStatus) },
       { key: 'kaiserStatus', label: 'Kaiser Status', required: false, ready: Boolean(requestedKaiserStatus) },
       { key: 'socialWorkerHold', label: 'SW Hold for Caspio', required: true, ready: Boolean(requestedSocialWorkerHold) },
       {
-        key: 'familyEmail',
-        label: 'Family/POA email',
-        required: false,
-        ready: Boolean(
-          toClean((application as any)?.bestContactEmail) ||
-          toClean((application as any)?.referrerEmail) ||
-          toClean((application as any)?.repEmail)
-        ),
+        key: 'contactPerson',
+        label: 'Family/POA contact name',
+        required: true,
+        ready: Boolean(contactFirstName || contactLastName),
       },
+      { key: 'contactEmail', label: 'Family/POA email', required: true, ready: Boolean(contactEmail) },
+      { key: 'contactPhone', label: 'Family/POA phone', required: true, ready: Boolean(contactPhone) },
     ];
     const missingRequiredReadiness = readinessChecks.filter((item) => item.required && !item.ready);
     const readinessComplete = missingRequiredReadiness.length === 0;
@@ -1355,6 +1374,14 @@ function PushToCaspioDialog({
                             Fill all required items above before pushing to Caspio.
                         </div>
                     ) : null}
+                    {allowDraftCaspioPush ? (
+                        <div className="text-xs text-muted-foreground">
+                            Draft push mode is enabled for this intake. Authorization fields are optional so you can publish early and manage Kaiser status while details are still being completed.
+                        </div>
+                    ) : null}
+                    <div className="text-xs text-muted-foreground">
+                        Contact person name, email, and phone are required before push so automatic reminder outreach has a valid recipient.
+                    </div>
                 </div>
                 {caspioMappingPreview && Object.keys(caspioMappingPreview).length > 0 ? (
                     <div className="space-y-3">
