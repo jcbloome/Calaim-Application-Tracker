@@ -17,6 +17,7 @@
 ## 🗓️ **Development History**
 
 ### **April 21, 2026 - Updates**
+- ✅ **Bug Fixed**: Kept CS Summary step navigation on admin routes during draft editing even when `userId` is absent, preventing Step 1 → Step 2 redirects into the user form portal.
 - ✅ **UI/UX**: Reordered CS Summary contact flow to render Section 2 (Submitting User) → Section 3 (Primary Contact) → Section 4 (Secondary Contact) → Section 5 (Legal Representative) in both online form layout and printable templates.
 - ✅ **Feature Added**: Added a regular-application Section 2 toggle to also notify the submitting user for missing-document requests, plus dual-recipient reminder sending (Primary Contact + optional Submitter) with deduping and draft-staff-pathway exclusion.
 - ✅ **UI/UX**: Updated CS Summary Section 2 draft staff mode to visibly show a read-only Agency field and auto-set it to “Connections Care Home Consultants.”

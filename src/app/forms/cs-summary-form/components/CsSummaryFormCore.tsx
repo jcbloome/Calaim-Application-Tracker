@@ -209,7 +209,9 @@ function CsSummaryFormComponent() {
   const targetUserId = appUserId || user?.uid;
   const isAdminView = isAdminRoute || !!appUserId;
   const isAdminCreatedApp = internalApplicationId?.startsWith('admin_app_');
-  const backLink = isAdminView ? `/admin/applications/${internalApplicationId}?userId=${appUserId}` : `/applications`;
+  const backLink = isAdminView
+    ? `/admin/applications/${internalApplicationId}${appUserId ? `?userId=${appUserId}` : ''}`
+    : `/applications`;
   
   const docRef = useMemoFirebase(() => {
     if (!firestore || !internalApplicationId) return null;
@@ -582,8 +584,8 @@ function CsSummaryFormComponent() {
     if (currentStep < steps.length) {
         const savedAppId = await saveProgress(true);
         if (savedAppId) {
-          const newUrl = appUserId
-            ? `/admin/forms/edit?applicationId=${savedAppId}&step=${currentStep + 1}&userId=${appUserId}`
+          const newUrl = isAdminView
+            ? `/admin/forms/edit?applicationId=${savedAppId}&step=${currentStep + 1}${appUserId ? `&userId=${appUserId}` : ''}`
             : `/forms/cs-summary-form?applicationId=${savedAppId}&step=${currentStep + 1}`;
           router.push(newUrl);
           setCurrentStep(currentStep + 1);
@@ -595,8 +597,8 @@ function CsSummaryFormComponent() {
   const prevStep = async () => {
     const savedAppId = await saveProgress(true);
     if (currentStep > 1 && savedAppId) {
-      const newUrl = appUserId
-        ? `/admin/forms/edit?applicationId=${savedAppId}&step=${currentStep - 1}&userId=${appUserId}`
+      const newUrl = isAdminView
+        ? `/admin/forms/edit?applicationId=${savedAppId}&step=${currentStep - 1}${appUserId ? `&userId=${appUserId}` : ''}`
         : `/forms/cs-summary-form?applicationId=${savedAppId}&step=${currentStep - 1}`;
       router.push(newUrl);
       setCurrentStep(currentStep - 1);
