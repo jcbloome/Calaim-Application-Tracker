@@ -123,27 +123,27 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         </div>
       </PrintableFormSection>
 
-      {/* Referrer Information */}
-      <PrintableFormSection title="Section 2: Referrer Information">
+      {/* Submitting User Information */}
+      <PrintableFormSection title="Section 2: User Submitting This Application">
         <PrintableField
-          label="Referrer First Name"
+          label="Submitting User First Name"
           value={data.referrerFirstName}
           width="half"
         />
         <PrintableField
-          label="Referrer Last Name"
+          label="Submitting User Last Name"
           value={data.referrerLastName}
           width="half"
         />
         
         <PrintableField
-          label="Referrer Phone"
+          label="Submitting User Phone"
           value={data.referrerPhone}
           required
           width="half"
         />
         <PrintableField
-          label="Relationship to Member"
+          label="Submitting User Relationship to Member"
           value={data.referrerRelationship}
           required
           width="half"
@@ -155,7 +155,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           width="full"
         />
         <PrintableField
-          label="Referrer Email"
+          label="Submitting User Email"
           value={data.referrerEmail}
           width="full"
         />
@@ -164,7 +164,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
       {/* Primary Contact Information */}
       <PrintableFormSection title="Section 3: Primary Contact Person">
         <PrintableField
-          label="Primary Contact Same as Referrer"
+          label="Primary Contact Same as Submitting User"
           value={data.isPrimaryContactSameAsReferrer ? 'Yes' : 'No'}
           type="radio"
           options={['Yes', 'No']}

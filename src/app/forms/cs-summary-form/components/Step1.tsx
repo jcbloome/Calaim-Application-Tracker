@@ -203,6 +203,65 @@ export default function Step1({
       .join(' ');
   };
 
+  const legalRepresentativeSection = (
+    <FormSection
+      title="Section 5: Legal Representative"
+      description="A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role."
+    >
+      <FormField
+        control={control}
+        name="hasLegalRep"
+        render={({ field }) => (
+          <FormItem className="space-y-3">
+            <FormLabel>Does member have a legal representative? <span className="text-destructive">*</span></FormLabel>
+            <FormControl>
+              <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
+                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">No, member has capacity and does not need legal representative</FormLabel></FormItem>
+                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="same_as_primary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
+                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, not same as primary contact (fill out below fields)</FormLabel></FormItem>
+                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="no_has_rep" /></FormControl><FormLabel className="font-normal">Member does not have capacity and does not have legal representative</FormLabel></FormItem>
+              </RadioGroup>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <div className="p-4 border rounded-md space-y-4">
+        <h3 className="font-medium">Representative's Contact Info</h3>
+        <p className="text-sm text-muted-foreground">If the member does not have a legal representative, you can leave these fields blank.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField control={control} name="repFirstName" render={({ field }) => (
+            <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={control} name="repLastName" render={({ field }) => (
+            <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+          )} />
+        </div>
+        <FormField control={control} name="repRelationship" render={({ field }) => (
+          <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+        )} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FormField control={control} name="repPhone" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Phone</FormLabel>
+              <FormControl><PhoneInput {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={control} name="repEmail" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Email</FormLabel>
+              <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
+              <FormDescription>If no email, enter "N/A".</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )} />
+        </div>
+      </div>
+    </FormSection>
+  );
+
 
   return (
     <div className="space-y-6">
@@ -596,63 +655,6 @@ export default function Step1({
       </FormSection>
       
       <FormSection 
-        title="Section 5: Legal Representative" 
-        description="A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role."
-      >
-            <FormField
-                control={control}
-                name="hasLegalRep"
-                render={({ field }) => (
-                    <FormItem className="space-y-3">
-                    <FormLabel>Does member have a legal representative? <span className="text-destructive">*</span></FormLabel>
-                    <FormControl>
-                        <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">No, member has capacity and does not need legal representative</FormLabel></FormItem>
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="same_as_primary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, not same as primary contact (fill out below fields)</FormLabel></FormItem>
-                            <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="no_has_rep" /></FormControl><FormLabel className="font-normal">Member does not have capacity and does not have legal representative</FormLabel></FormItem>
-                        </RadioGroup>
-                    </FormControl>
-                    <FormMessage />
-                    </FormItem>
-                )}
-            />
-            
-            <div className="p-4 border rounded-md space-y-4">
-                <h3 className="font-medium">Representative's Contact Info</h3>
-                <p className="text-sm text-muted-foreground">If the member does not have a legal representative, you can leave these fields blank.</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={control} name="repFirstName" render={({ field }) => (
-                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                    )} />
-                    <FormField control={control} name="repLastName" render={({ field }) => (
-                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                    )} />
-                </div>
-                <FormField control={control} name="repRelationship" render={({ field }) => (
-                    <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={control} name="repPhone" render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Phone</FormLabel>
-                            <FormControl><PhoneInput {...field} /></FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )} />
-                    <FormField control={control} name="repEmail" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
-                           <FormDescription>If no email, enter "N/A".</FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                    )} />
-                </div>
-            </div>
-      </FormSection>
-      
-      <FormSection 
         title="Section 2: User Submitting This Application" 
         required={!forceSeparatePrimaryContactFromSubmitter}
         description="This identifies who is completing/submitting this application. Status and missing-document updates are sent to the Primary Contact in Section 3."
@@ -936,7 +938,9 @@ export default function Step1({
                 </div>
             </div>
       </FormSection>
-      
+
+      {legalRepresentativeSection}
+
     </div>
   );
 }

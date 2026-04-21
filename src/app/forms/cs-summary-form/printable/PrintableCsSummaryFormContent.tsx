@@ -47,7 +47,7 @@ export function PrintableCsSummaryFormContent() {
             </div>
             <div className="space-y-4">
                 <div>
-                <SectionTitle>Member Information</SectionTitle>
+                <SectionTitle>Section 1: Member Information</SectionTitle>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                     <Field label="First Name" />
                     <Field label="Last Name" />
@@ -67,7 +67,7 @@ export function PrintableCsSummaryFormContent() {
                 </div>
 
                 <div>
-                <SectionTitle>User Submitting This Application</SectionTitle>
+                <SectionTitle>Section 2: User Submitting This Application</SectionTitle>
                  <p className="text-xs text-gray-600 my-2">This section identifies the person submitting the application. Application progress and missing-document updates should be sent to the Primary Contact section below.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                     <Field label="Submitting User First Name" />
@@ -80,7 +80,7 @@ export function PrintableCsSummaryFormContent() {
                 </div>
 
                 <div>
-                <SectionTitle>Primary Contact Person</SectionTitle>
+                <SectionTitle>Section 3: Primary Contact Person</SectionTitle>
                     <p className="text-xs text-gray-600 my-2">This contact receives application status and missing-document communications.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="First Name" />
@@ -93,7 +93,7 @@ export function PrintableCsSummaryFormContent() {
                 </div>
                 
                 <div>
-                <SectionTitle>Secondary Contact Person (Optional)</SectionTitle>
+                <SectionTitle>Section 4: Secondary Contact Person (Optional)</SectionTitle>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="First Name" />
                     <Field label="Last Name" />
@@ -105,7 +105,7 @@ export function PrintableCsSummaryFormContent() {
                 </div>
 
                 <div>
-                <SectionTitle>Legal Representative</SectionTitle>
+                <SectionTitle>Section 5: Legal Representative</SectionTitle>
                     <p className="text-xs text-gray-600 my-2">A legal representative (e.g., with Power of Attorney) might be distinct from a contact person. If the legal representative is also the primary or secondary contact, please enter their information again here to confirm their legal role.</p>
                     <div className="space-y-2 mt-3">
                         <p className="text-xs font-medium text-gray-700">Does member have a legal representative?</p>
