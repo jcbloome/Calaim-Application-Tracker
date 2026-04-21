@@ -8,11 +8,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Try multiple possible API key sources
-const apiKey = process.env.GEMINI_API_KEY 
-  || process.env.GOOGLE_API_KEY 
-  || process.env.FIREBASE_API_KEY 
-  || '';
+// Vision parser should only use Gemini/Google AI keys.
+// Do not fall back to unrelated keys (like Firebase web keys), which can point to
+// the wrong project/quota and cause confusing 429 errors.
+const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
 
 const genAI = new GoogleGenerativeAI(apiKey);
 
@@ -37,6 +36,16 @@ interface ExtractedFields {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error: 'Vision parsing is not configured. Missing GEMINI_API_KEY or GOOGLE_API_KEY.',
+          details: 'Set GEMINI_API_KEY (preferred) or GOOGLE_API_KEY for the parser route.',
+        },
+        { status: 503 }
+      );
+    }
+
     // Get the image file from the request
     const formData = await request.formData();
     const file = formData.get('image') as File;
@@ -177,13 +186,23 @@ Return ONLY the JSON object, no other text.`;
   } catch (error: any) {
     console.error('[Vision API] Error:', error);
     console.error('[Vision API] Stack:', error.stack);
+    const details = String(error?.message || '').trim();
+    const lowered = details.toLowerCase();
+    const isQuotaError =
+      lowered.includes('prepayment credits are depleted') ||
+      lowered.includes('quota') ||
+      lowered.includes('too many requests');
+    const status = isQuotaError ? 429 : 500;
+    const publicError = isQuotaError
+      ? 'Vision parsing is temporarily unavailable (Gemini credits/quota reached).'
+      : 'Failed to parse PDF with vision';
     return NextResponse.json(
       { 
-        error: 'Failed to parse PDF with vision',
-        details: error.message,
+        error: publicError,
+        details: details || 'Unknown vision parser error.',
         stack: error.stack,
       },
-      { status: 500 }
+      { status }
     );
   }
 }

@@ -17,6 +17,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ToastAction } from '@/components/ui/toast';
+import { findCountyByCity } from '@/lib/california-cities';
 
 let pdfJsLoaderPromise: Promise<any> | null = null;
 const loadPdfJs = async () => {
@@ -350,7 +351,13 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
         if (explicitCounty) {
           result.memberCustomaryCounty = explicitCounty;
         } else if (zipMatch?.[1]) {
-          const inferredCounty = inferCountyFromZip(zipMatch[1].trim());
+          const inferredCounty = inferCountyFromCityZip({
+            city: cityStateMatch?.[1] || '',
+            zip: zipMatch[1].trim(),
+          });
+          if (inferredCounty) result.memberCustomaryCounty = inferredCounty;
+        } else if (cityStateMatch?.[1]) {
+          const inferredCounty = inferCountyFromCity(cityStateMatch[1]);
           if (inferredCounty) result.memberCustomaryCounty = inferredCounty;
         }
       }
@@ -449,7 +456,13 @@ const splitAddressFromLines = (lines: string[]) => {
       if (zipCandidate?.[1]) zip = zipCandidate[1];
     }
 
-    return { street, city, state, zip, county };
+    return {
+      street,
+      city,
+      state,
+      zip,
+      county: county || inferCountyFromCityZip({ city, zip }),
+    };
   }
 
   return { street: '', city: '', state: '', zip: '', county: '' };
@@ -462,6 +475,21 @@ const inferCountyFromZip = (zipRaw: unknown) => {
     '90210': 'Los Angeles',
   };
   return countyByZip[zip] || '';
+};
+
+const inferCountyFromCity = (cityRaw: unknown) => {
+  const city = String(cityRaw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^city\s+of\s+/i, '');
+  if (!city) return '';
+  return findCountyByCity(city) || '';
+};
+
+const inferCountyFromCityZip = (params: { city?: unknown; zip?: unknown }) => {
+  const byZip = inferCountyFromZip(params.zip);
+  if (byZip) return byZip;
+  return inferCountyFromCity(params.city);
 };
 
 const parseAddressParts = (rawValue: unknown) => {
@@ -481,7 +509,9 @@ const parseAddressParts = (rawValue: unknown) => {
       city: cityStateZipMatch[2].trim(),
       state: cityStateZipMatch[3].trim().toUpperCase(),
       zip: cityStateZipMatch[4].trim(),
-      county: inferredCounty || inferCountyFromZip(cityStateZipMatch[4].trim()),
+      county:
+        inferredCounty ||
+        inferCountyFromCityZip({ city: cityStateZipMatch[2].trim(), zip: cityStateZipMatch[4].trim() }),
     };
   }
 
@@ -496,7 +526,7 @@ const parseAddressParts = (rawValue: unknown) => {
       city,
       state: /^[A-Za-z]{2}$/.test(state) ? state : '',
       zip,
-      county: inferredCounty || inferCountyFromZip(zip),
+      county: inferredCounty || inferCountyFromCityZip({ city, zip }),
     };
   }
   if (commaParts.length >= 3) {
@@ -509,7 +539,7 @@ const parseAddressParts = (rawValue: unknown) => {
       city,
       state: String(stateZip?.[1] || '').toUpperCase(),
       zip,
-      county: inferredCounty || inferCountyFromZip(zip),
+      county: inferredCounty || inferCountyFromCityZip({ city, zip }),
     };
   }
 
@@ -540,8 +570,11 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
     next.memberCustomaryAddress = '';
   }
 
-  if (!next.memberCustomaryCounty && next.memberCustomaryZip) {
-    const inferredCounty = inferCountyFromZip(next.memberCustomaryZip);
+  if (!next.memberCustomaryCounty && (next.memberCustomaryZip || next.memberCustomaryCity)) {
+    const inferredCounty = inferCountyFromCityZip({
+      city: next.memberCustomaryCity,
+      zip: next.memberCustomaryZip,
+    });
     if (inferredCounty) next.memberCustomaryCounty = inferredCounty;
   }
 
@@ -919,6 +952,7 @@ const getEmptyMemberData = () => ({
   contactPhone: '',
   contactEmail: '',
   contactRelationship: '',
+  eligibilityCheckStatus: 'Pending',
   notes: '',
 });
 
@@ -958,11 +992,6 @@ const extractSingleAuthContactPreview = (patch: Record<string, string>) => ({
   email: String(patch.contactEmail || '').trim().toLowerCase(),
 });
 
-const removeUnreliableSingleAuthContactFields = (patch: Record<string, string>) => {
-  const { memberPhone: _memberPhone, contactPhone: _contactPhone, contactEmail: _contactEmail, ...rest } = patch;
-  return rest;
-};
-
 type KaiserIlsImportRow = {
   rowId: string;
   sourceType: 'spreadsheet' | 'single_auth_pdf';
@@ -975,6 +1004,9 @@ type KaiserIlsImportRow = {
   memberCounty: string;
   memberDob: string;
   memberPhone: string;
+  contactPhone: string;
+  contactEmail: string;
+  eligibilityCheckStatus: 'Pending' | 'CalAIM Eligible' | 'Not CalAIM Eligible';
   authorizationNumberT2038: string;
   authorizationStartT2038: string;
   authorizationEndT2038: string;
@@ -988,6 +1020,20 @@ type KaiserIlsImportRow = {
   statusNote: string;
   applicationId: string;
   pushedClientId2: string;
+};
+
+const normalizeEligibilityStatus = (value: unknown): 'Pending' | 'CalAIM Eligible' | 'Not CalAIM Eligible' => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'Pending';
+  if (normalized === 'calaim eligible' || normalized === 'eligible') return 'CalAIM Eligible';
+  if (
+    normalized === 'not calaim eligible' ||
+    normalized === 'not eligible' ||
+    normalized === 'ineligible'
+  ) {
+    return 'Not CalAIM Eligible';
+  }
+  return 'Pending';
 };
 
 type IlsDuplicateMatch = {
@@ -1413,11 +1459,22 @@ export default function CreateApplicationPage() {
           const memberMrn = getSpreadsheetValue(raw, ['Member MRN', 'MCP_CIN', 'MRN', 'CIN']);
           const clientId2 = getSpreadsheetValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
           const memberAddress = getSpreadsheetValue(raw, ['Member Address', 'Address', 'ISP_Current_Address']);
-          const memberCounty = getSpreadsheetValue(raw, ['County', 'Member County', 'RCFE County', 'Member_County']);
+          const parsedAddress = parseAddressParts(memberAddress);
+          const memberCity =
+            getSpreadsheetValue(raw, ['City', 'Member City', 'Member_City']) || parsedAddress.city || '';
+          const memberZip =
+            getSpreadsheetValue(raw, ['ZIP', 'Zip', 'Zip Code', 'Member Zip', 'Member_Zip']) || parsedAddress.zip || '';
+          const memberCountyRaw = getSpreadsheetValue(raw, ['County', 'Member County', 'RCFE County', 'Member_County']);
+          const memberCounty = memberCountyRaw || inferCountyFromCityZip({ city: memberCity, zip: memberZip });
           const memberDob = toSpreadsheetDate(
             getSpreadsheetValue(raw, ['Date of Birth', 'DOB', 'Birth_Date', 'Member DOB'])
           );
           const memberPhone = getSpreadsheetValue(raw, ['Member Phone Number', 'Member Phone', 'Phone', 'Member_Phone']);
+          const contactPhone = getSpreadsheetValue(raw, ['Cell Phone', 'Contact Phone', 'Best Contact Phone', 'Secondary Phone']);
+          const contactEmail = getSpreadsheetValue(raw, ['Email', 'Contact Email', 'Best Contact Email', 'Member Email']);
+          const eligibilityCheckStatus = normalizeEligibilityStatus(
+            getSpreadsheetValue(raw, ['Eligibility Check Result', 'CalAIM Status', 'CalAIM_Eligibility', 'calaimTrackingStatus'])
+          );
           const authorizationNumberT2038 = getSpreadsheetValue(raw, ['ILS Auth Number', 'Authorization_Number_T038', 'Authorization Number', 'Auth Number', 'T2038 Authorization Number']);
           const authorizationStartT2038 = toSpreadsheetDate(
             getSpreadsheetValue(raw, ['Auth Start Date', 'Authorization_Start_T2038', 'Authorization Start', 'Auth Start', 'Start Date'])
@@ -1440,6 +1497,11 @@ export default function CreateApplicationPage() {
             memberCounty,
             memberDob,
             memberPhone,
+            contactPhone: normalizePhoneDigits(contactPhone)
+              ? formatPhoneDashed(normalizePhoneDigits(contactPhone))
+              : '',
+            contactEmail: String(contactEmail || '').trim().toLowerCase(),
+            eligibilityCheckStatus,
             authorizationNumberT2038,
             authorizationStartT2038,
             authorizationEndT2038,
@@ -1606,6 +1668,8 @@ export default function CreateApplicationPage() {
             memberMrn: row.memberMrn || '',
             memberDob: row.memberDob || '',
             memberPhone: row.memberPhone || '',
+            contactPhone: row.contactPhone || '',
+            contactEmail: row.contactEmail || '',
             Authorization_Number_T038: row.authorizationNumberT2038 || '',
             Authorization_Start_T2038: row.authorizationStartT2038 || '',
             Authorization_End_T2038: row.authorizationEndT2038 || '',
@@ -1618,9 +1682,10 @@ export default function CreateApplicationPage() {
             referrerPhone: '',
             bestContactFirstName: '',
             bestContactLastName: '',
-            bestContactPhone: '',
+            bestContactPhone: row.contactPhone || '',
             bestContactRelationship: '',
-            bestContactEmail: '',
+            bestContactEmail: row.contactEmail || '',
+            calaimTrackingStatus: normalizeEligibilityStatus(row.eligibilityCheckStatus),
             intakeType: 'kaiser_auth_received_via_ils',
             intakeSource: 'ils_spreadsheet_batch',
             kaiserAuthReceivedViaIls: true,
@@ -1963,9 +2028,8 @@ export default function CreateApplicationPage() {
 
         const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
         const contactPreview = extractSingleAuthContactPreview(normalizedPatch);
-        const reliablePatch = removeUnreliableSingleAuthContactFields(normalizedPatch);
         setSingleAuthContactPreview(contactPreview);
-        setMemberData((prev) => ({ ...prev, ...reliablePatch }));
+        setMemberData((prev) => ({ ...prev, ...normalizedPatch }));
         setServiceRequestParsedFields(parsedFieldKeys);
         setServiceRequestWarnings(visionWarnings);
         setServiceRequestParseMode('vision');
@@ -1995,9 +2059,8 @@ export default function CreateApplicationPage() {
 
       const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
       const contactPreview = extractSingleAuthContactPreview(normalizedPatch);
-      const reliablePatch = removeUnreliableSingleAuthContactFields(normalizedPatch);
       setSingleAuthContactPreview(contactPreview);
-      setMemberData((prev) => ({ ...prev, ...reliablePatch }));
+      setMemberData((prev) => ({ ...prev, ...normalizedPatch }));
       setServiceRequestParsedFields(parsedFieldKeys);
       setServiceRequestWarnings(warnings);
       setServiceRequestParseMode('text');
@@ -2017,11 +2080,25 @@ export default function CreateApplicationPage() {
       }
       
       const safeMessage = String(error?.message || 'Could not parse Service Request PDF.');
+      const lowerMessage = safeMessage.toLowerCase();
+      const isVisionQuotaError =
+        lowerMessage.includes('credits') ||
+        lowerMessage.includes('quota') ||
+        lowerMessage.includes('too many requests') ||
+        lowerMessage.includes('vision parsing is temporarily unavailable');
       // Avoid logging raw Error objects in dev overlay, which can appear as unhandled runtime errors.
       console.warn('Service request parse failed:', safeMessage);
+      if (isVisionQuotaError) {
+        setServiceRequestWarnings((prev) => [
+          ...prev,
+          'Vision parser credits/quota are currently unavailable. Please enter fields manually for now.',
+        ]);
+      }
       toast({
-        title: 'Parse failed',
-        description: safeMessage,
+        title: isVisionQuotaError ? 'Vision parsing unavailable' : 'Parse failed',
+        description: isVisionQuotaError
+          ? 'Gemini vision credits/quota are currently unavailable. Enter fields manually and continue, or retry later.'
+          : safeMessage,
         variant: 'destructive',
       });
     } finally {
@@ -2116,6 +2193,9 @@ export default function CreateApplicationPage() {
             memberCounty: String(normalizedPatch.memberCustomaryCounty || '').trim(),
             memberDob: toMmDdYyyy(normalizedPatch.memberDob || ''),
             memberPhone: String(normalizedPatch.memberPhone || '').trim(),
+            contactPhone: String(normalizedPatch.contactPhone || '').trim(),
+            contactEmail: String(normalizedPatch.contactEmail || '').trim().toLowerCase(),
+            eligibilityCheckStatus: normalizeEligibilityStatus((memberData as any)?.eligibilityCheckStatus),
             authorizationNumberT2038: String(normalizedPatch.Authorization_Number_T038 || '').trim(),
             authorizationStartT2038: toMmDdYyyy(normalizedPatch.Authorization_Start_T2038 || ''),
             authorizationEndT2038: toMmDdYyyy(normalizedPatch.Authorization_End_T2038 || ''),
@@ -2221,22 +2301,22 @@ export default function CreateApplicationPage() {
   };
 
   const hasRequiredMemberName = hasValidMemberName(memberData.memberFirstName) && hasValidMemberName(memberData.memberLastName);
+  const isKaiserAuthReceivedIntake = intakeType === 'kaiser_auth_received_via_ils';
+  const hasPrimaryContactComplete =
+    Boolean(memberData.contactFirstName && memberData.contactLastName && memberData.contactPhone && memberData.contactEmail) &&
+    String(memberData.contactPhone || '').replace(/\D/g, '').length === 10;
 
   const createApplicationForMember = async (options?: { skipNavigate?: boolean; suppressSuccessToast?: boolean }) => {
-    const isKaiserAuthReceived = intakeType === 'kaiser_auth_received_via_ils';
-    const hasContactRequired =
-      Boolean(memberData.contactFirstName && memberData.contactLastName && memberData.contactPhone && memberData.contactEmail) &&
-      String(memberData.contactPhone || '').replace(/\D/g, '').length === 10;
+    const isKaiserAuthReceived = isKaiserAuthReceivedIntake;
+    const hasRequiredCreateInputs = hasRequiredMemberName && (isKaiserAuthReceived ? true : hasPrimaryContactComplete);
     const submittingStaff = getSubmittingStaffIdentity(user);
 
-    if (
-      !firestore ||
-      !hasRequiredMemberName ||
-      !hasContactRequired
-    ) {
+    if (!firestore || !hasRequiredCreateInputs) {
       toast({
         title: "Missing Information",
-        description: "Please fill member name and primary contact name, phone, and email before creating the draft application.",
+        description: isKaiserAuthReceived
+          ? "Please fill member first and last name before creating the Kaiser auth draft. You can complete primary contact after eligibility review."
+          : "Please fill member name and primary contact name, phone, and email before creating the draft application.",
         variant: "destructive",
       });
       return null;
@@ -2274,6 +2354,7 @@ export default function CreateApplicationPage() {
               customaryState: memberData.memberCustomaryState || '',
               customaryZip: memberData.memberCustomaryZip || '',
               customaryCounty: memberData.memberCustomaryCounty || '',
+              calaimTrackingStatus: String(memberData.eligibilityCheckStatus || '').trim() || 'Pending',
             }
           : {}),
 
@@ -2643,15 +2724,7 @@ export default function CreateApplicationPage() {
     }
   };
 
-  const isFormValid = hasRequiredMemberName && (
-                       Boolean(
-                         memberData.contactFirstName &&
-                         memberData.contactLastName &&
-                         memberData.contactPhone &&
-                         memberData.contactEmail &&
-                         memberData.contactPhone.replace(/\D/g, '').length === 10
-                       )
-                     );
+  const isFormValid = hasRequiredMemberName && (isKaiserAuthReceivedIntake ? true : hasPrimaryContactComplete);
 
   const hasUnsavedChanges = useMemo(() => {
     const memberDefaults = getEmptyMemberData();
@@ -2790,6 +2863,11 @@ export default function CreateApplicationPage() {
             {intakeType === 'kaiser_auth_received_via_ils' && (
               <p className="text-xs text-muted-foreground mt-1">
                 Name-only intake is supported for spreadsheet workflows. You can assign staff now and complete MRN, auth dates, diagnostics, and eligibility uploads later.
+              </p>
+            )}
+            {intakeType === 'kaiser_auth_received_via_ils' && (
+              <p className="text-xs text-blue-700 mt-1">
+                Workflow order: complete eligibility check details first on this page, confirm the correct primary contact from Kaiser portal, then enter primary contact on the CS Summary flow.
               </p>
             )}
           </div>
@@ -2994,6 +3072,23 @@ export default function CreateApplicationPage() {
                     <div className="text-xs text-muted-foreground">
                       Spreadsheet file: {ilsSpreadsheetFileName || 'None'} • Single auth PDFs selected: {serviceRequestFiles.length || 0}
                     </div>
+                    {ilsSpreadsheetFileName ? (
+                      <div className="rounded-md border bg-emerald-50/60 px-2 py-1 text-xs text-emerald-800">
+                        Uploaded spreadsheet: <span className="font-medium">{ilsSpreadsheetFileName}</span>
+                      </div>
+                    ) : null}
+                    {serviceRequestFiles.length > 0 ? (
+                      <div className="rounded-md border bg-slate-50 p-2 space-y-1">
+                        <div className="text-xs font-medium text-slate-700">Uploaded single-auth PDF file(s):</div>
+                        <div className="space-y-1">
+                          {serviceRequestFiles.map((file, idx) => (
+                            <div key={`${file.name}-${idx}`} className="text-xs text-slate-700 break-all">
+                              {idx + 1}. {file.name}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="text-xs text-muted-foreground">
                       Single-auth flow: Parse PDF(s) -&gt; Create skeleton(s) (draft) -&gt; Open main application page -&gt; Push to Caspio.
                     </div>
@@ -3013,7 +3108,7 @@ export default function CreateApplicationPage() {
                     {(singleAuthContactPreview.memberPhone || singleAuthContactPreview.cellPhone || singleAuthContactPreview.email) ? (
                       <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs space-y-1">
                         <div className="font-medium text-amber-900">
-                          Parsed contact preview (not auto-applied to skeleton)
+                          Parsed contact preview (autofilled on this page)
                         </div>
                         <div className="text-amber-800">
                           Member Phone: {singleAuthContactPreview.memberPhone || 'Not found'}
@@ -3304,6 +3399,29 @@ export default function CreateApplicationPage() {
                               </td>
                               <td className="px-2 py-1.5">
                                 <div className="space-y-1">
+                                  <Select
+                                    value={normalizeEligibilityStatus(row.eligibilityCheckStatus)}
+                                    onValueChange={(value) => {
+                                      const nextStatus = normalizeEligibilityStatus(value);
+                                      setIlsImportRows((prev) =>
+                                        prev.map((r) =>
+                                          r.rowId === row.rowId ? { ...r, eligibilityCheckStatus: nextStatus } : r
+                                        )
+                                      );
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-[11px]">
+                                      <SelectValue placeholder="Eligibility status" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="Pending">Pending</SelectItem>
+                                      <SelectItem value="CalAIM Eligible">CalAIM Eligible</SelectItem>
+                                      <SelectItem value="Not CalAIM Eligible">Not CalAIM Eligible</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <div className="text-[11px] text-muted-foreground">
+                                    Eligibility: {normalizeEligibilityStatus(row.eligibilityCheckStatus)}
+                                  </div>
                                   <div>
                                     {row.statusNote || [row.createStatus, row.pushStatus, row.deleteStatus].filter((x) => x !== 'idle').join(' • ') || 'Ready'}
                                   </div>
@@ -3481,6 +3599,25 @@ export default function CreateApplicationPage() {
                       ? `${eligibilityScreenshotFiles.length} file(s) selected`
                       : 'Upload one or more screenshot pages.'}
                   </div>
+                  <div className="mt-3">
+                    <Label>Eligibility Check Result (optional)</Label>
+                    <Select
+                      value={String(memberData.eligibilityCheckStatus || 'Pending')}
+                      onValueChange={(value) => setMemberData({ ...memberData, eligibilityCheckStatus: value })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Select eligibility result" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Pending">Pending</SelectItem>
+                        <SelectItem value="CalAIM Eligible">CalAIM Eligible</SelectItem>
+                        <SelectItem value="Not CalAIM Eligible">Not CalAIM Eligible</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Saved on draft create and used for pathway readiness tracking.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -3494,7 +3631,9 @@ export default function CreateApplicationPage() {
             </p>
             <Alert className="mb-3">
               <AlertDescription>
-                Submitting staff is tracked automatically for this draft. Primary contact is separate and required before draft creation.
+                {intakeType === 'kaiser_auth_received_via_ils'
+                  ? 'Submitting staff is tracked automatically for this draft. For Kaiser auth upload, primary contact can be entered after eligibility review in CS Summary.'
+                  : 'Submitting staff is tracked automatically for this draft. Primary contact is separate and required before draft creation.'}
               </AlertDescription>
             </Alert>
             <div className="mb-3 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
@@ -3505,7 +3644,7 @@ export default function CreateApplicationPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="contactFirstName">Contact First Name *</Label>
+                <Label htmlFor="contactFirstName">Contact First Name {intakeType !== 'kaiser_auth_received_via_ils' ? '*' : ''}</Label>
                 <Input
                   id="contactFirstName"
                   value={memberData.contactFirstName || ''}
@@ -3513,7 +3652,7 @@ export default function CreateApplicationPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="contactLastName">Contact Last Name *</Label>
+                <Label htmlFor="contactLastName">Contact Last Name {intakeType !== 'kaiser_auth_received_via_ils' ? '*' : ''}</Label>
                 <Input
                   id="contactLastName"
                   value={memberData.contactLastName || ''}
@@ -3521,7 +3660,7 @@ export default function CreateApplicationPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="contactPhone">Contact Phone *</Label>
+                <Label htmlFor="contactPhone">Contact Phone {intakeType !== 'kaiser_auth_received_via_ils' ? '*' : ''}</Label>
                 <Input
                   id="contactPhone"
                   type="tel"
@@ -3538,7 +3677,7 @@ export default function CreateApplicationPage() {
                 />
               </div>
               <div className="md:col-span-2">
-                <Label htmlFor="contactEmail">Contact Email *</Label>
+                <Label htmlFor="contactEmail">Contact Email {intakeType !== 'kaiser_auth_received_via_ils' ? '*' : ''}</Label>
                 <Input
                   id="contactEmail"
                   type="text"
@@ -3598,7 +3737,11 @@ export default function CreateApplicationPage() {
 
           {!isFormValid && (
             <div className="text-sm text-gray-500 text-center space-y-1">
-              <p>Please fill in all required fields (marked with *) before creating the application draft.</p>
+              <p>
+                {intakeType === 'kaiser_auth_received_via_ils'
+                  ? 'Please fill member first and last name before creating the Kaiser auth draft.'
+                  : 'Please fill in all required fields (marked with *) before creating the application draft.'}
+              </p>
               {memberData.contactPhone && memberData.contactPhone.replace(/\D/g, '').length > 0 && memberData.contactPhone.replace(/\D/g, '').length < 10 && (
                 <p className="text-red-500">Contact phone number must be 10 digits (xxx.xxx.xxxx)</p>
               )}
