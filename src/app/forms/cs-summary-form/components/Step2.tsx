@@ -14,7 +14,7 @@ import { californiaCounties } from '@/lib/california-counties';
 import { US_STATE_OPTIONS, normalizeUsStateCode } from '@/lib/us-states';
 import { findCountyByCity } from '@/lib/california-cities';
 
-const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other", "Unknown"];
+const locationOptions = ["Home", "Hospital", "Skilled Nursing", "Unhoused", "Sub-Acute", "Assisted Living", "Other"];
 const UNKNOWN_VALUE = 'Unknown';
 
 export default function Step2() {
@@ -47,53 +47,49 @@ export default function Step2() {
       setValue('customaryZip', getValues('currentZip'));
       setValue('customaryCounty', getValues('currentCounty'));
       clearErrors(['customaryLocationType', 'customaryLocationName', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty']);
-    } else {
-        setValue('customaryLocationType', '');
-        setValue('customaryLocationName', '');
-        setValue('customaryAddress', '');
-        setValue('customaryCity', '');
-        setValue('customaryState', '');
-        setValue('customaryZip', '');
-        setValue('customaryCounty', '');
     }
   }, [copyAddress, ...currentAddressFields, getValues, setValue, clearErrors]);
 
   useEffect(() => {
     const normalizedCurrent = normalizeUsStateCode(getValues('currentState'));
     const normalizedCustomary = normalizeUsStateCode(getValues('customaryState'));
-    if (
-      String(getValues('currentState') || '').trim().toLowerCase() !== UNKNOWN_VALUE.toLowerCase() &&
-      normalizedCurrent !== (getValues('currentState') || '')
-    ) {
+    if (normalizedCurrent !== (getValues('currentState') || '')) {
       setValue('currentState', normalizedCurrent);
     }
-    if (
-      String(getValues('customaryState') || '').trim().toLowerCase() !== UNKNOWN_VALUE.toLowerCase() &&
-      normalizedCustomary !== (getValues('customaryState') || '')
-    ) {
+    if (normalizedCustomary !== (getValues('customaryState') || '')) {
       setValue('customaryState', normalizedCustomary);
     }
   }, [getValues, setValue]);
 
   useEffect(() => {
-    if (String(currentLocation || '').trim().toLowerCase() !== UNKNOWN_VALUE.toLowerCase()) return;
-    setValue('currentAddress', UNKNOWN_VALUE);
-    setValue('currentCity', UNKNOWN_VALUE);
-    setValue('currentState', UNKNOWN_VALUE);
-    setValue('currentZip', UNKNOWN_VALUE);
-    setValue('currentCounty', UNKNOWN_VALUE);
-    clearErrors(['currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty']);
-  }, [currentLocation, setValue, clearErrors]);
-
-  useEffect(() => {
-    if (String(customaryLocationType || '').trim().toLowerCase() !== UNKNOWN_VALUE.toLowerCase()) return;
-    setValue('customaryAddress', UNKNOWN_VALUE);
-    setValue('customaryCity', UNKNOWN_VALUE);
-    setValue('customaryState', UNKNOWN_VALUE);
-    setValue('customaryZip', UNKNOWN_VALUE);
-    setValue('customaryCounty', UNKNOWN_VALUE);
-    clearErrors(['customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty']);
-  }, [customaryLocationType, setValue, clearErrors]);
+    // Clean legacy values from older records that allowed "Unknown".
+    const unknown = UNKNOWN_VALUE.toLowerCase();
+    const fields: Array<keyof FormValues> = [
+      'currentLocation',
+      'customaryLocationType',
+      'currentAddress',
+      'currentCity',
+      'currentState',
+      'currentZip',
+      'currentCounty',
+      'customaryAddress',
+      'customaryCity',
+      'customaryState',
+      'customaryZip',
+      'customaryCounty',
+    ];
+    const changed: Array<keyof FormValues> = [];
+    for (const fieldName of fields) {
+      const value = String(getValues(fieldName) || '').trim().toLowerCase();
+      if (value === unknown) {
+        setValue(fieldName, '' as FormValues[typeof fieldName]);
+        changed.push(fieldName);
+      }
+    }
+    if (changed.length > 0) {
+      clearErrors(changed);
+    }
+  }, [getValues, setValue, clearErrors]);
 
   useEffect(() => {
     const county = findCountyByCity(String(currentCity || '').trim());
@@ -195,14 +191,13 @@ export default function Step2() {
               <FormField control={control} name="currentState" render={({ field }) => (
                 <FormItem>
                   <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                  <Select onValueChange={field.onChange} value={String(field.value || '').trim().toLowerCase() === UNKNOWN_VALUE.toLowerCase() ? UNKNOWN_VALUE : normalizeUsStateCode(field.value ?? '')}>
+                  <Select onValueChange={field.onChange} value={normalizeUsStateCode(field.value ?? '')}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select state" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value={UNKNOWN_VALUE}>{UNKNOWN_VALUE}</SelectItem>
                       {US_STATE_OPTIONS.map((state) => (
                         <SelectItem key={state.code} value={state.code}>
                           {state.code} - {state.name}
@@ -228,7 +223,6 @@ export default function Step2() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value={UNKNOWN_VALUE}>{UNKNOWN_VALUE}</SelectItem>
                       {californiaCounties.map((county) => (
                         <SelectItem key={county} value={county}>
                           {county}
@@ -322,7 +316,7 @@ export default function Step2() {
                               <FormLabel>Normal Long Term Mailing State <span className="text-destructive">*</span></FormLabel>
                               <Select
                                 onValueChange={field.onChange}
-                                value={String(field.value || '').trim().toLowerCase() === UNKNOWN_VALUE.toLowerCase() ? UNKNOWN_VALUE : normalizeUsStateCode(field.value ?? '')}
+                                value={normalizeUsStateCode(field.value ?? '')}
                                 disabled={copyAddress}
                               >
                                 <FormControl>
@@ -331,7 +325,6 @@ export default function Step2() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value={UNKNOWN_VALUE}>{UNKNOWN_VALUE}</SelectItem>
                                   {US_STATE_OPTIONS.map((state) => (
                                     <SelectItem key={state.code} value={state.code}>
                                       {state.code} - {state.name}
@@ -357,7 +350,6 @@ export default function Step2() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value={UNKNOWN_VALUE}>{UNKNOWN_VALUE}</SelectItem>
                                   {californiaCounties.map((county) => (
                                     <SelectItem key={county} value={county}>
                                       {county}

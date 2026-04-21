@@ -37,6 +37,7 @@ const steps = [
   { id: 4, name: 'Financial & Cost Information', fields: [] },
   { id: 5, name: 'ISP, ALW, RCFE Selection', fields: [
       'ispContactIsMember',
+      'ispLocationSameAsCurrent',
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail',
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip',
       'onALWWaitlist', 'hasPrefRCFE',
@@ -144,6 +145,7 @@ function CsSummaryFormComponent() {
       submitterAlsoReceivesDocRequests: false,
       copyAddress: false,
       ispContactIsMember: false,
+      ispLocationSameAsCurrent: false,
     }
   });
 
@@ -260,6 +262,20 @@ function CsSummaryFormComponent() {
             nextData.referrerRelationship = 'Staff';
             nextData.agency = String((data as any)?.agency || '').trim() || 'Connections Care Home Consultants';
             nextData.isPrimaryContactSameAsReferrer = false;
+          }
+          const normalizedStatus = String((data as any)?.status || '').trim().toLowerCase();
+          const hasLegacyAutoSelectedPathway = Boolean(String(nextData.pathway || '').trim());
+          const hasPathwaySelectionConfirmation = Boolean(
+            String((nextData as any)?.pathwaySelectionConfirmedAt || '').trim()
+          );
+          const shouldClearLegacyDraftPathway =
+            isStaffDraftFlow &&
+            normalizedStatus === 'draft' &&
+            hasLegacyAutoSelectedPathway &&
+            !hasPathwaySelectionConfirmation;
+          if (shouldClearLegacyDraftPathway) {
+            nextData.pathway = '';
+            nextData.snfDiversionReason = '';
           }
 
           reset(nextData as FormValues);

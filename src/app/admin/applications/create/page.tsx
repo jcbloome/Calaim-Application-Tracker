@@ -1631,7 +1631,7 @@ export default function CreateApplicationPage() {
             currentStep: 1,
             isComplete: false,
             healthPlan: 'Kaiser',
-            pathway: 'SNF Transition',
+            pathway: '',
             kaiserStatus: 'T2038 Received, Needs First Contact',
             caspioCalAIMStatus: 'Pending',
             allowDraftCaspioPush: true,
@@ -2327,7 +2327,7 @@ export default function CreateApplicationPage() {
       await setDoc(applicationRef, {
         ...baseApplication,
         healthPlan: isKaiserAuthReceived ? 'Kaiser' : '',
-        pathway: isKaiserAuthReceived ? 'SNF Transition' : '',
+        pathway: '',
         kaiserStatus: isKaiserAuthReceived ? 'T2038 Received, Needs First Contact' : '',
         caspioCalAIMStatus: isKaiserAuthReceived ? 'Pending' : '',
         allowDraftCaspioPush: isKaiserAuthReceived ? true : false,

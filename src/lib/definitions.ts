@@ -120,12 +120,14 @@ export type Application = {
   existingHealthPlan?: string | null;
   switchingHealthPlan?: 'Yes' | 'No' | 'N/A' | null;
   meetsPathwayCriteria?: boolean;
+  pathwaySelectionConfirmedAt?: string | null;
   snfDiversionReason?: string | null;
   ispFirstName?: string;
   ispLastName?: string;
   ispRelationship?: string;
   ispPhone?: string;
   ispEmail?: string;
+  ispLocationSameAsCurrent?: boolean;
   ispLocationType?: string;
   ispAddress?: string;
   ispCity?: string;

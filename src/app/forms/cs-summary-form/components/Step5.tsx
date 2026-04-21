@@ -19,10 +19,17 @@ export default function Step5() {
   const { control, watch, getValues, setValue, clearErrors } = useFormContext<FormValues>();
   const hasPrefRCFE = watch('hasPrefRCFE');
   const ispContactIsMember = watch('ispContactIsMember');
+  const ispLocationSameAsCurrent = watch('ispLocationSameAsCurrent');
   const memberFirstName = watch('memberFirstName');
   const memberLastName = watch('memberLastName');
   const memberPhone = watch('memberPhone');
   const memberEmail = watch('memberEmail');
+  const currentLocation = watch('currentLocation');
+  const currentLocationName = watch('currentLocationName');
+  const currentAddress = watch('currentAddress');
+  const currentCity = watch('currentCity');
+  const currentState = watch('currentState');
+  const currentZip = watch('currentZip');
 
   useEffect(() => {
     const normalizedState = normalizeUsStateCode(getValues('ispState'));
@@ -44,6 +51,27 @@ export default function Step5() {
     }
     clearErrors(['ispFirstName', 'ispLastName', 'ispRelationship']);
   }, [ispContactIsMember, memberFirstName, memberLastName, memberPhone, memberEmail, setValue, clearErrors]);
+
+  useEffect(() => {
+    if (!ispLocationSameAsCurrent) return;
+    setValue('ispLocationType', String(currentLocation || '').trim());
+    setValue('ispFacilityName', String(currentLocationName || '').trim());
+    setValue('ispAddress', String(currentAddress || '').trim());
+    setValue('ispCity', String(currentCity || '').trim());
+    setValue('ispState', normalizeUsStateCode(String(currentState || '').trim()));
+    setValue('ispZip', String(currentZip || '').trim());
+    clearErrors(['ispLocationType', 'ispFacilityName', 'ispAddress', 'ispCity', 'ispState', 'ispZip']);
+  }, [
+    ispLocationSameAsCurrent,
+    currentLocation,
+    currentLocationName,
+    currentAddress,
+    currentCity,
+    currentState,
+    currentZip,
+    setValue,
+    clearErrors,
+  ]);
 
   const formatName = (value: string) => {
     if (!value) return '';
@@ -142,6 +170,23 @@ export default function Step5() {
             <p className="text-sm text-muted-foreground">
               Enter where the RN/MSW should connect for care-needs review. For Health Net this is the call location/context; for Kaiser this is the in-person assessment location.
             </p>
+            <FormField
+              control={control}
+              name="ispLocationSameAsCurrent"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3">
+                  <FormControl>
+                    <Checkbox checked={Boolean(field.value)} onCheckedChange={(checked) => field.onChange(checked === true)} />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel className="text-sm font-medium">Same as current location (Section 6)</FormLabel>
+                    <FormDescription className="text-xs text-muted-foreground">
+                      Auto-populates ISP location type, location name, address, city, state, and zip from Section 6.
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={control}
@@ -149,7 +194,7 @@ export default function Step5() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Type of Location <span className="text-destructive">*</span></FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                    <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)}>
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
                         {locationOptions.map((option) => (
@@ -163,20 +208,20 @@ export default function Step5() {
                 )}
               />
               <FormField control={control} name="ispFacilityName" render={({ field }) => (
-                <FormItem><FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
             <FormField control={control} name="ispAddress" render={({ field }) => (
-              <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <FormField control={control} name="ispCity" render={({ field }) => (
-                <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={control} name="ispState" render={({ field }) => (
                 <FormItem>
                   <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                  <Select onValueChange={field.onChange} value={normalizeUsStateCode(field.value ?? '')}>
+                  <Select onValueChange={field.onChange} value={normalizeUsStateCode(field.value ?? '')} disabled={Boolean(ispLocationSameAsCurrent)}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger></FormControl>
                     <SelectContent>
                       {US_STATE_OPTIONS.map((state) => (
@@ -190,7 +235,7 @@ export default function Step5() {
                 </FormItem>
               )} />
               <FormField control={control} name="ispZip" render={({ field }) => (
-                <FormItem><FormLabel>Zip <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(String(e.target.value || '').trim())} inputMode="numeric" /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Zip <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(String(e.target.value || '').trim())} inputMode="numeric" /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
           </div>

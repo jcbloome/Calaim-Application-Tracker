@@ -17,6 +17,12 @@
 ## 🗓️ **Development History**
 
 ### **April 21, 2026 - Updates**
+- ✅ **Bug Fixed**: Resolved red error styling on Section 6A “Same as current location” checkbox by allowing legacy `copyAddress: null` values to deserialize as `false` in the CS Summary schema.
+- ✅ **Bug Fixed**: Prevented Section 6A Normal Long Term Mailing Address values from being unintentionally cleared when “Same as current location” is unchecked, preserving manual entries and previously saved data.
+- ✅ **UI/UX**: Added `ISP Assessment Location` checkbox (“Same as current location”) to auto-populate and sync ISP location type/name/address/city/state/zip from Section 6, with linked ISP location fields read-only while enabled.
+- ✅ **Bug Fixed**: Added legacy draft pathway cleanup so old auto-selected `SNF Transition` values are cleared once unless staff has explicitly confirmed pathway selection, preventing false preselection in CS Summary Step 3.
+- ✅ **UI/UX**: Stopped auto-prefilling `Pathway Selection` on newly created admin draft applications (including Kaiser ILS draft creation paths) so staff must explicitly choose SNF Transition or SNF Diversion in CS Summary Step 3.
+- ✅ **UI/UX**: Removed `Unknown` as a selectable value from CS Summary Section 6 current/customary location type, state, and county fields (plus printable Section 6 location options), and auto-clears legacy `Unknown` values when opening older drafts.
 - ✅ **Bug Fixed**: Kept CS Summary step navigation on admin routes during draft editing even when `userId` is absent, preventing Step 1 → Step 2 redirects into the user form portal.
 - ✅ **UI/UX**: Reordered CS Summary contact flow to render Section 2 (Submitting User) → Section 3 (Primary Contact) → Section 4 (Secondary Contact) → Section 5 (Legal Representative) in both online form layout and printable templates.
 - ✅ **Feature Added**: Added a regular-application Section 2 toggle to also notify the submitting user for missing-document requests, plus dual-recipient reminder sending (Primary Contact + optional Submitter) with deduping and draft-staff-pathway exclusion.

@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -14,10 +15,17 @@ import { AlertTriangle } from 'lucide-react';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 export default function Step3() {
-  const { control, watch } = useFormContext<FormValues>();
+  const { control, watch, setValue, getValues } = useFormContext<FormValues>();
   const pathway = watch('pathway');
   const healthPlan = watch('healthPlan');
   const switchingHealthPlan = watch('switchingHealthPlan');
+
+  useEffect(() => {
+    if (!String(pathway || '').trim()) return;
+    const alreadyConfirmed = String(getValues('pathwaySelectionConfirmedAt') || '').trim();
+    if (alreadyConfirmed) return;
+    setValue('pathwaySelectionConfirmedAt', new Date().toISOString(), { shouldDirty: true });
+  }, [pathway, getValues, setValue]);
   
   return (
     <div className="space-y-6">

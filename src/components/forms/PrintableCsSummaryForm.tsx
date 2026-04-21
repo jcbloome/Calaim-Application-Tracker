@@ -304,8 +304,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
             'Unhoused',
             'Sub-Acute',
             'Assisted Living',
-            'Other',
-            'Unknown'
+            'Other'
           ]}
           required
           width="full"
@@ -376,8 +375,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
             'Unhoused',
             'Sub-Acute',
             'Assisted Living',
-            'Other',
-            'Unknown'
+            'Other'
           ]}
           required
           width="full"

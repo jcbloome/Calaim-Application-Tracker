@@ -104,7 +104,7 @@ export const formSchema = z.object({
     currentState: requiredString,
     currentZip: requiredString,
     currentCounty: requiredString,
-    copyAddress: z.boolean().optional(),
+    copyAddress: z.boolean().optional().nullable().transform(val => val === true),
     customaryLocationType: requiredString,
     customaryLocationName: optionalString,
     customaryAddress: requiredString,
@@ -118,6 +118,7 @@ export const formSchema = z.object({
     existingHealthPlan: optionalString,
     switchingHealthPlan: z.enum(['Yes', 'No', 'N/A']).optional().nullable(),
     pathway: z.enum(['SNF Transition', 'SNF Diversion'], { errorMap: () => ({ message: ' ' }) }),
+    pathwaySelectionConfirmedAt: optionalString,
     snfDiversionReason: optionalString,
 
     // Step 4 - ISP & RCFE
@@ -127,6 +128,7 @@ export const formSchema = z.object({
     ispRelationship: requiredString,
     ispPhone: requiredPhone,
     ispEmail: optionalEmail,
+    ispLocationSameAsCurrent: z.boolean().optional().nullable().transform(val => val === true),
     ispLocationType: requiredString,
     ispAddress: requiredString,
     ispCity: requiredString,
