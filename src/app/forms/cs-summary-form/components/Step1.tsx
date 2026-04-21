@@ -13,6 +13,9 @@ import { FormSection } from '@/components/FormSection';
 import { GlossaryDialog } from '@/components/GlossaryDialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 
 const MEMBER_LANGUAGE_OPTIONS = [
   'English',
@@ -27,13 +30,20 @@ const MEMBER_LANGUAGE_OPTIONS = [
   'Farsi',
 ] as const;
 const MEMBER_LANGUAGE_OTHER_VALUE = '__other__';
+const STAFF_DRAFT_AGENCY_NAME = 'Connections Care Home Consultants';
 
 export default function Step1({
   isAdminView,
   onCheckMrnUnique,
+  forceSeparatePrimaryContactFromSubmitter,
+  applicationIdForDraftUploads,
+  appUserIdForDraftUploads,
 }: {
   isAdminView?: boolean;
   onCheckMrnUnique?: (mrn: string) => void;
+  forceSeparatePrimaryContactFromSubmitter?: boolean;
+  applicationIdForDraftUploads?: string;
+  appUserIdForDraftUploads?: string;
 }) {
   const { control, watch, setValue, getValues, clearErrors, trigger } = useFormContext<FormValues>();
   
@@ -41,6 +51,12 @@ export default function Step1({
   const memberLanguage = watch('memberLanguage');
   const hasLegalRep = watch('hasLegalRep');
   const isPrimaryContactSameAsReferrer = watch('isPrimaryContactSameAsReferrer');
+  const bestContactEmail = watch('bestContactEmail');
+  const secondaryContactEmail = watch('secondaryContactEmail');
+  const repEmail = watch('repEmail');
+  const referrerEmail = watch('referrerEmail');
+  const agency = watch('agency');
+  const submitterAlsoReceivesDocRequests = watch('submitterAlsoReceivesDocRequests');
   const [isMemberLanguageOther, setIsMemberLanguageOther] = useState(false);
 
   useEffect(() => {
@@ -121,6 +137,21 @@ export default function Step1({
   }, [isPrimaryContactSameAsReferrer, clearErrors]);
 
   useEffect(() => {
+    if (!forceSeparatePrimaryContactFromSubmitter) return;
+    if (isPrimaryContactSameAsReferrer) {
+      setValue('isPrimaryContactSameAsReferrer', false);
+    }
+  }, [forceSeparatePrimaryContactFromSubmitter, isPrimaryContactSameAsReferrer, setValue]);
+
+  useEffect(() => {
+    if (!forceSeparatePrimaryContactFromSubmitter) return;
+    const currentAgency = String(getValues('agency') || '').trim();
+    if (currentAgency !== STAFF_DRAFT_AGENCY_NAME) {
+      setValue('agency', STAFF_DRAFT_AGENCY_NAME);
+    }
+  }, [forceSeparatePrimaryContactFromSubmitter, getValues, setValue]);
+
+  useEffect(() => {
     const normalized = String(memberLanguage || '').trim().toLowerCase();
     if (!normalized) return;
     const isPopular = MEMBER_LANGUAGE_OPTIONS.some((option) => option.toLowerCase() === normalized);
@@ -136,6 +167,33 @@ export default function Step1({
     if (matched) return matched;
     return MEMBER_LANGUAGE_OTHER_VALUE;
   }, [isMemberLanguageOther, memberLanguage]);
+
+  const reminderRecipientPreview = useMemo(() => {
+    const primary = String(bestContactEmail || '').trim();
+    const secondary = String(secondaryContactEmail || '').trim();
+    const legalRep = String(repEmail || '').trim();
+    const submitter = String(referrerEmail || '').trim();
+
+    if (primary) {
+      return { email: primary, source: 'Primary Contact' };
+    }
+    if (secondary) {
+      return { email: secondary, source: 'Secondary Contact' };
+    }
+    if (legalRep) {
+      return { email: legalRep, source: 'Legal Representative' };
+    }
+    if (!forceSeparatePrimaryContactFromSubmitter && submitter) {
+      return { email: submitter, source: 'Submitting User (fallback)' };
+    }
+    return { email: '', source: '' };
+  }, [bestContactEmail, secondaryContactEmail, repEmail, referrerEmail, forceSeparatePrimaryContactFromSubmitter]);
+  const submitterDocRequestPreview = useMemo(() => {
+    const submitter = String(referrerEmail || '').trim();
+    if (!submitterAlsoReceivesDocRequests) return '';
+    if (!submitter) return 'Submitting user additional recipient is enabled, but submitter email is missing.';
+    return `Submitting user will also receive missing-document requests: ${submitter}`;
+  }, [submitterAlsoReceivesDocRequests, referrerEmail]);
   
   const formatName = (value: string) => {
     if (!value) return '';
@@ -148,6 +206,35 @@ export default function Step1({
 
   return (
     <div className="space-y-6">
+      {forceSeparatePrimaryContactFromSubmitter ? (
+        <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="bg-blue-100 text-blue-900 hover:bg-blue-100">
+                Draft Staff Pathway Active
+              </Badge>
+              <span>
+                Submitting user is staff in this draft flow. Keep Primary Contact as the outreach recipient for document and status updates.
+              </span>
+            </div>
+            {applicationIdForDraftUploads ? (
+              <Button asChild variant="outline" size="sm" className="border-blue-300 bg-white text-blue-900 hover:bg-blue-100">
+                <Link
+                  href={`/admin/applications/${encodeURIComponent(applicationIdForDraftUploads)}${
+                    appUserIdForDraftUploads ? `?userId=${encodeURIComponent(appUserIdForDraftUploads)}` : ''
+                  }`}
+                >
+                  Upload Eligibility Documents
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-1 text-xs text-blue-800">
+            Use this button to add Eligibility Screenshot files while the application is still in draft.
+          </div>
+        </div>
+      ) : null}
+
       {/* What is CalAIM Information Card */}
       <Card className="border-l-4 border-blue-500 bg-blue-50">
         <CardHeader>
@@ -536,27 +623,27 @@ export default function Step1({
                 <p className="text-sm text-muted-foreground">If the member does not have a legal representative, you can leave these fields blank.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repFirstName" render={({ field }) => (
-                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={control} name="repLastName" render={({ field }) => (
-                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                     )} />
                 </div>
                 <FormField control={control} name="repRelationship" render={({ field }) => (
-                    <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={control} name="repPhone" render={({ field }) => (
                         <FormItem>
                             <FormLabel>Phone</FormLabel>
-                            <FormControl><PhoneInput {...field} disabled={hasLegalRep === 'same_as_primary'} /></FormControl>
+                            <FormControl><PhoneInput {...field} /></FormControl>
                             <FormMessage />
                         </FormItem>
                     )} />
                     <FormField control={control} name="repEmail" render={({ field }) => (
                         <FormItem>
                           <FormLabel>Email</FormLabel>
-                          <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={hasLegalRep === 'same_as_primary'} /></FormControl>
+                          <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
                            <FormDescription>If no email, enter "N/A".</FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -567,7 +654,7 @@ export default function Step1({
       
       <FormSection 
         title="Section 2: User Submitting This Application" 
-        required={true}
+        required={!forceSeparatePrimaryContactFromSubmitter}
         description="This identifies who is completing/submitting this application. Status and missing-document updates are sent to the Primary Contact in Section 3."
       >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -578,7 +665,13 @@ export default function Step1({
                 <FormItem>
                   <FormLabel>Submitting User First Name</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} onChange={e => field.onChange(formatName(e.target.value))}/>
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      readOnly={!isAdminView || Boolean(forceSeparatePrimaryContactFromSubmitter)}
+                      className={!isAdminView || forceSeparatePrimaryContactFromSubmitter ? "bg-muted" : ""}
+                      onChange={e => field.onChange(formatName(e.target.value))}
+                    />
                   </FormControl>
                 </FormItem>
               )}
@@ -590,7 +683,13 @@ export default function Step1({
                 <FormItem>
                   <FormLabel>Submitting User Last Name</FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} readOnly={!isAdminView} className={!isAdminView ? "bg-muted" : ""} onChange={e => field.onChange(formatName(e.target.value))}/>
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      readOnly={!isAdminView || Boolean(forceSeparatePrimaryContactFromSubmitter)}
+                      className={!isAdminView || forceSeparatePrimaryContactFromSubmitter ? "bg-muted" : ""}
+                      onChange={e => field.onChange(formatName(e.target.value))}
+                    />
                   </FormControl>
                 </FormItem>
               )}
@@ -609,8 +708,8 @@ export default function Step1({
                       inputMode="email"
                       {...field}
                       value={field.value ?? ''}
-                      readOnly={!isAdminView}
-                      className={!isAdminView ? "bg-muted" : ""}
+                      readOnly={!isAdminView || Boolean(forceSeparatePrimaryContactFromSubmitter)}
+                      className={!isAdminView || forceSeparatePrimaryContactFromSubmitter ? "bg-muted" : ""}
                     />
                   </FormControl>
                   <FormDescription>For submitter identity only. Primary contact receives status/document updates.</FormDescription>
@@ -618,50 +717,98 @@ export default function Step1({
                 </FormItem>
               )}
             />
-            <FormField
-              control={control}
-              name="referrerPhone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Submitting User Phone <span className="text-destructive">*</span></FormLabel>
-                  <FormControl>
-                    <PhoneInput {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {!forceSeparatePrimaryContactFromSubmitter ? (
+              <FormField
+                control={control}
+                name="referrerPhone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Submitting User Phone
+                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
+                    </FormLabel>
+                    <FormControl>
+                      <PhoneInput {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+          {!forceSeparatePrimaryContactFromSubmitter ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+              <FormField
+                control={control}
+                name="referrerRelationship"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Submitting User Relationship to Member
+                      {!forceSeparatePrimaryContactFromSubmitter && <span className="text-destructive"> *</span>}
+                    </FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                    </FormControl>
+                     <FormDescription>e.g., Son, POA, Self, etc.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={control}
+                name="agency"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Agency</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                    </FormControl>
+                     <FormDescription>e.g., Bob's Referral Agency, Hospital Name, etc. If not applicable, leave blank.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          ) : null}
+          {!forceSeparatePrimaryContactFromSubmitter ? (
             <FormField
               control={control}
-              name="referrerRelationship"
+              name="submitterAlsoReceivesDocRequests"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Submitting User Relationship to Member <span className="text-destructive">*</span></FormLabel>
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3">
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
+                    <Checkbox checked={field.value === true} onCheckedChange={(checked) => field.onChange(checked === true)} />
                   </FormControl>
-                   <FormDescription>e.g., Son, POA, Self, etc.</FormDescription>
-                  <FormMessage />
+                  <div className="space-y-1 leading-none">
+                    <FormLabel>Also send missing-document requests to submitting user</FormLabel>
+                    <FormDescription>
+                      When enabled, both Primary Contact and Submitting User receive document-request reminders so either can upload required files.
+                    </FormDescription>
+                    <FormDescription>
+                      HIPAA note: submitting users can submit documents but should not be treated as having full visibility into previously uploaded documents unless authorized.
+                    </FormDescription>
+                  </div>
                 </FormItem>
               )}
             />
-            <FormField
-              control={control}
-              name="agency"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Agency</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
-                  </FormControl>
-                   <FormDescription>e.g., Bob's Referral Agency, Hospital Name, etc. If not applicable, leave blank.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+          ) : null}
+          {forceSeparatePrimaryContactFromSubmitter ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+              <FormField
+                control={control}
+                name="agency"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Agency</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? agency ?? STAFF_DRAFT_AGENCY_NAME} readOnly className="bg-muted" />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </div>
+          ) : null}
       </FormSection>
       
       <FormSection 
@@ -670,29 +817,46 @@ export default function Step1({
         description="This contact receives application progress updates and missing-document notices. If the member is primary contact, re-enter member name and use N/A for relationship."
       >
           <div className="p-4 border rounded-md space-y-4">
-              {/* Checkbox to use referrer as primary contact */}
-              <FormField
-                control={control}
-                name="isPrimaryContactSameAsReferrer"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={(checked) => field.onChange(checked === true)}
-                      />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel className="text-sm font-medium">
-                        Primary contact is the same as the submitting user
-                      </FormLabel>
-                      <FormDescription className="text-xs text-muted-foreground">
-                        Check this to copy submitting-user details into Primary Contact (recipient of status/document updates)
-                      </FormDescription>
-                    </div>
-                  </FormItem>
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                {reminderRecipientPreview.email ? (
+                  <span>
+                    Reminder recipient preview: <strong>{reminderRecipientPreview.email}</strong> ({reminderRecipientPreview.source})
+                  </span>
+                ) : (
+                  <span>Reminder recipient preview: No recipient email available yet. Enter Primary Contact email to enable reminders.</span>
                 )}
-              />
+                {!forceSeparatePrimaryContactFromSubmitter && submitterDocRequestPreview ? (
+                  <div className="mt-1">{submitterDocRequestPreview}</div>
+                ) : null}
+              </div>
+              {!forceSeparatePrimaryContactFromSubmitter ? (
+                <FormField
+                  control={control}
+                  name="isPrimaryContactSameAsReferrer"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="text-sm font-medium">
+                          Primary contact is the same as the submitting user
+                        </FormLabel>
+                        <FormDescription className="text-xs text-muted-foreground">
+                          Check this to copy submitting-user details into Primary Contact (recipient of status/document updates)
+                        </FormDescription>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Draft intake mode: submitting user is staff. Primary contact is required and receives status/document updates.
+                </p>
+              )}
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactFirstName" render={({ field }) => (

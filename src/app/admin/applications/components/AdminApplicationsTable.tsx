@@ -150,7 +150,17 @@ const getDisplayMemberName = (app: WithId<Application & FormValues>) => {
   const first = invalidToken(firstRaw) ? '' : firstRaw;
   const last = invalidToken(lastRaw) ? '' : lastRaw;
   const full = `${first} ${last}`.trim();
-  return full || 'Unnamed Member';
+  if (full) return full;
+
+  const combined = String(
+    (app as any)?.memberName ||
+      (app as any)?.memberFullName ||
+      (app as any)?.member_full_name ||
+      (app as any)?.seniorName ||
+      ''
+  ).trim();
+  if (combined && !invalidToken(combined)) return combined;
+  return 'Member';
 };
 
 const getMemberGroupingKey = (app: WithId<Application & FormValues>) => {

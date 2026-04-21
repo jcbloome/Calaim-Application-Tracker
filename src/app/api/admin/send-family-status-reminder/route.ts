@@ -82,7 +82,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, skippedDisabled: true });
     }
 
-    const recipientEmail = String(overrideEmail || appData?.bestContactEmail || appData?.referrerEmail || '').trim();
+    const normalizedStatus = String(appData?.status || '').trim().toLowerCase();
+    const normalizedIntakeType = String(appData?.intakeType || '').trim().toLowerCase();
+    const isStaffDraftPathway = Boolean(appData?.createdByAdmin) && (
+      normalizedStatus === 'draft' ||
+      normalizedIntakeType === 'kaiser_auth_received_via_ils'
+    );
+    const recipientEmail = String(
+      overrideEmail ||
+      appData?.bestContactEmail ||
+      appData?.secondaryContactEmail ||
+      appData?.repEmail ||
+      (isStaffDraftPathway ? '' : appData?.referrerEmail) ||
+      ''
+    ).trim();
     if (!recipientEmail) {
       return NextResponse.json(
         { success: false, error: 'Primary contact email is missing for this application' },

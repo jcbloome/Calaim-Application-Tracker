@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useForm, FormProvider, FieldPath, FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, Loader2, AlertCircle, CheckCircle2, Save, Trash2, ShieldCheck } from 'lucide-react';
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, errorEmitter, FirestorePermissionError, useMemoFirebase } from '@/firebase';
-import { doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, collectionGroup, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, collectionGroup, query, where, getDocs, type QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore';
 import Link from 'next/link';
 
 import Step1 from './Step1';
@@ -27,7 +27,7 @@ const steps = [
       'memberFirstName', 'memberLastName', 'memberAge', 'memberMrn', 'confirmMemberMrn', 'memberLanguage',
       'memberMediCalNum', 'confirmMemberMediCalNum', 'memberDob', 'sex', 'memberPhone', 'memberEmail',
       'Authorization_Number_T038', 'Authorization_Start_T2038', 'Authorization_End_T2038', 'Diagnostic_Code',
-      'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency',
+      'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency', 'submitterAlsoReceivesDocRequests',
       'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'secondaryContactFirstName', 'secondaryContactLastName', 'secondaryContactRelationship', 'secondaryContactPhone', 'secondaryContactEmail', 'secondaryContactLanguage',
       'hasLegalRep', 'repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail'
@@ -59,8 +59,58 @@ function isValidMemberNameValue(value: unknown) {
   return !['undefined', 'null', 'nan'].includes(lowered);
 }
 
+function splitNameParts(fullName: string) {
+  const normalized = String(fullName || '').trim();
+  if (!normalized) return { firstName: '', lastName: '' };
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' ') || '',
+  };
+}
+
+function getStaffIdentity(options: {
+  currentUser: unknown;
+  appData?: Record<string, unknown>;
+}) {
+  const currentUser = (options.currentUser && typeof options.currentUser === 'object'
+    ? options.currentUser
+    : {}) as Record<string, unknown>;
+  const appData = options.appData || {};
+
+  const userDisplayName = String(currentUser.displayName || '').trim();
+  const userEmail = String(currentUser.email || '').trim();
+  const providerDisplayName = String((Array.isArray(currentUser.providerData) ? currentUser.providerData[0] : {})?.displayName || '').trim();
+  const providerEmail = String((Array.isArray(currentUser.providerData) ? currentUser.providerData[0] : {})?.email || '').trim();
+
+  const storedDisplayName = String(
+    appData.draftSubmittedByStaffName ||
+    appData.assignedStaffName ||
+    appData.assignedStaffDisplayName ||
+    appData.referrerName ||
+    ''
+  ).trim();
+  const storedEmail = String(
+    appData.draftSubmittedByStaffEmail ||
+    appData.assignedStaffEmail ||
+    appData.calaimCoordinatorEmail ||
+    ''
+  ).trim();
+
+  const resolvedEmail = userEmail || providerEmail || storedEmail;
+  const resolvedName = userDisplayName || providerDisplayName || storedDisplayName || (resolvedEmail ? resolvedEmail.split('@')[0] : '');
+  const nameParts = splitNameParts(resolvedName);
+
+  return {
+    firstName: nameParts.firstName,
+    lastName: nameParts.lastName,
+    email: resolvedEmail,
+  };
+}
+
 function CsSummaryFormComponent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { user, isUserLoading } = useUser();
@@ -68,6 +118,7 @@ function CsSummaryFormComponent() {
   
   const applicationId = searchParams.get('applicationId');
   const appUserId = searchParams.get('userId'); // For admins editing a user's app
+  const isAdminRoute = String(pathname || '').startsWith('/admin/');
 
   const [internalApplicationId, setInternalApplicationId] = useState<string | null>(applicationId);
   const initialStep = parseInt(searchParams.get('step') || '1', 10);
@@ -84,11 +135,13 @@ function CsSummaryFormComponent() {
   const [isKaiserSkeletonDraftFlow, setIsKaiserSkeletonDraftFlow] = useState(false);
   const initialWatchCompleteRef = useRef(false);
   const lastSnapshotRef = useRef('');
+  const mrnIndexWarningShownRef = useRef(false);
 
   const methods = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       isPrimaryContactSameAsReferrer: false,
+      submitterAlsoReceivesDocRequests: false,
       copyAddress: false,
       ispContactIsMember: false,
     }
@@ -154,7 +207,7 @@ function CsSummaryFormComponent() {
   };
 
   const targetUserId = appUserId || user?.uid;
-  const isAdminView = !!appUserId;
+  const isAdminView = isAdminRoute || !!appUserId;
   const isAdminCreatedApp = internalApplicationId?.startsWith('admin_app_');
   const backLink = isAdminView ? `/admin/applications/${internalApplicationId}?userId=${appUserId}` : `/applications`;
   
@@ -186,23 +239,29 @@ function CsSummaryFormComponent() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as Application;
-          reset(data as FormValues);
-          const healthPlan = String((data as any)?.healthPlan || '').trim().toLowerCase();
-          const intakeType = String((data as any)?.intakeType || '').trim().toLowerCase();
-          const isKaiserIntake =
-            Boolean((data as any)?.kaiserAuthReceivedViaIls) ||
-            intakeType === 'kaiser_auth_received_via_ils' ||
-            healthPlan.includes('kaiser');
-          const isHealthNetIntake =
-            healthPlan.includes('health net') ||
-            healthPlan.includes('healthnet') ||
-            healthPlan === 'hn';
           const isSkeletonSeed =
             Boolean((data as any)?.createdByAdmin) ||
             Boolean((data as any)?.intakeSource) ||
             String((data as any)?.id || '').startsWith('admin_app_') ||
             Boolean(internalApplicationId?.startsWith('admin_app_'));
-          setIsKaiserSkeletonDraftFlow(isAdminView && (isKaiserIntake || isHealthNetIntake) && isSkeletonSeed);
+          const isStaffDraftFlow = isAdminView && isSkeletonSeed;
+
+          const nextData = { ...(data as any) } as Record<string, unknown>;
+          if (isStaffDraftFlow) {
+            const staffIdentity = getStaffIdentity({
+              currentUser: user,
+              appData: data as Record<string, unknown>,
+            });
+            nextData.referrerFirstName = staffIdentity.firstName || String((data as any)?.referrerFirstName || '');
+            nextData.referrerLastName = staffIdentity.lastName || String((data as any)?.referrerLastName || '');
+            nextData.referrerEmail = staffIdentity.email || String((data as any)?.referrerEmail || '');
+            nextData.referrerRelationship = 'Staff';
+            nextData.agency = String((data as any)?.agency || '').trim() || 'Connections Care Home Consultants';
+            nextData.isPrimaryContactSameAsReferrer = false;
+          }
+
+          reset(nextData as FormValues);
+          setIsKaiserSkeletonDraftFlow(isStaffDraftFlow);
           
           // Check if CS Summary is already completed and show skip option
           const csSummaryForm = data.forms?.find(form => 
@@ -321,13 +380,31 @@ function CsSummaryFormComponent() {
     }
 
     try {
-      const [userAppsSnap, adminAppsSnap] = await Promise.all([
-        getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
-        getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
-      ]);
+      const adminAppsSnap = await getDocs(
+        query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))
+      );
+      let userAppsDocs: QueryDocumentSnapshot<DocumentData>[] = [];
+      try {
+        const userAppsSnap = await getDocs(
+          query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))
+        );
+        userAppsDocs = userAppsSnap.docs;
+      } catch (groupError: any) {
+        const code = String(groupError?.code || '').trim().toLowerCase();
+        const msg = String(groupError?.message || '').toLowerCase();
+        const missingIndex = code === 'failed-precondition' || msg.includes('requires a collection_group') || msg.includes('index');
+        if (!missingIndex) throw groupError;
+        if (!mrnIndexWarningShownRef.current) {
+          mrnIndexWarningShownRef.current = true;
+          toast({
+            title: 'MRN duplicate check limited',
+            description: 'Cross-user MRN duplicate checking is temporarily limited until the Firestore index is available.',
+          });
+        }
+      }
 
       const currentPath = docRef?.path;
-      const allDocs = [...userAppsSnap.docs, ...adminAppsSnap.docs];
+      const allDocs = [...userAppsDocs, ...adminAppsSnap.docs];
       const seenPaths = new Set<string>();
       const duplicates = allDocs.filter((docSnapshot) => {
         const path = docSnapshot.ref.path;
@@ -353,8 +430,8 @@ function CsSummaryFormComponent() {
       } else {
         clearErrors('memberMrn');
       }
-    } catch (error) {
-      console.error('Error checking MRN uniqueness:', error);
+    } catch (error: any) {
+      console.warn('MRN uniqueness check skipped:', String(error?.message || 'unknown error'));
     }
   };
 
@@ -588,20 +665,37 @@ function CsSummaryFormComponent() {
     const normalizedMrn = data.memberMrn?.trim();
     if (!normalizedMrn) return false;
 
-    let userAppsSnap;
+    let userAppsDocs: QueryDocumentSnapshot<DocumentData>[] = [];
     let adminAppsSnap;
     try {
-      [userAppsSnap, adminAppsSnap] = await Promise.all([
-        getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
-        getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))),
-      ]);
+      adminAppsSnap = await getDocs(
+        query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))
+      );
+      try {
+        const userAppsSnap = await getDocs(
+          query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn))
+        );
+        userAppsDocs = userAppsSnap.docs;
+      } catch (groupError: any) {
+        const code = String(groupError?.code || '').trim().toLowerCase();
+        const msg = String(groupError?.message || '').toLowerCase();
+        const missingIndex = code === 'failed-precondition' || msg.includes('requires a collection_group') || msg.includes('index');
+        if (!missingIndex) throw groupError;
+        if (!mrnIndexWarningShownRef.current) {
+          mrnIndexWarningShownRef.current = true;
+          toast({
+            title: 'MRN duplicate check limited',
+            description: 'Cross-user MRN duplicate checking is temporarily limited until the Firestore index is available.',
+          });
+        }
+      }
     } catch (error: any) {
       console.warn('Duplicate check skipped:', error);
       return false;
     }
 
     const currentPath = docRef?.path;
-    const allDocs = [...userAppsSnap.docs, ...adminAppsSnap.docs];
+    const allDocs = [...userAppsDocs, ...adminAppsSnap.docs];
     const seenPaths = new Set<string>();
     const duplicates = allDocs.filter((docSnapshot) => {
       const path = docSnapshot.ref.path;
@@ -892,7 +986,15 @@ function CsSummaryFormComponent() {
             )}
 
             <div className="min-h-[450px]">
-              {currentStep === 1 && <Step1 isAdminView={isAdminView} onCheckMrnUnique={checkMrnUniqueness} />}
+              {currentStep === 1 && (
+                <Step1
+                  isAdminView={isAdminView}
+                  onCheckMrnUnique={checkMrnUniqueness}
+                  forceSeparatePrimaryContactFromSubmitter={isKaiserSkeletonDraftFlow}
+                  applicationIdForDraftUploads={internalApplicationId || ''}
+                  appUserIdForDraftUploads={appUserId || ''}
+                />
+              )}
               {currentStep === 2 && <Step2 />}
               {currentStep === 3 && <Step3 />}
               {currentStep === 4 && <Step4 />}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
 import { useSearchParams } from 'next/navigation';
@@ -99,6 +99,7 @@ export default function StandaloneUploadsPage() {
   const [apps, setApps] = useState<ApplicationCandidate[]>([]);
   const [selectedAppKey, setSelectedAppKey] = useState<string>('');
   const [assignedOpenUrl, setAssignedOpenUrl] = useState<string>('');
+  const appsIndexWarningShownRef = useRef(false);
 
   useEffect(() => {
     if (!firestore || !isAdmin) return;
@@ -279,10 +280,28 @@ export default function StandaloneUploadsPage() {
         }
 
         const normalizedMrn = mrn.trim();
-        const [userAppsSnap, adminAppsSnap] = await Promise.all([
-          getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn), limit(25))),
-          getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn), limit(25))),
-        ]);
+        const adminAppsSnap = await getDocs(
+          query(collection(firestore, 'applications'), where('memberMrn', '==', normalizedMrn), limit(25))
+        );
+        let userAppsDocs: any[] = [];
+        try {
+          const userAppsSnap = await getDocs(
+            query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', normalizedMrn), limit(25))
+          );
+          userAppsDocs = userAppsSnap.docs;
+        } catch (groupError: any) {
+          const code = String(groupError?.code || '').trim().toLowerCase();
+          const msg = String(groupError?.message || '').toLowerCase();
+          const missingIndex = code === 'failed-precondition' || msg.includes('requires a collection_group') || msg.includes('index');
+          if (!missingIndex) throw groupError;
+          if (!appsIndexWarningShownRef.current) {
+            appsIndexWarningShownRef.current = true;
+            toast({
+              title: 'Application lookup limited',
+              description: 'Cross-user MRN lookup is temporarily limited until the Firestore index is available.',
+            });
+          }
+        }
 
         const toCandidate = (d: any, source: 'user' | 'admin'): ApplicationCandidate => {
           const data = d.data() as any;
@@ -306,7 +325,7 @@ export default function StandaloneUploadsPage() {
         };
 
         const combined: ApplicationCandidate[] = [
-          ...userAppsSnap.docs.map((d) => toCandidate(d, 'user')),
+          ...userAppsDocs.map((d) => toCandidate(d, 'user')),
           ...adminAppsSnap.docs.map((d) => toCandidate(d, 'admin')),
         ];
 
@@ -323,7 +342,7 @@ export default function StandaloneUploadsPage() {
         setAppsLoading(false);
       }
     },
-    [firestore]
+    [firestore, toast]
   );
 
   const assignToApplication = useCallback(

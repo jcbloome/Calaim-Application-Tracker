@@ -47,11 +47,19 @@ export async function sendReminderEmails(applications: Application[]): Promise<S
                 })
                 .map((item: FormStatus) => item.name);
             
-            // Fetch user data to get email and name
-            let userEmail: string | undefined;
-            let userName: string = 'there';
+            // Primary contact should receive member-facing reminders.
+            const primaryContactEmail = String(app.bestContactEmail || '').trim();
+            const primaryContactName = String(`${app.bestContactFirstName || ''} ${app.bestContactLastName || ''}`).trim() || 'there';
+            const normalizedStatus = String((app as any)?.status || '').trim().toLowerCase();
+            const normalizedIntakeType = String((app as any)?.intakeType || '').trim().toLowerCase();
+            const isStaffDraftPathway = Boolean((app as any)?.createdByAdmin) && (
+                normalizedStatus === 'draft' ||
+                normalizedIntakeType === 'kaiser_auth_received_via_ils'
+            );
+            let userEmail: string | undefined = primaryContactEmail || undefined;
+            let userName: string = primaryContactName;
 
-            if (app.userId) {
+            if (!userEmail && !isStaffDraftPathway && app.userId) {
                 try {
                     const userDoc = await firestore.collection('users').doc(app.userId).get();
                     if (userDoc.exists) {
@@ -70,22 +78,43 @@ export async function sendReminderEmails(applications: Application[]): Promise<S
                     userEmail = app.referrerEmail;
                     userName = app.referrerName || 'there';
                 }
-            } else if(app.referrerEmail) {
+            } else if(!userEmail && !isStaffDraftPathway && app.referrerEmail) {
                  userEmail = app.referrerEmail;
                  userName = app.referrerName || 'there';
             }
-            
-            // Only send if there are incomplete items and an email to send to
-            if (incompleteItems && incompleteItems.length > 0 && userEmail) {
-                await sendReminderEmail({
-                    to: userEmail,
-                    subject: `Reminder: Action needed for CalAIM application for ${app.memberFirstName} ${app.memberLastName}`,
-                    referrerName: userName,
-                    memberName: `${app.memberFirstName} ${app.memberLastName}`,
-                    applicationId: app.id,
-                    incompleteItems,
-                });
-                sentCount++;
+
+            const recipients: Array<{ email: string; name: string }> = [];
+            if (userEmail) {
+                recipients.push({ email: userEmail, name: userName });
+            }
+            const shouldAlsoNotifySubmitter = Boolean((app as any)?.submitterAlsoReceivesDocRequests) && !isStaffDraftPathway;
+            const submitterEmail = String((app as any)?.referrerEmail || '').trim();
+            const submitterName = String((app as any)?.referrerName || '').trim() || 'there';
+            if (shouldAlsoNotifySubmitter && submitterEmail) {
+                recipients.push({ email: submitterEmail, name: submitterName });
+            }
+
+            const dedupedRecipients = Array.from(
+                new Map(
+                    recipients
+                        .filter((entry) => Boolean(String(entry.email || '').trim()))
+                        .map((entry) => [String(entry.email || '').trim().toLowerCase(), entry])
+                ).values()
+            );
+
+            // Only send if there are incomplete items and recipient emails.
+            if (incompleteItems && incompleteItems.length > 0 && dedupedRecipients.length > 0) {
+                for (const recipient of dedupedRecipients) {
+                    await sendReminderEmail({
+                        to: recipient.email,
+                        subject: `Reminder: Action needed for CalAIM application for ${app.memberFirstName} ${app.memberLastName}`,
+                        referrerName: recipient.name,
+                        memberName: `${app.memberFirstName} ${app.memberLastName}`,
+                        applicationId: app.id,
+                        incompleteItems,
+                    });
+                    sentCount++;
+                }
                 if (app.id) {
                     sentApplicationIds.push(app.id);
                 }

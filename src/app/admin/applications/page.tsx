@@ -70,6 +70,48 @@ const normalizeIntakeSource = (app: any): 'family_call' | 'ils_single_authorizat
   return 'family_call';
 };
 
+const sanitizeNameToken = (value: unknown) => {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const lowered = text.toLowerCase();
+  if (lowered === 'undefined' || lowered === 'null' || lowered === 'nan') return '';
+  return text;
+};
+
+const deriveMemberNameFields = (raw: any) => {
+  const currentFirst = sanitizeNameToken(raw?.memberFirstName);
+  const currentLast = sanitizeNameToken(raw?.memberLastName);
+  if (currentFirst || currentLast) {
+    return { memberFirstName: currentFirst, memberLastName: currentLast };
+  }
+
+  const combined = sanitizeNameToken(
+    raw?.memberName ||
+      raw?.memberFullName ||
+      raw?.member_full_name ||
+      raw?.seniorName ||
+      raw?.Senior_Name
+  );
+  if (!combined) return { memberFirstName: '', memberLastName: '' };
+
+  if (combined.includes(',')) {
+    const [last, first] = combined.split(',').map((token) => sanitizeNameToken(token));
+    return {
+      memberFirstName: first || '',
+      memberLastName: last || '',
+    };
+  }
+
+  const parts = combined.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return { memberFirstName: parts[0], memberLastName: '' };
+  }
+  return {
+    memberFirstName: parts[0],
+    memberLastName: parts.slice(1).join(' '),
+  };
+};
+
 function AdminApplicationsPageContent() {
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -115,18 +157,30 @@ function AdminApplicationsPageContent() {
       ]);
 
       // Combine both user and admin applications with unique keys
-      const userApps = userAppsSnapshot.docs.map((doc, index) => ({
-        ...doc.data(), 
-        id: doc.id,
-        uniqueKey: `user-${doc.id}-${index}`,
-        source: 'user'
-      })) as WithId<Application & FormValues>[];
-      const adminApps = adminAppsSnapshot.docs.map((doc, index) => ({
-        ...doc.data(), 
-        id: doc.id,
-        uniqueKey: `admin-${doc.id}-${index}`,
-        source: 'admin'
-      })) as WithId<Application & FormValues>[];
+      const userApps = userAppsSnapshot.docs.map((doc, index) => {
+        const data = doc.data() as any;
+        const derivedNames = deriveMemberNameFields(data);
+        return {
+          ...data,
+          ...derivedNames,
+          id: doc.id,
+          userId: doc.ref?.parent?.parent?.id || '',
+          uniqueKey: `user-${doc.id}-${index}`,
+          source: 'user',
+        };
+      }) as WithId<Application & FormValues>[];
+      const adminApps = adminAppsSnapshot.docs.map((doc, index) => {
+        const data = doc.data() as any;
+        const derivedNames = deriveMemberNameFields(data);
+        return {
+          ...data,
+          ...derivedNames,
+          id: doc.id,
+          userId: '',
+          uniqueKey: `admin-${doc.id}-${index}`,
+          source: 'admin',
+        };
+      }) as WithId<Application & FormValues>[];
 
       const normalize = (value: unknown) =>
         String(value ?? '')
@@ -154,6 +208,12 @@ function AdminApplicationsPageContent() {
         return sourceBoost;
       };
 
+      const hasValidMemberName = (app: any) => {
+        const first = sanitizeNameToken(app?.memberFirstName);
+        const last = sanitizeNameToken(app?.memberLastName);
+        return Boolean(first || last);
+      };
+
       const allApps = [...userApps, ...adminApps];
       const byId = new Map<string, WithId<Application & FormValues>>();
       const aliasToCanonical = new Map<string, string>();
@@ -164,6 +224,9 @@ function AdminApplicationsPageContent() {
       ) => {
         const currentMs = toMillis((current as any)?.lastUpdated || (current as any)?.submissionDate);
         const incomingMs = toMillis((incoming as any)?.lastUpdated || (incoming as any)?.submissionDate);
+        const currentHasName = hasValidMemberName(current);
+        const incomingHasName = hasValidMemberName(incoming);
+        if (currentHasName !== incomingHasName) return incomingHasName ? incoming : current;
         if (incomingMs !== currentMs) return incomingMs > currentMs ? incoming : current;
         const currentPriority = getPriority(current);
         const incomingPriority = getPriority(incoming);

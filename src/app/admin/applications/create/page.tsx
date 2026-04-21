@@ -922,6 +922,24 @@ const getEmptyMemberData = () => ({
   notes: '',
 });
 
+const getSubmittingStaffIdentity = (user: unknown) => {
+  const userRecord = (user && typeof user === 'object' ? user : {}) as Record<string, unknown>;
+  const displayName = String(userRecord.displayName || '').trim();
+  const email = String(userRecord.email || '').trim();
+  const phone = String(userRecord.phoneNumber || '').trim();
+  const fallback = email ? email.split('@')[0] : 'Staff';
+  const normalizedName = displayName || fallback;
+  const parts = normalizedName.split(/\s+/).filter(Boolean);
+  return {
+    name: normalizedName,
+    firstName: parts[0] || normalizedName,
+    lastName: parts.slice(1).join(' ') || '',
+    email,
+    phone,
+    uid: String(userRecord.uid || '').trim(),
+  };
+};
+
 const normalizeMemberPatch = (patch: Record<string, unknown>) => {
   const normalized: Record<string, string> = {};
   for (const [key, value] of Object.entries(patch)) {
@@ -1081,6 +1099,7 @@ export default function CreateApplicationPage() {
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
   const parseAbortControllerRef = useRef<AbortController | null>(null);
   const parsedSingleAuthFilesRef = useRef<Record<string, File>>({});
+  const ilsDuplicateIndexWarningShownRef = useRef(false);
   const createApplicationRef = useRef<() => Promise<string | null> | string | null>(() => null);
   const [memberData, setMemberData] = useState(getEmptyMemberData);
 
@@ -1248,10 +1267,24 @@ export default function CreateApplicationPage() {
 
     setCheckingRowDuplicates((prev) => ({ ...prev, [rowId]: true }));
     try {
-      const [adminAppsSnap, userAppsSnap] = await Promise.all([
-        getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', mrn))),
-        getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', mrn))),
-      ]);
+      const adminAppsSnap = await getDocs(query(collection(firestore, 'applications'), where('memberMrn', '==', mrn)));
+      let userAppsDocs: Array<any> = [];
+      try {
+        const userAppsSnap = await getDocs(query(collectionGroup(firestore, 'applications'), where('memberMrn', '==', mrn)));
+        userAppsDocs = userAppsSnap.docs;
+      } catch (groupError: any) {
+        const code = String(groupError?.code || '').trim().toLowerCase();
+        const msg = String(groupError?.message || '').toLowerCase();
+        const missingIndex = code === 'failed-precondition' || msg.includes('requires a collection_group') || msg.includes('index');
+        if (!missingIndex) throw groupError;
+        if (!ilsDuplicateIndexWarningShownRef.current) {
+          ilsDuplicateIndexWarningShownRef.current = true;
+          toast({
+            title: 'Duplicate check limited',
+            description: 'Cross-user duplicate checks are temporarily limited until the Firestore index is available.',
+          });
+        }
+      }
 
       const matches: IlsDuplicateMatch[] = [];
 
@@ -1278,7 +1311,7 @@ export default function CreateApplicationPage() {
         });
       });
 
-      userAppsSnap.docs.forEach((docSnap) => {
+      userAppsDocs.forEach((docSnap: any) => {
         const data = docSnap.data() as any;
         const existingAuth = String(data?.Authorization_Number_T038 || '').trim();
         const existingStart = String(data?.Authorization_Start_T2038 || '').trim();
@@ -2191,18 +2224,19 @@ export default function CreateApplicationPage() {
 
   const createApplicationForMember = async (options?: { skipNavigate?: boolean; suppressSuccessToast?: boolean }) => {
     const isKaiserAuthReceived = intakeType === 'kaiser_auth_received_via_ils';
-    const hasStandardRequired = memberData.contactPhone && memberData.contactFirstName && memberData.contactLastName;
-    const hasKaiserRequired = true;
+    const hasContactRequired =
+      Boolean(memberData.contactFirstName && memberData.contactLastName && memberData.contactPhone && memberData.contactEmail) &&
+      String(memberData.contactPhone || '').replace(/\D/g, '').length === 10;
+    const submittingStaff = getSubmittingStaffIdentity(user);
 
     if (
       !firestore ||
       !hasRequiredMemberName ||
-      (!isKaiserAuthReceived && !hasStandardRequired) ||
-      (isKaiserAuthReceived && !hasKaiserRequired)
+      !hasContactRequired
     ) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all required fields for this intake type.",
+        description: "Please fill member name and primary contact name, phone, and email before creating the draft application.",
         variant: "destructive",
       });
       return null;
@@ -2243,13 +2277,16 @@ export default function CreateApplicationPage() {
             }
           : {}),
 
-        // Contact/Referrer information (person helping with application)
-        referrerFirstName: memberData.contactFirstName || '',
-        referrerLastName: memberData.contactLastName || '',
-        referrerPhone: memberData.contactPhone || memberData.memberPhone || '',
-        referrerRelationship: memberData.contactRelationship || '',
+        // Submitting user for draft intake (staff)
+        referrerFirstName: submittingStaff.firstName || '',
+        referrerLastName: submittingStaff.lastName || '',
+        referrerEmail: submittingStaff.email || '',
+        referrerPhone: submittingStaff.phone || memberData.contactPhone || memberData.memberPhone || '',
+        referrerRelationship: 'Staff',
+        agency: 'Connections Care Home Consultants',
 
-        // Best contact defaults to same as referrer for admin-created applications
+        // Primary contact for member outreach
+        isPrimaryContactSameAsReferrer: false,
         bestContactFirstName: memberData.contactFirstName || '',
         bestContactLastName: memberData.contactLastName || '',
         bestContactPhone: memberData.contactPhone || memberData.memberPhone || '',
@@ -2264,6 +2301,9 @@ export default function CreateApplicationPage() {
         // Application metadata
         createdAt: serverTimestamp(),
         createdByAdmin: true,
+        draftSubmittedByStaffUid: submittingStaff.uid || null,
+        draftSubmittedByStaffName: submittingStaff.name || null,
+        draftSubmittedByStaffEmail: submittingStaff.email || null,
         status: 'draft',
         currentStep: 1,
         adminNotes: memberData.notes,
@@ -2604,14 +2644,13 @@ export default function CreateApplicationPage() {
   };
 
   const isFormValid = hasRequiredMemberName && (
-                       intakeType === 'kaiser_auth_received_via_ils'
-                         ? true
-                         : Boolean(
-                             memberData.contactFirstName &&
-                             memberData.contactLastName &&
-                             memberData.contactPhone &&
-                             memberData.contactPhone.replace(/\D/g, '').length === 10
-                           )
+                       Boolean(
+                         memberData.contactFirstName &&
+                         memberData.contactLastName &&
+                         memberData.contactPhone &&
+                         memberData.contactEmail &&
+                         memberData.contactPhone.replace(/\D/g, '').length === 10
+                       )
                      );
 
   const hasUnsavedChanges = useMemo(() => {
@@ -3451,18 +3490,22 @@ export default function CreateApplicationPage() {
           <div>
             <h3 className="text-lg font-semibold mb-3">Primary Contact Person</h3>
             <p className="text-sm text-gray-600 mb-3">
-              This is the person helping with the application (family member, caregiver, case worker, etc.)
+              This is who receives missing-document requests and status outreach (family member, caregiver, case worker, etc.).
             </p>
-            {intakeType === 'kaiser_auth_received_via_ils' && (
-              <Alert className="mb-3">
-                <AlertDescription>
-                  Contact person can be added later. Once available, add contact info so document and status reminders can be sent.
-                </AlertDescription>
-              </Alert>
-            )}
+            <Alert className="mb-3">
+              <AlertDescription>
+                Submitting staff is tracked automatically for this draft. Primary contact is separate and required before draft creation.
+              </AlertDescription>
+            </Alert>
+            <div className="mb-3 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              {(() => {
+                const submittingStaff = getSubmittingStaffIdentity(user);
+                return `Submitting staff: ${submittingStaff.name}${submittingStaff.email ? ` (${submittingStaff.email})` : ''}`;
+              })()}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="contactFirstName">Contact First Name{intakeType === 'standard' ? ' *' : ''}</Label>
+                <Label htmlFor="contactFirstName">Contact First Name *</Label>
                 <Input
                   id="contactFirstName"
                   value={memberData.contactFirstName || ''}
@@ -3470,7 +3513,7 @@ export default function CreateApplicationPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="contactLastName">Contact Last Name{intakeType === 'standard' ? ' *' : ''}</Label>
+                <Label htmlFor="contactLastName">Contact Last Name *</Label>
                 <Input
                   id="contactLastName"
                   value={memberData.contactLastName || ''}
@@ -3478,7 +3521,7 @@ export default function CreateApplicationPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="contactPhone">Contact Phone{intakeType === 'standard' ? ' *' : ''}</Label>
+                <Label htmlFor="contactPhone">Contact Phone *</Label>
                 <Input
                   id="contactPhone"
                   type="tel"
@@ -3495,7 +3538,7 @@ export default function CreateApplicationPage() {
                 />
               </div>
               <div className="md:col-span-2">
-                <Label htmlFor="contactEmail">Contact Email (Optional)</Label>
+                <Label htmlFor="contactEmail">Contact Email *</Label>
                 <Input
                   id="contactEmail"
                   type="text"
@@ -3503,7 +3546,7 @@ export default function CreateApplicationPage() {
                   value={memberData.contactEmail || ''}
                   onChange={(e) => setMemberData({ ...memberData, contactEmail: e.target.value })}
                 />
-                <p className="mt-1 text-xs text-muted-foreground">If no email, enter &quot;N/A&quot;.</p>
+                <p className="mt-1 text-xs text-muted-foreground">If no email exists, enter &quot;N/A&quot; so follow-up staff can update it later.</p>
               </div>
             </div>
           </div>
@@ -3555,8 +3598,8 @@ export default function CreateApplicationPage() {
 
           {!isFormValid && (
             <div className="text-sm text-gray-500 text-center space-y-1">
-              <p>Please fill in all required fields (marked with *) for the selected intake type.</p>
-              {intakeType === 'standard' && memberData.contactPhone && memberData.contactPhone.replace(/\D/g, '').length < 10 && (
+              <p>Please fill in all required fields (marked with *) before creating the application draft.</p>
+              {memberData.contactPhone && memberData.contactPhone.replace(/\D/g, '').length > 0 && memberData.contactPhone.replace(/\D/g, '').length < 10 && (
                 <p className="text-red-500">Contact phone number must be 10 digits (xxx.xxx.xxxx)</p>
               )}
               {intakeType === 'kaiser_auth_received_via_ils' && memberData.memberPhone && memberData.memberPhone.replace(/\D/g, '').length > 0 && memberData.memberPhone.replace(/\D/g, '').length < 10 && (

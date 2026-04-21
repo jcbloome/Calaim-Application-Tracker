@@ -62,9 +62,14 @@ export const formSchema = z.object({
     referrerFirstName: optionalString,
     referrerLastName: optionalString,
     referrerEmail: optionalEmail,
-    referrerPhone: requiredPhone,
-    referrerRelationship: requiredString,
+    referrerPhone: optionalPhone,
+    referrerRelationship: optionalString,
     agency: optionalString,
+    submitterAlsoReceivesDocRequests: z.boolean().optional().nullable().transform(val => val === true),
+    intakeType: optionalString,
+    status: optionalString,
+    kaiserAuthReceivedViaIls: z.boolean().optional().nullable().transform(val => val === true),
+    createdByAdmin: z.boolean().optional().nullable().transform(val => val === true),
 
     // Step 1 - Primary Contact Person
     isPrimaryContactSameAsReferrer: z.boolean().optional().nullable().transform(val => val === true),
@@ -147,6 +152,22 @@ export const formSchema = z.object({
     path: ["confirmMemberMrn"],
   })
   .superRefine((data, ctx) => {
+    const normalizedIntakeType = String(data.intakeType ?? '').trim().toLowerCase();
+    const normalizedStatus = String(data.status ?? '').trim().toLowerCase();
+    const isDraftStaffPathway = Boolean(data.createdByAdmin) && (
+      normalizedStatus === 'draft' ||
+      Boolean(data.kaiserAuthReceivedViaIls) ||
+      normalizedIntakeType === 'kaiser_auth_received_via_ils'
+    );
+    if (!isDraftStaffPathway) {
+      if (!String(data.referrerPhone ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['referrerPhone'] });
+      }
+      if (!String(data.referrerRelationship ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['referrerRelationship'] });
+      }
+    }
+
     if (!data.isPrimaryContactSameAsReferrer) {
       if (!String(data.bestContactFirstName ?? '').trim()) {
         ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactFirstName'] });
