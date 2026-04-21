@@ -3,7 +3,7 @@ import { Resend } from 'resend';
 import admin from 'firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
 
-const DEFAULT_APP_BASE_URL = 'https://connectcalaim.com';
+const APP_BASE_URL = 'https://connectcalaim.com';
 const FROM_EMAIL = 'CalAIM Pathfinder <noreply@carehomefinders.com>';
 const EMAIL_TEMPLATE = 'introductory_application_invite';
 const EMAIL_SOURCE = '/api/admin/send-introductory-email';
@@ -12,6 +12,27 @@ type IntroEmailMode = 'preview' | 'send';
 
 function normalizeEmail(value: unknown): string {
   return String(value || '').trim();
+}
+
+function isValidEmail(value: string): boolean {
+  const email = String(value || '').trim();
+  if (!email) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function parseEmailList(value: unknown): string[] {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const deduped = new Map<string, string>();
+  raw
+    .split(/[;,]/)
+    .map((part) => normalizeEmail(part))
+    .filter((email) => isValidEmail(email))
+    .forEach((email) => {
+      const key = email.toLowerCase();
+      if (!deduped.has(key)) deduped.set(key, email);
+    });
+  return Array.from(deduped.values());
 }
 
 function htmlEscape(value: string): string {
@@ -32,40 +53,86 @@ function toHtmlBody(message: string): string {
 }
 
 function getAppBaseUrl(): string {
-  const raw = String(process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || DEFAULT_APP_BASE_URL).trim();
-  if (!raw) return DEFAULT_APP_BASE_URL;
-  try {
-    const parsed = new URL(raw);
-    return `${parsed.origin}`.replace(/\/$/, '');
-  } catch {
-    return DEFAULT_APP_BASE_URL;
-  }
+  return APP_BASE_URL;
+}
+
+function getMissingRequestedDocuments(appData: Record<string, unknown>): string[] {
+  const forms = Array.isArray(appData?.forms) ? (appData.forms as Array<Record<string, unknown>>) : [];
+  const internalExclusions = new Set(['eligibility screenshot', 'eligibility check']);
+  const items = forms
+    .filter((form) => {
+      const name = String(form?.name || '').trim();
+      if (!name) return false;
+      const normalizedName = name.toLowerCase();
+      if (normalizedName === 'cs member summary' || normalizedName === 'cs summary') return false;
+      if (internalExclusions.has(normalizedName)) return false;
+      if (String(form?.type || '').trim().toLowerCase() === 'info') return false;
+      const status = String(form?.status || '').trim().toLowerCase();
+      return status !== 'completed';
+    })
+    .map((form) => String(form?.name || '').trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(items));
+}
+
+function getFirstNameOnly(name: string): string {
+  const cleaned = String(name || '').trim();
+  if (!cleaned) return '';
+  return cleaned.split(/\s+/)[0] || '';
 }
 
 function buildDefaultDraft(params: {
   applicationId: string;
   memberName: string;
   contactName: string;
+  memberMrn: string;
+  hasKaiserAuthorizationAtIntake: boolean;
   baseUrl: string;
+  missingDocuments: string[];
+  senderName: string;
+  senderEmail: string;
 }): { subject: string; message: string } {
-  const { applicationId, memberName, contactName, baseUrl } = params;
-  const greeting = contactName || 'there';
+  const {
+    applicationId,
+    memberName,
+    contactName,
+    memberMrn,
+    hasKaiserAuthorizationAtIntake,
+    baseUrl,
+    missingDocuments,
+    senderName,
+    senderEmail,
+  } = params;
+  const greetingFirstName = getFirstNameOnly(contactName) || 'there';
   const loginUrl = `${baseUrl}/login`;
   const signupUrl = `${baseUrl}/signup`;
   const inviteUrl = `${baseUrl}/invite/continue?applicationId=${encodeURIComponent(applicationId)}`;
+  const kaiserAuthorizationLine = hasKaiserAuthorizationAtIntake
+    ? `We have received Kaiser authorization for ${memberName} for the California Advancing and Innovating Medi-Cal (CalAIM) program for Assisted Living Transitions${memberMrn ? ` (MRN: ${memberMrn})` : ''}. We need the required documents below to move forward.`
+    : `We started a CalAIM application for ${memberName} and we are ready for next steps.`;
+  const missingDocumentsSection = missingDocuments.length
+    ? [
+        '',
+        'Missing documents requested:',
+        ...missingDocuments.map((item) => `- ${item}`),
+      ]
+    : [];
+  const supportLine = `For any questions, please contact ${senderName || 'our team'}${senderEmail ? ` at ${senderEmail}` : ''} or call 800-330-5993.`;
 
   return {
-    subject: `Welcome to Connect CalAIM - Next Steps for ${memberName}`,
+    subject: `To ${contactName || 'Primary Contact'}, Re: ${memberName} For Kaiser CalAIM Assisted Living Transitions Program - Next Steps`,
     message: [
-      `Hello ${greeting},`,
+      `Hello ${greetingFirstName},`,
       '',
-      `We started a CalAIM application for ${memberName} and we are ready for next steps.`,
+      kaiserAuthorizationLine,
       '',
       'Please sign in to the Connect CalAIM portal to continue and upload required documents:',
       `- Sign in: ${loginUrl}`,
       `- Create account (if new): ${signupUrl}`,
       '',
       'Please use this same email address for your account so we can match it correctly.',
+      ...missingDocumentsSection,
       '',
       'After signing in, open My Applications and select the member application.',
       '',
@@ -77,7 +144,7 @@ function buildDefaultDraft(params: {
       '- Member last name',
       '- Member date of birth',
       '',
-      'If you need help, reply to this email and our team will assist.',
+      supportLine,
       '',
       'Thank you,',
       'Connections Care Home Consultants',
@@ -116,26 +183,59 @@ export async function POST(request: NextRequest) {
     const contactName = String(
       `${appData.bestContactFirstName || appData.referrerFirstName || ''} ${appData.bestContactLastName || appData.referrerLastName || ''}`
     ).trim();
+    const memberMrn = String(appData.memberMrn || '').trim();
+    const kaiserAuthorizationMode = String(appData.kaiserAuthorizationMode || '').trim().toLowerCase();
+    const intakeType = String(appData.intakeType || '').trim().toLowerCase();
+    const hasKaiserAuthorizationAtIntake =
+      kaiserAuthorizationMode === 'authorization_received' ||
+      Boolean(appData.kaiserAuthReceivedViaIls) ||
+      intakeType === 'kaiser_auth_received_via_ils';
     const toEmailDefault =
       normalizeEmail(appData.bestContactEmail) ||
       normalizeEmail(appData.referrerEmail) ||
       normalizeEmail(appData.repEmail) ||
       normalizeEmail(appData.secondaryContactEmail);
+    const senderName = String(adminCheck.name || adminCheck.email || 'Staff').trim();
+    const senderEmail = normalizeEmail(adminCheck.email);
     const baseUrl = getAppBaseUrl();
-    const defaults = buildDefaultDraft({ applicationId, memberName, contactName, baseUrl });
+    const missingDocuments = getMissingRequestedDocuments(appData);
+    const defaults = buildDefaultDraft({
+      applicationId,
+      memberName,
+      contactName,
+      memberMrn,
+      hasKaiserAuthorizationAtIntake,
+      baseUrl,
+      missingDocuments,
+      senderName,
+      senderEmail,
+    });
 
     const to = String(body.to || toEmailDefault).trim();
     const subject = String(body.subject || defaults.subject).trim();
     const message = String(body.message || defaults.message).trim();
+    const toRecipients = parseEmailList(to);
+    const requestedCc = parseEmailList(body.cc);
+    const senderShouldBeCc =
+      isValidEmail(senderEmail) &&
+      !toRecipients.some((email) => email.toLowerCase() === senderEmail.toLowerCase());
+    const ccBase = requestedCc.length > 0 ? requestedCc : senderShouldBeCc ? [senderEmail] : [];
+    const ccDedup = new Map<string, string>();
+    ccBase.forEach((email) => {
+      if (!toRecipients.some((toEmail) => toEmail.toLowerCase() === email.toLowerCase())) {
+        ccDedup.set(email.toLowerCase(), email);
+      }
+    });
+    const ccRecipients = Array.from(ccDedup.values());
 
     if (mode === 'preview') {
       return NextResponse.json({
         success: true,
-        draft: { to, subject, message },
+        draft: { to: toRecipients.join(', '), cc: ccRecipients.join(', '), subject, message },
       });
     }
 
-    if (!to || !subject || !message) {
+    if (toRecipients.length === 0 || !subject || !message) {
       return NextResponse.json(
         { success: false, error: 'Recipient, subject, and message are required to send.' },
         { status: 400 }
@@ -155,7 +255,9 @@ export async function POST(request: NextRequest) {
     try {
       const result = await resend.emails.send({
         from: FROM_EMAIL,
-        to: [to],
+        to: toRecipients,
+        ...(ccRecipients.length > 0 ? { cc: ccRecipients } : {}),
+        ...(isValidEmail(senderEmail) ? { replyTo: senderEmail } : {}),
         subject,
         html,
         text,
@@ -173,7 +275,8 @@ export async function POST(request: NextRequest) {
         template: EMAIL_TEMPLATE,
         source: EMAIL_SOURCE,
         from: FROM_EMAIL,
-        to: [to],
+        to: toRecipients,
+        cc: ccRecipients.length > 0 ? ccRecipients : null,
         subject,
         provider: 'resend',
         providerMessageId: providerMessageId || null,
@@ -184,13 +287,14 @@ export async function POST(request: NextRequest) {
           sentByUid: adminCheck.uid,
           sentByEmail: adminCheck.email,
           sentByName: adminCheck.name,
+          ccRecipients,
         },
       });
 
       await appRef.set(
         {
           introEmailLastSentAt: admin.firestore.FieldValue.serverTimestamp(),
-          introEmailLastSentTo: to,
+          introEmailLastSentTo: toRecipients.join(', '),
           introEmailLastSentByUid: adminCheck.uid,
           introEmailLastSentByEmail: adminCheck.email,
         },
@@ -204,7 +308,8 @@ export async function POST(request: NextRequest) {
         template: EMAIL_TEMPLATE,
         source: EMAIL_SOURCE,
         from: FROM_EMAIL,
-        to: [to],
+        to: toRecipients,
+        cc: ccRecipients.length > 0 ? ccRecipients : null,
         subject,
         provider: 'resend',
         providerMessageId: providerMessageId || null,
@@ -215,6 +320,7 @@ export async function POST(request: NextRequest) {
           sentByUid: adminCheck.uid,
           sentByEmail: adminCheck.email,
           sentByName: adminCheck.name,
+          ccRecipients,
         },
       });
       throw sendError;

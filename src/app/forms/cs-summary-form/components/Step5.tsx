@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { type FormValues } from '../schema';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,7 +16,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 
 const locationOptions = ['Home', 'Hospital', 'Skilled Nursing', 'Unhoused', 'Sub-Acute', 'Assisted Living', 'Other', 'Unknown'];
 
-export default function Step5() {
+export default function Step5({
+  relaxIspRequiredForDraft = false,
+}: {
+  relaxIspRequiredForDraft?: boolean;
+}) {
   const { control, watch, getValues, setValue, clearErrors } = useFormContext<FormValues>();
   const hasPrefRCFE = watch('hasPrefRCFE');
   const ispContactIsMember = watch('ispContactIsMember');
@@ -142,18 +147,18 @@ export default function Step5() {
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField control={control} name="ispFirstName" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact First Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact First Name {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
             <FormField control={control} name="ispLastName" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact Last Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact Last Name {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField control={control} name="ispRelationship" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact Relationship to Member <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact Relationship to Member {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
             <FormField control={control} name="ispPhone" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact Phone <span className="text-destructive">*</span></FormLabel><FormControl><PhoneInput {...field} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact Phone {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput {...field} /></FormControl><FormMessage /></FormItem>
             )} />
           </div>
           <FormField control={control} name="ispEmail" render={({ field }) => (
@@ -193,7 +198,7 @@ export default function Step5() {
                 name="ispLocationType"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Type of Location <span className="text-destructive">*</span></FormLabel>
+                    <FormLabel>Type of Location {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)}>
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
@@ -208,19 +213,19 @@ export default function Step5() {
                 )}
               />
               <FormField control={control} name="ispFacilityName" render={({ field }) => (
-                <FormItem><FormLabel>Facility Name <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Facility Name {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
             <FormField control={control} name="ispAddress" render={({ field }) => (
-              <FormItem><FormLabel>Street Address <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>Street Address {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <FormField control={control} name="ispCity" render={({ field }) => (
-                <FormItem><FormLabel>City <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>City {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={control} name="ispState" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>State <span className="text-destructive">*</span></FormLabel>
+                  <FormLabel>State {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel>
                   <Select onValueChange={field.onChange} value={normalizeUsStateCode(field.value ?? '')} disabled={Boolean(ispLocationSameAsCurrent)}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger></FormControl>
                     <SelectContent>
@@ -235,10 +240,39 @@ export default function Step5() {
                 </FormItem>
               )} />
               <FormField control={control} name="ispZip" render={({ field }) => (
-                <FormItem><FormLabel>Zip <span className="text-destructive">*</span></FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(String(e.target.value || '').trim())} inputMode="numeric" /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Zip {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispLocationSameAsCurrent)} onChange={(e) => field.onChange(String(e.target.value || '').trim())} inputMode="numeric" /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
           </div>
+          {relaxIspRequiredForDraft ? (
+            <div className="space-y-3 p-4 border rounded-md bg-amber-50 border-amber-200">
+              <h3 className="font-medium text-base text-amber-900">Draft Pre-Assessment Notes (for Kaiser tier planning)</h3>
+              <p className="text-sm text-amber-800">
+                Capture care-needs observations for internal pre-assessment. These notes are included with Caspio push when a matching notes field is available.
+              </p>
+              <FormField
+                control={control}
+                name="preAssessmentCareNeedsNotes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Member care-needs pre-assessment notes</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        value={field.value ?? ''}
+                        rows={5}
+                        placeholder="Examples: transfer assist level, ambulation support, cognition/safety concerns, toileting needs, medication supervision, behavior/redirecting needs, overnight support patterns."
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Draft-only planning notes to help estimate likely ISP/tier level before formal assessment.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

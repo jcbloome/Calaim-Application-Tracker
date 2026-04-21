@@ -84,6 +84,18 @@ import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusPro
 
 const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
 
+function toMillisSafe(value: unknown): number {
+  try {
+    const ts = value as { toDate?: () => Date; toMillis?: () => number } | null;
+    if (ts && typeof ts.toDate === 'function') return ts.toDate().getTime();
+    if (ts && typeof ts.toMillis === 'function') return Number(ts.toMillis()) || 0;
+    const ms = new Date(String(value || '')).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  } catch {
+    return 0;
+  }
+}
+
 // Staff Assignment Dropdown Component
 function StaffAssignmentDropdown({ 
     application, 
@@ -1509,6 +1521,239 @@ function PushToCaspioDialog({
             </AlertDialogContent>
         </AlertDialog>
     );
+}
+
+function IntroductoryEmailDialog({
+  application,
+  buttonVariant = 'outline',
+  buttonClassName = 'w-full justify-start gap-2',
+}: {
+  application: Application;
+  buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
+  buttonClassName?: string;
+}) {
+  const { user } = useUser();
+  const { toast } = useToast();
+  const [isOpen, setIsOpen] = useState(false);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [to, setTo] = useState('');
+  const [cc, setCc] = useState('');
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [lastSentAtMs, setLastSentAtMs] = useState(() =>
+    toMillisSafe((application as any)?.introEmailLastSentAt || (application as any)?.introEmailLastSentDate)
+  );
+  const [lastSentTo, setLastSentTo] = useState(String((application as any)?.introEmailLastSentTo || '').trim());
+
+  const isDraftLike = String((application as any)?.status || '').trim().toLowerCase() === 'draft' || Boolean((application as any)?.createdByAdmin);
+  const primaryContactEmail = String((application as any)?.bestContactEmail || '').trim();
+  const fallbackEmail = String((application as any)?.referrerEmail || '').trim();
+  const recipientHint = primaryContactEmail || fallbackEmail;
+  const lastSentLabel = useMemo(() => {
+    if (!lastSentAtMs) return '';
+    try {
+      return format(new Date(lastSentAtMs), 'MMM d, yyyy h:mm a');
+    } catch {
+      return '';
+    }
+  }, [lastSentAtMs]);
+
+  useEffect(() => {
+    setLastSentAtMs(toMillisSafe((application as any)?.introEmailLastSentAt || (application as any)?.introEmailLastSentDate));
+    setLastSentTo(String((application as any)?.introEmailLastSentTo || '').trim());
+  }, [application]);
+
+  const loadPreview = async () => {
+    const applicationId = String(application.id || '').trim();
+    if (!applicationId) return;
+    if (!user) {
+      toast({ title: 'Not signed in', description: 'Please refresh and try again.', variant: 'destructive' });
+      return;
+    }
+    setIsLoadingPreview(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/send-introductory-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          applicationId,
+          mode: 'preview',
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to load invitation preview.');
+      }
+      setTo(String(data?.draft?.to || '').trim());
+      setCc(String(data?.draft?.cc || '').trim());
+      setSubject(String(data?.draft?.subject || '').trim());
+      setMessage(String(data?.draft?.message || '').trim());
+    } catch (error: any) {
+      toast({
+        title: 'Preview failed',
+        description: String(error?.message || 'Unable to load introductory email preview.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (subject || message || to || cc) return;
+    void loadPreview();
+  }, [isOpen]);
+
+  const sendEmail = async () => {
+    const applicationId = String(application.id || '').trim();
+    if (!applicationId) return;
+    if (!user) {
+      toast({ title: 'Not signed in', description: 'Please refresh and try again.', variant: 'destructive' });
+      return;
+    }
+    if (!to.trim() || !subject.trim() || !message.trim()) {
+      toast({
+        title: 'Missing email content',
+        description: 'Recipient, subject, and message are required before sending.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsSending(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/send-introductory-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          applicationId,
+          mode: 'send',
+          to: String(to || '').trim(),
+          cc: String(cc || '').trim(),
+          subject: String(subject || '').trim(),
+          message: String(message || '').trim(),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to send invitation email.');
+      }
+      toast({
+        title: 'Invitation sent',
+        description: `Introductory email sent to ${String(to || '').trim()}.`,
+      });
+      setLastSentAtMs(Date.now());
+      setLastSentTo(String(to || '').trim());
+      setIsOpen(false);
+    } catch (error: any) {
+      toast({
+        title: 'Send failed',
+        description: String(error?.message || 'Unable to send introductory email.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={isOpen}
+      onOpenChange={(next) => {
+        setIsOpen(next);
+        if (!next) {
+          setIsLoadingPreview(false);
+          setIsSending(false);
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          variant={buttonVariant}
+          className={buttonClassName}
+          disabled={!isDraftLike}
+          title={!isDraftLike ? 'Available for draft/admin-started records' : undefined}
+        >
+          <Mail className="h-4 w-4" />
+          Send Introductory Invite
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Invite primary contact from draft</DialogTitle>
+          <DialogDescription>
+            Send the portal invitation so the primary contact can complete remaining forms after draft/Caspio readiness.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {lastSentLabel ? (
+            <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
+              Last sent: {lastSentLabel}
+              {lastSentTo ? ` to ${lastSentTo}` : ''}. This send is retained in Email Logs.
+            </div>
+          ) : (
+            <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
+              This send will be timestamped and retained in Email Logs.
+            </div>
+          )}
+          {!recipientHint ? (
+            <Alert variant="destructive">
+              <AlertTitle>No contact email found</AlertTitle>
+              <AlertDescription>
+                Add a primary contact email first, then use this invitation action.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <Button type="button" variant="outline" size="sm" onClick={() => void loadPreview()} disabled={isLoadingPreview || isSending}>
+            {isLoadingPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Refresh Preview
+          </Button>
+          <div className="space-y-2">
+            <Label>To</Label>
+            <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder={recipientHint || 'contact@example.com'} />
+          </div>
+          <div className="space-y-2">
+            <Label>CC (Staff)</Label>
+            <Input
+              value={cc}
+              onChange={(e) => setCc(e.target.value)}
+              placeholder={String(user?.email || '').trim() || 'staff@carehomefinders.com'}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Subject</Label>
+            <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Message</Label>
+            <Textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={10} />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setIsOpen(false)} disabled={isSending}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void sendEmail()}
+              disabled={isSending || isLoadingPreview || !recipientHint}
+            >
+              {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Send Invitation
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function getReminderMissingItems(application: Application | null): string[] {
@@ -9069,10 +9314,10 @@ function ApplicationDetailPageContent() {
 
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="w-full h-auto justify-start gap-2 py-2 whitespace-normal">
                   <Bell className={cn('h-4 w-4', pendingUserStaffResponses > 0 ? 'text-blue-600' : 'text-muted-foreground')} />
-                  Note log and responses
-                  <span className="ml-auto flex items-center gap-1">
+                  <span className="flex-1 text-left leading-tight">Note log and responses</span>
+                  <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1">
                     <Badge
                       variant="outline"
                       className={cn(
@@ -9223,6 +9468,11 @@ function ApplicationDetailPageContent() {
             </Dialog>
 
             <PushToCaspioDialog
+              application={application}
+              buttonVariant="outline"
+              buttonClassName="w-full justify-start gap-2"
+            />
+            <IntroductoryEmailDialog
               application={application}
               buttonVariant="outline"
               buttonClassName="w-full justify-start gap-2"

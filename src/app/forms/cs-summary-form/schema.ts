@@ -123,18 +123,19 @@ export const formSchema = z.object({
 
     // Step 4 - ISP & RCFE
     ispContactIsMember: z.boolean().optional().nullable().transform(val => val === true),
-    ispFirstName: requiredString,
-    ispLastName: requiredString,
-    ispRelationship: requiredString,
-    ispPhone: requiredPhone,
+    ispFirstName: optionalString,
+    ispLastName: optionalString,
+    ispRelationship: optionalString,
+    ispPhone: optionalPhone,
     ispEmail: optionalEmail,
     ispLocationSameAsCurrent: z.boolean().optional().nullable().transform(val => val === true),
-    ispLocationType: requiredString,
-    ispAddress: requiredString,
-    ispCity: requiredString,
-    ispState: requiredString,
-    ispZip: requiredString,
-    ispFacilityName: requiredString,
+    ispLocationType: optionalString,
+    ispAddress: optionalString,
+    ispCity: optionalString,
+    ispState: optionalString,
+    ispZip: optionalString,
+    ispFacilityName: optionalString,
+    preAssessmentCareNeedsNotes: optionalString,
     onALWWaitlist: z.enum(['Yes', 'No', 'Unknown'], { errorMap: () => ({ message: ' ' }) }),
     hasPrefRCFE: z.enum(['Yes', 'No'], { errorMap: () => ({ message: ' ' }) }),
     rcfeName: optionalString,
@@ -167,6 +168,36 @@ export const formSchema = z.object({
       }
       if (!String(data.referrerRelationship ?? '').trim()) {
         ctx.addIssue({ code: 'custom', message: ' ', path: ['referrerRelationship'] });
+      }
+      if (!String(data.ispFirstName ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispFirstName'] });
+      }
+      if (!String(data.ispLastName ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispLastName'] });
+      }
+      if (!String(data.ispRelationship ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispRelationship'] });
+      }
+      if (!String(data.ispPhone ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispPhone'] });
+      }
+      if (!String(data.ispLocationType ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispLocationType'] });
+      }
+      if (!String(data.ispFacilityName ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispFacilityName'] });
+      }
+      if (!String(data.ispAddress ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispAddress'] });
+      }
+      if (!String(data.ispCity ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispCity'] });
+      }
+      if (!String(data.ispState ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispState'] });
+      }
+      if (!String(data.ispZip ?? '').trim()) {
+        ctx.addIssue({ code: 'custom', message: ' ', path: ['ispZip'] });
       }
     }
 

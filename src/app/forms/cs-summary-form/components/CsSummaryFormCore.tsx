@@ -40,6 +40,7 @@ const steps = [
       'ispLocationSameAsCurrent',
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail',
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip',
+      'preAssessmentCareNeedsNotes',
       'onALWWaitlist', 'hasPrefRCFE',
       'rcfeName', 'rcfeAddress', 'rcfePreferredCities',
       'rcfeAdminFirstName', 'rcfeAdminLastName', 'rcfeAdminPhone', 'rcfeAdminEmail'
@@ -134,6 +135,7 @@ function CsSummaryFormComponent() {
   const [lastEditedAt, setLastEditedAt] = useState(0);
   const [isDeletingDraft, setIsDeletingDraft] = useState(false);
   const [isKaiserSkeletonDraftFlow, setIsKaiserSkeletonDraftFlow] = useState(false);
+  const [isStaffDraftFlow, setIsStaffDraftFlow] = useState(false);
   const initialWatchCompleteRef = useRef(false);
   const lastSnapshotRef = useRef('');
   const mrnIndexWarningShownRef = useRef(false);
@@ -248,10 +250,10 @@ function CsSummaryFormComponent() {
             Boolean((data as any)?.intakeSource) ||
             String((data as any)?.id || '').startsWith('admin_app_') ||
             Boolean(internalApplicationId?.startsWith('admin_app_'));
-          const isStaffDraftFlow = isAdminView && isSkeletonSeed;
+          const isStaffDraftFlowDetected = isAdminView && isSkeletonSeed;
 
           const nextData = { ...(data as any) } as Record<string, unknown>;
-          if (isStaffDraftFlow) {
+          if (isStaffDraftFlowDetected) {
             const staffIdentity = getStaffIdentity({
               currentUser: user,
               appData: data as Record<string, unknown>,
@@ -269,7 +271,7 @@ function CsSummaryFormComponent() {
             String((nextData as any)?.pathwaySelectionConfirmedAt || '').trim()
           );
           const shouldClearLegacyDraftPathway =
-            isStaffDraftFlow &&
+            isStaffDraftFlowDetected &&
             normalizedStatus === 'draft' &&
             hasLegacyAutoSelectedPathway &&
             !hasPathwaySelectionConfirmation;
@@ -279,7 +281,8 @@ function CsSummaryFormComponent() {
           }
 
           reset(nextData as FormValues);
-          setIsKaiserSkeletonDraftFlow(isStaffDraftFlow);
+          setIsKaiserSkeletonDraftFlow(isStaffDraftFlowDetected);
+          setIsStaffDraftFlow(isStaffDraftFlowDetected);
           
           // Check if CS Summary is already completed and show skip option
           const csSummaryForm = data.forms?.find(form => 
@@ -291,6 +294,7 @@ function CsSummaryFormComponent() {
         } else {
             setInternalApplicationId(null);
             setIsKaiserSkeletonDraftFlow(false);
+            setIsStaffDraftFlow(false);
             if (user && !isAdminView) { // Only reset referrer for new user forms
                 const displayName = user.displayName || '';
                 const nameParts = displayName.split(' ');
@@ -306,6 +310,7 @@ function CsSummaryFormComponent() {
         }
       } else if (user && !internalApplicationId && !isAdminView) {
           setIsKaiserSkeletonDraftFlow(false);
+          setIsStaffDraftFlow(false);
           const displayName = user.displayName || '';
           const nameParts = displayName.split(' ');
           const firstName = nameParts[0] || '';
@@ -429,6 +434,9 @@ function CsSummaryFormComponent() {
         if (seenPaths.has(path)) return false;
         seenPaths.add(path);
         if (currentPath && path === currentPath) return false;
+        if (internalApplicationId && docSnapshot.id === internalApplicationId) return false;
+        const status = String((docSnapshot.data() as any)?.status || '').trim().toLowerCase();
+        if (status === 'deleted') return false;
         return true;
       });
 
@@ -720,6 +728,9 @@ function CsSummaryFormComponent() {
       if (seenPaths.has(path)) return false;
       seenPaths.add(path);
       if (currentPath && path === currentPath) return false;
+      if (internalApplicationId && docSnapshot.id === internalApplicationId) return false;
+      const status = String((docSnapshot.data() as any)?.status || '').trim().toLowerCase();
+      if (status === 'deleted') return false;
       return true;
     });
 
@@ -759,10 +770,13 @@ function CsSummaryFormComponent() {
       return;
     }
 
-    const hasDuplicate = await checkForDuplicates(data);
-    if (hasDuplicate) {
-      setIsProcessing(false);
-      return;
+    const isEditingExistingApplication = Boolean(internalApplicationId);
+    if (!isEditingExistingApplication) {
+      const hasDuplicate = await checkForDuplicates(data);
+      if (hasDuplicate) {
+        setIsProcessing(false);
+        return;
+      }
     }
   
     try {
@@ -772,11 +786,19 @@ function CsSummaryFormComponent() {
              setIsProcessing(false);
              return;
         }
-        
-        const reviewUrl = appUserId || finalAppId.startsWith('admin_app_')
-          ? `/admin/forms/review?applicationId=${finalAppId}${appUserId ? `&userId=${appUserId}` : ''}`
-          : `/forms/cs-summary-form/review?applicationId=${finalAppId}`;
-        router.push(reviewUrl);
+
+        if (isEditingExistingApplication) {
+          if (isAdminView) {
+            router.push(`/admin/applications/${finalAppId}${appUserId ? `?userId=${appUserId}` : ''}`);
+          } else {
+            router.push(`/pathway?applicationId=${finalAppId}`);
+          }
+        } else {
+          const reviewUrl = appUserId || finalAppId.startsWith('admin_app_')
+            ? `/admin/forms/review?applicationId=${finalAppId}${appUserId ? `&userId=${appUserId}` : ''}`
+            : `/forms/cs-summary-form/review?applicationId=${finalAppId}`;
+          router.push(reviewUrl);
+        }
         
     } catch {
         // Error is already handled and emitted by saveProgress
@@ -1016,7 +1038,7 @@ function CsSummaryFormComponent() {
               {currentStep === 2 && <Step2 />}
               {currentStep === 3 && <Step3 />}
               {currentStep === 4 && <Step4 />}
-              {currentStep === 5 && <Step5 />}
+              {currentStep === 5 && <Step5 relaxIspRequiredForDraft={isStaffDraftFlow} />}
             </div>
 
             <div className="mt-8 pt-5 border-t">
@@ -1054,7 +1076,9 @@ function CsSummaryFormComponent() {
                       {isProcessing ? (
                           <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...</>
                       ) : (
-                          'Review & Complete'
+                          (internalApplicationId
+                            ? (isAdminView ? 'Save & Continue to Application' : 'Save & Continue to Pathway')
+                            : 'Review & Complete')
                       )}
                     </Button>
                   )}

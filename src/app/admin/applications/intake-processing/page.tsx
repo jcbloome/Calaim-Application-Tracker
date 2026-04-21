@@ -90,7 +90,8 @@ const getMemberKey = (app: Record<string, unknown>) => {
 
 const getIncomingDocumentsFromApp = (app: Record<string, unknown>): IncomingDocumentSummary[] => {
   const forms = Array.isArray(app?.forms) ? (app.forms as Record<string, unknown>[]) : [];
-  return forms
+  const docsByName = new Map<string, IncomingDocumentSummary>();
+  forms
     .filter((form) => {
       const status = String(form?.status || '').trim().toLowerCase();
       if (status !== 'completed') return false;
@@ -98,17 +99,28 @@ const getIncomingDocumentsFromApp = (app: Record<string, unknown>): IncomingDocu
       const isSummary = formName === 'cs member summary' || formName === 'cs summary';
       return !isSummary;
     })
-    .map((form) => {
+    .forEach((form) => {
       const formName = String(form?.name || '').trim();
       const fileName = String(form?.fileName || '').trim();
       const displayName = fileName || formName || 'Incoming document';
       const acknowledged = form?.acknowledged === true;
-      return {
-        name: displayName,
-        pendingCount: acknowledged ? 0 : 1,
-        totalCount: 1,
-      };
+      const docKey = normalizeText(displayName);
+      const existing = docsByName.get(docKey);
+      if (!existing) {
+        docsByName.set(docKey, {
+          name: displayName,
+          pendingCount: acknowledged ? 0 : 1,
+          totalCount: 1,
+        });
+        return;
+      }
+      docsByName.set(docKey, {
+        name: existing.name,
+        pendingCount: existing.pendingCount + (acknowledged ? 0 : 1),
+        totalCount: existing.totalCount + 1,
+      });
     });
+  return Array.from(docsByName.values());
 };
 
 export default function ApplicationsIntakeProcessingPage() {
@@ -301,8 +313,8 @@ export default function ApplicationsIntakeProcessingPage() {
                             <span className="text-muted-foreground">No incoming documents</span>
                           ) : (
                             <div className="space-y-1">
-                              {member.incomingDocuments.map((doc) => (
-                                <div key={`${member.key}-${normalizeText(doc.name)}`} className="flex flex-wrap items-center gap-2">
+                              {member.incomingDocuments.map((doc, index) => (
+                                <div key={`${member.key}-${normalizeText(doc.name)}-${index}`} className="flex flex-wrap items-center gap-2">
                                   <span>{doc.name}</span>
                                   {doc.pendingCount > 0 ? (
                                     <Badge variant="secondary">Flagged</Badge>

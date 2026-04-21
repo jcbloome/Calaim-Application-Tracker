@@ -17,6 +17,12 @@
 ## 🗓️ **Development History**
 
 ### **April 21, 2026 - Updates**
+- ✅ **Feature Added**: Added an admin application-detail “Send Introductory Invite” action for draft/admin-started records with preview/edit/send flow, enabling primary-contact portal invitations directly from draft after sufficient data/Caspio readiness.
+- ✅ **Feature Added**: Added draft-only Section 11 pre-assessment care-needs notes in CS Summary (for rough Kaiser tier planning) and wired Caspio push to include these notes when a matching Caspio notes column exists.
+- ✅ **UI/UX**: Updated CS Summary existing-record save flow so admin edits now continue to `/admin/applications/[id]` (full tracker/notifications/Caspio action workspace) instead of the public `/pathway` page; button text now reflects admin vs user destination.
+- ✅ **Bug Fixed**: Fixed Pathway page runtime crash after “Save & Continue to Pathway” by restoring missing `Badge` import in `src/app/pathway/page.tsx` (`ReferenceError: Badge is not defined`).
+- ✅ **UI/UX**: Updated CS Summary final-step edit behavior so existing applications bypass new-record MRN duplicate blocking on submit, show “Save & Continue to Pathway,” and route directly to Pathway after save.
+- ✅ **Bug Fixed**: Relaxed ISP contact/location required validation for staff draft CS Summary flow and improved MRN duplicate detection to ignore same-ID/deleted records, reducing false “MRN already used” blockers (e.g., hidden legacy copies).
 - ✅ **Bug Fixed**: Resolved red error styling on Section 6A “Same as current location” checkbox by allowing legacy `copyAddress: null` values to deserialize as `false` in the CS Summary schema.
 - ✅ **Bug Fixed**: Prevented Section 6A Normal Long Term Mailing Address values from being unintentionally cleared when “Same as current location” is unchecked, preserving manual entries and previously saved data.
 - ✅ **UI/UX**: Added `ISP Assessment Location` checkbox (“Same as current location”) to auto-populate and sync ISP location type/name/address/city/state/zip from Section 6, with linked ISP location fields read-only while enabled.

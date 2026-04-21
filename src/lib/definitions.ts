@@ -134,6 +134,7 @@ export type Application = {
   ispState?: string;
   ispZip?: string;
   ispFacilityName?: string;
+  preAssessmentCareNeedsNotes?: string | null;
   onALWWaitlist?: 'Yes' | 'No' | 'Unknown';
   monthlyIncome?: string;
   incomeSource?: Array<'SSI' | 'SSA' | 'SSD' | 'OTHER' | 'N/A'> | 'SSI' | 'SSA' | 'SSD' | 'OTHER' | 'N/A' | string;

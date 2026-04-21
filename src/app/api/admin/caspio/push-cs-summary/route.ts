@@ -21,6 +21,12 @@ const MONTHLY_INCOME_FIELD = 'Monthly_Income';
 const MCO_AND_TIER_FIELD = 'MCO_and_Tier';
 const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
 const KAISER_STATUS_FIELD = 'Kaiser_Status';
+const PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES = [
+  'Pre_Assessment_Care_Needs_Notes',
+  'Pre_Assessment_Notes',
+  'Care_Needs_Notes',
+  'Care_Notes',
+];
 
 const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<string, string> | null) => {
   const memberData: Record<string, any> = {};
@@ -283,6 +289,24 @@ export async function POST(request: NextRequest) {
     memberFieldNames.forEach((name) => {
       fieldNameByNormalized.set(normalizeFieldName(name), name);
     });
+    const preAssessmentNotes = clean(
+      applicationData?.preAssessmentCareNeedsNotes ||
+      applicationData?.pre_assessment_care_needs_notes ||
+      applicationData?.preAssessmentNotes
+    );
+    if (preAssessmentNotes) {
+      const mappedNotesField = Object.keys(memberData).find(
+        (name) =>
+          normalizeFieldName(name).includes('preassessment') &&
+          normalizeFieldName(name).includes('notes')
+      );
+      const notesFieldName =
+        mappedNotesField ||
+        PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES.find((name) => fieldNameByNormalized.has(normalizeFieldName(name)));
+      if (notesFieldName) {
+        memberData[notesFieldName] = preAssessmentNotes;
+      }
+    }
     const holdFieldCandidates = [
       HOLD_FOR_SOCIAL_WORKER_FIELD,
       'Hold_For_Social_Worker',
