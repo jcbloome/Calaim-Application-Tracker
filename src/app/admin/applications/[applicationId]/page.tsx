@@ -1666,35 +1666,36 @@ function IntroductoryEmailDialog({
   };
 
   return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={(next) => {
-        setIsOpen(next);
-        if (!next) {
-          setIsLoadingPreview(false);
-          setIsSending(false);
-        }
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button
-          variant={buttonVariant}
-          className={buttonClassName}
-          disabled={!isDraftLike}
-          title={!isDraftLike ? 'Available for draft/admin-started records' : undefined}
-        >
-          <Mail className="h-4 w-4" />
-          Send Introductory Invite
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Invite primary contact from draft</DialogTitle>
-          <DialogDescription>
-            Send the portal invitation so the primary contact can complete remaining forms after draft/Caspio readiness.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
+    <div className="space-y-1">
+      <Dialog
+        open={isOpen}
+        onOpenChange={(next) => {
+          setIsOpen(next);
+          if (!next) {
+            setIsLoadingPreview(false);
+            setIsSending(false);
+          }
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button
+            variant={buttonVariant}
+            className={buttonClassName}
+            disabled={!isDraftLike}
+            title={!isDraftLike ? 'Available for draft/admin-started records' : undefined}
+          >
+            <Mail className="h-4 w-4" />
+            Send Introductory Invite
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Invite primary contact from draft</DialogTitle>
+            <DialogDescription>
+              Send the portal invitation so the primary contact can complete remaining forms after draft/Caspio readiness.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
           {lastSentLabel ? (
             <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
               Last sent: {lastSentLabel}
@@ -1750,9 +1751,15 @@ function IntroductoryEmailDialog({
               Send Invitation
             </Button>
           </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {lastSentLabel ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+          Introductory invite sent {lastSentLabel}{lastSentTo ? ` to ${lastSentTo}` : ''}. Logged in Email Logs.
         </div>
-      </DialogContent>
-    </Dialog>
+      ) : null}
+    </div>
   );
 }
 

@@ -195,6 +195,7 @@ export async function POST(request: NextRequest) {
       normalizeEmail(appData.referrerEmail) ||
       normalizeEmail(appData.repEmail) ||
       normalizeEmail(appData.secondaryContactEmail);
+    const primaryContactEmail = normalizeEmail(appData.bestContactEmail);
     const senderName = String(adminCheck.name || adminCheck.email || 'Staff').trim();
     const senderEmail = normalizeEmail(adminCheck.email);
     const baseUrl = getAppBaseUrl();
@@ -227,6 +228,9 @@ export async function POST(request: NextRequest) {
       }
     });
     const ccRecipients = Array.from(ccDedup.values());
+    const sentToPrimaryContact =
+      Boolean(primaryContactEmail) &&
+      toRecipients.some((email) => email.toLowerCase() === primaryContactEmail.toLowerCase());
 
     if (mode === 'preview') {
       return NextResponse.json({
@@ -284,6 +288,8 @@ export async function POST(request: NextRequest) {
         metadata: {
           applicationId,
           memberName,
+          primaryContactEmail: primaryContactEmail || null,
+          sentToPrimaryContact,
           sentByUid: adminCheck.uid,
           sentByEmail: adminCheck.email,
           sentByName: adminCheck.name,
@@ -317,6 +323,8 @@ export async function POST(request: NextRequest) {
         metadata: {
           applicationId,
           memberName,
+          primaryContactEmail: primaryContactEmail || null,
+          sentToPrimaryContact,
           sentByUid: adminCheck.uid,
           sentByEmail: adminCheck.email,
           sentByName: adminCheck.name,
