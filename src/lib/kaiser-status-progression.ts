@@ -36,6 +36,11 @@ export const KAISER_STATUS_ALIASES: Record<string, string> = {
   [normalizeKey('ILS/RCFE_Member_At_RCFE_Confirmed')]: 'Final- Member at RCFE',
   [normalizeKey('T2038 Auth Only Email')]: 'T2038_Auth_Email_Kaiser',
   [normalizeKey('T2038_Auth_Email_Kaiser')]: 'T2038_Auth_Email_Kaiser',
+  [normalizeKey('T2038 Received, Need First Contact')]: 'T2038 received, Need First Contact',
+  [normalizeKey('T2038 Received, Needs First Contact')]: 'T2038 received, Need First Contact',
+  [normalizeKey('T2038 Received, Unreachable')]: 'T2038 received, Unreachable',
+  [normalizeKey('T2038 Received, doc collection')]: 'T2038 received, doc collection',
+  [normalizeKey('T2038 Received, Doc Collection')]: 'T2038 received, doc collection',
 };
 
 export function normalizeKaiserStatusName(raw: string): string {

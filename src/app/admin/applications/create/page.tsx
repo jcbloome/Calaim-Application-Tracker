@@ -1131,7 +1131,6 @@ export default function CreateApplicationPage() {
   const [isCreatingIlsRecords, setIsCreatingIlsRecords] = useState(false);
   const [isDeletingCreatedIlsRecords, setIsDeletingCreatedIlsRecords] = useState(false);
   const [isPushingIlsRows, setIsPushingIlsRows] = useState(false);
-  const [isPushingSingleAuthToCaspio, setIsPushingSingleAuthToCaspio] = useState(false);
   const [isLoadingIntroEmailPreview, setIsLoadingIntroEmailPreview] = useState(false);
   const [isSendingIntroEmail, setIsSendingIntroEmail] = useState(false);
   const [introEmailDraft, setIntroEmailDraft] = useState<{
@@ -1423,7 +1422,7 @@ export default function CreateApplicationPage() {
       Authorization_End_T2038: sample.authorizationEndT2038,
       cptCode: sample.cptCode,
       Diagnostic_Code: sample.diagnosticCode,
-      kaiserStatus: 'T2038 Received, Needs First Contact',
+      kaiserStatus: 'T2038 Received, Need First Contact',
       workflowStep: 'Needs First Contact',
       assignedStaffName: sample.assignedStaffName,
       healthPlan: 'Kaiser',
@@ -1697,7 +1696,7 @@ export default function CreateApplicationPage() {
             isComplete: false,
             healthPlan: 'Kaiser',
             pathway: '',
-            kaiserStatus: 'T2038 Received, Needs First Contact',
+            kaiserStatus: 'T2038 Received, Need First Contact',
             caspioCalAIMStatus: 'Authorized',
             allowDraftCaspioPush: true,
             forms: formsForRow,
@@ -1717,7 +1716,7 @@ export default function CreateApplicationPage() {
                 message:
                   `You were assigned ${memberName} from Kaiser ILS spreadsheet intake.\n` +
                   `MRN: ${row.memberMrn || '—'} • DOB: ${row.memberDob || '—'} • County: ${row.memberCounty || '—'}\n` +
-                  `Status: T2038 Received, Needs First Contact`,
+                  `Status: T2038 Received, Need First Contact`,
                 memberName,
                 memberMrn: row.memberMrn || null,
                 memberDob: row.memberDob || null,
@@ -2409,7 +2408,7 @@ export default function CreateApplicationPage() {
         ...baseApplication,
         healthPlan: isKaiserAuthReceived ? 'Kaiser' : '',
         pathway: '',
-        kaiserStatus: isKaiserAuthReceived ? 'T2038 Received, Needs First Contact' : '',
+        kaiserStatus: isKaiserAuthReceived ? 'T2038 Received, Need First Contact' : '',
         caspioCalAIMStatus: isKaiserAuthReceived ? 'Authorized' : '',
         allowDraftCaspioPush: isKaiserAuthReceived ? true : false,
         forms: isKaiserAuthReceived ? authReceivedForms : [],
@@ -2670,57 +2669,6 @@ export default function CreateApplicationPage() {
       });
     } finally {
       setIsSendingIntroEmail(false);
-    }
-  };
-
-  const pushSingleAuthToCaspio = async (options?: { createSkeletonFirst?: boolean }) => {
-    if (intakeType !== 'kaiser_auth_received_via_ils') {
-      toast({
-        title: 'Wrong intake type',
-        description: 'Switch to Kaiser Auth Received (via ILS) to use single-auth push.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (!hasRequiredMemberName) {
-      toast({
-        title: 'Missing member name',
-        description: 'Parse the single auth PDF (or enter member first/last name) before creating/opening the main application record.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    setIsPushingSingleAuthToCaspio(true);
-    try {
-      let createdApplicationId: string | null = null;
-      if (options?.createSkeletonFirst) {
-        createdApplicationId = await createApplicationForMember({ skipNavigate: true, suppressSuccessToast: true });
-        if (!createdApplicationId) {
-          throw new Error('Could not create skeleton application.');
-        }
-      }
-      toast({
-        title: 'Skeleton created',
-        description: createdApplicationId
-          ? `Open application ${createdApplicationId} and push to Caspio from the main application page.`
-          : 'Create a skeleton first, then push from the main application page.',
-        action: createdApplicationId ? (
-          <ToastAction altText="Go to this application" onClick={() => router.push(`/admin/applications/${createdApplicationId}`)}>
-            Go to this application
-          </ToastAction>
-        ) : undefined,
-      });
-      if (createdApplicationId) {
-        router.push(`/admin/applications/${createdApplicationId}`);
-      }
-    } catch (error: any) {
-      toast({
-        title: 'Create/open failed',
-        description: String(error?.message || 'Unable to create/open the main application page.'),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsPushingSingleAuthToCaspio(false);
     }
   };
 
@@ -3064,18 +3012,6 @@ export default function CreateApplicationPage() {
                       </Button>
                       <Button
                         type="button"
-                        onClick={() => void pushSingleAuthToCaspio({ createSkeletonFirst: true })}
-                        disabled={isPushingSingleAuthToCaspio || isCreating}
-                      >
-                        {isPushingSingleAuthToCaspio ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Database className="mr-2 h-4 w-4 text-sky-600" />
-                        )}
-                        Create + Open Main Page
-                      </Button>
-                      <Button
-                        type="button"
                         variant="ghost"
                         onClick={clearServiceRequestFile}
                         disabled={!serviceRequestFile || isParsingServiceRequest}
@@ -3099,7 +3035,7 @@ export default function CreateApplicationPage() {
                       </div>
                     ) : null}
                     <div className="text-xs text-muted-foreground">
-                      Single-auth flow: Parse PDF(s) -&gt; Create skeleton(s) (draft) -&gt; Open main application page -&gt; Push to Caspio.
+                      Single-auth flow: Parse PDF(s) -&gt; Create skeleton draft -&gt; Go to main application page for Quick Actions, introductory email, first-call notes, and Caspio push.
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Protocol: Upload single-auth PDF first, then click Parse Single Auth PDF to fill member name/details.
@@ -3132,6 +3068,7 @@ export default function CreateApplicationPage() {
                       </div>
                     ) : null}
                     {lastCreatedSkeleton ? (
+                      <>
                       <div className="rounded-md border bg-emerald-50/60 p-2 space-y-2">
                         <div className="text-xs font-medium">
                           Skeleton created: <span className="font-semibold">{lastCreatedSkeleton.applicationId}</span> ({lastCreatedSkeleton.memberName})
@@ -3169,11 +3106,6 @@ export default function CreateApplicationPage() {
                             onClick={() => void copyToClipboard('Portal continue link', familyPortalContinueLink)}
                           >
                             Copy Continue Link
-                          </Button>
-                          <Button type="button" size="sm" asChild>
-                            <Link href={`/admin/applications/${lastCreatedSkeleton.applicationId}`}>
-                              Go to This Application
-                            </Link>
                           </Button>
                           <Button
                             type="button"
@@ -3235,6 +3167,12 @@ export default function CreateApplicationPage() {
                           </div>
                         ) : null}
                       </div>
+                      <Button type="button" className="w-full" asChild>
+                        <Link href={`/admin/applications/${lastCreatedSkeleton.applicationId}`}>
+                          Go to Application Main Page
+                        </Link>
+                      </Button>
+                      </>
                     ) : null}
                   </div>
                   <div className="text-xs text-muted-foreground">

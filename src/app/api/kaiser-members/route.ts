@@ -42,6 +42,160 @@ const pickFirstPopulated = (row: Record<string, unknown>, keys: string[]) => {
   return '';
 };
 
+const normalizeText = (value: unknown) => String(value ?? '').trim().toLowerCase();
+const toIsoString = (value: unknown) => {
+  try {
+    if (!value) return '';
+    const withToDate = value as { toDate?: () => Date };
+    if (typeof withToDate?.toDate === 'function') {
+      const d = withToDate.toDate();
+      return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+    }
+    const d = new Date(String(value));
+    return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+  } catch {
+    return '';
+  }
+};
+const isTruthy = (value: unknown) => {
+  const v = normalizeText(value);
+  return Boolean(v) && !['false', '0', 'no', 'null', 'undefined'].includes(v);
+};
+const isKaiserDraftApplication = (app: Record<string, unknown>) => {
+  const healthPlan = normalizeText(app?.healthPlan || app?.Health_Plan || app?.health_plan || '');
+  const intakeType = normalizeText(app?.intakeType || '');
+  const intakeSource = normalizeText(app?.intakeSource || '');
+  const authMode = normalizeText(app?.kaiserAuthorizationMode || '');
+  return (
+    healthPlan.includes('kaiser') ||
+    intakeType === 'kaiser_auth_received_via_ils' ||
+    intakeSource === 'ils_single_authorization_sheet' ||
+    intakeSource === 'ils_spreadsheet_batch' ||
+    authMode === 'authorization_received' ||
+    isTruthy(app?.kaiserAuthReceivedViaIls)
+  );
+};
+const deriveDraftKaiserStatus = (app: Record<string, unknown>) => {
+  const explicit = String(app?.kaiserStatus || app?.Kaiser_Status || '').trim();
+  if (explicit) return explicit;
+  if (isTruthy(app?.kaiserAuthReceivedViaIls) || normalizeText(app?.kaiserAuthorizationMode) === 'authorization_received') {
+    return 'T2038 Received, Need First Contact';
+  }
+  return '';
+};
+const toDraftKaiserMember = (docId: string, app: Record<string, unknown>) => {
+  const memberFirstName = String(app?.memberFirstName || app?.Member_First_Name || '').trim();
+  const memberLastName = String(app?.memberLastName || app?.Member_Last_Name || '').trim();
+  const hasMemberName = Boolean(memberFirstName || memberLastName);
+  if (!hasMemberName) return null;
+
+  const clientId2 = String(app?.clientId2 || app?.client_ID2 || app?.caspioClientId2 || '').trim();
+  const syntheticClientId2 = clientId2 || `draft-${docId}`;
+  const staffAssigned = String(app?.assignedStaffName || app?.draftSubmittedByStaffName || '').trim();
+  const memberCounty = String(
+    app?.memberCounty || app?.memberCustomaryCounty || app?.currentCounty || app?.Member_County || ''
+  ).trim() || 'Unknown';
+  const memberPhone = String(app?.memberPhone || app?.contactPhone || app?.bestContactPhone || '').trim();
+  const memberEmail = String(app?.contactEmail || app?.bestContactEmail || app?.referrerEmail || '').trim();
+  const kaiserStatus = deriveDraftKaiserStatus(app);
+  const calaimStatus = toCanonicalCalaimStatus(app?.caspioCalAIMStatus ?? app?.CalAIM_Status ?? 'Authorized');
+  const lastUpdatedIso =
+    toIsoString(app?.lastUpdated) ||
+    toIsoString(app?.updatedAt) ||
+    toIsoString(app?.createdAt) ||
+    new Date().toISOString();
+  const createdAtIso = toIsoString(app?.createdAt) || lastUpdatedIso;
+
+  return {
+    ISP_Current_Location: '',
+    ISP_Contact_Phone: '',
+    ISP_Contact_Email: '',
+    ISP_Contact_Confirm_Field: '',
+    id: `draft-${docId}`,
+    Client_ID2: syntheticClientId2,
+    client_ID2: syntheticClientId2,
+    memberName: `${memberLastName || 'Unknown'}, ${memberFirstName || 'Member'}`,
+    memberFirstName: memberFirstName || 'Unknown',
+    memberLastName: memberLastName || 'Member',
+    Senior_Last_First_ID: `${memberLastName || 'Unknown'}, ${memberFirstName || 'Member'}`,
+    memberCounty,
+    memberMrn: String(app?.memberMrn || app?.MCP_CIN || app?.Member_MRN || '').trim(),
+    Birth_Date: String(app?.memberDob || app?.Birth_Date || '').trim(),
+    birthDate: String(app?.memberDob || app?.Birth_Date || '').trim(),
+    memberPhone,
+    memberEmail,
+    CalAIM_MCO: 'Kaiser',
+    CalAIM_Status: calaimStatus,
+    ILS_Connected: '',
+    Kaiser_Status: kaiserStatus,
+    Kaiser_ID_Status: '',
+    SW_ID: '',
+    Kaiser_User_Assignment: staffAssigned,
+    ALFT_Assigned: '',
+    Kaiser_Next_Step_Date: String(app?.nextStepDate || app?.Kaiser_Next_Step_Date || '').trim(),
+    T2038_Auth_Email_Kaiser: '',
+    Social_Worker_Assigned: '',
+    Staff_Assigned: staffAssigned,
+    RCFE_Name: '',
+    RCFE_Admin_Name: '',
+    RCFE_Admin_Email: '',
+    RCFE_Address: '',
+    RCFE_City: '',
+    RCFE_Zip: '',
+    pathway: String(app?.pathway || 'Kaiser Draft Intake').trim() || 'Kaiser Draft Intake',
+    Next_Step_Due_Date: String(app?.nextStepDate || app?.Next_Step_Due_Date || '').trim(),
+    workflow_step: String(app?.workflowStep || '').trim(),
+    workflow_notes: String(app?.workflowNotes || '').trim(),
+    last_updated: lastUpdatedIso,
+    created_at: createdAtIso,
+    Authorization_End_Date_T2038: String(app?.Authorization_End_T2038 || app?.Authorization_End_Date_T2038 || '').trim(),
+    Need_More_Contact_Info_ILS: '',
+    Hold_For_Social_Worker: '',
+    source: 'application-draft',
+    applicationId: docId,
+    caspioSent: Boolean(app?.caspioSent),
+  };
+};
+const appendDraftKaiserMembers = async (adminDb: any, baseMembers: any[]) => {
+  try {
+    const [kaiserIntakeSnap, kaiserHealthPlanSnap, authModeSnap] = await Promise.all([
+      adminDb.collection('applications').where('kaiserAuthReceivedViaIls', '==', true).limit(3000).get(),
+      adminDb.collection('applications').where('healthPlan', '==', 'Kaiser').limit(3000).get(),
+      adminDb.collection('applications').where('kaiserAuthorizationMode', '==', 'authorization_received').limit(3000).get(),
+    ]);
+
+    const draftsById = new Map<string, Record<string, unknown>>();
+    [kaiserIntakeSnap, kaiserHealthPlanSnap, authModeSnap].forEach((snap) => {
+      snap.docs.forEach((doc) => {
+        draftsById.set(doc.id, doc.data() as Record<string, unknown>);
+      });
+    });
+
+    const existingClientIds = new Set(
+      baseMembers.map((m) => String(m?.Client_ID2 || m?.client_ID2 || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const draftMembers: any[] = [];
+    draftsById.forEach((app, appId) => {
+      if (!isKaiserDraftApplication(app)) return;
+      if (Boolean(app?.caspioSent)) return;
+      const statusText = normalizeText(app?.status || '');
+      const isDraftLike = statusText === 'draft' || statusText === 'authorization received (doc collection)' || !statusText;
+      if (!isDraftLike) return;
+      const candidate = toDraftKaiserMember(appId, app);
+      if (!candidate) return;
+      const candidateClientId = String(candidate?.Client_ID2 || '').trim().toLowerCase();
+      if (candidateClientId && existingClientIds.has(candidateClientId)) return;
+      draftMembers.push(candidate);
+    });
+
+    if (!draftMembers.length) return baseMembers;
+    return [...baseMembers, ...draftMembers];
+  } catch (error) {
+    console.warn('Failed to append Kaiser draft applications to tracker response:', error);
+    return baseMembers;
+  }
+};
+
 export async function GET(request: NextRequest) {
   try {
     const preferCaspio = request.nextUrl.searchParams.get('refresh') === '1' || request.nextUrl.searchParams.get('source') === 'caspio';
@@ -157,10 +311,12 @@ export async function GET(request: NextRequest) {
         Hold_For_Social_Worker: member.Hold_For_Social_Worker || member.Hold_For_Social_Worker_Visit || '',
       }));
 
+      const mergedMembers = await appendDraftKaiserMembers(adminDb, transformedMembers);
+
       const responseBody = {
         success: true,
-        members: transformedMembers,
-        count: transformedMembers.length,
+        members: mergedMembers,
+        count: mergedMembers.length,
         timestamp: new Date().toISOString(),
         source: 'firestore-cache',
       };
@@ -221,7 +377,7 @@ export async function GET(request: NextRequest) {
         const countData = await countResponse.json();
         console.log('🔢 Total Kaiser members available:', countData);
       }
-    } catch (countError) {
+    } catch {
       console.log('⚠️ Could not get count, proceeding with pagination...');
     }
     
