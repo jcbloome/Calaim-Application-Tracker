@@ -834,6 +834,7 @@ function PushToCaspioDialog({
     const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
     const [isResettingCaspio, setIsResettingCaspio] = useState(false);
     const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
+    const [skeletonPushEnabled, setSkeletonPushEnabled] = useState(false);
 
     const docRef = useMemoFirebase(() => {
         if (!firestore || !application.id) return null;
@@ -906,6 +907,7 @@ function PushToCaspioDialog({
 
     const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
     const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
+    const isKaiserHealthPlan = String((application as any)?.healthPlan || '').trim().toLowerCase().includes('kaiser');
     const caspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
     const requestedKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
     const requestedSocialWorkerHold = String(
@@ -957,9 +959,9 @@ function PushToCaspioDialog({
     const readinessChecks = [
       { key: 'memberFirstName', label: 'Member first name', required: true, ready: Boolean(toClean((application as any)?.memberFirstName)) },
       { key: 'memberLastName', label: 'Member last name', required: true, ready: Boolean(toClean((application as any)?.memberLastName)) },
-      { key: 'authorizationNumber', label: 'Authorization Number T038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush, ready: Boolean(toClean((application as any)?.Authorization_Number_T038)) },
-      { key: 'authorizationStart', label: 'Authorization Start T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush, ready: Boolean(toClean((application as any)?.Authorization_Start_T2038)) },
-      { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
+      { key: 'authorizationNumber', label: 'Authorization Number T038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_Number_T038)) },
+      { key: 'authorizationStart', label: 'Authorization Start T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_Start_T2038)) },
+      { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
       { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
       { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: false, ready: Boolean(caspioCalAIMStatus) },
@@ -1180,6 +1182,7 @@ function PushToCaspioDialog({
                       holdForSocialWorkerStatus: requestedSocialWorkerHold,
                     },
                     mapping: mappingOverride || caspioMappingPreview || null,
+                    skeletonPush: isKaiserHealthPlan && skeletonPushEnabled,
                 }),
             });
             const result = await response.json().catch(() => ({} as any));
@@ -1431,6 +1434,26 @@ function PushToCaspioDialog({
                     {allowDraftCaspioPush ? (
                         <div className="text-xs text-muted-foreground">
                             Draft push mode is enabled for this intake. Authorization fields are optional so you can publish early and manage Kaiser status while details are still being completed.
+                        </div>
+                    ) : null}
+                    {isKaiserHealthPlan ? (
+                        <div className="rounded-md border p-2 space-y-2">
+                          <label className="flex items-start gap-2 text-xs">
+                            <Checkbox
+                              checked={skeletonPushEnabled}
+                              onCheckedChange={(checked) => setSkeletonPushEnabled(Boolean(checked))}
+                              disabled={isSendingToCaspio}
+                            />
+                            <span>
+                              <span className="font-medium">Skeleton push</span>{' '}
+                              fills missing mapped values with placeholders so staff can create a Caspio record with essential member/contact info first.
+                            </span>
+                          </label>
+                          {skeletonPushEnabled ? (
+                            <div className="text-[11px] text-muted-foreground">
+                              Missing mapped fields are auto-filled with dummy placeholders. Use this for incomplete Kaiser intakes that still need claim/authorization workflow started.
+                            </div>
+                          ) : null}
                         </div>
                     ) : null}
                     <div className="text-xs text-muted-foreground">

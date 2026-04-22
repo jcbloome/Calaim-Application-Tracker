@@ -35,15 +35,81 @@ const PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES = [
   'Care_Notes',
 ];
 
-const buildMemberDataFromMapping = (applicationData: any, mapping?: Record<string, string> | null) => {
+const getApplicationValueByCsField = (applicationData: any, csField: string) => {
+  const direct = applicationData?.[csField];
+  if (direct !== undefined && direct !== null && direct !== '') return direct;
+  const normalizedTarget = normalizeFieldName(csField);
+  if (!normalizedTarget || !applicationData || typeof applicationData !== 'object') return '';
+  for (const [key, value] of Object.entries(applicationData)) {
+    if (normalizeFieldName(key) === normalizedTarget && value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return '';
+};
+
+const buildSkeletonPlaceholder = (applicationData: any, csField: string, caspioField: string) => {
+  const normalized = normalizeFieldName(`${csField} ${caspioField}`);
+  const memberFirst = clean(applicationData?.memberFirstName);
+  const memberLast = clean(applicationData?.memberLastName);
+  const bestContactFirst = clean(applicationData?.bestContactFirstName || applicationData?.referrerFirstName);
+  const bestContactLast = clean(applicationData?.bestContactLastName || applicationData?.referrerLastName);
+  const bestContactEmail = clean(applicationData?.bestContactEmail || applicationData?.referrerEmail);
+  const bestContactPhone = clean(applicationData?.bestContactPhone || applicationData?.referrerPhone);
+  const memberMrn = clean(
+    applicationData?.memberMrn ||
+      applicationData?.medicalRecordNumber ||
+      applicationData?.mrn ||
+      applicationData?.Member_MRN
+  );
+  if (normalized.includes('seniorfirst') || normalized.includes('memberfirst')) return memberFirst || 'Unknown';
+  if (normalized.includes('seniorlast') || normalized.includes('memberlast')) return memberLast || 'Unknown';
+  if (normalized.includes('mrn') || normalized.includes('medicalrecord')) return memberMrn || 'MRN-PENDING';
+  if (normalized.includes('phone')) return bestContactPhone || '5550000000';
+  if (normalized.includes('email')) return bestContactEmail || 'skeleton-push@placeholder.invalid';
+  if (normalized.includes('contactfirst') || normalized.includes('repfirst') || normalized.includes('caregiverfirst')) {
+    return bestContactFirst || 'Unknown';
+  }
+  if (normalized.includes('contactlast') || normalized.includes('replast') || normalized.includes('caregiverlast')) {
+    return bestContactLast || 'Unknown';
+  }
+  if (normalized.includes('contactname') || normalized.includes('caregivername') || normalized.includes('repname')) {
+    return `${bestContactFirst} ${bestContactLast}`.trim() || 'Unknown Contact';
+  }
+  if (normalized.includes('relationship')) return 'Unknown';
+  if (normalized.includes('dob') || normalized.includes('dateofbirth')) return '01/01/1900';
+  if (normalized.includes('zip')) return '99999';
+  if (normalized.includes('state')) return 'CA';
+  if (normalized.includes('city')) return 'Unknown';
+  if (normalized.includes('address')) return 'Pending Address';
+  if (normalized.includes('language')) return 'English';
+  if (normalized.includes('gender')) return 'Unknown';
+  if (normalized.includes('income') || normalized.includes('amount') || normalized.includes('monthly')) return '0';
+  if (normalized.includes('notes') || normalized.includes('comment')) return 'Skeleton push placeholder value';
+  if (normalized.includes('status')) return 'Pending';
+  return 'Pending details';
+};
+
+const buildMemberDataFromMapping = (
+  applicationData: any,
+  mapping?: Record<string, string> | null,
+  options?: { skeletonPush?: boolean }
+) => {
   const memberData: Record<string, any> = {};
   if (!mapping || typeof mapping !== 'object') return memberData;
+  const skeletonPush = Boolean(options?.skeletonPush);
 
   Object.entries(mapping).forEach(([csField, caspioField]) => {
     if (!caspioField) return;
-    const value = applicationData?.[csField];
-    if (value === undefined || value === null || value === '') return;
-    memberData[caspioField] = value;
+    const value = getApplicationValueByCsField(applicationData, csField);
+    if (value !== undefined && value !== null && value !== '') {
+      memberData[caspioField] = value;
+      return;
+    }
+    if (!skeletonPush) return;
+    const placeholder = buildSkeletonPlaceholder(applicationData, csField, caspioField);
+    if (!hasValue(placeholder)) return;
+    memberData[caspioField] = placeholder;
   });
 
   return memberData;
@@ -153,6 +219,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({} as any));
     const applicationData = body?.applicationData || null;
     const mapping = (body?.mapping || null) as Record<string, string> | null;
+    const skeletonPush = Boolean(body?.skeletonPush);
 
     if (!applicationData || typeof applicationData !== 'object') {
       return NextResponse.json({ success: false, message: 'Application data is required.' }, { status: 400 });
@@ -320,7 +387,7 @@ export async function POST(request: NextRequest) {
       existingRow = await trySearchMember(where);
     }
 
-    const mappedFields = buildMemberDataFromMapping(applicationData, mapping);
+    const mappedFields = buildMemberDataFromMapping(applicationData, mapping, { skeletonPush });
     // Prevent stale draft mappings from sending an invalid hold-column alias.
     // We set this field explicitly below using canonical column naming.
     Object.keys(mappedFields).forEach((fieldName) => {
