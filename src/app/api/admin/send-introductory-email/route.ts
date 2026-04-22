@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
       `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`
     ).trim() || 'CalAIM Member';
     const contactName = String(
-      `${appData.bestContactFirstName || appData.referrerFirstName || ''} ${appData.bestContactLastName || appData.referrerLastName || ''}`
+      `${appData.bestContactFirstName || ''} ${appData.bestContactLastName || ''}`
     ).trim();
     const memberMrn = String(appData.memberMrn || '').trim();
     const kaiserAuthorizationMode = String(appData.kaiserAuthorizationMode || '').trim().toLowerCase();
@@ -190,11 +190,7 @@ export async function POST(request: NextRequest) {
       kaiserAuthorizationMode === 'authorization_received' ||
       Boolean(appData.kaiserAuthReceivedViaIls) ||
       intakeType === 'kaiser_auth_received_via_ils';
-    const toEmailDefault =
-      normalizeEmail(appData.bestContactEmail) ||
-      normalizeEmail(appData.referrerEmail) ||
-      normalizeEmail(appData.repEmail) ||
-      normalizeEmail(appData.secondaryContactEmail);
+    const toEmailDefault = normalizeEmail(appData.bestContactEmail);
     const primaryContactEmail = normalizeEmail(appData.bestContactEmail);
     const senderName = String(adminCheck.name || adminCheck.email || 'Staff').trim();
     const senderEmail = normalizeEmail(adminCheck.email);

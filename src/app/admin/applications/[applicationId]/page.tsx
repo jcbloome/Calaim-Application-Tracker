@@ -1548,8 +1548,7 @@ function IntroductoryEmailDialog({
 
   const isDraftLike = String((application as any)?.status || '').trim().toLowerCase() === 'draft' || Boolean((application as any)?.createdByAdmin);
   const primaryContactEmail = String((application as any)?.bestContactEmail || '').trim();
-  const fallbackEmail = String((application as any)?.referrerEmail || '').trim();
-  const recipientHint = primaryContactEmail || fallbackEmail;
+  const recipientHint = primaryContactEmail;
   const lastSentLabel = useMemo(() => {
     if (!lastSentAtMs) return '';
     try {
