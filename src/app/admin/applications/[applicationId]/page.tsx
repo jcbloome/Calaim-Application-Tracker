@@ -5576,6 +5576,160 @@ function ApplicationDetailPageContent() {
     const parsedDob = new Date(rawDob);
     return Number.isNaN(parsedDob.getTime()) ? rawDob : format(parsedDob, 'MM-dd-yyyy');
   })();
+  const t2038AuthNumberDisplay = String(
+    (application as any)?.Authorization_Number_T038 ||
+    (application as any)?.Authorization_Number_T2038 ||
+    ''
+  ).trim();
+  const t2038AuthStartDisplay = String(
+    (application as any)?.Authorization_Start_T2038 ||
+    (application as any)?.Authorization_Start_Date_T2038 ||
+    ''
+  ).trim();
+  const t2038AuthEndDisplay = String(
+    (application as any)?.Authorization_End_T2038 ||
+    (application as any)?.Authorization_End_Date_T2038 ||
+    ''
+  ).trim();
+  const hasT2038AuthorizationSummary = Boolean(
+    t2038AuthNumberDisplay || t2038AuthStartDisplay || t2038AuthEndDisplay
+  );
+  const memberFileEntries = (() => {
+    const toIso = (value: unknown): string => {
+      if (!value) return '';
+      try {
+        if (typeof (value as any)?.toDate === 'function') {
+          return (value as any).toDate().toISOString();
+        }
+        if (typeof (value as any)?.seconds === 'number') {
+          return new Date((value as any).seconds * 1000).toISOString();
+        }
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const parsed = new Date(raw);
+        return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString();
+      } catch {
+        return '';
+      }
+    };
+
+    const rawForms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
+    const formEntries = rawForms
+      .map((form, idx) => {
+        const documentName = String(form?.name || '').trim() || 'Application File';
+        const fileName = String(form?.fileName || '').trim() || documentName;
+        const downloadURL = String(form?.downloadURL || '').trim();
+        const filePath = String(form?.filePath || '').trim();
+        if (!downloadURL && !filePath && !fileName) return null;
+        return {
+          id: `form-file-${idx}-${documentName}-${fileName}`,
+          category: 'Application form',
+          documentName,
+          fileName,
+          downloadURL,
+          filePath,
+          uploadedAtIso: toIso(form?.dateCompleted || form?.uploadedAt || form?.createdAt),
+        };
+      })
+      .filter(Boolean) as Array<{
+      id: string;
+      category: string;
+      documentName: string;
+      fileName: string;
+      downloadURL: string;
+      filePath: string;
+      uploadedAtIso: string;
+    }>;
+
+    const rawEligibility = Array.isArray((application as any)?.eligibilityScreenshotUploads)
+      ? ((application as any).eligibilityScreenshotUploads as any[])
+      : [];
+    const eligibilityEntries = rawEligibility
+      .map((upload, idx) => {
+        const fileName = String(upload?.fileName || '').trim() || `Eligibility Screenshot ${idx + 1}`;
+        const downloadURL = String(upload?.downloadURL || '').trim();
+        const filePath = String(upload?.filePath || '').trim();
+        if (!downloadURL && !filePath) return null;
+        return {
+          id: `elig-file-${idx}-${fileName}`,
+          category: 'Eligibility check',
+          documentName: 'Eligibility Screenshot',
+          fileName,
+          downloadURL,
+          filePath,
+          uploadedAtIso: toIso(upload?.uploadedAtIso || upload?.uploadedAt || upload?.createdAt),
+        };
+      })
+      .filter(Boolean) as Array<{
+      id: string;
+      category: string;
+      documentName: string;
+      fileName: string;
+      downloadURL: string;
+      filePath: string;
+      uploadedAtIso: string;
+    }>;
+
+    const deduped = new Map<string, (typeof formEntries)[number]>();
+    [...formEntries, ...eligibilityEntries].forEach((entry) => {
+      const key = `${entry.documentName}::${entry.fileName}::${entry.downloadURL || entry.filePath}`;
+      if (!deduped.has(key)) deduped.set(key, entry);
+    });
+
+    return Array.from(deduped.values()).sort((a, b) => {
+      const aMs = a.uploadedAtIso ? new Date(a.uploadedAtIso).getTime() : 0;
+      const bMs = b.uploadedAtIso ? new Date(b.uploadedAtIso).getTime() : 0;
+      return bMs - aMs;
+    });
+  })();
+  const MemberFilesDialog = ({
+    triggerLabel,
+    triggerClassName,
+    triggerVariant = 'outline',
+  }: {
+    triggerLabel: string;
+    triggerClassName?: string;
+    triggerVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
+  }) => (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant={triggerVariant} className={triggerClassName || 'w-full justify-start gap-2'}>
+          <File className="h-4 w-4" />
+          {triggerLabel}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+        <DialogHeader>
+          <DialogTitle>Files in Application</DialogTitle>
+          <DialogDescription>All member files in this application, including eligibility checks.</DialogDescription>
+        </DialogHeader>
+        {memberFileEntries.length === 0 ? (
+          <div className="rounded-md border p-3 text-sm text-muted-foreground">No uploaded files found yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {memberFileEntries.map((entry) => (
+              <div key={entry.id} className="rounded-md border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">{entry.category}</div>
+                  {entry.uploadedAtIso ? (
+                    <div className="text-xs text-muted-foreground">{format(new Date(entry.uploadedAtIso), 'MMM d, yyyy h:mm a')}</div>
+                  ) : null}
+                </div>
+                <div className="text-sm font-medium">{entry.documentName}</div>
+                {entry.downloadURL ? (
+                  <a href={entry.downloadURL} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-700 underline underline-offset-2">
+                    {entry.fileName}
+                  </a>
+                ) : (
+                  <div className="text-xs text-muted-foreground">{entry.fileName}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
   const parseCurrencyAmount = (value: unknown): number | null => {
     if (value == null) return null;
     const normalized = String(value).replace(/[^0-9.]/g, '').trim();
@@ -8396,6 +8550,22 @@ function ApplicationDetailPageContent() {
                 </div>
                 <div><strong>Submission Status:</strong> <span className="font-semibold">{application.status}</span></div>
             </div>
+            {isKaiserPlan && hasT2038AuthorizationSummary ? (
+              <div className="rounded-md border border-sky-200 bg-sky-50/60 p-3">
+                <div className="text-sm font-medium text-sky-900">Parsed T2038 Authorization</div>
+                <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+                  <div>
+                    <span className="font-medium">Auth Number:</span> {t2038AuthNumberDisplay || '—'}
+                  </div>
+                  <div>
+                    <span className="font-medium">Auth Start:</span> {t2038AuthStartDisplay || '—'}
+                  </div>
+                  <div>
+                    <span className="font-medium">Auth End:</span> {t2038AuthEndDisplay || '—'}
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {isKaiserPlan ? (
               <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3">
@@ -8760,6 +8930,12 @@ function ApplicationDetailPageContent() {
             </CardContent>
         </Card>
 
+        <div className="flex justify-end">
+          <MemberFilesDialog
+            triggerLabel="View Files in Application"
+            triggerClassName="justify-start gap-2"
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {displayedPathwayRequirements.map((req) => {
                 const formInfo = formStatusMap.get(req.title);
@@ -9200,6 +9376,7 @@ function ApplicationDetailPageContent() {
                 <ActivityLog embedded applicationIdFilter={String(application.id || '')} />
               </DialogContent>
             </Dialog>
+            <MemberFilesDialog triggerLabel="See Files" />
             {isKaiserPlan ? (() => {
               const qaMemberAddress = [
                 String((application as any)?.currentAddress || '').trim(),
