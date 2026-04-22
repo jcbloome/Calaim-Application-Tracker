@@ -2932,70 +2932,84 @@ export default function CreateApplicationPage() {
                     If selected on create, this assignment is added to the staff member&apos;s Action Items (bell) and daily task calendar. You can also assign staff later.
                   </div>
                 </div>
-                <div className="md:col-span-2 p-3 border rounded-md bg-indigo-50/40 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="font-medium">Kaiser (ILS) Spreadsheet Parser</div>
-                      <div className="text-xs text-muted-foreground">
-                        Upload Excel files from Kaiser ILS or bulk single authorization-sheet PDFs to parse fields, create draft application records, assign staff, and push to Caspio when ready.
+                <div className="md:col-span-2 space-y-3">
+                  <div className="p-3 border rounded-md bg-indigo-50/40 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="font-medium">Section 1: Kaiser (ILS) Spreadsheet Parser</div>
+                        <div className="text-xs text-muted-foreground">
+                          Upload Excel files from Kaiser ILS to parse fields, create draft application records, assign staff, and send selected rows to the main-page Caspio push flow.
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <input
+                          ref={ilsSpreadsheetInputRef}
+                          type="file"
+                          accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                          className="hidden"
+                          onChange={(e) => {
+                            const picked = e.target.files?.[0];
+                            if (picked) void parseIlsSpreadsheetFile(picked);
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => ilsSpreadsheetInputRef.current?.click()}
+                          disabled={isParsingIlsSpreadsheet}
+                        >
+                          {isParsingIlsSpreadsheet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                          {isParsingIlsSpreadsheet ? 'Parsing spreadsheet...' : 'Upload ILS Spreadsheet'}
+                        </Button>
+                        <Button type="button" variant="outline" onClick={applyStaffToSelectedIlsRows} disabled={selectedIlsRows.length === 0}>
+                          Assign Staff to Selected
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={clearIlsSpreadsheetImport}
+                          disabled={isParsingIlsSpreadsheet || (ilsImportRows.length === 0 && !ilsSpreadsheetFileName)}
+                        >
+                          Delete Spreadsheet Upload
+                        </Button>
+                        <Button type="button" variant="outline" onClick={createIlsSkeletonApplications} disabled={isCreatingIlsRecords || selectedIlsRows.length === 0}>
+                          {isCreatingIlsRecords ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Create Selected Records
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          onClick={deleteCreatedIlsRecords}
+                          disabled={isDeletingCreatedIlsRecords || selectedCreatedIlsRows.length === 0}
+                        >
+                          {isDeletingCreatedIlsRecords ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Delete Created Records
+                        </Button>
+                        <Button type="button" onClick={pushSelectedIlsRowsToCaspio} disabled={isPushingIlsRows || selectedIlsRows.length === 0}>
+                          {isPushingIlsRows ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Database className="mr-2 h-4 w-4 text-sky-600" />
+                          )}
+                          Open Selected for Main-Page Push
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <input
-                        ref={ilsSpreadsheetInputRef}
-                        type="file"
-                        accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-                        className="hidden"
-                        onChange={(e) => {
-                          const picked = e.target.files?.[0];
-                          if (picked) void parseIlsSpreadsheetFile(picked);
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => ilsSpreadsheetInputRef.current?.click()}
-                        disabled={isParsingIlsSpreadsheet}
-                      >
-                        {isParsingIlsSpreadsheet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                        {isParsingIlsSpreadsheet ? 'Parsing spreadsheet...' : 'Upload ILS Spreadsheet'}
-                      </Button>
-                      <Button type="button" variant="outline" onClick={applyStaffToSelectedIlsRows} disabled={selectedIlsRows.length === 0}>
-                        Assign Staff to Selected
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={clearIlsSpreadsheetImport}
-                        disabled={isParsingIlsSpreadsheet || (ilsImportRows.length === 0 && !ilsSpreadsheetFileName)}
-                      >
-                        Delete Spreadsheet Upload
-                      </Button>
-                      <Button type="button" variant="outline" onClick={createIlsSkeletonApplications} disabled={isCreatingIlsRecords || selectedIlsRows.length === 0}>
-                        {isCreatingIlsRecords ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Create Selected Records
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={deleteCreatedIlsRecords}
-                        disabled={isDeletingCreatedIlsRecords || selectedCreatedIlsRows.length === 0}
-                      >
-                        {isDeletingCreatedIlsRecords ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Delete Created Records
-                      </Button>
-                      <Button type="button" onClick={pushSelectedIlsRowsToCaspio} disabled={isPushingIlsRows || selectedIlsRows.length === 0}>
-                        {isPushingIlsRows ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Database className="mr-2 h-4 w-4 text-sky-600" />
-                        )}
-                        Open Selected for Main-Page Push
-                      </Button>
+                    <div className="text-xs text-muted-foreground">
+                      Spreadsheet file: {ilsSpreadsheetFileName || 'None'}
                     </div>
+                    {ilsSpreadsheetFileName ? (
+                      <div className="rounded-md border bg-emerald-50/60 px-2 py-1 text-xs text-emerald-800">
+                        Uploaded spreadsheet: <span className="font-medium">{ilsSpreadsheetFileName}</span>
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="rounded-md border bg-white/80 p-2 space-y-2">
-                    <div className="text-xs font-medium">Single authorization sheet PDF parser</div>
+
+                  <div className="p-3 border rounded-md bg-white/80 space-y-2">
+                    <div className="font-medium">Section 2: Upload Single Auth or Upload Batch</div>
+                    <div className="text-xs text-muted-foreground">
+                      Upload one PDF to parse and create a single skeleton, or upload multiple PDFs and parse them into a batch for spreadsheet-style processing.
+                    </div>
                     <input
                       ref={serviceRequestFileInputRef}
                       type="file"
@@ -3070,13 +3084,8 @@ export default function CreateApplicationPage() {
                       </Button>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Spreadsheet file: {ilsSpreadsheetFileName || 'None'} • Single auth PDFs selected: {serviceRequestFiles.length || 0}
+                      Single auth PDFs selected: {serviceRequestFiles.length || 0}
                     </div>
-                    {ilsSpreadsheetFileName ? (
-                      <div className="rounded-md border bg-emerald-50/60 px-2 py-1 text-xs text-emerald-800">
-                        Uploaded spreadsheet: <span className="font-medium">{ilsSpreadsheetFileName}</span>
-                      </div>
-                    ) : null}
                     {serviceRequestFiles.length > 0 ? (
                       <div className="rounded-md border bg-slate-50 p-2 space-y-1">
                         <div className="text-xs font-medium text-slate-700">Uploaded single-auth PDF file(s):</div>
@@ -3095,6 +3104,7 @@ export default function CreateApplicationPage() {
                     <div className="text-xs text-muted-foreground">
                       Protocol: Upload single-auth PDF first, then click Parse Single Auth PDF to fill member name/details.
                     </div>
+                  </div>
                     {serviceRequestParsedFields.length > 0 ? (
                       <div className="text-xs text-green-700">
                         Parsed via PDF: {serviceRequestParsedFields.join(', ')}
@@ -3467,7 +3477,6 @@ export default function CreateApplicationPage() {
                       </table>
                     </div>
                   ) : null}
-                </div>
                 <div>
                   <Label htmlFor="memberMrn">Member MRN</Label>
                   <Input

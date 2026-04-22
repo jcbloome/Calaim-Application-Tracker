@@ -105,6 +105,7 @@ const adminNavLinks = [
     icon: LayoutDashboard,
     isSubmenu: true,
     submenuItems: [
+      { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin', label: 'Activity Dashboard', icon: Activity },
       { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
       { href: '/admin/applications/intake-processing', label: 'Application Intake Processing', icon: FolderSync },
@@ -114,7 +115,6 @@ const adminNavLinks = [
       { href: '/admin/alft-tracker', label: 'ALFT Workflow Intake', icon: UploadCloud },
       { href: '/admin/alft-assignment', label: 'ALFT Assignment Queue', icon: UserCheck },
       { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield },
-      { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
       { href: '/admin/email-logs', label: 'Email Logs', icon: Mail },
