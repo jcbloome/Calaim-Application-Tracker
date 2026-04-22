@@ -852,20 +852,6 @@ function PushToCaspioDialog({
         const loadMappingPreview = async () => {
             if (firestore && user?.uid) {
                 try {
-                    const cloudRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
-                    const cloudSnap = await getDoc(cloudRef);
-                    if (cloudSnap.exists()) {
-                        const cloudData = (cloudSnap.data() || {}) as Record<string, any>;
-                        const locked = cloudData?.lockedMappings;
-                        if (locked && typeof locked === 'object' && Object.keys(locked).length > 0) {
-                            if (!cancelled) setCaspioMappingPreview(locked as Record<string, string>);
-                            return;
-                        }
-                    }
-                } catch (error) {
-                    console.warn('Failed to load cloud Caspio mapping preview:', error);
-                }
-                try {
                     const sharedRef = doc(firestore, 'admin-settings', 'caspio-field-mapping');
                     const sharedSnap = await getDoc(sharedRef);
                     if (sharedSnap.exists()) {
@@ -878,6 +864,20 @@ function PushToCaspioDialog({
                     }
                 } catch (error) {
                     console.warn('Failed to load shared Caspio mapping preview:', error);
+                }
+                try {
+                    const cloudRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
+                    const cloudSnap = await getDoc(cloudRef);
+                    if (cloudSnap.exists()) {
+                        const cloudData = (cloudSnap.data() || {}) as Record<string, any>;
+                        const locked = cloudData?.lockedMappings;
+                        if (locked && typeof locked === 'object' && Object.keys(locked).length > 0) {
+                            if (!cancelled) setCaspioMappingPreview(locked as Record<string, string>);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Failed to load cloud Caspio mapping preview:', error);
                 }
             }
             if (typeof window !== 'undefined') {

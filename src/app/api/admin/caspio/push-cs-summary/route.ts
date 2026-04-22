@@ -14,6 +14,13 @@ const normalizeFieldName = (fieldName: string) =>
 const hasValue = (value: unknown) => clean(value).length > 0;
 const looksLikePkField = (fieldName: string) => /^pk_id$/i.test(clean(fieldName));
 const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(value));
+const buildEqualsClause = (fieldName: string, value: unknown) => {
+  const normalizedValue = clean(value);
+  if (!normalizedValue) return '';
+  return looksLikeNumericId(normalizedValue)
+    ? `${fieldName}=${normalizedValue}`
+    : `${fieldName}='${esc(normalizedValue)}'`;
+};
 const HOLD_FOR_SOCIAL_WORKER_FIELD = 'Hold_For_Social_Worker_Visit';
 const HOLD_FOR_SOCIAL_WORKER_VALUE = '🔴 Hold';
 const CALAIM_STATUS_FIELD = 'CalAIM_Status';
@@ -94,28 +101,41 @@ async function createClientAndGetClientId2(
     const err = await createResponse.text().catch(() => '');
     throw new Error(`Failed to create client in connect_tbl_clients: ${createResponse.status} ${err}`);
   }
+  const createJson = await createResponse.json().catch(() => ({} as any));
+  const createResultRow = Array.isArray(createJson?.Result) ? createJson.Result[0] : createJson?.Result;
+  const directClientId2 = clean(
+    createResultRow?.client_ID2 ||
+      createResultRow?.Client_ID2 ||
+      createResultRow?.clientid2 ||
+      createResultRow?.Record_ID
+  );
+  if (directClientId2) return directClientId2;
 
   const where = `First_Name='${esc(firstName)}' AND Last_Name='${esc(lastName)}'`;
-  const lookupUrl =
-    `${baseUrl}/tables/${clientTable}/records` +
-    `?q.where=${encodeURIComponent(where)}` +
-    `&q.orderBy=${encodeURIComponent('client_ID2 DESC')}` +
-    `&q.limit=1`;
+  const lookupOrderCandidates = ['client_ID2 DESC', 'Client_ID2 DESC', 'PK_ID DESC'];
 
-  for (let attempt = 1; attempt <= 8; attempt += 1) {
-    const lookupResponse = await fetch(lookupUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
+  for (let attempt = 1; attempt <= 10; attempt += 1) {
+    for (const orderBy of lookupOrderCandidates) {
+      const lookupUrl =
+        `${baseUrl}/tables/${clientTable}/records` +
+        `?q.where=${encodeURIComponent(where)}` +
+        `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Record_ID')}` +
+        `&q.orderBy=${encodeURIComponent(orderBy)}` +
+        `&q.limit=1`;
+      const lookupResponse = await fetch(lookupUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (lookupResponse.ok) {
-      const lookupJson = await lookupResponse.json().catch(() => ({} as any));
-      const row = Array.isArray(lookupJson?.Result) ? lookupJson.Result[0] : null;
-      const clientId2 = clean(row?.client_ID2 || row?.Client_ID2 || row?.Record_ID);
-      if (clientId2) return clientId2;
+      if (lookupResponse.ok) {
+        const lookupJson = await lookupResponse.json().catch(() => ({} as any));
+        const row = Array.isArray(lookupJson?.Result) ? lookupJson.Result[0] : null;
+        const clientId2 = clean(row?.client_ID2 || row?.Client_ID2 || row?.clientid2 || row?.Record_ID);
+        if (clientId2) return clientId2;
+      }
     }
 
     await sleep(250 * attempt);
@@ -251,13 +271,49 @@ export async function POST(request: NextRequest) {
         applicationData?.Client_ID2 ||
         applicationData?.caspioClientId2
     );
+    const isAlreadySent = Boolean(applicationData?.caspioSent);
+    if (hintedClientId2 && !isAlreadySent) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'client-id2-conflict',
+          message:
+            'This application already has Client_ID2. Delete the existing record in Caspio Clients Table and CalAIM Members tables before pushing again.',
+        },
+        { status: 409 }
+      );
+    }
+    const hintedMrn = clean(
+      applicationData?.memberMrn ||
+        applicationData?.medicalRecordNumber ||
+        applicationData?.mrn ||
+        applicationData?.Member_MRN
+    );
 
     let existingRow: Record<string, any> | null = null;
     if (hintedClientId2) {
-      const whereByClientId = looksLikeNumericId(hintedClientId2)
-        ? `client_ID2=${hintedClientId2}`
-        : `client_ID2='${esc(hintedClientId2)}'`;
-      existingRow = await trySearchMember(whereByClientId);
+      const clientIdFieldCandidates = ['client_ID2', 'Client_ID2', 'clientid2'];
+      for (const clientIdField of clientIdFieldCandidates) {
+        if (existingRow) break;
+        const whereByClientId = buildEqualsClause(clientIdField, hintedClientId2);
+        if (!whereByClientId) continue;
+        existingRow = await trySearchMember(whereByClientId);
+      }
+    }
+    if (!existingRow && hintedMrn) {
+      const mrnFieldCandidates = [
+        'MRN',
+        'Member_MRN',
+        'Medical_Record_Number',
+        'Medical_Record_Number_MRN',
+        'MedicalRecordNumber',
+      ];
+      for (const mrnField of mrnFieldCandidates) {
+        if (existingRow) break;
+        const whereByMrn = buildEqualsClause(mrnField, hintedMrn);
+        if (!whereByMrn) continue;
+        existingRow = await trySearchMember(whereByMrn);
+      }
     }
     if (!existingRow) {
       const where = `${firstNameField}='${esc(firstName)}' AND ${lastNameField}='${esc(lastName)}'`;
