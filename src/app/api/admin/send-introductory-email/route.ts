@@ -58,7 +58,13 @@ function getAppBaseUrl(): string {
 
 function getMissingRequestedDocuments(appData: Record<string, unknown>): string[] {
   const forms = Array.isArray(appData?.forms) ? (appData.forms as Array<Record<string, unknown>>) : [];
-  const internalExclusions = new Set(['eligibility screenshot', 'eligibility check']);
+  const internalExclusions = new Set([
+    'eligibility screenshot',
+    'eligibility check',
+    'room and board/tier level agreement',
+    'room and board/tier level commitment',
+    'room and board commitment',
+  ]);
   const items = forms
     .filter((form) => {
       const name = String(form?.name || '').trim();

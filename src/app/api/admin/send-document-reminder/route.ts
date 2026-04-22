@@ -20,7 +20,13 @@ try {
 const getMissingItemsFromForms = (application: any): string[] => {
   const forms = Array.isArray(application?.forms) ? application.forms : [];
   if (forms.length === 0) return [];
-  const internalExclusions = new Set(['eligibility screenshot', 'eligibility check']);
+  const internalExclusions = new Set([
+    'eligibility screenshot',
+    'eligibility check',
+    'room and board/tier level agreement',
+    'room and board/tier level commitment',
+    'room and board commitment',
+  ]);
   
   return forms
     .filter((form: any) => {

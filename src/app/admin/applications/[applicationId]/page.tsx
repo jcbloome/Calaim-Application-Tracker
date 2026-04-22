@@ -1765,7 +1765,13 @@ function IntroductoryEmailDialog({
 function getReminderMissingItems(application: Application | null): string[] {
   const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
   if (forms.length === 0) return [];
-  const internalExclusions = new Set(['eligibility screenshot', 'eligibility check']);
+  const internalExclusions = new Set([
+    'eligibility screenshot',
+    'eligibility check',
+    'room and board/tier level agreement',
+    'room and board/tier level commitment',
+    'room and board commitment',
+  ]);
   return forms
     .filter((form: any) => {
       const name = String(form?.name || '').trim();
