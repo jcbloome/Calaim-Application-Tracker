@@ -1170,7 +1170,6 @@ function PushToCaspioDialog({
                           (application as any)?.monthlyIncome ||
                           ''
                         ).trim(),
-                        Pre_Assessment_Care_Needs_Notes: String((application as any)?.preAssessmentCareNeedsNotes || '').trim(),
                     };
                     if (effectiveMapping && typeof effectiveMapping === 'object') {
                         Object.entries(effectiveMapping).forEach(([csField, caspioField]) => {
@@ -1784,9 +1783,6 @@ function getReminderMissingItems(application: Application | null): string[] {
 function AdminActions({ application }: { application: Application }) {
     const { isAdmin, isSuperAdmin, user: adminUser } = useAdmin();
     const [notes, setNotes] = useState('');
-    const [careNeedsNotesDraft, setCareNeedsNotesDraft] = useState<string>(
-      String((application as any)?.preAssessmentCareNeedsNotes || '').trim()
-    );
     const [status, setStatus] = useState<Application['status'] | ''>('');
     const [adminProcessingStatus, setAdminProcessingStatus] = useState<NonNullable<Application['adminProcessingStatus']> | ''>(
       (application.adminProcessingStatus as NonNullable<Application['adminProcessingStatus']>) || ''
@@ -1802,7 +1798,6 @@ function AdminActions({ application }: { application: Application }) {
     const [scheduleNotes, setScheduleNotes] = useState('');
     const [schedulePriority, setSchedulePriority] = useState<'high' | 'medium' | 'low'>('medium');
     const [isSavingSchedule, setIsSavingSchedule] = useState(false);
-    const [isSavingCareNeedsNotes, setIsSavingCareNeedsNotes] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
 
@@ -1848,10 +1843,6 @@ function AdminActions({ application }: { application: Application }) {
         ? kaiserStatusOptions
         : standardStatusOptions;
 
-    useEffect(() => {
-      setCareNeedsNotesDraft(String((application as any)?.preAssessmentCareNeedsNotes || '').trim());
-    }, [application?.id, (application as any)?.preAssessmentCareNeedsNotes]);
-
     const adminProcessingStatusOptions: Array<NonNullable<Application['adminProcessingStatus']>> = [
       'In Process',
       'On Hold',
@@ -1888,32 +1879,6 @@ function AdminActions({ application }: { application: Application }) {
       await Promise.all(writes);
     };
 
-    const savePreAssessmentCareNeedsNotes = async () => {
-      const normalized = String(careNeedsNotesDraft || '').trim();
-      setIsSavingCareNeedsNotes(true);
-      try {
-        await saveToApplicationDocs({
-          preAssessmentCareNeedsNotes: normalized,
-          lastUpdated: serverTimestamp(),
-        });
-        toast({
-          title: 'First-call notes saved',
-          description: normalized
-            ? 'Care needs notes saved. This note is included when pushing this member to Caspio.'
-            : 'Care needs notes cleared.',
-          className: 'bg-green-100 text-green-900 border-green-200',
-        });
-      } catch (error: any) {
-        toast({
-          variant: 'destructive',
-          title: 'Save failed',
-          description: String(error?.message || 'Could not save first-call care needs notes.'),
-        });
-      } finally {
-        setIsSavingCareNeedsNotes(false);
-      }
-    };
-    
     const sendEmailAndUpdateStatus = async () => {
         if (!status) {
              toast({ variant: 'destructive', title: 'Error', description: 'Please select a status before sending.' });
@@ -2418,6 +2383,8 @@ function ApplicationDetailPageContent() {
   const authorizedCalaimBackfillRef = useRef<string>('');
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [prePushNotesDraft, setPrePushNotesDraft] = useState('');
+  const [isSavingPrePushNotes, setIsSavingPrePushNotes] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [intakeImportOpen, setIntakeImportOpen] = useState(false);
   const [intakeRequirementTitle, setIntakeRequirementTitle] = useState<string>('');
@@ -3246,6 +3213,22 @@ function ApplicationDetailPageContent() {
     planLower.includes('health net') ||
     planLower.includes('healthnet') ||
     planLower === 'hn';
+  const prePushKaiserStatusOptions = [
+    'T2038 Received, Need First Contact',
+    'T2038 Received, Unreachable',
+    'T2038 Received, doc collection',
+  ] as const;
+  const isDraftLikeApplication =
+    String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
+    Boolean((application as any)?.createdByAdmin);
+  const showPrePushNotesSection = isDraftLikeApplication && (isKaiserPlan || isHealthNetPlan);
+  const showDraftKaiserStatusSection = isDraftLikeApplication && isKaiserPlan;
+
+  useEffect(() => {
+    const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
+    setPrePushNotesDraft(existing);
+  }, [application?.id, (application as any)?.preAssessmentCareNeedsNotes]);
+
   const kaiserFamilyProgressOptions = useMemo(
     () => [
       'Application Received',
@@ -6178,6 +6161,80 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const updateDraftKaiserStatus = async (status: string) => {
+    if (!docRef || !application || !showDraftKaiserStatusSection) return;
+    const normalized = String(status || '').trim();
+    if (!normalized) return;
+    try {
+      await setDoc(
+        docRef,
+        {
+          kaiserStatus: normalized,
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setApplication((prev) =>
+        prev
+          ? ({
+              ...prev,
+              kaiserStatus: normalized,
+            } as any)
+          : prev
+      );
+      toast({
+        title: 'Kaiser status saved',
+        description: `Draft Kaiser status set to "${normalized}".`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Save failed',
+        description: String(error?.message || 'Could not save draft Kaiser status.'),
+      });
+    }
+  };
+
+  const savePrePushNotes = async () => {
+    if (!docRef || !application) return;
+    const normalized = String(prePushNotesDraft || '').trim();
+    setIsSavingPrePushNotes(true);
+    try {
+      await setDoc(
+        docRef,
+        {
+          preAssessmentCareNeedsNotes: normalized,
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setApplication((prev) =>
+        prev
+          ? ({
+              ...prev,
+              preAssessmentCareNeedsNotes: normalized,
+            } as any)
+          : prev
+      );
+      toast({
+        title: 'Pre-push notes saved',
+        description: normalized
+          ? 'These notes will be included on Caspio push when a mapped notes field is available.'
+          : 'Pre-push notes cleared.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Save failed',
+        description: String(error?.message || 'Could not save pre-push notes.'),
+      });
+    } finally {
+      setIsSavingPrePushNotes(false);
+    }
+  };
+
   const updateKaiserAuthorizationMode = async (mode: 'authorization_received' | 'authorization_needed') => {
     if (!docRef || !application || !isKaiserPlan) return;
     setIsUpdatingKaiserAuthorizationMode(true);
@@ -8523,41 +8580,37 @@ function ApplicationDetailPageContent() {
                     {isKaiserPlan ? (
                       <div className="space-y-2">
                         <Label className="text-xs font-medium text-muted-foreground">Kaiser Status</Label>
-                        <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                          {kaiserStatusPickerValue || 'Synced from Kaiser workflow'}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Read only. Initial status is set to T2038 Requested after Kaiser referral is sent.
-                        </p>
-                      </div>
-                    ) : null}
-                    {isKaiserPlan && (isKaiserAuthReceivedIntake || allowDraftCaspioPush) ? (
-                      <div className="space-y-2 md:col-span-2">
-                        <Label htmlFor="pre-assessment-care-needs-notes" className="text-xs font-medium text-muted-foreground">
-                          First Phone Call - Member Care Needs Notes
-                        </Label>
-                        <Textarea
-                          id="pre-assessment-care-needs-notes"
-                          value={careNeedsNotesDraft}
-                          onChange={(event) => setCareNeedsNotesDraft(event.target.value)}
-                          placeholder="Capture first-call notes: current care needs, ADL support, urgent placement details, family concerns, follow-up priorities..."
-                          rows={4}
-                        />
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-xs text-muted-foreground">
-                            Saved to the draft application and included in Caspio push when a care-notes field is available.
-                          </p>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void savePreAssessmentCareNeedsNotes()}
-                            disabled={isSavingCareNeedsNotes}
-                          >
-                            {isSavingCareNeedsNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            Save First-Call Notes
-                          </Button>
-                        </div>
+                        {showDraftKaiserStatusSection ? (
+                          <>
+                            <Select
+                              value={kaiserStatusPickerValue || prePushKaiserStatusOptions[0]}
+                              onValueChange={(value) => void updateDraftKaiserStatus(value)}
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Select draft Kaiser status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {prePushKaiserStatusOptions.map((option) => (
+                                  <SelectItem key={option} value={option}>
+                                    {option}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              Draft-only status for tracker visibility before Caspio push.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
+                              {kaiserStatusPickerValue || 'Synced from Kaiser workflow'}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Read only. Initial status is set to T2038 Requested after Kaiser referral is sent.
+                            </p>
+                          </>
+                        )}
                       </div>
                     ) : null}
                   </div>
@@ -9583,6 +9636,35 @@ function ApplicationDetailPageContent() {
               buttonVariant="outline"
               buttonClassName="w-full justify-start gap-2"
             />
+            {showPrePushNotesSection ? (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <Label htmlFor="quick-actions-pre-push-notes" className="text-xs font-medium text-muted-foreground">
+                  Pre-Push Notes
+                </Label>
+                <Textarea
+                  id="quick-actions-pre-push-notes"
+                  value={prePushNotesDraft}
+                  onChange={(event) => setPrePushNotesDraft(event.target.value)}
+                  rows={4}
+                  placeholder="Add family call/intake notes before Caspio push."
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-muted-foreground">
+                    Saved to draft and sent on Caspio push when notes mapping exists.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void savePrePushNotes()}
+                    disabled={isSavingPrePushNotes}
+                  >
+                    {isSavingPrePushNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Save
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <IntroductoryEmailDialog
               application={application}
               buttonVariant="outline"
