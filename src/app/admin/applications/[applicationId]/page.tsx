@@ -8268,6 +8268,9 @@ function ApplicationDetailPageContent() {
         )}
         <Card className="shadow-sm">
             <CardHeader>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Application Pathway
+            </div>
             <CardTitle className="text-2xl sm:text-3xl font-bold text-primary flex items-center gap-2">
                 Application for {application.memberFirstName} {application.memberLastName}
                 {(application as any)?.calaimTrackingStatus === 'CalAIM Eligible' && (
