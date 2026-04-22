@@ -694,10 +694,6 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
   ]);
   const linePhones = extractPhonesFromLines(lines);
 
-  const memberEmail = findFirst(flattened, [
-    /email\s*:\s*([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
-  ]);
-
   const parsedName = sanitizeParsedName(parseMemberName(memberNameRaw));
   const tableFields = extractMemberTableFieldsFromLines(lines);
   let updates: Record<string, string> = {};
@@ -729,7 +725,6 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     const normalizedContactPhone = normalizePhoneDigits(tableFields.contactPhone || linePhones.memberPhone || memberPhone);
     if (normalizedContactPhone) updates.contactPhone = formatPhoneDashed(normalizedContactPhone);
   }
-  if (memberEmail) updates.contactEmail = memberEmail.toLowerCase();
   updates = normalizeAddressFieldPlacement(updates);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
     const inferredStreet = inferStreetFromCityStateContext({
@@ -830,10 +825,6 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
   ]);
   const linePhones = extractPhonesFromLines(lines);
 
-  const memberEmail = findFirst(flattened, [
-    /(?:member|patient)?\s*email\s*[:#-]?\s*(?:\r?\n\s*)?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
-  ]);
-
   const parsedName = sanitizeParsedName(parseMemberName(memberNameRaw));
   const tableFields = extractMemberTableFieldsFromLines(lines);
   const parsedAddress = parseAddressParts(memberAddress);
@@ -904,7 +895,6 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     const normalizedContactPhone = normalizePhoneDigits(tableFields.contactPhone || linePhones.memberPhone || memberPhone);
     if (normalizedContactPhone) updates.contactPhone = formatPhoneDashed(normalizedContactPhone);
   }
-  if (memberEmail) updates.contactEmail = memberEmail.toLowerCase();
   updates = normalizeAddressFieldPlacement(updates as Record<string, string>);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
     const inferredStreet = inferStreetFromCityStateContext({
@@ -2026,9 +2016,10 @@ export default function CreateApplicationPage() {
         }
 
         const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
-        const contactPreview = extractSingleAuthContactPreview(normalizedPatch);
+        const sanitizedPatch = { ...normalizedPatch, contactEmail: '' };
+        const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
         setSingleAuthContactPreview(contactPreview);
-        setMemberData((prev) => ({ ...prev, ...normalizedPatch }));
+        setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
         setServiceRequestParsedFields(parsedFieldKeys);
         setServiceRequestWarnings(visionWarnings);
         setServiceRequestParseMode('vision');
@@ -2057,9 +2048,10 @@ export default function CreateApplicationPage() {
       }
 
       const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
-      const contactPreview = extractSingleAuthContactPreview(normalizedPatch);
+      const sanitizedPatch = { ...normalizedPatch, contactEmail: '' };
+      const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
       setSingleAuthContactPreview(contactPreview);
-      setMemberData((prev) => ({ ...prev, ...normalizedPatch }));
+      setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
       setServiceRequestParsedFields(parsedFieldKeys);
       setServiceRequestWarnings(warnings);
       setServiceRequestParseMode('text');
@@ -2193,7 +2185,7 @@ export default function CreateApplicationPage() {
             memberDob: toMmDdYyyy(normalizedPatch.memberDob || ''),
             memberPhone: String(normalizedPatch.memberPhone || '').trim(),
             contactPhone: String(normalizedPatch.contactPhone || '').trim(),
-            contactEmail: String(normalizedPatch.contactEmail || '').trim().toLowerCase(),
+            contactEmail: '',
             eligibilityCheckStatus: normalizeEligibilityStatus((memberData as any)?.eligibilityCheckStatus),
             authorizationNumberT2038: String(normalizedPatch.Authorization_Number_T038 || '').trim(),
             authorizationStartT2038: toMmDdYyyy(normalizedPatch.Authorization_Start_T2038 || ''),

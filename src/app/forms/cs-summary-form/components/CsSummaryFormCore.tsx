@@ -588,7 +588,7 @@ function CsSummaryFormComponent() {
   };
 
   const nextStep = async () => {
-    const allowDraftNavigationWithoutStepValidation = isKaiserSkeletonDraftFlow;
+    const allowDraftNavigationWithoutStepValidation = isStaffDraftFlow;
     if (!allowDraftNavigationWithoutStepValidation) {
       const fields = steps[currentStep - 1].fields;
       const isValid = await trigger(fields as FieldPath<FormValues>[], { shouldFocus: true });
@@ -883,7 +883,17 @@ function CsSummaryFormComponent() {
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="flex-grow">
+      <form
+        onSubmit={
+          isStaffDraftFlow
+            ? (event) => {
+                event.preventDefault();
+                void onSubmit(getValues());
+              }
+            : handleSubmit(onSubmit, onInvalid)
+        }
+        className="flex-grow"
+      >
         <div className="container mx-auto px-3 py-4 sm:px-6 sm:py-8 max-w-full overflow-x-hidden">
           <div className="max-w-4xl mx-auto w-full">
              {isAdminView && internalApplicationId && (
@@ -934,9 +944,9 @@ function CsSummaryFormComponent() {
                         <p className="mt-0.5 text-blue-800">
                           You can safely leave and return later without losing your CS Summary progress.
                         </p>
-                        {isKaiserSkeletonDraftFlow ? (
+                        {isStaffDraftFlow ? (
                           <p className="mt-1 text-blue-800">
-                            Admin draft mode (Kaiser/Health Net): you can move between steps without filling all required fields. Required fields are still enforced when you click Review &amp; Complete.
+                            Admin draft mode: you can move between steps and save with partial information. Complete missing details before final submission/Caspio push.
                           </p>
                         ) : null}
                       </div>

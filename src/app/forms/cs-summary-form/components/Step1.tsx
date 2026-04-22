@@ -856,7 +856,7 @@ export default function Step1({
                 />
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Draft intake mode: submitting user is staff. Primary contact is required and receives status/document updates.
+                  Draft intake mode: submitting user is staff. Add whatever primary-contact details you have now; relationship and other fields can be completed later.
                 </p>
               )}
               
