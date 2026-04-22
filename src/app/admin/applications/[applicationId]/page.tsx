@@ -964,8 +964,8 @@ function PushToCaspioDialog({
       { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
       { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
-      { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: false, ready: Boolean(caspioCalAIMStatus) },
-      { key: 'kaiserStatus', label: 'Kaiser Status', required: false, ready: Boolean(requestedKaiserStatus) },
+      { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(caspioCalAIMStatus) },
+      { key: 'kaiserStatus', label: 'Kaiser Status', required: isKaiserHealthPlan, ready: Boolean(requestedKaiserStatus) },
       { key: 'socialWorkerHold', label: 'SW Hold for Caspio', required: true, ready: Boolean(requestedSocialWorkerHold) },
       {
         key: 'contactPerson',
@@ -1536,10 +1536,10 @@ function PushToCaspioDialog({
                         ) : null}
                     </div>
                 ) : (
-                    <Alert variant="destructive">
-                        <AlertTitle>No locked mapping found</AlertTitle>
+                    <Alert>
+                        <AlertTitle>No local locked mapping preview</AlertTitle>
                         <AlertDescription>
-                            Lock a mapping first in `Admin → Caspio Test` (saves `calaim_cs_caspio_mapping`), then come back here.
+                            Push can still continue. The server will try the shared locked mapping from `Admin → Caspio Test`.
                         </AlertDescription>
                     </Alert>
                 )}
@@ -1576,8 +1576,6 @@ function PushToCaspioDialog({
                             })();
                         }}
                         disabled={
-                          !caspioMappingPreview ||
-                          Object.keys(caspioMappingPreview).length === 0 ||
                           isSendingToCaspio ||
                           (hasExistingClientId2 && !isAlreadySent) ||
                           !hasAssignedStaff ||

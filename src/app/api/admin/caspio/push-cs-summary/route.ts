@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-server-auth';
 import { caspioWriteBlockedResponse, isCaspioWriteReadOnly } from '@/lib/caspio-write-guard';
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 const clean = (value: unknown) => String(value ?? '').trim();
 const esc = (value: unknown) => clean(value).replace(/'/g, "''");
@@ -34,6 +36,19 @@ const PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES = [
   'Care_Needs_Notes',
   'Care_Notes',
 ];
+let adminDb: any = null;
+try {
+  if (!getApps().length) {
+    const app = initializeApp({
+      projectId: process.env.FIREBASE_PROJECT_ID || 'studio-2881432245-f1d94',
+    });
+    adminDb = getFirestore(app);
+  } else {
+    adminDb = getFirestore();
+  }
+} catch (error) {
+  console.warn('Firebase Admin init failed for Caspio push mapping fallback:', error);
+}
 
 const getApplicationValueByCsField = (applicationData: any, csField: string) => {
   const direct = applicationData?.[csField];
@@ -62,6 +77,7 @@ const buildSkeletonPlaceholder = (applicationData: any, csField: string, caspioF
       applicationData?.mrn ||
       applicationData?.Member_MRN
   );
+  if (normalized.includes('clientid2') || normalized.includes('pkid')) return '';
   if (normalized.includes('seniorfirst') || normalized.includes('memberfirst')) return memberFirst || 'Unknown';
   if (normalized.includes('seniorlast') || normalized.includes('memberlast')) return memberLast || 'Unknown';
   if (normalized.includes('mrn') || normalized.includes('medicalrecord')) return memberMrn || 'MRN-PENDING';
@@ -88,6 +104,33 @@ const buildSkeletonPlaceholder = (applicationData: any, csField: string, caspioF
   if (normalized.includes('notes') || normalized.includes('comment')) return 'Skeleton push placeholder value';
   if (normalized.includes('status')) return 'Pending';
   return 'Pending details';
+};
+const looksLikePlaceholderValue = (value: string) => {
+  const lower = clean(value).toLowerCase();
+  if (!lower) return false;
+  return (
+    lower.includes('pending') ||
+    lower.includes('unknown') ||
+    lower.includes('placeholder') ||
+    lower.includes('dummy') ||
+    lower === '0'
+  );
+};
+const getSharedLockedMapping = async (): Promise<Record<string, string> | null> => {
+  if (!adminDb) return null;
+  try {
+    const sharedSnap = await adminDb.collection('admin-settings').doc('caspio-field-mapping').get();
+    if (!sharedSnap.exists) return null;
+    const data = (sharedSnap.data() || {}) as Record<string, any>;
+    const locked = data?.lockedMappings;
+    if (!locked || typeof locked !== 'object') return null;
+    const entries = Object.entries(locked).filter(([k, v]) => hasValue(k) && hasValue(v));
+    if (!entries.length) return null;
+    return Object.fromEntries(entries) as Record<string, string>;
+  } catch (error) {
+    console.warn('Failed to load shared locked Caspio mapping in API:', error);
+    return null;
+  }
 };
 
 const buildMemberDataFromMapping = (
@@ -218,7 +261,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({} as any));
     const applicationData = body?.applicationData || null;
-    const mapping = (body?.mapping || null) as Record<string, string> | null;
+    const providedMapping = (body?.mapping || null) as Record<string, string> | null;
+    const fallbackMapping = await getSharedLockedMapping();
+    const mapping =
+      providedMapping && typeof providedMapping === 'object' && Object.keys(providedMapping).length > 0
+        ? providedMapping
+        : fallbackMapping;
     const skeletonPush = Boolean(body?.skeletonPush);
 
     if (!applicationData || typeof applicationData !== 'object') {
@@ -410,7 +458,7 @@ export async function POST(request: NextRequest) {
       memberData[clientIdField] = existingClientId2;
     } else {
       const currentClientId = clean(memberData[clientIdField]);
-      if (!currentClientId || currentClientId === '0') {
+      if (!currentClientId || looksLikePlaceholderValue(currentClientId)) {
         const generatedClientId2 = await createClientAndGetClientId2(baseUrl, token, firstName, lastName);
         memberData[clientIdField] = generatedClientId2;
       }
@@ -464,7 +512,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           code: 'missing-mapping',
-          message: 'No mapped Caspio fields were found. Please lock mapping in Admin → Caspio Test first.',
+          message: 'No mapped Caspio fields were found. Please lock mapping in Admin → Caspio Test (shared mapping) first.',
         },
         { status: 400 }
       );
