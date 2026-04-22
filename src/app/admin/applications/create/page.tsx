@@ -1698,7 +1698,7 @@ export default function CreateApplicationPage() {
             healthPlan: 'Kaiser',
             pathway: '',
             kaiserStatus: 'T2038 Received, Needs First Contact',
-            caspioCalAIMStatus: 'Pending',
+            caspioCalAIMStatus: 'Authorized',
             allowDraftCaspioPush: true,
             forms: formsForRow,
             assignedStaffId: row.assignedStaffId || '',
@@ -2410,7 +2410,7 @@ export default function CreateApplicationPage() {
         healthPlan: isKaiserAuthReceived ? 'Kaiser' : '',
         pathway: '',
         kaiserStatus: isKaiserAuthReceived ? 'T2038 Received, Needs First Contact' : '',
-        caspioCalAIMStatus: isKaiserAuthReceived ? 'Pending' : '',
+        caspioCalAIMStatus: isKaiserAuthReceived ? 'Authorized' : '',
         allowDraftCaspioPush: isKaiserAuthReceived ? true : false,
         forms: isKaiserAuthReceived ? authReceivedForms : [],
         ...(isKaiserAuthReceived

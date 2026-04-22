@@ -2379,6 +2379,7 @@ function ApplicationDetailPageContent() {
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [eligibilityPasteLoading, setEligibilityPasteLoading] = useState(false);
   const [isResettingEligibilityUploads, setIsResettingEligibilityUploads] = useState(false);
+  const authorizedCalaimBackfillRef = useRef<string>('');
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -5184,6 +5185,42 @@ function ApplicationDetailPageContent() {
       });
     }
   };
+
+  useEffect(() => {
+    if (!docRef || !application) return;
+    const isKaiserPlanLocal = String((application as any)?.healthPlan || '').trim().toLowerCase().includes('kaiser');
+    if (!isKaiserPlanLocal) return;
+    const kaiserAuthorizationMode = String((application as any)?.kaiserAuthorizationMode || '').trim().toLowerCase();
+    const isKaiserAuthReceivedIntakeLocal =
+      kaiserAuthorizationMode === 'authorization_received'
+        ? true
+        : kaiserAuthorizationMode === 'authorization_needed'
+          ? false
+          : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
+            String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils' ||
+            String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
+    if (!isKaiserAuthReceivedIntakeLocal) return;
+    const appId = String((application as any)?.id || applicationId || '').trim();
+    if (!appId) return;
+    const key = `${appId}:authorized-calaim-backfill`;
+    if (authorizedCalaimBackfillRef.current === key) return;
+    const currentCalaimStatus = String((application as any)?.caspioCalAIMStatus || '').trim().toLowerCase();
+    const needsBackfill = !currentCalaimStatus || currentCalaimStatus === 'pending';
+    if (!needsBackfill) return;
+    authorizedCalaimBackfillRef.current = key;
+    void (async () => {
+      try {
+        const updateData = {
+          caspioCalAIMStatus: 'Authorized',
+          lastUpdated: serverTimestamp(),
+        };
+        await setDoc(docRef, updateData, { merge: true });
+        setApplication((prev) => (prev ? ({ ...prev, ...updateData } as any) : prev));
+      } catch (error) {
+        console.warn('Failed to backfill Authorized CalAIM status for authorized Kaiser intake:', error);
+      }
+    })();
+  }, [application, applicationId, docRef]);
 
   if (isLoading || isUserLoading) {
     return (
