@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Brain, Map, Database, FolderSync, ArrowRight } from 'lucide-react';
+import { Brain, Database, FolderSync, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -25,15 +25,8 @@ const integrationTools = [
     color: 'text-indigo-600'
   },
   {
-    title: 'Field Mapping',
-    description: 'Configure and manage Caspio field mappings and data transformations',
-    icon: Map,
-    href: '/admin/caspio-field-mapping',
-    color: 'text-green-600'
-  },
-  {
-    title: 'Caspio API Test',
-    description: 'Test Caspio database connections, API endpoints, and data queries',
+    title: 'Caspio Field Mapping',
+    description: 'Configure field mappings and run Caspio sync tests from one workspace',
     icon: Database,
     href: '/admin/caspio-test',
     color: 'text-orange-600'

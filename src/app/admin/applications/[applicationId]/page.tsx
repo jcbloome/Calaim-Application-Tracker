@@ -5531,6 +5531,12 @@ function ApplicationDetailPageContent() {
         : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
           String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils' ||
           String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
+  const effectiveCaspioCalAIMStatus = (() => {
+    const raw = String((application as any)?.caspioCalAIMStatus || '').trim();
+    if (!raw) return isKaiserAuthReceivedIntake ? 'Authorized' : '';
+    if (isKaiserAuthReceivedIntake && raw.toLowerCase() === 'pending') return 'Authorized';
+    return raw;
+  })();
   const kaiserReferralSubmitted = Boolean(
     kaiserReferralSubmission?.submitted ||
       kaiserReferralSubmission?.submittedAt ||
@@ -8290,17 +8296,17 @@ function ApplicationDetailPageContent() {
                   <div
                     className={cn(
                       'flex items-center gap-2 text-base font-semibold',
-                      String((application as any)?.caspioCalAIMStatus || '').trim() ? 'text-green-700' : 'text-amber-700'
+                      effectiveCaspioCalAIMStatus ? 'text-green-700' : 'text-amber-700'
                     )}
                   >
-                    {String((application as any)?.caspioCalAIMStatus || '').trim() ? (
+                    {effectiveCaspioCalAIMStatus ? (
                       <CheckCircle2 className="h-5 w-5" />
                     ) : (
                       <XCircle className="h-5 w-5" />
                     )}
                     <span>
-                      {String((application as any)?.caspioCalAIMStatus || '').trim()
-                        ? `CalAIM Status (Caspio sync): ${String((application as any)?.caspioCalAIMStatus || '').trim()}`
+                      {effectiveCaspioCalAIMStatus
+                        ? `CalAIM Status (Caspio sync): ${effectiveCaspioCalAIMStatus}`
                         : 'CalAIM Status (Caspio sync): Waiting for Caspio update'}
                     </span>
                   </div>
@@ -8435,7 +8441,7 @@ function ApplicationDetailPageContent() {
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-muted-foreground">CalAIM Status for Caspio</Label>
                       <Select
-                        value={String((application as any)?.caspioCalAIMStatus || '')}
+                        value={effectiveCaspioCalAIMStatus}
                         onValueChange={(value) => {
                           if (value === 'Authorized' || value === 'Pending') {
                             void updateCaspioCalAIMStatus(value);
