@@ -305,6 +305,13 @@ export async function POST(request: NextRequest) {
           introEmailLastSentTo: toRecipients.join(', '),
           introEmailLastSentByUid: adminCheck.uid,
           introEmailLastSentByEmail: adminCheck.email,
+          introEmailSendHistory: admin.firestore.FieldValue.arrayUnion({
+            sentAtIso: new Date().toISOString(),
+            to: toRecipients.join(', '),
+            sentByUid: adminCheck.uid,
+            sentByEmail: adminCheck.email,
+            sentByName: adminCheck.name,
+          }),
         },
         { merge: true }
       );

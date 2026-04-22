@@ -89,7 +89,7 @@ export const formSchema = z.object({
     secondaryContactLanguage: optionalString,
 
     // Step 1 - Legal Rep
-    hasLegalRep: z.enum(['notApplicable', 'same_as_primary', 'different', 'no_has_rep'], { errorMap: () => ({ message: "Please make a selection."})}),
+    hasLegalRep: z.enum(['notApplicable', 'same_as_primary', 'different', 'no_capacity_has_rep', 'no_has_rep'], { errorMap: () => ({ message: "Please make a selection."})}),
     repFirstName: optionalString,
     repLastName: optionalString,
     repRelationship: optionalString,

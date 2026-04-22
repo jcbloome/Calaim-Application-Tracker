@@ -92,6 +92,7 @@ export function PrintableCsSummaryFormSpanish({
           'No Aplica',
           'Mismo que el Contacto Principal',
           'Persona Diferente (completar abajo)',
+          'El miembro no tiene capacidad y requiere representante legal',
           'El miembro no tiene representante legal'
         ],
         width: 'full',

@@ -244,6 +244,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
             case 'same_as_primary':
             case 'different':
                 return 'Yes, member has capacity';
+            case 'no_capacity_has_rep':
             case 'no_has_rep': 
                 return 'No, member lacks capacity';
             default: 

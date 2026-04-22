@@ -481,6 +481,7 @@ export default function CaspioTestPage() {
     if (!firestore || !user?.uid) return;
     if (!hasLoadedCloudDrafts || isApplyingCloudDrafts) return;
     const draftsRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
+    const sharedMappingRef = doc(firestore, 'admin-settings', 'caspio-field-mapping');
     const payload = {
       lockedMappings: lockedMappings || null,
       currentDraftMappings: lockedMappings
@@ -494,6 +495,19 @@ export default function CaspioTestPage() {
     void setDoc(draftsRef, payload, { merge: true }).catch((error) => {
       console.warn('Failed to save cloud mapping drafts:', error);
     });
+    if (lockedMappings && Object.keys(lockedMappings).length > 0) {
+      void setDoc(
+        sharedMappingRef,
+        {
+          lockedMappings,
+          updatedByUid: user.uid,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      ).catch((error) => {
+        console.warn('Failed to save shared Caspio locked mapping:', error);
+      });
+    }
   }, [
     currentDraftMappings,
     fieldMappings,

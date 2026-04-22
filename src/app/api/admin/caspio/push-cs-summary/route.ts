@@ -156,6 +156,15 @@ export async function POST(request: NextRequest) {
       applicationData?.monthlyIncome ||
       applicationData?.Monthly_Income
     );
+    const preAssessmentNotes = clean(
+      applicationData?.preAssessmentCareNeedsNotes ||
+      applicationData?.pre_assessment_care_needs_notes ||
+      applicationData?.preAssessmentNotes
+    );
+    const isDraftLikeForPush =
+      clean(applicationData?.status).toLowerCase() === 'draft' ||
+      Boolean(applicationData?.createdByAdmin) ||
+      Boolean(applicationData?.allowDraftCaspioPush);
     const normalizedHealthPlan = clean(
       applicationData?.healthPlan || applicationData?.CalAIM_MCO || applicationData?.calaimMco
     ).toLowerCase();
@@ -192,6 +201,16 @@ export async function POST(request: NextRequest) {
           success: false,
           code: 'missing-kaiser-status',
           message: 'Select Kaiser Status on the main application page before pushing this Kaiser application.',
+        },
+        { status: 400 }
+      );
+    }
+    if (isDraftLikeForPush && !preAssessmentNotes) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'missing-pre-push-notes',
+          message: 'Pre-push notes are required before pushing draft applications to Caspio.',
         },
         { status: 400 }
       );
@@ -289,11 +308,6 @@ export async function POST(request: NextRequest) {
     memberFieldNames.forEach((name) => {
       fieldNameByNormalized.set(normalizeFieldName(name), name);
     });
-    const preAssessmentNotes = clean(
-      applicationData?.preAssessmentCareNeedsNotes ||
-      applicationData?.pre_assessment_care_needs_notes ||
-      applicationData?.preAssessmentNotes
-    );
     if (preAssessmentNotes) {
       const mappedNotesField = Object.keys(memberData).find(
         (name) =>

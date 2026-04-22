@@ -485,6 +485,13 @@ const STRICT_UPLOAD_REQUIRED_FOR_COMPLETION = new Set([
   'Medicine List',
   'Declaration of Eligibility',
 ]);
+const PROCESS_TRACKER_REVIEW_TARGETS = new Set([
+  'CS Member Summary',
+  'CS Summary',
+  'Proof of Income',
+  "LIC 602A - Physician's Report",
+  'Medicine List',
+]);
 
 const PROGRAM_INFO_GUIDE_URL = 'https://connectcalaim.com/info/eligibility';
 const HEALTH_NET_MANAGER_SIGNATURE = 'Leidy Kanjanapitak';
@@ -858,6 +865,20 @@ function PushToCaspioDialog({
                 } catch (error) {
                     console.warn('Failed to load cloud Caspio mapping preview:', error);
                 }
+                try {
+                    const sharedRef = doc(firestore, 'admin-settings', 'caspio-field-mapping');
+                    const sharedSnap = await getDoc(sharedRef);
+                    if (sharedSnap.exists()) {
+                        const sharedData = (sharedSnap.data() || {}) as Record<string, any>;
+                        const sharedLocked = sharedData?.lockedMappings;
+                        if (sharedLocked && typeof sharedLocked === 'object' && Object.keys(sharedLocked).length > 0) {
+                            if (!cancelled) setCaspioMappingPreview(sharedLocked as Record<string, string>);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Failed to load shared Caspio mapping preview:', error);
+                }
             }
             if (typeof window !== 'undefined') {
                 try {
@@ -907,6 +928,11 @@ function PushToCaspioDialog({
           : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
             String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils';
     const allowDraftCaspioPush = Boolean((application as any)?.allowDraftCaspioPush);
+    const isDraftLikeForPush =
+      String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
+      Boolean((application as any)?.createdByAdmin) ||
+      allowDraftCaspioPush;
+    const prePushNotes = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
     const toClean = (value: unknown) => String(value ?? '').trim();
     const contactFirstName = toClean(
       (application as any)?.bestContactFirstName ||
@@ -947,6 +973,12 @@ function PushToCaspioDialog({
       },
       { key: 'contactEmail', label: 'Family/POA email', required: true, ready: Boolean(contactEmail) },
       { key: 'contactPhone', label: 'Family/POA phone', required: true, ready: Boolean(contactPhone) },
+      {
+        key: 'prePushNotes',
+        label: 'Pre-push notes',
+        required: isDraftLikeForPush,
+        ready: Boolean(prePushNotes),
+      },
     ];
     const missingRequiredReadiness = readinessChecks.filter((item) => item.required && !item.ready);
     const readinessComplete = missingRequiredReadiness.length === 0;
@@ -988,8 +1020,9 @@ function PushToCaspioDialog({
             Kaiser_Status: String(requestedKaiserStatus || '').trim(),
             Hold_For_Social_Worker_Visit: String(requestedSocialWorkerHold || '').trim(),
             Monthly_Income: monthlyIncomeForCaspio,
+            Pre_Assessment_Care_Needs_Notes: prePushNotes,
         } as Record<string, string>;
-    }, [application, caspioCalAIMStatus, requestedKaiserStatus, requestedSocialWorkerHold]);
+    }, [application, caspioCalAIMStatus, requestedKaiserStatus, requestedSocialWorkerHold, prePushNotes]);
     const previousSpecialSnapshot = useMemo(() => {
         const raw = (application as any)?.caspioLastPushedSpecialData;
         if (!raw || typeof raw !== 'object') return {} as Record<string, string>;
@@ -1110,6 +1143,14 @@ function PushToCaspioDialog({
             });
             return;
         }
+        if (isDraftLikeForPush && !prePushNotes) {
+            toast({
+                variant: 'destructive',
+                title: 'Pre-push notes required',
+                description: 'Add pre-push notes in Quick Actions before pushing this draft to Caspio.',
+            });
+            return;
+        }
         setIsSendingToCaspio(true);
         if (docRef) {
             await setDoc(
@@ -1170,6 +1211,7 @@ function PushToCaspioDialog({
                           (application as any)?.monthlyIncome ||
                           ''
                         ).trim(),
+                        Pre_Assessment_Care_Needs_Notes: prePushNotes,
                     };
                     if (effectiveMapping && typeof effectiveMapping === 'object') {
                         Object.entries(effectiveMapping).forEach(([csField, caspioField]) => {
@@ -1394,6 +1436,11 @@ function PushToCaspioDialog({
                     <div className="text-xs text-muted-foreground">
                         Contact person name, email, and phone are required before push so automatic reminder outreach has a valid recipient.
                     </div>
+                    {isDraftLikeForPush ? (
+                        <div className="text-xs text-muted-foreground">
+                            Draft push requires pre-push notes so care needs/context are included with the Caspio update.
+                        </div>
+                    ) : null}
                 </div>
                 {caspioMappingPreview && Object.keys(caspioMappingPreview).length > 0 ? (
                     <div className="space-y-3">
@@ -1546,7 +1593,6 @@ function IntroductoryEmailDialog({
   );
   const [lastSentTo, setLastSentTo] = useState(String((application as any)?.introEmailLastSentTo || '').trim());
 
-  const isDraftLike = String((application as any)?.status || '').trim().toLowerCase() === 'draft' || Boolean((application as any)?.createdByAdmin);
   const primaryContactEmail = String((application as any)?.bestContactEmail || '').trim();
   const recipientHint = primaryContactEmail;
   const lastSentLabel = useMemo(() => {
@@ -1557,6 +1603,27 @@ function IntroductoryEmailDialog({
       return '';
     }
   }, [lastSentAtMs]);
+  const introInviteHistoryLabel = useMemo(() => {
+    const raw = Array.isArray((application as any)?.introEmailSendHistory)
+      ? ((application as any).introEmailSendHistory as Array<any>)
+      : [];
+    if (!raw.length) return '';
+    const sorted = [...raw]
+      .map((entry) => {
+        const iso = String(entry?.sentAtIso || '').trim();
+        const ms = iso ? new Date(iso).getTime() : 0;
+        return { iso, ms };
+      })
+      .filter((entry) => Boolean(entry.iso) && Number.isFinite(entry.ms) && entry.ms > 0)
+      .sort((a, b) => a.ms - b.ms);
+    if (!sorted.length) return '';
+    const first = sorted[0];
+    const second = sorted[1];
+    const firstLabel = format(new Date(first.ms), 'MMM d, yyyy h:mm a');
+    if (!second) return `1st invite: ${firstLabel}`;
+    const secondLabel = format(new Date(second.ms), 'MMM d, yyyy h:mm a');
+    return `1st invite: ${firstLabel} • 2nd invite: ${secondLabel}`;
+  }, [application]);
 
   useEffect(() => {
     setLastSentAtMs(toMillisSafe((application as any)?.introEmailLastSentAt || (application as any)?.introEmailLastSentDate));
@@ -1680,18 +1747,17 @@ function IntroductoryEmailDialog({
           <Button
             variant={buttonVariant}
             className={buttonClassName}
-            disabled={!isDraftLike}
-            title={!isDraftLike ? 'Available for draft/admin-started records' : undefined}
+            title={!recipientHint ? 'Add primary contact email first' : undefined}
           >
             <Mail className="h-4 w-4" />
-            Send Introductory Invite
+            {lastSentAtMs ? 'Resend Introductory Invite' : 'Send Introductory Invite'}
           </Button>
         </DialogTrigger>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Invite primary contact from draft</DialogTitle>
+            <DialogTitle>Invite primary contact</DialogTitle>
             <DialogDescription>
-              Send the portal invitation so the primary contact can complete remaining forms after draft/Caspio readiness.
+              Send the portal invitation so the primary contact can complete remaining forms after draft/Caspio readiness. You can resend if the family did not receive the first email.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -1747,15 +1813,32 @@ function IntroductoryEmailDialog({
               disabled={isSending || isLoadingPreview || !recipientHint}
             >
               {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Send Invitation
+              {lastSentAtMs ? 'Resend Invitation' : 'Send Invitation'}
             </Button>
           </div>
           </div>
         </DialogContent>
       </Dialog>
+      {introInviteHistoryLabel ? (
+        <div className="text-[11px] text-muted-foreground">
+          {introInviteHistoryLabel}
+        </div>
+      ) : null}
       {lastSentLabel ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
-          Introductory invite sent {lastSentLabel}{lastSentTo ? ` to ${lastSentTo}` : ''}. Logged in Email Logs.
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800 space-y-2">
+          <div>
+            Introductory invite sent {lastSentLabel}{lastSentTo ? ` to ${lastSentTo}` : ''}. Logged in Email Logs.
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsOpen(true)}
+            disabled={isLoadingPreview || isSending || !recipientHint}
+            className="h-7 px-2 text-xs"
+          >
+            Resend Invite
+          </Button>
         </div>
       ) : null}
     </div>
@@ -7465,7 +7548,7 @@ function ApplicationDetailPageContent() {
                             <div>
                               <h3 className="text-lg font-semibold mb-2 text-primary">Legal Representative</h3>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                                <div><p className="text-sm text-muted-foreground">Member Has Capacity</p><p className="font-semibold">{(['notApplicable', 'same_as_primary', 'different'].includes(String(application.hasLegalRep || '')) ? 'Yes, member has capacity' : String(application.hasLegalRep || '') === 'no_has_rep' ? 'No, member lacks capacity' : 'Yes, member has capacity')}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Member Has Capacity</p><p className="font-semibold">{(['notApplicable', 'same_as_primary', 'different'].includes(String(application.hasLegalRep || '')) ? 'Yes, member has capacity' : ['no_has_rep', 'no_capacity_has_rep'].includes(String(application.hasLegalRep || '')) ? 'No, member lacks capacity' : 'Yes, member has capacity')}</p></div>
                                 <div><p className="text-sm text-muted-foreground">Has Legal Representative</p><p className="font-semibold">{String(application.hasLegalRep || '') || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div><p className="text-sm text-muted-foreground">Rep Name</p><p className="font-semibold">{`${application.repFirstName || ''} ${application.repLastName || ''}`.trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div><p className="text-sm text-muted-foreground">Rep Relationship</p><p className="font-semibold">{application.repRelationship || <span className="font-normal text-gray-400">N/A</span>}</p></div>
@@ -8683,6 +8766,7 @@ function ApplicationDetailPageContent() {
                 const status = getComponentStatus(req.title);
                 const isSummary = req.title === 'CS Member Summary' || req.title === 'CS Summary';
                 const isWaiversCard = req.title === 'Waivers & Authorizations';
+                const isProcessTrackerReviewTarget = PROCESS_TRACKER_REVIEW_TARGETS.has(req.title);
                 const isReviewed = isSummary
                   ? Boolean((application as any)?.applicationChecked)
                   : Boolean(formInfo?.acknowledged);
@@ -8759,6 +8843,23 @@ function ApplicationDetailPageContent() {
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
                             <StatusIndicator status={status} />
                             {getFormAction(req)}
+                            {status === 'Completed' && isProcessTrackerReviewTarget && !isReviewed ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full border-blue-200 text-blue-700 hover:bg-blue-50"
+                                  onClick={() => {
+                                    if (isSummary) {
+                                      void handleApplicationReviewed(true);
+                                    } else {
+                                      void handleFormReviewed(req.title, true);
+                                    }
+                                  }}
+                                >
+                                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                                  Mark as Reviewed
+                                </Button>
+                            ) : null}
                             {(
                                 <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
                                     <Dialog
@@ -8986,6 +9087,38 @@ function ApplicationDetailPageContent() {
                                   </label>
                               </div>
                           ))}
+                      </div>
+                      <div className="space-y-2 rounded-md border border-blue-200 bg-blue-50/40 p-3">
+                        <div className="text-xs font-medium text-blue-900">Review checklist (individual documents)</div>
+                        {consolidatedMedicalDocuments.map((doc) => {
+                          const formInfo = formStatusMap.get(doc.name);
+                          const isCompleted = String(formInfo?.status || '').trim() === 'Completed';
+                          const isReviewed = Boolean(formInfo?.acknowledged);
+                          return (
+                            <div key={`${doc.id}-review`} className="flex items-center justify-between gap-2">
+                              <Label htmlFor={`${doc.id}-review`} className="text-xs">
+                                {doc.name}
+                              </Label>
+                              <div className="flex items-center gap-2">
+                                {!isCompleted ? (
+                                  <span className="text-[11px] text-muted-foreground">Upload first</span>
+                                ) : isReviewed ? (
+                                  <span className="text-[11px] text-green-700">Reviewed</span>
+                                ) : (
+                                  <span className="text-[11px] text-amber-700">Needs review</span>
+                                )}
+                                <Checkbox
+                                  id={`${doc.id}-review`}
+                                  checked={isReviewed}
+                                  onCheckedChange={(checked) => {
+                                    void handleFormReviewed(doc.name, Boolean(checked));
+                                  }}
+                                  disabled={!isCompleted}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                       <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || !isAnyConsolidatedChecked) && "opacity-50 pointer-events-none")}>
                           {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}

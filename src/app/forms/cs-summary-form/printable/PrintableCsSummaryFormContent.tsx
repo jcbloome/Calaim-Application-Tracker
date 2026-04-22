@@ -113,6 +113,7 @@ export function PrintableCsSummaryFormContent() {
                             <CheckboxField label="N/A, member has capacity and does not need legal representative" />
                             <CheckboxField label="Yes, same as primary contact" />
                             <CheckboxField label="Yes, not same as primary contact (fill out below fields)" />
+                            <CheckboxField label="Member does not have capacity and requires legal representative" />
                             <CheckboxField label="Member does not have capacity and does not have legal representative" />
                         </div>
                     </div>

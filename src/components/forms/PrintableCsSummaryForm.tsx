@@ -256,6 +256,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
             'Not Applicable',
             'Same as Primary Contact',
             'Different Person (fill below)',
+            'Member lacks capacity and requires legal representative',
             'Member has no legal representative'
           ]}
           width="full"

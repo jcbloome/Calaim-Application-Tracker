@@ -96,7 +96,7 @@ export type Application = {
   secondaryContactPhone?: string;
   secondaryContactEmail?: string;
   secondaryContactLanguage?: string;
-  hasLegalRep?: 'notApplicable' | 'same_as_primary' | 'different' | 'no_has_rep' | null;
+  hasLegalRep?: 'notApplicable' | 'same_as_primary' | 'different' | 'no_capacity_has_rep' | 'no_has_rep' | null;
   repFirstName?: string | null;
   repLastName?: string | null;
   repRelationship?: string | null;

@@ -1144,11 +1144,22 @@ export default function CreateApplicationPage() {
       try {
         const mappingRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
         const mappingSnap = await getDoc(mappingRef);
-        if (!mappingSnap.exists()) return;
-        const data = (mappingSnap.data() || {}) as Record<string, any>;
-        const locked = data?.lockedMappings;
-        if (locked && typeof locked === 'object' && Object.keys(locked).length > 0) {
-          setLockedCaspioPushMapping(locked as Record<string, string>);
+        if (mappingSnap.exists()) {
+          const data = (mappingSnap.data() || {}) as Record<string, any>;
+          const locked = data?.lockedMappings;
+          if (locked && typeof locked === 'object' && Object.keys(locked).length > 0) {
+            setLockedCaspioPushMapping(locked as Record<string, string>);
+            return;
+          }
+        }
+        const sharedRef = doc(firestore, 'admin-settings', 'caspio-field-mapping');
+        const sharedSnap = await getDoc(sharedRef);
+        if (sharedSnap.exists()) {
+          const sharedData = (sharedSnap.data() || {}) as Record<string, any>;
+          const sharedLocked = sharedData?.lockedMappings;
+          if (sharedLocked && typeof sharedLocked === 'object' && Object.keys(sharedLocked).length > 0) {
+            setLockedCaspioPushMapping(sharedLocked as Record<string, string>);
+          }
         }
       } catch (error) {
         console.warn('Failed to load locked Caspio mapping from Firestore:', error);
