@@ -1148,93 +1148,93 @@ export default function AuthorizationTracker() {
           ) : (
             <>
               <div className="hidden lg:block overflow-x-auto">
-                <Table data-testid="members-table">
+                <Table data-testid="members-table" className="min-w-[1650px] table-auto">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>
+                      <TableHead className="min-w-[190px] whitespace-nowrap">
                         <Button 
                           variant="ghost" 
                           className="h-auto p-0 font-semibold hover:bg-transparent"
                           onClick={() => handleSort('memberName')}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 whitespace-nowrap">
                             Member
                             {getSortIcon('memberName')}
                           </div>
                         </Button>
                       </TableHead>
-                      <TableHead>
+                      <TableHead className="min-w-[120px] whitespace-nowrap">
                         <Button 
                           variant="ghost" 
                           className="h-auto p-0 font-semibold hover:bg-transparent"
                           onClick={() => handleSort('healthPlan')}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 whitespace-nowrap">
                             Health Plan
                             {getSortIcon('healthPlan')}
                           </div>
                         </Button>
                       </TableHead>
-                      <TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">
                         <Button 
                           variant="ghost" 
                           className="h-auto p-0 font-semibold hover:bg-transparent"
                           onClick={() => handleSort('t2038Status')}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 whitespace-nowrap">
                             T2038 Status
                             {getSortIcon('t2038Status')}
                           </div>
                         </Button>
                       </TableHead>
-                      <TableHead>T2038 Start Date</TableHead>
-                      <TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">T2038 Start Date</TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">
                         <Button 
                           variant="ghost" 
                           className="h-auto p-0 font-semibold hover:bg-transparent"
                           onClick={() => handleSort('t2038EndDate')}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 whitespace-nowrap">
                             T2038 End Date
                             {getSortIcon('t2038EndDate')}
                           </div>
                         </Button>
                       </TableHead>
-                      <TableHead>T2038 Request Date</TableHead>
-                      <TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">T2038 Request Date</TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">
                         <Button 
                           variant="ghost" 
                           className="h-auto p-0 font-semibold hover:bg-transparent"
                           onClick={() => handleSort('h2022Status')}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 whitespace-nowrap">
                             H2022 Status
                             {getSortIcon('h2022Status')}
                           </div>
                         </Button>
                       </TableHead>
-                      <TableHead>H2022 Start Date</TableHead>
-                      <TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">H2022 Start Date</TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">
                         <Button 
                           variant="ghost" 
                           className="h-auto p-0 font-semibold hover:bg-transparent"
                           onClick={() => handleSort('h2022EndDate')}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 whitespace-nowrap">
                             H2022 End Date
                             {getSortIcon('h2022EndDate')}
                           </div>
                         </Button>
                       </TableHead>
-                      <TableHead>H2022 Request Date</TableHead>
-                      <TableHead>Contact</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">H2022 Request Date</TableHead>
+                      <TableHead className="min-w-[170px] whitespace-nowrap">Contact</TableHead>
+                      <TableHead className="min-w-[95px] whitespace-nowrap">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredAndSortedMembers.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={11} className="text-center py-8">
+                        <TableCell colSpan={12} className="text-center py-8">
                           {authorizationScopedMembers.length === 0 ? (
                             <div className="text-muted-foreground">
                               <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
