@@ -20,9 +20,11 @@ export async function GET(req: NextRequest) {
       String(value ?? '')
         .trim()
         .toLowerCase()
+        .replace(/&/g, ' & ')
+        .replace(/[_-]+/g, ' ')
         .replace(/\s+/g, ' ');
     const isKaiserTargetStatus = (status: unknown) => {
-      const normalized = normalizeValue(status).replace(/[_-]+/g, ' ');
+      const normalized = normalizeValue(status);
       return (
         normalized === 'final member at rcfe' ||
         normalized === 'r & b sent pending ils contract'
@@ -68,6 +70,15 @@ export async function GET(req: NextRequest) {
         memberStatus: rawMember.CalAIM_Status || '',
         kaiserStatus: rawMember.Kaiser_Status || '',
         rcfeName: rawMember.RCFE_Name || '',
+        rcfeAddress: [
+          rawMember.RCFE_Address || rawMember.RCFE_Street || rawMember.RCFE_Street_Address || '',
+          rawMember.RCFE_City || '',
+          rawMember.RCFE_Zip || '',
+        ]
+          .map((value: string) => String(value || '').trim())
+          .filter(Boolean)
+          .join(', '),
+        rcfeAdminName: rawMember.RCFE_Administrator || rawMember.RCFE_Admin_Name || '',
         
         // Authorization fields (from raw Caspio data)
         authStartDateT2038: rawMember.Authorization_Start_Date_T2038 || '',
