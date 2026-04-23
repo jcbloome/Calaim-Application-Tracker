@@ -166,63 +166,89 @@ export default function IlsLogTrackerPage() {
         <CardHeader>
           <CardTitle>Weekly Trend Table</CardTitle>
           <CardDescription>
-            Negative deltas are good (queue reduced). Positive deltas indicate growth and possible blockage.
+            Easier weekly view: focus on core risk buckets first, then open details as needed.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {rowsWithDelta.length === 0 ? (
             <div className="text-sm text-muted-foreground">No snapshots yet. Click "Capture This Week" to start tracking.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="py-2 pr-3">Week</th>
-                    <th className="py-2 pr-3">Total</th>
-                    <th className="py-2 pr-3">Delta</th>
-                    <th className="py-2 pr-3">T2038 Auth Email</th>
-                    <th className="py-2 pr-3">T2038 Requested</th>
-                    <th className="py-2 pr-3">T2038 Unreachable</th>
-                    <th className="py-2 pr-3">Tier Requested</th>
-                    <th className="py-2 pr-3">Tier Appeals</th>
-                    <th className="py-2 pr-3">R&B Pending</th>
-                    <th className="py-2 pr-3">H2022 With</th>
-                    <th className="py-2 pr-3">H2022 Without</th>
-                    <th className="py-2 pr-3">Final RCFE With</th>
-                    <th className="py-2 pr-3">Final RCFE Without</th>
-                    <th className="py-2 pr-3">Ending &lt; 1 Month</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rowsWithDelta.map((row) => (
-                    <tr key={row.id} className="border-b align-top">
-                      <td className="py-2 pr-3">
-                        <div>{row.weekLabel || row.weekStartYmd}</div>
-                        <div className="text-xs text-muted-foreground">{row.capturedAtIso ? new Date(row.capturedAtIso).toLocaleString() : '-'}</div>
-                        <div className="text-xs text-muted-foreground">{row.capturedByEmail || '-'}</div>
-                      </td>
-                      <td className="py-2 pr-3 font-semibold">{row.counts.totalInQueues}</td>
-                      <td className="py-2 pr-3">
-                        <Badge variant="outline" className="gap-1">
-                          {DELTA_ICON(row.totalDelta)}
-                          {row.totalDelta > 0 ? `+${row.totalDelta}` : row.totalDelta}
-                        </Badge>
-                      </td>
-                      <td className="py-2 pr-3">{row.counts.t2038AuthOnly}</td>
-                      <td className="py-2 pr-3">{row.counts.t2038Requested}</td>
-                      <td className="py-2 pr-3">{row.counts.t2038ReceivedUnreachable}</td>
-                      <td className="py-2 pr-3">{row.counts.tierRequested}</td>
-                      <td className="py-2 pr-3">{row.counts.tierAppeals}</td>
-                      <td className="py-2 pr-3">{row.counts.rbPendingIlsContract}</td>
-                      <td className="py-2 pr-3">{row.counts.h2022AuthDatesWith}</td>
-                      <td className="py-2 pr-3">{row.counts.h2022AuthDatesWithout}</td>
-                      <td className="py-2 pr-3">{row.counts.finalAtRcfeWithDates}</td>
-                      <td className="py-2 pr-3">{row.counts.finalAtRcfeWithoutDates}</td>
-                      <td className="py-2 pr-3">{row.counts.h2022EndingWithin1Month}</td>
+            <div className="space-y-3">
+              <div className="text-xs text-muted-foreground">
+                Delta logic: negative is good (queue reduced), positive means queue grew.
+              </div>
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/60">
+                    <tr className="text-left">
+                      <th className="py-2 px-3">Week</th>
+                      <th className="py-2 px-3">Total in Queues</th>
+                      <th className="py-2 px-3">Week-over-Week Delta</th>
+                      <th className="py-2 px-3">T2038 Requested</th>
+                      <th className="py-2 px-3">Tier Level Requested</th>
+                      <th className="py-2 px-3">Tier Level Appeal</th>
+                      <th className="py-2 px-3">H2022 Without Dates</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {rowsWithDelta.map((row, idx) => (
+                      <tr key={row.id} className={`border-t align-top ${idx % 2 === 0 ? 'bg-background' : 'bg-muted/20'}`}>
+                        <td className="py-2 px-3">
+                          <div className="font-medium">{row.weekLabel || row.weekStartYmd}</div>
+                          <div className="text-xs text-muted-foreground">{row.capturedAtIso ? new Date(row.capturedAtIso).toLocaleString() : '-'}</div>
+                          <div className="text-xs text-muted-foreground">{row.capturedByEmail || '-'}</div>
+                        </td>
+                        <td className="py-2 px-3 font-semibold">{row.counts.totalInQueues}</td>
+                        <td className="py-2 px-3">
+                          <Badge variant="outline" className="gap-1">
+                            {DELTA_ICON(row.totalDelta)}
+                            {row.totalDelta > 0 ? `+${row.totalDelta}` : row.totalDelta}
+                          </Badge>
+                        </td>
+                        <td className="py-2 px-3">{row.counts.t2038Requested}</td>
+                        <td className="py-2 px-3">{row.counts.tierRequested}</td>
+                        <td className="py-2 px-3">{row.counts.tierAppeals}</td>
+                        <td className="py-2 px-3">{row.counts.h2022AuthDatesWithout}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <details className="rounded-md border p-3">
+                <summary className="cursor-pointer text-sm font-medium">Show detailed queue counts</summary>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="py-2 pr-3">Week</th>
+                        <th className="py-2 pr-3">T2038 Auth Email</th>
+                        <th className="py-2 pr-3">T2038 Requested</th>
+                        <th className="py-2 pr-3">T2038 Unreachable</th>
+                        <th className="py-2 pr-3">Tier Requested</th>
+                        <th className="py-2 pr-3">Tier Appeals</th>
+                        <th className="py-2 pr-3">H2022 With</th>
+                        <th className="py-2 pr-3">Final RCFE With</th>
+                        <th className="py-2 pr-3">Final RCFE Without</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rowsWithDelta.map((row) => (
+                        <tr key={`detail-${row.id}`} className="border-b">
+                          <td className="py-2 pr-3">{row.weekLabel || row.weekStartYmd}</td>
+                          <td className="py-2 pr-3">{row.counts.t2038AuthOnly}</td>
+                          <td className="py-2 pr-3">{row.counts.t2038Requested}</td>
+                          <td className="py-2 pr-3">{row.counts.t2038ReceivedUnreachable}</td>
+                          <td className="py-2 pr-3">{row.counts.tierRequested}</td>
+                          <td className="py-2 pr-3">{row.counts.tierAppeals}</td>
+                          <td className="py-2 pr-3">{row.counts.h2022AuthDatesWith}</td>
+                          <td className="py-2 pr-3">{row.counts.finalAtRcfeWithDates}</td>
+                          <td className="py-2 pr-3">{row.counts.finalAtRcfeWithoutDates}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </div>
           )}
         </CardContent>

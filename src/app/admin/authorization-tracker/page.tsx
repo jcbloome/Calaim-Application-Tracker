@@ -40,6 +40,7 @@ interface AuthorizationMember {
   memberName: string;
   mrn: string;
   healthPlan: string;
+  kaiserStatus?: string;
   calaimStatus?: string;
   rcfeName?: string;
   primaryContact: string;
@@ -63,7 +64,21 @@ interface AuthorizationMember {
   h2022Status: 'active' | 'expiring' | 'expired' | 'pending' | 'none';
   // Critical renewal bucket for authorization tracker.
   criticalRenewal?: boolean;
+  hasCompleteH2022Dates?: boolean;
+  needsIlsDateRouting?: boolean;
   needsAttention: boolean;
+}
+
+interface MembersCacheStatusSnapshot {
+  lastSyncAt?: string;
+  lastRunAt?: string;
+  lastMode?: string;
+  webhook?: {
+    latestEventReceivedAt?: string;
+    latestEventOperation?: string;
+    latestProcessedAt?: string;
+    latestProcessedSuccess?: boolean | null;
+  };
 }
 
 const getAuthStatus = (endDate?: string): 'active' | 'expiring' | 'expired' | 'pending' | 'none' => {
@@ -130,6 +145,17 @@ const normalizeCalaimStatus = (value?: string) =>
     .replace(/\s+/g, ' ');
 
 const isAuthorizedCalaim = (value?: string) => normalizeCalaimStatus(value) === 'authorized';
+const normalizeKaiserStatus = (value?: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+const isKaiserTrackerStatus = (value?: string) => {
+  const status = normalizeKaiserStatus(value);
+  return status === 'final member at rcfe' || status === 'r & b sent pending ils contract';
+};
+const hasDateValue = (value?: string) => Boolean(String(value || '').trim());
 
 const isEndDateWithinDays = (endDate?: string, withinDays: number = 30) => {
   if (!endDate || endDate.trim() === '') return false;
@@ -153,6 +179,22 @@ const formatDateSafe = (dateString?: string) => {
   }
 };
 
+const formatDateTimeSafe = (dateString?: string) => {
+  if (!dateString) return 'Not available';
+  try {
+    const date = parseISO(dateString);
+    if (!isNaN(date.getTime())) return format(date, 'MMM d, yyyy h:mm a');
+  } catch {
+    // fallback to native parse
+  }
+  try {
+    const date = new Date(dateString);
+    return isNaN(date.getTime()) ? 'Not available' : format(date, 'MMM d, yyyy h:mm a');
+  } catch {
+    return 'Not available';
+  }
+};
+
 export default function AuthorizationTracker() {
   const { user, isAdmin } = useAdmin();
   const { toast } = useToast();
@@ -167,6 +209,8 @@ export default function AuthorizationTracker() {
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedPlanMetric, setSelectedPlanMetric] = useState<'all' | 'urgent' | 't2038Active' | 'h2022Active'>('all');
+  const [lastAuthorizationRefreshAt, setLastAuthorizationRefreshAt] = useState<string>('');
+  const [membersCacheStatus, setMembersCacheStatus] = useState<MembersCacheStatusSnapshot | null>(null);
   
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string>('memberName');
@@ -275,6 +319,7 @@ export default function AuthorizationTracker() {
           : 'Unknown Member',
         mrn: member.memberMediCalNum || member.memberMrn || '',
         healthPlan: member.memberHealthPlan || 'Unknown',
+        kaiserStatus: member.kaiserStatus || '',
         calaimStatus: member.memberStatus || '',
         rcfeName: member.rcfeName || '',
         primaryContact: member.primaryContact || '',
@@ -294,6 +339,11 @@ export default function AuthorizationTracker() {
         const h2022Status = getAuthStatus(member.authEndDateH2022);
         const t2038DaysRemaining = getDaysRemaining(member.authEndDateT2038);
         const h2022DaysRemaining = getDaysRemaining(member.authEndDateH2022);
+        const hasCompleteH2022Dates = hasDateValue(member.authStartDateH2022) && hasDateValue(member.authEndDateH2022);
+        const needsIlsDateRouting =
+          isKaiserPlan(member.healthPlan) &&
+          isKaiserTrackerStatus(member.kaiserStatus) &&
+          !hasCompleteH2022Dates;
 
         const authorized = isAuthorizedCalaim(member.calaimStatus);
         const hasRcfePlacement = Boolean(String(member.rcfeName || '').trim());
@@ -319,11 +369,14 @@ export default function AuthorizationTracker() {
           t2038DaysRemaining,
           h2022DaysRemaining,
           criticalRenewal,
+          hasCompleteH2022Dates,
+          needsIlsDateRouting,
           needsAttention
         };
       });
       
       setMembers(processedMembers);
+      setLastAuthorizationRefreshAt(new Date().toISOString());
       
       toast({
         title: "Success",
@@ -340,8 +393,27 @@ export default function AuthorizationTracker() {
       });
     } finally {
       setIsLoading(false);
+      void fetchMembersCacheStatus();
     }
   };
+
+  const fetchMembersCacheStatus = async () => {
+    try {
+      const response = await fetch('/api/caspio/members-cache/status', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) return;
+      setMembersCacheStatus({
+        ...((data?.settings || {}) as MembersCacheStatusSnapshot),
+        webhook: (data?.webhook || {}) as MembersCacheStatusSnapshot['webhook'],
+      });
+    } catch {
+      // best effort only
+    }
+  };
+
+  useEffect(() => {
+    void fetchMembersCacheStatus();
+  }, []);
 
   // Removed auto-loading - data only loads when "Refresh Data" button is clicked
 
@@ -398,6 +470,20 @@ export default function AuthorizationTracker() {
     }, 100);
   };
 
+  const authorizationScopedMembers = useMemo(
+    () =>
+      members.filter((member) => {
+        if (!isKaiserPlan(member.healthPlan)) return true;
+        return isKaiserTrackerStatus(member.kaiserStatus) && Boolean(member.hasCompleteH2022Dates);
+      }),
+    [members]
+  );
+
+  const kaiserNeedsIlsRoutingMembers = useMemo(
+    () => members.filter((member) => Boolean(member.needsIlsDateRouting)),
+    [members]
+  );
+
   // Handle column sorting
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -421,7 +507,7 @@ export default function AuthorizationTracker() {
   // Filter and sort members
   const filteredAndSortedMembers = useMemo(() => {
     // First filter
-    const filtered = members.filter(member => {
+    const filtered = authorizationScopedMembers.filter(member => {
       const matchesSearch = searchTerm === '' || 
         member.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.mrn.toLowerCase().includes(searchTerm.toLowerCase());
@@ -530,18 +616,18 @@ export default function AuthorizationTracker() {
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [members, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, selectedFilter, selectedMonth, selectedPlanMetric, sortColumn, sortDirection]);
+  }, [authorizationScopedMembers, searchTerm, selectedMCO, selectedStatus, showExpiringOnly, selectedFilter, selectedMonth, selectedPlanMetric, sortColumn, sortDirection]);
 
   // Summary stats and monthly expiration data
   const stats = useMemo(() => {
-    const total = members.length;
-    const kaiserCount = members.filter(m => String(m.healthPlan || '').toLowerCase().includes('kaiser')).length;
-    const healthNetCount = members.filter(m => String(m.healthPlan || '').toLowerCase().includes('health net')).length;
-    const needingAttention = members.filter(m => m.needsAttention).length;
-    const t2038Expiring = members.filter(m => m.t2038Status === 'expiring').length;
-    const h2022Expiring = members.filter(m => m.h2022Status === 'expiring').length;
-    const expired = members.filter(m => m.t2038Status === 'expired' || m.h2022Status === 'expired').length;
-    const criticalRenewals = members.filter(m => m.criticalRenewal).length;
+    const total = authorizationScopedMembers.length;
+    const kaiserCount = authorizationScopedMembers.filter(m => String(m.healthPlan || '').toLowerCase().includes('kaiser')).length;
+    const healthNetCount = authorizationScopedMembers.filter(m => String(m.healthPlan || '').toLowerCase().includes('health net')).length;
+    const needingAttention = authorizationScopedMembers.filter(m => m.needsAttention).length;
+    const t2038Expiring = authorizationScopedMembers.filter(m => m.t2038Status === 'expiring').length;
+    const h2022Expiring = authorizationScopedMembers.filter(m => m.h2022Status === 'expiring').length;
+    const expired = authorizationScopedMembers.filter(m => m.t2038Status === 'expired' || m.h2022Status === 'expired').length;
+    const criticalRenewals = authorizationScopedMembers.filter(m => m.criticalRenewal).length;
     
     // Calculate monthly expiration data for next 6 months
     const today = new Date();
@@ -551,29 +637,44 @@ export default function AuthorizationTracker() {
       const monthStart = startOfMonth(addDays(today, i * 30));
       const monthEnd = endOfMonth(addDays(today, i * 30));
       const monthName = format(monthStart, 'MMM yyyy');
-      
-      const t2038Expirations = members.filter(m => {
-        if (!m.authEndDateT2038) return false;
-        const endDate = parseISO(m.authEndDateT2038);
-        return isWithinInterval(endDate, { start: monthStart, end: monthEnd });
-      }).length;
-      
-      const h2022Expirations = members.filter(m => {
-        if (!m.authEndDateH2022) return false;
-        const endDate = parseISO(m.authEndDateH2022);
-        return isWithinInterval(endDate, { start: monthStart, end: monthEnd });
-      }).length;
-      
+
+      const expiresInMonth = (member: AuthorizationMember) => {
+        const t2038ExpiresInMonth = member.authEndDateT2038 && (() => {
+          try {
+            const endDate = parseISO(member.authEndDateT2038);
+            return isWithinInterval(endDate, { start: monthStart, end: monthEnd });
+          } catch {
+            return false;
+          }
+        })();
+        const h2022ExpiresInMonth = member.authEndDateH2022 && (() => {
+          try {
+            const endDate = parseISO(member.authEndDateH2022);
+            return isWithinInterval(endDate, { start: monthStart, end: monthEnd });
+          } catch {
+            return false;
+          }
+        })();
+        return t2038ExpiresInMonth || h2022ExpiresInMonth;
+      };
+
+      const kaiserExpirations = authorizationScopedMembers.filter(
+        (member) => isKaiserPlan(member.healthPlan) && expiresInMonth(member)
+      ).length;
+      const healthNetExpirations = authorizationScopedMembers.filter(
+        (member) => isHealthNetPlan(member.healthPlan) && expiresInMonth(member)
+      ).length;
+
       monthlyExpirations.push({
         month: monthName,
-        t2038: t2038Expirations,
-        h2022: h2022Expirations,
-        total: t2038Expirations + h2022Expirations
+        kaiser: kaiserExpirations,
+        healthNet: healthNetExpirations,
+        total: kaiserExpirations + healthNetExpirations
       });
     }
     
     // MCO breakdown
-    const mcoBreakdown = members.reduce((acc, member) => {
+    const mcoBreakdown = authorizationScopedMembers.reduce((acc, member) => {
       const mco = normalizePlanForDisplay(member.healthPlan);
       const filterValue = normalizePlanForFilter(member.healthPlan);
       if (!acc[mco]) {
@@ -599,7 +700,7 @@ export default function AuthorizationTracker() {
       monthlyExpirations,
       mcoBreakdown
     };
-  }, [members]);
+  }, [authorizationScopedMembers]);
 
   const getStatusBadge = (status: string, daysRemaining?: number) => {
     switch (status) {
@@ -641,6 +742,56 @@ export default function AuthorizationTracker() {
           </Button>
         </div>
       </div>
+      <Card className="mb-6">
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium">Health Plan Filter</p>
+              <p className="text-xs text-muted-foreground">Quickly switch between Kaiser and Health Net members</p>
+            </div>
+            <Select value={selectedMCO} onValueChange={setSelectedMCO}>
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue placeholder="Select health plan" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Health Plans</SelectItem>
+                <SelectItem value="kaiser">Kaiser</SelectItem>
+                <SelectItem value="health net">Health Net</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+      <Card className="mb-6">
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="text-muted-foreground">Authorization data last refreshed</div>
+              <div className="font-medium">{lastAuthorizationRefreshAt ? formatDateTimeSafe(lastAuthorizationRefreshAt) : 'Not refreshed yet'}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Members cache last sync</div>
+              <div className="font-medium">{membersCacheStatus?.lastSyncAt ? formatDateTimeSafe(membersCacheStatus.lastSyncAt) : 'Not available'}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Last webhook event received</div>
+              <div className="font-medium">
+                {membersCacheStatus?.webhook?.latestEventReceivedAt
+                  ? `${formatDateTimeSafe(membersCacheStatus.webhook.latestEventReceivedAt)} (${membersCacheStatus?.webhook?.latestEventOperation || 'event'})`
+                  : 'Not available'}
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Last webhook processed</div>
+              <div className="font-medium">
+                {membersCacheStatus?.webhook?.latestProcessedAt
+                  ? `${formatDateTimeSafe(membersCacheStatus.webhook.latestProcessedAt)} (${membersCacheStatus?.webhook?.latestProcessedSuccess === false ? 'failed' : 'success'})`
+                  : 'Not available'}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Always show the interface structure */}
       <>
@@ -675,6 +826,37 @@ export default function AuthorizationTracker() {
                 onClick={() => handleCardClick('criticalRenewal')}
               >
                 Filter Only
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {kaiserNeedsIlsRoutingMembers.length > 0 && (
+        <Card className="mb-6 border-blue-200 bg-blue-50">
+          <CardContent className="p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-blue-700 mt-0.5" />
+              <div>
+                <div className="font-semibold text-blue-800">
+                  Kaiser members missing H2022 dates: {kaiserNeedsIlsRoutingMembers.length}
+                </div>
+                <div className="text-sm text-blue-700">
+                  These members are in Kaiser status "Final- Member at RCFE" or "R &amp; B Sent Pending ILS Contract"
+                  but are missing H2022 start/end dates and should be tracked in ILS Pending Tracker.
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                className="border-blue-300 text-blue-800 hover:bg-blue-100"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.location.href = '/admin/ils-report-editor';
+                  }
+                }}
+              >
+                Open ILS Pending Tracker
               </Button>
             </div>
           </CardContent>
@@ -774,12 +956,12 @@ export default function AuthorizationTracker() {
                 </div>
                 <div className="flex items-center gap-6">
                   <div className="text-center">
-                    <div className="text-sm text-muted-foreground">T2038</div>
-                    <div className="font-semibold text-blue-600">{month.t2038}</div>
+                    <div className="text-sm text-muted-foreground">Kaiser</div>
+                    <div className="font-semibold text-blue-600">{month.kaiser}</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-sm text-muted-foreground">H2022</div>
-                    <div className="font-semibold text-purple-600">{month.h2022}</div>
+                    <div className="text-sm text-muted-foreground">Health Net</div>
+                    <div className="font-semibold text-purple-600">{month.healthNet}</div>
                   </div>
                   <div className="text-center">
                     <div className="text-sm text-muted-foreground">Total</div>
@@ -874,38 +1056,6 @@ export default function AuthorizationTracker() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full"
               />
-            </div>
-            
-            <Select value={selectedMCO} onValueChange={setSelectedMCO}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Kaiser vs Health Net" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Health Plans</SelectItem>
-                <SelectItem value="kaiser">Kaiser</SelectItem>
-                <SelectItem value="health net">Health Net</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant={selectedMCO === 'kaiser' ? 'default' : 'outline'}
-                onClick={() => setSelectedMCO('kaiser')}
-              >
-                Kaiser ({stats.kaiserCount})
-              </Button>
-              <Button
-                variant={selectedMCO === 'health net' ? 'default' : 'outline'}
-                onClick={() => setSelectedMCO('health net')}
-              >
-                Health Net ({stats.healthNetCount})
-              </Button>
-              <Button
-                variant={selectedMCO === 'all' ? 'default' : 'outline'}
-                onClick={() => setSelectedMCO('all')}
-              >
-                All ({stats.total})
-              </Button>
             </div>
             
             <Select value={selectedStatus} onValueChange={setSelectedStatus}>
@@ -1085,7 +1235,7 @@ export default function AuthorizationTracker() {
                     {filteredAndSortedMembers.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={11} className="text-center py-8">
-                          {members.length === 0 ? (
+                          {authorizationScopedMembers.length === 0 ? (
                             <div className="text-muted-foreground">
                               <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
                               <p className="font-medium">No Authorization Data Loaded</p>
@@ -1277,7 +1427,7 @@ export default function AuthorizationTracker() {
               <div className="lg:hidden space-y-3">
                 {filteredAndSortedMembers.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    {members.length === 0 ? (
+                    {authorizationScopedMembers.length === 0 ? (
                       <>
                         <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
                         <p className="font-medium">No Authorization Data Loaded</p>

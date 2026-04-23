@@ -218,6 +218,21 @@ const isRbPendingOrFinalAtRcfeStatus = (value: unknown): boolean => {
   );
 };
 
+const isTierLevelAppealStatus = (value: unknown): boolean => {
+  const compact = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  return compact === 'tier level appeals' || compact === 'tier level appeal';
+};
+
+const isT2038RequestedStatus = (value: unknown): boolean => {
+  const compact = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  return compact === 't2038 requested';
+};
+
+const isTierLevelRequestedStatus = (value: unknown): boolean => {
+  const compact = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  return compact === 'tier level requested';
+};
+
 const isH2022AuthTrackingEligible = (member: ILSReportMember): boolean => {
   return isRbPendingOrFinalAtRcfeStatus(getEffectiveKaiserStatus(member) || member.Kaiser_Status);
 };
@@ -227,7 +242,9 @@ const isMissingRcfeName = (member: ILSReportMember): boolean => {
 };
 
 const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
-  const status = normalizeStatus(member.Kaiser_Status);
+  const currentStatus = getEffectiveKaiserStatus(member) || member.Kaiser_Status;
+  const status = normalizeStatus(currentStatus);
+  const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
   if (key === 't2038_auth_only_email') {
     const hasAuthEmail = hasMeaningfulValue((member as any)?.T2038_Auth_Email_Kaiser);
     const hasOfficialAuth =
@@ -251,10 +268,12 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
             (member as any).Kaiser_T038_Received
         )
       );
-    return requested && !received;
+    // Prefer live Kaiser_Status as source of truth.
+    if (isT2038RequestedStatus(currentStatus)) return true;
+    // Fallback only when status is empty/unknown.
+    return !hasMeaningfulValue(currentStatus) && requested && !received;
   }
   if (key === 't2038_received_unreachable') {
-    const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
     return compactStatus === 't2038 received unreachable';
   }
   if (key === 'tier_level_requested') {
@@ -274,16 +293,20 @@ const queueIncludes = (member: ILSReportMember, key: QueueKey): boolean => {
             (member as any).Tier_Received_Date
         )
       );
-    // Show only members still pending with ILS (requested exists, received not set).
-    return requested && !received;
+    // Show only members still pending with ILS (requested exists, received not set),
+    // but exclude statuses that belong in other queues.
+    const excludedByStatus =
+      isFinalMemberAtRcfe(currentStatus) ||
+      isRbPendingOrFinalAtRcfeStatus(currentStatus) ||
+      isTierLevelAppealStatus(currentStatus);
+    if (isTierLevelRequestedStatus(currentStatus)) return true;
+    return !hasMeaningfulValue(currentStatus) && requested && !received && !excludedByStatus;
   }
   if (key === 'tier_level_appeals') {
-    const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
-    return compactStatus === 'tier level appeals' || compactStatus === 'tier level appeal';
+    return isTierLevelAppealStatus(currentStatus);
   }
   // R&B Sent Pending ILS Contract:
   // show only pending members (requested exists or status matches), but hide once H2022 received is set.
-  const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
   const rbPendingByStatus =
     status === 'r&b sent pending ils contract' ||
     status === 'r & b sent pending ils contract' ||
@@ -312,6 +335,12 @@ const queueRequestedDate = (member: ILSReportMember, key: QueueKey): string => {
 };
 
 const getEffectiveKaiserStatus = (member: any): string => {
+  const rawStatus = String(member?.Kaiser_Status || '').trim();
+  if (hasMeaningfulValue(rawStatus)) {
+    // Real Caspio Kaiser_Status always wins over derived fallback flags.
+    return rawStatus;
+  }
+
   const hasAuthEmail = hasMeaningfulValue(member?.T2038_Auth_Email_Kaiser);
   const hasOfficialAuth =
     hasMeaningfulValue(member?.Kaiser_T2038_Received_Date) ||
@@ -319,7 +348,7 @@ const getEffectiveKaiserStatus = (member: any): string => {
     hasMeaningfulValue(member?.Kaiser_T2038_Received);
 
   if (hasAuthEmail && !hasOfficialAuth) return 'T2038_Auth_Email_Kaiser';
-  return String(member?.Kaiser_Status || '');
+  return rawStatus;
 };
 
 export default function ILSReportEditorPage() {
@@ -327,6 +356,8 @@ export default function ILSReportEditorPage() {
   const auth = useAuth();
   const [members, setMembers] = useState<ILSReportMember[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncingMembersCache, setIsSyncingMembersCache] = useState(false);
+  const [lastIlsSyncAt, setLastIlsSyncAt] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [reportDate, setReportDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [cardEditOpen, setCardEditOpen] = useState(false);
@@ -507,6 +538,59 @@ export default function ILSReportEditorPage() {
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const syncMembersCacheFromCaspio = async () => {
+    if (!auth?.currentUser) return;
+    setIsSyncingMembersCache(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const response = await fetch('/api/caspio/members-cache/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, mode: 'full', mcoFilter: ['Kaiser'] }),
+      });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `HTTP ${response.status}`);
+      }
+
+      toast({
+        title: 'Caspio Sync Complete',
+        description: `Fetched ${Number(data?.fetched || 0)} Kaiser records, updated ${Number(data?.upserted || 0)} cache records.`,
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+      setLastIlsSyncAt(String(data?.lastSyncAt || new Date().toISOString()));
+
+      await loadMembers({ silent: true });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Caspio Sync Failed',
+        description: error?.message || 'Could not sync members cache from Caspio.',
+      });
+    } finally {
+      setIsSyncingMembersCache(false);
+    }
+  };
+
+  const loadLastIlsSyncTimestamp = async () => {
+    try {
+      const response = await fetch('/api/caspio/members-cache/status', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({} as any));
+      if (!response.ok || !data?.success) return;
+      const lastSyncAt = String(
+        data?.settings?.ilsKaiserLastManualSyncAt ||
+        data?.settings?.ilsKaiserLastSyncAt ||
+        data?.settings?.lastSyncAt ||
+        ''
+      ).trim();
+      if (lastSyncAt) {
+        setLastIlsSyncAt(lastSyncAt);
+      }
+    } catch {
+      // best effort
     }
   };
 
@@ -997,6 +1081,7 @@ export default function ILSReportEditorPage() {
     if (didAutoLoadRef.current) return;
     didAutoLoadRef.current = true;
     loadMembers({ silent: true });
+    loadLastIlsSyncTimestamp();
   }, [isAdminLoading, accessLoading, canAccessIlsTools, auth?.currentUser]);
 
   if (isAdminLoading || accessLoading) {
@@ -1067,17 +1152,17 @@ export default function ILSReportEditorPage() {
               
               <div className="flex flex-wrap gap-2">
                 <Button
-                  onClick={() => loadMembers()}
-                  disabled={isLoading}
+                  onClick={() => void syncMembersCacheFromCaspio()}
+                  disabled={isLoading || isSyncingMembersCache}
                   variant="outline"
                   className="w-full sm:w-auto justify-start bg-green-50 hover:bg-green-100 border-green-200"
                 >
-                  {isLoading ? (
+                  {isSyncingMembersCache ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
-                    <Database className="mr-2 h-4 w-4" />
+                    <RefreshCw className="mr-2 h-4 w-4" />
                   )}
-                  {members.length === 0 ? 'Load Cached Data' : 'Refresh Cached Data'}
+                  {members.length === 0 ? 'Sync from Caspio' : 'Sync from Caspio (Refresh Data)'}
                 </Button>
                 
                 <Button
@@ -1093,6 +1178,9 @@ export default function ILSReportEditorPage() {
                   ILS Pending Tracker Report
                 </Button>
 
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Last sync: {lastIlsSyncAt ? formatDateTimeSafe(lastIlsSyncAt) : 'Not synced yet'}
               </div>
           </div>
         </CardContent>

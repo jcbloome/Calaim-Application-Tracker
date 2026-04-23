@@ -50,6 +50,14 @@ const isRbPendingOrFinalAtRcfeStatus = (value: unknown): boolean => {
   );
 };
 
+const getWeekStartYmd = (date = new Date()): string => {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = d.getUTCDay(); // 0 Sun ... 6 Sat
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diffToMonday);
+  return d.toISOString().slice(0, 10);
+};
+
 let resendClient: Resend | null = null;
 function getResendClient(): Resend | null {
   if (resendClient) return resendClient;
@@ -79,12 +87,8 @@ export async function GET(request: NextRequest) {
       ? settings.weeklyEmailRecipients.map(normalizeEmail).filter(Boolean)
       : [];
 
-    if (!weeklyEmailEnabled || recipients.length === 0) {
-      return NextResponse.json({ success: true, skipped: true, reason: 'Weekly ILS email disabled or no recipients' });
-    }
-
     const resend = getResendClient();
-    if (!resend) {
+    if (weeklyEmailEnabled && recipients.length > 0 && !resend) {
       return NextResponse.json({ success: false, error: 'RESEND_API_KEY missing' }, { status: 500 });
     }
 
@@ -246,6 +250,57 @@ export async function GET(request: NextRequest) {
       ...queues.finalRcfeMissingH2022Dates.map((r) => r.id).filter(Boolean),
     ]).size;
 
+    // Auto-capture weekly snapshot so ILS Log Tracker trends stay current
+    // even when nobody clicks "Capture This Week" manually.
+    const now = new Date();
+    const weekStartYmd = getWeekStartYmd(now);
+    const weekLabel = `Week of ${weekStartYmd}`;
+    await adminDb.collection('ils_weekly_tracker_snapshots').doc(weekStartYmd).set(
+      {
+        weekStartYmd,
+        weekLabel,
+        capturedAtIso: now.toISOString(),
+        capturedByUid: 'system_cron',
+        capturedByEmail: 'system@cron',
+        counts: {
+          totalInQueues: totalUnique,
+          t2038AuthOnly: queues.t2038AuthOnly.length,
+          t2038Requested: queues.t2038Requested.length,
+          t2038ReceivedUnreachable: queues.t2038ReceivedUnreachable.length,
+          tierRequested: queues.tierRequested.length,
+          tierAppeals: queues.tierAppeals.length,
+          rbPendingIlsContract: queues.rbPendingIlsContract.length,
+          h2022AuthDatesWith: queues.h2022AuthDatesWith.length,
+          h2022AuthDatesWithout: queues.h2022AuthDatesWithout.length,
+          finalAtRcfeWithDates: h2022AuthDatesWithMembers.filter((m: any) => isFinalMemberAtRcfe(m?.Kaiser_Status)).length,
+          finalAtRcfeWithoutDates: finalRcfeMissingH2022Members.length,
+          h2022EndingWithin1Month: h2022AuthEligibleMembers.filter((m: any) => {
+            const ymd = toYmd(m?.Authorization_End_Date_H2022);
+            if (!ymd) return false;
+            const endDate = new Date(`${ymd}T00:00:00`);
+            if (Number.isNaN(endDate.getTime())) return false;
+            const today = new Date();
+            const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const cutoff = new Date(start);
+            cutoff.setDate(cutoff.getDate() + 30);
+            return endDate >= start && endDate <= cutoff;
+          }).length,
+        },
+      },
+      { merge: true }
+    );
+
+    if (!weeklyEmailEnabled || recipients.length === 0) {
+      return NextResponse.json({
+        success: true,
+        skippedEmail: true,
+        reason: 'Weekly ILS email disabled or no recipients',
+        autoCapturedSnapshot: true,
+        weekStartYmd,
+        totalMembers: totalUnique,
+      });
+    }
+
     const tableRowsFor = (rowsForQueue: QueueRow[]) =>
       rowsForQueue
         .slice(0, 80)
@@ -256,7 +311,7 @@ export async function GET(request: NextRequest) {
         .join('');
 
     const dateLabel = new Date().toLocaleDateString();
-    await resend.emails.send({
+    await resend!.emails.send({
       from: 'Connections CalAIM <noreply@carehomefinders.com>',
       to: recipients,
       subject: `ILS Pending Weekly Report (${dateLabel})`,
@@ -309,7 +364,13 @@ export async function GET(request: NextRequest) {
       `,
     });
 
-    return NextResponse.json({ success: true, sentTo: recipients.length, totalMembers: totalUnique });
+    return NextResponse.json({
+      success: true,
+      sentTo: recipients.length,
+      totalMembers: totalUnique,
+      autoCapturedSnapshot: true,
+      weekStartYmd,
+    });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to send ILS weekly list' }, { status: 500 });
   }

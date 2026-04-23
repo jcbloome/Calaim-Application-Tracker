@@ -37,7 +37,9 @@ type MemberActivityPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 50; // safety cap
-const FIRESTORE_BATCH_LIMIT = 500;
+// Keep this conservative because member cache docs can be large and
+// Firestore rejects oversized commit payloads with "Transaction too big".
+const FIRESTORE_BATCH_LIMIT = 100;
 
 const MEMBERS_SELECT_FIELDS: string[] = [
   'Client_ID2',
@@ -584,11 +586,21 @@ async function fetchUpdatedMembersFromCaspio(params: {
   since: Date | null;
   updatedField: string | null;
   selectFields: string[] | null;
+  mcoFilter?: string[];
 }) {
-  const { accessToken, baseUrl, since, updatedField, selectFields } = params;
+  const { accessToken, baseUrl, since, updatedField, selectFields, mcoFilter } = params;
 
   const select = Array.isArray(selectFields) && selectFields.length > 0 ? selectFields.join(',') : null;
-  const where = since && updatedField ? `${updatedField}>'${toCaspioComparableDate(since)}'` : null;
+  const escapedMcos = (Array.isArray(mcoFilter) ? mcoFilter : [])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .map((value) => value.replace(/'/g, "''"));
+  const mcoWhere =
+    escapedMcos.length > 0
+      ? `(${escapedMcos.map((value) => `CalAIM_MCO='${value}'`).join(' OR ')})`
+      : null;
+  const sinceWhere = since && updatedField ? `${updatedField}>'${toCaspioComparableDate(since)}'` : null;
+  const where = [sinceWhere, mcoWhere].filter(Boolean).join(' AND ') || null;
 
   const results: any[] = [];
   for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
@@ -649,6 +661,12 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const mode = (String(body?.mode || 'full') as SyncMode) || 'full';
+    const mcoFilter = Array.isArray(body?.mcoFilter)
+      ? body.mcoFilter
+          .map((value: unknown) => String(value || '').trim())
+          .filter((value: string) => value.length > 0)
+      : [];
+    const hasScopedMcoFilter = mcoFilter.length > 0;
 
     // Allow trusted schedulers (Cloud Scheduler / GitHub Actions) to call this endpoint without an interactive admin idToken.
     // Matches the existing `/api/cron/reminders` pattern: Authorization: Bearer ${CRON_SECRET}
@@ -753,6 +771,7 @@ export async function POST(req: NextRequest) {
         since: null,
         updatedField,
         selectFields,
+        mcoFilter,
       });
       rawMembers = full;
     } else {
@@ -763,6 +782,7 @@ export async function POST(req: NextRequest) {
         since: updatedField ? since : null,
         updatedField,
         selectFields,
+        mcoFilter,
       });
     }
 
@@ -1086,7 +1106,7 @@ export async function POST(req: NextRequest) {
     // Full sync should be authoritative: remove cache docs that no longer exist in Caspio.
     // This prevents stale assignments/counts from lingering in admin dashboards.
     let pruned = 0;
-    if (effectiveMode === 'full') {
+    if (effectiveMode === 'full' && !hasScopedMcoFilter) {
       const cacheSnap = await adminDb.collection(CACHE_COLLECTION).select().limit(10000).get();
       const staleIds = cacheSnap.docs
         .map((doc: any) => String(doc.id || '').trim())
@@ -1106,37 +1126,55 @@ export async function POST(req: NextRequest) {
     const nextSyncAt = maxModified ? maxModified.toISOString() : now.toISOString();
     const runAtIso = now.toISOString();
     const runTrigger = cronAuthorized ? 'auto' : 'manual';
-    await settingsRef.set(
-      {
-        lastSyncAt: nextSyncAt,
-        lastRunAt: runAtIso,
-        lastMode: effectiveMode,
-        lastRunByUid: uid,
-        lastRunTrigger: runTrigger,
-        ...(cronAuthorized
-          ? {
-              lastAutoSyncAt: runAtIso,
-              lastAutoSyncMode: effectiveMode,
-            }
-          : {
-              lastManualSyncAt: runAtIso,
-              lastManualSyncMode: effectiveMode,
-              lastManualSyncByUid: uid,
-            }),
-        lastSelectSignature: selectSignature,
-        lastRunSummary: {
-          fetched: rawMembers.length,
-          upserted,
-          skippedMissingId,
-          pruned,
-          appKaiserStatusUpdated: appKaiserStatusSync.updated,
-          appKaiserStatusClientsTouched: appKaiserStatusSync.clientsTouched,
-          appCalAIMStatusUpdated: appCalAIMStatusSync.updated,
-          appCalAIMStatusClientsTouched: appCalAIMStatusSync.clientsTouched,
+    if (hasScopedMcoFilter) {
+      await settingsRef.set(
+        {
+          ilsKaiserLastManualSyncAt: runAtIso,
+          ilsKaiserLastSyncAt: nextSyncAt,
+          ilsKaiserLastMode: effectiveMode,
+          ilsKaiserLastSummary: {
+            fetched: rawMembers.length,
+            upserted,
+            skippedMissingId,
+            pruned,
+            mcoFilter,
+          },
         },
-      },
-      { merge: true }
-    );
+        { merge: true }
+      );
+    } else {
+      await settingsRef.set(
+        {
+          lastSyncAt: nextSyncAt,
+          lastRunAt: runAtIso,
+          lastMode: effectiveMode,
+          lastRunByUid: uid,
+          lastRunTrigger: runTrigger,
+          ...(cronAuthorized
+            ? {
+                lastAutoSyncAt: runAtIso,
+                lastAutoSyncMode: effectiveMode,
+              }
+            : {
+                lastManualSyncAt: runAtIso,
+                lastManualSyncMode: effectiveMode,
+                lastManualSyncByUid: uid,
+              }),
+          lastSelectSignature: selectSignature,
+          lastRunSummary: {
+            fetched: rawMembers.length,
+            upserted,
+            skippedMissingId,
+            pruned,
+            appKaiserStatusUpdated: appKaiserStatusSync.updated,
+            appKaiserStatusClientsTouched: appKaiserStatusSync.clientsTouched,
+            appCalAIMStatusUpdated: appCalAIMStatusSync.updated,
+            appCalAIMStatusClientsTouched: appCalAIMStatusSync.clientsTouched,
+          },
+        },
+        { merge: true }
+      );
+    }
 
     // Always log a lightweight system activity for the sync itself.
     try {
@@ -1168,6 +1206,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       mode: effectiveMode,
+      mcoFilter,
+      scopedSync: hasScopedMcoFilter,
       since: since ? since.toISOString() : null,
       lastSyncAt: nextSyncAt,
       fetched: rawMembers.length,

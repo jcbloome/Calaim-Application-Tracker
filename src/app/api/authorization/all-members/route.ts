@@ -16,12 +16,34 @@ export async function GET(req: NextRequest) {
     const result = await fetchAllCalAIMMembers(credentials, { includeRawData: true });
     console.log(`✅ Fetched ${result.count} total members using MCO partitioning method`);
 
-    // Work directly with raw members to avoid mapping issues
+    const normalizeValue = (value: unknown) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+    const isKaiserTargetStatus = (status: unknown) => {
+      const normalized = normalizeValue(status).replace(/[_-]+/g, ' ');
+      return (
+        normalized === 'final member at rcfe' ||
+        normalized === 'r & b sent pending ils contract'
+      );
+    };
+    const hasAnyAuthData = (rawMember: any) =>
+      Boolean(
+        rawMember.Authorization_Start_Date_T2038 ||
+          rawMember.Authorization_End_Date_T2038 ||
+          rawMember.Authorization_Start_Date_H2022 ||
+          rawMember.Authorization_End_Date_H2022
+      );
+    const isKaiserMember = (rawMember: any) =>
+      normalizeValue(rawMember.CalAIM_MCO).includes('kaiser');
+
+    // Work directly with raw members to avoid mapping issues.
+    // Include members with auth dates plus Kaiser members in target Kaiser_Status buckets
+    // so missing-date members can be routed to ILS workflows.
     const rawMembersWithAuthData = result.rawMembers?.filter(rawMember => 
-      rawMember.Authorization_Start_Date_T2038 || 
-      rawMember.Authorization_End_Date_T2038 || 
-      rawMember.Authorization_Start_Date_H2022 || 
-      rawMember.Authorization_End_Date_H2022
+      hasAnyAuthData(rawMember) ||
+      (isKaiserMember(rawMember) && isKaiserTargetStatus(rawMember.Kaiser_Status))
     ) || [];
     
     console.log(`📊 Total members: ${result.count}, Members with authorization data: ${rawMembersWithAuthData.length}`);
@@ -44,6 +66,7 @@ export async function GET(req: NextRequest) {
         memberCounty: rawMember.Member_County || 'Los Angeles',
         memberHealthPlan: rawMember.CalAIM_MCO || 'Unknown',
         memberStatus: rawMember.CalAIM_Status || '',
+        kaiserStatus: rawMember.Kaiser_Status || '',
         rcfeName: rawMember.RCFE_Name || '',
         
         // Authorization fields (from raw Caspio data)
