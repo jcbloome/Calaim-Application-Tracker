@@ -17,6 +17,10 @@
 ## 🗓️ **Development History**
 
 ### **April 23, 2026 - Updates**
+- ✅ **UI/UX**: Applied the same clarity pass to Daily Task Tracker follow-up calendar tools by renaming the section for workflow context, adding numbered sync/import actions, and adding a recommended-order helper to reduce staff confusion during Caspio follow-up refreshes.
+- ✅ **UI/UX**: Clarified Kaiser create-intake guidance with explicit numbered button labels and a recommended workflow order for Section 1 (batch skeletons + staff assignment) and Section 2 (single-auth one-PDF flow) to make staff actions easier to follow.
+- ✅ **UI/UX**: Added a dedicated `Kaiser Staff Reminders` KPI card on Daily Task Tracker and simplified Kaiser intake create flow by making Section 2 single-auth only (removed in-section single-create and batch-PDF actions) while Section 1 now explicitly uses `Create Batch Skeletons` with staff assignment controls.
+- ✅ **Feature Added**: Added Kaiser process inactivity reminders into staff daily task flows by surfacing `kaiser_process_inactivity` notifications in `/api/staff/tasks`, counting them in Action Items `My Tasks`, and having cron upsert matching `adminDailyTasks` entries; also documented the daily `/api/cron/kaiser-staff-process-digest` scheduler route in runbooks/architecture references.
 - ✅ **Integration**: Added structured Caspio webhook observability logs (`received`, ignored reasons, stale-event skips, and per-event application-doc match/update counts) in `caspioWebhook` so member-level Kaiser status propagation can be verified directly in Firebase function logs.
 - ✅ **Bug Fixed**: Updated Caspio member-to-application matching to query Firestore `applications` docs by both string and numeric `client_ID2/clientId2` values, fixing webhook runs that were received but showed `appDocsMatched: 0` for numeric client IDs (e.g., Jean `10379`).
 - ✅ **Bug Fixed**: Expanded webhook application matching to include `caspioClientId2` and fallback MRN fields (`memberMrn` variants), and now backfills `client_ID2/clientId2` onto matched application docs during Caspio updates so future Kaiser status webhooks resolve and sync reliably.

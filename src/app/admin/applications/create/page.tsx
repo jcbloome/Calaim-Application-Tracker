@@ -1126,7 +1126,7 @@ export default function CreateApplicationPage() {
   
   const [isCreating, setIsCreating] = useState(false);
   const [intakeType, setIntakeType] = useState<'standard' | 'kaiser_auth_received_via_ils'>('standard');
-  const [kaiserStaffList, setKaiserStaffList] = useState<Array<{ uid: string; displayName: string }>>([]);
+  const [kaiserStaffList, setKaiserStaffList] = useState<Array<{ uid: string; displayName: string; email: string }>>([]);
   const [isLoadingKaiserStaff, setIsLoadingKaiserStaff] = useState(false);
   const [selectedAssignedStaffId, setSelectedAssignedStaffId] = useState('');
   const [selectedAssignedStaffName, setSelectedAssignedStaffName] = useState('');
@@ -1238,7 +1238,7 @@ export default function CreateApplicationPage() {
             const lastName = String(data?.lastName || '').trim();
             const email = String(data?.email || '').trim();
             const displayName = `${firstName} ${lastName}`.trim() || email || d.id;
-            return { uid: d.id, displayName };
+            return { uid: d.id, displayName, email };
           })
           .sort((a, b) => a.displayName.localeCompare(b.displayName));
         setKaiserStaffList(staff);
@@ -1273,6 +1273,42 @@ export default function CreateApplicationPage() {
     };
     void loadActionItemCount();
   }, [firestore, selectedAssignedStaffId]);
+
+  const sendStaffAssignmentWorkflowEmail = async (params: {
+    applicationId: string;
+    appUserId: string;
+    staffId: string;
+    staffName: string;
+    memberName: string;
+    memberMrn?: string;
+    memberCounty?: string;
+    assignedBy: string;
+  }) => {
+    const staffEmail = String(
+      kaiserStaffList.find((staff) => staff.uid === params.staffId)?.email || ''
+    ).trim();
+    const res = await fetch('/api/admin/send-staff-assignment-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        applicationId: params.applicationId,
+        appUserId: params.appUserId,
+        staffId: params.staffId,
+        staffName: params.staffName,
+        to: staffEmail || undefined,
+        memberName: params.memberName,
+        memberMrn: params.memberMrn || '',
+        memberCounty: params.memberCounty || '',
+        kaiserStatus: 'T2038 Received, Need First Contact',
+        calaimStatus: 'Authorized',
+        assignedBy: params.assignedBy,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) {
+      throw new Error(String(data?.error || 'Failed to send staff assignment email.'));
+    }
+  };
 
   const uploadEligibilityFiles = async (applicationId: string) => {
     if (!storage || eligibilityScreenshotFiles.length === 0) return [];
@@ -1776,6 +1812,16 @@ export default function CreateApplicationPage() {
                 applicationId,
                 source: 'kaiser-ils-spreadsheet',
                 timestamp: serverTimestamp(),
+              });
+              await sendStaffAssignmentWorkflowEmail({
+                applicationId,
+                appUserId,
+                staffId: row.assignedStaffId,
+                staffName: row.assignedStaffName || 'Kaiser Staff',
+                memberName,
+                memberMrn: row.memberMrn || '',
+                memberCounty: row.memberCounty || '',
+                assignedBy: assignedByName,
               });
             } catch (notifyError) {
               console.warn('Failed to create staff notification for spreadsheet row:', notifyError);
@@ -2347,14 +2393,14 @@ export default function CreateApplicationPage() {
 
   const createApplicationForMember = async (options?: { skipNavigate?: boolean; suppressSuccessToast?: boolean }) => {
     const isKaiserAuthReceived = isKaiserAuthReceivedIntake;
-    const hasRequiredCreateInputs = hasRequiredMemberName && (isKaiserAuthReceived ? true : hasPrimaryContactComplete);
+    const hasRequiredCreateInputs = isKaiserAuthReceived ? true : (hasRequiredMemberName && hasPrimaryContactComplete);
     const submittingStaff = getSubmittingStaffIdentity(user);
 
     if (!firestore || !hasRequiredCreateInputs) {
       toast({
         title: "Missing Information",
         description: isKaiserAuthReceived
-          ? "Please fill member first and last name before creating the Kaiser auth draft. You can complete primary contact after eligibility review."
+          ? "Please complete required draft fields before creating the Kaiser auth draft."
           : "Please fill member name and primary contact name, phone, and email before creating the draft application.",
         variant: "destructive",
       });
@@ -2531,6 +2577,16 @@ export default function CreateApplicationPage() {
             applicationId,
             source: 'application-pathway',
             timestamp: serverTimestamp(),
+          });
+          await sendStaffAssignmentWorkflowEmail({
+            applicationId,
+            appUserId,
+            staffId: selectedAssignedStaffId,
+            staffName: selectedAssignedStaffName || 'Kaiser Staff',
+            memberName,
+            memberMrn: memberMrn === '—' ? '' : memberMrn,
+            memberCounty: memberCounty === '—' ? '' : memberCounty,
+            assignedBy: assignedByName,
           });
         } catch (error) {
           console.warn('Failed to create initial staff assignment notification:', error);
@@ -2723,7 +2779,7 @@ export default function CreateApplicationPage() {
     }
   };
 
-  const isFormValid = hasRequiredMemberName && (isKaiserAuthReceivedIntake ? true : hasPrimaryContactComplete);
+  const isFormValid = isKaiserAuthReceivedIntake ? true : (hasRequiredMemberName && hasPrimaryContactComplete);
 
   const hasUnsavedChanges = useMemo(() => {
     const memberDefaults = getEmptyMemberData();
@@ -2874,24 +2930,26 @@ export default function CreateApplicationPage() {
           {/* Member Information */}
           <div>
             <h3 className="text-lg font-semibold mb-3">Member Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="memberFirstName">Member First Name *</Label>
-                <Input
-                  id="memberFirstName"
-                  value={memberData.memberFirstName || ''}
-                  onChange={(e) => setMemberData({ ...memberData, memberFirstName: e.target.value })}
-                />
+            {intakeType !== 'kaiser_auth_received_via_ils' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="memberFirstName">Member First Name *</Label>
+                  <Input
+                    id="memberFirstName"
+                    value={memberData.memberFirstName || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberFirstName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberLastName">Member Last Name *</Label>
+                  <Input
+                    id="memberLastName"
+                    value={memberData.memberLastName || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberLastName: e.target.value })}
+                  />
+                </div>
               </div>
-              <div>
-                <Label htmlFor="memberLastName">Member Last Name *</Label>
-                <Input
-                  id="memberLastName"
-                  value={memberData.memberLastName || ''}
-                  onChange={(e) => setMemberData({ ...memberData, memberLastName: e.target.value })}
-                />
-              </div>
-            </div>
+            )}
             {intakeType === 'kaiser_auth_received_via_ils' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div className="md:col-span-2 p-3 border rounded-md bg-muted/30 space-y-3">
@@ -2928,16 +2986,16 @@ export default function CreateApplicationPage() {
                     </div>
                   )}
                   <div className="text-xs text-muted-foreground">
-                    If selected on create, this assignment is added to the staff member&apos;s Action Items (bell) and daily task calendar. You can also assign staff later.
+                    If selected on create, this assignment is added to the staff member&apos;s Action Items (bell), daily task calendar, and sends an email with Kaiser workflow steps (eligibility check, CS summary, push to Caspio when ready). You can also assign staff later.
                   </div>
                 </div>
                 <div className="md:col-span-2 space-y-3">
                   <div className="p-3 border rounded-md bg-indigo-50/40 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <div className="font-medium">Section 1: Kaiser (ILS) Spreadsheet Parser</div>
+                        <div className="font-medium">Section 1: Batch Skeletons + Staff Assignment (Spreadsheet)</div>
                         <div className="text-xs text-muted-foreground">
-                          Upload Excel files from Kaiser ILS to parse fields, create draft application records, assign staff, and send selected rows to the main-page Caspio push flow.
+                          Use this section for batch workflow: upload spreadsheet, assign staff, create batch skeletons, then open selected rows for main-page Caspio push.
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -2958,10 +3016,10 @@ export default function CreateApplicationPage() {
                           disabled={isParsingIlsSpreadsheet}
                         >
                           {isParsingIlsSpreadsheet ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-                          {isParsingIlsSpreadsheet ? 'Parsing spreadsheet...' : 'Upload ILS Spreadsheet'}
+                          {isParsingIlsSpreadsheet ? 'Parsing spreadsheet...' : '1) Upload Spreadsheet'}
                         </Button>
                         <Button type="button" variant="outline" onClick={applyStaffToSelectedIlsRows} disabled={selectedIlsRows.length === 0}>
-                          Assign Staff to Selected
+                          2) Assign Staff to Selected
                         </Button>
                         <Button
                           type="button"
@@ -2973,7 +3031,7 @@ export default function CreateApplicationPage() {
                         </Button>
                         <Button type="button" variant="outline" onClick={createIlsSkeletonApplications} disabled={isCreatingIlsRecords || selectedIlsRows.length === 0}>
                           {isCreatingIlsRecords ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          Create Selected Records
+                          3) Create Batch Skeletons
                         </Button>
                         <Button
                           type="button"
@@ -2990,9 +3048,12 @@ export default function CreateApplicationPage() {
                           ) : (
                             <Database className="mr-2 h-4 w-4 text-sky-600" />
                           )}
-                          Open Selected for Main-Page Push
+                          4) Open Selected for Main-Page Caspio Push
                         </Button>
                       </div>
+                    </div>
+                    <div className="rounded-md border bg-slate-50 px-2 py-1 text-xs text-slate-700">
+                      Recommended order: upload spreadsheet - select rows - assign staff - create batch skeletons - open selected rows for main-page Caspio push.
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Spreadsheet file: {ilsSpreadsheetFileName || 'None'}
@@ -3005,20 +3066,19 @@ export default function CreateApplicationPage() {
                   </div>
 
                   <div className="p-3 border rounded-md bg-white/80 space-y-2">
-                    <div className="font-medium">Section 2: Upload Single Auth or Upload Batch</div>
+                    <div className="font-medium">Section 2: Single Auth (One PDF)</div>
                     <div className="text-xs text-muted-foreground">
-                      Upload one PDF to parse and create a single skeleton, or upload multiple PDFs and parse them into a batch for spreadsheet-style processing.
+                      Use this section for one member at a time. Batch processing is in Section 1.
                     </div>
                     <input
                       ref={serviceRequestFileInputRef}
                       type="file"
                       accept=".pdf,application/pdf"
                       className="hidden"
-                      multiple
                       onChange={(e) => {
                         const selectedList = Array.from(e.target.files || []);
                         const selected = selectedList[0] || null;
-                        setServiceRequestFiles(selectedList);
+                        setServiceRequestFiles(selected ? [selected] : []);
                         setServiceRequestFile(selected);
                         setServiceRequestParsedFields([]);
                         setServiceRequestWarnings([]);
@@ -3032,7 +3092,7 @@ export default function CreateApplicationPage() {
                         onClick={() => serviceRequestFileInputRef.current?.click()}
                         disabled={isParsingServiceRequest}
                       >
-                        Upload Single Auth PDF
+                        1) Upload Single Auth PDF
                       </Button>
                       <Button
                         type="button"
@@ -3041,25 +3101,7 @@ export default function CreateApplicationPage() {
                         disabled={!serviceRequestFile || isParsingServiceRequest}
                       >
                         {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-                        {isParsingServiceRequest ? 'Parsing...' : 'Parse Single Auth PDF'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void parseSingleAuthPdfToIlsRows(serviceRequestFiles)}
-                        disabled={serviceRequestFiles.length === 0 || isParsingServiceRequest}
-                      >
-                        {isParsingServiceRequest ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4" />}
-                        Parse Selected PDFs Into Batch
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void createApplicationForMember()}
-                        disabled={isCreating || !isFormValid}
-                      >
-                        {isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Create Single Auth Skeleton
+                        {isParsingServiceRequest ? 'Parsing...' : '2) Parse Single Auth PDF'}
                       </Button>
                       <Button
                         type="button"
@@ -3071,11 +3113,11 @@ export default function CreateApplicationPage() {
                       </Button>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Single auth PDFs selected: {serviceRequestFiles.length || 0}
+                      Single auth PDF selected: {serviceRequestFile ? '1' : '0'}
                     </div>
                     {serviceRequestFiles.length > 0 ? (
                       <div className="rounded-md border bg-slate-50 p-2 space-y-1">
-                        <div className="text-xs font-medium text-slate-700">Uploaded single-auth PDF file(s):</div>
+                        <div className="text-xs font-medium text-slate-700">Uploaded single-auth PDF:</div>
                         <div className="space-y-1">
                           {serviceRequestFiles.map((file, idx) => (
                             <div key={`${file.name}-${idx}`} className="text-xs text-slate-700 break-all">
@@ -3086,7 +3128,7 @@ export default function CreateApplicationPage() {
                       </div>
                     ) : null}
                     <div className="text-xs text-muted-foreground">
-                      Single-auth flow: Parse PDF(s) -&gt; Create skeleton draft -&gt; Go to main application page for Quick Actions, introductory email, first-call notes, and Caspio push.
+                      Single-auth flow: Upload PDF -&gt; Parse Single Auth PDF -&gt; Use the bottom Create button -&gt; Continue on the main application page.
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Protocol: Upload single-auth PDF first, then click Parse Single Auth PDF to fill member name/details.
@@ -3486,6 +3528,22 @@ export default function CreateApplicationPage() {
                     </div>
                   ) : null}
                 <div>
+                  <Label htmlFor="memberFirstName">Member First Name</Label>
+                  <Input
+                    id="memberFirstName"
+                    value={memberData.memberFirstName || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberFirstName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberLastName">Member Last Name</Label>
+                  <Input
+                    id="memberLastName"
+                    value={memberData.memberLastName || ''}
+                    onChange={(e) => setMemberData({ ...memberData, memberLastName: e.target.value })}
+                  />
+                </div>
+                <div>
                   <Label htmlFor="memberMrn">Member MRN</Label>
                   <Input
                     id="memberMrn"
@@ -3717,7 +3775,7 @@ export default function CreateApplicationPage() {
             <div className="text-sm text-gray-500 text-center space-y-1">
               <p>
                 {intakeType === 'kaiser_auth_received_via_ils'
-                  ? 'Please fill member first and last name before creating the Kaiser auth draft.'
+                  ? 'Please complete required draft fields before creating the Kaiser auth draft.'
                   : 'Please fill in all required fields (marked with *) before creating the application draft.'}
               </p>
               {memberData.contactPhone && memberData.contactPhone.replace(/\D/g, '').length > 0 && memberData.contactPhone.replace(/\D/g, '').length < 10 && (

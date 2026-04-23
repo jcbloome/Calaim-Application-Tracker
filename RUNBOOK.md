@@ -208,6 +208,14 @@ See `desktop/CODE_SIGNING.md` and set:
   - SW portal refreshes read only from this admin-synced Firestore cache.
   - Use `mode=full` only for occasional backfills or schema-change recovery.
 
+### Daily Kaiser staff process reminders
+- Endpoint: `GET /api/cron/kaiser-staff-process-digest`
+- Auth header: `Authorization: Bearer ${CRON_SECRET}`
+- Behavior:
+  - Sends inactivity reminders (48h+ no progress) to assigned Kaiser staff.
+  - Sends each Kaiser staff member a daily digest of open assignments not pushed to Caspio.
+  - Writes matching reminders to `adminDailyTasks` so staff sees them in daily task counts.
+
 ### Nightly Kaiser tracker preload (retired)
 - The automated midnight preload scheduler has been removed.
 - Reason: webhook-driven cache updates + scheduled members-cache sync provide complete coverage post-backfill.

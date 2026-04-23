@@ -454,6 +454,7 @@ All routes under `/api`. See code files for full request/response shapes.
 | `/api/cron/caspio-members-sync` | Daily | Full/incremental Caspio → Firestore cache sync |
 | `/api/cron/ils-weekly-list` | Weekly | ILS weekly list email |
 | `/api/cron/kaiser-rcfe-weekly-confirm` | Weekly | Kaiser RCFE confirmation |
+| `/api/cron/kaiser-staff-process-digest` | Daily | Kaiser staff inactivity reminders + daily digest emails |
 | `/api/cron/reminders` | Periodic | General reminders |
 
 All cron routes require `Authorization: Bearer {CRON_SECRET}` header.
@@ -837,6 +838,7 @@ Set up external cron (Google Cloud Scheduler or similar) to call:
 - `GET /api/cron/caspio-members-sync` — daily, with `Authorization: Bearer {CRON_SECRET}`
 - `GET /api/cron/ils-weekly-list` — weekly
 - `GET /api/cron/kaiser-rcfe-weekly-confirm` — weekly
+- `GET /api/cron/kaiser-staff-process-digest` — daily
 - `GET /api/cron/reminders` — as needed
 
 ### Step 10 — Seed social workers

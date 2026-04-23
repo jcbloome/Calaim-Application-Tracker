@@ -47,6 +47,11 @@ export async function GET(request: NextRequest) {
       if (!raw) return false;
       return raw === 'closed' || raw.includes('closed') || raw === 'resolved' || raw === 'done';
     };
+    const isOpenLike = (value: any) => {
+      const raw = String(value || '').trim().toLowerCase();
+      if (!raw) return true;
+      return raw === 'open' || raw === 'pending' || raw === 'in progress' || raw === 'in_progress';
+    };
     const normalizeStatus = (value: any) =>
       String(value || '')
         .trim()
@@ -338,28 +343,51 @@ export async function GET(request: NextRequest) {
         );
         staffDocs.forEach((docSnap) => {
           const data = docSnap.data();
-          const followUpRequired = Boolean(data.followUpRequired) || Boolean(data.followUpDate);
+          const notificationType = String((data as any)?.type || '').trim().toLowerCase();
+          const isKaiserProcessReminder =
+            notificationType === 'kaiser_process_inactivity' &&
+            Boolean((data as any)?.requiresStaffAction) &&
+            !isClosedLike((data as any)?.status);
+          const followUpRequired = Boolean(data.followUpRequired) || Boolean(data.followUpDate) || isKaiserProcessReminder;
           if (!followUpRequired) return;
           const closed =
             isClosedLike(data.status) ||
             isClosedLike((data as any)?.followUpStatus) ||
             Boolean((data as any)?.resolvedAt);
           if (onlyFollowUp && closed) return;
-          const followUpDate = data.followUpDate?.toDate?.()?.toISOString?.()
-            || data.followUpDate
-            || data.timestamp?.toDate?.()?.toISOString?.()
-            || new Date().toISOString();
+          const followUpDate = (() => {
+            const explicitDate = data.followUpDate?.toDate?.()?.toISOString?.()
+              || data.followUpDate
+              || (data as any)?.reminderDueAt;
+            if (explicitDate) return String(explicitDate);
+            const createdIso = data.timestamp?.toDate?.()?.toISOString?.()
+              || data.createdAt
+              || new Date().toISOString();
+            // Keep process reminders visible as pending for 24h before overdue.
+            if (isKaiserProcessReminder) {
+              return new Date(new Date(createdIso).getTime() + 24 * 60 * 60 * 1000).toISOString();
+            }
+            return String(createdIso);
+          })();
           const isOverdue = followUpDate ? new Date(followUpDate) < now : false;
           followUpTasks.push({
             id: `staff-followup-${docSnap.id}`,
-            title: data.title ? `Follow-up: ${data.title}` : 'Follow-up required',
+            title: data.title
+              ? (isKaiserProcessReminder ? `Kaiser reminder: ${data.title}` : `Follow-up: ${data.title}`)
+              : (isKaiserProcessReminder ? 'Kaiser process reminder' : 'Follow-up required'),
             description: data.message || data.content || '',
             memberName: data.memberName,
             memberClientId: data.clientId2,
             healthPlan: data.healthPlan,
             taskType: 'follow_up',
             priority: normalizePriority(data.priority),
-            status: closed ? 'completed' : isOverdue ? 'overdue' : 'pending',
+            status: closed
+              ? 'completed'
+              : (!isKaiserProcessReminder && !isOpenLike((data as any)?.status))
+                ? 'completed'
+                : isOverdue
+                  ? 'overdue'
+                  : 'pending',
             dueDate: followUpDate,
             assignedBy: data.createdBy || 'system',
             assignedByName: data.senderName || data.createdByName || 'Staff',
@@ -370,6 +398,8 @@ export async function GET(request: NextRequest) {
             notes: data.message || data.content || '',
             source: 'notes',
             followUpStatus: closed ? 'Closed' : String(data.status || '').trim() || 'Open',
+            actionUrl: String((data as any)?.actionUrl || '').trim() || undefined,
+            reminderType: notificationType || undefined,
           });
         });
       } catch (followupError) {

@@ -94,6 +94,7 @@ interface StaffAssignmentPayload {
     calaimStatus: string;
     assignedBy: string;
     nextStepsDate?: string;
+    dashboardUrl?: string;
 }
 
 interface NoteAssignmentPayload {
@@ -439,7 +440,7 @@ export const sendReminderEmail = async (payload: ReminderPayload) => {
 };
 
 export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) => {
-    const { to, staffName, memberName, memberMrn, memberCounty, kaiserStatus, calaimStatus, assignedBy, nextStepsDate } = payload;
+    const { to, staffName, memberName, memberMrn, memberCounty, kaiserStatus, calaimStatus, assignedBy, nextStepsDate, dashboardUrl } = payload;
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
@@ -456,6 +457,7 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
             calaimStatus,
             assignedBy,
             nextStepsDate,
+            dashboardUrl,
         }));
 
         return await sendViaResendWithLog({

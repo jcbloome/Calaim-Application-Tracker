@@ -484,7 +484,10 @@ function AdminHeader() {
           const isAssignmentAlert =
             type.includes('assignment') ||
             (Boolean(data?.requiresStaffAction) && source === 'application-pathway' && isKaiserOrHealthNet);
-          if (!isRead && !hiddenFromInbox && isAssignmentAlert) {
+          const isKaiserProcessReminder =
+            type.includes('kaiser_process_inactivity') &&
+            Boolean(data?.requiresStaffAction);
+          if (!isRead && !hiddenFromInbox && (isAssignmentAlert || isKaiserProcessReminder)) {
             nextAssignments += 1;
           }
           // Keep Action Item count aligned with what Electron can actually alert on.

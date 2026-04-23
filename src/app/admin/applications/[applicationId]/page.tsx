@@ -971,6 +971,15 @@ function PushToCaspioDialog({
       (application as any)?.referrerEmail ||
       (application as any)?.repEmail
     );
+    const forms = Array.isArray((application as any)?.forms) ? ((application as any)?.forms as any[]) : [];
+    const hasCompletedForm = (candidates: string[]) =>
+      forms.some((form) => {
+        const name = String(form?.name || '').trim().toLowerCase();
+        const status = String(form?.status || '').trim().toLowerCase();
+        return candidates.some((candidate) => name === candidate.toLowerCase()) && status === 'completed';
+      });
+    const eligibilityCheckComplete = hasCompletedForm(['Eligibility Check', 'Eligibility Screenshot']);
+    const csSummaryComplete = hasCompletedForm(['CS Summary', 'CS Member Summary']);
     const readinessChecks = [
       { key: 'memberFirstName', label: 'Member first name', required: true, ready: Boolean(toClean((application as any)?.memberFirstName)) },
       { key: 'memberLastName', label: 'Member last name', required: true, ready: Boolean(toClean((application as any)?.memberLastName)) },
@@ -990,6 +999,18 @@ function PushToCaspioDialog({
       },
       { key: 'contactEmail', label: 'Family/POA email', required: true, ready: Boolean(contactEmail) },
       { key: 'contactPhone', label: 'Family/POA phone', required: true, ready: Boolean(contactPhone) },
+      {
+        key: 'eligibilityCheckComplete',
+        label: 'Eligibility Check complete',
+        required: isKaiserHealthPlan,
+        ready: eligibilityCheckComplete,
+      },
+      {
+        key: 'csSummaryComplete',
+        label: 'CS Summary complete',
+        required: isKaiserHealthPlan,
+        ready: csSummaryComplete,
+      },
       {
         key: 'prePushNotes',
         label: 'Pre-push notes',

@@ -62,7 +62,7 @@ export default function StaffAssignmentEmail({
             </Text>
             
             <Text style={paragraph}>
-              You have been assigned a new CalAIM member to manage. Please review the member details below and take appropriate next steps.
+              You have been assigned a new Kaiser CalAIM member. Please open the member in the CalAIM portal and complete the required workflow.
             </Text>
 
             {/* Member Details Card */}
@@ -110,13 +110,16 @@ export default function StaffAssignmentEmail({
             {/* Action Button */}
             <Section style={buttonContainer}>
               <Link href={dashboardUrl} style={button}>
-                View Kaiser Tracker Dashboard
+                Open Assigned Member
               </Link>
             </Section>
 
-            <Text style={paragraph}>
-              Please log into the CalAIM Application Portal to review this member's full details and update their status as needed.
-            </Text>
+            <Section style={memberCard}>
+              <Heading style={h2}>Required Next Steps</Heading>
+              <Text style={paragraph}>1) Complete Eligibility Check</Text>
+              <Text style={paragraph}>2) Complete CS Summary form</Text>
+              <Text style={paragraph}>3) Push to Caspio when ready</Text>
+            </Section>
 
             <Hr style={hr} />
             

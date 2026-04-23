@@ -53,6 +53,7 @@ interface MyTask {
   clientId2?: string;
   followUpStatus?: string;
   followUpAssignment?: string;
+  reminderType?: string;
 }
 
 interface MemberNote {
@@ -299,6 +300,9 @@ function MyTasksPageContent() {
       completed: tasks.filter(t => t.status === 'completed').length,
       followup: tasks.filter(t => t.taskType === 'follow_up' && t.status !== 'completed').length,
       notes: tasks.filter(t => t.source === 'notes' && t.status !== 'completed').length,
+      kaiserReminders: tasks.filter((t) =>
+        String(t.reminderType || '').toLowerCase() === 'kaiser_process_inactivity' && t.status !== 'completed'
+      ).length,
       dueThisWeek: tasks.filter(t => {
         const date = new Date(t.dueDate);
         return date >= weekStart && date <= weekEnd && t.status !== 'completed';
@@ -1152,7 +1156,7 @@ function MyTasksPageContent() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
@@ -1220,6 +1224,17 @@ function MyTasksPageContent() {
                 <p className="text-2xl font-bold text-purple-600">{taskCounts.notes}</p>
               </div>
               <MessageSquare className="h-8 w-8 text-purple-500" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Kaiser Staff Reminders</p>
+                <p className="text-2xl font-bold text-amber-600">{taskCounts.kaiserReminders}</p>
+              </div>
+              <Bell className="h-8 w-8 text-amber-500" />
             </div>
           </CardContent>
         </Card>
@@ -1414,9 +1429,9 @@ function MyTasksPageContent() {
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div>
-                    <CardTitle>Follow-up Calendar</CardTitle>
+                    <CardTitle>Follow-up Calendar (Caspio Sync Workflow)</CardTitle>
                     <CardDescription>
-                      Month view + daily agenda for assigned follow-ups with dates from Caspio (manual sync, on demand).
+                      Use this section to import and sync assigned Caspio follow-ups, then review by day.
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1426,7 +1441,7 @@ function MyTasksPageContent() {
                       disabled={isImportingAllFollowUps || isSyncingFollowUps || isLoadingFollowUpCalendar}
                     >
                       <RefreshCw className={`mr-2 h-4 w-4 ${isImportingAllFollowUps ? 'animate-spin' : ''}`} />
-                      Initial import (all open)
+                      1) Initial import (all open)
                     </Button>
                     <Button
                       variant="outline"
@@ -1434,13 +1449,16 @@ function MyTasksPageContent() {
                       disabled={isSyncingFollowUps || isLoadingFollowUpCalendar}
                     >
                       <RefreshCw className={`mr-2 h-4 w-4 ${isSyncingFollowUps ? 'animate-spin' : ''}`} />
-                      Manual sync + load month
+                      2) Sync assigned follow-ups
                     </Button>
                   </div>
                 </div>
+                <div className="rounded-md border bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                  Recommended order: run initial import once, then use sync assigned follow-ups whenever new/updated Caspio follow-ups are expected.
+                </div>
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                   Closing a follow-up from this page updates Caspio <span className="font-semibold">Follow_Up_Status</span> to Closed.
-                  After status changes, click <span className="font-semibold">Sync assigned follow-ups</span> to refresh the calendar view.
+                  After status changes, click <span className="font-semibold">2) Sync assigned follow-ups</span> to refresh the calendar view.
                 </div>
               </CardHeader>
               <CardContent>
