@@ -723,6 +723,61 @@ export default function StaffManagementPage() {
         if (!firestore) return;
         setIsSavingNotifications(true);
         try {
+            const staffByUid = new Map(
+                (staffList || []).map((staff) => [String(staff.uid || '').trim(), staff] as const).filter(([uid]) => Boolean(uid))
+            );
+            const emailToUid = new Map(
+                (staffList || [])
+                    .map((staff) => [String(staff.email || '').trim().toLowerCase(), String(staff.uid || '').trim()] as const)
+                    .filter(([email, uid]) => Boolean(email) && Boolean(uid))
+            );
+            const normalizeRecipientKey = (rawKey: string, value: ReviewRecipientSettings) => {
+                const key = String(rawKey || '').trim();
+                if (!key) return '';
+                if (staffByUid.has(key)) return key;
+                const keyEmail = key.toLowerCase();
+                if (key.includes('@') && emailToUid.has(keyEmail)) {
+                    return emailToUid.get(keyEmail) || key;
+                }
+                const valueEmail = String(value?.email || '').trim().toLowerCase();
+                if (valueEmail && emailToUid.has(valueEmail)) {
+                    return emailToUid.get(valueEmail) || key;
+                }
+                return key;
+            };
+            const normalizedReviewRecipients = Object.entries(reviewRecipients || {}).reduce(
+                (acc, [rawKey, value]) => {
+                    const targetUid = normalizeRecipientKey(rawKey, value as ReviewRecipientSettings);
+                    if (!targetUid) return acc;
+                    const staff = staffByUid.get(targetUid);
+                    const existing = acc[targetUid] || ({} as ReviewRecipientSettings);
+                    const incoming = (value || {}) as ReviewRecipientSettings;
+                    acc[targetUid] = {
+                        ...existing,
+                        ...incoming,
+                        enabled: Boolean(existing.enabled || incoming.enabled),
+                        documents: Boolean(existing.documents || incoming.documents),
+                        csSummary: Boolean(existing.csSummary || incoming.csSummary),
+                        eligibility: Boolean((existing as any).eligibility || (incoming as any).eligibility),
+                        standalone: Boolean((existing as any).standalone || (incoming as any).standalone),
+                        alftReviewer: Boolean((existing as any).alftReviewer || (existing as any).alft || (incoming as any).alftReviewer || (incoming as any).alft),
+                        alft: Boolean((existing as any).alft || (existing as any).alftReviewer || (incoming as any).alft || (incoming as any).alftReviewer),
+                        kaiserRnVisitAssigner: Boolean((existing as any).kaiserRnVisitAssigner || (incoming as any).kaiserRnVisitAssigner),
+                        kaiserUploads: (incoming as any).kaiserUploads ?? (existing as any).kaiserUploads ?? true,
+                        healthNetUploads: (incoming as any).healthNetUploads ?? (existing as any).healthNetUploads ?? true,
+                        email: incoming.email || existing.email || staff?.email,
+                        label:
+                            incoming.label ||
+                            existing.label ||
+                            ((staff?.firstName || staff?.lastName)
+                                ? `${staff?.firstName || ''} ${staff?.lastName || ''}`.trim()
+                                : staff?.email),
+                    };
+                    return acc;
+                },
+                {} as Record<string, ReviewRecipientSettings>
+            );
+
             const notificationsRef = doc(firestore, 'system_settings', 'notifications');
             const notificationsData = {
                 recipientUids: notificationRecipients,
@@ -760,7 +815,7 @@ export default function StaffManagementPage() {
                 enabled: Boolean(reviewPopupsEnabled),
                 alftElectronEnabled: Boolean(alftElectronEnabled),
                 pollIntervalSeconds: Math.max(30, Math.min(3600, Math.round(Number(reviewPollIntervalSeconds || 180)))),
-                recipients: reviewRecipients,
+                recipients: normalizedReviewRecipients,
                 updatedAt: new Date(),
                 updatedBy: currentUser?.uid || null,
             };

@@ -65,6 +65,7 @@ interface AuthorizationMember {
   h2022DaysRemaining?: number;
   t2038Status: 'active' | 'expiring' | 'expired' | 'pending' | 'none';
   h2022Status: 'active' | 'expiring' | 'expired' | 'pending' | 'none';
+  h2022EndingWithin30Days?: boolean;
   // Critical renewal bucket for authorization tracker.
   criticalRenewal?: boolean;
   hasCompleteH2022Dates?: boolean;
@@ -361,6 +362,7 @@ export default function AuthorizationTracker() {
         const h2022Status = getAuthStatus(member.authEndDateH2022);
         const t2038DaysRemaining = getDaysRemaining(member.authEndDateT2038);
         const h2022DaysRemaining = getDaysRemaining(member.authEndDateH2022);
+        const h2022EndingWithin30Days = isEndDateWithinDays(member.authEndDateH2022, 30);
         const hasCompleteH2022Dates = hasDateValue(member.authStartDateH2022) && hasDateValue(member.authEndDateH2022);
         const needsIlsDateRouting =
           isKaiserPlan(member.healthPlan) &&
@@ -382,6 +384,7 @@ export default function AuthorizationTracker() {
           t2038Status === 'expired' ||
           h2022Status === 'expiring' ||
           h2022Status === 'expired' ||
+          h2022EndingWithin30Days ||
           criticalRenewal;
         
         return {
@@ -390,6 +393,7 @@ export default function AuthorizationTracker() {
           h2022Status,
           t2038DaysRemaining,
           h2022DaysRemaining,
+          h2022EndingWithin30Days,
           criticalRenewal,
           hasCompleteH2022Dates,
           needsIlsDateRouting,
@@ -604,7 +608,7 @@ export default function AuthorizationTracker() {
       const matchesCardFilter = selectedFilter === 'all' || 
         (selectedFilter === 'needsAttention' && member.needsAttention) ||
         (selectedFilter === 't2038Expiring' && member.t2038Status === 'expiring') ||
-        (selectedFilter === 'h2022Expiring' && member.h2022Status === 'expiring') ||
+        (selectedFilter === 'h2022Expiring' && Boolean(member.h2022EndingWithin30Days)) ||
         (selectedFilter === 'criticalRenewal' && member.criticalRenewal) ||
         (selectedFilter === 'expired' && (member.t2038Status === 'expired' || member.h2022Status === 'expired'));
       
@@ -744,7 +748,7 @@ export default function AuthorizationTracker() {
     const healthNetCount = dataPageScopedMembers.filter(m => String(m.healthPlan || '').toLowerCase().includes('health net')).length;
     const needingAttention = dataPageScopedMembers.filter(m => m.needsAttention).length;
     const t2038Expiring = dataPageScopedMembers.filter(m => m.t2038Status === 'expiring').length;
-    const h2022Expiring = dataPageScopedMembers.filter(m => m.h2022Status === 'expiring').length;
+    const h2022Expiring = dataPageScopedMembers.filter(m => Boolean(m.h2022EndingWithin30Days)).length;
     const expired = dataPageScopedMembers.filter(m => m.t2038Status === 'expired' || m.h2022Status === 'expired').length;
     const criticalRenewals = dataPageScopedMembers.filter(m => m.criticalRenewal).length;
     
@@ -1510,7 +1514,7 @@ export default function AuthorizationTracker() {
             </div>
           ) : (
             <>
-              <div className="hidden lg:block overflow-x-auto">
+              <div className="hidden xl:block overflow-x-auto">
                 <Table data-testid="members-table" className="min-w-[1650px] table-auto">
                   <TableHeader>
                     <TableRow>
@@ -1702,6 +1706,11 @@ export default function AuthorizationTracker() {
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             {getStatusBadge(member.h2022Status, member.h2022DaysRemaining)}
+                            {member.h2022EndingWithin30Days && (
+                              <Badge variant="outline" className="w-fit border-purple-200 text-purple-700 bg-purple-50">
+                                Ends within 30 days
+                              </Badge>
+                            )}
                             {member.criticalRenewal && (
                               <Badge variant="destructive" className="w-fit bg-red-600">
                                 Critical
@@ -1791,7 +1800,7 @@ export default function AuthorizationTracker() {
                   </TableBody>
                 </Table>
               </div>
-              <div className="lg:hidden space-y-3">
+              <div className="xl:hidden space-y-3">
                 {filteredAndSortedMembers.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     {authorizationScopedMembers.length === 0 ? (
@@ -1844,13 +1853,39 @@ export default function AuthorizationTracker() {
                           </div>
                         </div>
                         <div className="grid gap-2 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">T2038 End:</span>{' '}
-                            {formatDateSafe(member.authEndDateT2038)}
+                          <div className="rounded-md border bg-muted/20 p-2">
+                            <div className="mb-1 text-xs font-semibold text-muted-foreground">T2038</div>
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              <div>
+                                <div className="text-muted-foreground">Start</div>
+                                <div className="font-medium">{formatDateSafe(member.authStartDateT2038)}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">End</div>
+                                <div className="font-medium">{formatDateSafe(member.authEndDateT2038)}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">Req</div>
+                                <div className="font-medium">{formatDateSafe(member.authExtRequestDateT2038)}</div>
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">H2022 End:</span>{' '}
-                            {formatDateSafe(member.authEndDateH2022)}
+                          <div className="rounded-md border bg-muted/20 p-2">
+                            <div className="mb-1 text-xs font-semibold text-muted-foreground">H2022</div>
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              <div>
+                                <div className="text-muted-foreground">Start</div>
+                                <div className="font-medium">{formatDateSafe(member.authStartDateH2022)}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">End</div>
+                                <div className="font-medium">{formatDateSafe(member.authEndDateH2022)}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">Req</div>
+                                <div className="font-medium">{formatDateSafe(member.authExtRequestDateH2022)}</div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                         <div className="text-sm">
