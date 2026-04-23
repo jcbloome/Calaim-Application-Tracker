@@ -196,6 +196,12 @@ const formatPhoneDashed = (rawValue: unknown) => {
   return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
 };
 
+const normalizeMediCalNumber = (rawValue: unknown) =>
+  String(rawValue || '')
+    .trim()
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toUpperCase();
+
 const stripContactInfoFromAddressLine = (rawValue: unknown) => {
   let value = String(rawValue || '').replace(/\s+/g, ' ').trim();
   if (!value) return '';
@@ -254,6 +260,7 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
     memberFirstName: string;
     memberLastName: string;
     memberMrn: string;
+    memberMediCalNum: string;
     memberDob: string;
     memberPhone: string;
     contactPhone: string;
@@ -279,9 +286,14 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
         }
 
         const tokens = valueLine.split(/\s+/).filter(Boolean);
-        const firstTokenWithDigit = tokens.find((token) => /\d/.test(token));
+        const digitTokens = tokens.filter((token) => /\d/.test(token));
+        const firstTokenWithDigit = digitTokens[0] || '';
         if (firstTokenWithDigit && /^[A-Z0-9-]{6,}$/i.test(firstTokenWithDigit)) {
           result.memberMrn = firstTokenWithDigit;
+        }
+        const secondTokenWithDigit = digitTokens[1] || '';
+        if (secondTokenWithDigit && /^[A-Z0-9-]{6,}$/i.test(secondTokenWithDigit)) {
+          result.memberMediCalNum = normalizeMediCalNumber(secondTokenWithDigit);
         }
       }
     }
@@ -671,6 +683,11 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     /\bmrn\b\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
     /medical\s*record\s*(?:number|no\.?|#)\s*[:#-]?\s*([A-Z0-9-]{4,})/i,
   ]);
+  const memberMediCalNum = normalizeMediCalNumber(
+    findFirst(flattened, [
+      /(?:medi[\s-]*cal|mcp[\s_-]*cin|cin)\s*(?:number|no\.?|#)?\s*[:#-]?\s*([0-9][A-Z0-9-]{6,})/i,
+    ])
+  );
 
   const memberAddress =
     extractAddressFromLines(lines) ||
@@ -704,6 +721,11 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     updates.memberLastName = toNameCase(tableFields.memberLastName || parsedName.lastName || '');
   }
   if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
+  const resolvedMediCalNum = memberMediCalNum || normalizeMediCalNumber(tableFields.memberMediCalNum || '');
+  if (resolvedMediCalNum) {
+    updates.memberMediCalNum = resolvedMediCalNum;
+    updates.confirmMemberMediCalNum = resolvedMediCalNum;
+  }
   if (tableFields.memberDob) updates.memberDob = tableFields.memberDob;
   if (authorizationNumber) updates.Authorization_Number_T038 = authorizationNumber;
   if (authorizationStart) updates.Authorization_Start_T2038 = toMmDdYyyy(authorizationStart);
@@ -784,6 +806,11 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     /member\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
     /patient\s*(?:id|identifier)\s*[:#-]?\s*(?:\r?\n\s*)?([A-Z0-9-]{4,})/i,
   ]);
+  const memberMediCalNum = normalizeMediCalNumber(
+    findFirst(flattened, [
+      /(?:medi[\s-]*cal|mcp[\s_-]*cin|cin)\s*(?:number|no\.?|#)?\s*[:#-]?\s*(?:\r?\n\s*)?([0-9][A-Z0-9-]{6,})/i,
+    ])
+  );
 
   const memberAddressRaw =
     extractAddressFromLines(lines) ||
@@ -833,6 +860,8 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     memberFirstName: string;
     memberLastName: string;
     memberMrn: string;
+    memberMediCalNum: string;
+    confirmMemberMediCalNum: string;
     memberPhone: string;
     memberDob: string;
     Authorization_Number_T038: string;
@@ -856,6 +885,11 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     updates.memberLastName = toNameCase(tableFields.memberLastName || parsedName.lastName || '');
   }
   if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
+  const resolvedMediCalNum = memberMediCalNum || normalizeMediCalNumber(tableFields.memberMediCalNum || '');
+  if (resolvedMediCalNum) {
+    updates.memberMediCalNum = resolvedMediCalNum;
+    updates.confirmMemberMediCalNum = resolvedMediCalNum;
+  }
   if (authorizationNumber) updates.Authorization_Number_T038 = authorizationNumber;
   if (authorizationStart) updates.Authorization_Start_T2038 = toMmDdYyyy(authorizationStart);
   if (authorizationEnd) updates.Authorization_End_T2038 = toMmDdYyyy(authorizationEnd);

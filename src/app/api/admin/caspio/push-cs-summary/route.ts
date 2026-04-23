@@ -36,6 +36,14 @@ const PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES = [
   'Care_Needs_Notes',
   'Care_Notes',
 ];
+const MEDICAL_NUMBER_FIELD_CANDIDATES = [
+  'MediCal_Number',
+  'Medi_Cal_Number',
+  'MediCalNumber',
+  'MCP_CIN',
+  'CIN',
+  'CIN_Number',
+];
 let adminDb: any = null;
 try {
   if (!getApps().length) {
@@ -131,6 +139,11 @@ const getSharedLockedMapping = async (): Promise<Record<string, string> | null> 
     console.warn('Failed to load shared locked Caspio mapping in API:', error);
     return null;
   }
+};
+const buildTempMediCalNumber = (seed: string) => {
+  const normalizedSeed = clean(seed).replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6) || 'TEMP';
+  const timestampPart = String(Date.now()).slice(-8);
+  return `${normalizedSeed}${timestampPart}`;
 };
 
 const buildMemberDataFromMapping = (
@@ -404,6 +417,16 @@ export async function POST(request: NextRequest) {
         applicationData?.mrn ||
         applicationData?.Member_MRN
     );
+    const hintedMediCalNumber = clean(
+      applicationData?.confirmMemberMediCalNum ||
+        applicationData?.memberMediCalNum ||
+        applicationData?.memberMediCalNumber ||
+        applicationData?.MediCal_Number ||
+        applicationData?.Medi_Cal_Number ||
+        applicationData?.MCP_CIN ||
+        applicationData?.cin ||
+        applicationData?.CIN
+    );
 
     let existingRow: Record<string, any> | null = null;
     if (hintedClientId2) {
@@ -428,6 +451,14 @@ export async function POST(request: NextRequest) {
         const whereByMrn = buildEqualsClause(mrnField, hintedMrn);
         if (!whereByMrn) continue;
         existingRow = await trySearchMember(whereByMrn);
+      }
+    }
+    if (!existingRow && hintedMediCalNumber) {
+      for (const fieldName of MEDICAL_NUMBER_FIELD_CANDIDATES) {
+        if (existingRow) break;
+        const whereByMediCal = buildEqualsClause(fieldName, hintedMediCalNumber);
+        if (!whereByMediCal) continue;
+        existingRow = await trySearchMember(whereByMediCal);
       }
     }
     if (!existingRow) {
@@ -479,6 +510,15 @@ export async function POST(request: NextRequest) {
     memberFieldNames.forEach((name) => {
       fieldNameByNormalized.set(normalizeFieldName(name), name);
     });
+    const mediCalFieldName =
+      MEDICAL_NUMBER_FIELD_CANDIDATES.find((name) => fieldNameByNormalized.has(normalizeFieldName(name))) || '';
+    if (mediCalFieldName && !hasValue(memberData[mediCalFieldName])) {
+      if (hintedMediCalNumber) {
+        memberData[mediCalFieldName] = hintedMediCalNumber;
+      } else if (skeletonPush) {
+        memberData[mediCalFieldName] = buildTempMediCalNumber(`${firstName}${lastName}${hintedMrn || ''}`);
+      }
+    }
     if (preAssessmentNotes) {
       const mappedNotesField = Object.keys(memberData).find(
         (name) =>
