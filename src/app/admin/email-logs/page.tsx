@@ -25,6 +25,7 @@ type EmailLogEntry = {
   provider?: string;
   providerMessageId?: string | null;
   errorMessage?: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 function toDateLabel(value: any): string {
@@ -81,6 +82,10 @@ function AdminEmailLogsPageContent() {
         String(row.source || ''),
         String(row.provider || ''),
         String(row.errorMessage || ''),
+        String((row.metadata?.applicationId as string) || ''),
+        String((row.metadata?.memberName as string) || ''),
+        String((row.metadata?.sentByName as string) || ''),
+        String((row.metadata?.senderEmail as string) || ''),
         ...(Array.isArray(row.to) ? row.to : []),
         ...(Array.isArray(row.cc) ? row.cc : []),
       ]
@@ -151,7 +156,11 @@ function AdminEmailLogsPageContent() {
                     <th className="py-2 pr-3">Time</th>
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2 pr-3">Sender</th>
+                    <th className="py-2 pr-3">Sent By</th>
+                    <th className="py-2 pr-3">Sender Email</th>
                     <th className="py-2 pr-3">To</th>
+                    <th className="py-2 pr-3">Application</th>
+                    <th className="py-2 pr-3">Member</th>
                     <th className="py-2 pr-3">Subject</th>
                     <th className="py-2 pr-3">Template</th>
                     <th className="py-2 pr-3">Source</th>
@@ -175,7 +184,11 @@ function AdminEmailLogsPageContent() {
                         </Badge>
                       </td>
                       <td className="py-2 pr-3">{String(row.from || 'N/A')}</td>
+                      <td className="py-2 pr-3">{String((row.metadata?.sentByName as string) || 'N/A')}</td>
+                      <td className="py-2 pr-3">{String((row.metadata?.senderEmail as string) || 'N/A')}</td>
                       <td className="py-2 pr-3">{Array.isArray(row.to) && row.to.length > 0 ? row.to.join(', ') : 'N/A'}</td>
+                      <td className="py-2 pr-3">{String((row.metadata?.applicationId as string) || 'N/A')}</td>
+                      <td className="py-2 pr-3">{String((row.metadata?.memberName as string) || 'N/A')}</td>
                       <td className="py-2 pr-3">{String(row.subject || 'N/A')}</td>
                       <td className="py-2 pr-3">{String(row.template || 'N/A')}</td>
                       <td className="py-2 pr-3">{String(row.source || 'N/A')}</td>

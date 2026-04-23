@@ -7,6 +7,7 @@ const caspioWebhookSecret = defineSecret("CASPIO_WEBHOOK_SECRET");
 const WEBHOOK_LOGS_COLLECTION = "webhook-logs";
 const WEBHOOK_EVENTS_COLLECTION = "caspio-webhook-events";
 const MEMBERS_CACHE_COLLECTION = "caspio_members_cache";
+const DEDUPE_RETRY_WINDOW_MS = 15 * 1000;
 
 const normalizeCaspioBlankValue = (value: any): any => {
   if (value === null || value === undefined) return "";
@@ -70,7 +71,9 @@ const verifyWebhookSecret = (requestBody: any, headerValue: string | undefined) 
   return { ok: true, reason: "secret_valid" };
 };
 
-const buildEventId = (payload: any) => {
+const buildEventIdentity = (
+  payload: any
+): { eventId: string; hasExplicitEventId: boolean; explicitEventId: string } => {
   const tableName = String(payload?.table_name || "").trim();
   const operation = String(payload?.operation || "").trim();
   const clientId = String(
@@ -82,8 +85,6 @@ const buildEventId = (payload: any) => {
   const modified = String(payload?.record_data?.Date_Modified || payload?.record_data?.last_updated || "").trim();
   const changedFields = asChangedFields(payload?.changed_fields).join("|");
   const explicitEventId = String(payload?.event_id || payload?.Event_ID || "").trim();
-  if (explicitEventId) return explicitEventId.slice(0, 200);
-
   const hashBase = JSON.stringify({
     tableName,
     operation,
@@ -92,7 +93,15 @@ const buildEventId = (payload: any) => {
     changedFields,
     record: payload?.record_data || {},
   });
-  return createHash("sha256").update(hashBase).digest("hex");
+  if (explicitEventId) {
+    // Some Caspio setups accidentally send a constant event_id.
+    // Include payload fingerprint so real updates are still processed.
+    const dedupeId = createHash("sha256")
+      .update(`${explicitEventId.slice(0, 200)}::${hashBase}`)
+      .digest("hex");
+    return { eventId: dedupeId, hasExplicitEventId: true, explicitEventId: explicitEventId.slice(0, 200) };
+  }
+  return { eventId: createHash("sha256").update(hashBase).digest("hex"), hasExplicitEventId: false, explicitEventId: "" };
 };
 
 const isStaleEvent = (incomingModifiedRaw: unknown, existingModifiedRaw: unknown) => {
@@ -117,6 +126,7 @@ const mapCaspioRecordToCacheFields = (recordData: Record<string, any>) => {
     memberMrn: String(recordData.MCP_CIN || "").trim(),
     Kaiser_Status: String(recordData.Kaiser_Status || "").trim(),
     CalAIM_Status: String(recordData.CalAIM_Status || "").trim(),
+    caspioCalAIMStatus: String(recordData.CalAIM_Status || "").trim(),
     kaiser_user_assignment: String(recordData.Kaiser_User_Assignment || "").trim(),
     Social_Worker_Assigned: String(recordData.Social_Worker_Assigned || "").trim(),
     pathway: String(recordData.SNF_Diversion_or_Transition || recordData.Pathway || "").trim(),
@@ -124,6 +134,117 @@ const mapCaspioRecordToCacheFields = (recordData: Record<string, any>) => {
     last_updated: String(recordData.Date_Modified || recordData.last_updated || new Date().toISOString()).trim(),
   };
 };
+
+const cleanComparable = (value: unknown) => String(value ?? "").trim();
+const canonicalComparable = (value: unknown) => cleanComparable(value).toLowerCase();
+
+const docMatchesClientId = (docData: Record<string, any>, clientIdRaw: string) => {
+  const target = canonicalComparable(clientIdRaw);
+  if (!target) return false;
+  const candidates = [
+    docData?.client_ID2,
+    docData?.clientId2,
+    docData?.Client_ID2,
+    docData?.caspioClientId2,
+  ];
+  return candidates.some((candidate) => canonicalComparable(candidate) === target);
+};
+
+async function findApplicationDocRefsByClientId(db: FirebaseFirestore.Firestore, clientIdRaw: string) {
+  const clientId = cleanComparable(clientIdRaw);
+  if (!clientId) return [] as FirebaseFirestore.DocumentReference[];
+
+  const refsByPath = new Map<string, FirebaseFirestore.DocumentReference>();
+  const fieldVariants = ["client_ID2", "clientId2", "Client_ID2", "caspioClientId2"];
+  const queryValues: Array<string | number> = [clientId];
+  if (/^-?\d+(\.\d+)?$/.test(clientId)) {
+    const numericClientId = Number(clientId);
+    if (Number.isFinite(numericClientId)) {
+      queryValues.push(numericClientId);
+    }
+  }
+
+  for (const field of fieldVariants) {
+    for (const queryValue of queryValues) {
+      // Fast path: root applications collection (no collection-group index dependency).
+      try {
+        const rootSnap = await db.collection("applications").where(field, "==", queryValue).limit(200).get();
+        rootSnap.docs.forEach((doc) => refsByPath.set(doc.ref.path, doc.ref));
+      } catch {
+        // best effort; continue to collection-group attempt
+      }
+
+      try {
+        const snap = await db.collectionGroup("applications").where(field, "==", queryValue).limit(200).get();
+        snap.docs.forEach((doc) => refsByPath.set(doc.ref.path, doc.ref));
+      } catch {
+        // best effort across field variants / value types
+      }
+    }
+  }
+
+  // Final fallback: indexless scan and normalized in-code matching.
+  // Handles subtle formatting drifts (e.g. numeric/string, casing, whitespace).
+  if (refsByPath.size === 0) {
+    try {
+      const rootScan = await db.collection("applications").limit(2000).get();
+      rootScan.docs
+        .filter((doc) => docMatchesClientId((doc.data() || {}) as Record<string, any>, clientId))
+        .forEach((doc) => refsByPath.set(doc.ref.path, doc.ref));
+    } catch {
+      // best effort fallback only
+    }
+
+    if (refsByPath.size === 0) {
+      try {
+        const groupScan = await db.collectionGroup("applications").limit(2000).get();
+        groupScan.docs
+          .filter((doc) => docMatchesClientId((doc.data() || {}) as Record<string, any>, clientId))
+          .forEach((doc) => refsByPath.set(doc.ref.path, doc.ref));
+      } catch {
+        // best effort fallback only
+      }
+    }
+  }
+
+  return Array.from(refsByPath.values());
+}
+
+async function findApplicationDocRefsByMrn(db: FirebaseFirestore.Firestore, mrnRaw: string) {
+  const mrn = cleanComparable(mrnRaw);
+  if (!mrn) return [] as FirebaseFirestore.DocumentReference[];
+
+  const refsByPath = new Map<string, FirebaseFirestore.DocumentReference>();
+  const fieldVariants = ["memberMrn", "memberMRN", "mrn", "medicalRecordNumber", "MCP_CIN"];
+  const queryValues: Array<string | number> = [mrn];
+  if (/^-?\d+(\.\d+)?$/.test(mrn)) {
+    const numericMrn = Number(mrn);
+    if (Number.isFinite(numericMrn)) {
+      queryValues.push(numericMrn);
+    }
+  }
+
+  for (const field of fieldVariants) {
+    for (const queryValue of queryValues) {
+      // Fast path: root applications collection (no collection-group index dependency).
+      try {
+        const rootSnap = await db.collection("applications").where(field, "==", queryValue).limit(200).get();
+        rootSnap.docs.forEach((doc) => refsByPath.set(doc.ref.path, doc.ref));
+      } catch {
+        // best effort; continue to collection-group attempt
+      }
+
+      try {
+        const snap = await db.collectionGroup("applications").where(field, "==", queryValue).limit(200).get();
+        snap.docs.forEach((doc) => refsByPath.set(doc.ref.path, doc.ref));
+      } catch {
+        // best effort across MRN field variants / value types
+      }
+    }
+  }
+
+  return Array.from(refsByPath.values());
+}
 
 const hasWebhookTestMarker = (...values: Array<unknown>) =>
   values.some((value) => String(value || "").toUpperCase().includes("WEBHOOK_TEST"));
@@ -139,6 +260,7 @@ export const caspioWebhook = onRequest(
     const db = admin.firestore();
     try {
       if (req.method !== "POST") {
+        console.log("[caspioWebhook] ignored_method", { method: req.method });
         res.status(405).json({ error: "Method not allowed" });
         return;
       }
@@ -146,12 +268,21 @@ export const caspioWebhook = onRequest(
       const webhookData = normalizeCaspioBlankValue(req.body || {});
       const secretCheck = verifyWebhookSecret(webhookData, req.headers["x-caspio-webhook-secret"] as string | undefined);
       if (!secretCheck.ok) {
+        console.warn("[caspioWebhook] unauthorized", {
+          reason: secretCheck.reason,
+          hasHeaderSecret: Boolean(req.headers["x-caspio-webhook-secret"]),
+          hasBodySecret: Boolean(webhookData?.secret || webhookData?.Secret),
+        });
         res.status(401).json({ error: "Unauthorized webhook" });
         return;
       }
 
       const { table_name, operation, record_data, changed_fields } = webhookData;
       if (table_name !== "CalAIM_tbl_Members") {
+        console.log("[caspioWebhook] ignored_table", {
+          tableName: table_name,
+          operation: String(operation || "").trim(),
+        });
         res.status(200).json({ message: "Webhook received but ignored" });
         return;
       }
@@ -164,17 +295,33 @@ export const caspioWebhook = onRequest(
           ""
       ).trim();
       if (!clientId) {
+        console.warn("[caspioWebhook] missing_client_id2", {
+          operation: String(operation || "").trim(),
+          tableName: table_name,
+        });
         res.status(200).json({ message: "No client_ID2 found" });
         return;
       }
 
       if (hasWebhookTestMarker(clientId, normalizedRecordData?.MCP_CIN, normalizedRecordData?.Senior_First, normalizedRecordData?.Senior_Last)) {
+        console.log("[caspioWebhook] ignored_test_marker", { clientId, operation: String(operation || "").trim() });
         res.status(200).json({ message: "Webhook test marker ignored", clientId });
         return;
       }
 
       const changedFields = asChangedFields(changed_fields);
-      const eventId = buildEventId({ ...webhookData, record_data: normalizedRecordData });
+      console.log("[caspioWebhook] received", {
+        tableName: table_name,
+        operation: String(operation || "").trim().toUpperCase(),
+        clientId,
+        changedFieldsCount: changedFields.length,
+        changedFieldsPreview: changedFields.slice(0, 12),
+      });
+      const { eventId: derivedEventId, hasExplicitEventId, explicitEventId } = buildEventIdentity({
+        ...webhookData,
+        record_data: normalizedRecordData,
+      });
+      const eventId = hasExplicitEventId ? derivedEventId : `${derivedEventId}:${Date.now()}`;
       eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(eventId);
       try {
         await eventRef.create({
@@ -185,13 +332,46 @@ export const caspioWebhook = onRequest(
           changedFields,
           receivedAt: admin.firestore.FieldValue.serverTimestamp(),
           status: "processing",
+          hasExplicitEventId,
+          explicitEventId: explicitEventId || null,
         });
       } catch (e: any) {
-        if (e?.code === 6 || String(e?.message || "").toLowerCase().includes("already exists")) {
-          res.status(200).json({ message: "Duplicate webhook ignored", eventId, clientId });
-          return;
+        if (hasExplicitEventId && (e?.code === 6 || String(e?.message || "").toLowerCase().includes("already exists"))) {
+          const existingEventSnap = await eventRef.get();
+          const existingData = existingEventSnap.exists ? (existingEventSnap.data() as any) : null;
+          const existingReceivedAt = existingData?.receivedAt?.toDate?.() as Date | undefined;
+          const ageMs = existingReceivedAt ? Date.now() - existingReceivedAt.getTime() : Number.POSITIVE_INFINITY;
+          if (ageMs <= DEDUPE_RETRY_WINDOW_MS) {
+            console.log("[caspioWebhook] duplicate_ignored", {
+              eventId,
+              explicitEventId: explicitEventId || null,
+              clientId,
+              ageMs,
+            });
+            res.status(200).json({ message: "Duplicate webhook ignored", eventId, clientId });
+            return;
+          }
+
+          // Same payload can legitimately recur later (e.g. status toggled back).
+          // Keep processing by creating a time-suffixed event document.
+          const replayEventId = `${eventId}:${Date.now()}`;
+          eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(replayEventId);
+          await eventRef.create({
+            source: "caspio",
+            table: table_name,
+            operation: String(operation || "").trim(),
+            clientId,
+            changedFields,
+            receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: "processing",
+            hasExplicitEventId,
+            explicitEventId: explicitEventId || null,
+            replayOfEventId: eventId,
+          });
+          // Handled duplicate collision; continue processing using replay eventRef.
+        } else {
+          throw e;
         }
-        throw e;
       }
 
       const cacheRef = db.collection(MEMBERS_CACHE_COLLECTION).doc(clientId);
@@ -202,6 +382,12 @@ export const caspioWebhook = onRequest(
       const existingModifiedRaw = cacheData?.Date_Modified || cacheData?.last_updated || cacheData?.caspioLastModifiedRaw || "";
       const stale = isStaleEvent(incomingModifiedRaw, existingModifiedRaw);
       if (stale) {
+        console.log("[caspioWebhook] ignored_stale", {
+          clientId,
+          eventId,
+          incomingModifiedRaw: String(incomingModifiedRaw || ""),
+          existingModifiedRaw: String(existingModifiedRaw || ""),
+        });
         await eventRef.set(
           {
             status: "ignored_stale",
@@ -215,6 +401,7 @@ export const caspioWebhook = onRequest(
         return;
       }
 
+      let updateResult: { applicationDocsMatched: number; applicationDocsUpdated: number } | null = null;
       switch (String(operation || "").toUpperCase()) {
         case "UPDATE":
         case "INSERT": {
@@ -233,11 +420,8 @@ export const caspioWebhook = onRequest(
             { merge: true }
           );
 
-          // Keep legacy applications mirror in sync for critical fields.
-          const applicationsSnapshot = await db.collection("applications").where("client_ID2", "==", clientId).limit(1).get();
-          if (!applicationsSnapshot.empty) {
-            await handleCaspioUpdate(applicationsSnapshot.docs[0].id, normalizedRecordData, changedFields);
-          }
+          // Keep application docs (root + user subcollections) in sync for critical fields.
+          updateResult = await handleCaspioUpdate(clientId, normalizedRecordData, changedFields);
           break;
         }
         case "DELETE":
@@ -251,7 +435,7 @@ export const caspioWebhook = onRequest(
             },
             { merge: true }
           );
-          await handleCaspioDelete(clientId);
+          updateResult = await handleCaspioDelete(clientId);
           break;
         default:
           console.log(`⚠️ Unknown operation: ${operation}`);
@@ -267,6 +451,13 @@ export const caspioWebhook = onRequest(
         recordData: normalizedRecordData,
         processedAt: admin.firestore.FieldValue.serverTimestamp(),
         success: true,
+      });
+      console.log("[caspioWebhook] processed", {
+        clientId,
+        eventId,
+        operation: String(operation || "").trim().toUpperCase(),
+        appDocsMatched: updateResult?.applicationDocsMatched ?? 0,
+        appDocsUpdated: updateResult?.applicationDocsUpdated ?? 0,
       });
 
       await eventRef.set(
@@ -313,12 +504,12 @@ export const caspioWebhook = onRequest(
 );
 
 // Handle Caspio UPDATE operations
-async function handleCaspioUpdate(applicationId: string, caspioData: any, changedFields: string[]) {
+async function handleCaspioUpdate(clientId: string, caspioData: any, changedFields: string[]) {
   const db = admin.firestore();
 
   const fieldMapping: Record<string, string> = {
-    Kaiser_Status: "Kaiser_Status",
-    CalAIM_Status: "CalAIM_Status",
+    Kaiser_Status: "kaiserStatus",
+    CalAIM_Status: "caspioCalAIMStatus",
     Kaiser_User_Assignment: "kaiser_user_assignment",
     Senior_First: "memberFirstName",
     Senior_Last: "memberLastName",
@@ -330,17 +521,22 @@ async function handleCaspioUpdate(applicationId: string, caspioData: any, change
   const updateData: any = {
     lastSyncedFromCaspio: admin.firestore.FieldValue.serverTimestamp(),
     caspioWebhookReceived: admin.firestore.FieldValue.serverTimestamp(),
+    client_ID2: cleanComparable(clientId),
+    clientId2: cleanComparable(clientId),
+    Client_ID2: cleanComparable(clientId),
   };
 
+  let mappedFieldApplied = false;
   changedFields.forEach((caspioField) => {
     const firestoreField = fieldMapping[caspioField];
     if (firestoreField && caspioData[caspioField] !== undefined) {
       updateData[firestoreField] = normalizeCaspioBlankValue(caspioData[caspioField]);
+      mappedFieldApplied = true;
     }
   });
 
-  // If changed fields were not provided, still upsert mapped fields.
-  if (Object.keys(updateData).length <= 2) {
+  // If changed fields were not provided (or none matched mapping), still upsert mapped fields.
+  if (!mappedFieldApplied) {
     Object.entries(fieldMapping).forEach(([caspioField, firestoreField]) => {
       if (caspioData[caspioField] !== undefined) {
         updateData[firestoreField] = normalizeCaspioBlankValue(caspioData[caspioField]);
@@ -348,9 +544,33 @@ async function handleCaspioUpdate(applicationId: string, caspioData: any, change
     });
   }
 
-  await db.collection("applications").doc(applicationId).update(updateData);
+  if (caspioData?.Kaiser_Status !== undefined) {
+    updateData.Kaiser_Status = normalizeCaspioBlankValue(caspioData.Kaiser_Status);
+  }
+  if (caspioData?.CalAIM_Status !== undefined) {
+    const normalizedCalAIMStatus = normalizeCaspioBlankValue(caspioData.CalAIM_Status);
+    updateData.CalAIM_Status = normalizedCalAIMStatus;
+    updateData.caspioCalAIMStatus = normalizedCalAIMStatus;
+  }
 
-  const clientId = String(caspioData.client_ID2 || caspioData.Client_ID2 || "").trim();
+  let refs = await findApplicationDocRefsByClientId(db, clientId);
+  if (refs.length === 0) {
+    const mrnCandidate = cleanComparable(caspioData?.MCP_CIN || caspioData?.MediCal_Number);
+    if (mrnCandidate) {
+      refs = await findApplicationDocRefsByMrn(db, mrnCandidate);
+    }
+  }
+  let applicationDocsUpdated = 0;
+  if (refs.length > 0) {
+    for (let i = 0; i < refs.length; i += 500) {
+      const chunk = refs.slice(i, i + 500);
+      const batch = db.batch();
+      chunk.forEach((ref) => batch.set(ref, updateData, { merge: true }));
+      await batch.commit();
+      applicationDocsUpdated += chunk.length;
+    }
+  }
+
   if (clientId) {
     await db.collection("sync-status").doc(clientId).set(
       {
@@ -361,18 +581,35 @@ async function handleCaspioUpdate(applicationId: string, caspioData: any, change
       { merge: true }
     );
   }
+
+  return {
+    applicationDocsMatched: refs.length,
+    applicationDocsUpdated,
+  };
 }
 
 // Handle Caspio DELETE operations
 async function handleCaspioDelete(clientId: string) {
   const db = admin.firestore();
-  const applicationsSnapshot = await db.collection("applications").where("client_ID2", "==", clientId).limit(1).get();
-
-  if (!applicationsSnapshot.empty) {
-    await applicationsSnapshot.docs[0].ref.update({
-      deletedFromCaspio: admin.firestore.FieldValue.serverTimestamp(),
-      needsReview: true,
-    });
+  const refs = await findApplicationDocRefsByClientId(db, clientId);
+  let applicationDocsUpdated = 0;
+  if (refs.length > 0) {
+    for (let i = 0; i < refs.length; i += 500) {
+      const chunk = refs.slice(i, i + 500);
+      const batch = db.batch();
+      chunk.forEach((ref) =>
+        batch.set(
+          ref,
+          {
+            deletedFromCaspio: admin.firestore.FieldValue.serverTimestamp(),
+            needsReview: true,
+          },
+          { merge: true }
+        )
+      );
+      await batch.commit();
+      applicationDocsUpdated += chunk.length;
+    }
   }
 
   await db.collection("sync-status").doc(clientId).set(
@@ -383,4 +620,9 @@ async function handleCaspioDelete(clientId: string) {
     },
     { merge: true }
   );
+
+  return {
+    applicationDocsMatched: refs.length,
+    applicationDocsUpdated,
+  };
 }

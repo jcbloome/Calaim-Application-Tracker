@@ -16,6 +16,23 @@
 
 ## 🗓️ **Development History**
 
+### **April 23, 2026 - Updates**
+- ✅ **Integration**: Added structured Caspio webhook observability logs (`received`, ignored reasons, stale-event skips, and per-event application-doc match/update counts) in `caspioWebhook` so member-level Kaiser status propagation can be verified directly in Firebase function logs.
+- ✅ **Bug Fixed**: Updated Caspio member-to-application matching to query Firestore `applications` docs by both string and numeric `client_ID2/clientId2` values, fixing webhook runs that were received but showed `appDocsMatched: 0` for numeric client IDs (e.g., Jean `10379`).
+- ✅ **Bug Fixed**: Expanded webhook application matching to include `caspioClientId2` and fallback MRN fields (`memberMrn` variants), and now backfills `client_ID2/clientId2` onto matched application docs during Caspio updates so future Kaiser status webhooks resolve and sync reliably.
+- ✅ **Bug Fixed**: Added direct root `applications` collection lookup fallback (before collection-group lookup) for webhook and members-cache sync matching, avoiding collection-group index blockers that can cause false `appDocsMatched: 0` even when `Client_ID2` is present on application records.
+- ✅ **Bug Fixed**: Added normalized indexless fallback scans for webhook and members-cache application matching (case/whitespace/type tolerant across `client_ID2` variants), to catch edge-case records that evade indexed equality queries and prevent repeated `appDocsMatched: 0` for valid members.
+
+### **April 22, 2026 - Updates**
+- ✅ **UI/UX**: Corrected the admin application quick action log to show the submitting member’s portal login history (from `loginLogs` filtered by application user ID) instead of staff app-open activity.
+- ✅ **Integration**: Updated introductory invite email sending to resolve sender identity from the application’s assigned case manager (users profile/email) and use that sender in both outbound mail headers and `emailLogs` instead of fixed `noreply@carehomefinders.com`.
+- ✅ **UI/UX**: Added a visible “Sending as” sender line in both introductory invite compose UIs (application detail + create skeleton flow), sourced from preview API sender resolution so staff can verify case-manager sender identity before sending.
+- ✅ **Integration**: Added sender-domain safety fallback for introductory invites (verified-domain check + fallback From + reply-to), enforced assigned-case-manager requirement before send, enriched Email Logs with sender/application audit fields, added member-login quick-action filters/timezone display, and added `test:intro-email-sender` regression coverage for sender resolution order.
+- ✅ **Integration**: Added Caspio `Kaiser_Status` propagation bridge in members-cache sync to auto-update matching Firestore application docs (`kaiserStatus`) by `client_ID2/clientId2`, so pathway/admin application views reflect Caspio status changes after sync runs.
+- ✅ **Integration**: Updated Firebase Caspio member webhook handling to propagate status/field updates across all matching application documents (root + user subcollections via collection-group lookup) and map `Kaiser_Status` into pathway-facing `kaiserStatus`, enabling webhook-driven app-wide status refresh.
+- ✅ **Bug Fixed**: Updated “Test if pushed + retrieve Client_ID2” action on admin application detail to also persist returned Caspio `member.kaiserStatus` into application `kaiserStatus`, so manual confirmation immediately refreshes the visible Kaiser Status card.
+- ✅ **Bug Fixed**: Removed hardcoded Kaiser status fallback (`T2038 Requested`) from admin application display logic so status no longer defaults incorrectly after referral activity; empty values now show `Not set` until true Caspio-synced status is present.
+
 ### **April 21, 2026 - Updates**
 - ✅ **Feature Added**: Added an admin application-detail “Send Introductory Invite” action for draft/admin-started records with preview/edit/send flow, enabling primary-contact portal invitations directly from draft after sufficient data/Caspio readiness.
 - ✅ **Feature Added**: Added draft-only Section 11 pre-assessment care-needs notes in CS Summary (for rough Kaiser tier planning) and wired Caspio push to include these notes when a matching Caspio notes column exists.
@@ -171,6 +188,12 @@
 - ✅ **Security**: Centralized hardcoded admin allowlist in shared helper
 - ✅ **Bug Fixed**: Restored Room & Board Commitment page and added to printable packages
 - ✅ **UI/UX**: Added online Room & Board Commitment form with e-signature
+- ✅ **Bug Fixed**: Resolved Caspio webhook repeat-update miss by always applying mapped field fallbacks when `changed_fields` is empty
+- ✅ **Bug Fixed**: Prevented false duplicate suppression when Caspio reuses static `event_id` by hashing explicit IDs with payload fingerprint
+- ✅ **Bug Fixed**: Updated webhook dedupe to ignore only short retry bursts, allowing later same-payload status changes to process
+- ✅ **Bug Fixed**: Tuned webhook retry-dedupe window to 15 seconds so intentional rapid status toggles (A→B→A) are not suppressed
+- ✅ **Bug Fixed**: Extended resilient dedupe/replay handling to all Caspio webhook functions (members, claims, RCFE registration, users registration, and notes)
+- ✅ **Feature Added**: Synced `CalAIM_Status` into application `caspioCalAIMStatus` (webhook + cache sync + live admin page cache listener)
 
 ### **January 20, 2026 - Project Foundation**
 - ✅ **Fixed SSR Issues**: Added client-side guards to all browser API calls (window, localStorage, Notification)

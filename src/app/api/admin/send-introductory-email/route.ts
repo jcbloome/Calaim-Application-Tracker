@@ -2,23 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import admin from 'firebase-admin';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import introEmailSenderUtils from '@/lib/intro-email-sender';
 
 const APP_BASE_URL = 'https://connectcalaim.com';
-const FROM_EMAIL = 'CalAIM Pathfinder <noreply@carehomefinders.com>';
 const EMAIL_TEMPLATE = 'introductory_application_invite';
 const EMAIL_SOURCE = '/api/admin/send-introductory-email';
+const DEFAULT_FROM_EMAIL = 'noreply@carehomefinders.com';
+const VERIFIED_SENDER_DOMAIN = String(process.env.RESEND_VERIFIED_SENDER_DOMAIN || 'carehomefinders.com')
+  .trim()
+  .toLowerCase();
+
+const {
+  normalizeEmail,
+  isValidEmail,
+  resolvePreferredSenderIdentity,
+  buildIntroEmailSender,
+} = introEmailSenderUtils as any;
 
 type IntroEmailMode = 'preview' | 'send';
-
-function normalizeEmail(value: unknown): string {
-  return String(value || '').trim();
-}
-
-function isValidEmail(value: string): boolean {
-  const email = String(value || '').trim();
-  if (!email) return false;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
 
 function parseEmailList(value: unknown): string[] {
   const raw = String(value || '').trim();
@@ -54,6 +55,53 @@ function toHtmlBody(message: string): string {
 
 function getAppBaseUrl(): string {
   return APP_BASE_URL;
+}
+
+async function resolveAssignedCaseManagerSender(args: {
+  adminDb: any;
+  appData: Record<string, unknown>;
+  fallbackName: string;
+  fallbackEmail: string;
+}): Promise<{ senderName: string; senderEmail: string; senderSource: string }> {
+  const { adminDb, appData, fallbackName, fallbackEmail } = args;
+  const assignedStaffId = String(appData.assignedStaffId || '').trim();
+  const assignedStaffName = String(appData.assignedStaffName || '').trim();
+  const assignedStaffEmailFromApp = normalizeEmail(appData.assignedStaffEmail);
+
+  const fallback = resolvePreferredSenderIdentity({
+    assignedProfileName: assignedStaffName,
+    assignedProfileEmail: '',
+    assignedAppName: assignedStaffName,
+    assignedAppEmail: assignedStaffEmailFromApp,
+    fallbackName,
+    fallbackEmail,
+  });
+
+  if (!assignedStaffId) return fallback;
+
+  try {
+    const staffSnap = await adminDb.collection('users').doc(assignedStaffId).get();
+    if (!staffSnap.exists) return fallback;
+    const staffData = (staffSnap.data() || {}) as Record<string, unknown>;
+    const profileEmail = normalizeEmail(staffData.email);
+    const profileName = String(
+      staffData.displayName ||
+        `${String(staffData.firstName || '').trim()} ${String(staffData.lastName || '').trim()}`
+    )
+      .trim()
+      .replace(/\s+/g, ' ');
+
+    return resolvePreferredSenderIdentity({
+      assignedProfileName: profileName,
+      assignedProfileEmail: profileEmail,
+      assignedAppName: assignedStaffName,
+      assignedAppEmail: assignedStaffEmailFromApp,
+      fallbackName,
+      fallbackEmail,
+    });
+  } catch {
+    return fallback;
+  }
 }
 
 function getMissingRequestedDocuments(appData: Record<string, unknown>): string[] {
@@ -183,6 +231,7 @@ export async function POST(request: NextRequest) {
     }
 
     const appData = (appSnap.data() || {}) as Record<string, unknown>;
+    const assignedStaffId = String(appData.assignedStaffId || '').trim();
     const memberName = String(
       `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`
     ).trim() || 'CalAIM Member';
@@ -198,8 +247,26 @@ export async function POST(request: NextRequest) {
       intakeType === 'kaiser_auth_received_via_ils';
     const toEmailDefault = normalizeEmail(appData.bestContactEmail);
     const primaryContactEmail = normalizeEmail(appData.bestContactEmail);
-    const senderName = String(adminCheck.name || adminCheck.email || 'Staff').trim();
-    const senderEmail = normalizeEmail(adminCheck.email);
+    const fallbackSenderName = String(adminCheck.name || adminCheck.email || 'Staff').trim();
+    const fallbackSenderEmail = normalizeEmail(adminCheck.email);
+    const senderResolved = await resolveAssignedCaseManagerSender({
+      adminDb: adminCheck.adminDb,
+      appData,
+      fallbackName: fallbackSenderName,
+      fallbackEmail: fallbackSenderEmail,
+    });
+    const senderName = senderResolved.senderName;
+    const senderEmail = senderResolved.senderEmail;
+    const senderTransport = buildIntroEmailSender({
+      senderName,
+      senderEmail,
+      fallbackName: fallbackSenderName || 'CalAIM Pathfinder',
+      fallbackEmail: fallbackSenderEmail || DEFAULT_FROM_EMAIL,
+      verifiedSenderDomain: VERIFIED_SENDER_DOMAIN,
+      defaultFromEmail: DEFAULT_FROM_EMAIL,
+    });
+    const fromEmail = String(senderTransport.fromEmail || '').trim();
+    const replyToEmail = String(senderTransport.replyTo || '').trim();
     const baseUrl = getAppBaseUrl();
     const missingDocuments = getMissingRequestedDocuments(appData);
     const defaults = buildDefaultDraft({
@@ -238,7 +305,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         draft: { to: toRecipients.join(', '), cc: ccRecipients.join(', '), subject, message },
+        sender: {
+          name: senderName || null,
+          email: senderEmail || null,
+          from: fromEmail,
+          source: senderResolved.senderSource || null,
+          usesFallbackFrom: Boolean(senderTransport.usesFallbackFrom),
+          canSendAsResolvedSender: Boolean(senderTransport.canSendAsResolvedSender),
+          warning: String(senderTransport.warning || ''),
+          verifiedSenderDomain: VERIFIED_SENDER_DOMAIN || null,
+        },
       });
+    }
+
+    if (!assignedStaffId) {
+      return NextResponse.json(
+        { success: false, error: 'Assigned case manager is required before sending an introductory invite.' },
+        { status: 400 }
+      );
     }
 
     if (toRecipients.length === 0 || !subject || !message) {
@@ -260,10 +344,10 @@ export async function POST(request: NextRequest) {
     let providerMessageId = '';
     try {
       const result = await resend.emails.send({
-        from: FROM_EMAIL,
+        from: fromEmail,
         to: toRecipients,
         ...(ccRecipients.length > 0 ? { cc: ccRecipients } : {}),
-        ...(isValidEmail(senderEmail) ? { replyTo: senderEmail } : {}),
+        ...(isValidEmail(replyToEmail) ? { replyTo: replyToEmail } : {}),
         subject,
         html,
         text,
@@ -280,7 +364,7 @@ export async function POST(request: NextRequest) {
         status: 'success',
         template: EMAIL_TEMPLATE,
         source: EMAIL_SOURCE,
-        from: FROM_EMAIL,
+        from: fromEmail,
         to: toRecipients,
         cc: ccRecipients.length > 0 ? ccRecipients : null,
         subject,
@@ -295,6 +379,12 @@ export async function POST(request: NextRequest) {
           sentByUid: adminCheck.uid,
           sentByEmail: adminCheck.email,
           sentByName: adminCheck.name,
+          senderEmail,
+          senderName,
+          senderSource: senderResolved.senderSource || null,
+          senderUsesFallbackFrom: Boolean(senderTransport.usesFallbackFrom),
+          senderWarning: String(senderTransport.warning || ''),
+          replyToEmail: isValidEmail(replyToEmail) ? replyToEmail : null,
           ccRecipients,
         },
       });
@@ -322,7 +412,7 @@ export async function POST(request: NextRequest) {
         status: 'failure',
         template: EMAIL_TEMPLATE,
         source: EMAIL_SOURCE,
-        from: FROM_EMAIL,
+        from: fromEmail,
         to: toRecipients,
         cc: ccRecipients.length > 0 ? ccRecipients : null,
         subject,
@@ -337,6 +427,12 @@ export async function POST(request: NextRequest) {
           sentByUid: adminCheck.uid,
           sentByEmail: adminCheck.email,
           sentByName: adminCheck.name,
+          senderEmail,
+          senderName,
+          senderSource: senderResolved.senderSource || null,
+          senderUsesFallbackFrom: Boolean(senderTransport.usesFallbackFrom),
+          senderWarning: String(senderTransport.warning || ''),
+          replyToEmail: isValidEmail(replyToEmail) ? replyToEmail : null,
           ccRecipients,
         },
       });

@@ -89,6 +89,9 @@ function IntroductoryEmailLogsPageContent() {
           String(row.providerMessageId || ''),
           String((row.metadata?.applicationId as string) || ''),
           String((row.metadata?.memberName as string) || ''),
+          String((row.metadata?.sentByName as string) || ''),
+          String((row.metadata?.senderEmail as string) || ''),
+          String((row.metadata?.senderWarning as string) || ''),
           ...(Array.isArray(row.to) ? row.to : []),
           ...(Array.isArray(row.cc) ? row.cc : []),
         ]
@@ -158,6 +161,8 @@ function IntroductoryEmailLogsPageContent() {
                     <th className="py-2 pr-3">Time</th>
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2 pr-3">Sender</th>
+                    <th className="py-2 pr-3">Sent By</th>
+                    <th className="py-2 pr-3">Sender Email</th>
                     <th className="py-2 pr-3">To</th>
                     <th className="py-2 pr-3">Application ID</th>
                     <th className="py-2 pr-3">Member</th>
@@ -183,6 +188,8 @@ function IntroductoryEmailLogsPageContent() {
                         </Badge>
                       </td>
                       <td className="py-2 pr-3">{String(row.from || 'N/A')}</td>
+                      <td className="py-2 pr-3">{String((row.metadata?.sentByName as string) || 'N/A')}</td>
+                      <td className="py-2 pr-3">{String((row.metadata?.senderEmail as string) || 'N/A')}</td>
                       <td className="py-2 pr-3">{Array.isArray(row.to) && row.to.length > 0 ? row.to.join(', ') : 'N/A'}</td>
                       <td className="py-2 pr-3">{String((row.metadata?.applicationId as string) || 'N/A')}</td>
                       <td className="py-2 pr-3">{String((row.metadata?.memberName as string) || 'N/A')}</td>

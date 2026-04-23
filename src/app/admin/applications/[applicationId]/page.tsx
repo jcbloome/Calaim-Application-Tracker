@@ -96,6 +96,21 @@ function toMillisSafe(value: unknown): number {
   }
 }
 
+type MemberPortalLoginEntry = {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  role: string;
+  action: string;
+  success: boolean;
+  failureReason?: string;
+  portal: string;
+  userAgent?: string;
+  timestamp?: any;
+  createdAt?: any;
+};
+
 // Staff Assignment Dropdown Component
 function StaffAssignmentDropdown({ 
     application, 
@@ -1609,12 +1624,16 @@ function IntroductoryEmailDialog({
   const [cc, setCc] = useState('');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [senderFromLabel, setSenderFromLabel] = useState('');
+  const [senderWarning, setSenderWarning] = useState('');
+  const [senderUsesFallbackFrom, setSenderUsesFallbackFrom] = useState(false);
   const [lastSentAtMs, setLastSentAtMs] = useState(() =>
     toMillisSafe((application as any)?.introEmailLastSentAt || (application as any)?.introEmailLastSentDate)
   );
   const [lastSentTo, setLastSentTo] = useState(String((application as any)?.introEmailLastSentTo || '').trim());
 
   const primaryContactEmail = String((application as any)?.bestContactEmail || '').trim();
+  const hasAssignedCaseManager = Boolean(String((application as any)?.assignedStaffId || '').trim());
   const recipientHint = primaryContactEmail;
   const lastSentLabel = useMemo(() => {
     if (!lastSentAtMs) return '';
@@ -1680,6 +1699,9 @@ function IntroductoryEmailDialog({
       setCc(String(data?.draft?.cc || '').trim());
       setSubject(String(data?.draft?.subject || '').trim());
       setMessage(String(data?.draft?.message || '').trim());
+      setSenderFromLabel(String(data?.sender?.from || '').trim());
+      setSenderWarning(String(data?.sender?.warning || '').trim());
+      setSenderUsesFallbackFrom(Boolean(data?.sender?.usesFallbackFrom));
     } catch (error: any) {
       toast({
         title: 'Preview failed',
@@ -1792,6 +1814,25 @@ function IntroductoryEmailDialog({
               This send will be timestamped and retained in Email Logs.
             </div>
           )}
+          {senderFromLabel ? (
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
+              Sending as: <span className="font-medium">{senderFromLabel}</span>
+            </div>
+          ) : null}
+          {senderWarning ? (
+            <Alert variant={senderUsesFallbackFrom ? 'warning' : 'default'}>
+              <AlertTitle>Sender fallback notice</AlertTitle>
+              <AlertDescription>{senderWarning}</AlertDescription>
+            </Alert>
+          ) : null}
+          {!hasAssignedCaseManager ? (
+            <Alert variant="destructive">
+              <AlertTitle>Assigned case manager required</AlertTitle>
+              <AlertDescription>
+                Assign staff first. Introductory invites are locked until a case manager is assigned.
+              </AlertDescription>
+            </Alert>
+          ) : null}
           {!recipientHint ? (
             <Alert variant="destructive">
               <AlertTitle>No contact email found</AlertTitle>
@@ -1831,7 +1872,7 @@ function IntroductoryEmailDialog({
             <Button
               type="button"
               onClick={() => void sendEmail()}
-              disabled={isSending || isLoadingPreview || !recipientHint}
+              disabled={isSending || isLoadingPreview || !recipientHint || !hasAssignedCaseManager}
             >
               {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
               {lastSentAtMs ? 'Resend Invitation' : 'Send Invitation'}
@@ -1855,7 +1896,7 @@ function IntroductoryEmailDialog({
             variant="outline"
             size="sm"
             onClick={() => setIsOpen(true)}
-            disabled={isLoadingPreview || isSending || !recipientHint}
+            disabled={isLoadingPreview || isSending || !recipientHint || !hasAssignedCaseManager}
             className="h-7 px-2 text-xs"
           >
             Resend Invite
@@ -2549,6 +2590,11 @@ function ApplicationDetailPageContent() {
     createdByName?: string;
     type?: string;
   }>>([]);
+  const [memberPortalLoginLog, setMemberPortalLoginLog] = useState<MemberPortalLoginEntry[]>([]);
+  const [isLoadingMemberPortalLoginLog, setIsLoadingMemberPortalLoginLog] = useState(false);
+  const [memberPortalLoginStatusFilter, setMemberPortalLoginStatusFilter] = useState<'all' | 'success' | 'failed'>('all');
+  const [memberPortalLoginRangeFilter, setMemberPortalLoginRangeFilter] =
+    useState<'all' | 'today' | '7d' | '30d'>('30d');
 
   const mergeCurrentUserIntoStaff = (
     staff: Array<{ uid: string; name: string; email: string; role?: string }>
@@ -3332,11 +3378,168 @@ function ApplicationDetailPageContent() {
     Boolean((application as any)?.createdByAdmin);
   const showPrePushNotesSection = isDraftLikeApplication && (isKaiserPlan || isHealthNetPlan);
   const showDraftKaiserStatusSection = isDraftLikeApplication && isKaiserPlan;
+  const memberPortalUserId = useMemo(() => {
+    const fromQuery = String(appUserId || '').trim();
+    if (fromQuery) return fromQuery;
+    return String((application as any)?.userId || '').trim();
+  }, [appUserId, (application as any)?.userId]);
+  const timezoneLabel = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local Time';
+    } catch {
+      return 'Local Time';
+    }
+  }, []);
+  const filteredMemberPortalLoginLog = useMemo(() => {
+    const now = Date.now();
+    return memberPortalLoginLog.filter((entry) => {
+      if (memberPortalLoginStatusFilter === 'success' && !entry.success) return false;
+      if (memberPortalLoginStatusFilter === 'failed' && entry.success) return false;
+      if (memberPortalLoginRangeFilter === 'all') return true;
+      const ms = toMillisSafe(entry.timestamp) || toMillisSafe(entry.createdAt);
+      if (!ms) return false;
+      if (memberPortalLoginRangeFilter === 'today') {
+        const d = new Date(ms);
+        const n = new Date();
+        return (
+          d.getFullYear() === n.getFullYear() &&
+          d.getMonth() === n.getMonth() &&
+          d.getDate() === n.getDate()
+        );
+      }
+      const windowDays = memberPortalLoginRangeFilter === '7d' ? 7 : 30;
+      return ms >= now - windowDays * 24 * 60 * 60 * 1000;
+    });
+  }, [memberPortalLoginLog, memberPortalLoginStatusFilter, memberPortalLoginRangeFilter]);
 
   useEffect(() => {
     const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
     setPrePushNotesDraft(existing);
   }, [application?.id, (application as any)?.preAssessmentCareNeedsNotes]);
+
+  useEffect(() => {
+    if (!firestore || !memberPortalUserId) {
+      setMemberPortalLoginLog([]);
+      return;
+    }
+
+    setIsLoadingMemberPortalLoginLog(true);
+    const logQuery = query(
+      collection(firestore, 'loginLogs'),
+      where('userId', '==', memberPortalUserId),
+      limit(120)
+    );
+    const unsubscribe = onSnapshot(
+      logQuery,
+      (snapshot) => {
+        const rows: MemberPortalLoginEntry[] = snapshot.docs
+          .map((item) => {
+          const data = (item.data() || {}) as any;
+          return {
+            id: item.id,
+            userId: String(data.userId || ''),
+            userName: String(data.userName || data.userEmail || 'Unknown user'),
+            userEmail: String(data.userEmail || ''),
+            role: String(data.userRole || data.role || 'User'),
+            action: String(data.action || ''),
+            success: data.success !== false,
+            failureReason: String(data.failureReason || ''),
+            portal: String(data.portal || ''),
+            userAgent: String(data.userAgent || ''),
+            timestamp: data.timestamp,
+            createdAt: data.createdAt,
+          };
+          })
+          .filter((entry) => entry.portal === 'user' && entry.action === 'login')
+          .sort((a, b) => {
+            const bMs = toMillisSafe(b.timestamp) || toMillisSafe(b.createdAt);
+            const aMs = toMillisSafe(a.timestamp) || toMillisSafe(a.createdAt);
+            return bMs - aMs;
+          })
+          .slice(0, 40);
+        setMemberPortalLoginLog(rows);
+        setIsLoadingMemberPortalLoginLog(false);
+      },
+      () => {
+        setIsLoadingMemberPortalLoginLog(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [firestore, memberPortalUserId]);
+
+  useEffect(() => {
+    if (!firestore || !docRef) return;
+    const clientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
+    if (!clientId2) return;
+
+    const cacheRef = doc(firestore, 'caspio_members_cache', clientId2);
+    const unsubscribe = onSnapshot(cacheRef, (snap) => {
+      if (!snap.exists()) return;
+      const data = (snap.data() || {}) as Record<string, unknown>;
+      const incomingKaiserStatus = String(data.Kaiser_Status || data.kaiserStatus || '').trim();
+      const incomingCalAIMStatus = String(data.CalAIM_Status || data.caspioCalAIMStatus || data.calaimStatus || '').trim();
+      const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+      const currentCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
+
+      const updateData: Record<string, unknown> = {
+        lastUpdated: serverTimestamp(),
+      };
+      let shouldPersist = false;
+
+      if (isKaiserPlan && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus) {
+        updateData.kaiserStatus = incomingKaiserStatus;
+        updateData.kaiserStatusSyncedFromCacheAt = serverTimestamp();
+        updateData.kaiserStatusSyncSource = 'caspio_members_cache_live';
+        shouldPersist = true;
+      }
+
+      if (incomingCalAIMStatus && incomingCalAIMStatus !== currentCalAIMStatus) {
+        updateData.caspioCalAIMStatus = incomingCalAIMStatus;
+        updateData.CalAIM_Status = incomingCalAIMStatus;
+        updateData.calaimStatusSyncedFromCacheAt = serverTimestamp();
+        updateData.calaimStatusSyncSource = 'caspio_members_cache_live';
+        shouldPersist = true;
+      }
+
+      if (!shouldPersist) return;
+
+      void setDoc(
+        docRef,
+        updateData,
+        { merge: true }
+      ).catch(() => {
+        // Best effort live sync; webhook/scheduled sync still provide server-side propagation.
+      });
+
+      setApplication((prev) =>
+        prev
+          ? ({
+              ...prev,
+              ...(isKaiserPlan && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus
+                ? { kaiserStatus: incomingKaiserStatus }
+                : {}),
+              ...(incomingCalAIMStatus && incomingCalAIMStatus !== currentCalAIMStatus
+                ? {
+                    caspioCalAIMStatus: incomingCalAIMStatus,
+                    CalAIM_Status: incomingCalAIMStatus,
+                  }
+                : {}),
+            } as any)
+          : prev
+      );
+    });
+
+    return () => unsubscribe();
+  }, [
+    firestore,
+    docRef,
+    isKaiserPlan,
+    (application as any)?.client_ID2,
+    (application as any)?.clientId2,
+    (application as any)?.kaiserStatus,
+    (application as any)?.caspioCalAIMStatus,
+  ]);
 
   const kaiserFamilyProgressOptions = useMemo(
     () => [
@@ -3405,13 +3608,6 @@ function ApplicationDetailPageContent() {
   const roomBoardAgreementMeta = (application as any)?.roomBoardTierAgreement || null;
 
   const kaiserCurrentStatus = (() => {
-    const submitted = Boolean(
-      (application as any)?.kaiserReferralSubmission?.submitted ||
-        (application as any)?.kaiserReferralSubmission?.submittedAt ||
-        (application as any)?.kaiserReferralSubmission?.submittedAtIso ||
-        (application as any)?.kaiserReferralSubmission?.providerMessageId
-    );
-    if (submitted) return 'T2038 Requested';
     return String((application as any)?.kaiserStatus || '').trim();
   })();
   const kaiserWorkflowOptions = useMemo(() => {
@@ -5506,13 +5702,6 @@ function ApplicationDetailPageContent() {
     ''
   ).trim();
   const currentKaiserStatus = (() => {
-    const submitted = Boolean(
-      (application as any)?.kaiserReferralSubmission?.submitted ||
-        (application as any)?.kaiserReferralSubmission?.submittedAt ||
-        (application as any)?.kaiserReferralSubmission?.submittedAtIso ||
-        (application as any)?.kaiserReferralSubmission?.providerMessageId
-    );
-    if (submitted) return 'T2038 Requested';
     return String((application as any)?.kaiserStatus || '').trim();
   })();
   const currentSocialWorkerHold = String(
@@ -6558,10 +6747,12 @@ function ApplicationDetailPageContent() {
         return;
       }
       const retrievedClientId2 = String(data.member.clientId2 || '').trim();
+      const retrievedKaiserStatus = String(data?.member?.kaiserStatus || '').trim();
       const patch = {
         clientId2: retrievedClientId2,
         client_ID2: retrievedClientId2,
         caspioClientId2: retrievedClientId2,
+        ...(retrievedKaiserStatus ? { kaiserStatus: retrievedKaiserStatus } : {}),
         caspioSent: true,
         caspioPushLastStatus: 'confirmed',
         lastUpdated: serverTimestamp(),
@@ -6577,7 +6768,9 @@ function ApplicationDetailPageContent() {
       );
       toast({
         title: 'Caspio record confirmed',
-        description: `Found pushed Caspio record and retrieved Client_ID2: ${retrievedClientId2}`,
+        description: retrievedKaiserStatus
+          ? `Retrieved Client_ID2: ${retrievedClientId2}. Kaiser Status synced: ${retrievedKaiserStatus}`
+          : `Found pushed Caspio record and retrieved Client_ID2: ${retrievedClientId2}`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -8886,10 +9079,10 @@ function ApplicationDetailPageContent() {
                         ) : (
                           <>
                             <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                              {kaiserStatusPickerValue || 'Synced from Kaiser workflow'}
+                              {kaiserStatusPickerValue || 'Not set'}
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              Read only. Initial status is set to T2038 Requested after Kaiser referral is sent.
+                              Read only. This value syncs from Caspio webhook/cache updates.
                             </p>
                           </>
                         )}
@@ -9395,6 +9588,106 @@ function ApplicationDetailPageContent() {
                   </DialogDescription>
                 </DialogHeader>
                 <ActivityLog embedded applicationIdFilter={String(application.id || '')} />
+              </DialogContent>
+            </Dialog>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <Eye className="h-4 w-4" />
+                  Member portal login log
+                  <Badge variant="outline" className="ml-auto text-[10px]">
+                    {filteredMemberPortalLoginLog.length} logins
+                  </Badge>
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>Member portal login log</DialogTitle>
+                  <DialogDescription>
+                    Login history for the submitting user/member account tied to this application.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/20 p-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Status</Label>
+                      <Select
+                        value={memberPortalLoginStatusFilter}
+                        onValueChange={(value) => setMemberPortalLoginStatusFilter(value as 'all' | 'success' | 'failed')}
+                      >
+                        <SelectTrigger className="h-8 w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="success">Success</SelectItem>
+                          <SelectItem value="failed">Failed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Range</Label>
+                      <Select
+                        value={memberPortalLoginRangeFilter}
+                        onValueChange={(value) => setMemberPortalLoginRangeFilter(value as 'all' | 'today' | '7d' | '30d')}
+                      >
+                        <SelectTrigger className="h-8 w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All time</SelectItem>
+                          <SelectItem value="today">Today</SelectItem>
+                          <SelectItem value="7d">Last 7 days</SelectItem>
+                          <SelectItem value="30d">Last 30 days</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="text-xs text-muted-foreground">Times shown in {timezoneLabel}</div>
+                  </div>
+                  {isLoadingMemberPortalLoginLog ? (
+                    <div className="flex items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading portal login history...
+                    </div>
+                  ) : !memberPortalUserId ? (
+                    <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                      This application is not linked to a member portal user ID yet.
+                    </div>
+                  ) : filteredMemberPortalLoginLog.length === 0 ? (
+                    <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                      No member portal login events match the selected filters.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filteredMemberPortalLoginLog.map((entry) => {
+                        const entryDate =
+                          entry.timestamp?.toDate?.() ||
+                          entry.createdAt?.toDate?.() ||
+                          null;
+                        const timestampLabel =
+                          entryDate && !Number.isNaN(entryDate.getTime())
+                            ? format(entryDate, 'MMM d, yyyy h:mm a')
+                            : 'Time unavailable';
+                        return (
+                          <div key={entry.id} className="rounded-md border p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline">{entry.role || 'User'}</Badge>
+                              <Badge variant="outline">{entry.success ? 'login success' : 'login failed'}</Badge>
+                              <span className="text-xs text-muted-foreground">{timestampLabel}</span>
+                            </div>
+                            <div className="mt-2 text-sm font-medium">{entry.userName || 'Unknown user'}</div>
+                            {entry.userEmail ? (
+                              <div className="text-xs text-muted-foreground">{entry.userEmail}</div>
+                            ) : null}
+                            {entry.failureReason ? (
+                              <div className="mt-1 text-xs text-amber-700">Reason: {entry.failureReason}</div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </DialogContent>
             </Dialog>
             <MemberFilesDialog triggerLabel="See Files" />

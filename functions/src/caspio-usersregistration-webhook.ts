@@ -7,6 +7,7 @@ const caspioWebhookSecret = defineSecret("CASPIO_WEBHOOK_SECRET");
 const USERSREG_CACHE_COLLECTION = "caspio_usersregistration_cache";
 const WEBHOOK_EVENTS_COLLECTION = "caspio-webhook-events";
 const WEBHOOK_LOGS_COLLECTION = "webhook-logs";
+const DEDUPE_RETRY_WINDOW_MS = 15 * 1000;
 
 const normalizeCaspioBlankValue = (value: any): any => {
   if (value === null || value === undefined) return "";
@@ -102,9 +103,11 @@ const toDocId = (recordData: Record<string, any>) => {
   return `userreg_${preferred.replace(/[^\w.\-@]+/g, "_").slice(0, 240)}`;
 };
 
-const buildEventId = (payload: Record<string, any>, recordData: Record<string, any>) => {
+const buildEventIdentity = (
+  payload: Record<string, any>,
+  recordData: Record<string, any>
+): { eventId: string; hasExplicitEventId: boolean; explicitEventId: string } => {
   const explicitEventId = String(payload?.event_id || payload?.Event_ID || "").trim();
-  if (explicitEventId) return explicitEventId.slice(0, 200);
   const hashBase = JSON.stringify({
     tableName: getTableName(payload),
     operation: getOperation(payload),
@@ -114,7 +117,13 @@ const buildEventId = (payload: Record<string, any>, recordData: Record<string, a
     timestamp: String(recordData?.Timestamp || recordData?.Create_Date || "").trim(),
     recordData,
   });
-  return createHash("sha256").update(hashBase).digest("hex");
+  if (explicitEventId) {
+    const dedupeId = createHash("sha256")
+      .update(`${explicitEventId.slice(0, 200)}::${hashBase}`)
+      .digest("hex");
+    return { eventId: dedupeId, hasExplicitEventId: true, explicitEventId: explicitEventId.slice(0, 200) };
+  }
+  return { eventId: createHash("sha256").update(hashBase).digest("hex"), hasExplicitEventId: false, explicitEventId: "" };
 };
 
 const hasWebhookTestMarker = (...values: Array<unknown>) =>
@@ -166,7 +175,8 @@ export const caspioUsersRegistrationWebhook = onRequest(
         return;
       }
 
-      const eventId = buildEventId(payload, recordData);
+      const { eventId: baseEventId, hasExplicitEventId, explicitEventId } = buildEventIdentity(payload, recordData);
+      let eventId = hasExplicitEventId ? baseEventId : `${baseEventId}:${Date.now()}`;
       eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(eventId);
       try {
         await eventRef.create({
@@ -179,13 +189,40 @@ export const caspioUsersRegistrationWebhook = onRequest(
           changedFields,
           receivedAt: admin.firestore.FieldValue.serverTimestamp(),
           status: "processing",
+          hasExplicitEventId,
+          explicitEventId: explicitEventId || null,
         });
       } catch (e: any) {
-        if (e?.code === 6 || String(e?.message || "").toLowerCase().includes("already exists")) {
-          res.status(200).json({ message: "Duplicate webhook ignored", eventId, docId });
-          return;
+        if (hasExplicitEventId && (e?.code === 6 || String(e?.message || "").toLowerCase().includes("already exists"))) {
+          const existingEventSnap = await eventRef.get();
+          const existingData = existingEventSnap.exists ? (existingEventSnap.data() as any) : null;
+          const existingReceivedAt = existingData?.receivedAt?.toDate?.() as Date | undefined;
+          const ageMs = existingReceivedAt ? Date.now() - existingReceivedAt.getTime() : Number.POSITIVE_INFINITY;
+          if (ageMs <= DEDUPE_RETRY_WINDOW_MS) {
+            res.status(200).json({ message: "Duplicate webhook ignored", eventId, docId });
+            return;
+          }
+
+          const replayEventId = `${eventId}:${Date.now()}`;
+          eventId = replayEventId;
+          eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(replayEventId);
+          await eventRef.create({
+            source: "caspio",
+            table: "connect_tbl_userregistration",
+            operation,
+            userId: String(recordData?.User_ID || "").trim() || null,
+            email: String(recordData?.Email || "").trim().toLowerCase() || null,
+            docId,
+            changedFields,
+            receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: "processing",
+            hasExplicitEventId,
+            explicitEventId: explicitEventId || null,
+            replayOfEventId: baseEventId,
+          });
+        } else {
+          throw e;
         }
-        throw e;
       }
 
       const ref = db.collection(USERSREG_CACHE_COLLECTION).doc(docId);

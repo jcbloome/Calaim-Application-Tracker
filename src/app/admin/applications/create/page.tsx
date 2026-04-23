@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage } from '@/firebase';
 import { addDoc, collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ToastAction } from '@/components/ui/toast';
@@ -1161,6 +1161,9 @@ export default function CreateApplicationPage() {
     to: string;
     subject: string;
     message: string;
+    senderFrom?: string;
+    senderWarning?: string;
+    senderUsesFallbackFrom?: boolean;
   } | null>(null);
   const [lastCreatedSkeleton, setLastCreatedSkeleton] = useState<{ applicationId: string; memberName: string; clientId2: string } | null>(null);
   const [lockedCaspioPushMapping, setLockedCaspioPushMapping] = useState<Record<string, string> | null>(null);
@@ -2630,6 +2633,9 @@ export default function CreateApplicationPage() {
         to: String(data?.draft?.to || '').trim(),
         subject: String(data?.draft?.subject || '').trim(),
         message: String(data?.draft?.message || '').trim(),
+        senderFrom: String(data?.sender?.from || '').trim(),
+        senderWarning: String(data?.sender?.warning || '').trim(),
+        senderUsesFallbackFrom: Boolean(data?.sender?.usesFallbackFrom),
       });
       toast({
         title: 'Preview loaded',
@@ -2654,6 +2660,14 @@ export default function CreateApplicationPage() {
     }
     if (!introEmailDraft) {
       toast({ title: 'No preview loaded', description: 'Load an introductory email preview first.' });
+      return;
+    }
+    if (!selectedAssignedStaffId) {
+      toast({
+        title: 'Assigned case manager required',
+        description: 'Assign staff before sending the introductory invite.',
+        variant: 'destructive',
+      });
       return;
     }
     if (!user) {
@@ -3158,7 +3172,7 @@ export default function CreateApplicationPage() {
                             type="button"
                             size="sm"
                             onClick={() => void sendIntroductoryEmail()}
-                            disabled={!introEmailDraft || isSendingIntroEmail || isLoadingIntroEmailPreview}
+                            disabled={!introEmailDraft || isSendingIntroEmail || isLoadingIntroEmailPreview || !selectedAssignedStaffId}
                           >
                             {isSendingIntroEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Send Introductory Email
@@ -3167,6 +3181,25 @@ export default function CreateApplicationPage() {
                         {introEmailDraft ? (
                           <div className="rounded-md border bg-white p-3 space-y-2">
                             <div className="text-xs font-medium">Edit Introductory Email Before Sending</div>
+                            {introEmailDraft.senderFrom ? (
+                              <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
+                                Sending as: <span className="font-medium">{introEmailDraft.senderFrom}</span>
+                              </div>
+                            ) : null}
+                            {introEmailDraft.senderWarning ? (
+                              <Alert variant={introEmailDraft.senderUsesFallbackFrom ? 'warning' : 'default'}>
+                                <AlertTitle>Sender fallback notice</AlertTitle>
+                                <AlertDescription>{introEmailDraft.senderWarning}</AlertDescription>
+                              </Alert>
+                            ) : null}
+                            {!selectedAssignedStaffId ? (
+                              <Alert variant="destructive">
+                                <AlertTitle>Assigned case manager required</AlertTitle>
+                                <AlertDescription>
+                                  Assign staff before sending the introductory invite.
+                                </AlertDescription>
+                              </Alert>
+                            ) : null}
                             <div className="space-y-1">
                               <Label htmlFor="intro-email-to" className="text-xs">To</Label>
                               <Input

@@ -9,6 +9,7 @@ const CLAIMS_H2022_COLLECTION = "h2022_claim_checker_claims";
 const CLAIMS_T2038_COLLECTION = "t2038_claims_cache";
 const WEBHOOK_EVENTS_COLLECTION = "caspio-webhook-events";
 const WEBHOOK_LOGS_COLLECTION = "webhook-logs";
+const DEDUPE_RETRY_WINDOW_MS = 15 * 1000;
 
 const normalizeCaspioBlankValue = (value: any): any => {
   if (value === null || value === undefined) return "";
@@ -124,7 +125,9 @@ const toClaimDocId = (prefix: string, raw: string) =>
     .replace(/[^\w.\-]+/g, "_")
     .slice(0, 240)}`;
 
-const buildEventId = (payload: any) => {
+const buildEventIdentity = (
+  payload: any
+): { eventId: string; hasExplicitEventId: boolean; explicitEventId: string } => {
   const tableName = String(payload?.table_name || "").trim();
   const operation = String(payload?.operation || "").trim();
   const recordData = payload?.record_data || {};
@@ -133,10 +136,14 @@ const buildEventId = (payload: any) => {
   const modified = String(recordData?.Date_Modified || recordData?.Timestamp || "").trim();
   const changedFields = asChangedFields(payload?.changed_fields).join("|");
   const explicitEventId = String(payload?.event_id || payload?.Event_ID || "").trim();
-  if (explicitEventId) return explicitEventId.slice(0, 200);
-
   const hashBase = JSON.stringify({ tableName, operation, ids, clientId2, modified, changedFields, recordData });
-  return createHash("sha256").update(hashBase).digest("hex");
+  if (explicitEventId) {
+    const dedupeId = createHash("sha256")
+      .update(`${explicitEventId.slice(0, 200)}::${hashBase}`)
+      .digest("hex");
+    return { eventId: dedupeId, hasExplicitEventId: true, explicitEventId: explicitEventId.slice(0, 200) };
+  }
+  return { eventId: createHash("sha256").update(hashBase).digest("hex"), hasExplicitEventId: false, explicitEventId: "" };
 };
 
 async function processClaimsWebhook(params: {
@@ -188,7 +195,8 @@ async function processClaimsWebhook(params: {
       return;
     }
 
-    const eventId = buildEventId(payload);
+    const { eventId: baseEventId, hasExplicitEventId, explicitEventId } = buildEventIdentity(payload);
+    let eventId = hasExplicitEventId ? baseEventId : `${baseEventId}:${Date.now()}`;
     eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(eventId);
     try {
       await eventRef.create({
@@ -200,13 +208,39 @@ async function processClaimsWebhook(params: {
         changedFields,
         receivedAt: admin.firestore.FieldValue.serverTimestamp(),
         status: "processing",
+        hasExplicitEventId,
+        explicitEventId: explicitEventId || null,
       });
     } catch (e: any) {
-      if (e?.code === 6 || String(e?.message || "").toLowerCase().includes("already exists")) {
-        res.status(200).json({ message: "Duplicate webhook ignored", eventId, claimRecordId, clientId2 });
-        return;
+      if (hasExplicitEventId && (e?.code === 6 || String(e?.message || "").toLowerCase().includes("already exists"))) {
+        const existingEventSnap = await eventRef.get();
+        const existingData = existingEventSnap.exists ? (existingEventSnap.data() as any) : null;
+        const existingReceivedAt = existingData?.receivedAt?.toDate?.() as Date | undefined;
+        const ageMs = existingReceivedAt ? Date.now() - existingReceivedAt.getTime() : Number.POSITIVE_INFINITY;
+        if (ageMs <= DEDUPE_RETRY_WINDOW_MS) {
+          res.status(200).json({ message: "Duplicate webhook ignored", eventId, claimRecordId, clientId2 });
+          return;
+        }
+
+        const replayEventId = `${eventId}:${Date.now()}`;
+        eventId = replayEventId;
+        eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(replayEventId);
+        await eventRef.create({
+          source: "caspio",
+          table: expectedTableNames[0],
+          operation,
+          claimRecordId,
+          clientId2,
+          changedFields,
+          receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          status: "processing",
+          hasExplicitEventId,
+          explicitEventId: explicitEventId || null,
+          replayOfEventId: baseEventId,
+        });
+      } else {
+        throw e;
       }
-      throw e;
     }
 
     const docId = toClaimDocId(docPrefix, claimRecordId || clientId2);

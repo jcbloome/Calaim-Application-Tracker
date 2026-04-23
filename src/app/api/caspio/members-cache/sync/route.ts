@@ -250,6 +250,199 @@ function normalizeCaspioBlankValue(value: any): any {
   return value;
 }
 
+function cleanComparable(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function canonicalComparable(value: unknown): string {
+  return cleanComparable(value).toLowerCase();
+}
+
+function docMatchesClientId(data: Record<string, any>, clientIdRaw: string): boolean {
+  const target = canonicalComparable(clientIdRaw);
+  if (!target) return false;
+  const candidates = [
+    data?.client_ID2,
+    data?.clientId2,
+    data?.Client_ID2,
+    data?.caspioClientId2,
+  ];
+  return candidates.some((candidate) => canonicalComparable(candidate) === target);
+}
+
+function getApplicationKaiserStatus(appData: Record<string, any> | null | undefined): string {
+  if (!appData) return '';
+  return cleanComparable(appData.kaiserStatus || appData.Kaiser_Status || appData.kaiser_status);
+}
+
+function getApplicationCalAIMStatus(appData: Record<string, any> | null | undefined): string {
+  if (!appData) return '';
+  return cleanComparable(appData.caspioCalAIMStatus || appData.CalAIM_Status || appData.calaimStatus || appData.calaim_status);
+}
+
+async function findApplicationRefsByClientId2(params: {
+  adminDb: any;
+  clientId2: string;
+}): Promise<Array<any>> {
+  const { adminDb } = params;
+  const clientId2 = cleanComparable(params.clientId2);
+  if (!clientId2) return [];
+
+  const refsByPath = new Map<string, any>();
+  const fieldVariants = ['client_ID2', 'clientId2', 'Client_ID2', 'caspioClientId2'];
+  const queryValues: Array<string | number> = [clientId2];
+  if (/^-?\d+(\.\d+)?$/.test(clientId2)) {
+    const numericClientId2 = Number(clientId2);
+    if (Number.isFinite(numericClientId2)) {
+      queryValues.push(numericClientId2);
+    }
+  }
+  for (const field of fieldVariants) {
+    for (const queryValue of queryValues) {
+      // Fast path: root applications collection (no collection-group index dependency).
+      try {
+        const rootSnap = await adminDb.collection('applications').where(field, '==', queryValue).limit(200).get();
+        rootSnap.docs.forEach((doc: any) => refsByPath.set(String(doc.ref.path || ''), doc.ref));
+      } catch {
+        // best effort; continue to collection-group attempt
+      }
+
+      try {
+        const snap = await adminDb.collectionGroup('applications').where(field, '==', queryValue).limit(200).get();
+        snap.docs.forEach((doc: any) => refsByPath.set(String(doc.ref.path || ''), doc.ref));
+      } catch {
+        // best effort; keep scanning other field variants / value types
+      }
+    }
+  }
+
+  // Final fallback: indexless scan and normalized in-code matching.
+  if (refsByPath.size === 0) {
+    try {
+      const rootScan = await adminDb.collection('applications').limit(2000).get();
+      rootScan.docs
+        .filter((doc: any) => docMatchesClientId((doc.data() || {}) as Record<string, any>, clientId2))
+        .forEach((doc: any) => refsByPath.set(String(doc.ref.path || ''), doc.ref));
+    } catch {
+      // best effort fallback only
+    }
+
+    if (refsByPath.size === 0) {
+      try {
+        const groupScan = await adminDb.collectionGroup('applications').limit(2000).get();
+        groupScan.docs
+          .filter((doc: any) => docMatchesClientId((doc.data() || {}) as Record<string, any>, clientId2))
+          .forEach((doc: any) => refsByPath.set(String(doc.ref.path || ''), doc.ref));
+      } catch {
+        // best effort fallback only
+      }
+    }
+  }
+
+  return Array.from(refsByPath.values()).filter(Boolean);
+}
+
+async function propagateKaiserStatusToApplications(params: {
+  adminDb: any;
+  statusByClientId2: Map<string, string>;
+}): Promise<{ updated: number; clientsTouched: number }> {
+  const { adminDb, statusByClientId2 } = params;
+  if (!statusByClientId2.size) return { updated: 0, clientsTouched: 0 };
+
+  const adminModule = await import('@/firebase-admin');
+  const admin = adminModule.default;
+  let updated = 0;
+  let clientsTouched = 0;
+
+  for (const [clientId2Raw, kaiserStatusRaw] of statusByClientId2.entries()) {
+    const clientId2 = cleanComparable(clientId2Raw);
+    const kaiserStatus = cleanComparable(kaiserStatusRaw);
+    if (!clientId2 || !kaiserStatus) continue;
+
+    const refs = await findApplicationRefsByClientId2({ adminDb, clientId2 });
+    if (refs.length === 0) continue;
+    clientsTouched += 1;
+
+    const snaps = await adminDb.getAll(...refs);
+    const refsToUpdate = snaps
+      .filter((snap: any) => snap?.exists)
+      .filter((snap: any) => getApplicationKaiserStatus((snap.data() || {}) as Record<string, any>) !== kaiserStatus)
+      .map((snap: any) => snap.ref);
+
+    for (let i = 0; i < refsToUpdate.length; i += FIRESTORE_BATCH_LIMIT) {
+      const batchRefs = refsToUpdate.slice(i, i + FIRESTORE_BATCH_LIMIT);
+      const batch = adminDb.batch();
+      batchRefs.forEach((ref: any) => {
+        batch.set(
+          ref,
+          {
+            kaiserStatus,
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+            kaiserStatusSyncedFromCaspioAt: admin.firestore.FieldValue.serverTimestamp(),
+            kaiserStatusSyncSource: 'caspio_members_cache_sync',
+          },
+          { merge: true }
+        );
+      });
+      await batch.commit();
+      updated += batchRefs.length;
+    }
+  }
+
+  return { updated, clientsTouched };
+}
+
+async function propagateCalAIMStatusToApplications(params: {
+  adminDb: any;
+  statusByClientId2: Map<string, string>;
+}): Promise<{ updated: number; clientsTouched: number }> {
+  const { adminDb, statusByClientId2 } = params;
+  if (!statusByClientId2.size) return { updated: 0, clientsTouched: 0 };
+
+  const adminModule = await import('@/firebase-admin');
+  const admin = adminModule.default;
+  let updated = 0;
+  let clientsTouched = 0;
+
+  for (const [clientId2Raw, calaimStatusRaw] of statusByClientId2.entries()) {
+    const clientId2 = cleanComparable(clientId2Raw);
+    const calaimStatus = cleanComparable(calaimStatusRaw);
+    if (!clientId2 || !calaimStatus) continue;
+
+    const refs = await findApplicationRefsByClientId2({ adminDb, clientId2 });
+    if (refs.length === 0) continue;
+    clientsTouched += 1;
+
+    const snaps = await adminDb.getAll(...refs);
+    const refsToUpdate = snaps
+      .filter((snap: any) => snap?.exists)
+      .filter((snap: any) => getApplicationCalAIMStatus((snap.data() || {}) as Record<string, any>) !== calaimStatus)
+      .map((snap: any) => snap.ref);
+
+    for (let i = 0; i < refsToUpdate.length; i += FIRESTORE_BATCH_LIMIT) {
+      const batchRefs = refsToUpdate.slice(i, i + FIRESTORE_BATCH_LIMIT);
+      const batch = adminDb.batch();
+      batchRefs.forEach((ref: any) => {
+        batch.set(
+          ref,
+          {
+            caspioCalAIMStatus: calaimStatus,
+            CalAIM_Status: calaimStatus,
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+            calaimStatusSyncedFromCaspioAt: admin.firestore.FieldValue.serverTimestamp(),
+            calaimStatusSyncSource: 'caspio_members_cache_sync',
+          },
+          { merge: true }
+        );
+      });
+      await batch.commit();
+      updated += batchRefs.length;
+    }
+  }
+
+  return { updated, clientsTouched };
+}
+
 function buildSwSearchKeys(member: Record<string, any>): string[] {
   const keys = new Set<string>();
 
@@ -577,6 +770,8 @@ export async function POST(req: NextRequest) {
     let skippedMissingId = 0;
     let maxModified: Date | null = since ? new Date(since) : null;
     const seenClientIds = new Set<string>();
+    const caspioKaiserStatusChanges = new Map<string, string>();
+    const caspioCalAIMStatusChanges = new Map<string, string>();
 
     const chunkSize = FIRESTORE_BATCH_LIMIT;
     for (let i = 0; i < rawMembers.length; i += chunkSize) {
@@ -624,6 +819,7 @@ export async function POST(req: NextRequest) {
           ...transformed,
           Client_ID2: clientId2,
           CalAIM_Status: calaimStatus,
+          caspioCalAIMStatus: calaimStatus,
           CalAIM_MCO: calaimMco,
           cachedAt: now.toISOString(),
         };
@@ -706,6 +902,17 @@ export async function POST(req: NextRequest) {
             .filter(Boolean) as Array<{ key: string; oldStr: string; newStr: string }>;
 
           if (changes.length === 0) continue;
+
+          const oldKaiserStatus = cleanComparable(oldData?.Kaiser_Status);
+          const newKaiserStatus = cleanComparable(p.newDoc?.Kaiser_Status);
+          if (newKaiserStatus && oldKaiserStatus !== newKaiserStatus) {
+            caspioKaiserStatusChanges.set(p.clientId2, newKaiserStatus);
+          }
+          const oldCalAIMStatus = cleanComparable(oldData?.CalAIM_Status);
+          const newCalAIMStatus = cleanComparable(p.newDoc?.CalAIM_Status);
+          if (newCalAIMStatus && oldCalAIMStatus !== newCalAIMStatus) {
+            caspioCalAIMStatusChanges.set(p.clientId2, newCalAIMStatus);
+          }
 
           const pickPrimaryKey = () => {
             const order = [
@@ -867,6 +1074,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const appKaiserStatusSync = await propagateKaiserStatusToApplications({
+      adminDb,
+      statusByClientId2: caspioKaiserStatusChanges,
+    });
+    const appCalAIMStatusSync = await propagateCalAIMStatusToApplications({
+      adminDb,
+      statusByClientId2: caspioCalAIMStatusChanges,
+    });
+
     // Full sync should be authoritative: remove cache docs that no longer exist in Caspio.
     // This prevents stale assignments/counts from lingering in admin dashboards.
     let pruned = 0;
@@ -913,6 +1129,10 @@ export async function POST(req: NextRequest) {
           upserted,
           skippedMissingId,
           pruned,
+          appKaiserStatusUpdated: appKaiserStatusSync.updated,
+          appKaiserStatusClientsTouched: appKaiserStatusSync.clientsTouched,
+          appCalAIMStatusUpdated: appCalAIMStatusSync.updated,
+          appCalAIMStatusClientsTouched: appCalAIMStatusSync.clientsTouched,
         },
       },
       { merge: true }
@@ -954,6 +1174,10 @@ export async function POST(req: NextRequest) {
       upserted,
       skippedMissingId,
       pruned,
+      appKaiserStatusUpdated: appKaiserStatusSync.updated,
+      appKaiserStatusClientsTouched: appKaiserStatusSync.clientsTouched,
+      appCalAIMStatusUpdated: appCalAIMStatusSync.updated,
+      appCalAIMStatusClientsTouched: appCalAIMStatusSync.clientsTouched,
     });
   } catch (error: any) {
     console.error('❌ Error syncing Caspio members cache:', error);

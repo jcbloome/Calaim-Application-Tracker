@@ -1,6 +1,7 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
+import { createHash } from "node:crypto";
 import { buildCaspioConfig, getCaspioAccessTokenFromConfig } from "./caspio-auth";
 import { getFirestore } from 'firebase-admin/firestore';
 
@@ -55,6 +56,8 @@ const caspioBaseUrl = defineSecret("CASPIO_BASE_URL");
 const caspioClientId = defineSecret("CASPIO_CLIENT_ID");
 const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
 const caspioWebhookSecret = defineSecret("CASPIO_WEBHOOK_SECRET");
+const WEBHOOK_EVENTS_COLLECTION = "caspio-webhook-events";
+const DEDUPE_RETRY_WINDOW_MS = 15 * 1000;
 
 const normalizeCaspioBlankValue = (value: any): any => {
   if (value === null || value === undefined) return '';
@@ -432,6 +435,60 @@ const verifyWebhookSecret = (payload: any) => {
   return { ok: true, reason: 'secret_valid' };
 };
 
+const asChangedFields = (changedFields: unknown): string[] => {
+  if (Array.isArray(changedFields)) {
+    return changedFields.map((v) => String(v || '').trim()).filter(Boolean);
+  }
+  const raw = String(changedFields || '').trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.map((v) => String(v || '').trim()).filter(Boolean);
+    }
+  } catch {
+    // ignore parse errors and fallback to splitting tokens
+  }
+  return raw.split(/[,\n|;]/g).map((v) => v.trim()).filter(Boolean);
+};
+
+const buildEventIdentity = (payload: any, noteData: Record<string, any>, webhookKey: string) => {
+  const explicitEventId = String(payload?.event_id || payload?.Event_ID || '').trim();
+  const noteId = String(noteData?.Note_ID || noteData?.noteId || '').trim();
+  const clientId2 = String(noteData?.Client_ID2 || noteData?.Client_ID || '').trim();
+  const changedFields = asChangedFields(payload?.changed_fields ?? payload?.changedFields ?? payload?.object_fields).join('|');
+  const hashBase = JSON.stringify({
+    webhookKey,
+    noteId,
+    clientId2,
+    changedFields,
+    noteData,
+  });
+
+  if (explicitEventId) {
+    const dedupeId = createHash('sha256')
+      .update(`${explicitEventId.slice(0, 200)}::${hashBase}`)
+      .digest('hex');
+    return {
+      eventId: dedupeId,
+      hasExplicitEventId: true,
+      explicitEventId: explicitEventId.slice(0, 200),
+      changedFields: asChangedFields(payload?.changed_fields ?? payload?.changedFields ?? payload?.object_fields),
+      noteId,
+      clientId2,
+    };
+  }
+
+  return {
+    eventId: createHash('sha256').update(hashBase).digest('hex'),
+    hasExplicitEventId: false,
+    explicitEventId: '',
+    changedFields: asChangedFields(payload?.changed_fields ?? payload?.changedFields ?? payload?.object_fields),
+    noteId,
+    clientId2,
+  };
+};
+
 
 const normalizeAssignmentValue = (value: string) => {
   return String(value || '').trim().toLowerCase();
@@ -514,6 +571,7 @@ export const caspioCalAIMNotesWebhook = onRequest(
     secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret, caspioWebhookSecret]
   },
   async (request, response) => {
+    let eventRef: FirebaseFirestore.DocumentReference | null = null;
     try {
       console.log('📝 CalAIM Notes Webhook received:', request.body);
 
@@ -540,6 +598,55 @@ export const caspioCalAIMNotesWebhook = onRequest(
         return;
       }
 
+      const db = getDb();
+      const eventIdentity = buildEventIdentity(request.body || {}, noteData as Record<string, any>, 'calaim_notes');
+      let eventId = eventIdentity.hasExplicitEventId ? eventIdentity.eventId : `${eventIdentity.eventId}:${Date.now()}`;
+      eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(eventId);
+      try {
+        await eventRef.create({
+          source: 'caspio',
+          table: 'CalAIM_Member_Notes_ILS',
+          operation: String((request.body || {}).operation || 'UPDATE').trim().toUpperCase(),
+          changedFields: eventIdentity.changedFields,
+          noteId: eventIdentity.noteId || null,
+          clientId2: eventIdentity.clientId2 || null,
+          receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          status: 'processing',
+          hasExplicitEventId: eventIdentity.hasExplicitEventId,
+          explicitEventId: eventIdentity.explicitEventId || null,
+        });
+      } catch (e: any) {
+        if (eventIdentity.hasExplicitEventId && (e?.code === 6 || String(e?.message || '').toLowerCase().includes('already exists'))) {
+          const existingEventSnap = await eventRef.get();
+          const existingData = existingEventSnap.exists ? (existingEventSnap.data() as any) : null;
+          const existingReceivedAt = existingData?.receivedAt?.toDate?.() as Date | undefined;
+          const ageMs = existingReceivedAt ? Date.now() - existingReceivedAt.getTime() : Number.POSITIVE_INFINITY;
+          if (ageMs <= DEDUPE_RETRY_WINDOW_MS) {
+            response.status(200).json({ success: true, message: 'Duplicate webhook ignored', eventId });
+            return;
+          }
+
+          const replayEventId = `${eventId}:${Date.now()}`;
+          eventId = replayEventId;
+          eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(replayEventId);
+          await eventRef.create({
+            source: 'caspio',
+            table: 'CalAIM_Member_Notes_ILS',
+            operation: String((request.body || {}).operation || 'UPDATE').trim().toUpperCase(),
+            changedFields: eventIdentity.changedFields,
+            noteId: eventIdentity.noteId || null,
+            clientId2: eventIdentity.clientId2 || null,
+            receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'processing',
+            hasExplicitEventId: eventIdentity.hasExplicitEventId,
+            explicitEventId: eventIdentity.explicitEventId || null,
+            replayOfEventId: eventIdentity.eventId,
+          });
+        } else {
+          throw e;
+        }
+      }
+
       // Store note in Firestore
       const noteId = await storeNoteInFirestore(noteData, 'calaim_members');
 
@@ -547,6 +654,15 @@ export const caspioCalAIMNotesWebhook = onRequest(
       const notifications = await sendStaffNotifications(noteData, noteId, 'calaim_members');
 
       console.log(`✅ CalAIM note processed: ${noteId}, notifications sent: ${notifications.length}`);
+      if (eventRef) {
+        await eventRef.set(
+          {
+            status: 'processed',
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
 
       response.status(200).json({
         success: true,
@@ -557,6 +673,16 @@ export const caspioCalAIMNotesWebhook = onRequest(
 
     } catch (error: any) {
       console.error('❌ Error processing CalAIM notes webhook:', error);
+      if (eventRef) {
+        await eventRef.set(
+          {
+            status: 'failed',
+            error: String(error?.message || error),
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
       response.status(500).json({
         error: 'Internal server error',
         message: error.message
@@ -572,6 +698,7 @@ export const caspioClientNotesWebhook = onRequest(
     secrets: [caspioBaseUrl, caspioClientId, caspioClientSecret, caspioWebhookSecret]
   },
   async (request, response) => {
+    let eventRef: FirebaseFirestore.DocumentReference | null = null;
     try {
       console.log('📝 Client Notes Webhook received:', request.body);
 
@@ -598,6 +725,55 @@ export const caspioClientNotesWebhook = onRequest(
         return;
       }
 
+      const db = getDb();
+      const eventIdentity = buildEventIdentity(request.body || {}, noteData as Record<string, any>, 'client_notes');
+      let eventId = eventIdentity.hasExplicitEventId ? eventIdentity.eventId : `${eventIdentity.eventId}:${Date.now()}`;
+      eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(eventId);
+      try {
+        await eventRef.create({
+          source: 'caspio',
+          table: 'connect_tbl_clientnotes',
+          operation: String((request.body || {}).operation || 'UPDATE').trim().toUpperCase(),
+          changedFields: eventIdentity.changedFields,
+          noteId: eventIdentity.noteId || null,
+          clientId2: eventIdentity.clientId2 || null,
+          receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          status: 'processing',
+          hasExplicitEventId: eventIdentity.hasExplicitEventId,
+          explicitEventId: eventIdentity.explicitEventId || null,
+        });
+      } catch (e: any) {
+        if (eventIdentity.hasExplicitEventId && (e?.code === 6 || String(e?.message || '').toLowerCase().includes('already exists'))) {
+          const existingEventSnap = await eventRef.get();
+          const existingData = existingEventSnap.exists ? (existingEventSnap.data() as any) : null;
+          const existingReceivedAt = existingData?.receivedAt?.toDate?.() as Date | undefined;
+          const ageMs = existingReceivedAt ? Date.now() - existingReceivedAt.getTime() : Number.POSITIVE_INFINITY;
+          if (ageMs <= DEDUPE_RETRY_WINDOW_MS) {
+            response.status(200).json({ success: true, message: 'Duplicate webhook ignored', eventId });
+            return;
+          }
+
+          const replayEventId = `${eventId}:${Date.now()}`;
+          eventId = replayEventId;
+          eventRef = db.collection(WEBHOOK_EVENTS_COLLECTION).doc(replayEventId);
+          await eventRef.create({
+            source: 'caspio',
+            table: 'connect_tbl_clientnotes',
+            operation: String((request.body || {}).operation || 'UPDATE').trim().toUpperCase(),
+            changedFields: eventIdentity.changedFields,
+            noteId: eventIdentity.noteId || null,
+            clientId2: eventIdentity.clientId2 || null,
+            receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'processing',
+            hasExplicitEventId: eventIdentity.hasExplicitEventId,
+            explicitEventId: eventIdentity.explicitEventId || null,
+            replayOfEventId: eventIdentity.eventId,
+          });
+        } else {
+          throw e;
+        }
+      }
+
       // Store note in Firestore
       const noteId = await storeNoteInFirestore(noteData, 'client_notes');
 
@@ -611,6 +787,15 @@ export const caspioClientNotesWebhook = onRequest(
       }
 
       console.log(`✅ Client note processed: ${noteId}, notifications sent: ${notifications.length}`);
+      if (eventRef) {
+        await eventRef.set(
+          {
+            status: 'processed',
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
 
       response.status(200).json({
         success: true,
@@ -623,6 +808,16 @@ export const caspioClientNotesWebhook = onRequest(
 
     } catch (error: any) {
       console.error('❌ Error processing client notes webhook:', error);
+      if (eventRef) {
+        await eventRef.set(
+          {
+            status: 'failed',
+            error: String(error?.message || error),
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
       response.status(500).json({
         error: 'Internal server error',
         message: error.message
