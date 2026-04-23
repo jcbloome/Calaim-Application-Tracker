@@ -23,6 +23,7 @@ type RecipientSettings = {
   standalone: boolean;
   alft: boolean;
   alftReviewer?: boolean;
+  kaiserRnVisitAssigner?: boolean;
   label?: string;
   email?: string;
 };
@@ -165,6 +166,7 @@ export default function ReviewNotificationsPage() {
         standalone: Boolean((existing as any).standalone),
         alft: Boolean((existing as any).alft),
         alftReviewer: Boolean((existing as any).alftReviewer ?? (existing as any).alft),
+        kaiserRnVisitAssigner: Boolean((existing as any).kaiserRnVisitAssigner),
         email: existing.email || email,
         label: existing.label || label
       };
@@ -177,6 +179,7 @@ export default function ReviewNotificationsPage() {
       standalone: false,
       alft: false,
       alftReviewer: false,
+      kaiserRnVisitAssigner: false,
       email,
       label
     };

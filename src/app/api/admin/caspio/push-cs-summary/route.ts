@@ -14,6 +14,18 @@ const normalizeFieldName = (fieldName: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 const hasValue = (value: unknown) => clean(value).length > 0;
+const looksLikeMedicalNumberField = (fieldName: string) => {
+  const normalized = normalizeFieldName(fieldName);
+  return (
+    normalized.includes('medicalnumber') ||
+    normalized.includes('medicalnum') ||
+    normalized.includes('medical') ||
+    normalized.includes('medic') ||
+    normalized.includes('mcpcin') ||
+    normalized === 'cin' ||
+    normalized.includes('cinnumber')
+  );
+};
 const looksLikePkField = (fieldName: string) => /^pk_id$/i.test(clean(fieldName));
 const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(value));
 const buildEqualsClause = (fieldName: string, value: unknown) => {
@@ -49,6 +61,8 @@ const PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES = [
   'Care_Notes',
 ];
 const MEDICAL_NUMBER_FIELD_CANDIDATES = [
+  'Medical_Number',
+  'MedicalNumber',
   'MediCal_Number',
   'Medi_Cal_Number',
   'MediCalNumber',
@@ -429,6 +443,10 @@ export async function POST(request: NextRequest) {
         applicationData?.mrn ||
         applicationData?.Member_MRN
     );
+    const mappedFields = buildMemberDataFromMapping(applicationData, mapping, { skeletonPush });
+    const mappedMediCalEntry = Object.entries(mappedFields).find(
+      ([fieldName, value]) => looksLikeMedicalNumberField(fieldName) && hasValue(value)
+    );
     const hintedMediCalNumber = clean(
       applicationData?.confirmMemberMediCalNum ||
         applicationData?.memberMediCalNum ||
@@ -437,7 +455,8 @@ export async function POST(request: NextRequest) {
         applicationData?.Medi_Cal_Number ||
         applicationData?.MCP_CIN ||
         applicationData?.cin ||
-        applicationData?.CIN
+        applicationData?.CIN ||
+        mappedMediCalEntry?.[1]
     );
 
     let existingRow: Record<string, any> | null = null;
@@ -466,7 +485,13 @@ export async function POST(request: NextRequest) {
       }
     }
     if (!existingRow && hintedMediCalNumber) {
-      for (const fieldName of MEDICAL_NUMBER_FIELD_CANDIDATES) {
+      const medicalFieldCandidates = Array.from(
+        new Set([
+          ...MEDICAL_NUMBER_FIELD_CANDIDATES,
+          clean(mappedMediCalEntry?.[0] || ''),
+        ].filter(Boolean))
+      );
+      for (const fieldName of medicalFieldCandidates) {
         if (existingRow) break;
         const whereByMediCal = buildEqualsClause(fieldName, hintedMediCalNumber);
         if (!whereByMediCal) continue;
@@ -478,7 +503,6 @@ export async function POST(request: NextRequest) {
       existingRow = await trySearchMember(where);
     }
 
-    const mappedFields = buildMemberDataFromMapping(applicationData, mapping, { skeletonPush });
     // Prevent stale draft mappings from sending an invalid hold-column alias.
     // We set this field explicitly below using canonical column naming.
     Object.keys(mappedFields).forEach((fieldName) => {

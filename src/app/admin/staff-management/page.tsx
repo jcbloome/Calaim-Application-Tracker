@@ -41,6 +41,7 @@ type ReviewRecipientSettings = {
     standalone?: boolean;
     alft?: boolean;
     alftReviewer?: boolean;
+    kaiserRnVisitAssigner?: boolean;
     // Which plan uploads should count as action items / popups for this staff member.
     // Defaults to true when not explicitly set.
     kaiserUploads?: boolean;
@@ -315,6 +316,26 @@ export default function StaffManagementPage() {
                         enabled: Boolean(next[canonical].enabled || value.enabled),
                         csSummary: Boolean(next[canonical].csSummary || value.csSummary),
                         documents: Boolean(next[canonical].documents || value.documents),
+                        eligibility: Boolean((next[canonical] as any).eligibility || (value as any).eligibility),
+                        standalone: Boolean((next[canonical] as any).standalone || (value as any).standalone),
+                        alftReviewer: Boolean(
+                          (next[canonical] as any).alftReviewer ||
+                          (next[canonical] as any).alft ||
+                          (value as any).alftReviewer ||
+                          (value as any).alft
+                        ),
+                        alft: Boolean(
+                          (next[canonical] as any).alft ||
+                          (next[canonical] as any).alftReviewer ||
+                          (value as any).alft ||
+                          (value as any).alftReviewer
+                        ),
+                        kaiserRnVisitAssigner: Boolean(
+                          (next[canonical] as any).kaiserRnVisitAssigner ||
+                          (value as any).kaiserRnVisitAssigner
+                        ),
+                        kaiserUploads: Boolean((next[canonical] as any).kaiserUploads ?? true) || Boolean((value as any).kaiserUploads ?? true),
+                        healthNetUploads: Boolean((next[canonical] as any).healthNetUploads ?? true) || Boolean((value as any).healthNetUploads ?? true),
                         email: next[canonical].email || value.email,
                         label: next[canonical].label || value.label,
                     };
@@ -544,6 +565,8 @@ export default function StaffManagementPage() {
                 alftReviewer: enable ? (current?.alftReviewer ?? current?.alft) : false,
                 // Backward-compatibility mirror.
                 alft: enable ? (current?.alftReviewer ?? current?.alft) : false,
+                // Separate role for H2022 renewal workflow notifications.
+                kaiserRnVisitAssigner: enable ? Boolean(current?.kaiserRnVisitAssigner) : false,
             },
             staff
         );
@@ -577,6 +600,7 @@ export default function StaffManagementPage() {
                         standalone: false,
                         alft: false,
                         alftReviewer: false,
+                        kaiserRnVisitAssigner: false,
                         kaiserUploads: true,
                         healthNetUploads: true,
                         email: member?.email,
@@ -837,6 +861,7 @@ export default function StaffManagementPage() {
                 standalone: false,
                 alft: false,
                 alftReviewer: false,
+                kaiserRnVisitAssigner: false,
                 kaiserUploads: true,
                 healthNetUploads: true,
                 email: staff?.email,
@@ -856,6 +881,10 @@ export default function StaffManagementPage() {
                         updates.alft !== undefined
                             ? updates.alft
                             : (updates.alftReviewer !== undefined ? updates.alftReviewer : (current.alft ?? current.alftReviewer ?? false)),
+                    kaiserRnVisitAssigner:
+                        updates.kaiserRnVisitAssigner !== undefined
+                            ? updates.kaiserRnVisitAssigner
+                            : Boolean(current.kaiserRnVisitAssigner),
                     kaiserUploads: updates.kaiserUploads === undefined ? (current.kaiserUploads ?? true) : updates.kaiserUploads,
                     healthNetUploads: updates.healthNetUploads === undefined ? (current.healthNetUploads ?? true) : updates.healthNetUploads,
                     email: current.email || staff?.email,
@@ -1176,6 +1205,7 @@ export default function StaffManagementPage() {
                                         standalone: false,
                                         alft: false,
                                         alftReviewer: false,
+                                        kaiserRnVisitAssigner: false,
                                         kaiserUploads: true,
                                         healthNetUploads: true,
                                         email: staff?.email,
@@ -1185,7 +1215,7 @@ export default function StaffManagementPage() {
                                     const interofficeElectronChecked = Boolean(
                                         notificationsEnabled &&
                                         reviewRecipient.enabled &&
-                                        (reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.alftReviewer || reviewRecipient.alft)
+                                        (reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.alftReviewer || reviewRecipient.alft || reviewRecipient.kaiserRnVisitAssigner)
                                     );
 
                                     return (
@@ -1320,7 +1350,7 @@ export default function StaffManagementPage() {
                                                       staff.uid,
                                                       {
                                                         kaiserUploads: nextValue,
-                                                        enabled: nextValue || Boolean((reviewRecipient.healthNetUploads ?? true) || reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft),
+                                                        enabled: nextValue || Boolean((reviewRecipient.healthNetUploads ?? true) || reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft || reviewRecipient.kaiserRnVisitAssigner),
                                                         documents: nextValue ? true : reviewRecipient.documents,
                                                         csSummary: nextValue ? true : reviewRecipient.csSummary,
                                                       },
@@ -1345,7 +1375,7 @@ export default function StaffManagementPage() {
                                                       staff.uid,
                                                       {
                                                         healthNetUploads: nextValue,
-                                                        enabled: nextValue || Boolean((reviewRecipient.kaiserUploads ?? true) || reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft),
+                                                        enabled: nextValue || Boolean((reviewRecipient.kaiserUploads ?? true) || reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft || reviewRecipient.kaiserRnVisitAssigner),
                                                         documents: nextValue ? true : reviewRecipient.documents,
                                                         csSummary: nextValue ? true : reviewRecipient.csSummary,
                                                       },
@@ -1409,23 +1439,23 @@ export default function StaffManagementPage() {
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
-                                                <Bell className={`h-4 w-4 ${Boolean(reviewRecipient.alftReviewer ?? reviewRecipient.alft) ? 'text-purple-700' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`review-alft-reviewer-${staff.uid}`} className="text-sm font-medium">ALFT Reviewer</Label>
+                                                <CalendarCheck className={`h-4 w-4 ${Boolean(reviewRecipient.kaiserRnVisitAssigner) ? 'text-purple-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`review-rn-visit-assigner-${staff.uid}`} className="text-sm font-medium">RN Visit Assigner (Kaiser)</Label>
                                             </div>
                                             <Checkbox
-                                                id={`review-alft-reviewer-${staff.uid}`}
-                                                checked={Boolean(reviewRecipient.alftReviewer ?? reviewRecipient.alft)}
+                                                id={`review-rn-visit-assigner-${staff.uid}`}
+                                                checked={Boolean(reviewRecipient.kaiserRnVisitAssigner)}
                                                 disabled={!reviewPopupsEnabled || !alftElectronEnabled}
                                                 onCheckedChange={(checked) => {
                                                     const nextValue = Boolean(checked);
-                                                    const keepEnabled = nextValue || Boolean(reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone);
+                                                    const keepEnabled = nextValue || Boolean(reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft);
                                                     setReviewRecipient(
                                                       staff.uid,
-                                                      { alftReviewer: nextValue, alft: nextValue, enabled: keepEnabled },
+                                                      { kaiserRnVisitAssigner: nextValue, enabled: keepEnabled },
                                                       staff
                                                     );
                                                 }}
-                                                aria-label={`Toggle ALFT reviewer routing for ${staff.email}`}
+                                                aria-label={`Toggle RN visit assigner routing for ${staff.email}`}
                                             />
                                         </div>
                                     </div>
