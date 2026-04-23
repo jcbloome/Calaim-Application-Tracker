@@ -17,6 +17,7 @@
 ## 🗓️ **Development History**
 
 ### **April 23, 2026 - Updates**
+- ✅ **Bug Fixed**: Hardened Caspio push member matching for leading-zero identifiers (CIN/MRN) by preserving leading zeros in API where-clauses, and added clearer field-specific duplicate/blank error messaging when Caspio rejects a push due to unique/required identifier constraints.
 - ✅ **Feature Added**: Preserved original Kaiser intake source documents in member files by uploading both spreadsheet intake files and single-auth PDFs into each created application’s `forms` uploads (`original-intake`) so staff can always reference the original document later.
 - ✅ **UI/UX**: Applied the same clarity pass to Daily Task Tracker follow-up calendar tools by renaming the section for workflow context, adding numbered sync/import actions, and adding a recommended-order helper to reduce staff confusion during Caspio follow-up refreshes.
 - ✅ **UI/UX**: Clarified Kaiser create-intake guidance with explicit numbered button labels and a recommended workflow order for Section 1 (batch skeletons + staff assignment) and Section 2 (single-auth one-PDF flow) to make staff actions easier to follow.

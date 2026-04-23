@@ -19,9 +19,21 @@ const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(va
 const buildEqualsClause = (fieldName: string, value: unknown) => {
   const normalizedValue = clean(value);
   if (!normalizedValue) return '';
+  // Preserve leading-zero identifiers (e.g., CIN/MRN) as text; unquoted numeric
+  // comparisons can drop the leading zero and miss existing Caspio rows.
+  if (/^0\d+$/.test(normalizedValue)) {
+    return `${fieldName}='${esc(normalizedValue)}'`;
+  }
   return looksLikeNumericId(normalizedValue)
     ? `${fieldName}=${normalizedValue}`
     : `${fieldName}='${esc(normalizedValue)}'`;
+};
+const parseDuplicateOrBlankField = (errorText: string) => {
+  const raw = String(errorText || '');
+  const lower = raw.toLowerCase();
+  if (!lower.includes('duplicate or blank values are not allowed')) return '';
+  const m = raw.match(/field\s+['"]([^'"]+)['"]/i);
+  return clean(m?.[1] || '');
 };
 const HOLD_FOR_SOCIAL_WORKER_FIELD = 'Hold_For_Social_Worker_Visit';
 const HOLD_FOR_SOCIAL_WORKER_VALUE = '🔴 Hold';
@@ -654,16 +666,23 @@ export async function POST(request: NextRequest) {
         }
       }
       const caspioError = await upsertResponse.text().catch(() => '') || firstErrorBody;
+      const duplicateBlankField = parseDuplicateOrBlankField(caspioError);
+      const duplicateBlankMessage = duplicateBlankField
+        ? `Caspio rejected this push because field "${duplicateBlankField}" is duplicate or blank. This usually means the member already exists in Caspio for that identifier, or the mapped value is empty.`
+        : '';
       return NextResponse.json(
         {
           success: false,
-          code: isUpdate ? 'caspio-update-failed' : 'caspio-insert-failed',
-          message: isUpdate
+          code: duplicateBlankField
+            ? 'caspio-duplicate-or-blank'
+            : (isUpdate ? 'caspio-update-failed' : 'caspio-insert-failed'),
+          message: duplicateBlankMessage || (isUpdate
             ? 'Failed to update member record in Caspio.'
-            : 'Failed to insert member record in Caspio.',
+            : 'Failed to insert member record in Caspio.'),
           details: {
             caspioStatus: upsertResponse.status,
             caspioError,
+            duplicateBlankField: duplicateBlankField || null,
             memberName: `${firstName} ${lastName}`.trim(),
             clientIdField,
             holdFieldTried: holdFieldName,
