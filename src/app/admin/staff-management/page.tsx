@@ -94,6 +94,7 @@ export default function StaffManagementPage() {
     const [alftElectronEnabled, setAlftElectronEnabled] = useState(true);
     const [reviewPollIntervalSeconds, setReviewPollIntervalSeconds] = useState(180);
     const [reviewRecipients, setReviewRecipients] = useState<Record<string, ReviewRecipientSettings>>({});
+    const reviewRecipientsRef = useRef<Record<string, ReviewRecipientSettings>>({});
     const [isAutoSaving, setIsAutoSaving] = useState(false);
     const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const autoSaveInFlightRef = useRef(false);
@@ -109,6 +110,10 @@ export default function StaffManagementPage() {
             return 0;
         }
     };
+
+    useEffect(() => {
+        reviewRecipientsRef.current = reviewRecipients || {};
+    }, [reviewRecipients]);
 
     // Redirect if not super admin
     useEffect(() => {
@@ -734,9 +739,16 @@ export default function StaffManagementPage() {
             const normalizeRecipientKey = (rawKey: string, value: ReviewRecipientSettings) => {
                 const key = String(rawKey || '').trim();
                 if (!key) return '';
+                if (key.includes('@')) {
+                    const keyEmail = key.toLowerCase();
+                    if (emailToUid.has(keyEmail)) {
+                        return emailToUid.get(keyEmail) || keyEmail;
+                    }
+                    return keyEmail;
+                }
                 if (staffByUid.has(key)) return key;
                 const keyEmail = key.toLowerCase();
-                if (key.includes('@') && emailToUid.has(keyEmail)) {
+                if (emailToUid.has(keyEmail)) {
                     return emailToUid.get(keyEmail) || key;
                 }
                 const valueEmail = String(value?.email || '').trim().toLowerCase();
@@ -745,7 +757,8 @@ export default function StaffManagementPage() {
                 }
                 return key;
             };
-            const normalizedReviewRecipients = Object.entries(reviewRecipients || {}).reduce(
+            const latestReviewRecipients = reviewRecipientsRef.current || {};
+            const normalizedReviewRecipients = Object.entries(latestReviewRecipients).reduce(
                 (acc, [rawKey, value]) => {
                     const targetUid = normalizeRecipientKey(rawKey, value as ReviewRecipientSettings);
                     if (!targetUid) return acc;
@@ -855,9 +868,11 @@ export default function StaffManagementPage() {
                 }),
             ]);
 
-            // Refresh cards/settings from source-of-truth after every save so UI stays current
-            // without requiring manual page refresh.
-            await Promise.all([fetchAllStaff(), fetchNotificationRecipients()]);
+            // Keep local state stable during autosave; forced refetch on every toggle causes UI
+            // jump/reset behavior that looks like a page refresh.
+            if (!options?.silentSuccess) {
+                await Promise.all([fetchAllStaff(), fetchNotificationRecipients()]);
+            }
 
             if (!options?.silentSuccess) {
                 toast({ 
@@ -907,8 +922,11 @@ export default function StaffManagementPage() {
     };
 
     const setReviewRecipient = (uid: string, updates: Partial<ReviewRecipientSettings>, staff?: StaffMember) => {
+        const normalizedUid = String(uid || '').trim().includes('@')
+            ? String(uid || '').trim().toLowerCase()
+            : String(uid || '').trim();
         setReviewRecipients(prev => {
-            const current = prev[uid] || {
+            const current = prev[normalizedUid] || {
                 enabled: false,
                 csSummary: false,
                 documents: false,
@@ -924,7 +942,7 @@ export default function StaffManagementPage() {
             };
             return {
                 ...prev,
-                [uid]: {
+                [normalizedUid]: {
                     ...current,
                     ...updates,
                     // Keep both fields aligned while we migrate from `alft` to `alftReviewer`.
@@ -1252,7 +1270,15 @@ export default function StaffManagementPage() {
                                 const nonSuperAdmins = filtered.filter((s) => s.role !== 'Super Admin');
 
                                 const renderCard = (staff: any) => {
-                                    const reviewRecipient = reviewRecipients[staff.uid] || {
+                                    const staffUid = String(staff?.uid || '').trim();
+                                    const staffEmail = String(staff?.email || '').trim().toLowerCase();
+                                    const canonicalFromEmail = staffEmail ? emailToCanonicalUid[staffEmail] : '';
+                                    const reviewRecipient = (
+                                        reviewRecipients[staffUid] ||
+                                        reviewRecipients[staffUid.toLowerCase()] ||
+                                        (canonicalFromEmail ? reviewRecipients[canonicalFromEmail] : undefined) ||
+                                        (staffEmail ? reviewRecipients[staffEmail] : undefined)
+                                    ) || {
                                         enabled: false,
                                         csSummary: false,
                                         documents: false,
@@ -1500,7 +1526,7 @@ export default function StaffManagementPage() {
                                             <Checkbox
                                                 id={`review-rn-visit-assigner-${staff.uid}`}
                                                 checked={Boolean(reviewRecipient.kaiserRnVisitAssigner)}
-                                                disabled={!reviewPopupsEnabled || !alftElectronEnabled}
+                                                disabled={!reviewPopupsEnabled}
                                                 onCheckedChange={(checked) => {
                                                     const nextValue = Boolean(checked);
                                                     const keepEnabled = nextValue || Boolean(reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft);
