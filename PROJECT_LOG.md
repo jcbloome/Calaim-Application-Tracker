@@ -17,6 +17,7 @@
 ## 🗓️ **Development History**
 
 ### **April 23, 2026 - Updates**
+- ✅ **Feature Added**: Preserved original Kaiser intake source documents in member files by uploading both spreadsheet intake files and single-auth PDFs into each created application’s `forms` uploads (`original-intake`) so staff can always reference the original document later.
 - ✅ **UI/UX**: Applied the same clarity pass to Daily Task Tracker follow-up calendar tools by renaming the section for workflow context, adding numbered sync/import actions, and adding a recommended-order helper to reduce staff confusion during Caspio follow-up refreshes.
 - ✅ **UI/UX**: Clarified Kaiser create-intake guidance with explicit numbered button labels and a recommended workflow order for Section 1 (batch skeletons + staff assignment) and Section 2 (single-auth one-PDF flow) to make staff actions easier to follow.
 - ✅ **UI/UX**: Added a dedicated `Kaiser Staff Reminders` KPI card on Daily Task Tracker and simplified Kaiser intake create flow by making Section 2 single-auth only (removed in-section single-create and batch-PDF actions) while Section 1 now explicitly uses `Create Batch Skeletons` with staff assignment controls.

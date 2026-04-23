@@ -1171,6 +1171,7 @@ export default function CreateApplicationPage() {
   const serviceRequestFileInputRef = useRef<HTMLInputElement | null>(null);
   const parseAbortControllerRef = useRef<AbortController | null>(null);
   const parsedSingleAuthFilesRef = useRef<Record<string, File>>({});
+  const ilsSpreadsheetSourceFileRef = useRef<File | null>(null);
   const ilsDuplicateIndexWarningShownRef = useRef(false);
   const createApplicationRef = useRef<() => Promise<string | null> | string | null>(() => null);
   const [memberData, setMemberData] = useState(getEmptyMemberData);
@@ -1363,6 +1364,35 @@ export default function CreateApplicationPage() {
     return Promise.all(uploads);
   };
 
+  const uploadIntakeSourceFile = async (params: {
+    applicationId: string;
+    file: File;
+    sourceLabel: string;
+    sourceTag: string;
+  }) => {
+    if (!storage) return null;
+    const safeFileName = params.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `applications/${params.applicationId}/original-intake/${Date.now()}-${safeFileName}`;
+    const storageRef = ref(storage, storagePath);
+    const uploadTask = uploadBytesResumable(storageRef, params.file);
+    await new Promise<void>((resolve, reject) => {
+      uploadTask.on('state_changed', undefined, reject, () => resolve());
+    });
+    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+    return {
+      name: params.sourceLabel,
+      status: 'Completed',
+      type: 'Upload',
+      href: '#',
+      fileName: params.file.name,
+      filePath: storagePath,
+      downloadURL,
+      dateCompleted: new Date().toISOString(),
+      source: params.sourceTag,
+      uploadedFiles: [{ fileName: params.file.name, filePath: storagePath, downloadURL }],
+    } as any;
+  };
+
   const normalizeAuthorizationValue = (value: string) =>
     String(value || '')
       .trim()
@@ -1511,6 +1541,7 @@ export default function CreateApplicationPage() {
   const parseIlsSpreadsheetFile = async (file: File) => {
     setIsParsingIlsSpreadsheet(true);
     setIlsSpreadsheetFileName(String(file?.name || '').trim());
+    ilsSpreadsheetSourceFileRef.current = file;
     try {
       const XLSX = await import('xlsx');
       const buffer = await file.arrayBuffer();
@@ -1626,6 +1657,7 @@ export default function CreateApplicationPage() {
     setCheckingRowDuplicates({});
     setQuickViewIlsRowId('');
     setIlsSpreadsheetFileName('');
+    ilsSpreadsheetSourceFileRef.current = null;
     parsedSingleAuthFilesRef.current = {};
     if (ilsSpreadsheetInputRef.current) {
       ilsSpreadsheetInputRef.current.value = '';
@@ -1688,30 +1720,28 @@ export default function CreateApplicationPage() {
           const applicationId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
           const applicationRef = doc(firestore, 'applications', applicationId);
           const formsForRow = authReceivedForms.map((form) => ({ ...form }));
-          const sourcePdf = row.sourceType === 'single_auth_pdf' ? parsedSingleAuthFilesRef.current[row.rowId] : null;
-          if (sourcePdf && storage) {
+          const sourceFile =
+            row.sourceType === 'single_auth_pdf'
+              ? parsedSingleAuthFilesRef.current[row.rowId]
+              : row.sourceType === 'spreadsheet'
+                ? ilsSpreadsheetSourceFileRef.current
+                : null;
+          if (sourceFile && storage) {
             try {
-              const safeFileName = sourcePdf.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-              const storagePath = `applications/${applicationId}/parsed-intake/${Date.now()}-${safeFileName}`;
-              const storageRef = ref(storage, storagePath);
-              const uploadTask = uploadBytesResumable(storageRef, sourcePdf);
-              await new Promise<void>((resolve, reject) => {
-                uploadTask.on('state_changed', undefined, reject, () => resolve());
+              const sourceForm = await uploadIntakeSourceFile({
+                applicationId,
+                file: sourceFile,
+                sourceLabel:
+                  row.sourceType === 'spreadsheet'
+                    ? 'Kaiser ILS Spreadsheet Upload'
+                    : 'ILS Authorization Sheet PDF',
+                sourceTag: row.sourceType,
               });
-              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              formsForRow.unshift({
-                name: 'ILS Authorization Sheet PDF',
-                status: 'Completed',
-                type: 'Upload',
-                href: '#',
-                fileName: sourcePdf.name,
-                filePath: storagePath,
-                downloadURL,
-                dateCompleted: new Date().toISOString(),
-                source: 'single_auth_pdf',
-              } as any);
+              if (sourceForm) {
+                formsForRow.unshift(sourceForm);
+              }
             } catch (uploadError) {
-              console.warn('Failed to upload parsed source PDF:', uploadError);
+              console.warn('Failed to upload original intake source file:', uploadError);
             }
           }
           const rowEligibilityUploads = await uploadIlsRowEligibilityFiles(applicationId, row.rowId);
@@ -2489,6 +2519,7 @@ export default function CreateApplicationPage() {
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Room and Board/Tier Level Agreement', status: 'Pending', type: 'Upload', href: '/forms/room-board-obligation/printable' },
       ];
+      let currentAuthForms = authReceivedForms.map((form) => ({ ...form }));
 
       await setDoc(applicationRef, {
         ...baseApplication,
@@ -2497,7 +2528,7 @@ export default function CreateApplicationPage() {
         kaiserStatus: isKaiserAuthReceived ? 'T2038 Received, Need First Contact' : '',
         caspioCalAIMStatus: isKaiserAuthReceived ? 'Authorized' : '',
         allowDraftCaspioPush: isKaiserAuthReceived ? true : false,
-        forms: isKaiserAuthReceived ? authReceivedForms : [],
+        forms: isKaiserAuthReceived ? currentAuthForms : [],
         ...(isKaiserAuthReceived
           ? (selectedAssignedStaffId
               ? {
@@ -2508,6 +2539,23 @@ export default function CreateApplicationPage() {
               : {})
           : {}),
       });
+
+      if (isKaiserAuthReceived && serviceRequestFile && storage) {
+        try {
+          const sourceForm = await uploadIntakeSourceFile({
+            applicationId,
+            file: serviceRequestFile,
+            sourceLabel: 'ILS Authorization Sheet PDF',
+            sourceTag: 'single_auth_pdf',
+          });
+          if (sourceForm) {
+            currentAuthForms = [sourceForm, ...currentAuthForms];
+            await setDoc(applicationRef, { forms: currentAuthForms, lastUpdated: serverTimestamp() }, { merge: true });
+          }
+        } catch (error) {
+          console.warn('Failed to upload single-auth source PDF:', error);
+        }
+      }
 
       if (isKaiserAuthReceived && eligibilityScreenshotFiles.length > 0) {
         try {
@@ -2523,9 +2571,10 @@ export default function CreateApplicationPage() {
               uploadedFiles,
               dateCompleted: new Date().toISOString(),
             };
-            const updatedForms = authReceivedForms.map((f) =>
+            const updatedForms = currentAuthForms.map((f) =>
               f.name === 'Eligibility Screenshot' ? completedEligibilityForm : f
             );
+            currentAuthForms = updatedForms;
             await setDoc(applicationRef, { forms: updatedForms, lastUpdated: serverTimestamp() }, { merge: true });
           }
         } catch (error) {
