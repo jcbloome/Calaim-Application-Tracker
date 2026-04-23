@@ -26,6 +26,8 @@ export async function POST(request: NextRequest) {
       reviewNotificationSent,
       documentReminderFrequencyDays,
       statusReminderFrequencyDays,
+      documentReminderNextAtMs,
+      statusReminderNextAtMs,
       familyStatusProgress,
       familyStatusDeniedReason
     } = await request.json();
@@ -58,10 +60,18 @@ export async function POST(request: NextRequest) {
       updateData.reviewNotificationSent = Boolean(reviewNotificationSent);
     }
     if (documentReminderFrequencyDays !== undefined) {
-      updateData.documentReminderFrequencyDays = Number(documentReminderFrequencyDays);
+      updateData.documentReminderFrequencyDays = 7;
     }
     if (statusReminderFrequencyDays !== undefined) {
-      updateData.statusReminderFrequencyDays = Number(statusReminderFrequencyDays);
+      updateData.statusReminderFrequencyDays = 7;
+    }
+    if (documentReminderNextAtMs !== undefined) {
+      const parsed = Number(documentReminderNextAtMs);
+      updateData.documentReminderNextAtMs = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+    }
+    if (statusReminderNextAtMs !== undefined) {
+      const parsed = Number(statusReminderNextAtMs);
+      updateData.statusReminderNextAtMs = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
     }
     if (familyStatusProgress !== undefined) {
       updateData.familyStatusProgress = String(familyStatusProgress || '').trim();

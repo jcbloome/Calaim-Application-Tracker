@@ -2901,19 +2901,53 @@ function ApplicationDetailPageContent() {
   const emailReminderSectionRef = useRef<HTMLDivElement | null>(null);
   const statusReminderSectionRef = useRef<HTMLDivElement | null>(null);
 
-  const reminderFrequencyOptions = useMemo(() => [2, 7] as const, []);
+  const reminderFrequencyOptions = useMemo(() => [7] as const, []);
+  const DAY_MS = 24 * 60 * 60 * 1000;
   const staffTestReminderEmail = String(user?.email || '').trim();
   const currentReminderMissingItems = useMemo(() => getReminderMissingItems(application), [application]);
   const documentReminderFrequencyDays = useMemo(() => {
     const raw = Number((application as any)?.documentReminderFrequencyDays);
-    if (!Number.isFinite(raw) || raw <= 0) return 2;
-    return Math.max(1, Math.min(30, Math.round(raw)));
+    if (!Number.isFinite(raw) || raw <= 0) return 7;
+    return 7;
   }, [application]);
   const statusReminderFrequencyDays = useMemo(() => {
     const raw = Number((application as any)?.statusReminderFrequencyDays);
     if (!Number.isFinite(raw) || raw <= 0) return 7;
-    return Math.max(1, Math.min(30, Math.round(raw)));
+    return 7;
   }, [application]);
+  const documentReminderNextAtMs = useMemo(() => {
+    const ms = toMillisSafe((application as any)?.documentReminderNextAtMs ?? (application as any)?.documentReminderNextAt);
+    return ms > 0 ? ms : 0;
+  }, [application]);
+  const statusReminderNextAtMs = useMemo(() => {
+    const ms = toMillisSafe((application as any)?.statusReminderNextAtMs ?? (application as any)?.statusReminderNextAt);
+    return ms > 0 ? ms : 0;
+  }, [application]);
+  const toDateInputValue = (ms: number): string => {
+    if (!ms) return '';
+    try {
+      return format(new Date(ms), 'yyyy-MM-dd');
+    } catch {
+      return '';
+    }
+  };
+  const fromDateInputToMs = (value: string): number | null => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return null;
+    const parsed = new Date(`${trimmed}T09:00:00`);
+    const ms = parsed.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  };
+  const getFrequencyLabel = (days: number): string =>
+    days === 7 ? 'weekly' : `every ${days} day${days === 1 ? '' : 's'}`;
+  const getNextReminderLabel = (ms: number): string => {
+    if (!ms) return 'Not set';
+    try {
+      return format(new Date(ms), 'MMM d, yyyy');
+    } catch {
+      return 'Not set';
+    }
+  };
 
   useEffect(() => {
     if (quickActionTarget !== 'reminders') return;
@@ -4253,7 +4287,7 @@ function ApplicationDetailPageContent() {
         type: authorizationUpload.type,
         startDate: authorizationUpload.startDate,
         endDate: authorizationUpload.endDate,
-        fileName: file.name,
+        fileName: buildUniqueFileName(authorizationUpload.type, file.name),
         downloadURL,
         uploadedAt: serverTimestamp(),
         createdBy: user?.uid || 'system',
@@ -4336,7 +4370,7 @@ function ApplicationDetailPageContent() {
       const newRecord = {
         id: `isp-${Date.now()}`,
         planDate: ispUpload.planDate,
-        fileName: file.name,
+        fileName: buildUniqueFileName('Individual service plans', file.name),
         downloadURL,
         uploadedAt: serverTimestamp(),
         createdBy: user?.uid || 'system',
@@ -4619,6 +4653,14 @@ function ApplicationDetailPageContent() {
     return `${memberName} - ${label}${ext}`;
   };
 
+  const buildUniqueFileName = (formName: string, originalFileName: string) => {
+    const standardFileName = buildStandardFileName(formName, originalFileName);
+    const ext = getFileExtension(standardFileName);
+    const baseName = ext ? standardFileName.slice(0, -ext.length) : standardFileName;
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    return `${baseName} - ${uniqueSuffix}${ext}`;
+  };
+
   const loadMemberStandaloneIntakes = async () => {
     if (!firestore || !application) return;
     const mrn = String(application.memberMrn || '').trim();
@@ -4699,7 +4741,7 @@ function ApplicationDetailPageContent() {
       return;
     }
 
-    const standardFileName = buildStandardFileName(params.requirementTitle, file.fileName || 'document.pdf');
+    const standardFileName = buildUniqueFileName(params.requirementTitle, file.fileName || 'document.pdf');
 
     try {
       await handleFormStatusUpdate([
@@ -4926,7 +4968,7 @@ function ApplicationDetailPageContent() {
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const standardFileName = buildStandardFileName(requirementTitle, file.name);
+      const standardFileName = buildUniqueFileName(requirementTitle, file.name);
       const safeFileName = buildStorageFileName(standardFileName);
       const uploadRoot = appUserId
         ? `user_uploads/${appUserId}`
@@ -5434,7 +5476,7 @@ function ApplicationDetailPageContent() {
                 name: formName,
                 status: 'Completed',
                 type: 'Upload',
-                fileName: buildStandardFileName(formName, file.name),
+                fileName: buildUniqueFileName(formName, file.name),
                 filePath: uploadResult.path,
                 downloadURL: uploadResult.downloadURL,
                 dateCompleted: Timestamp.now(),
@@ -8944,7 +8986,7 @@ function ApplicationDetailPageContent() {
                     )}
                     <span>
                       Email reminders: {(application as any)?.emailRemindersEnabled === true
-                        ? (documentReminderFrequencyDays === 7 ? 'On (weekly)' : 'On (every 2 days)')
+                        ? `On (${getFrequencyLabel(documentReminderFrequencyDays)}) • Next: ${getNextReminderLabel(documentReminderNextAtMs)}`
                         : 'Off'}
                     </span>
                   </div>
@@ -8961,50 +9003,106 @@ function ApplicationDetailPageContent() {
                     )}
                     <span>
                       Status updates: {(application as any)?.statusRemindersEnabled === true
-                        ? (statusReminderFrequencyDays === 7 ? 'On (weekly)' : 'On (every 2 days)')
+                        ? `On (${getFrequencyLabel(statusReminderFrequencyDays)}) • Next: ${getNextReminderLabel(statusReminderNextAtMs)}`
                         : 'Off'}
                     </span>
                   </div>
+                  <div className="pl-7">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:w-auto"
+                      onClick={() => setIsReminderDialogOpen(true)}
+                    >
+                      Open reminder preview tools
+                    </Button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 pl-7">
                     <div className="space-y-2">
-                      <Label className="text-xs font-medium text-muted-foreground">Email reminders</Label>
-                      <RadioGroup
-                        value={Boolean((application as any)?.emailRemindersEnabled) ? 'on' : 'off'}
-                        onValueChange={(value) =>
-                          updateReminderSettings({ emailRemindersEnabled: value === 'on' })
-                        }
+                      <Label className="text-xs font-medium text-muted-foreground">Email reminders frequency</Label>
+                      <Select
+                        value={Boolean((application as any)?.emailRemindersEnabled) ? String(documentReminderFrequencyDays) : 'none'}
+                        onValueChange={(v) => {
+                          if (v === 'none') {
+                            updateReminderSettings({ emailRemindersEnabled: false });
+                            return;
+                          }
+                          const nextAtMs = documentReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
+                          updateReminderSettings({
+                            emailRemindersEnabled: true,
+                            documentReminderFrequencyDays: Number(v),
+                            documentReminderNextAtMs: nextAtMs,
+                          });
+                        }}
                         disabled={isUpdatingReminderControls}
-                        className="flex items-center gap-4"
                       >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem id="main-email-reminders-on" value="on" />
-                          <Label htmlFor="main-email-reminders-on" className="text-sm">On</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem id="main-email-reminders-off" value="off" />
-                          <Label htmlFor="main-email-reminders-off" className="text-sm">Off</Label>
-                        </div>
-                      </RadioGroup>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Frequency" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {reminderFrequencyOptions.map((d) => (
+                            <SelectItem key={`pathway-doc-freq-${d}`} value={String(d)}>
+                              Once a week
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs font-medium text-muted-foreground">Status updates</Label>
-                      <RadioGroup
-                        value={Boolean((application as any)?.statusRemindersEnabled) ? 'on' : 'off'}
-                        onValueChange={(value) =>
-                          updateReminderSettings({ statusRemindersEnabled: value === 'on' })
-                        }
+                      <Label className="text-xs font-medium text-muted-foreground">Next email reminder date</Label>
+                      <Input
+                        type="date"
+                        value={toDateInputValue(documentReminderNextAtMs)}
+                        onChange={(event) => {
+                          const nextAtMs = fromDateInputToMs(event.target.value);
+                          updateReminderSettings({ documentReminderNextAtMs: nextAtMs });
+                        }}
                         disabled={isUpdatingReminderControls}
-                        className="flex items-center gap-4"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-muted-foreground">Status updates frequency</Label>
+                      <Select
+                        value={Boolean((application as any)?.statusRemindersEnabled) ? String(statusReminderFrequencyDays) : 'none'}
+                        onValueChange={(v) => {
+                          if (v === 'none') {
+                            updateReminderSettings({ statusRemindersEnabled: false });
+                            return;
+                          }
+                          const nextAtMs = statusReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
+                          updateReminderSettings({
+                            statusRemindersEnabled: true,
+                            statusReminderFrequencyDays: Number(v),
+                            statusReminderNextAtMs: nextAtMs,
+                          });
+                        }}
+                        disabled={isUpdatingReminderControls}
                       >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem id="main-status-reminders-on" value="on" />
-                          <Label htmlFor="main-status-reminders-on" className="text-sm">On</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem id="main-status-reminders-off" value="off" />
-                          <Label htmlFor="main-status-reminders-off" className="text-sm">Off</Label>
-                        </div>
-                      </RadioGroup>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Frequency" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {reminderFrequencyOptions.map((d) => (
+                            <SelectItem key={`pathway-status-freq-${d}`} value={String(d)}>
+                              Once a week
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-muted-foreground">Next status reminder date</Label>
+                      <Input
+                        type="date"
+                        value={toDateInputValue(statusReminderNextAtMs)}
+                        onChange={(event) => {
+                          const nextAtMs = fromDateInputToMs(event.target.value);
+                          updateReminderSettings({ statusReminderNextAtMs: nextAtMs });
+                        }}
+                        disabled={isUpdatingReminderControls}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-muted-foreground">CalAIM Status for Caspio</Label>
@@ -10426,12 +10524,6 @@ function ApplicationDetailPageContent() {
             </Dialog>
 
             <Dialog open={isReminderDialogOpen} onOpenChange={setIsReminderDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
-                  <Mail className="h-4 w-4" />
-                  Missing Docs and status reminders
-                </Button>
-              </DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
                 <DialogHeader>
                   <DialogTitle>Missing Docs and status reminders</DialogTitle>
@@ -10488,9 +10580,11 @@ function ApplicationDetailPageContent() {
                           updateReminderSettings({ emailRemindersEnabled: false });
                           return;
                         }
+                        const nextAtMs = documentReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
                         updateReminderSettings({
                           emailRemindersEnabled: true,
                           documentReminderFrequencyDays: Number(v),
+                          documentReminderNextAtMs: nextAtMs,
                         });
                       }}
                       disabled={isUpdatingReminderControls}
@@ -10502,11 +10596,24 @@ function ApplicationDetailPageContent() {
                         <SelectItem value="none">None</SelectItem>
                         {reminderFrequencyOptions.map((d) => (
                           <SelectItem key={`quick-doc-freq-${d}`} value={String(d)}>
-                            {d === 7 ? 'Weekly' : 'Every 2 days'}
+                            Once a week
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email-reminder-next-date-quick">Next email reminder date</Label>
+                    <Input
+                      id="email-reminder-next-date-quick"
+                      type="date"
+                      value={toDateInputValue(documentReminderNextAtMs)}
+                      onChange={(event) => {
+                        const nextAtMs = fromDateInputToMs(event.target.value);
+                        updateReminderSettings({ documentReminderNextAtMs: nextAtMs });
+                      }}
+                      disabled={isUpdatingReminderControls}
+                    />
                   </div>
 
                   <div className="space-y-2 p-3 border rounded-lg bg-muted/20">
@@ -10607,9 +10714,11 @@ function ApplicationDetailPageContent() {
                           updateReminderSettings({ statusRemindersEnabled: false });
                           return;
                         }
+                        const nextAtMs = statusReminderNextAtMs || (Date.now() + Number(v) * DAY_MS);
                         updateReminderSettings({
                           statusRemindersEnabled: true,
                           statusReminderFrequencyDays: Number(v),
+                          statusReminderNextAtMs: nextAtMs,
                         });
                       }}
                       disabled={isUpdatingReminderControls}
@@ -10621,11 +10730,24 @@ function ApplicationDetailPageContent() {
                         <SelectItem value="none">None</SelectItem>
                         {reminderFrequencyOptions.map((d) => (
                           <SelectItem key={`quick-status-freq-${d}`} value={String(d)}>
-                            {d === 7 ? 'Weekly' : 'Every 2 days'}
+                            Once a week
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="status-reminder-next-date-quick">Next status reminder date</Label>
+                    <Input
+                      id="status-reminder-next-date-quick"
+                      type="date"
+                      value={toDateInputValue(statusReminderNextAtMs)}
+                      onChange={(event) => {
+                        const nextAtMs = fromDateInputToMs(event.target.value);
+                        updateReminderSettings({ statusReminderNextAtMs: nextAtMs });
+                      }}
+                      disabled={isUpdatingReminderControls}
+                    />
                   </div>
                   <div className="space-y-2 p-3 border rounded-lg bg-muted/20">
                     <Label htmlFor="staff-test-status-reminder-email" className="text-sm font-medium">

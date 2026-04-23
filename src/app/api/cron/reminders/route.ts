@@ -37,11 +37,15 @@ export async function GET(request: Request) {
 
     const now = Date.now();
     const getCadenceMs = (appData: any) => {
-      const raw = Number(appData?.documentReminderFrequencyDays);
-      const days = Number.isFinite(raw) && raw > 0 ? Math.max(1, Math.min(30, Math.round(raw))) : 2;
-      return days * 24 * 60 * 60 * 1000;
+      return 7 * 24 * 60 * 60 * 1000;
     };
-    const isDueForReminder = (lastSent: any, cadenceMs: number) => {
+    const getNextReminderMs = (appData: any) => {
+      const raw = Number(appData?.documentReminderNextAtMs ?? appData?.documentReminderNextAt);
+      return Number.isFinite(raw) && raw > 0 ? raw : 0;
+    };
+    const isDueForReminder = (appData: any, lastSent: any, cadenceMs: number) => {
+      const nextReminderMs = getNextReminderMs(appData);
+      if (nextReminderMs > now && now < nextReminderMs) return false;
       if (!lastSent) return true;
       const lastDate = typeof lastSent?.toDate === 'function'
         ? lastSent.toDate()
@@ -54,7 +58,7 @@ export async function GET(request: Request) {
       data.emailRemindersEnabled === true &&
       (data.status === 'In Progress' || data.status === 'Requires Revision') &&
       data.forms?.some(form => form.status === 'Pending') &&
-      isDueForReminder((data as any).emailReminderLastSentAt, getCadenceMs(data))
+      isDueForReminder(data, (data as any).emailReminderLastSentAt, getCadenceMs(data))
     );
     
     if (appsToRemind.length === 0) {
@@ -74,10 +78,11 @@ export async function GET(request: Request) {
 
     if (result.sentApplicationIds?.length) {
       const batch = firestore.batch();
-      appsToRemind.forEach(({ id, ref }) => {
+      appsToRemind.forEach(({ id, ref, data }) => {
         if (!result.sentApplicationIds?.includes(id)) return;
         batch.update(ref, {
-          emailReminderLastSentAt: admin.firestore.FieldValue.serverTimestamp()
+          emailReminderLastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+          documentReminderNextAtMs: now + getCadenceMs(data),
         });
       });
       await batch.commit();
