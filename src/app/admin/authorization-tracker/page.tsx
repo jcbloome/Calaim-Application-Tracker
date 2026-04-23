@@ -443,19 +443,24 @@ export default function AuthorizationTracker() {
 
   // Removed auto-loading - data only loads when "Refresh Data" button is clicked
 
+  const scrollToMemberBreakdown = () => {
+    setTimeout(() => {
+      const breakdownElement =
+        document.getElementById('member-breakdown-section') ||
+        document.querySelector('[data-testid="members-table"]');
+      if (breakdownElement) {
+        breakdownElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  };
+
   // Handle summary card clicks for filtering
   const handleCardClick = (filterType: string) => {
     setSelectedFilter(filterType);
     setSelectedMonth('all'); // Reset month filter when using summary cards
     setSelectedMonthSegment('all');
     setSelectedMonthAuthType('all');
-    // Scroll to the members table
-    setTimeout(() => {
-      const tableElement = document.querySelector('[data-testid="members-table"]');
-      if (tableElement) {
-        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 100);
+    scrollToMemberBreakdown();
   };
 
   // Handle monthly expiration clicks for filtering
@@ -465,13 +470,7 @@ export default function AuthorizationTracker() {
     setSelectedPlanMetric('all');
     setSelectedMonthSegment('all');
     setSelectedMonthAuthType('all');
-    // Scroll to the members table
-    setTimeout(() => {
-      const tableElement = document.querySelector('[data-testid="members-table"]');
-      if (tableElement) {
-        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 100);
+    scrollToMemberBreakdown();
   };
 
   const handleMonthPlanClick = (
@@ -488,12 +487,7 @@ export default function AuthorizationTracker() {
     setSelectedPlanMetric('all');
     setSelectedStatus('all');
     setShowExpiringOnly(false);
-    setTimeout(() => {
-      const tableElement = document.querySelector('[data-testid="members-table"]');
-      if (tableElement) {
-        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 100);
+    scrollToMemberBreakdown();
   };
 
   // Clear filters
@@ -519,12 +513,7 @@ export default function AuthorizationTracker() {
     setSelectedMonthAuthType('all');
     setSelectedStatus('all');
     setShowExpiringOnly(false);
-    setTimeout(() => {
-      const tableElement = document.querySelector('[data-testid="members-table"]');
-      if (tableElement) {
-        tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 100);
+    scrollToMemberBreakdown();
   };
 
   const authorizationScopedMembers = useMemo(
@@ -1232,7 +1221,7 @@ export default function AuthorizationTracker() {
 
       {selectedDataPage === 'kaiser' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <Card>
+          <Card className="cursor-pointer transition-all hover:shadow-md" onClick={scrollToMemberBreakdown}>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Final- Member at RCFE</p>
               <p className="text-2xl font-bold text-blue-700">{stats.kaiserFinalAtRcfeCount}</p>
@@ -1241,14 +1230,14 @@ export default function AuthorizationTracker() {
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="cursor-pointer transition-all hover:shadow-md" onClick={scrollToMemberBreakdown}>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">R &amp; B Sent Pending ILS Contract</p>
               <p className="text-2xl font-bold text-indigo-700">{stats.kaiserRbPendingIlsContractCount}</p>
               <p className="text-xs text-muted-foreground mt-1">Can still be requestable for T2038 renewal workflow.</p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="cursor-pointer transition-all hover:shadow-md" onClick={scrollToMemberBreakdown}>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Final RCFE H2022 Dates</p>
               <p className="text-base font-semibold text-green-700">
@@ -1259,7 +1248,7 @@ export default function AuthorizationTracker() {
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="cursor-pointer transition-all hover:shadow-md" onClick={scrollToMemberBreakdown}>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">R&amp;B Pending H2022 Dates</p>
               <p className="text-base font-semibold text-green-700">
@@ -1270,7 +1259,7 @@ export default function AuthorizationTracker() {
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="cursor-pointer transition-all hover:shadow-md" onClick={scrollToMemberBreakdown}>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">H2022 Date Quality (Final + R&amp;B)</p>
               <p className="text-base font-semibold text-green-700">
@@ -1502,7 +1491,7 @@ export default function AuthorizationTracker() {
       )}
 
           {/* Authorization Table */}
-          <Card>
+          <Card id="member-breakdown-section">
         <CardHeader>
           <CardTitle>Authorization Status ({filteredAndSortedMembers.length} members)</CardTitle>
         </CardHeader>

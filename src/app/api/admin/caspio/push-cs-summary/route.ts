@@ -66,10 +66,137 @@ const MEDICAL_NUMBER_FIELD_CANDIDATES = [
   'MediCal_Number',
   'Medi_Cal_Number',
   'MediCalNumber',
+  'Medi_Cal',
+  'MediCal',
+  'MC',
   'MCP_CIN',
   'CIN',
   'CIN_Number',
 ];
+const MEDI_CAL_APPLICATION_FIELD_CANDIDATES = [
+  'confirmMemberMediCalNum',
+  'memberMediCalNum',
+  'memberMediCalNumber',
+  'MediCal_Number',
+  'Medi_Cal_Number',
+  'Medi_Cal',
+  'MediCal',
+  'Medical_Number',
+  'MCP_CIN',
+  'cin',
+  'CIN',
+  'MC',
+];
+const MEDI_CAL_CS_FIELD_ALIASES = new Set([
+  'medicalnumber',
+  'medicalnum',
+  'medical',
+  'medcalnumber',
+  'medcalnum',
+  'medic',
+  'mcpcin',
+  'cin',
+  'cinnumber',
+]);
+const extractMediCalNumberFromApplication = (applicationData: Record<string, any>) => {
+  for (const key of MEDI_CAL_APPLICATION_FIELD_CANDIDATES) {
+    const value = clean(applicationData?.[key]);
+    if (value) return value;
+  }
+  for (const [key, rawValue] of Object.entries(applicationData || {})) {
+    if (!looksLikeMedicalNumberField(key)) continue;
+    const value = clean(rawValue);
+    if (!value) continue;
+    return value;
+  }
+  return '';
+};
+const pickFirstNonEmpty = (source: Record<string, any>, candidates: string[]) => {
+  for (const key of candidates) {
+    const value = source?.[key];
+    if (value !== undefined && value !== null && clean(value) !== '') {
+      return value;
+    }
+  }
+  return '';
+};
+const canonicalizeApplicationData = (raw: Record<string, any>) => {
+  const app = { ...(raw || {}) } as Record<string, any>;
+  const normalizedEntries = Object.entries(app).reduce((acc, [key, value]) => {
+    const normalizedKey = normalizeFieldName(key);
+    if (!normalizedKey) return acc;
+    if (acc[normalizedKey] === undefined && clean(value) !== '') {
+      acc[normalizedKey] = value;
+    }
+    return acc;
+  }, {} as Record<string, any>);
+
+  const setIfMissing = (targetKey: string, value: unknown) => {
+    if (app[targetKey] !== undefined && app[targetKey] !== null && clean(app[targetKey]) !== '') return;
+    if (value === undefined || value === null || clean(value) === '') return;
+    app[targetKey] = value;
+  };
+  const fromNormalized = (normalizedKey: string) => normalizedEntries[normalizeFieldName(normalizedKey)];
+
+  setIfMissing('memberFirstName', pickFirstNonEmpty(app, [
+    'memberFirstName',
+    'Member_First_Name',
+    'Senior_First',
+    'firstName',
+    'First_Name',
+  ]) || fromNormalized('member first name') || fromNormalized('senior first'));
+  setIfMissing('memberLastName', pickFirstNonEmpty(app, [
+    'memberLastName',
+    'Member_Last_Name',
+    'Senior_Last',
+    'lastName',
+    'Last_Name',
+  ]) || fromNormalized('member last name') || fromNormalized('senior last'));
+  setIfMissing('memberMrn', pickFirstNonEmpty(app, [
+    'memberMrn',
+    'medicalRecordNumber',
+    'mrn',
+    'Member_MRN',
+    'MRN',
+    'Medical_Record_Number',
+  ]) || fromNormalized('member mrn') || fromNormalized('medical record number'));
+  const mediCalNumber = extractMediCalNumberFromApplication(app);
+  setIfMissing('memberMediCalNum', mediCalNumber);
+  setIfMissing('confirmMemberMediCalNum', mediCalNumber);
+  setIfMissing('bestContactFirstName', pickFirstNonEmpty(app, [
+    'bestContactFirstName',
+    'referrerFirstName',
+    'repFirstName',
+    'contactFirstName',
+  ]) || fromNormalized('best contact first name'));
+  setIfMissing('bestContactLastName', pickFirstNonEmpty(app, [
+    'bestContactLastName',
+    'referrerLastName',
+    'repLastName',
+    'contactLastName',
+  ]) || fromNormalized('best contact last name'));
+  setIfMissing('bestContactEmail', pickFirstNonEmpty(app, [
+    'bestContactEmail',
+    'referrerEmail',
+    'repEmail',
+    'contactEmail',
+  ]) || fromNormalized('best contact email'));
+  setIfMissing('bestContactPhone', pickFirstNonEmpty(app, [
+    'bestContactPhone',
+    'referrerPhone',
+    'repPhone',
+    'contactPhone',
+  ]) || fromNormalized('best contact phone'));
+  setIfMissing('healthPlan', pickFirstNonEmpty(app, [
+    'healthPlan',
+    'CalAIM_MCO',
+    'calaimMco',
+    'memberHealthPlan',
+    'CalAIM_MCP',
+  ]) || fromNormalized('health plan') || fromNormalized('calaim mco'));
+
+  return app;
+};
 let adminDb: any = null;
 try {
   if (!getApps().length) {
@@ -89,6 +216,10 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
   if (direct !== undefined && direct !== null && direct !== '') return direct;
   const normalizedTarget = normalizeFieldName(csField);
   if (!normalizedTarget || !applicationData || typeof applicationData !== 'object') return '';
+  if (MEDI_CAL_CS_FIELD_ALIASES.has(normalizedTarget)) {
+    const mediCalValue = extractMediCalNumberFromApplication(applicationData as Record<string, any>);
+    if (mediCalValue) return mediCalValue;
+  }
   for (const [key, value] of Object.entries(applicationData)) {
     if (normalizeFieldName(key) === normalizedTarget && value !== undefined && value !== null && value !== '') {
       return value;
@@ -299,7 +430,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({} as any));
-    const applicationData = body?.applicationData || null;
+    const rawApplicationData = body?.applicationData || null;
+    const applicationData = rawApplicationData && typeof rawApplicationData === 'object'
+      ? canonicalizeApplicationData(rawApplicationData as Record<string, any>)
+      : null;
     const providedMapping = (body?.mapping || null) as Record<string, string> | null;
     const fallbackMapping = await getSharedLockedMapping();
     const mapping =
@@ -448,15 +582,8 @@ export async function POST(request: NextRequest) {
       ([fieldName, value]) => looksLikeMedicalNumberField(fieldName) && hasValue(value)
     );
     const hintedMediCalNumber = clean(
-      applicationData?.confirmMemberMediCalNum ||
-        applicationData?.memberMediCalNum ||
-        applicationData?.memberMediCalNumber ||
-        applicationData?.MediCal_Number ||
-        applicationData?.Medi_Cal_Number ||
-        applicationData?.MCP_CIN ||
-        applicationData?.cin ||
-        applicationData?.CIN ||
-        mappedMediCalEntry?.[1]
+      extractMediCalNumberFromApplication(applicationData as Record<string, any>) ||
+      mappedMediCalEntry?.[1]
     );
 
     let existingRow: Record<string, any> | null = null;
@@ -613,6 +740,20 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify(payload),
     });
+    const doUpdateByPk = async (pkId: number, payload: Record<string, any>) => {
+      const safePk = Number(pkId || 0);
+      if (!safePk) return null;
+      const where = `PK_ID=${safePk}`;
+      const updateUrl = `${baseUrl}/tables/${membersTable}/records?q.where=${encodeURIComponent(where)}`;
+      return fetch(updateUrl, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    };
     let upsertResponse = await doUpsert(memberData);
 
     // Some Caspio tables may not have Kaiser_User_Assignment. If so, retry once without it.
@@ -691,6 +832,66 @@ export async function POST(request: NextRequest) {
       }
       const caspioError = await upsertResponse.text().catch(() => '') || firstErrorBody;
       const duplicateBlankField = parseDuplicateOrBlankField(caspioError);
+      if (!isUpdate && duplicateBlankField) {
+        const duplicateFieldCandidates = Array.from(
+          new Set([
+            duplicateBlankField,
+            ...(looksLikeMedicalNumberField(duplicateBlankField) ? MEDICAL_NUMBER_FIELD_CANDIDATES : []),
+            clean(mappedMediCalEntry?.[0] || ''),
+          ].filter(Boolean))
+        );
+        const duplicateValueCandidates = Array.from(
+          new Set(
+            [
+              memberData[duplicateBlankField],
+              hintedMediCalNumber,
+              hintedMrn,
+              mappedMediCalEntry?.[1],
+              memberData.Medical_Number,
+              memberData.MediCal_Number,
+              memberData.Medi_Cal_Number,
+              memberData.MCP_CIN,
+            ]
+              .map((value) => clean(value))
+              .filter(Boolean)
+              .flatMap((value) => {
+                const variants = [value];
+                const upper = value.toUpperCase();
+                const lower = value.toLowerCase();
+                if (!variants.includes(upper)) variants.push(upper);
+                if (!variants.includes(lower)) variants.push(lower);
+                return variants;
+              })
+          )
+        );
+
+        let recoveredRow: Record<string, any> | null = null;
+        for (const fieldName of duplicateFieldCandidates) {
+          if (recoveredRow) break;
+          for (const candidateValue of duplicateValueCandidates) {
+            const whereClause = buildEqualsClause(fieldName, candidateValue);
+            if (!whereClause) continue;
+            recoveredRow = await trySearchMember(whereClause);
+            if (recoveredRow) break;
+          }
+        }
+
+        const recoveredPk = Number(recoveredRow?.PK_ID || recoveredRow?.pk_id || 0);
+        if (recoveredPk) {
+          const updateFromDuplicateResponse = await doUpdateByPk(recoveredPk, memberData);
+          if (updateFromDuplicateResponse?.ok) {
+            const updateResult = await updateFromDuplicateResponse.json().catch(() => ({} as any));
+            return NextResponse.json({
+              success: true,
+              message: `Successfully updated Caspio profile for "${firstName} ${lastName}" (matched existing record by ${duplicateBlankField}).`,
+              mode: 'update',
+              clientId2: clean(memberData[clientIdField] || recoveredRow?.client_ID2 || recoveredRow?.Client_ID2),
+              recoveredFromDuplicateField: duplicateBlankField,
+              data: updateResult,
+            });
+          }
+        }
+      }
       const duplicateBlankMessage = duplicateBlankField
         ? `Caspio rejected this push because field "${duplicateBlankField}" is duplicate or blank. This usually means the member already exists in Caspio for that identifier, or the mapped value is empty.`
         : '';
