@@ -1416,7 +1416,7 @@ function PushToCaspioDialog({
                     )}
                 </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent className="max-w-3xl">
+            <AlertDialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
                 <AlertDialogHeader>
                     <AlertDialogTitle>Confirm push to Caspio</AlertDialogTitle>
                     <AlertDialogDescription>
