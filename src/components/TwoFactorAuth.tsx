@@ -457,20 +457,33 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
                         <div className="rounded border bg-background p-2 text-xs break-all">
                           <strong>Manual key:</strong> {totpSetup.secret}
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
                             onClick={() => openAuthenticatorApp(totpSetup.otpauthUrl)}
+                            className="w-full sm:w-auto"
                           >
                             Open in Authenticator
                           </Button>
-                          <Button type="button" size="sm" variant="outline" onClick={() => copyToClipboard(totpSetup.secret, 'Manual key')}>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => copyToClipboard(totpSetup.secret, 'Manual key')}
+                            className="w-full sm:w-auto"
+                          >
                             <Copy className="mr-1 h-3 w-3" />
                             Copy Key
                           </Button>
-                          <Button type="button" size="sm" variant="outline" onClick={() => copyToClipboard(totpSetup.otpauthUrl, 'Setup URL')}>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => copyToClipboard(totpSetup.otpauthUrl, 'Setup URL')}
+                            className="w-full sm:w-auto"
+                          >
                             <Copy className="mr-1 h-3 w-3" />
                             Copy Setup URL
                           </Button>
@@ -498,11 +511,11 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
               </Alert>
             )}
             
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Button 
                 onClick={verifyCode}
                 disabled={isLoading || !code || code.length !== 6 || (selectedMethod === 'email' && timeLeft === 0)}
-                className="flex-1"
+                className="w-full sm:flex-1"
               >
                 {isLoading ? (
                   <>
@@ -518,6 +531,7 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
                 variant="outline"
                 onClick={() => setStep('method')}
                 disabled={isLoading}
+                className="w-full sm:w-auto"
               >
                 Back
               </Button>
