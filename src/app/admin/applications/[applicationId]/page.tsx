@@ -3481,6 +3481,28 @@ function ApplicationDetailPageContent() {
   }, [application?.id, (application as any)?.preAssessmentCareNeedsNotes]);
 
   useEffect(() => {
+    if (!showPrePushNotesSection || !docRef || !application) return;
+    const normalizedDraft = String(prePushNotesDraft || '').trim();
+    const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
+    if (normalizedDraft === existing) {
+      if (prePushNotesAutosaveState === 'saving') setPrePushNotesAutosaveState('saved');
+      return;
+    }
+    setPrePushNotesAutosaveState('saving');
+    const timeout = setTimeout(() => {
+      void savePrePushNotes({ silent: true, value: prePushNotesDraft });
+    }, 900);
+    return () => clearTimeout(timeout);
+  }, [
+    showPrePushNotesSection,
+    docRef,
+    application,
+    prePushNotesDraft,
+    (application as any)?.preAssessmentCareNeedsNotes,
+    prePushNotesAutosaveState,
+  ]);
+
+  useEffect(() => {
     if (!firestore || !memberPortalUserId) {
       setMemberPortalLoginLog([]);
       return;
@@ -6947,28 +6969,6 @@ function ApplicationDetailPageContent() {
       setIsSavingPrePushNotes(false);
     }
   };
-
-  useEffect(() => {
-    if (!showPrePushNotesSection || !docRef || !application) return;
-    const normalizedDraft = String(prePushNotesDraft || '').trim();
-    const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
-    if (normalizedDraft === existing) {
-      if (prePushNotesAutosaveState === 'saving') setPrePushNotesAutosaveState('saved');
-      return;
-    }
-    setPrePushNotesAutosaveState('saving');
-    const timeout = setTimeout(() => {
-      void savePrePushNotes({ silent: true, value: prePushNotesDraft });
-    }, 900);
-    return () => clearTimeout(timeout);
-  }, [
-    showPrePushNotesSection,
-    docRef,
-    application,
-    prePushNotesDraft,
-    (application as any)?.preAssessmentCareNeedsNotes,
-    prePushNotesAutosaveState,
-  ]);
 
   const updateKaiserAuthorizationMode = async (mode: 'authorization_received' | 'authorization_needed') => {
     if (!docRef || !application || !isKaiserPlan) return;
