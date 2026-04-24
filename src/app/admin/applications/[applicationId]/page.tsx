@@ -2558,6 +2558,8 @@ function ApplicationDetailPageContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [prePushNotesDraft, setPrePushNotesDraft] = useState('');
   const [isSavingPrePushNotes, setIsSavingPrePushNotes] = useState(false);
+  const [prePushNotesAutosaveState, setPrePushNotesAutosaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [prePushNotesSavedAtIso, setPrePushNotesSavedAtIso] = useState<string>('');
   const [error, setError] = useState<Error | null>(null);
   const [intakeImportOpen, setIntakeImportOpen] = useState(false);
   const [intakeRequirementTitle, setIntakeRequirementTitle] = useState<string>('');
@@ -3475,6 +3477,7 @@ function ApplicationDetailPageContent() {
   useEffect(() => {
     const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
     setPrePushNotesDraft(existing);
+    setPrePushNotesAutosaveState('idle');
   }, [application?.id, (application as any)?.preAssessmentCareNeedsNotes]);
 
   useEffect(() => {
@@ -6895,10 +6898,16 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  const savePrePushNotes = async () => {
+  const savePrePushNotes = async (options?: { silent?: boolean; value?: string }) => {
     if (!docRef || !application) return;
-    const normalized = String(prePushNotesDraft || '').trim();
+    const normalized = String(options?.value ?? prePushNotesDraft ?? '').trim();
+    const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
+    if (normalized === existing) {
+      setPrePushNotesAutosaveState('saved');
+      return;
+    }
     setIsSavingPrePushNotes(true);
+    setPrePushNotesAutosaveState('saving');
     try {
       await setDoc(
         docRef,
@@ -6916,14 +6925,19 @@ function ApplicationDetailPageContent() {
             } as any)
           : prev
       );
-      toast({
-        title: 'Pre-push notes saved',
-        description: normalized
-          ? 'These notes will be included on Caspio push when a mapped notes field is available.'
-          : 'Pre-push notes cleared.',
-        className: 'bg-green-100 text-green-900 border-green-200',
-      });
+      setPrePushNotesSavedAtIso(new Date().toISOString());
+      setPrePushNotesAutosaveState('saved');
+      if (!options?.silent) {
+        toast({
+          title: 'Pre-push notes saved',
+          description: normalized
+            ? 'These notes will be included on Caspio push when a mapped notes field is available.'
+            : 'Pre-push notes cleared.',
+          className: 'bg-green-100 text-green-900 border-green-200',
+        });
+      }
     } catch (error: any) {
+      setPrePushNotesAutosaveState('error');
       toast({
         variant: 'destructive',
         title: 'Save failed',
@@ -6933,6 +6947,28 @@ function ApplicationDetailPageContent() {
       setIsSavingPrePushNotes(false);
     }
   };
+
+  useEffect(() => {
+    if (!showPrePushNotesSection || !docRef || !application) return;
+    const normalizedDraft = String(prePushNotesDraft || '').trim();
+    const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
+    if (normalizedDraft === existing) {
+      if (prePushNotesAutosaveState === 'saving') setPrePushNotesAutosaveState('saved');
+      return;
+    }
+    setPrePushNotesAutosaveState('saving');
+    const timeout = setTimeout(() => {
+      void savePrePushNotes({ silent: true, value: prePushNotesDraft });
+    }, 900);
+    return () => clearTimeout(timeout);
+  }, [
+    showPrePushNotesSection,
+    docRef,
+    application,
+    prePushNotesDraft,
+    (application as any)?.preAssessmentCareNeedsNotes,
+    prePushNotesAutosaveState,
+  ]);
 
   const updateKaiserAuthorizationMode = async (mode: 'authorization_received' | 'authorization_needed') => {
     if (!docRef || !application || !isKaiserPlan) return;
@@ -10741,16 +10777,20 @@ function ApplicationDetailPageContent() {
                   <p className="text-[11px] text-muted-foreground">
                     Saved to draft and sent on Caspio push when notes mapping exists.
                   </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void savePrePushNotes()}
-                    disabled={isSavingPrePushNotes}
-                  >
-                    {isSavingPrePushNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Save
-                  </Button>
+                  <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+                    {isSavingPrePushNotes || prePushNotesAutosaveState === 'saving' ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Saving...
+                      </>
+                    ) : prePushNotesAutosaveState === 'saved' ? (
+                      `Saved${prePushNotesSavedAtIso ? ` ${format(new Date(prePushNotesSavedAtIso), 'h:mm a')}` : ''}`
+                    ) : prePushNotesAutosaveState === 'error' ? (
+                      'Autosave failed'
+                    ) : (
+                      'Autosave on'
+                    )}
+                  </div>
                 </div>
               </div>
             ) : null}
