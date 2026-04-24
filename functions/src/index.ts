@@ -130,7 +130,8 @@ export {
   send2FACode, 
   verify2FACode, 
   check2FAStatus, 
-  update2FAPreferences 
+  update2FAPreferences,
+  setup2FATOTP
 } from './two-factor-auth';
 
 // Export Task and Note Management functions

@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
-import { createHash, randomBytes } from "crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { Resend } from "resend";
 
 const resendApiKey = defineSecret("RESEND_API_KEY");
@@ -12,8 +12,11 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_SENDS_PER_HOUR = 5;
 const MAX_VERIFY_ATTEMPTS = 3;
 const TWO_FA_SESSION_MS = 8 * 60 * 60 * 1000;
+const TOTP_TIME_STEP_SECONDS = 30;
+const TOTP_DIGITS = 6;
+const TOTP_WINDOW_STEPS = 1;
 
-type TwoFactorMethod = 'email' | 'sms';
+type TwoFactorMethod = 'email' | 'totp';
 type TwoFactorCodeDoc = {
   codeHash: string;
   codeSalt: string;
@@ -34,7 +37,8 @@ function nowTs() {
 
 function normalizeMethod(value: unknown): TwoFactorMethod {
   const method = String(value || '').trim().toLowerCase();
-  if (method === 'email' || method === 'sms') return method;
+  if (method === 'sms') return 'email';
+  if (method === 'email' || method === 'totp') return method;
   throw new HttpsError('invalid-argument', 'Invalid 2FA method');
 }
 
@@ -55,6 +59,89 @@ function buildCodeHash(code: string, salt: string): string {
   return createHash('sha256').update(`${salt}:${code}`).digest('hex');
 }
 
+function encodeBase32(buffer: Buffer): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  let output = '';
+
+  for (const byte of buffer) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      output += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) {
+    output += alphabet[(value << (5 - bits)) & 31];
+  }
+  return output;
+}
+
+function decodeBase32(base32: string): Buffer {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const sanitized = String(base32 || '')
+    .trim()
+    .toUpperCase()
+    .replace(/=+$/g, '')
+    .replace(/[^A-Z2-7]/g, '');
+  if (!sanitized) return Buffer.alloc(0);
+
+  let bits = 0;
+  let value = 0;
+  const bytes: number[] = [];
+
+  for (const ch of sanitized) {
+    const idx = alphabet.indexOf(ch);
+    if (idx < 0) continue;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function generateTotpSecret(): string {
+  return encodeBase32(randomBytes(20));
+}
+
+function generateTotpCode(secret: string, epochSeconds = Math.floor(Date.now() / 1000)): string {
+  const key = decodeBase32(secret);
+  if (!key.length) return '';
+  const counter = Math.floor(epochSeconds / TOTP_TIME_STEP_SECONDS);
+  const counterBuffer = Buffer.alloc(8);
+  counterBuffer.writeBigUInt64BE(BigInt(counter));
+  const hmac = createHmac('sha1', key).update(counterBuffer).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const binary =
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff);
+  const otp = binary % 10 ** TOTP_DIGITS;
+  return String(otp).padStart(TOTP_DIGITS, '0');
+}
+
+function safeCodeEquals(left: string, right: string): boolean {
+  const a = Buffer.from(String(left || '').trim());
+  const b = Buffer.from(String(right || '').trim());
+  if (a.length !== b.length || a.length === 0) return false;
+  return timingSafeEqual(a, b);
+}
+
+function verifyTotpCode(secret: string, submittedCode: string): boolean {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  for (let i = -TOTP_WINDOW_STEPS; i <= TOTP_WINDOW_STEPS; i += 1) {
+    const expected = generateTotpCode(secret, nowSeconds + i * TOTP_TIME_STEP_SECONDS);
+    if (safeCodeEquals(expected, submittedCode)) return true;
+  }
+  return false;
+}
+
 // Generate and send 2FA code
 export const send2FACode = onCall({ secrets: [resendApiKey] }, async (request) => {
   try {
@@ -68,9 +155,8 @@ export const send2FACode = onCall({ secrets: [resendApiKey] }, async (request) =
     if (!method || !contact) {
       throw new HttpsError('invalid-argument', 'Method and contact information required');
     }
-
-    if (method === 'sms') {
-      throw new HttpsError('failed-precondition', 'SMS 2FA is not configured yet. Please use email verification.');
+    if (method === 'totp') {
+      throw new HttpsError('failed-precondition', 'Authenticator app verification does not send a code. Enter your app code directly.');
     }
     
     const userEmail = String(request.auth.token.email || '').trim().toLowerCase();
@@ -122,11 +208,7 @@ export const send2FACode = onCall({ secrets: [resendApiKey] }, async (request) =
     });
     
     // Send code based on method
-    if (method === 'email') {
-      await sendEmailCode(contact, code, request.auth.uid);
-    } else if (method === 'sms') {
-      await sendSMSCode(contact, code, request.auth.uid);
-    }
+    await sendEmailCode(contact, code, request.auth.uid);
     
     console.log(`✅ 2FA code sent via ${method}`);
     
@@ -148,6 +230,7 @@ export const send2FACode = onCall({ secrets: [resendApiKey] }, async (request) =
 // Verify 2FA code
 export const verify2FACode = onCall(async (request) => {
   try {
+    const method = request.data?.method ? normalizeMethod(request.data?.method) : undefined;
     const code = String(request.data?.code || '').trim();
     
     if (!request.auth) {
@@ -161,33 +244,54 @@ export const verify2FACode = onCall(async (request) => {
     console.log(`🔐 Verifying 2FA code for user: ${request.auth.uid}`);
     
     const db = admin.firestore();
-    const codeDoc = await db.collection('2fa-codes').doc(request.auth.uid).get();
-    
-    if (!codeDoc.exists) {
-      throw new HttpsError('not-found', 'No verification code found. Please request a new code.');
-    }
-    
-    const codeData = codeDoc.data() as TwoFactorCodeDoc;
-    
-    // Check if code is expired
-    if (codeData.expiresAt.toDate() < new Date()) {
-      throw new HttpsError('deadline-exceeded', 'Verification code has expired. Please request a new code.');
-    }
-    
-    // Check if too many attempts
-    if (Number(codeData.attempts || 0) >= MAX_VERIFY_ATTEMPTS) {
-      throw new HttpsError('resource-exhausted', 'Too many failed attempts. Please request a new code.');
-    }
-    
-    // Check if code hash matches
-    const submittedHash = buildCodeHash(code, String(codeData.codeSalt || ''));
-    if (submittedHash !== String(codeData.codeHash || '')) {
-      // Increment attempts
-      await codeDoc.ref.update({
-        attempts: admin.firestore.FieldValue.increment(1)
-      });
-      
-      throw new HttpsError('invalid-argument', 'Invalid verification code. Please try again.');
+    const userRef = db.collection('users').doc(request.auth.uid);
+    const userDoc = await userRef.get();
+    const userData = userDoc.exists ? userDoc.data() || {} : {};
+    const preferredMethod = normalizeMethod((method || userData['2faPreferredMethod'] || 'email'));
+    let logContact = '';
+
+    if (preferredMethod === 'totp') {
+      const secret = String(userData['2faTotpSecret'] || userData['2faTotpPendingSecret'] || '').trim();
+      if (!secret) {
+        throw new HttpsError('failed-precondition', 'Authenticator app is not configured for this account.');
+      }
+      if (!verifyTotpCode(secret, code)) {
+        throw new HttpsError('invalid-argument', 'Invalid authenticator code. Please try again.');
+      }
+
+      const updateData: Record<string, any> = {};
+      if (!userData['2faTotpEnabled'] || !userData['2faTotpSecret']) {
+        updateData['2faTotpSecret'] = secret;
+        updateData['2faTotpEnabled'] = true;
+        updateData['2faTotpEnabledAt'] = admin.firestore.FieldValue.serverTimestamp();
+        updateData['2faTotpPendingSecret'] = admin.firestore.FieldValue.delete();
+        updateData['2faTotpPendingCreatedAt'] = admin.firestore.FieldValue.delete();
+      }
+      if (Object.keys(updateData).length > 0) {
+        await userRef.set(updateData, { merge: true });
+      }
+      logContact = String(request.auth.token.email || '');
+    } else {
+      const codeDoc = await db.collection('2fa-codes').doc(request.auth.uid).get();
+      if (!codeDoc.exists) {
+        throw new HttpsError('not-found', 'No verification code found. Please request a new code.');
+      }
+      const codeData = codeDoc.data() as TwoFactorCodeDoc;
+      if (codeData.expiresAt.toDate() < new Date()) {
+        throw new HttpsError('deadline-exceeded', 'Verification code has expired. Please request a new code.');
+      }
+      if (Number(codeData.attempts || 0) >= MAX_VERIFY_ATTEMPTS) {
+        throw new HttpsError('resource-exhausted', 'Too many failed attempts. Please request a new code.');
+      }
+      const submittedHash = buildCodeHash(code, String(codeData.codeSalt || ''));
+      if (submittedHash !== String(codeData.codeHash || '')) {
+        await codeDoc.ref.update({
+          attempts: admin.firestore.FieldValue.increment(1)
+        });
+        throw new HttpsError('invalid-argument', 'Invalid verification code. Please try again.');
+      }
+      await codeDoc.ref.delete();
+      logContact = String(codeData.contact || '');
     }
     
     // Set 2FA session (valid for 8 hours)
@@ -204,16 +308,13 @@ export const verify2FACode = onCall(async (request) => {
     // Log successful 2FA
     await db.collection('2fa-logs').add({
       userId: request.auth.uid,
-      method: codeData.method,
-      contactMasked: maskContact(String(codeData.contact || '')),
+      method: preferredMethod,
+      contactMasked: maskContact(logContact),
       success: true,
       verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
       ipAddress: request.rawRequest.ip,
       userAgent: request.rawRequest.headers['user-agent']
     });
-
-    // Consume the code only after all success-side writes complete.
-    await codeDoc.ref.delete();
     
     console.log(`✅ 2FA verification successful for user: ${request.auth.uid}`);
     
@@ -270,8 +371,10 @@ export const check2FAStatus = onCall(async (request) => {
     const codeSnap = await db.collection('2fa-codes').doc(request.auth.uid).get();
     const codeData = (codeSnap.exists ? codeSnap.data() : null) as TwoFactorCodeDoc | null;
     const pendingExpiry = codeData?.expiresAt?.toDate?.();
+    const pendingMethod = String(codeData?.method || '').trim().toLowerCase();
     const pendingCode =
       Boolean(codeData) &&
+      pendingMethod === 'email' &&
       !Boolean(codeData?.verified) &&
       Boolean(pendingExpiry && pendingExpiry > now) &&
       Number(codeData?.attempts || 0) < MAX_VERIFY_ATTEMPTS;
@@ -284,6 +387,7 @@ export const check2FAStatus = onCall(async (request) => {
       pendingCode,
       pendingCodeExpiresAt: pendingExpiry?.toISOString(),
       preferredMethod: userData['2faPreferredMethod'] || 'email',
+      totpEnabled: Boolean(userData['2faTotpEnabled']),
       email: userData.email,
       phone: userData.phone
     };
@@ -301,7 +405,6 @@ export const check2FAStatus = onCall(async (request) => {
 export const update2FAPreferences = onCall(async (request) => {
   try {
     const preferredMethod = request.data?.preferredMethod ? normalizeMethod(request.data.preferredMethod) : undefined;
-    const phone = String(request.data?.phone || '').trim();
     
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -310,19 +413,11 @@ export const update2FAPreferences = onCall(async (request) => {
     const db = admin.firestore();
     const updateData: any = {};
     
-    if (preferredMethod === 'sms') {
-      throw new HttpsError('failed-precondition', 'SMS 2FA is not configured yet. Please use email.');
-    }
-
     if (preferredMethod) {
       updateData['2faPreferredMethod'] = preferredMethod;
     }
     
-    if (phone) {
-      updateData.phone = phone;
-    }
-    
-    await db.collection('users').doc(request.auth.uid).update(updateData);
+    await db.collection('users').doc(request.auth.uid).set(updateData, { merge: true });
     
     console.log(`✅ 2FA preferences updated for user: ${request.auth.uid}`);
     
@@ -337,6 +432,53 @@ export const update2FAPreferences = onCall(async (request) => {
       throw error;
     }
     throw new HttpsError('internal', `Failed to update 2FA preferences: ${error.message}`);
+  }
+});
+
+// Generate / refresh pending authenticator setup secret and return otpauth URI.
+export const setup2FATOTP = onCall(async (request) => {
+  try {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+    const db = admin.firestore();
+    const userRef = db.collection('users').doc(request.auth.uid);
+    const userSnap = await userRef.get();
+    const userData = userSnap.exists ? userSnap.data() || {} : {};
+
+    const alreadyEnabled = Boolean(userData['2faTotpEnabled']) && Boolean(String(userData['2faTotpSecret'] || '').trim());
+    let secret = String(userData['2faTotpPendingSecret'] || '').trim();
+    if (alreadyEnabled) {
+      secret = String(userData['2faTotpSecret'] || '').trim();
+    }
+    if (!secret) {
+      secret = generateTotpSecret();
+      await userRef.set(
+        {
+          '2faTotpPendingSecret': secret,
+          '2faTotpPendingCreatedAt': admin.firestore.FieldValue.serverTimestamp(),
+          '2faPreferredMethod': 'totp',
+        },
+        { merge: true }
+      );
+    }
+
+    const accountLabel = String(request.auth.token.email || request.auth.uid);
+    const issuer = 'CalAIM Tracker';
+    const otpauthUrl = `otpauth://totp/${encodeURIComponent(`${issuer}:${accountLabel}`)}?secret=${encodeURIComponent(secret)}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=${TOTP_DIGITS}&period=${TOTP_TIME_STEP_SECONDS}`;
+
+    return {
+      success: true,
+      secret,
+      otpauthUrl,
+      alreadyEnabled,
+      issuer,
+      accountLabel,
+    };
+  } catch (error: any) {
+    console.error('❌ Error setting up TOTP:', error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError('internal', `Failed to initialize authenticator setup: ${error.message}`);
   }
 });
 
@@ -362,14 +504,6 @@ async function sendEmailCode(email: string, code: string, userId: string): Promi
   if (error) {
     throw new Error(`Resend error while sending 2FA code: ${String(error.message || 'unknown error')}`);
   }
-}
-
-// Helper function to send SMS code
-async function sendSMSCode(phone: string, code: string, userId: string): Promise<void> {
-  void phone;
-  void code;
-  void userId;
-  throw new HttpsError('failed-precondition', 'SMS 2FA is not configured yet.');
 }
 
 // Email template generators
