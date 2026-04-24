@@ -1009,13 +1009,13 @@ function MyTasksPageContent() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto p-4 sm:p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3">
           <ListTodo className="h-8 w-8 text-primary" />
           <div>
-            <h1 className="text-3xl font-bold">Daily Task Tracker</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold">Daily Task Tracker</h1>
             <p className="text-muted-foreground">
               Daily tasks, follow-ups, and note assignments tied to your workflow
             </p>
@@ -1024,6 +1024,7 @@ function MyTasksPageContent() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
+            className="w-full sm:w-auto"
             onClick={() => {
               setSelectedTab('followup_calendar');
               try {
@@ -1038,7 +1039,7 @@ function MyTasksPageContent() {
           </Button>
           <Dialog open={isCreateFollowUpOpen} onOpenChange={setIsCreateFollowUpOpen}>
             <DialogTrigger asChild>
-              <Button onClick={resetFollowUpForm}>
+              <Button onClick={resetFollowUpForm} className="w-full sm:w-auto">
                 <MessageSquare className="mr-2 h-4 w-4" />
                 Create Follow-up Task
               </Button>
@@ -1148,7 +1149,7 @@ function MyTasksPageContent() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button onClick={fetchMyTasks} disabled={isLoading}>
+          <Button onClick={fetchMyTasks} disabled={isLoading} className="w-full sm:w-auto">
             <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -1356,9 +1357,9 @@ function MyTasksPageContent() {
           <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-4 flex-wrap">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1371,7 +1372,7 @@ function MyTasksPageContent() {
             </Select>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1384,7 +1385,7 @@ function MyTasksPageContent() {
             </Select>
 
             <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Source" />
               </SelectTrigger>
               <SelectContent>
@@ -1396,7 +1397,7 @@ function MyTasksPageContent() {
             </Select>
 
             <Select value={timeRange} onValueChange={(value: 'all' | 'daily' | 'weekly' | 'monthly') => setTimeRange(value)}>
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Time Range" />
               </SelectTrigger>
               <SelectContent>
@@ -1413,15 +1414,17 @@ function MyTasksPageContent() {
       {/* Tasks Tabs */}
       <div ref={tabsAnchorRef} />
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList className="grid w-full grid-cols-7">
-          <TabsTrigger value="all">All ({taskCounts.all})</TabsTrigger>
-          <TabsTrigger value="overdue">Overdue ({taskCounts.overdue})</TabsTrigger>
-          <TabsTrigger value="today">Today ({taskCounts.today})</TabsTrigger>
-          <TabsTrigger value="upcoming">Upcoming ({taskCounts.upcoming})</TabsTrigger>
-          <TabsTrigger value="followup">Follow-ups ({taskCounts.followup})</TabsTrigger>
-          <TabsTrigger value="followup_calendar">Calendar</TabsTrigger>
-          <TabsTrigger value="completed">Completed ({taskCounts.completed})</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="inline-flex w-max min-w-full sm:min-w-0">
+            <TabsTrigger value="all" className="shrink-0">All ({taskCounts.all})</TabsTrigger>
+            <TabsTrigger value="overdue" className="shrink-0">Overdue ({taskCounts.overdue})</TabsTrigger>
+            <TabsTrigger value="today" className="shrink-0">Today ({taskCounts.today})</TabsTrigger>
+            <TabsTrigger value="upcoming" className="shrink-0">Upcoming ({taskCounts.upcoming})</TabsTrigger>
+            <TabsTrigger value="followup" className="shrink-0">Follow-ups ({taskCounts.followup})</TabsTrigger>
+            <TabsTrigger value="followup_calendar" className="shrink-0">Calendar</TabsTrigger>
+            <TabsTrigger value="completed" className="shrink-0">Completed ({taskCounts.completed})</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value={selectedTab} className="space-y-4">
           {selectedTab === 'followup_calendar' ? (
@@ -1573,7 +1576,86 @@ function MyTasksPageContent() {
                   </p>
                 </div>
               ) : (
-                <Table>
+                <>
+                <div className="space-y-3 lg:hidden">
+                  {filteredTasks.map((task) => (
+                    <div key={task.id} className="rounded-lg border p-3 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            {getTaskTypeIcon(task.taskType)}
+                            <p className="font-medium leading-tight">{task.title}</p>
+                          </div>
+                          {task.description && (
+                            <p className="text-sm text-muted-foreground mt-1">{task.description}</p>
+                          )}
+                        </div>
+                        <Badge variant="outline" className={getStatusColor(task.status)}>
+                          {task.status.replace('_', ' ')}
+                        </Badge>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline" className={getSourceBadge(task.source)}>
+                          {task.source === 'applications' ? 'Applications' : task.source === 'notes' ? 'Notes' : 'Manual'}
+                        </Badge>
+                        <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                          {task.priority}
+                        </Badge>
+                        <Badge variant="outline" className={task.status === 'overdue' ? 'bg-red-100 text-red-800 border-red-200' : ''}>
+                          Due: {formatDueDate(task.dueDate)}
+                        </Badge>
+                      </div>
+
+                      <div className="text-sm space-y-1">
+                        <p className="text-muted-foreground">
+                          Assigned To: <span className="text-foreground font-medium">{task.assignedToName}</span>
+                        </p>
+                        <p className="text-muted-foreground">
+                          Assigned By: <span className="text-foreground">{task.assignedByName}</span>
+                        </p>
+                        {task.memberName && (
+                          <p className="text-muted-foreground">
+                            Member: <span className="text-foreground">{task.memberName}{task.memberClientId ? ` • ${task.memberClientId}` : ''}</span>
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {task.actionUrl && (
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={task.actionUrl}>
+                              <FileText className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        )}
+                        {(task.memberName && task.memberClientId) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleMemberClick(task.memberClientId!, task.memberName!, task.healthPlan || 'Unknown')}
+                            title="Open member notes"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {task.status !== 'completed' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCompleteTask(task)}
+                            disabled={isCompletingTask[task.id]}
+                          >
+                            <CheckCircle className={`h-4 w-4 ${isCompletingTask[task.id] ? 'animate-spin' : ''}`} />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden lg:block overflow-x-auto">
+                <Table className="min-w-[1200px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Task</TableHead>
@@ -1785,6 +1867,8 @@ function MyTasksPageContent() {
                     ))}
                   </TableBody>
                 </Table>
+                </div>
+                </>
               )}
             </CardContent>
           </Card>
