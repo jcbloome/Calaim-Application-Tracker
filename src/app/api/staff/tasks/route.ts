@@ -3,9 +3,10 @@ import { adminDb } from '@/firebase-admin';
 import { normalizePriorityLabel } from '@/lib/notification-utils';
 import { FieldPath } from 'firebase-admin/firestore';
 
-const H2022_VISIT_ALERT_EMAIL = 'john@carehomefinders.com';
 const H2022_VISIT_ALERT_WINDOW_DAYS = 30;
 const FIRST_CONTACT_STATUS_TOKENS = new Set(['t2038 received need first contact', 't2038 received needs first contact']);
+const RN_VISIT_SET_WEEKLY_STATUS = 'rn visit set with weekly reminder to look for assessment tool from rn';
+const ISP_SUBMITTED_STATUS = 'isp submitted';
 
 export async function GET(request: NextRequest) {
   try {
@@ -112,6 +113,7 @@ export async function GET(request: NextRequest) {
         const allowEligibility = Boolean(recipient?.eligibility);
         const allowStandalone = Boolean(recipient?.standalone);
         const allowAlft = Boolean(recipient?.alftReviewer ?? recipient?.alft);
+        const allowRnVisitAssigner = Boolean(recipient?.kaiserRnVisitAssigner);
         return {
           enabled,
           pollIntervalSeconds,
@@ -121,6 +123,7 @@ export async function GET(request: NextRequest) {
           allowEligibility,
           allowStandalone,
           allowAlft,
+          allowRnVisitAssigner,
         };
       } catch {
         return {
@@ -132,12 +135,13 @@ export async function GET(request: NextRequest) {
           allowEligibility: false,
           allowStandalone: false,
           allowAlft: false,
+          allowRnVisitAssigner: false,
         };
       }
     };
 
     const reviewPrefs = onlyFollowUp
-      ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false, allowEligibility: false, allowStandalone: false, allowAlft: false }
+      ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false, allowEligibility: false, allowStandalone: false, allowAlft: false, allowRnVisitAssigner: false }
       : await loadReviewNotificationRecipient();
 
     const fetchAllDocs = async (
@@ -514,10 +518,11 @@ export async function GET(request: NextRequest) {
         console.warn('Failed to load member follow-up notes:', memberError);
       }
 
-      // System follow-up alerts for Kaiser H2022 ending within 30 days.
-      // These are calendar-visible tasks for the assigned staff daily agenda.
+      // System follow-up alerts for Kaiser H2022 ending within 30 days for
+      // RN Visit Assigner (Kaiser). Workflow is driven by Caspio field:
+      // Kaiser_H2022_Needs_RN_Reauth.
       try {
-        if (staffEmail === H2022_VISIT_ALERT_EMAIL) {
+        if (reviewPrefs.allowRnVisitAssigner) {
           const normalizeIso = (value: any) => {
             if (!value) return '';
             try {
@@ -529,6 +534,11 @@ export async function GET(request: NextRequest) {
               return '';
             }
           };
+          const normalize = (value: any) =>
+            String(value || '')
+              .trim()
+              .toLowerCase()
+              .replace(/\s+/g, ' ');
 
           const startOfToday = new Date();
           startOfToday.setHours(0, 0, 0, 0);
@@ -552,29 +562,52 @@ export async function GET(request: NextRequest) {
             const diffDays = Math.floor((h2022EndDate.getTime() - startOfToday.getTime()) / (24 * 60 * 60 * 1000));
             if (diffDays < 0 || diffDays > H2022_VISIT_ALERT_WINDOW_DAYS) return;
 
+            const reauthRaw = String(data?.Kaiser_H2022_Needs_RN_Reauth || '').trim();
+            const reauthNorm = normalize(reauthRaw);
+            // Fully clear once ISP is submitted.
+            if (reauthNorm === ISP_SUBMITTED_STATUS) return;
+
+            const weeklyReminderMode = reauthNorm === RN_VISIT_SET_WEEKLY_STATUS;
+            const weeklyDue = new Date(startOfToday);
+            weeklyDue.setDate(weeklyDue.getDate() + 7);
+            const dueIso = weeklyReminderMode ? weeklyDue.toISOString() : h2022EndIso;
+            const title = weeklyReminderMode
+              ? `Weekly reminder: check RN assessment tool (${memberName})`
+              : `Kaiser H2022 ending soon: ${memberName}`;
+            const description = weeklyReminderMode
+              ? 'RN visit already set. Weekly reminder to check for assessment tool from RN. Set Kaiser_H2022_Needs_RN_Reauth to "ISP Submitted" to fully clear.'
+              : `H2022 ends in ${diffDays} day${diffDays === 1 ? '' : 's'}. Set up RN tier level visit.`;
+            const notes = weeklyReminderMode
+              ? 'Current state: RN Visit Set with weekly reminder to look for Assessment tool from RN.'
+              : 'Auto-flagged because Kaiser H2022 authorization end date is within 30 days. Clear by setting Kaiser_H2022_Needs_RN_Reauth to RN Visit Set... and fully clear when ISP Submitted.';
+            const reminderType = weeklyReminderMode
+              ? 'kaiser_h2022_rn_reauth_weekly'
+              : 'kaiser_h2022_rn_reauth';
+
             followUpTasks.push({
-              id: `h2022-expiring-${memberClientId || docSnap.id}-${h2022EndIso.slice(0, 10)}`,
-              title: `Kaiser H2022 ending soon: ${memberName}`,
-              description: `H2022 ends in ${diffDays} day${diffDays === 1 ? '' : 's'}. Set up next MSW visit.`,
+              id: `h2022-expiring-${memberClientId || docSnap.id}-${h2022EndIso.slice(0, 10)}-${weeklyReminderMode ? 'weekly' : 'initial'}`,
+              title,
+              description,
               memberName,
               memberClientId: memberClientId || undefined,
               healthPlan: 'Kaiser',
               taskType: 'follow_up',
-              priority: diffDays <= 7 ? 'Urgent' : 'Priority',
+              priority: weeklyReminderMode ? 'Priority' : (diffDays <= 7 ? 'Urgent' : 'Priority'),
               status: 'pending',
-              dueDate: h2022EndIso,
+              dueDate: dueIso,
               assignedBy: 'system',
               assignedByName: 'System',
               assignedTo: userId,
               assignedToName: staffName,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
-              notes: 'Auto-flagged because Kaiser H2022 authorization end date is within 30 days.',
+              notes,
               source: 'applications',
               actionUrl: memberClientId
                 ? `/admin/member-notes?clientId2=${encodeURIComponent(memberClientId)}`
                 : '/admin/kaiser-tracker',
               currentKaiserStatus: String(data?.Kaiser_Status || '').trim() || undefined,
+              reminderType,
             });
           });
         }

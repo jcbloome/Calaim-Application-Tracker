@@ -553,6 +553,14 @@ function MyTasksPageContent() {
 
   const handleCompleteTask = async (task: MyTask) => {
     if (task.status === 'completed') return;
+    if (String(task.reminderType || '').startsWith('kaiser_h2022_rn_reauth')) {
+      toast({
+        title: 'Update Kaiser re-auth field to clear',
+        description:
+          'Set Kaiser_H2022_Needs_RN_Reauth to "RN Visit Set with weekly reminder to look for Assessment tool from RN", then to "ISP Submitted" to fully clear this reminder.',
+      });
+      return;
+    }
     setIsCompletingTask((prev) => ({ ...prev, [task.id]: true }));
 
     try {
@@ -1644,7 +1652,7 @@ function MyTasksPageContent() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleCompleteTask(task)}
-                            disabled={isCompletingTask[task.id]}
+                            disabled={isCompletingTask[task.id] || String(task.reminderType || '').startsWith('kaiser_h2022_rn_reauth')}
                           >
                             <CheckCircle className={`h-4 w-4 ${isCompletingTask[task.id] ? 'animate-spin' : ''}`} />
                           </Button>
@@ -1854,7 +1862,7 @@ function MyTasksPageContent() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleCompleteTask(task)}
-                                    disabled={isCompletingTask[task.id]}
+                                    disabled={isCompletingTask[task.id] || String(task.reminderType || '').startsWith('kaiser_h2022_rn_reauth')}
                                   >
                                     <CheckCircle className={`h-4 w-4 ${isCompletingTask[task.id] ? 'animate-spin' : ''}`} />
                                   </Button>
