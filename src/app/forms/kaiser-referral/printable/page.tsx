@@ -74,14 +74,23 @@ function KaiserReferralPrintableContent() {
     [searchParams]
   );
 
-  const pathwayHref = useMemo(() => {
+  const backHref = useMemo(() => {
     if (formPrefill.returnTo) {
       return formPrefill.returnTo;
     }
     if (formPrefill.applicationId) {
       return `/pathway?applicationId=${encodeURIComponent(formPrefill.applicationId)}`;
     }
-    return '/applications';
+    return '/admin/kaiser-referral-generator';
+  }, [formPrefill.applicationId, formPrefill.returnTo]);
+
+  const backLabel = useMemo(() => {
+    const target = String(formPrefill.returnTo || '').toLowerCase();
+    if (target.includes('/admin/kaiser-referral-generator')) return 'Back to Standalone Generator';
+    if (target.includes('/admin/daily-tasks')) return 'Back to Daily Task Tracker';
+    if (target.includes('/admin/applications')) return 'Back to Application';
+    if (formPrefill.applicationId) return 'Back to Application Pathway';
+    return 'Back to Standalone Generator';
   }, [formPrefill.applicationId, formPrefill.returnTo]);
 
   const printableProps = useMemo(() => {
@@ -230,7 +239,7 @@ function KaiserReferralPrintableContent() {
       </div>
       <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
         <Button variant="outline" asChild>
-          <Link href={pathwayHref}>Back to Application Pathway</Link>
+          <Link href={backHref}>{backLabel}</Link>
         </Button>
       </div>
       <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 print:hidden">
