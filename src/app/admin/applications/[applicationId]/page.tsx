@@ -994,21 +994,21 @@ function PushToCaspioDialog({
       {
         key: 'contactPerson',
         label: 'Family/POA contact name',
-        required: true,
+        required: !skeletonPushEnabled,
         ready: Boolean(contactFirstName || contactLastName),
       },
-      { key: 'contactEmail', label: 'Family/POA email', required: true, ready: Boolean(contactEmail) },
-      { key: 'contactPhone', label: 'Family/POA phone', required: true, ready: Boolean(contactPhone) },
+      { key: 'contactEmail', label: 'Family/POA email', required: !skeletonPushEnabled, ready: Boolean(contactEmail) },
+      { key: 'contactPhone', label: 'Family/POA phone', required: !skeletonPushEnabled, ready: Boolean(contactPhone) },
       {
         key: 'eligibilityCheckComplete',
         label: 'Eligibility Check complete',
-        required: isKaiserHealthPlan,
+        required: isKaiserHealthPlan && !skeletonPushEnabled,
         ready: eligibilityCheckComplete,
       },
       {
         key: 'csSummaryComplete',
         label: 'CS Summary complete',
-        required: isKaiserHealthPlan,
+        required: isKaiserHealthPlan && !skeletonPushEnabled,
         ready: csSummaryComplete,
       },
       {
@@ -1493,7 +1493,9 @@ function PushToCaspioDialog({
                         </div>
                     ) : null}
                     <div className="text-xs text-muted-foreground">
-                        Contact person name, email, and phone are required before push so automatic reminder outreach has a valid recipient.
+                        {skeletonPushEnabled
+                          ? 'Skeleton push allows missing Family/POA contact and CS Summary completion. You can update these fields later after outreach.'
+                          : 'Contact person name, email, and phone are required before push so automatic reminder outreach has a valid recipient.'}
                     </div>
                     {isDraftLikeForPush ? (
                         <div className="text-xs text-muted-foreground">
