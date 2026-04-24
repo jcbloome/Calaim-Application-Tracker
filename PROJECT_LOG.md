@@ -17,6 +17,9 @@
 ## 🗓️ **Development History**
 
 ### **April 23, 2026 - Updates**
+- ✅ **Feature Added**: Added H2022 renewal alert automation via `/api/cron/h2022-rn-renewal-alerts` to flag members ending within 30 days, notify ALFT reviewers (email + staff notifications), and create daily task tracker items for RN rescheduling follow-up.
+- ✅ **Bug Fixed**: Fixed ALFT reviewer persistence in Staff Management when legacy email-keyed recipient settings normalize to UID keys by preserving merged `alftReviewer/alft` and other review toggles during migration.
+- ✅ **UI/UX**: Updated Authorization Tracker H2022 expiring logic to flag all members with H2022 ending within 30 days (not only <=14-day “expiring” status), including a visible row badge and filter-card count alignment.
 - ✅ **Bug Fixed**: Hardened Caspio push member matching for leading-zero identifiers (CIN/MRN) by preserving leading zeros in API where-clauses, and added clearer field-specific duplicate/blank error messaging when Caspio rejects a push due to unique/required identifier constraints.
 - ✅ **Feature Added**: Preserved original Kaiser intake source documents in member files by uploading both spreadsheet intake files and single-auth PDFs into each created application’s `forms` uploads (`original-intake`) so staff can always reference the original document later.
 - ✅ **UI/UX**: Applied the same clarity pass to Daily Task Tracker follow-up calendar tools by renaming the section for workflow context, adding numbered sync/import actions, and adding a recommended-order helper to reduce staff confusion during Caspio follow-up refreshes.

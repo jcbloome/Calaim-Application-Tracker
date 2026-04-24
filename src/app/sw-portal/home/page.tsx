@@ -21,8 +21,6 @@ import {
   Loader2,
   MapPin,
   RefreshCw,
-  ShieldAlert,
-  ShieldCheck,
   User,
   Circle,
 } from 'lucide-react';
@@ -75,12 +73,6 @@ type DraftVisit = {
   updatedAt?: string;
 };
 
-type CclStatus = {
-  rcfeId: string;
-  month: string;
-  acknowledged: boolean;
-};
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 const todayLocalKey = () => {
@@ -131,7 +123,6 @@ export default function SWHomePage() {
   const [facilities, setFacilities] = useState<RosterFacility[]>([]);
   const [monthStatuses, setMonthStatuses] = useState<Record<string, MonthVisitStatus>>({});
   const [drafts, setDrafts] = useState<DraftVisit[]>([]);
-  const [cclByRcfe, setCclByRcfe] = useState<Record<string, CclStatus>>({});
   const [expandedRcfes, setExpandedRcfes] = useState<Set<string>>(new Set());
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
@@ -200,24 +191,6 @@ export default function SWHomePage() {
           setDrafts(Array.isArray(draftsData?.drafts) ? draftsData.drafts : []);
         }
 
-        // CCL checks — fetch per RCFE after roster loads
-        const rcfeIds = nextFacilities.map((f) => f.id).filter(Boolean);
-        if (rcfeIds.length && idToken) {
-          const cclRes = await fetch(
-            `/api/sw-visits/rcfe-ccl-check?month=${month}&rcfeIds=${rcfeIds.map(encodeURIComponent).join(',')}`,
-            { headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store' }
-          );
-          if (cclRes.ok) {
-            const cclData = await cclRes.json().catch(() => ({} as any));
-            const checks: CclStatus[] = Array.isArray(cclData?.checks) ? cclData.checks : [];
-            const cclMap: Record<string, CclStatus> = {};
-            checks.forEach((c) => {
-              if (c.rcfeId) cclMap[c.rcfeId] = c;
-            });
-            setCclByRcfe(cclMap);
-          }
-        }
-
         setHasLoadedOnce(true);
       } catch (e: any) {
         const msg = e?.message || 'Failed to load your roster. Please try again.';
@@ -268,13 +241,7 @@ export default function SWHomePage() {
     [facilities, memberStatusMap]
   );
 
-  const totalCclDue = useMemo(() => facilities.length, [facilities]);
-  const completedCcl = useMemo(
-    () => Object.values(cclByRcfe).filter((c) => c.acknowledged).length,
-    [cclByRcfe]
-  );
-
-  const allDone = completedMembers === totalMembers && totalMembers > 0 && completedCcl === totalCclDue;
+  const allDone = completedMembers === totalMembers && totalMembers > 0;
 
   // ── Interactions ──────────────────────────────────────────────────────────────
 
@@ -347,10 +314,6 @@ export default function SWHomePage() {
             />
           </div>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
-              CCL checks: {completedCcl} / {totalCclDue} done
-            </span>
             {allDone && (
               <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                 All done — ready to wrap up!
@@ -392,8 +355,6 @@ export default function SWHomePage() {
       <div className="space-y-4">
         {facilities.map((facility) => {
           const isExpanded = expandedRcfes.has(facility.id);
-          const ccl = cclByRcfe[facility.id];
-          const cclDone = ccl?.acknowledged === true;
 
           const facilityMemberCount = facility.members.length;
           const facilityDoneCount = facility.members.filter((m) => {
@@ -433,20 +394,6 @@ export default function SWHomePage() {
                     <span className="text-muted-foreground">
                       {facilityDoneCount}/{facilityMemberCount} members
                     </span>
-                    {/* CCL badge */}
-                    {cclDone ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-800">
-                        <ShieldCheck className="h-3 w-3" /> CCL done
-                      </span>
-                    ) : (
-                      <Link
-                        href={`/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(facility.id)}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-200"
-                      >
-                        <ShieldAlert className="h-3 w-3" /> CCL needed
-                      </Link>
-                    )}
                   </div>
                 </div>
                 {isExpanded ? (

@@ -529,9 +529,7 @@ export default function SWQueuePage() {
                     </div>
                     <Button asChild size="sm" variant="outline">
                       <Link
-                        href={`/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(group.rcfeId)}&month=${encodeURIComponent(
-                          statusMonth
-                        )}&returnTo=${encodeURIComponent(`/sw-visit-verification?rcfeId=${encodeURIComponent(group.rcfeId)}`)}`}
+                        href={`/sw-visit-verification?rcfeId=${encodeURIComponent(group.rcfeId)}`}
                       >
                         Open RCFE <ExternalLink className="h-3.5 w-3.5 ml-2" />
                       </Link>
@@ -567,13 +565,9 @@ export default function SWQueuePage() {
                   </div>
                   <Button asChild size="sm" variant="outline">
                     <Link
-                      href={`/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(m.rcfeId)}&month=${encodeURIComponent(
-                        statusMonth
-                      )}&returnTo=${encodeURIComponent(
-                        `/sw-portal/sign-off?rcfeId=${encodeURIComponent(m.rcfeId)}${
-                          m.visitDay ? `&claimDay=${encodeURIComponent(m.visitDay)}` : ''
-                        }`
-                      )}`}
+                      href={`/sw-portal/sign-off?rcfeId=${encodeURIComponent(m.rcfeId)}${
+                        m.visitDay ? `&claimDay=${encodeURIComponent(m.visitDay)}` : ''
+                      }`}
                     >
                       Sign off <ExternalLink className="h-3.5 w-3.5 ml-2" />
                     </Link>

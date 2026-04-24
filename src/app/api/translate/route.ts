@@ -23,7 +23,6 @@ const PROTECTED_TRANSLATION_TERMS = [
   'Health Net',
   'HNRC',
   'RCFE',
-  'CCL',
   'ILS',
   'CalAIM',
 ];

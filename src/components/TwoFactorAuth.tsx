@@ -29,6 +29,8 @@ interface TwoFactorStatus {
   isVerified: boolean;
   sessionExpiry?: string;
   requiresVerification: boolean;
+  pendingCode?: boolean;
+  pendingCodeExpiresAt?: string;
   preferredMethod: 'email' | 'sms';
   email?: string;
   phone?: string;
@@ -76,6 +78,15 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
         if (data.isVerified) {
           setStep('verified');
           onVerificationComplete();
+        } else if (data.pendingCode) {
+          setStep('code');
+          const expiryIso = String(data.pendingCodeExpiresAt || '').trim();
+          if (expiryIso) {
+            const remaining = Math.max(0, Math.floor((new Date(expiryIso).getTime() - Date.now()) / 1000));
+            setTimeLeft(remaining);
+          } else {
+            setTimeLeft(0);
+          }
         } else if (data.requiresVerification) {
           setStep('method');
         }
@@ -167,10 +178,12 @@ export function TwoFactorAuth({ onVerificationComplete, required = false }: TwoF
         onVerificationComplete();
       }
     } catch (error: any) {
+      const details = String(error?.details || '').trim();
+      const message = String(error?.message || '').trim();
       toast({
         variant: 'destructive',
         title: 'Verification Failed',
-        description: error.message || 'Invalid verification code',
+        description: details || message || 'Invalid verification code',
       });
     } finally {
       setIsLoading(false);

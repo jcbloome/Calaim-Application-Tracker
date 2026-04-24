@@ -4,10 +4,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { useAuth, useFirestore } from '@/firebase';
+import { useAuth } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
-import { collection, getDocs, query, where } from 'firebase/firestore';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +21,6 @@ import {
   History,
   Home,
   LogOut,
-  ShieldCheck,
   UploadCloud,
 } from 'lucide-react';
 
@@ -31,7 +29,6 @@ import {
 type NavCounts = {
   month: string;
   rosterNeedsAction: number;
-  cclChecksMissing: number;
   updatedAtIso: string;
   ok: boolean;
 };
@@ -93,7 +90,6 @@ function NavItem({
 export function SWTopNav({ className }: { className?: string }) {
   const pathname = usePathname() || '/';
   const auth = useAuth();
-  const firestore = useFirestore();
   const { user, isSocialWorker } = useSocialWorker();
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
@@ -163,45 +159,15 @@ export function SWTopNav({ className }: { className?: string }) {
         if (flags.needsAction) rosterNeedsAction += 1;
       });
 
-      // 2) Missing CCL checks for draft claims
-      let cclChecksMissing = 0;
-      if (firestore) {
-        const q1 = query(collection(firestore, 'sw-claims'), where('socialWorkerEmail', '==', swEmail));
-        const snap = await getDocs(q1);
-        const drafts = snap.docs
-          .map((d) => ({ id: d.id, ...(d.data() as any) }))
-          .filter((c: any) => String(c?.status || 'draft').toLowerCase() === 'draft');
-
-        const groups = new Map<string, { rcfeId: string; month: string }>();
-        drafts.forEach((c: any) => {
-          const rcfeId = String(c?.rcfeId || '').trim();
-          const m = String(c?.claimMonth || '').trim();
-          if (rcfeId && m && m === monthKey) groups.set(`${rcfeId}_${m}`, { rcfeId, month: m });
-        });
-
-        const groupList = Array.from(groups.values()).slice(0, 30);
-        const checks = await Promise.all(
-          groupList.map(async (g) => {
-            const qs = new URLSearchParams({ rcfeId: g.rcfeId, month: g.month });
-            const res = await fetch(`/api/sw-visits/rcfe-ccl-check?${qs}`, {
-              headers: { authorization: `Bearer ${idToken}` },
-            });
-            const data = await res.json().catch(() => ({} as any));
-            return Boolean(res.ok && data?.success && data?.check);
-          })
-        );
-        cclChecksMissing = checks.filter((ok) => !ok).length;
-      }
-
-      setCounts({ month: monthKey, rosterNeedsAction, cclChecksMissing, updatedAtIso, ok: true });
+      setCounts({ month: monthKey, rosterNeedsAction, updatedAtIso, ok: true });
     } catch {
       setCounts((prev) =>
         prev
           ? { ...prev, updatedAtIso, ok: false }
-          : { month: currentMonthKey(), rosterNeedsAction: 0, cclChecksMissing: 0, updatedAtIso, ok: false }
+          : { month: currentMonthKey(), rosterNeedsAction: 0, updatedAtIso, ok: false }
       );
     }
-  }, [auth, firestore, isSocialWorker, swEmail]);
+  }, [auth, isSocialWorker, swEmail]);
 
   useEffect(() => {
     if (!isSocialWorker) return;
@@ -246,15 +212,6 @@ export function SWTopNav({ className }: { className?: string }) {
         icon={Home}
         label="Home"
         badge={counts?.rosterNeedsAction}
-        pathname={pathname}
-      />
-
-      {/* CCL Checks */}
-      <NavItem
-        href="/sw-portal/ccl-checks"
-        icon={ShieldCheck}
-        label="CCL Checks"
-        badge={counts?.cclChecksMissing}
         pathname={pathname}
       />
 

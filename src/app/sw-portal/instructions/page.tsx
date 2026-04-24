@@ -11,7 +11,7 @@ export default function SWInstructionsPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-bold">Social Worker Portal Primer</h1>
         <p className="text-sm text-muted-foreground">
-          Step-by-step guide for roster, questionnaires, sign-off, CCL checks, and claim submission.
+          Step-by-step guide for roster, questionnaires, sign-off, and claim submission.
         </p>
       </div>
 
@@ -37,8 +37,7 @@ export default function SWInstructionsPage() {
             <li>Open <strong>Roster</strong> and confirm today&apos;s assigned members.</li>
             <li>Complete each member&apos;s <strong>Questionnaire</strong> (drafts are okay while you work).</li>
             <li>At the end of that RCFE visit, complete <strong>Sign Off</strong> with RCFE staff + location.</li>
-            <li>Run required <strong>CCL checks</strong> (if pending) for draft claims.</li>
-            <li>Submit in <strong>Claims</strong> once sign-off/check requirements are complete.</li>
+            <li>Submit in <strong>Claims</strong> once sign-off is complete.</li>
           </ol>
         </CardContent>
       </Card>
@@ -158,28 +157,6 @@ export default function SWInstructionsPage() {
           <CardTitle className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">5</Badge>
             <span className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              CCL checks (before claim submission when required)
-            </span>
-          </CardTitle>
-          <CardDescription>Complete any missing RCFE CCL checks shown in your Tasks workflow.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ul className="list-disc pl-5 space-y-1 text-sm">
-            <li>If CCL is missing for an RCFE/month, complete it before final claim submission.</li>
-            <li>Use the <strong>CCL Checks</strong> page to clear missing items.</li>
-          </ul>
-          <Button asChild variant="outline">
-            <Link href="/sw-portal/ccl-checks">Open CCL Checks</Link>
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">6</Badge>
-            <span className="flex items-center gap-2">
               <DollarSign className="h-4 w-4" />
               Submit Claims
             </span>
@@ -200,7 +177,7 @@ export default function SWInstructionsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">7</Badge>
+            <Badge variant="secondary">6</Badge>
             <span className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4" />
               Status Log (current month + past months)

@@ -292,9 +292,6 @@ export async function POST(req: NextRequest) {
     const flagged = Boolean(visitData?.visitSummary?.flagged);
     const totalScore = Number(visitData?.visitSummary?.totalScore || 0);
 
-    // Community Care Licensing (CCLD) check is handled post-signoff (desktop flow),
-    // so drafting questionnaires should never block on it.
-
     const payload: Record<string, any> = {
       id: effectiveVisitId,
       visitId: effectiveVisitId,

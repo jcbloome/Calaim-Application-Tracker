@@ -32,6 +32,11 @@ interface StaffMember {
 
 const ILS_MEMBER_TARGET_EMAIL = 'jhernandez@ilshealth.com';
 const STAFF_CARD_EXCLUDED_EMAILS = new Set(['jocelyn@ilshealth.com']);
+const formatNamePart = (raw: unknown) =>
+    String(raw || '')
+        .trim()
+        .toLowerCase()
+        .replace(/(^|[\s'-])([a-z])/g, (_m, sep: string, chr: string) => `${sep}${chr.toUpperCase()}`);
 
 type ReviewRecipientSettings = {
     enabled: boolean;
@@ -185,8 +190,8 @@ export default function StaffManagementPage() {
                 return {
                     uid,
                     role: superAdminIds.has(uid) ? 'Super Admin' : adminIds.has(uid) ? 'Admin' : 'Staff',
-                    firstName: userData.firstName || '',
-                    lastName: userData.lastName || '',
+                    firstName: formatNamePart(userData.firstName || ''),
+                    lastName: formatNamePart(userData.lastName || ''),
                     email: userData.email || uid,
                     isKaiserStaff: Boolean(userData.isKaiserStaff),
                     isHealthNetStaff: Boolean(userData.isHealthNetStaff),
@@ -207,8 +212,8 @@ export default function StaffManagementPage() {
                     }
                     return {
                         ...member,
-                        firstName: member.firstName || firstNameFromAuth,
-                        lastName: member.lastName || lastNameFromAuth,
+                        firstName: member.firstName || formatNamePart(firstNameFromAuth),
+                        lastName: member.lastName || formatNamePart(lastNameFromAuth),
                         email: member.email || currentUser.email || member.uid
                     };
                 });
@@ -222,8 +227,8 @@ export default function StaffManagementPage() {
                 staff.push({
                     uid: currentUser.uid,
                     role: 'Super Admin',
-                    firstName,
-                    lastName,
+                    firstName: formatNamePart(firstName),
+                    lastName: formatNamePart(lastName),
                     email: currentUser.email || currentUser.uid
                 });
             }
@@ -477,8 +482,8 @@ export default function StaffManagementPage() {
                 },
                 body: JSON.stringify({
                     email: newStaffEmail,
-                    firstName: newStaffFirstName,
-                    lastName: newStaffLastName,
+                    firstName: formatNamePart(newStaffFirstName),
+                    lastName: formatNamePart(newStaffLastName),
                     role: newStaffRole,
                 })
             });

@@ -48,42 +48,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: `Claim is already ${status}` }, { status: 409 });
     }
 
-    // Require monthly Community Care Licensing check before claim submission.
-    const safeDocId = (value: string) =>
-      String(value || '')
-        .trim()
-        .slice(0, 240)
-        .replace(/[^\w.\-]+/g, '_')
-        .slice(0, 240);
-
-    const rcfeId = String(claim?.rcfeId || '').trim();
-    const month = String(claim?.claimMonth || '').trim();
-    let cclCheckId = '';
-    if (rcfeId && month && /^\d{4}-\d{2}$/.test(month)) {
-      cclCheckId = safeDocId(`${rcfeId}_${month}`);
-      const checkSnap = await adminDb.collection('rcfe_monthly_ccl_checks').doc(cclCheckId).get().catch(() => null);
-      if (!checkSnap || !checkSnap.exists) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Community Care Licensing monthly check is required before submitting this claim.',
-            requiresCclCheck: true,
-            rcfeId,
-            month,
-          },
-          { status: 409 }
-        );
-      }
-    }
-
     const now = admin.firestore.Timestamp.now();
     await claimRef.set(
       {
         status: 'submitted',
         submittedAt: now,
-        cclCheckCompleted: true,
-        requiresCclCheck: false,
-        ...(cclCheckId ? { cclCheckId } : {}),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -101,8 +70,6 @@ export async function POST(request: NextRequest) {
             claimStatus: 'submitted',
             claimSubmitted: true,
             claimSubmittedAt: now,
-            requiresCclCheck: false,
-            ...(cclCheckId ? { cclCheckId } : {}),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true }

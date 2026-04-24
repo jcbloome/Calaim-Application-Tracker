@@ -190,15 +190,16 @@ export const verify2FACode = onCall(async (request) => {
       throw new HttpsError('invalid-argument', 'Invalid verification code. Please try again.');
     }
     
-    await codeDoc.ref.delete();
-    
     // Set 2FA session (valid for 8 hours)
     const sessionExpiry = new Date(Date.now() + TWO_FA_SESSION_MS);
-    await db.collection('users').doc(request.auth.uid).update({
-      '2faVerified': true,
-      '2faVerifiedAt': admin.firestore.FieldValue.serverTimestamp(),
-      '2faSessionExpiry': admin.firestore.Timestamp.fromDate(sessionExpiry)
-    });
+    await db.collection('users').doc(request.auth.uid).set(
+      {
+        '2faVerified': true,
+        '2faVerifiedAt': admin.firestore.FieldValue.serverTimestamp(),
+        '2faSessionExpiry': admin.firestore.Timestamp.fromDate(sessionExpiry),
+      },
+      { merge: true }
+    );
     
     // Log successful 2FA
     await db.collection('2fa-logs').add({
@@ -210,6 +211,9 @@ export const verify2FACode = onCall(async (request) => {
       ipAddress: request.rawRequest.ip,
       userAgent: request.rawRequest.headers['user-agent']
     });
+
+    // Consume the code only after all success-side writes complete.
+    await codeDoc.ref.delete();
     
     console.log(`✅ 2FA verification successful for user: ${request.auth.uid}`);
     
@@ -260,12 +264,25 @@ export const check2FAStatus = onCall(async (request) => {
     // Check if 2FA session is still valid
     const sessionExpiry = userData['2faSessionExpiry']?.toDate();
     const isVerified = Boolean(userData['2faVerified']) && Boolean(sessionExpiry && sessionExpiry > now);
+
+    // If a code is still active for this user, return enough info for UI to
+    // resume the code-entry step after refresh/navigation.
+    const codeSnap = await db.collection('2fa-codes').doc(request.auth.uid).get();
+    const codeData = (codeSnap.exists ? codeSnap.data() : null) as TwoFactorCodeDoc | null;
+    const pendingExpiry = codeData?.expiresAt?.toDate?.();
+    const pendingCode =
+      Boolean(codeData) &&
+      !Boolean(codeData?.verified) &&
+      Boolean(pendingExpiry && pendingExpiry > now) &&
+      Number(codeData?.attempts || 0) < MAX_VERIFY_ATTEMPTS;
     
     return {
       success: true,
       isVerified: !!isVerified,
       sessionExpiry: sessionExpiry?.toISOString(),
       requiresVerification: !isVerified,
+      pendingCode,
+      pendingCodeExpiresAt: pendingExpiry?.toISOString(),
       preferredMethod: userData['2faPreferredMethod'] || 'email',
       email: userData.email,
       phone: userData.phone

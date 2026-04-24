@@ -7,14 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { format } from 'date-fns';
-import { AlertCircle, CheckCircle, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2, Trash2 } from 'lucide-react';
 
 type ClaimDoc = {
   id: string;
@@ -69,8 +68,6 @@ export default function SubmitClaimsPage() {
   const [selectedDraftClaimIds, setSelectedDraftClaimIds] = useState<Record<string, boolean>>({});
   const [submittingDrafts, setSubmittingDrafts] = useState(false);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
-  const [cclLoading, setCclLoading] = useState(false);
-  const [cclExistsByKey, setCclExistsByKey] = useState<Record<string, boolean>>({});
 
   const swEmail = String((user as any)?.email || '').trim();
 
@@ -180,82 +177,6 @@ export default function SubmitClaimsPage() {
       .sort((a, b) => (b.claimDate?.getTime?.() || 0) - (a.claimDate?.getTime?.() || 0));
   }, [claimsForMonth.draft]);
 
-  const cclMissingGroups = useMemo(() => {
-    const grouped = new Map<string, { rcfeId: string; rcfeLabel: string; month: string; count: number }>();
-    draftRows.forEach((r) => {
-      const rcfeId = String((r as any)?.rcfeId || '').trim();
-      const m = String((r as any)?.claimMonth || '').trim();
-      if (!rcfeId || !m) return;
-      const key = `${rcfeId}_${m}`;
-      if (cclExistsByKey[key]) return;
-      const ex = grouped.get(key);
-      const rcfeLabel = String((r as any)?.rcfeLabel || '').trim() || rcfeId;
-      if (ex) ex.count += 1;
-      else grouped.set(key, { rcfeId, rcfeLabel, month: m, count: 1 });
-    });
-    return Array.from(grouped.values()).sort((a, b) => String(b.month).localeCompare(String(a.month)));
-  }, [cclExistsByKey, draftRows]);
-
-  const cclBlockedByClaimId = useMemo(() => {
-    const map: Record<string, boolean> = {};
-    draftRows.forEach((r) => {
-      const rcfeId = String((r as any)?.rcfeId || '').trim();
-      const m = String((r as any)?.claimMonth || '').trim();
-      if (!rcfeId || !m) return;
-      const key = `${rcfeId}_${m}`;
-      if (!cclExistsByKey[key]) map[r.id] = true;
-    });
-    return map;
-  }, [cclExistsByKey, draftRows]);
-
-  useEffect(() => {
-    const run = async () => {
-      if (!auth?.currentUser) return;
-      if (claimsForMonth.draft.length === 0) {
-        setCclExistsByKey({});
-        return;
-      }
-      const unique = Array.from(
-        new Set(
-          claimsForMonth.draft
-            .map((c) => `${String(c.rcfeId || '').trim()}_${String(c.claimMonth || '').trim()}`)
-            .filter((k) => {
-              const parts = k.split('_');
-              return Boolean(parts[0] && parts[1]);
-            })
-        )
-      );
-      if (unique.length === 0) {
-        setCclExistsByKey({});
-        return;
-      }
-      setCclLoading(true);
-      try {
-        const idToken = await auth.currentUser.getIdToken();
-        const results = await Promise.all(
-          unique.map(async (key) => {
-            const [rcfeId, m] = key.split('_');
-            const qs = new URLSearchParams({ rcfeId, month: m });
-            const res = await fetch(`/api/sw-visits/rcfe-ccl-check?${qs.toString()}`, {
-              headers: { authorization: `Bearer ${idToken}` },
-            });
-            const data = await res.json().catch(() => ({} as any));
-            const exists = Boolean(res.ok && data?.success && data?.check);
-            return { key, exists };
-          })
-        );
-        const next: Record<string, boolean> = {};
-        results.forEach((r) => (next[r.key] = r.exists));
-        setCclExistsByKey(next);
-      } catch {
-        // Keep silent here; submit endpoint is the ultimate guardrail.
-      } finally {
-        setCclLoading(false);
-      }
-    };
-    void run();
-  }, [auth?.currentUser, claimsForMonth.draft]);
-
   const selectedDraftIds = useMemo(() => Object.keys(selectedDraftClaimIds).filter((k) => selectedDraftClaimIds[k]), [selectedDraftClaimIds]);
   const allDraftSelected = useMemo(() => draftRows.length > 0 && selectedDraftIds.length === draftRows.length, [draftRows.length, selectedDraftIds.length]);
 
@@ -266,7 +187,7 @@ export default function SubmitClaimsPage() {
     }
     const map: Record<string, boolean> = {};
     draftRows.forEach((c) => {
-      if (c.readyToSubmit && !cclBlockedByClaimId[c.id]) map[c.id] = true;
+      if (c.readyToSubmit) map[c.id] = true;
     });
     setSelectedDraftClaimIds(map);
   };
@@ -443,38 +364,6 @@ export default function SubmitClaimsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {cclMissingGroups.length > 0 ? (
-            <Alert>
-              <ShieldCheck className="h-4 w-4" />
-              <AlertDescription>
-                <div className="font-medium">CCL checks required before submitting</div>
-                <div className="text-sm text-muted-foreground">
-                  One monthly licensing check per RCFE covers all members at that home. Complete the check, then submit drafts.
-                </div>
-                <div className="mt-2 space-y-1">
-                  {cclMissingGroups.slice(0, 6).map((g) => (
-                    <div key={`${g.rcfeId}_${g.month}`} className="flex items-center justify-between gap-2">
-                      <div className="text-sm min-w-0 truncate">
-                        {g.rcfeLabel} • <span className="font-mono">{g.month}</span> • {g.count} draft(s)
-                      </div>
-                      <Button asChild size="sm" variant="outline">
-                        <Link
-                          href={`/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(g.rcfeId)}&month=${encodeURIComponent(g.month)}`}
-                        >
-                          Complete
-                        </Link>
-                      </Button>
-                    </div>
-                  ))}
-                  {cclMissingGroups.length > 6 ? (
-                    <div className="text-xs text-muted-foreground">+{cclMissingGroups.length - 6} more</div>
-                  ) : null}
-                </div>
-                {cclLoading ? <div className="mt-2 text-xs text-muted-foreground">Checking CCL status…</div> : null}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
           {isLoadingClaims ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -504,8 +393,7 @@ export default function SubmitClaimsPage() {
                 <TableBody>
                   {draftRows.map((r) => {
                     const checked = Boolean(selectedDraftClaimIds[r.id]);
-                    const cclBlocked = Boolean(cclBlockedByClaimId[r.id]);
-                    const disabled = !r.readyToSubmit || cclBlocked;
+                    const disabled = !r.readyToSubmit;
                     const canDelete = Boolean((r as any)?.canDelete);
                     return (
                       <TableRow key={r.id} className={disabled ? 'opacity-60' : undefined}>
@@ -525,15 +413,13 @@ export default function SubmitClaimsPage() {
                           {r.signedOffByLabel}
                           {!r.readyToSubmit ? (
                             <div className="text-[11px] text-muted-foreground">Waiting for RCFE sign-off</div>
-                          ) : cclBlocked ? (
-                            <div className="text-[11px] text-muted-foreground">Blocked until CCL check is complete</div>
                           ) : null}
                         </TableCell>
                         <TableCell className="text-right">{r.visitCount}</TableCell>
                         <TableCell className="font-semibold">{money(r.totalAmount)}</TableCell>
                         <TableCell>
-                          <Badge variant={cclBlocked ? 'outline' : r.readyToSubmit ? 'secondary' : 'outline'}>
-                            {cclBlocked ? 'blocked (CCL)' : r.readyToSubmit ? 'ready' : 'pending sign-off'}
+                          <Badge variant={r.readyToSubmit ? 'secondary' : 'outline'}>
+                            {r.readyToSubmit ? 'ready' : 'pending sign-off'}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">

@@ -216,6 +216,14 @@ See `desktop/CODE_SIGNING.md` and set:
   - Sends each Kaiser staff member a daily digest of open assignments not pushed to Caspio.
   - Writes matching reminders to `adminDailyTasks` so staff sees them in daily task counts.
 
+### Daily H2022 RN renewal alerts (ALFT reviewers)
+- Endpoint: `GET /api/cron/h2022-rn-renewal-alerts`
+- Auth header: `Authorization: Bearer ${CRON_SECRET}`
+- Behavior:
+  - Finds members with `Authorization_End_Date_H2022` within 30 days.
+  - Creates ALFT reviewer action items in `staff_notifications` and `adminDailyTasks`.
+  - Sends a daily digest email to each enabled ALFT reviewer.
+
 ### Nightly Kaiser tracker preload (retired)
 - The automated midnight preload scheduler has been removed.
 - Reason: webhook-driven cache updates + scheduled members-cache sync provide complete coverage post-backfill.

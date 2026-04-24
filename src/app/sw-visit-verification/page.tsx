@@ -100,6 +100,8 @@ interface MemberVisitQuestionnaire {
     safetyCompliance: number;
     careQuality: number;
     overallRating: number;
+    wouldPlaceRelative: boolean | null;
+    wouldNotPlaceReason: string;
     notes: string;
     flagForReview: boolean;
   };
@@ -153,6 +155,18 @@ type MemberEligibility = {
   lastSubmittedDate: string | null;
   nextEligibleDate: string | null;
   daysRemaining: number;
+};
+
+const formatPersonName = (raw: unknown) => {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  const base = value.includes('@') ? value.split('@')[0] : value;
+  return base
+    .replace(/[._]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/(^|[\s'-])([a-z])/g, (_m, sep: string, chr: string) => `${sep}${chr.toUpperCase()}`);
 };
 
 // Star Rating Component
@@ -282,6 +296,8 @@ function SWVisitVerificationContent() {
       safetyCompliance: 0,
       careQuality: 0,
       overallRating: 0,
+      wouldPlaceRelative: null,
+      wouldNotPlaceReason: '',
       notes: '',
       flagForReview: false
     },
@@ -435,8 +451,6 @@ function SWVisitVerificationContent() {
     Record<string, { visitId: string; flagged: boolean }>
   >({});
   const [loadingDraftVisits, setLoadingDraftVisits] = useState(false);
-  const [cclCheckExists, setCclCheckExists] = useState(false);
-  const [loadingCclCheck, setLoadingCclCheck] = useState(false);
   const [memberEligibilityById, setMemberEligibilityById] = useState<Record<string, MemberEligibility>>({});
   const [loadingMemberEligibility, setLoadingMemberEligibility] = useState(false);
 
@@ -445,15 +459,7 @@ function SWVisitVerificationContent() {
     if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     return new Date().toISOString().slice(0, 10);
   }, [questionnaire.visitDate]);
-  const cclMonthKey = useMemo(() => String(claimDayKey || '').slice(0, 7), [claimDayKey]);
-  const cclGateHref = useMemo(() => {
-    if (!selectedRCFE?.id) return '/sw-portal/ccl-checks';
-    return `/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(String(selectedRCFE.id || ''))}&month=${encodeURIComponent(
-      cclMonthKey
-    )}&returnTo=${encodeURIComponent(
-      `/sw-visit-verification?rcfeId=${encodeURIComponent(String(selectedRCFE.id || '').trim())}`
-    )}`;
-  }, [cclMonthKey, selectedRCFE?.id]);
+  const claimMonthKey = useMemo(() => String(claimDayKey || '').slice(0, 7), [claimDayKey]);
 
   const getIdToken = useCallback(async () => {
     try {
@@ -511,7 +517,7 @@ function SWVisitVerificationContent() {
       if (!idToken) throw new Error('Not signed in');
       const res = await fetch(
         `/api/sw-visits/draft-candidates?rcfeId=${encodeURIComponent(String(selectedRCFE.id))}&month=${encodeURIComponent(
-          cclMonthKey
+          claimMonthKey
         )}&rcfeName=${encodeURIComponent(String(selectedRCFE.name || ''))}`,
         { headers: { authorization: `Bearer ${idToken}` } }
       );
@@ -538,7 +544,7 @@ function SWVisitVerificationContent() {
     } finally {
       setLoadingDraftVisits(false);
     }
-  }, [cclMonthKey, claimDayKey, getMemberNameKey, getIdToken, isSocialWorker, selectedRCFE?.id, selectedRCFE?.name, user]);
+  }, [claimDayKey, claimMonthKey, getMemberNameKey, getIdToken, isSocialWorker, selectedRCFE?.id, selectedRCFE?.name, user]);
 
   const refreshMemberEligibility = useCallback(async () => {
     if (!isSocialWorker || !selectedRCFE?.id) {
@@ -579,38 +585,6 @@ function SWVisitVerificationContent() {
       setLoadingMemberEligibility(false);
     }
   }, [claimDayKey, getIdToken, isSocialWorker, selectedRCFE?.id, selectedRCFE?.members]);
-
-  const refreshCclCheck = useCallback(async () => {
-    if (!selectedRCFE?.id || !isSocialWorker) {
-      setCclCheckExists(false);
-      return;
-    }
-    if (!/^\d{4}-\d{2}$/.test(cclMonthKey)) {
-      setCclCheckExists(false);
-      return;
-    }
-    setLoadingCclCheck(true);
-    try {
-      const idToken = await getIdToken();
-      if (!idToken) {
-        setCclCheckExists(false);
-        return;
-      }
-      const qs = new URLSearchParams({
-        rcfeId: String(selectedRCFE.id || '').trim(),
-        month: cclMonthKey,
-      });
-      const res = await fetch(`/api/sw-visits/rcfe-ccl-check?${qs.toString()}`, {
-        headers: { authorization: `Bearer ${idToken}` },
-      });
-      const data = await res.json().catch(() => null);
-      setCclCheckExists(Boolean(res.ok && data?.success && data?.check));
-    } catch {
-      setCclCheckExists(false);
-    } finally {
-      setLoadingCclCheck(false);
-    }
-  }, [cclMonthKey, getIdToken, isSocialWorker, selectedRCFE?.id]);
 
   const downloadMonthlyVisitsCsv = useCallback(async () => {
     if (!user) return;
@@ -823,18 +797,16 @@ function SWVisitVerificationContent() {
     
     const rcfeScore = questionnaire.rcfeAssessment.facilityCondition +
                      questionnaire.rcfeAssessment.staffProfessionalism +
-                     questionnaire.rcfeAssessment.safetyCompliance +
                      questionnaire.rcfeAssessment.careQuality +
                      questionnaire.rcfeAssessment.overallRating;
     
     const rawTotal = wellbeingScore + satisfactionScore + rcfeScore;
-    const rawMax = nonResponsive ? 25 : 75;
+    const rawMax = nonResponsive ? 20 : 70;
     // Normalize to 0–100 for easier interpretation.
     const totalScore = rawMax > 0 ? Math.max(0, Math.min(100, Math.round((rawTotal / rawMax) * 100))) : 0;
     const hasCompleteScoringInputs =
       questionnaire.rcfeAssessment.facilityCondition > 0 &&
       questionnaire.rcfeAssessment.staffProfessionalism > 0 &&
-      questionnaire.rcfeAssessment.safetyCompliance > 0 &&
       questionnaire.rcfeAssessment.careQuality > 0 &&
       questionnaire.rcfeAssessment.overallRating > 0 &&
       (nonResponsive
@@ -937,15 +909,6 @@ function SWVisitVerificationContent() {
   );
 
   const handleMemberSelect = (member: Member) => {
-    if (!cclCheckExists) {
-      toast({
-        title: 'Licensing check required first',
-        description: 'Complete the RCFE monthly CCL check before starting questionnaires at this home.',
-        variant: 'destructive',
-      });
-      router.push(cclGateHref);
-      return;
-    }
     setSelectedMember(member);
     persistLastSelection({
       rcfeId: String(member?.rcfeId || '').trim(),
@@ -1151,6 +1114,8 @@ function SWVisitVerificationContent() {
         safetyCompliance: 0,
         careQuality: 0,
         overallRating: 0,
+        wouldPlaceRelative: null,
+        wouldNotPlaceReason: '',
         notes: '',
         flagForReview: false,
       },
@@ -1236,15 +1201,6 @@ function SWVisitVerificationContent() {
     void refreshMemberEligibility();
   }, [claimDayKey, isSocialWorker, refreshMemberEligibility, selectedRCFE?.id]);
 
-  useEffect(() => {
-    if (!isSocialWorker) return;
-    if (!selectedRCFE?.id) {
-      setCclCheckExists(false);
-      return;
-    }
-    void refreshCclCheck();
-  }, [cclMonthKey, isSocialWorker, refreshCclCheck, selectedRCFE?.id]);
-
   // Auto-load assignments on mount.
   useEffect(() => {
     fetchAssignedRCFEs({ quiet: true });
@@ -1327,6 +1283,8 @@ function SWVisitVerificationContent() {
             safetyCompliance: 0,
             careQuality: 0,
             overallRating: 0,
+            wouldPlaceRelative: null,
+            wouldNotPlaceReason: '',
             notes: '',
             flagForReview: false,
           },
@@ -1377,9 +1335,12 @@ function SWVisitVerificationContent() {
       case 5: // RCFE Assessment
         return questionnaire.rcfeAssessment.facilityCondition > 0 &&
                questionnaire.rcfeAssessment.staffProfessionalism > 0 &&
-               questionnaire.rcfeAssessment.safetyCompliance > 0 &&
                questionnaire.rcfeAssessment.careQuality > 0 &&
-               questionnaire.rcfeAssessment.overallRating > 0;
+               questionnaire.rcfeAssessment.overallRating > 0 &&
+               questionnaire.rcfeAssessment.wouldPlaceRelative !== null &&
+               (questionnaire.rcfeAssessment.wouldPlaceRelative
+                 ? true
+                 : String(questionnaire.rcfeAssessment.wouldNotPlaceReason || '').trim().length > 0);
       case 6: // SW Notes  
         return true; // Visit summary doesn't require additional input
       default:
@@ -1400,7 +1361,7 @@ function SWVisitVerificationContent() {
         if (questionnaire.memberConcerns.hasConcerns === true) return "Please describe the member's concerns";
         return nonResponsive ? "Member is marked non-responsive (concerns optional)" : "Please indicate if the member has concerns";
       case 5:
-        return "Please rate all aspects of the RCFE";
+        return "Please complete RCFE ratings and the overall MSW placement impression question";
       case 6:
         return "Please provide your observations";
       default:
@@ -1493,11 +1454,7 @@ function SWVisitVerificationContent() {
     if (questionnaire.rcfeAssessment.staffProfessionalism === 0) {
       errors.push("Staff professionalism rating is required");
     }
-    
-    if (questionnaire.rcfeAssessment.safetyCompliance === 0) {
-      errors.push("Safety compliance rating is required");
-    }
-    
+
     if (questionnaire.rcfeAssessment.careQuality === 0) {
       errors.push("Care quality rating is required");
     }
@@ -1505,8 +1462,15 @@ function SWVisitVerificationContent() {
     if (questionnaire.rcfeAssessment.overallRating === 0) {
       errors.push("Overall rating is required");
     }
-
-    // Community Care Licensing (CCLD) check is completed post-signoff on desktop.
+    if (questionnaire.rcfeAssessment.wouldPlaceRelative === null) {
+      errors.push("MSW placement impression is required");
+    }
+    if (
+      questionnaire.rcfeAssessment.wouldPlaceRelative === false &&
+      !String(questionnaire.rcfeAssessment.wouldNotPlaceReason || '').trim()
+    ) {
+      errors.push("Please explain why you would not place your relative there");
+    }
     
     // Note: Social worker observations are captured in rcfeAssessment.notes
     // No additional observations required for visit summary
@@ -1641,7 +1605,7 @@ function SWVisitVerificationContent() {
         ...questionnaire,
         socialWorkerUid: user?.uid || null,
         socialWorkerEmail: (user?.email || '').toLowerCase() || null,
-        socialWorkerName: user?.displayName || user?.email || questionnaire.socialWorkerId || null,
+        socialWorkerName: formatPersonName(user?.displayName || user?.email || questionnaire.socialWorkerId || null) || null,
         geolocation
       };
 
@@ -1774,12 +1738,12 @@ function SWVisitVerificationContent() {
     );
   }
 
-  const swName = String(
+  const swName = formatPersonName(
     (socialWorkerData as any)?.displayName ||
       (user as any)?.displayName ||
       (user as any)?.email ||
       'Social Worker'
-  ).trim() || 'Social Worker';
+  ) || 'Social Worker';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1959,7 +1923,7 @@ function SWVisitVerificationContent() {
                 </Button>
                 {completedVisitsForSelectedRcfe.length > 0 && (
                   <Button
-                    onClick={() => router.push(cclCheckExists ? `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(claimDayKey)}` : cclGateHref)}
+                    onClick={() => router.push(`/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(claimDayKey)}`)}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     <CheckCircle className="h-4 w-4 mr-2" />
@@ -1985,20 +1949,6 @@ function SWVisitVerificationContent() {
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!cclCheckExists ? (
-                <Alert className="border-amber-200 bg-amber-50">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <span>
-                      Complete RCFE licensing check first for <span className="font-mono">{cclMonthKey}</span> before questionnaires/sign-off.
-                    </span>
-                    <Button type="button" size="sm" variant="outline" onClick={() => router.push(cclGateHref)}>
-                      {loadingCclCheck ? 'Checking…' : 'Open licensing check'}
-                    </Button>
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-
               {completedVisitsForSelectedRcfe.length > 0 && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -2012,7 +1962,7 @@ function SWVisitVerificationContent() {
                       type="button"
                       size="sm"
                       className="bg-green-600 hover:bg-green-700"
-                      onClick={() => router.push(cclCheckExists ? `/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(claimDayKey)}` : cclGateHref)}
+                      onClick={() => router.push(`/sw-portal/sign-off?rcfeId=${encodeURIComponent(String(selectedRCFE?.id || ''))}&claimDay=${encodeURIComponent(claimDayKey)}`)}
                     >
                       <CheckCircle className="h-4 w-4 mr-2" />
                       Go to sign-off
@@ -2725,16 +2675,7 @@ function SWVisitVerificationContent() {
                       rcfeAssessment: { ...prev.rcfeAssessment, staffProfessionalism: value }
                     }))}
                   />
-                  
-                  <StarRating
-                    label="Safety Compliance"
-                    value={questionnaire.rcfeAssessment.safetyCompliance}
-                    onChange={(value) => setQuestionnaire(prev => ({
-                      ...prev,
-                      rcfeAssessment: { ...prev.rcfeAssessment, safetyCompliance: value }
-                    }))}
-                  />
-                  
+
                   <StarRating
                     label="Care Quality"
                     value={questionnaire.rcfeAssessment.careQuality}
@@ -2752,6 +2693,68 @@ function SWVisitVerificationContent() {
                       rcfeAssessment: { ...prev.rcfeAssessment, overallRating: value }
                     }))}
                   />
+
+                  <div className="space-y-2 rounded-md border p-3">
+                    <div className="text-sm font-medium">
+                      MSW overall impression of home: Would you place your relative here? <span className="text-red-500">*</span>
+                    </div>
+                    <div className="flex flex-wrap gap-4">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="wouldPlaceRelative"
+                          checked={questionnaire.rcfeAssessment.wouldPlaceRelative === true}
+                          onChange={() =>
+                            setQuestionnaire((prev) => ({
+                              ...prev,
+                              rcfeAssessment: {
+                                ...prev.rcfeAssessment,
+                                wouldPlaceRelative: true,
+                                wouldNotPlaceReason: '',
+                              },
+                            }))
+                          }
+                          className="h-4 w-4"
+                        />
+                        Yes
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="wouldPlaceRelative"
+                          checked={questionnaire.rcfeAssessment.wouldPlaceRelative === false}
+                          onChange={() =>
+                            setQuestionnaire((prev) => ({
+                              ...prev,
+                              rcfeAssessment: {
+                                ...prev.rcfeAssessment,
+                                wouldPlaceRelative: false,
+                              },
+                            }))
+                          }
+                          className="h-4 w-4"
+                        />
+                        No
+                      </label>
+                    </div>
+                    {questionnaire.rcfeAssessment.wouldPlaceRelative === false && (
+                      <Textarea
+                        placeholder="If not, why not?"
+                        value={String(questionnaire.rcfeAssessment.wouldNotPlaceReason || '')}
+                        onChange={(e) =>
+                          setQuestionnaire((prev) => ({
+                            ...prev,
+                            rcfeAssessment: { ...prev.rcfeAssessment, wouldNotPlaceReason: e.target.value },
+                          }))
+                        }
+                        className={
+                          !String(questionnaire.rcfeAssessment.wouldNotPlaceReason || '').trim()
+                            ? 'border-red-300 focus-visible:ring-red-300'
+                            : undefined
+                        }
+                      />
+                    )}
+                  </div>
                   
                   <Textarea
                     placeholder="Notes about RCFE assessment..."
@@ -2822,13 +2825,6 @@ function SWVisitVerificationContent() {
                         <span className="font-medium">This visit has been flagged for review</span>
                       </div>
                     )}
-                  </div>
-
-                  <div className="rounded-lg border bg-white p-4 space-y-2">
-                    <div className="text-sm font-semibold text-slate-900">Community Care Licensing (monthly RCFE check)</div>
-                    <div className="text-xs text-slate-600">
-                      Complete this before questionnaires/sign-off on the CCL Checks page.
-                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -3011,6 +3007,12 @@ function SWVisitVerificationContent() {
                       <Input
                         value={signOffData.rcfeStaffName}
                         onChange={(e) => setSignOffData(prev => ({...prev, rcfeStaffName: e.target.value}))}
+                        onBlur={(e) =>
+                          setSignOffData((prev) => ({
+                            ...prev,
+                            rcfeStaffName: formatPersonName(e.target.value),
+                          }))
+                        }
                         placeholder="Enter full name"
                         className="mt-1"
                       />
@@ -3119,7 +3121,8 @@ function SWVisitVerificationContent() {
                                 
                                 setSignOffData(prev => ({
                                   ...prev,
-                                  signature: `${prev.rcfeStaffName} - ${new Date().toLocaleString()}`,
+                                  rcfeStaffName: formatPersonName(prev.rcfeStaffName) || prev.rcfeStaffName,
+                                  signature: `${formatPersonName(prev.rcfeStaffName) || prev.rcfeStaffName} - ${new Date().toLocaleString()}`,
                                   signedAt: new Date().toISOString(),
                                   geolocation: {
                                     latitude: position.coords.latitude,
@@ -3320,7 +3323,7 @@ function SWVisitVerificationContent() {
                               socialWorkerId: user?.email || user?.displayName || 'Billy Buckhalter',
                               socialWorkerUid: user?.uid || null,
                               socialWorkerEmail: (user?.email || '').toLowerCase() || null,
-                              socialWorkerName: user?.displayName || user?.email || null,
+                              socialWorkerName: formatPersonName(user?.displayName || user?.email || null) || null,
                               claimDay,
                               completedVisits: rcfeVisits,
                               signOffData,
@@ -3359,7 +3362,7 @@ function SWVisitVerificationContent() {
                                 ...prev,
                                 [selectedRCFE.id]: {
                                   signedAt: String(signOffData.signedAt || new Date().toISOString()),
-                                  staffName: String(signOffData.rcfeStaffName || '').trim(),
+                                  staffName: formatPersonName(signOffData.rcfeStaffName) || String(signOffData.rcfeStaffName || '').trim(),
                                   memberIds: Array.from(
                                     new Set([
                                       ...((prev[selectedRCFE.id]?.memberIds || []) as string[]),

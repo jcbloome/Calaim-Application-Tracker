@@ -30,7 +30,6 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
 
   const mobileNavLinks = [
     { href: '/sw-portal/home', label: 'Home' },
-    { href: '/sw-portal/ccl-checks', label: 'CCL Checks' },
     { href: '/sw-portal/history', label: 'History' },
     { href: '/sw-portal/wrap-up', label: 'Wrap Up' },
     { href: '/sw-portal/alft-upload', label: 'ALFT Upload' },

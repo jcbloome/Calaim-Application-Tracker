@@ -408,15 +408,10 @@ export async function POST(req: NextRequest) {
               visitTime: '',
               notes: '',
             })),
-            // Post-signoff flow:
-            // - Claim remains a draft until the monthly CCL check is completed.
             status: 'draft',
             reviewStatus: 'not_submitted',
             paymentStatus: 'unpaid',
             hasFlaggedVisits,
-            requiresCclCheck: true,
-            cclCheckMonth: visitMonth,
-            cclCheckCompleted: false,
             signoffById: {
               [signOffId]: signoffSummary,
             },
@@ -506,8 +501,6 @@ export async function POST(req: NextRequest) {
               claimMonth: visitMonth,
               claimStatus: 'draft',
               claimSubmitted: false,
-              requiresCclCheck: true,
-              cclCheckMonth: visitMonth,
               claimVisitFeeRate: visitFeeRate,
               claimGasAmount: gasAmount,
               claimTotalAmount: totalAmount,

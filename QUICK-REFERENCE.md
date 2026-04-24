@@ -131,6 +131,7 @@ npm install && npm run dev
 | `GET /api/cron/ils-weekly-list` | Weekly | ILS weekly list email |
 | `GET /api/cron/kaiser-rcfe-weekly-confirm` | Weekly | Kaiser RCFE confirmations |
 | `GET /api/cron/kaiser-staff-process-digest` | Daily | Staff inactivity reminders + Kaiser daily digest |
+| `GET /api/cron/h2022-rn-renewal-alerts` | Daily | Alert ALFT reviewers for H2022 ending within 30 days |
 | `GET /api/cron/reminders` | As needed | General reminders |
 
 All require header: `Authorization: Bearer {CRON_SECRET}`

@@ -231,15 +231,13 @@ function SwAlftInstructionBox() {
   return (
     <Alert className="print:hidden border-blue-200 bg-blue-50">
       <AlertDescription className="space-y-3 text-blue-950">
-        <div className="font-semibold">ALFT and CCL guidance (SW portal)</div>
+        <div className="font-semibold">ALFT guidance (SW portal)</div>
         <ul className="list-disc space-y-1.5 pl-5 text-sm">
           <li>Complete all ALFT sections before submitting. Do not leave required clinical sections blank.</li>
           <li>For level-of-care scoring, evaluate the member on their worst day, not their best day, because needs fluctuate.</li>
           <li>In the ALFT commentary section, include only pertinent health-care information that supports tier-level decisions.</li>
           <li>Avoid non-clinical commentary (for example, "member seems happy") unless it directly affects care needs or safety.</li>
-          <li>For CCL checks, capture violation counts and flag only severe events (for example, abuse, neglect, serious elopement risk).</li>
-          <li>Do not escalate minor infractions alone (for example, water temperature findings) unless they create clear member safety risk.</li>
-          <li>CCL reports are facility-wide; when flagging to the team, prioritize issues likely relevant to our CalAIM member.</li>
+          <li>Do not escalate minor infractions alone unless they create a clear member safety risk.</li>
         </ul>
       </AlertDescription>
     </Alert>

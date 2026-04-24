@@ -4,12 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
-import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, ShieldCheck, FileSignature, FlagTriangleRight } from 'lucide-react';
+import { Loader2, FileSignature, FlagTriangleRight } from 'lucide-react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 
 type ClaimDoc = {
@@ -24,15 +23,6 @@ type ClaimDoc = {
   visitIds?: string[];
   signoffById?: Record<string, any>;
   memberVisits?: any[];
-};
-
-type CclGroup = {
-  key: string; // rcfeId_month
-  rcfeId: string;
-  rcfeName: string;
-  month: string; // YYYY-MM
-  draftClaimIds: string[];
-  checkExists: boolean;
 };
 
 const normalize = (v: unknown) =>
@@ -59,7 +49,6 @@ const claimReadyToSubmit = (c: ClaimDoc) => {
 export default function SwEndOfDayPage() {
   const auth = useAuth();
   const firestore = useFirestore();
-  const { toast } = useToast();
   const { user, isSocialWorker, isLoading: swLoading } = useSocialWorker();
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
@@ -67,7 +56,6 @@ export default function SwEndOfDayPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [claims, setClaims] = useState<ClaimDoc[]>([]);
-  const [cclExistsByKey, setCclExistsByKey] = useState<Record<string, boolean>>({});
 
   const refresh = useCallback(async () => {
     if (!firestore || !swEmail) return;
@@ -104,84 +92,6 @@ export default function SwEndOfDayPage() {
   const flaggedDrafts = useMemo(() => {
     return draftClaimsForMonth.filter((c) => Boolean(c.hasFlaggedVisits));
   }, [draftClaimsForMonth]);
-
-  const cclGroups = useMemo(() => {
-    const grouped = new Map<string, { rcfeId: string; rcfeName: string; month: string; ids: string[] }>();
-    draftClaimsForMonth.forEach((c) => {
-      const rcfeId = String(c.rcfeId || '').trim();
-      const m = String(c.claimMonth || '').trim();
-      const rcfeName = String(c.rcfeName || '').trim() || rcfeId;
-      if (!rcfeId || !m) return;
-      const key = `${rcfeId}_${m}`;
-      const ex = grouped.get(key);
-      if (ex) ex.ids.push(String(c.id));
-      else grouped.set(key, { rcfeId, rcfeName, month: m, ids: [String(c.id)] });
-    });
-    return Array.from(grouped.values()).map((g) => ({
-      key: `${g.rcfeId}_${g.month}`,
-      rcfeId: g.rcfeId,
-      rcfeName: g.rcfeName,
-      month: g.month,
-      draftClaimIds: g.ids,
-      checkExists: Boolean(cclExistsByKey[`${g.rcfeId}_${g.month}`]),
-    })) as CclGroup[];
-  }, [cclExistsByKey, draftClaimsForMonth]);
-
-  const missingCclGroups = useMemo(() => cclGroups.filter((g) => !g.checkExists), [cclGroups]);
-
-  const blockedReadyClaims = useMemo(() => {
-    const missing = new Set(missingCclGroups.map((g) => g.key));
-    return draftClaimsForMonth.filter((c) => {
-      if (!claimReadyToSubmit(c)) return false;
-      const rcfeId = String(c.rcfeId || '').trim();
-      const m = String(c.claimMonth || '').trim();
-      if (!rcfeId || !m) return false;
-      return missing.has(`${rcfeId}_${m}`);
-    });
-  }, [draftClaimsForMonth, missingCclGroups]);
-
-  const loadCclExistence = useCallback(async () => {
-    if (!auth?.currentUser) return;
-    const unique = Array.from(
-      new Set(
-        draftClaimsForMonth
-          .map((c) => `${String(c.rcfeId || '').trim()}_${String(c.claimMonth || '').trim()}`)
-          .filter((k) => k && !k.startsWith('_') && k.split('_').length === 2)
-      )
-    );
-    if (unique.length === 0) {
-      setCclExistsByKey({});
-      return;
-    }
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const results = await Promise.all(
-        unique.map(async (key) => {
-          const [rcfeId, m] = key.split('_');
-          const qs = new URLSearchParams({ rcfeId, month: m });
-          const res = await fetch(`/api/sw-visits/rcfe-ccl-check?${qs.toString()}`, {
-            headers: { authorization: `Bearer ${idToken}` },
-          });
-          const data = await res.json().catch(() => ({} as any));
-          const exists = Boolean(res.ok && data?.success && data?.check);
-          return { key, exists };
-        })
-      );
-      const map: Record<string, boolean> = {};
-      results.forEach((r) => (map[r.key] = r.exists));
-      setCclExistsByKey(map);
-    } catch (e: any) {
-      toast({ title: 'CCL check status unavailable', description: e?.message || 'Could not verify CCL checks.' });
-    }
-  }, [auth?.currentUser, draftClaimsForMonth, toast]);
-
-  useEffect(() => {
-    if (!isSocialWorker || swLoading) return;
-    void loadCclExistence();
-  }, [isSocialWorker, loadCclExistence, swLoading]);
-
-  const openCclUrl = (g: CclGroup) =>
-    `/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(g.rcfeId)}&month=${encodeURIComponent(g.month)}`;
 
   if (swLoading) {
     return (
@@ -225,7 +135,7 @@ export default function SwEndOfDayPage() {
         </Alert>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
@@ -248,41 +158,6 @@ export default function SwEndOfDayPage() {
                 ))}
                 <Button asChild className="w-full" variant="outline">
                   <Link href="/sw-portal/sign-off">Go to Sign Off</Link>
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4" />
-              CCL checks required
-            </CardTitle>
-            <CardDescription>One monthly check per RCFE covers all members at that home.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Badge variant={missingCclGroups.length ? 'destructive' : 'secondary'}>{missingCclGroups.length} required</Badge>
-            {missingCclGroups.length === 0 ? (
-              <div className="text-sm text-muted-foreground pt-2">All set for this month.</div>
-            ) : (
-              <div className="space-y-2 pt-2">
-                {missingCclGroups.slice(0, 6).map((g) => (
-                  <div key={g.key} className="rounded-md border p-2 flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{g.rcfeName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        <span className="font-mono">{g.month}</span> • Draft claims: {g.draftClaimIds.length}
-                      </div>
-                    </div>
-                    <Button asChild size="sm">
-                      <Link href={openCclUrl(g)}>Complete</Link>
-                    </Button>
-                  </div>
-                ))}
-                <Button asChild className="w-full" variant="outline">
-                  <Link href="/sw-portal/ccl-checks">Open CCL Checks</Link>
                 </Button>
               </div>
             )}
@@ -318,13 +193,6 @@ export default function SwEndOfDayPage() {
         </Card>
       </div>
 
-      {blockedReadyClaims.length > 0 ? (
-        <Alert>
-          <AlertDescription>
-            {blockedReadyClaims.length} draft claim(s) are ready but blocked until the monthly CCL check is completed for their RCFE.
-          </AlertDescription>
-        </Alert>
-      ) : null}
     </div>
   );
 }

@@ -84,8 +84,6 @@ export default function SWSignOffPage() {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
   const [overrideSubmitting, setOverrideSubmitting] = useState(false);
-  const [cclCheckExists, setCclCheckExists] = useState(false);
-  const [loadingCclCheck, setLoadingCclCheck] = useState(false);
   const [eligibilityByMemberId, setEligibilityByMemberId] = useState<Record<string, MemberEligibility>>({});
   const [loadingEligibility, setLoadingEligibility] = useState(false);
 
@@ -102,14 +100,6 @@ export default function SWSignOffPage() {
       return Boolean(row && !row.eligible && row.blockedReason === 'within_30_days');
     });
   }, [eligibilityByMemberId, selectedVisits]);
-  // Kept as derived data placeholder for future UI (e.g. flagged warnings).
-  const cclMonth = String(claimDay || '').slice(0, 7);
-  const cclGateHref = `/sw-portal/ccl-checks?rcfeId=${encodeURIComponent(rcfeId)}&month=${encodeURIComponent(
-    cclMonth
-  )}&returnTo=${encodeURIComponent(
-    `/sw-portal/sign-off?rcfeId=${encodeURIComponent(rcfeId)}&claimDay=${encodeURIComponent(claimDay)}`
-  )}`;
-
   const loadRcfes = useCallback(async () => {
     if (!swEmail) return;
     setLoadingRcfes(true);
@@ -229,30 +219,6 @@ export default function SWSignOffPage() {
     });
   }, [blockedVisits]);
 
-  useEffect(() => {
-    const checkCcl = async () => {
-      if (!auth?.currentUser || !rcfeId || !/^\d{4}-\d{2}$/.test(cclMonth)) {
-        setCclCheckExists(false);
-        return;
-      }
-      setLoadingCclCheck(true);
-      try {
-        const idToken = await auth.currentUser.getIdToken();
-        const qs = new URLSearchParams({ rcfeId, month: cclMonth });
-        const res = await fetch(`/api/sw-visits/rcfe-ccl-check?${qs.toString()}`, {
-          headers: { authorization: `Bearer ${idToken}` },
-        });
-        const data = await res.json().catch(() => ({} as any));
-        setCclCheckExists(Boolean(res.ok && data?.success && data?.check));
-      } catch {
-        setCclCheckExists(false);
-      } finally {
-        setLoadingCclCheck(false);
-      }
-    };
-    void checkCcl();
-  }, [auth?.currentUser, cclMonth, rcfeId]);
-
   const refreshGeoPermission = async () => {
     try {
       const anyNav: any = navigator as any;
@@ -358,7 +324,6 @@ export default function SWSignOffPage() {
     staffName.trim() &&
     staffTitle.trim() &&
     signature.trim() &&
-    cclCheckExists &&
     blockedVisits.length === 0 &&
     (Boolean(geolocation) || geoOverrideEnabled) &&
     !submitting;
@@ -421,7 +386,7 @@ export default function SWSignOffPage() {
 
       toast({
         title: 'Submitted',
-        description: `Submitted ${selectedVisits.length} questionnaire(s). Next: complete the monthly CCL check to auto-submit the claim(s).`,
+        description: `Submitted ${selectedVisits.length} questionnaire(s).`,
       });
 
       setStaffName('');
@@ -434,10 +399,9 @@ export default function SWSignOffPage() {
       setGeoOverrideReason('');
       await loadCandidates();
 
-      // After a successful submission, the next action is usually to select another RCFE/member.
-      // Route to CCL Checks (desktop-friendly last step).
+      // After a successful submission, return to Home.
       setTimeout(() => {
-        router.push('/sw-portal/ccl-checks');
+        router.push('/sw-portal/home');
       }, 400);
     } catch (e: any) {
       setError(e?.message || 'Failed to submit.');
@@ -584,26 +548,6 @@ export default function SWSignOffPage() {
           </div>
         </CardContent>
       </Card>
-
-      {!cclCheckExists ? (
-        <Alert className="border-amber-200 bg-amber-50">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <span>
-              Complete monthly CCL check first for <span className="font-mono">{cclMonth || 'selected month'}</span> before questionnaire sign-off.
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => router.push(cclGateHref)}
-              disabled={!rcfeId || !/^\d{4}-\d{2}$/.test(cclMonth)}
-            >
-              {loadingCclCheck ? 'Checking…' : 'Open CCL check'}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : null}
 
       <Card>
         <CardHeader>

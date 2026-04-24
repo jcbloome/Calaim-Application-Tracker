@@ -19,8 +19,6 @@ import {
   Loader2,
   RefreshCw,
   Send,
-  ShieldAlert,
-  ShieldCheck,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -37,12 +35,6 @@ type ClaimDoc = {
   visitIds?: string[];
   signoffById?: Record<string, any>;
   hasFlaggedVisits?: boolean;
-};
-
-type CclStatus = {
-  rcfeId: string;
-  month: string;
-  acknowledged: boolean;
 };
 
 type MonthExportRow = {
@@ -118,7 +110,6 @@ export default function WrapUpPage() {
 
   const [monthRows, setMonthRows] = useState<MonthExportRow[]>([]);
   const [claims, setClaims] = useState<ClaimDoc[]>([]);
-  const [cclByKey, setCclByKey] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
 
   // ── Load data ─────────────────────────────────────────────────────────────────
@@ -152,23 +143,6 @@ export default function WrapUpPage() {
         (c) => String(c.claimMonth || '').slice(0, 7) === month
       );
       setClaims(thisMonthClaims);
-
-      // CCL checks for the RCFEs in this month's claims
-      const rcfeIds = [...new Set(thisMonthClaims.map((c) => String(c.rcfeId || '').trim()).filter(Boolean))];
-      if (rcfeIds.length) {
-        const cclRes = await fetch(
-          `/api/sw-visits/rcfe-ccl-check?month=${month}&rcfeIds=${rcfeIds.map(encodeURIComponent).join(',')}`,
-          { headers: { Authorization: `Bearer ${idToken}` }, cache: 'no-store' }
-        );
-        if (cclRes.ok) {
-          const cclData = await cclRes.json().catch(() => ({} as any));
-          const map: Record<string, boolean> = {};
-          (Array.isArray(cclData?.checks) ? cclData.checks : []).forEach((c: CclStatus) => {
-            if (c.rcfeId) map[`${c.rcfeId}_${month}`] = Boolean(c.acknowledged);
-          });
-          setCclByKey(map);
-        }
-      }
 
       setHasLoadedOnce(true);
     } catch (e: any) {
@@ -204,25 +178,8 @@ export default function WrapUpPage() {
     [draftClaims]
   );
 
-  const rcfesWithPendingCcl = useMemo(
-    () =>
-      [...new Set(draftClaims.map((c) => String(c.rcfeId || '').trim()).filter(Boolean))].filter(
-        (rcfeId) => !cclByKey[`${rcfeId}_${month}`]
-      ),
-    [cclByKey, draftClaims, month]
-  );
-
-  const rcfeNames = useMemo(() => {
-    const map: Record<string, string> = {};
-    claims.forEach((c) => {
-      if (c.rcfeId) map[c.rcfeId] = String(c.rcfeName || c.rcfeId);
-    });
-    return map;
-  }, [claims]);
-
-  const allCclDone = rcfesWithPendingCcl.length === 0;
   const allSignedOff = notYetSigned.length === 0;
-  const canSubmit = Boolean(canSubmitClaims) && allCclDone && readyToSubmit.length > 0;
+  const canSubmit = Boolean(canSubmitClaims) && readyToSubmit.length > 0;
 
   // ── Submit claims ─────────────────────────────────────────────────────────────
 
@@ -341,50 +298,10 @@ export default function WrapUpPage() {
             </div>
           </section>
 
-          {/* ── Step 2: CCL checks ── */}
+          {/* ── Step 2: Submit claims ── */}
           <section className="rounded-xl border bg-card p-5 shadow-sm">
             <div className="flex items-start gap-3">
-              <StepBadge step={2} done={allCclDone} />
-              <div className="flex-1">
-                <h2 className="font-semibold">CCL license checks</h2>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  Confirm RCFE licensing status for each facility.
-                </p>
-                {rcfesWithPendingCcl.length > 0 ? (
-                  <>
-                    <div className="mt-3 space-y-1.5">
-                      {rcfesWithPendingCcl.map((rcfeId) => (
-                        <div key={rcfeId} className="flex items-center gap-2 text-sm">
-                          <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
-                          <span className="truncate">{rcfeNames[rcfeId] || rcfeId}</span>
-                          <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 text-[10px]">
-                            Pending
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                    <Button asChild size="sm" className="mt-3 gap-1.5" variant="outline">
-                      <Link href="/sw-portal/ccl-checks">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        Complete CCL Checks
-                      </Link>
-                    </Button>
-                  </>
-                ) : draftClaims.length > 0 ? (
-                  <p className="mt-2 flex items-center gap-1.5 text-sm text-green-700">
-                    <ShieldCheck className="h-4 w-4" /> All CCL checks complete
-                  </p>
-                ) : (
-                  <p className="mt-2 text-sm text-muted-foreground">No active drafts — nothing to check.</p>
-                )}
-              </div>
-            </div>
-          </section>
-
-          {/* ── Step 3: Submit claims ── */}
-          <section className="rounded-xl border bg-card p-5 shadow-sm">
-            <div className="flex items-start gap-3">
-              <StepBadge step={3} done={submittedClaims.length > 0 && draftClaims.length === 0} />
+              <StepBadge step={2} done={submittedClaims.length > 0 && draftClaims.length === 0} />
               <div className="flex-1">
                 <h2 className="font-semibold">Submit claims</h2>
 
@@ -434,16 +351,6 @@ export default function WrapUpPage() {
                       </div>
                     )}
                   </div>
-                )}
-
-                {/* Blocking notice */}
-                {!allCclDone && draftClaims.length > 0 && (
-                  <Alert className="mt-3 border-amber-200 bg-amber-50">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    <AlertDescription className="text-amber-800 text-sm">
-                      Complete all CCL checks above before submitting.
-                    </AlertDescription>
-                  </Alert>
                 )}
 
                 {!canSubmitClaims && (
