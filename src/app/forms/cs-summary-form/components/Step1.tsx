@@ -51,13 +51,38 @@ export default function Step1({
   const memberLanguage = watch('memberLanguage');
   const hasLegalRep = watch('hasLegalRep');
   const isPrimaryContactSameAsReferrer = watch('isPrimaryContactSameAsReferrer');
+  const bestContactFirstName = watch('bestContactFirstName');
+  const bestContactLastName = watch('bestContactLastName');
+  const bestContactRelationship = watch('bestContactRelationship');
+  const bestContactPhone = watch('bestContactPhone');
   const bestContactEmail = watch('bestContactEmail');
   const secondaryContactEmail = watch('secondaryContactEmail');
+  const repFirstName = watch('repFirstName');
+  const repLastName = watch('repLastName');
+  const repRelationship = watch('repRelationship');
+  const repPhone = watch('repPhone');
   const repEmail = watch('repEmail');
   const referrerEmail = watch('referrerEmail');
   const agency = watch('agency');
   const submitterAlsoReceivesDocRequests = watch('submitterAlsoReceivesDocRequests');
   const [isMemberLanguageOther, setIsMemberLanguageOther] = useState(false);
+
+  const copyRepFromPrimaryContact = () => {
+    setValue('repFirstName', String(getValues('bestContactFirstName') || '').trim());
+    setValue('repLastName', String(getValues('bestContactLastName') || '').trim());
+    setValue('repRelationship', String(getValues('bestContactRelationship') || '').trim());
+    setValue('repPhone', String(getValues('bestContactPhone') || '').trim());
+    setValue('repEmail', String(getValues('bestContactEmail') || '').trim());
+    clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
+  };
+
+  const isNoCapacityRepSameAsPrimary =
+    hasLegalRep === 'no_capacity_has_rep' &&
+    String(repFirstName || '').trim() === String(bestContactFirstName || '').trim() &&
+    String(repLastName || '').trim() === String(bestContactLastName || '').trim() &&
+    String(repRelationship || '').trim() === String(bestContactRelationship || '').trim() &&
+    String(repPhone || '').trim() === String(bestContactPhone || '').trim() &&
+    String(repEmail || '').trim() === String(bestContactEmail || '').trim();
 
   useEffect(() => {
     if (memberDob && /^\d{2}\/\d{2}\/\d{4}$/.test(memberDob)) {
@@ -80,12 +105,7 @@ export default function Step1({
     const isSameAsPrimary = hasLegalRep === 'same_as_primary';
     
     if (isSameAsPrimary) {
-        setValue('repFirstName', getValues('bestContactFirstName'));
-        setValue('repLastName', getValues('bestContactLastName'));
-        setValue('repRelationship', getValues('bestContactRelationship'));
-        setValue('repPhone', getValues('bestContactPhone'));
-        setValue('repEmail', getValues('bestContactEmail'));
-        clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
+        copyRepFromPrimaryContact();
     } else {
         const currentRepValues = {
             repFirstName: getValues('repFirstName'),
@@ -103,7 +123,7 @@ export default function Step1({
         };
 
         // Only clear if the values were previously auto-filled
-        if (JSON.stringify(currentRepValues) === JSON.stringify(bestContactValues)) {
+        if (hasLegalRep !== 'no_capacity_has_rep' && JSON.stringify(currentRepValues) === JSON.stringify(bestContactValues)) {
             setValue('repFirstName', '');
             setValue('repLastName', '');
             setValue('repRelationship', '');
@@ -231,29 +251,59 @@ export default function Step1({
       <div className="p-4 border rounded-md space-y-4">
         <h3 className="font-medium">Representative's Contact Info</h3>
         <p className="text-sm text-muted-foreground">If the member does not have a legal representative, you can leave these fields blank.</p>
+        {hasLegalRep === 'no_capacity_has_rep' ? (
+          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+            <FormControl>
+              <Checkbox
+                checked={isNoCapacityRepSameAsPrimary}
+                onCheckedChange={(checked) => {
+                  if (checked === true) {
+                    copyRepFromPrimaryContact();
+                    return;
+                  }
+                  if (isNoCapacityRepSameAsPrimary) {
+                    setValue('repFirstName', '');
+                    setValue('repLastName', '');
+                    setValue('repRelationship', '');
+                    setValue('repPhone', '');
+                    setValue('repEmail', '');
+                  }
+                }}
+              />
+            </FormControl>
+            <div className="space-y-1 leading-none">
+              <FormLabel className="text-sm font-medium">
+                Legal representative contact info is the same as Primary Contact
+              </FormLabel>
+              <FormDescription className="text-xs text-muted-foreground">
+                Use this when the member lacks capacity and the legal representative is also the primary contact.
+              </FormDescription>
+            </div>
+          </FormItem>
+        ) : null}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField control={control} name="repFirstName" render={({ field }) => (
-            <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+            <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={control} name="repLastName" render={({ field }) => (
-            <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+            <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
           )} />
         </div>
         <FormField control={control} name="repRelationship" render={({ field }) => (
-          <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+          <FormItem><FormLabel>Relationship</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
         )} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField control={control} name="repPhone" render={({ field }) => (
             <FormItem>
               <FormLabel>Phone</FormLabel>
-              <FormControl><PhoneInput {...field} /></FormControl>
+              <FormControl><PhoneInput {...field} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} /></FormControl>
               <FormMessage />
             </FormItem>
           )} />
           <FormField control={control} name="repEmail" render={({ field }) => (
             <FormItem>
               <FormLabel>Email</FormLabel>
-              <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
+              <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={isNoCapacityRepSameAsPrimary || hasLegalRep === 'same_as_primary'} /></FormControl>
               <FormDescription>If no email, enter "N/A".</FormDescription>
               <FormMessage />
             </FormItem>
