@@ -207,6 +207,11 @@ export type FormStatus = {
   fileName?: string | null;
   filePath?: string | null;
   downloadURL?: string | null;
+  uploadedFiles?: Array<{
+    fileName?: string | null;
+    filePath?: string | null;
+    downloadURL?: string | null;
+  }> | null;
   signerType?: 'member' | 'representative' | null;
   signerName?: string | null;
   signerRelationship?: string | null;

@@ -713,26 +713,46 @@ function PathwayPageContent() {
     try {
         // If this is a revision upload, remove the prior file first so the new
         // upload replaces the original document in the pathway record.
-        if (replaceExistingForm?.filePath) {
+        const existingUploadPaths = [
+          String(replaceExistingForm?.filePath || '').trim(),
+          ...((Array.isArray((replaceExistingForm as any)?.uploadedFiles)
+            ? (replaceExistingForm as any).uploadedFiles
+            : []
+          )
+            .map((item: any) => String(item?.filePath || '').trim())
+            .filter(Boolean)),
+        ].filter(Boolean);
+        if (existingUploadPaths.length > 0) {
           try {
-            const previousRef = ref(storage, replaceExistingForm.filePath);
-            await deleteObject(previousRef);
+            await Promise.all(
+              existingUploadPaths.map((path) => deleteObject(ref(storage, path)).catch(() => undefined))
+            );
           } catch {
             // Best effort only. Continue so metadata still points to the newest file.
           }
         }
         console.log('Attempting upload with user:', user?.email, 'applicationId:', applicationId);
-        const uploadResult = await doUpload(files, requirementTitle);
-        console.log('Upload result:', uploadResult);
-        
-        if (uploadResult) {
+        const uploadResults = [];
+        for (const file of files) {
+          const result = await doUpload([file], requirementTitle);
+          if (result) uploadResults.push(result);
+        }
+        console.log('Upload results:', uploadResults);
+
+        if (uploadResults.length > 0) {
+            const primaryUpload = uploadResults[0];
             console.log('Updating form status...');
             await handleFormStatusUpdate([{
                 name: requirementTitle,
                 status: 'Completed',
                 fileName: files.map(f => f.name).join(', '),
-                filePath: uploadResult.path,
+                filePath: primaryUpload.path,
                 downloadURL: null,
+                uploadedFiles: uploadResults.map((entry, index) => ({
+                  fileName: files[index]?.name || entry.path.split('/').pop() || 'Uploaded file',
+                  filePath: entry.path,
+                  downloadURL: null,
+                })),
                 dateCompleted: Timestamp.now(),
                 uploadedByUid: user.uid,
                 uploadedByEmail: user.email || null,
@@ -813,29 +833,40 @@ function PathwayPageContent() {
   };
 
   const handleFileRemove = async (form: FormStatusType) => {
-    if (!form.filePath) {
+    const uploadPaths = [
+      String(form.filePath || '').trim(),
+      ...((Array.isArray((form as any)?.uploadedFiles)
+        ? (form as any).uploadedFiles
+        : []
+      )
+        .map((item: any) => String(item?.filePath || '').trim())
+        .filter(Boolean)),
+    ].filter(Boolean);
+
+    if (uploadPaths.length === 0) {
       await handleFormStatusUpdate([{
         name: form.name,
         status: 'Pending',
         fileName: null,
         filePath: null,
         downloadURL: null,
+        uploadedFiles: [],
         uploadedByUid: null,
         uploadedByEmail: null,
         uploadedByName: null,
       }]);
       return;
     }
-    
-    const storageRef = ref(storage, form.filePath);
+
     try {
-      await deleteObject(storageRef);
+      await Promise.all(uploadPaths.map((path) => deleteObject(ref(storage, path)).catch(() => undefined)));
       await handleFormStatusUpdate([{
         name: form.name,
         status: 'Pending',
         fileName: null,
         filePath: null,
         downloadURL: null,
+        uploadedFiles: [],
         uploadedByUid: null,
         uploadedByEmail: null,
         uploadedByName: null,
@@ -851,6 +882,7 @@ function PathwayPageContent() {
         fileName: null,
         filePath: null,
         downloadURL: null,
+        uploadedFiles: [],
         uploadedByUid: null,
         uploadedByEmail: null,
         uploadedByName: null,
@@ -1234,6 +1266,8 @@ function PathwayPageContent() {
   const getFormAction = (req: (typeof pathwayRequirements)[0]) => {
     const formInfo = formStatusMap.get(req.title);
     const isCompleted = formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo);
+    const reviewState = getRequirementReviewState(formInfo);
+    const canEditUploadedDocument = !isReadOnly && reviewState !== 'reviewed';
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
     
     if (isReadOnly) {
@@ -1554,7 +1588,7 @@ function PathwayPageContent() {
                           <div className="space-y-2">
                             <span className="block text-green-800 font-medium">Document submitted</span>
                             <span className="block text-xs text-gray-500">Document preview/download is restricted to staff.</span>
-                            {!isReadOnly && (
+                            {canEditUploadedDocument && (
                               <>
                                 <Label
                                   htmlFor={`${req.id}-replace`}
@@ -1572,9 +1606,24 @@ function PathwayPageContent() {
                                   className="sr-only"
                                   onChange={(e) => handleFileUpload(e, req.title, formInfo)}
                                   disabled={isUploading}
-                                  multiple={false}
+                                  multiple={isMultiple}
                                 />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                                  onClick={() => void handleFileRemove(formInfo!)}
+                                  disabled={isUploading}
+                                >
+                                  <X className="mr-2 h-4 w-4" />
+                                  Delete Upload
+                                </Button>
                               </>
+                            )}
+                            {!canEditUploadedDocument && (
+                              <span className="block text-xs text-gray-500">
+                                This upload is verified by staff and is now frozen.
+                              </span>
                             )}
                           </div>
                         )}
@@ -1627,7 +1676,7 @@ function PathwayPageContent() {
                           <div className="space-y-2">
                             <span className="block text-green-800 font-medium">Document submitted</span>
                             <span className="block text-xs text-gray-500">Document preview/download is restricted to staff.</span>
-                            {!isReadOnly && (
+                            {canEditUploadedDocument && (
                               <>
                                 <Label
                                   htmlFor={`${req.id}-replace`}
@@ -1647,7 +1696,22 @@ function PathwayPageContent() {
                                   disabled={isUploading}
                                   multiple={false}
                                 />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                                  onClick={() => void handleFileRemove(formInfo!)}
+                                  disabled={isUploading}
+                                >
+                                  <X className="mr-2 h-4 w-4" />
+                                  Delete Upload
+                                </Button>
                               </>
+                            )}
+                            {!canEditUploadedDocument && (
+                              <span className="block text-xs text-gray-500">
+                                This upload is verified by staff and is now frozen.
+                              </span>
                             )}
                           </div>
                         )}

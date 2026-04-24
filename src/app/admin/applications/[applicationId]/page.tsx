@@ -2921,6 +2921,9 @@ function ApplicationDetailPageContent() {
   const [rejectReasonByForm, setRejectReasonByForm] = useState<Record<string, string>>({});
   const [rejectingByForm, setRejectingByForm] = useState<Record<string, boolean>>({});
   const [rejectDialogForm, setRejectDialogForm] = useState<string | null>(null);
+  const [rejectScopeByForm, setRejectScopeByForm] = useState<Record<string, 'form' | 'file'>>({});
+  const [rejectFileByForm, setRejectFileByForm] = useState<Record<string, string>>({});
+  const [resolvedStorageUrls, setResolvedStorageUrls] = useState<Record<string, string>>({});
   const emailReminderSectionRef = useRef<HTMLDivElement | null>(null);
   const statusReminderSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -5067,15 +5070,25 @@ function ApplicationDetailPageContent() {
     setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
     
     try {
-        const uploadResult = await doUpload(files, requirementTitle);
-        if (uploadResult) {
+        const uploadResults: Array<{ downloadURL: string; path: string; fileName: string }> = [];
+        for (const file of files) {
+          const result = await doUpload([file], requirementTitle);
+          if (result) uploadResults.push(result);
+        }
+        if (uploadResults.length > 0) {
+            const primaryUpload = uploadResults[0];
             await handleFormStatusUpdate([{
                 name: requirementTitle,
                 status: 'Completed',
                 type: 'Upload',
-                fileName: uploadResult.fileName,
-                filePath: uploadResult.path,
-                downloadURL: uploadResult.downloadURL,
+                fileName: uploadResults.map((entry) => entry.fileName).join(', '),
+                filePath: primaryUpload.path,
+                downloadURL: primaryUpload.downloadURL,
+                uploadedFiles: uploadResults.map((entry) => ({
+                  fileName: entry.fileName,
+                  filePath: entry.path,
+                  downloadURL: entry.downloadURL,
+                })),
                 dateCompleted: Timestamp.now(),
             }]);
             toast({ title: 'Upload Successful', description: `${requirementTitle} has been uploaded.` });
@@ -5237,6 +5250,58 @@ function ApplicationDetailPageContent() {
       return uploadsWithUrls.map((upload) => upload.id);
     });
   }, [(application as any)?.eligibilityScreenshotUploads]);
+
+  useEffect(() => {
+    if (!storage || !application) return;
+    const pendingPaths = new Set<string>();
+    const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
+    forms.forEach((form) => {
+      const path = String(form?.filePath || '').trim();
+      const url = String(form?.downloadURL || '').trim();
+      if (path && !url && !resolvedStorageUrls[path]) pendingPaths.add(path);
+      const uploadedFiles = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+      uploadedFiles.forEach((entry: any) => {
+        const entryPath = String(entry?.filePath || '').trim();
+        const entryUrl = String(entry?.downloadURL || '').trim();
+        if (entryPath && !entryUrl && !resolvedStorageUrls[entryPath]) pendingPaths.add(entryPath);
+      });
+    });
+    getEligibilityScreenshotUploads().forEach((upload) => {
+      const path = String(upload?.filePath || '').trim();
+      const url = String(upload?.downloadURL || '').trim();
+      if (path && !url && !resolvedStorageUrls[path]) pendingPaths.add(path);
+    });
+    if (pendingPaths.size === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const resolved: Record<string, string> = {};
+      await Promise.all(
+        Array.from(pendingPaths).map(async (path) => {
+          try {
+            const url = await getDownloadURL(ref(storage, path));
+            if (url) resolved[path] = url;
+          } catch {
+            // best effort; some legacy paths may no longer exist
+          }
+        })
+      );
+      if (cancelled || Object.keys(resolved).length === 0) return;
+      setResolvedStorageUrls((prev) => ({ ...prev, ...resolved }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [application, resolvedStorageUrls, storage]);
+
+  const getEffectiveDownloadUrl = (downloadURL?: string | null, filePath?: string | null) => {
+    const direct = String(downloadURL || '').trim();
+    if (direct) return direct;
+    const path = String(filePath || '').trim();
+    if (!path) return '';
+    return String(resolvedStorageUrls[path] || '').trim();
+  };
 
   const upsertEligibilityScreenshotUploads = async (next: EligibilityScreenshotUpload[]) => {
     if (!docRef) return;
@@ -5518,20 +5583,32 @@ function ApplicationDetailPageContent() {
   };
 
   const handleFileRemove = async (form: FormStatusType) => {
-      if (!form.filePath) {
-        await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+      const uploadPaths = [
+        String(form.filePath || '').trim(),
+        ...((Array.isArray((form as any)?.uploadedFiles) ? (form as any).uploadedFiles : [])
+          .map((entry: any) => String(entry?.filePath || '').trim())
+          .filter(Boolean)),
+      ].filter(Boolean);
+
+      if (uploadPaths.length === 0) {
+        await handleFormStatusUpdate([
+          { name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null, uploadedFiles: [] as any }
+        ]);
         return;
       }
 
-      const storageRef = ref(storage, form.filePath);
       try {
-          await deleteObject(storageRef);
-          await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+          await Promise.all(uploadPaths.map((path) => deleteObject(ref(storage, path)).catch(() => undefined)));
+          await handleFormStatusUpdate([
+            { name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null, uploadedFiles: [] as any }
+          ]);
           toast({ title: 'File Removed', description: `${form.fileName} has been removed.` });
       } catch (error) {
           console.error("Error removing file:", error);
           const errorCode = (error as any)?.code;
-          await handleFormStatusUpdate([{ name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null }]);
+          await handleFormStatusUpdate([
+            { name: form.name, status: 'Pending', fileName: null, filePath: null, downloadURL: null, uploadedFiles: [] as any }
+          ]);
           if (errorCode === 'storage/unauthorized') {
             toast({ title: 'File Reset', description: 'Access denied to delete the original file. The card was reset so you can re-upload.' });
             return;
@@ -6243,7 +6320,11 @@ function ApplicationDetailPageContent() {
     }
   };
 
-  const handleRejectFormRedo = async (formName: string, sendEmail: boolean) => {
+  const handleRejectFormRedo = async (
+    formName: string,
+    sendEmail: boolean,
+    options?: { scope?: 'form' | 'file'; targetFileKey?: string }
+  ) => {
     if (!docRef || !application) return;
     const reason = String(rejectReasonByForm[formName] || '').trim();
     if (!reason) {
@@ -6265,14 +6346,43 @@ function ApplicationDetailPageContent() {
       return;
     }
 
+    const rejectScope = options?.scope === 'file' ? 'file' : 'form';
+    const targetFileKey = String(options?.targetFileKey || '').trim();
+    const targetEligibilityUploadId = targetFileKey.startsWith('eligibility:') ? targetFileKey.replace('eligibility:', '') : '';
+    const targetFormFilePath = targetFileKey.startsWith('form-path:') ? targetFileKey.replace('form-path:', '') : '';
+    const targetEligibilityUpload =
+      rejectScope === 'file' && targetEligibilityUploadId
+        ? getEligibilityScreenshotUploads().find((upload) => upload.id === targetEligibilityUploadId)
+        : null;
+
+    if (rejectScope === 'file' && !targetFileKey) {
+      toast({
+        variant: 'destructive',
+        title: 'Select file to reject',
+        description: 'Pick the specific file to reject, or switch to whole set.',
+      });
+      return;
+    }
+
     setRejectingByForm((prev) => ({ ...prev, [formName]: true }));
     try {
       const targetForms = (application.forms || []).filter(
         (form: any) => String(form?.name || '').trim() === formName
       );
-      const storagePathsToDelete = targetForms
-        .map((form: any) => String(form?.filePath || '').trim())
-        .filter(Boolean);
+      const storagePathsToDelete = (
+        rejectScope === 'file'
+          ? [
+              targetEligibilityUpload ? String(targetEligibilityUpload.filePath || '').trim() : '',
+              targetFormFilePath ? targetFormFilePath : '',
+            ]
+          : targetForms.flatMap((form: any) => {
+              const primary = String(form?.filePath || '').trim();
+              const extra = (Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [])
+                .map((entry: any) => String(entry?.filePath || '').trim())
+                .filter(Boolean);
+              return [primary, ...extra];
+            })
+      ).filter(Boolean);
 
       // Best-effort cleanup: remove prior uploaded file objects so the rejected component is a true reset.
       if (storagePathsToDelete.length > 0) {
@@ -6360,6 +6470,8 @@ function ApplicationDetailPageContent() {
           emailed: Boolean(sentAtIso),
           emailTo: sentAtIso ? recipientEmail : null,
           emailSentAt: sentAtIso,
+          scope: rejectScope,
+          targetFileKey: targetFileKey || null,
         };
         return {
           ...form,
@@ -6369,6 +6481,7 @@ function ApplicationDetailPageContent() {
           fileName: null,
           filePath: null,
           downloadURL: null,
+          uploadedFiles: [],
           source: null,
           standaloneUploadId: null,
           acknowledged: false,
@@ -6412,6 +6525,11 @@ function ApplicationDetailPageContent() {
         return isCompleted && !summary && !acknowledged;
       }).length;
 
+      const nextEligibilityUploads =
+        rejectScope === 'file' && targetEligibilityUploadId
+          ? getEligibilityScreenshotUploads().filter((upload) => upload.id !== targetEligibilityUploadId)
+          : getEligibilityScreenshotUploads();
+
       const patch: Record<string, any> = {
         forms: updatedForms,
         status: 'Requires Revision',
@@ -6419,6 +6537,9 @@ function ApplicationDetailPageContent() {
         pendingDocReviewCount,
         pendingDocReviewUpdatedAt: serverTimestamp(),
       };
+      if (rejectScope === 'file' && targetEligibilityUploadId) {
+        patch.eligibilityScreenshotUploads = nextEligibilityUploads;
+      }
 
       if (isWaiverFormName(formName)) {
         patch.choice = null;
@@ -6450,12 +6571,16 @@ function ApplicationDetailPageContent() {
       });
 
       setRejectReasonByForm((prev) => ({ ...prev, [formName]: '' }));
+      setRejectScopeByForm((prev) => ({ ...prev, [formName]: 'form' }));
+      setRejectFileByForm((prev) => ({ ...prev, [formName]: '' }));
       setRejectDialogForm(null);
       toast({
-        title: sendEmail ? 'Form rejected and email sent' : 'Form rejected',
+        title: sendEmail ? 'Rejection saved and email sent' : 'Rejection saved',
         description: sendEmail
           ? `${formName} set to pending and email sent to ${recipientEmail}.`
-          : `${formName} set to pending. Applicant can now redo the form.`,
+          : rejectScope === 'file'
+            ? 'Selected file rejected. Applicant can now re-upload.'
+            : `${formName} set to pending. Applicant can now redo the form.`,
       });
     } catch (error: any) {
       console.error('Reject form redo error:', error);
@@ -8120,8 +8245,8 @@ function ApplicationDetailPageContent() {
             );
         case 'Upload':
              if (req.id === 'eligibility-screenshot') {
-               const uploads = getEligibilityScreenshotUploads();
-               const canViewAny = uploads.some((u) => Boolean(u.downloadURL));
+              const uploads = getEligibilityScreenshotUploads();
+              const canViewAny = uploads.some((u) => Boolean(getEffectiveDownloadUrl(u.downloadURL, u.filePath)));
 
                return (
                  <div className="space-y-2" onPasteCapture={(event) => void handleEligibilityScreenshotPaste(event)}>
@@ -8166,17 +8291,19 @@ function ApplicationDetailPageContent() {
                          Uploaded screenshot{uploads.length === 1 ? '' : 's'} ({uploads.length})
                        </div>
                        <div className="space-y-1">
-                         {uploads.map((u) => (
-                           <div
-                             key={u.id}
-                             className={cn(
-                               'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
-                               u.downloadURL ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
-                             )}
-                           >
-                             {u.downloadURL ? (
+                        {uploads.map((u) => {
+                          const effectiveUrl = getEffectiveDownloadUrl(u.downloadURL, u.filePath);
+                          return (
+                          <div
+                            key={u.id}
+                            className={cn(
+                              'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
+                              effectiveUrl ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
+                            )}
+                          >
+                            {effectiveUrl ? (
                                <a
-                                 href={u.downloadURL}
+                                href={effectiveUrl}
                                  target="_blank"
                                  rel="noopener noreferrer"
                                  className="truncate flex-1 text-green-800 font-medium hover:underline"
@@ -8198,8 +8325,8 @@ function ApplicationDetailPageContent() {
                                <X className="h-4 w-4" />
                                <span className="sr-only">Remove file</span>
                              </Button>
-                           </div>
-                         ))}
+                          </div>
+                        )})}
                        </div>
                        {!canViewAny ? (
                          <div className="text-xs text-muted-foreground">
@@ -8256,7 +8383,35 @@ function ApplicationDetailPageContent() {
 
              const isRoomBoardAgreementReq = req.id === 'room-board-obligation';
              if (formInfo?.status === 'Completed') {
-                 const hasViewableFile = Boolean(formInfo.downloadURL);
+                const uploadedFileEntries = (
+                  Array.isArray((formInfo as any)?.uploadedFiles) && (formInfo as any).uploadedFiles.length > 0
+                    ? (formInfo as any).uploadedFiles
+                    : [
+                        {
+                          fileName: (formInfo as any)?.fileName || 'Completed',
+                          filePath: (formInfo as any)?.filePath || '',
+                          downloadURL: (formInfo as any)?.downloadURL || '',
+                        },
+                      ]
+                )
+                  .map((entry: any, index: number) => {
+                    const fileName = String(entry?.fileName || '').trim() || `Uploaded file ${index + 1}`;
+                    const filePath = String(entry?.filePath || '').trim();
+                    const directUrl = String(entry?.downloadURL || '').trim();
+                    return {
+                      key: `${fileName}-${filePath || directUrl || index}`,
+                      fileName,
+                      filePath,
+                      url: getEffectiveDownloadUrl(directUrl, filePath),
+                    };
+                  })
+                  .filter((entry: any) => Boolean(entry.fileName));
+                const effectiveFormDownloadUrl = getEffectiveDownloadUrl(
+                  (formInfo as any)?.downloadURL || '',
+                  (formInfo as any)?.filePath || ''
+                );
+                const hasViewableFile =
+                  Boolean(effectiveFormDownloadUrl) || uploadedFileEntries.some((entry: any) => Boolean(entry.url));
                  return (
                     <div className="space-y-2">
                       {proofIncomeControls}
@@ -8264,15 +8419,35 @@ function ApplicationDetailPageContent() {
                         'flex items-center justify-between gap-2 p-2 rounded-md border text-sm',
                         hasViewableFile ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'
                       )}>
-                          {hasViewableFile ? (
-                              <a href={formInfo.downloadURL} target="_blank" rel="noopener noreferrer" className="truncate flex-1 text-green-800 font-medium hover:underline">
-                                  {formInfo?.fileName || 'Completed'}
-                              </a>
-                          ) : (
-                              <span className="truncate flex-1 text-amber-800 font-medium">
+                          <div className="min-w-0 flex-1 space-y-1">
+                            {uploadedFileEntries.length > 1 ? (
+                              <div className="text-xs text-muted-foreground">
+                                {uploadedFileEntries.length} uploaded files
+                              </div>
+                            ) : null}
+                            {uploadedFileEntries.map((entry: any) =>
+                              entry.url ? (
+                                <a
+                                  key={entry.key}
+                                  href={entry.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block truncate text-green-800 font-medium hover:underline"
+                                >
+                                  {entry.fileName}
+                                </a>
+                              ) : (
+                                <span key={entry.key} className="block truncate text-amber-800 font-medium">
+                                  {entry.fileName}
+                                </span>
+                              )
+                            )}
+                            {!hasViewableFile ? (
+                              <span className="block truncate text-amber-800 font-medium">
                                 No file available to view (this item was marked complete without an upload).
                               </span>
-                          )}
+                            ) : null}
+                          </div>
                            <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-100 hover:text-red-600" onClick={() => handleFileRemove(formInfo)}>
                               <X className="h-4 w-4" />
                               <span className="sr-only">Remove file</span>
@@ -9395,6 +9570,94 @@ function ApplicationDetailPageContent() {
                                         </DialogHeader>
                                         <div className="space-y-3">
                                           {(() => {
+                                            const baseFiles: Array<{ key: string; label: string }> = [];
+                                            const perFile = Array.isArray((formInfo as any)?.uploadedFiles)
+                                              ? (formInfo as any).uploadedFiles
+                                              : [];
+                                            if (perFile.length > 0) {
+                                              perFile.forEach((entry: any, index: number) => {
+                                                const path = String(entry?.filePath || '').trim();
+                                                const name = String(entry?.fileName || '').trim() || `Uploaded file ${index + 1}`;
+                                                baseFiles.push({
+                                                  key: path ? `form-path:${path}` : `form-name:${req.title}`,
+                                                  label: name,
+                                                });
+                                              });
+                                            } else {
+                                              const formFileName = String((formInfo as any)?.fileName || '').trim();
+                                              const formFilePath = String((formInfo as any)?.filePath || '').trim();
+                                              if (formFileName || formFilePath) {
+                                                baseFiles.push({
+                                                  key: formFilePath ? `form-path:${formFilePath}` : `form-name:${req.title}`,
+                                                  label: formFileName || `${req.title} upload`,
+                                                });
+                                              }
+                                            }
+                                            const eligibilityFiles =
+                                              req.id === 'eligibility-screenshot'
+                                                ? getEligibilityScreenshotUploads().map((upload) => ({
+                                                    key: `eligibility:${upload.id}`,
+                                                    label: upload.fileName || 'Eligibility screenshot upload',
+                                                  }))
+                                                : [];
+                                            const rejectableFiles = [...baseFiles, ...eligibilityFiles];
+                                            const hasFileOptions = rejectableFiles.length > 0;
+                                            const selectedScope = rejectScopeByForm[req.title] || 'form';
+                                            const selectedFile = rejectFileByForm[req.title] || '';
+                                            return hasFileOptions ? (
+                                              <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                                                <div className="text-xs font-medium">Reject scope</div>
+                                                <div className="flex flex-wrap gap-2">
+                                                  <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant={selectedScope === 'form' ? 'default' : 'outline'}
+                                                    onClick={() =>
+                                                      setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'form' }))
+                                                    }
+                                                  >
+                                                    Reject whole set/card
+                                                  </Button>
+                                                  <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant={selectedScope === 'file' ? 'default' : 'outline'}
+                                                    onClick={() =>
+                                                      setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'file' }))
+                                                    }
+                                                  >
+                                                    Reject specific file
+                                                  </Button>
+                                                </div>
+                                                {selectedScope === 'file' ? (
+                                                  <div className="space-y-1">
+                                                    <Label htmlFor={`reject-file-${req.id}`} className="text-xs">
+                                                      Select file
+                                                    </Label>
+                                                    <select
+                                                      id={`reject-file-${req.id}`}
+                                                      className="w-full rounded-md border bg-background px-2 py-1.5 text-xs"
+                                                      value={selectedFile}
+                                                      onChange={(event) =>
+                                                        setRejectFileByForm((prev) => ({
+                                                          ...prev,
+                                                          [req.title]: event.target.value,
+                                                        }))
+                                                      }
+                                                    >
+                                                      <option value="">Select a file...</option>
+                                                      {rejectableFiles.map((file) => (
+                                                        <option key={file.key} value={file.key}>
+                                                          {file.label}
+                                                        </option>
+                                                      ))}
+                                                    </select>
+                                                  </div>
+                                                ) : null}
+                                              </div>
+                                            ) : null;
+                                          })()}
+                                          {(() => {
                                             const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
                                             const previewReason = String(rejectReasonByForm[req.title] || '').trim() || '[Enter description above]';
                                             const previewSubject = `Action needed: Please redo ${req.title}`;
@@ -9471,7 +9734,12 @@ function ApplicationDetailPageContent() {
                                               size="sm"
                                               variant="outline"
                                               disabled={Boolean(rejectingByForm[req.title])}
-                                              onClick={() => handleRejectFormRedo(req.title, false)}
+                                              onClick={() =>
+                                                handleRejectFormRedo(req.title, false, {
+                                                  scope: rejectScopeByForm[req.title] || 'form',
+                                                  targetFileKey: rejectFileByForm[req.title] || '',
+                                                })
+                                              }
                                             >
                                               {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
                                               Reject only
@@ -9480,7 +9748,12 @@ function ApplicationDetailPageContent() {
                                               size="sm"
                                               className="bg-amber-600 text-white hover:bg-amber-700"
                                               disabled={Boolean(rejectingByForm[req.title])}
-                                              onClick={() => handleRejectFormRedo(req.title, true)}
+                                              onClick={() =>
+                                                handleRejectFormRedo(req.title, true, {
+                                                  scope: rejectScopeByForm[req.title] || 'form',
+                                                  targetFileKey: rejectFileByForm[req.title] || '',
+                                                })
+                                              }
                                             >
                                               {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
                                               Reject + Email applicant
