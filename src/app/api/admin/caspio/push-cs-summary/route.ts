@@ -587,6 +587,7 @@ export async function POST(request: NextRequest) {
     );
 
     let existingRow: Record<string, any> | null = null;
+    let existingRowMatchSource: 'client_id2' | 'mrn' | 'medi_cal' | 'name' | null = null;
     if (hintedClientId2) {
       const clientIdFieldCandidates = ['client_ID2', 'Client_ID2', 'clientid2'];
       for (const clientIdField of clientIdFieldCandidates) {
@@ -594,6 +595,7 @@ export async function POST(request: NextRequest) {
         const whereByClientId = buildEqualsClause(clientIdField, hintedClientId2);
         if (!whereByClientId) continue;
         existingRow = await trySearchMember(whereByClientId);
+        if (existingRow) existingRowMatchSource = 'client_id2';
       }
     }
     if (!existingRow && hintedMrn) {
@@ -609,6 +611,7 @@ export async function POST(request: NextRequest) {
         const whereByMrn = buildEqualsClause(mrnField, hintedMrn);
         if (!whereByMrn) continue;
         existingRow = await trySearchMember(whereByMrn);
+        if (existingRow) existingRowMatchSource = 'mrn';
       }
     }
     if (!existingRow && hintedMediCalNumber) {
@@ -623,11 +626,14 @@ export async function POST(request: NextRequest) {
         const whereByMediCal = buildEqualsClause(fieldName, hintedMediCalNumber);
         if (!whereByMediCal) continue;
         existingRow = await trySearchMember(whereByMediCal);
+        if (existingRow) existingRowMatchSource = 'medi_cal';
       }
     }
-    if (!existingRow) {
+    const allowNameMatchLookup = !skeletonPush || Boolean(hintedClientId2 || hintedMrn || hintedMediCalNumber);
+    if (!existingRow && allowNameMatchLookup) {
       const where = `${firstNameField}='${esc(firstName)}' AND ${lastNameField}='${esc(lastName)}'`;
       existingRow = await trySearchMember(where);
+      if (existingRow) existingRowMatchSource = 'name';
     }
 
     // Prevent stale draft mappings from sending an invalid hold-column alias.
@@ -648,7 +654,9 @@ export async function POST(request: NextRequest) {
     if (!memberData[firstNameField]) memberData[firstNameField] = firstName;
     if (!memberData[lastNameField]) memberData[lastNameField] = lastName;
     const existingClientId2 = clean(existingRow?.client_ID2 || existingRow?.Client_ID2);
-    if (existingClientId2) {
+    const canReuseExistingClientId2 =
+      Boolean(existingClientId2) && !(skeletonPush && existingRowMatchSource === 'name');
+    if (canReuseExistingClientId2) {
       memberData[clientIdField] = existingClientId2;
     } else {
       const currentClientId = clean(memberData[clientIdField]);
@@ -721,7 +729,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const isUpdate = Boolean(existingRow?.PK_ID || existingRow?.pk_id);
+    const isUpdate = Boolean(existingRow?.PK_ID || existingRow?.pk_id) && !(skeletonPush && existingRowMatchSource === 'name');
     if (!isUpdate && isKaiserApplication) {
       // Only set default tier on first insert for Kaiser applications.
       memberData[MCO_AND_TIER_FIELD] = DEFAULT_KAISER_TIER_VALUE;
