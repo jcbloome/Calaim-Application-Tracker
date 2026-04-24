@@ -1622,6 +1622,9 @@ export default function AuthorizationTracker() {
                             {isKaiserPlan(member.healthPlan) && member.kaiserStatus && (
                               <p className="text-xs text-muted-foreground">Kaiser Status: {member.kaiserStatus}</p>
                             )}
+                            {String(member.rcfeName || '').trim() && (
+                              <p className="text-xs text-muted-foreground">RCFE: {member.rcfeName}</p>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1826,6 +1829,12 @@ export default function AuthorizationTracker() {
                           </Badge>
                         </div>
                         <div className="text-sm text-muted-foreground">MRN: {member.mrn}</div>
+                        {isKaiserPlan(member.healthPlan) && member.kaiserStatus && (
+                          <div className="text-sm text-muted-foreground">Kaiser Status: {member.kaiserStatus}</div>
+                        )}
+                        {String(member.rcfeName || '').trim() && (
+                          <div className="text-sm text-muted-foreground">RCFE: {member.rcfeName}</div>
+                        )}
                         <div className="grid gap-2 text-sm">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-muted-foreground">T2038:</span>

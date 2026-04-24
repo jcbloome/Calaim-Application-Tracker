@@ -17,6 +17,12 @@ try {
 }
 
 const clean = (value: unknown) => String(value || '').trim();
+const normalizeKaiserStatus = (value: unknown) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
 
 const parseDate = (value: unknown): Date | null => {
   const raw = clean(value);
@@ -57,14 +63,17 @@ export async function GET(request: NextRequest) {
     const kaiserRecipientEntries = Object.entries(recipients).filter(([, r]) =>
       Boolean(r?.enabled) && Boolean(r?.kaiserRnVisitAssigner)
     );
+    const kaiserManagerEntries = Object.entries(recipients).filter(([, r]) =>
+      Boolean(r?.enabled) && Boolean(r?.kaiserUploads)
+    );
     const healthNetManagerEntries = Object.entries(recipients).filter(([, r]) =>
       Boolean(r?.enabled) && Boolean(r?.healthNetUploads)
     );
 
-    if (!kaiserRecipientEntries.length && !healthNetManagerEntries.length) {
+    if (!kaiserRecipientEntries.length && !kaiserManagerEntries.length && !healthNetManagerEntries.length) {
       return NextResponse.json({
         success: true,
-        message: 'No enabled recipients configured for Kaiser RN Visit Assigner or Health Net Manager tasks.',
+        message: 'No enabled recipients configured for Kaiser RN Visit Assigner, Kaiser Manager, or Health Net Manager tasks.',
       });
     }
 
@@ -75,15 +84,26 @@ export async function GET(request: NextRequest) {
     const todayYmd = toYmd(today);
     const cutoffYmd = toYmd(cutoff);
 
-    const memberSnap = await adminDb
-      .collection('caspio_members_cache')
-      .where('Authorization_End_Date_H2022', '>=', todayYmd)
-      .limit(10000)
-      .get()
-      .catch(() => null);
+    const [h2022Snap, t2038Snap] = await Promise.all([
+      adminDb
+        .collection('caspio_members_cache')
+        .where('Authorization_End_Date_H2022', '>=', todayYmd)
+        .limit(10000)
+        .get()
+        .catch(() => null),
+      adminDb
+        .collection('caspio_members_cache')
+        .where('Authorization_End_Date_T2038', '>=', todayYmd)
+        .limit(10000)
+        .get()
+        .catch(() => null),
+    ]);
+    const memberById = new Map<string, any>();
+    (h2022Snap?.docs || []).forEach((d: any) => memberById.set(String(d.id), { id: d.id, ...(d.data() as any) }));
+    (t2038Snap?.docs || []).forEach((d: any) => memberById.set(String(d.id), { id: d.id, ...(d.data() as any) }));
+    const allMembers = Array.from(memberById.values());
 
-    const expiringMembers = (memberSnap?.docs || [])
-      .map((d: any) => ({ id: d.id, ...(d.data() as any) }))
+    const expiringH2022Members = allMembers
       .map((m: any) => {
         const endDate = parseDate(m?.Authorization_End_Date_H2022);
         if (!endDate) return null;
@@ -111,21 +131,55 @@ export async function GET(request: NextRequest) {
       kaiserStatus: string;
     }>;
 
-    if (!expiringMembers.length) {
+    const expiringKaiserT2038Members = allMembers
+      .map((m: any) => {
+        const healthPlan = clean(m?.CalAIM_MCO);
+        const plan = healthPlan.toLowerCase();
+        if (!plan.includes('kaiser')) return null;
+        const kaiserStatus = clean(m?.Kaiser_Status);
+        if (normalizeKaiserStatus(kaiserStatus) === 'final member at rcfe') return null;
+        const endDate = parseDate(m?.Authorization_End_Date_T2038 || m?.Authorization_End_T2038);
+        if (!endDate) return null;
+        const endYmd = toYmd(endDate);
+        if (endYmd < todayYmd || endYmd > cutoffYmd) return null;
+        const memberName = `${clean(m?.Senior_First)} ${clean(m?.Senior_Last)}`.trim() || 'Member';
+        const clientId2 = clean(m?.client_ID2 || m?.Client_ID2 || m?.MCP_CIN || m?.MRN || m?.MC) || m.id;
+        const county = clean(m?.Member_County) || '';
+        return {
+          memberName,
+          clientId2,
+          healthPlan,
+          county,
+          t2038EndDate: endYmd,
+          kaiserStatus,
+        };
+      })
+      .filter(Boolean) as Array<{
+      memberName: string;
+      clientId2: string;
+      healthPlan: string;
+      county: string;
+      t2038EndDate: string;
+      kaiserStatus: string;
+    }>;
+
+    if (!expiringH2022Members.length && !expiringKaiserT2038Members.length) {
       return NextResponse.json({
         success: true,
-        message: 'No H2022 authorizations ending within 30 days.',
+        message: 'No H2022 or applicable T2038 authorizations ending within 30 days.',
         kaiserRecipients: kaiserRecipientEntries.length,
+        kaiserManagers: kaiserManagerEntries.length,
         healthNetManagers: healthNetManagerEntries.length,
       });
     }
 
     let dailyTasksCreated = 0;
     let kaiserTasksCreated = 0;
+    let kaiserManagerTasksCreated = 0;
     let healthNetTasksCreated = 0;
     const actionUrl = `/admin/authorization-tracker`;
 
-    for (const member of expiringMembers) {
+    for (const member of expiringH2022Members) {
       const plan = clean(member.healthPlan).toLowerCase();
       const isHealthNet = plan.includes('health net') || plan.includes('healthnet');
       const assignees = isHealthNet ? healthNetManagerEntries : kaiserRecipientEntries;
@@ -182,13 +236,58 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    for (const member of expiringKaiserT2038Members) {
+      for (const [assigneeUid, assignee] of kaiserManagerEntries) {
+        const assigneeName =
+          clean(assignee?.label) ||
+          clean(assignee?.email) ||
+          'Kaiser Manager';
+        const taskId = `t2038-renewal-task-kaiser-manager-${assigneeUid}-${clean(member.clientId2).replace(/[^a-zA-Z0-9_-]/g, '')}-${member.t2038EndDate}`;
+        const title = `Review T2038 renewal: ${member.memberName} (Kaiser)`;
+        const description = `T2038 ends on ${member.t2038EndDate}. Member is not Final- Member at RCFE, so request renewal review is needed.`;
+        const notes = `Action items: 1) Review Kaiser status (${member.kaiserStatus || 'Unknown'}), 2) Prepare/request T2038 renewal, 3) Update authorization notes and track completion in the portal.`;
+        const tags = ['t2038', 'renewal', 'authorization', 'kaiser-manager'];
+        try {
+          await adminDb.collection('adminDailyTasks').doc(taskId).create({
+            title,
+            description,
+            memberName: member.memberName,
+            memberClientId: member.clientId2,
+            healthPlan: member.healthPlan,
+            assignedTo: assigneeUid,
+            assignedToName: assigneeName,
+            priority: 'high',
+            status: 'pending',
+            dueDate: member.t2038EndDate,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            createdBy: 'system',
+            notes,
+            tags,
+            applicationLink: actionUrl,
+            source: 'caspio_kaiser_t2038',
+          });
+          dailyTasksCreated += 1;
+          kaiserManagerTasksCreated += 1;
+        } catch (error: any) {
+          const alreadyExists = String(error?.code || '').toLowerCase() === '6' || String(error?.message || '').toLowerCase().includes('already exists');
+          if (!alreadyExists) {
+            console.warn('Failed to create Kaiser T2038 daily task:', error);
+          }
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      expiringMembers: expiringMembers.length,
+      expiringH2022Members: expiringH2022Members.length,
+      expiringKaiserT2038Members: expiringKaiserT2038Members.length,
       kaiserRecipients: kaiserRecipientEntries.length,
+      kaiserManagers: kaiserManagerEntries.length,
       healthNetManagers: healthNetManagerEntries.length,
       dailyTasksCreated,
       kaiserTasksCreated,
+      kaiserManagerTasksCreated,
       healthNetTasksCreated,
       emailsSent: 0,
     });
