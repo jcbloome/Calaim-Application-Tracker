@@ -19,6 +19,8 @@ interface ExtractedFields {
   memberFirstName: string;
   memberLastName: string;
   memberMrn: string;
+  memberMediCalNum: string;
+  confirmMemberMediCalNum: string;
   memberDob: string;
   memberCustomaryAddress: string;
   memberCustomaryCity: string;
@@ -26,6 +28,7 @@ interface ExtractedFields {
   memberCustomaryZip: string;
   memberCustomaryCounty: string;
   memberPhone: string;
+  memberEmail: string;
   contactPhone: string;
   contactEmail: string;
   Authorization_Number_T038: string;
@@ -33,6 +36,14 @@ interface ExtractedFields {
   Authorization_End_T2038: string;
   Diagnostic_Code: string;
 }
+
+const normalizeMediCalNumber = (value: string): string => {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return '';
+  const compact = raw.replace(/[^A-Z0-9]/g, '');
+  if (/^9\d{7}[A-Z]$/.test(compact)) return compact;
+  return raw;
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -74,6 +85,8 @@ Extract the following fields from the image and return ONLY a valid JSON object 
   "memberFirstName": "",
   "memberLastName": "",
   "memberMrn": "",
+  "memberMediCalNum": "",
+  "confirmMemberMediCalNum": "",
   "memberDob": "",
   "memberCustomaryAddress": "",
   "memberCustomaryCity": "",
@@ -81,6 +94,7 @@ Extract the following fields from the image and return ONLY a valid JSON object 
   "memberCustomaryZip": "",
   "memberCustomaryCounty": "",
   "memberPhone": "",
+  "memberEmail": "",
   "contactPhone": "",
   "contactEmail": "",
   "Authorization_Number_T038": "",
@@ -92,12 +106,15 @@ Extract the following fields from the image and return ONLY a valid JSON object 
 Instructions:
 - Member Name: Split into first and last name, use Title Case (e.g., "Jim Kovacich" not "JIM KOVACICH")
 - MRN: Medical Record Number (keep as-is)
+- Medi-Cal Number: Use the value under CIN (if present), normalize to 9XXXXXXXX format ending with a letter when possible
+- Do not copy MRN into Medi-Cal Number unless the form explicitly shows the same value for both
 - DOB: Format as MM/DD/YYYY
 - Address: Split into street, city, state, zip (county can be empty), use Title Case for street and city
 - State: Two-letter uppercase code (e.g., "CA")
 - Member Phone: Format with dashes (e.g., 562-432-2700)
 - Cell Phone: Use for contactPhone, format as digits only (e.g., 5624322700)
-- Email: Lowercase
+- Member Email: Extract from the "Email" field under Member Information and return as lowercase
+- Contact Email: Leave empty unless the form explicitly has a separate contact-person email field
 - Authorization Number: From "Authorization #" field (keep as-is)
 - Authorization Start/End: Format as MM/DD/YYYY
 - Diagnostic Code: From "DX Code" field (keep as-is)
@@ -165,9 +182,16 @@ Return ONLY the JSON object, no other text.`;
     if (extractedFields.memberCustomaryState) {
       extractedFields.memberCustomaryState = extractedFields.memberCustomaryState.toUpperCase();
     }
+    if (extractedFields.memberEmail) {
+      extractedFields.memberEmail = extractedFields.memberEmail.toLowerCase();
+    }
     // Email should always be lowercase
     if (extractedFields.contactEmail) {
       extractedFields.contactEmail = extractedFields.contactEmail.toLowerCase();
+    }
+    if (extractedFields.memberMediCalNum) {
+      extractedFields.memberMediCalNum = normalizeMediCalNumber(extractedFields.memberMediCalNum);
+      extractedFields.confirmMemberMediCalNum = extractedFields.memberMediCalNum;
     }
 
     // Filter out empty fields

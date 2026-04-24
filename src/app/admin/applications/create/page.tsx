@@ -263,6 +263,7 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
     memberMediCalNum: string;
     memberDob: string;
     memberPhone: string;
+    memberEmail: string;
     contactPhone: string;
     memberCustomaryAddress: string;
     memberCustomaryCity: string;
@@ -323,6 +324,8 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
       if (normalizedPhones[0]) result.memberPhone = formatPhoneDashed(normalizedPhones[0]);
       if (normalizedPhones[1]) result.contactPhone = formatPhoneDashed(normalizedPhones[1]);
       else if (normalizedPhones[0]) result.contactPhone = formatPhoneDashed(normalizedPhones[0]);
+      const emailMatch = joined.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+      if (emailMatch?.[0]) result.memberEmail = String(emailMatch[0]).trim().toLowerCase();
 
       const addressOnlyLines = blockLines.filter((entry) => !phonePattern.test(entry) && !/@/.test(entry));
       if (addressOnlyLines.length > 0) {
@@ -710,6 +713,14 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
     /cell\s*phone\s*:\s*([()0-9.\-\s]{7,})/i,
   ]);
   const linePhones = extractPhonesFromLines(lines);
+  const memberEmail = String(
+    findFirst(flattened, [
+      /(?:member|patient)\s*email\s*[:#-]?\s*(?:\r?\n\s*)?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
+      /\bemail\s*[:#-]?\s*(?:\r?\n\s*)?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
+    ]) || ''
+  )
+    .trim()
+    .toLowerCase();
 
   const parsedName = sanitizeParsedName(parseMemberName(memberNameRaw));
   const tableFields = extractMemberTableFieldsFromLines(lines);
@@ -746,6 +757,9 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
   if (tableFields.contactPhone || linePhones.memberPhone || memberPhone) {
     const normalizedContactPhone = normalizePhoneDigits(tableFields.contactPhone || linePhones.memberPhone || memberPhone);
     if (normalizedContactPhone) updates.contactPhone = formatPhoneDashed(normalizedContactPhone);
+  }
+  if (tableFields.memberEmail || memberEmail) {
+    updates.memberEmail = String(tableFields.memberEmail || memberEmail || '').trim().toLowerCase();
   }
   updates = normalizeAddressFieldPlacement(updates);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
@@ -851,6 +865,14 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     /mobile\s*phone\s*[:#-]?\s*(?:\r?\n\s*)?([+()0-9.\-\s]{7,})/i,
   ]);
   const linePhones = extractPhonesFromLines(lines);
+  const memberEmail = String(
+    findFirst(flattened, [
+      /(?:member|patient)\s*email\s*[:#-]?\s*(?:\r?\n\s*)?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
+      /\bemail\s*[:#-]?\s*(?:\r?\n\s*)?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
+    ]) || ''
+  )
+    .trim()
+    .toLowerCase();
 
   const parsedName = sanitizeParsedName(parseMemberName(memberNameRaw));
   const tableFields = extractMemberTableFieldsFromLines(lines);
@@ -863,6 +885,7 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     memberMediCalNum: string;
     confirmMemberMediCalNum: string;
     memberPhone: string;
+    memberEmail: string;
     memberDob: string;
     Authorization_Number_T038: string;
     Authorization_Start_T2038: string;
@@ -929,6 +952,9 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     const normalizedContactPhone = normalizePhoneDigits(tableFields.contactPhone || linePhones.memberPhone || memberPhone);
     if (normalizedContactPhone) updates.contactPhone = formatPhoneDashed(normalizedContactPhone);
   }
+  if (tableFields.memberEmail || memberEmail) {
+    updates.memberEmail = String(tableFields.memberEmail || memberEmail || '').trim().toLowerCase();
+  }
   updates = normalizeAddressFieldPlacement(updates as Record<string, string>);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
     const inferredStreet = inferStreetFromCityStateContext({
@@ -959,8 +985,11 @@ const getEmptyMemberData = () => ({
   memberFirstName: '',
   memberLastName: '',
   memberMrn: '',
+  memberMediCalNum: '',
+  confirmMemberMediCalNum: '',
   memberDob: '',
   memberPhone: '',
+  memberEmail: '',
   memberCustomaryLocation: '',
   memberCustomaryAddress: '',
   memberCustomaryCity: '',
@@ -1013,7 +1042,7 @@ const normalizeMemberPatch = (patch: Record<string, unknown>) => {
 const extractSingleAuthContactPreview = (patch: Record<string, string>) => ({
   memberPhone: String(patch.memberPhone || '').trim(),
   cellPhone: String(patch.contactPhone || '').trim(),
-  email: String(patch.contactEmail || '').trim().toLowerCase(),
+  email: String(patch.memberEmail || patch.contactEmail || '').trim().toLowerCase(),
 });
 
 type KaiserIlsImportRow = {
@@ -1023,11 +1052,13 @@ type KaiserIlsImportRow = {
   memberFirstName: string;
   memberLastName: string;
   memberMrn: string;
+  memberMediCalNum: string;
   clientId2: string;
   memberAddress: string;
   memberCounty: string;
   memberDob: string;
   memberPhone: string;
+  memberEmail: string;
   contactPhone: string;
   contactEmail: string;
   eligibilityCheckStatus: 'Pending' | 'CalAIM Eligible' | 'Not CalAIM Eligible';
@@ -1561,6 +1592,14 @@ export default function CreateApplicationPage() {
           const memberFirstName = toNameCase(memberFirstNameRaw || parsedName.firstName);
           const memberLastName = toNameCase(memberLastNameRaw || parsedName.lastName);
           const memberMrn = getSpreadsheetValue(raw, ['Member MRN', 'MCP_CIN', 'MRN', 'CIN']);
+          const memberMediCalNum = normalizeMediCalNumber(
+            getSpreadsheetValue(raw, ['Medi-Cal Number', 'MediCal Number', 'Member Medi-Cal Number', 'CIN', 'MCP_CIN'])
+          );
+          const memberEmail = String(
+            getSpreadsheetValue(raw, ['Member Email', 'Email', 'Member_Email', 'Patient Email']) || ''
+          )
+            .trim()
+            .toLowerCase();
           const clientId2 = getSpreadsheetValue(raw, ['Client_ID2', 'Client ID2', 'client_ID2']);
           const memberAddress = getSpreadsheetValue(raw, ['Member Address', 'Address', 'ISP_Current_Address']);
           const parsedAddress = parseAddressParts(memberAddress);
@@ -1596,11 +1635,13 @@ export default function CreateApplicationPage() {
             memberFirstName,
             memberLastName,
             memberMrn,
+            memberMediCalNum,
             clientId2,
             memberAddress,
             memberCounty,
             memberDob,
             memberPhone,
+            memberEmail,
             contactPhone: normalizePhoneDigits(contactPhone)
               ? formatPhoneDashed(normalizePhoneDigits(contactPhone))
               : '',
@@ -1769,8 +1810,11 @@ export default function CreateApplicationPage() {
             memberFirstName: row.memberFirstName,
             memberLastName: row.memberLastName,
             memberMrn: row.memberMrn || '',
+            memberMediCalNum: row.memberMediCalNum || '',
+            confirmMemberMediCalNum: row.memberMediCalNum || '',
             memberDob: row.memberDob || '',
             memberPhone: row.memberPhone || '',
+            memberEmail: row.memberEmail || '',
             contactPhone: row.contactPhone || '',
             contactEmail: row.contactEmail || '',
             Authorization_Number_T038: row.authorizationNumberT2038 || '',
@@ -1787,7 +1831,7 @@ export default function CreateApplicationPage() {
             bestContactLastName: '',
             bestContactPhone: row.contactPhone || '',
             bestContactRelationship: '',
-            bestContactEmail: row.contactEmail || '',
+            bestContactEmail: row.contactEmail || row.memberEmail || '',
             calaimTrackingStatus: normalizeEligibilityStatus(row.eligibilityCheckStatus),
             intakeType: 'kaiser_auth_received_via_ils',
             intakeSource: 'ils_spreadsheet_batch',
@@ -2303,11 +2347,13 @@ export default function CreateApplicationPage() {
             memberFirstName: parsedName.firstName,
             memberLastName: parsedName.lastName,
             memberMrn: String(normalizedPatch.memberMrn || '').trim(),
+            memberMediCalNum: normalizeMediCalNumber(String(normalizedPatch.memberMediCalNum || '').trim()),
             clientId2: '',
             memberAddress: String(normalizedPatch.memberCustomaryAddress || '').trim(),
             memberCounty: String(normalizedPatch.memberCustomaryCounty || '').trim(),
             memberDob: toMmDdYyyy(normalizedPatch.memberDob || ''),
             memberPhone: String(normalizedPatch.memberPhone || '').trim(),
+            memberEmail: String(normalizedPatch.memberEmail || '').trim().toLowerCase(),
             contactPhone: String(normalizedPatch.contactPhone || '').trim(),
             contactEmail: '',
             eligibilityCheckStatus: normalizeEligibilityStatus((memberData as any)?.eligibilityCheckStatus),
@@ -2451,8 +2497,11 @@ export default function CreateApplicationPage() {
         ...(isKaiserAuthReceived
           ? {
               memberMrn: memberData.memberMrn || '',
+              memberMediCalNum: memberData.memberMediCalNum || '',
+              confirmMemberMediCalNum: memberData.confirmMemberMediCalNum || memberData.memberMediCalNum || '',
               memberDob: memberData.memberDob || '',
               memberPhone: memberData.memberPhone || '',
+              memberEmail: memberData.memberEmail || '',
               Authorization_Number_T038: memberData.Authorization_Number_T038 || '',
               Authorization_Start_T2038: memberData.Authorization_Start_T2038 || '',
               Authorization_End_T2038: memberData.Authorization_End_T2038 || '',
