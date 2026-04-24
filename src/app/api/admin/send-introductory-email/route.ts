@@ -142,6 +142,7 @@ function buildDefaultDraft(params: {
   contactName: string;
   memberMrn: string;
   hasKaiserAuthorizationAtIntake: boolean;
+  hasPriorIntroEmail: boolean;
   baseUrl: string;
   missingDocuments: string[];
   senderName: string;
@@ -153,6 +154,7 @@ function buildDefaultDraft(params: {
     contactName,
     memberMrn,
     hasKaiserAuthorizationAtIntake,
+    hasPriorIntroEmail,
     baseUrl,
     missingDocuments,
     senderName,
@@ -163,8 +165,12 @@ function buildDefaultDraft(params: {
   const signupUrl = `${baseUrl}/signup`;
   const inviteUrl = `${baseUrl}/invite/continue?applicationId=${encodeURIComponent(applicationId)}`;
   const kaiserAuthorizationLine = hasKaiserAuthorizationAtIntake
-    ? `We have received Kaiser authorization for ${memberName} for the California Advancing and Innovating Medi-Cal (CalAIM) program for Assisted Living Transitions${memberMrn ? ` (MRN: ${memberMrn})` : ''}. We need the required documents below to move forward.`
-    : `We started a CalAIM application for ${memberName} and we are ready for next steps.`;
+    ? hasPriorIntroEmail
+      ? `This is a reminder to sign in and continue the existing Kaiser-authorized CalAIM Assisted Living Transitions application for ${memberName}${memberMrn ? ` (MRN: ${memberMrn})` : ''}.`
+      : `We have received Kaiser authorization for ${memberName} for the California Advancing and Innovating Medi-Cal (CalAIM) program for Assisted Living Transitions${memberMrn ? ` (MRN: ${memberMrn})` : ''}. We need the required documents below to move forward.`
+    : hasPriorIntroEmail
+      ? `This is a reminder to continue the CalAIM application for ${memberName}.`
+      : `We started a CalAIM application for ${memberName} and we are ready for next steps.`;
   const missingDocumentsSection = missingDocuments.length
     ? [
         '',
@@ -175,7 +181,9 @@ function buildDefaultDraft(params: {
   const supportLine = `For any questions, please contact ${senderName || 'our team'}${senderEmail ? ` at ${senderEmail}` : ''} or call 800-330-5993.`;
 
   return {
-    subject: `To ${contactName || 'Primary Contact'}, Re: ${memberName} For Kaiser CalAIM Assisted Living Transitions Program - Next Steps`,
+    subject: hasPriorIntroEmail
+      ? `Reminder: ${memberName} CalAIM Assisted Living Transitions - Portal Action Needed`
+      : `To ${contactName || 'Primary Contact'}, Re: ${memberName} For Kaiser CalAIM Assisted Living Transitions Program - Next Steps`,
     message: [
       `Hello ${greetingFirstName},`,
       '',
@@ -269,12 +277,17 @@ export async function POST(request: NextRequest) {
     const replyToEmail = String(senderTransport.replyTo || '').trim();
     const baseUrl = getAppBaseUrl();
     const missingDocuments = getMissingRequestedDocuments(appData);
+    const hasPriorIntroEmail = Boolean(
+      appData.introEmailLastSentAt ||
+        (Array.isArray(appData.introEmailSendHistory) && (appData.introEmailSendHistory as unknown[]).length > 0)
+    );
     const defaults = buildDefaultDraft({
       applicationId,
       memberName,
       contactName,
       memberMrn,
       hasKaiserAuthorizationAtIntake,
+      hasPriorIntroEmail,
       baseUrl,
       missingDocuments,
       senderName,
