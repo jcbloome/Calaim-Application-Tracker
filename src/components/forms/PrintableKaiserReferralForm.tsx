@@ -42,6 +42,9 @@ type ReferralPrefill = {
 interface PrintableKaiserReferralFormProps extends ReferralPrefill {
   applicationId?: string;
   userId?: string;
+  taskId?: string;
+  memberClientId?: string;
+  referralContext?: string;
   showPrintButton?: boolean;
   hasReviewedPdfPreview?: boolean;
   onOpenPdfPreview?: () => Promise<void> | void;
@@ -104,6 +107,40 @@ const InteractiveCheckbox = ({
 );
 
 const lineValue = (value?: string) => String(value || '').trim();
+const normalizeMemberName = (value?: string) => {
+  const raw = lineValue(value);
+  if (!raw) return '';
+  const withoutTrailingId = raw.replace(/\s+[a-zA-Z-]*\d{3,}\s*$/, '').trim();
+  if (withoutTrailingId.includes(',')) {
+    const [lastNameRaw, firstNameRaw] = withoutTrailingId.split(',', 2);
+    const lastName = lineValue(lastNameRaw);
+    const firstName = lineValue(firstNameRaw);
+    return `${firstName} ${lastName}`.trim();
+  }
+  return withoutTrailingId.replace(/\s+/g, ' ').trim();
+};
+const toMmDdYyyy = (value?: string) => {
+  const raw = lineValue(value);
+  if (!raw) return '';
+  const mdy = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (mdy) {
+    const mm = String(Number(mdy[1])).padStart(2, '0');
+    const dd = String(Number(mdy[2])).padStart(2, '0');
+    return `${mm}-${dd}-${mdy[3]}`;
+  }
+  const ymd = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:T.*)?$/);
+  if (ymd) {
+    const mm = String(Number(ymd[2])).padStart(2, '0');
+    const dd = String(Number(ymd[3])).padStart(2, '0');
+    return `${mm}-${dd}-${ymd[1]}`;
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  const yyyy = String(parsed.getFullYear());
+  return `${mm}-${dd}-${yyyy}`;
+};
 const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
 const DEFAULT_REFERRER_ORG = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';
@@ -256,6 +293,9 @@ function SectionBHeader({ itemLabel = '' }: { itemLabel?: string }) {
 export function PrintableKaiserReferralForm({
   applicationId,
   userId,
+  taskId,
+  memberClientId,
+  referralContext,
   showPrintButton = true,
   hasReviewedPdfPreview = true,
   onOpenPdfPreview,
@@ -270,14 +310,14 @@ export function PrintableKaiserReferralForm({
 }: PrintableKaiserReferralFormProps) {
   const packetRef = React.useRef<HTMLDivElement>(null);
   const [formValues, setFormValues] = React.useState(() => ({
-    memberName: lineValue(prefill.memberName),
-    memberDob: lineValue(prefill.memberDob),
+    memberName: normalizeMemberName(prefill.memberName),
+    memberDob: toMmDdYyyy(prefill.memberDob),
     memberPhone: lineValue(prefill.memberPhone),
     memberAddress: lineValue(prefill.memberAddress),
     memberMrn: lineValue(prefill.memberMrn || prefill.memberMediCal),
     caregiverName: lineValue(prefill.caregiverName),
     caregiverContact: lineValue(prefill.caregiverContact),
-    referralDate: lineValue(prefill.referralDate),
+    referralDate: toMmDdYyyy(prefill.referralDate),
     // Do not source Referrer Name from CS Summary prefill.
     referrerName: DEFAULT_REFERRER_NAME,
     referrerOrganization: DEFAULT_REFERRER_ORG,
@@ -295,7 +335,7 @@ export function PrintableKaiserReferralForm({
     chw: false,
     cs: false,
     respite: false,
-    alfTransitions: requiredSection1AlfUsage === 'yes',
+    alfTransitions: true,
     homeTransition: false,
     personalCare: false,
     envAdaptations: false,
@@ -378,7 +418,7 @@ export function PrintableKaiserReferralForm({
   React.useEffect(() => {
     setServiceUsage((prev) => ({
       ...prev,
-      alfTransitions: requiredSection1AlfUsage === 'yes',
+      alfTransitions: true,
     }));
   }, [requiredSection1AlfUsage]);
 
@@ -439,6 +479,10 @@ export function PrintableKaiserReferralForm({
       window.alert('Please check "Confirm PDF view is correct" before continuing.');
       return;
     }
+    if (!lineValue(formValues.memberPhone)) {
+      window.alert('Member phone number is required before sending to Kaiser Intake.');
+      return;
+    }
     setIsPdfConfirmedForSend(true);
     setEmailPreviewOpen(true);
   };
@@ -466,6 +510,9 @@ export function PrintableKaiserReferralForm({
           memberCounty: memberCounty || '',
           referrerName: referrerName || '',
           referrerEmail: referrerEmail || '',
+          taskId: String(taskId || ''),
+          memberClientId: String(memberClientId || ''),
+          referralContext: String(referralContext || ''),
           customSubject: subjectLine,
           customMessage: previewMessage,
           pdfBase64,
@@ -795,6 +842,9 @@ export function PrintableKaiserReferralForm({
                   <input
                     value={formValues.referralDate}
                     onChange={(event) => setFormValues((prev) => ({ ...prev, referralDate: event.target.value }))}
+                    onBlur={(event) =>
+                      setFormValues((prev) => ({ ...prev, referralDate: toMmDdYyyy(event.target.value) }))
+                    }
                     className="w-full border border-transparent bg-transparent px-1 focus:border-black focus:outline-none"
                   />
                 </div>
@@ -934,6 +984,9 @@ export function PrintableKaiserReferralForm({
                   <input
                     value={formValues.memberDob}
                     onChange={(event) => setFormValues((prev) => ({ ...prev, memberDob: event.target.value }))}
+                    onBlur={(event) =>
+                      setFormValues((prev) => ({ ...prev, memberDob: toMmDdYyyy(event.target.value) }))
+                    }
                     className="h-[24px] w-full border border-transparent bg-transparent focus:border-black focus:outline-none"
                   />
                 </div>
@@ -944,6 +997,7 @@ export function PrintableKaiserReferralForm({
                   <input
                     value={formValues.memberPhone}
                     onChange={(event) => setFormValues((prev) => ({ ...prev, memberPhone: event.target.value }))}
+                    required
                     className="h-[24px] w-full border border-transparent bg-transparent focus:border-black focus:outline-none"
                   />
                 </div>
@@ -1013,7 +1067,7 @@ export function PrintableKaiserReferralForm({
             <div className="mt-0.5 grid grid-cols-2 gap-x-2">
               <div className="space-y-0.5">
                 <div><InteractiveCheckbox checked={serviceUsage.respite} onToggle={() => setServiceUsage((prev) => ({ ...prev, respite: !prev.respite }))} className="mr-1" />Respite Services (Caregiver Respite)</div>
-                <div><InteractiveCheckbox checked={serviceUsage.alfTransitions} onToggle={() => setServiceUsage((prev) => ({ ...prev, alfTransitions: !prev.alfTransitions }))} className="mr-1" />Assisted Living Facility Transitions</div>
+                <div><InteractiveCheckbox checked={serviceUsage.alfTransitions} onToggle={() => {}} className="mr-1" />Assisted Living Facility Transitions</div>
                 <div><InteractiveCheckbox checked={serviceUsage.homeTransition} onToggle={() => setServiceUsage((prev) => ({ ...prev, homeTransition: !prev.homeTransition }))} className="mr-1" />Community or Home Transition Services</div>
                 <div><InteractiveCheckbox checked={serviceUsage.personalCare} onToggle={() => setServiceUsage((prev) => ({ ...prev, personalCare: !prev.personalCare }))} className="mr-1" />Personal Care and Homemaker Services</div>
                 <div><InteractiveCheckbox checked={serviceUsage.envAdaptations} onToggle={() => setServiceUsage((prev) => ({ ...prev, envAdaptations: !prev.envAdaptations }))} className="mr-1" />Environmental Accessibility Adaptations (Home Modifications)</div>

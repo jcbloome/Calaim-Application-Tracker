@@ -47,6 +47,72 @@ const toYmd = (date: Date) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+const composeAddress = (...parts: Array<unknown>) =>
+  parts
+    .map((part) => clean(part))
+    .filter(Boolean)
+    .join(', ')
+    .replace(/,\s*,/g, ', ')
+    .trim();
+
+const normalizeDateInput = (value: unknown) => {
+  const parsed = parseDate(value);
+  return parsed ? toYmd(parsed) : clean(value);
+};
+
+const buildKaiserReferralActionUrl = (params: {
+  member: Record<string, any>;
+  memberName: string;
+  clientId2: string;
+  referralDate: string;
+  taskId: string;
+}) => {
+  const { member, memberName, clientId2, referralDate, taskId } = params;
+  const query = new URLSearchParams();
+
+  const memberAddress = composeAddress(
+    member?.Member_Address || member?.Address || member?.Street_Address || member?.memberAddress,
+    member?.Member_City || member?.City || member?.memberCity,
+    [member?.Member_State || member?.State || member?.memberState, member?.Member_Zip || member?.Zip || member?.memberZip]
+      .map((part) => clean(part))
+      .filter(Boolean)
+      .join(' ')
+  );
+  const caregiverName = `${clean(member?.Caregiver_First || member?.CaregiverFirstName || member?.Best_Contact_First)} ${clean(
+    member?.Caregiver_Last || member?.CaregiverLastName || member?.Best_Contact_Last
+  )}`.trim();
+  const caregiverContact =
+    clean(member?.Caregiver_Contact || member?.Caregiver_Phone || member?.Best_Contact_Phone || member?.Best_Contact_Email) || '';
+
+  const setIfPresent = (key: string, value: unknown) => {
+    const text = clean(value);
+    if (text) query.set(key, text);
+  };
+
+  query.set('returnTo', '/admin/daily-tasks');
+  query.set('memberName', memberName || 'Member');
+  query.set('memberMrn', clean(member?.MRN || member?.Member_MRN || member?.MCP_CIN || member?.MC || clientId2));
+  query.set('memberMediCal', clean(member?.MCP_CIN || member?.Medical_Number || member?.Medi_Cal || member?.MC || ''));
+  query.set('referralDate', referralDate);
+  query.set('healthPlan', clean(member?.CalAIM_MCO || 'Kaiser'));
+  query.set('memberCounty', clean(member?.Member_County || member?.County || ''));
+  query.set('kaiserAuthAlreadyReceived', '0');
+  query.set('taskId', taskId);
+  query.set('memberClientId', clientId2);
+  query.set('referralContext', 'kaiser_t2038_expiring_task');
+
+  setIfPresent('memberDob', normalizeDateInput(member?.DOB || member?.Senior_DOB || member?.Date_Of_Birth || member?.Member_DOB));
+  setIfPresent('memberPhone', member?.Senior_Phone || member?.Member_Phone || member?.Phone || member?.Best_Contact_Phone);
+  setIfPresent('memberEmail', member?.Member_Email || member?.Email || member?.Best_Contact_Email);
+  setIfPresent('memberAddress', memberAddress);
+  setIfPresent('caregiverName', caregiverName);
+  setIfPresent('caregiverContact', caregiverContact);
+  setIfPresent('currentLocationName', member?.RCFE_Name || member?.Facility_Name);
+  setIfPresent('currentLocationAddress', member?.RCFE_Address || memberAddress);
+
+  return `/forms/kaiser-referral/printable?${query.toString()}`;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
@@ -243,9 +309,17 @@ export async function GET(request: NextRequest) {
           clean(assignee?.email) ||
           'Kaiser Manager';
         const taskId = `t2038-renewal-task-kaiser-manager-${assigneeUid}-${clean(member.clientId2).replace(/[^a-zA-Z0-9_-]/g, '')}-${member.t2038EndDate}`;
-        const title = `Review T2038 renewal: ${member.memberName} (Kaiser)`;
-        const description = `T2038 ends on ${member.t2038EndDate}. Member is not Final- Member at RCFE, so request renewal review is needed.`;
-        const notes = `Action items: 1) Review Kaiser status (${member.kaiserStatus || 'Unknown'}), 2) Prepare/request T2038 renewal, 3) Update authorization notes and track completion in the portal.`;
+        const sourceMember = allMembers.find((candidate) => clean(candidate?.client_ID2 || candidate?.Client_ID2 || candidate?.MCP_CIN || candidate?.MRN || candidate?.MC || candidate?.id) === clean(member.clientId2)) || {};
+        const referralActionUrl = buildKaiserReferralActionUrl({
+          member: sourceMember,
+          memberName: member.memberName,
+          clientId2: member.clientId2,
+          referralDate: todayYmd,
+          taskId,
+        });
+        const title = `Generate Kaiser referral: ${member.memberName} (T2038 expiring)`;
+        const description = `T2038 ends on ${member.t2038EndDate}. Member is not Final- Member at RCFE; open prefilled referral and submit reauthorization request to Kaiser.`;
+        const notes = `Action items: 1) Open "Generate Kaiser Referral Form" from this task, 2) Confirm Kaiser status (${member.kaiserStatus || 'Unknown'}), 3) Send referral to Kaiser intake, 4) Confirm submission in Kaiser referral logs.`;
         const tags = ['t2038', 'renewal', 'authorization', 'kaiser-manager'];
         try {
           await adminDb.collection('adminDailyTasks').doc(taskId).create({
@@ -264,7 +338,7 @@ export async function GET(request: NextRequest) {
             createdBy: 'system',
             notes,
             tags,
-            applicationLink: actionUrl,
+            applicationLink: referralActionUrl,
             source: 'caspio_kaiser_t2038',
           });
           dailyTasksCreated += 1;

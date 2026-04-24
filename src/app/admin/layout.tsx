@@ -156,6 +156,7 @@ const adminNavLinks = [
       { href: '/admin/tools/h2022-claim-checker', label: 'H2022 Claim Checker', icon: ClipboardCheck },
       { isDivider: true, label: 'Kaiser', icon: Heart },
       { href: '/admin/kaiser-tracker', label: 'Kaiser Tracker', icon: Heart },
+      { href: '/admin/kaiser-referral-generator', label: 'Kaiser Referral Generator', icon: FileText },
       { href: '/admin/kaiser-room-board-docs', label: 'Kaiser Room & Board Docs', icon: Download },
       { href: '/admin/authorization-tracker', label: 'Authorization Tracker', icon: Shield },
       { href: '/admin/statistics', label: 'Statistics', icon: BarChart3 },

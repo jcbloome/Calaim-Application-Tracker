@@ -66,6 +66,9 @@ function KaiserReferralPrintableContent() {
       alft22Choice: searchParams.get('alft22Choice') || '',
       kaiserAuthAlreadyReceived: searchParams.get('kaiserAuthAlreadyReceived') || '',
       kaiserReferralSubmittedAtIso: searchParams.get('kaiserReferralSubmittedAtIso') || '',
+      taskId: searchParams.get('taskId') || '',
+      memberClientId: searchParams.get('memberClientId') || '',
+      referralContext: searchParams.get('referralContext') || '',
       returnTo: searchParams.get('returnTo') || '',
     }),
     [searchParams]
@@ -106,6 +109,9 @@ function KaiserReferralPrintableContent() {
       currentLocationAddress: formPrefill.currentLocationAddress,
       healthPlan: formPrefill.healthPlan,
       memberCounty: formPrefill.memberCounty,
+      taskId: formPrefill.taskId,
+      memberClientId: formPrefill.memberClientId,
+      referralContext: formPrefill.referralContext,
     };
   }, [formPrefill]);
 
@@ -129,6 +135,8 @@ function KaiserReferralPrintableContent() {
   });
   const hasRequiredLocation = Boolean(alft22Choice);
   const hasRequiredSection1Usage = section1AlfUsage === 'yes' || section1AlfUsage === 'no';
+  const hasRequiredMemberPhone = Boolean(String(printableProps.memberPhone || '').trim());
+  const hasRequiredMemberAddress = Boolean(String(printableProps.memberAddress || '').trim());
   const hasRequiredSelectionsForPdf = hasRequiredLocation && hasRequiredSection1Usage;
   const requiresKaiserReferralSendFlow = !['1', 'true', 'yes'].includes(
     String(formPrefill.kaiserAuthAlreadyReceived || '').trim().toLowerCase()
@@ -239,6 +247,14 @@ function KaiserReferralPrintableContent() {
           Staff reminder: Section 2.2 <span className="font-semibold">Where member is currently living</span> is required before sending.
           {hasRequiredLocation ? ' (Completed)' : ' (Please complete)'}
         </div>
+        <div className="mt-1 text-xs text-emerald-700">
+          Staff reminder: <span className="font-semibold">Member Phone Number</span> is required before sending.
+          {hasRequiredMemberPhone ? ' (Completed)' : ' (Please complete)'}
+        </div>
+        <div className="mt-1 text-xs text-emerald-700">
+          Staff reminder: <span className="font-semibold">Member Mailing Address</span> is required before sending.
+          {hasRequiredMemberAddress ? ' (Completed)' : ' (Please complete)'}
+        </div>
         {!hasReviewedPdfPreview ? (
           <div className="mt-1 text-xs text-amber-700">
             PDF preview required: complete Step 2 View PDF before continuing.
@@ -254,6 +270,9 @@ function KaiserReferralPrintableContent() {
         <div className="font-medium text-amber-900">Step 1: Complete required Kaiser fields</div>
         <div className="mt-1 text-xs text-amber-900">
           Select required values before moving to PDF review.
+        </div>
+        <div className="mt-2 text-xs text-amber-900">
+          Required member fields in Section A: <strong>Member Phone Number</strong> and <strong>Member Mailing Address</strong>.
         </div>
         <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
           <label className="space-y-1">

@@ -7,6 +7,9 @@ type SendPayload = {
   region: string;
   applicationId?: string;
   userId?: string;
+  taskId?: string;
+  memberClientId?: string;
+  referralContext?: string;
   memberName?: string;
   memberMrn?: string;
   memberCounty?: string;
@@ -204,10 +207,16 @@ export async function POST(request: NextRequest) {
     const userId = String(body?.userId || '').trim();
     const overrideResubmit = Boolean(body?.overrideResubmit);
     const overrideReason = String(body?.overrideReason || '').trim();
+    const taskId = String(body?.taskId || '').trim();
+    const memberClientId = String(body?.memberClientId || '').trim();
+    const referralContext = String(body?.referralContext || '').trim();
     const metadata = {
       region,
       applicationId: appId || null,
       userId: userId || null,
+      taskId: taskId || null,
+      memberClientId: memberClientId || null,
+      referralContext: referralContext || null,
       memberName: memberName || null,
       memberMrn: memberMrn || null,
       memberCounty: memberCounty || null,

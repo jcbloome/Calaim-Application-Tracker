@@ -359,7 +359,9 @@ function TaskCard({
               className="flex items-center gap-0.5 text-blue-600 hover:underline"
             >
               <ExternalLink className="h-3 w-3" />
-              View application
+              {task.applicationLink.includes('/forms/kaiser-referral/printable')
+                ? 'Generate Kaiser Referral Form'
+                : 'View application'}
             </Link>
           )}
         </div>
