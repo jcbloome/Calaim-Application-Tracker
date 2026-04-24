@@ -6369,6 +6369,19 @@ function ApplicationDetailPageContent() {
       const targetForms = (application.forms || []).filter(
         (form: any) => String(form?.name || '').trim() === formName
       );
+      const targetFileLabel = (() => {
+        if (targetEligibilityUpload) return String(targetEligibilityUpload.fileName || 'Selected file').trim();
+        if (!targetFormFilePath) return '';
+        for (const form of targetForms) {
+          const files = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+          const fromUploaded = files.find((entry: any) => String(entry?.filePath || '').trim() === targetFormFilePath);
+          if (fromUploaded) return String(fromUploaded?.fileName || 'Selected file').trim();
+          if (String(form?.filePath || '').trim() === targetFormFilePath) {
+            return String(form?.fileName || 'Selected file').trim();
+          }
+        }
+        return 'Selected file';
+      })();
       const storagePathsToDelete = (
         rejectScope === 'file'
           ? [
@@ -6408,12 +6421,27 @@ function ApplicationDetailPageContent() {
       let sentAtIso: string | null = null;
 
       if (sendEmail) {
-        const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
-        const applicantPathwayUrl = `https://connectcalaim.com/pathway?applicationId=${encodeURIComponent(String(applicationId || ''))}`;
+        const focusIdByFormName: Record<string, string> = {
+          'cs member summary': 'cs-summary',
+          'cs summary': 'cs-summary',
+          'waivers & authorizations': 'waivers',
+          'proof of income': 'proof-of-income',
+          "lic 602a - physician's report": 'lic-602a',
+          'medicine list': 'medicine-list',
+          'declaration of eligibility': 'declaration-of-eligibility',
+          'snf facesheet': 'snf-facesheet',
+        };
+        const focusId = focusIdByFormName[String(formName || '').trim().toLowerCase()] || '';
+        const pathwayReturnPath = `/pathway?applicationId=${encodeURIComponent(String(applicationId || ''))}${
+          focusId ? `&focus=${encodeURIComponent(focusId)}&mode=upload-missing` : ''
+        }`;
+        const applicantPortalLoginUrl = `https://connectcalaim.com/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
+        const applicantPathwayUrl = `https://connectcalaim.com${pathwayReturnPath}`;
         const subject = `Action needed: Please redo ${formName}`;
         const emailMessage = [
           `We reviewed your application and need an updated submission for: "${formName}".`,
           '',
+          ...(rejectScope === 'file' && targetFileLabel ? [`File rejected: ${targetFileLabel}`, ''] : []),
           'What to update:',
           `- ${reason}`,
           '',
@@ -6472,16 +6500,45 @@ function ApplicationDetailPageContent() {
           emailSentAt: sentAtIso,
           scope: rejectScope,
           targetFileKey: targetFileKey || null,
+          targetFileLabel: targetFileLabel || null,
         };
+        const rawUploads = Array.isArray((form as any)?.uploadedFiles) ? (form as any).uploadedFiles : [];
+        const normalizedUploads = rawUploads
+          .map((entry: any) => ({
+            fileName: String(entry?.fileName || '').trim(),
+            filePath: String(entry?.filePath || '').trim(),
+            downloadURL: String(entry?.downloadURL || '').trim() || null,
+          }))
+          .filter((entry: any) => Boolean(entry.fileName || entry.filePath));
+        const fallbackUpload =
+          String(form?.filePath || '').trim() || String(form?.fileName || '').trim()
+            ? [
+                {
+                  fileName: String(form?.fileName || '').trim() || 'Uploaded file',
+                  filePath: String(form?.filePath || '').trim(),
+                  downloadURL: String(form?.downloadURL || '').trim() || null,
+                },
+              ]
+            : [];
+        const currentUploads = normalizedUploads.length > 0 ? normalizedUploads : fallbackUpload;
+        const remainingUploads =
+          rejectScope === 'file' && targetFormFilePath
+            ? currentUploads.filter((entry: any) => String(entry?.filePath || '').trim() !== targetFormFilePath)
+            : currentUploads;
+        const hasRemainingUploads = remainingUploads.length > 0;
+        const nextPrimaryUpload = hasRemainingUploads ? remainingUploads[0] : null;
+        const shouldPreserveNonRejectedFiles = rejectScope === 'file' && hasRemainingUploads;
         return {
           ...form,
-          status: 'Pending',
-          dateCompleted: null,
+          status: shouldPreserveNonRejectedFiles ? 'Completed' : 'Pending',
+          dateCompleted: shouldPreserveNonRejectedFiles ? form?.dateCompleted || null : null,
           // Reset generic completion/upload artifacts so users can resubmit cleanly.
-          fileName: null,
-          filePath: null,
-          downloadURL: null,
-          uploadedFiles: [],
+          fileName: shouldPreserveNonRejectedFiles
+            ? remainingUploads.map((entry: any) => String(entry.fileName || '').trim()).filter(Boolean).join(', ')
+            : null,
+          filePath: shouldPreserveNonRejectedFiles ? String(nextPrimaryUpload?.filePath || '').trim() || null : null,
+          downloadURL: shouldPreserveNonRejectedFiles ? String(nextPrimaryUpload?.downloadURL || '').trim() || null : null,
+          uploadedFiles: shouldPreserveNonRejectedFiles ? remainingUploads : [],
           source: null,
           standaloneUploadId: null,
           acknowledged: false,
@@ -6579,7 +6636,7 @@ function ApplicationDetailPageContent() {
         description: sendEmail
           ? `${formName} set to pending and email sent to ${recipientEmail}.`
           : rejectScope === 'file'
-            ? 'Selected file rejected. Applicant can now re-upload.'
+            ? 'Selected file rejected. Remaining files were kept and applicant can upload replacements.'
             : `${formName} set to pending. Applicant can now redo the form.`,
       });
     } catch (error: any) {
@@ -9799,6 +9856,8 @@ function ApplicationDetailPageContent() {
                                                 : 'Unknown date';
                                               const who = String(entry?.rejectedBy || '').trim() || 'Unknown sender';
                                               const why = String(entry?.reason || '').trim() || 'No reason';
+                                              const scope = String(entry?.scope || '').trim().toLowerCase() === 'file' ? 'Specific file' : 'Whole card';
+                                              const targetFileLabel = String(entry?.targetFileLabel || '').trim();
                                               const emailed = Boolean(entry?.emailed);
                                               const to = String(entry?.emailTo || '').trim();
                                               const sentAt = String(entry?.emailSentAt || '').trim();
@@ -9812,6 +9871,10 @@ function ApplicationDetailPageContent() {
                                                 >
                                                   <div>
                                                     <span className="font-medium text-foreground">{dateLabel}</span> - {who}
+                                                  </div>
+                                                  <div>
+                                                    Scope: <span className="font-medium text-foreground">{scope}</span>
+                                                    {targetFileLabel ? ` - ${targetFileLabel}` : ''}
                                                   </div>
                                                   <div>{why}</div>
                                                   <div className={emailed ? 'text-red-700' : ''}>

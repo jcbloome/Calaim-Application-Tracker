@@ -207,10 +207,30 @@ export type FormStatus = {
   fileName?: string | null;
   filePath?: string | null;
   downloadURL?: string | null;
+  source?: string | null;
+  standaloneUploadId?: string | null;
   uploadedFiles?: Array<{
     fileName?: string | null;
     filePath?: string | null;
     downloadURL?: string | null;
+  }> | null;
+  revisionRequestedReason?: string | null;
+  revisionRequestedAt?: string | null;
+  revisionRequestedBy?: string | null;
+  revisionRequestedByUid?: string | null;
+  revisionEmailTo?: string | null;
+  revisionEmailSentAt?: string | null;
+  revisionHistory?: Array<{
+    reason?: string | null;
+    rejectedAt?: string | null;
+    rejectedBy?: string | null;
+    rejectedByUid?: string | null;
+    emailed?: boolean;
+    emailTo?: string | null;
+    emailSentAt?: string | null;
+    scope?: 'form' | 'file' | string;
+    targetFileKey?: string | null;
+    targetFileLabel?: string | null;
   }> | null;
   signerType?: 'member' | 'representative' | null;
   signerName?: string | null;

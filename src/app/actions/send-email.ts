@@ -35,6 +35,16 @@ function getResendClient(): Resend | null {
 }
 
 const DEFAULT_PORTAL_LOGIN_URL = 'https://connectcalaim.com/login';
+const REQUIREMENT_TITLE_TO_ID: Record<string, string> = {
+    'cs member summary': 'cs-summary',
+    'cs summary': 'cs-summary',
+    'waivers & authorizations': 'waivers',
+    'proof of income': 'proof-of-income',
+    "lic 602a - physician's report": 'lic-602a',
+    'medicine list': 'medicine-list',
+    'declaration of eligibility': 'declaration-of-eligibility',
+    'snf facesheet': 'snf-facesheet',
+};
 
 function resolvePortalLoginUrl(rawPortalUrl?: string): string {
     const raw = String(rawPortalUrl || '').trim();
@@ -57,6 +67,14 @@ function resolvePortalLoginUrl(rawPortalUrl?: string): string {
     } catch {
         return DEFAULT_PORTAL_LOGIN_URL;
     }
+}
+
+function getRequirementFocusId(incompleteItems: string[] = []): string {
+    for (const item of incompleteItems) {
+        const key = String(item || '').trim().toLowerCase();
+        if (REQUIREMENT_TITLE_TO_ID[key]) return REQUIREMENT_TITLE_TO_ID[key];
+    }
+    return '';
 }
 
 interface ApplicationStatusPayload {
@@ -82,6 +100,7 @@ interface ReminderPayload {
     applicationId: string;
     incompleteItems: string[];
     baseUrl?: string;
+    focusRequirementId?: string;
 }
 
 interface StaffAssignmentPayload {
@@ -409,18 +428,20 @@ export const sendApplicationStatusEmail = async (payload: ApplicationStatusPaylo
 };
 
 export const sendReminderEmail = async (payload: ReminderPayload) => {
-    const { to, subject, referrerName, memberName, applicationId, incompleteItems, baseUrl } = payload;
+    const { to, subject, referrerName, memberName, applicationId, incompleteItems, baseUrl, focusRequirementId } = payload;
 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
 
     try {
+        const resolvedFocusRequirementId = String(focusRequirementId || '').trim() || getRequirementFocusId(incompleteItems);
         const emailHtml = await renderAsync(ReminderEmail({
             referrerName,
             memberName,
             applicationId,
             incompleteItems,
             baseUrl,
+            focusRequirementId: resolvedFocusRequirementId || undefined,
         }));
 
         return await sendViaResendWithLog({

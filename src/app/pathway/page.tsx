@@ -1,9 +1,10 @@
 
 'use client';
 
-import { Suspense, useMemo, useState, useEffect, type ReactNode } from 'react';
+import { Suspense, useState, useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { format } from 'date-fns';
 import {
   Card,
   CardContent,
@@ -30,14 +31,13 @@ import {
   MessageSquareHeart,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
 import { cn } from '@/lib/utils';
 import type { Application, FormStatus as FormStatusType } from '@/lib/definitions';
-import { useDoc, useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
+import { useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot } from 'firebase/firestore';
-import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -86,21 +86,43 @@ const getPathwayRequirements = (
   ];
 };
 
-function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
-    const isCompleted = status === 'Completed';
+function StatusIndicator({
+  state,
+  isUpload,
+}: {
+  state: RequirementReviewState;
+  isUpload?: boolean;
+}) {
+    const statusLabel =
+      state === 'reviewed'
+        ? 'Reviewed'
+        : state === 'needs_revision'
+          ? 'Needs revision'
+          : state === 'under_review'
+            ? (isUpload ? 'Uploaded - under review' : 'Submitted - under review')
+            : 'Not started';
+    const isDone = state === 'reviewed' || state === 'under_review';
+    const toneClass =
+      state === 'reviewed'
+        ? 'text-green-600'
+        : state === 'needs_revision'
+          ? 'text-amber-600'
+          : state === 'under_review'
+            ? 'text-blue-600'
+            : 'text-orange-500';
     return (
       <div className={cn(
         "flex items-center gap-2 text-sm font-medium",
-        isCompleted ? 'text-green-600' : 'text-orange-500'
+        toneClass
       )}>
-        {isCompleted ? (
+        {isDone ? (
           <CheckCircle2 className="h-5 w-5" />
         ) : (
           <div className="h-5 w-5 flex items-center justify-center">
             <div className="h-3 w-3 rounded-full border-2 border-current" />
           </div>
         )}
-        <span>{isCompleted ? 'Completed' : 'Pending'}</span>
+        <span>{statusLabel}</span>
       </div>
     );
 }
@@ -133,6 +155,29 @@ function getRequirementReviewLabel(state: RequirementReviewState): string {
     default:
       return 'Pending upload';
   }
+}
+
+function getRequirementMissingGuidance(req: { id: string; type: string }, state: RequirementReviewState): string[] {
+  if (state === 'reviewed' || state === 'under_review') return [];
+  if (req.id === 'proof-of-income') {
+    return [
+      'Upload either a Social Security award letter, one PDF containing all bank statements, or multiple statement files.',
+      'Make sure all pages are readable and include names/dates.',
+    ];
+  }
+  if (req.type === 'Upload') {
+    return [
+      'Upload the requested file(s).',
+      'Use clear scans/photos so staff can verify quickly.',
+    ];
+  }
+  if (req.id === 'waivers') {
+    return ['Complete all waiver acknowledgements before submitting this card.'];
+  }
+  if (req.id === 'cs-summary') {
+    return ['Complete all required CS Summary sections and save before returning here.'];
+  }
+  return ['Complete this card to continue your application.'];
 }
 
 function QuickViewField({
@@ -252,6 +297,8 @@ function PathwayPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const applicationId = searchParams.get('applicationId');
+  const focusRequirementIdParam = String(searchParams.get('focus') || '').trim();
+  const modeParam = String(searchParams.get('mode') || '').trim().toLowerCase();
   const { user, isUserLoading } = useUser();
   const { isAdmin, isSuperAdmin } = useAdmin();
   const firestore = useFirestore();
@@ -281,6 +328,13 @@ function PathwayPageContent() {
     'SNF Facesheet': false,
   });
   const [staffDownloadUrls, setStaffDownloadUrls] = useState<Record<string, string>>({});
+  const [showMissingOnly, setShowMissingOnly] = useState(
+    modeParam === 'upload-missing' || modeParam === 'missing'
+  );
+  const [focusedRequirementId, setFocusedRequirementId] = useState('');
+  const [uploadReceiptByRequirement, setUploadReceiptByRequirement] = useState<
+    Record<string, { uploadedAtIso: string; fileNames: string[]; fileCount: number }>
+  >({});
 
   const isAdminCreatedApp = applicationId?.startsWith('admin_app_');
 
@@ -740,24 +794,50 @@ function PathwayPageContent() {
         console.log('Upload results:', uploadResults);
 
         if (uploadResults.length > 0) {
-            const primaryUpload = uploadResults[0];
+            const existingFormInfo = replaceExistingForm || (formStatusMap.get(requirementTitle) as FormStatusType | undefined);
+            const shouldMergeWithExisting =
+              !replaceExistingForm &&
+              Boolean(existingFormInfo) &&
+              hasOpenRevisionRequest(existingFormInfo);
+            const preservedExistingUploads = shouldMergeWithExisting
+              ? ((Array.isArray((existingFormInfo as any)?.uploadedFiles)
+                  ? (existingFormInfo as any).uploadedFiles
+                  : []
+                )
+                  .map((entry: any) => ({
+                    fileName: String(entry?.fileName || '').trim(),
+                    filePath: String(entry?.filePath || '').trim(),
+                    downloadURL: null,
+                  }))
+                  .filter((entry: any) => Boolean(entry.fileName || entry.filePath)))
+              : [];
+            const combinedUploads = [...preservedExistingUploads, ...uploadResults.map((entry, index) => ({
+              fileName: files[index]?.name || entry.path.split('/').pop() || 'Uploaded file',
+              filePath: entry.path,
+              downloadURL: null,
+            }))];
+            const primaryUpload = combinedUploads[0] || uploadResults[0];
             console.log('Updating form status...');
             await handleFormStatusUpdate([{
                 name: requirementTitle,
                 status: 'Completed',
-                fileName: files.map(f => f.name).join(', '),
-                filePath: primaryUpload.path,
+                fileName: combinedUploads.map((entry) => String(entry.fileName || '').trim()).filter(Boolean).join(', '),
+                filePath: String((primaryUpload as any)?.filePath || uploadResults[0].path || '').trim() || null,
                 downloadURL: null,
-                uploadedFiles: uploadResults.map((entry, index) => ({
-                  fileName: files[index]?.name || entry.path.split('/').pop() || 'Uploaded file',
-                  filePath: entry.path,
-                  downloadURL: null,
-                })),
+                uploadedFiles: combinedUploads,
                 dateCompleted: Timestamp.now(),
                 uploadedByUid: user.uid,
                 uploadedByEmail: user.email || null,
                 uploadedByName: user.displayName || user.email || 'User',
             }]);
+            setUploadReceiptByRequirement((prev) => ({
+              ...prev,
+              [requirementTitle]: {
+                uploadedAtIso: new Date().toISOString(),
+                fileNames: files.map((f) => String(f.name || '').trim()).filter(Boolean),
+                fileCount: files.length,
+              },
+            }));
             console.log('Form status updated successfully');
             toast({ 
               title: 'Upload Successful', 
@@ -820,9 +900,22 @@ function PathwayPageContent() {
           uploadedByName: user.displayName || user.email || 'User',
         }));
         await handleFormStatusUpdate(updates);
+        setUploadReceiptByRequirement((prev) => {
+          const next = { ...prev };
+          const nowIso = new Date().toISOString();
+          const names = files.map((file) => String(file.name || '').trim()).filter(Boolean);
+          formsToUpdate.forEach((name) => {
+            next[name] = {
+              uploadedAtIso: nowIso,
+              fileNames: names,
+              fileCount: files.length,
+            };
+          });
+          return next;
+        });
         toast({ title: 'Upload Successful', description: 'Consolidated documents have been uploaded.' });
       }
-    } catch (error) {
+    } catch {
       toast({ variant: 'destructive', title: 'Upload Failed', description: 'Could not upload consolidated documents.' });
     } finally {
       setUploading(prev => ({ ...prev, [consolidatedId]: false }));
@@ -855,6 +948,12 @@ function PathwayPageContent() {
         uploadedByEmail: null,
         uploadedByName: null,
       }]);
+      setUploadReceiptByRequirement((prev) => {
+        if (!prev[form.name]) return prev;
+        const next = { ...prev };
+        delete next[form.name];
+        return next;
+      });
       return;
     }
 
@@ -871,6 +970,12 @@ function PathwayPageContent() {
         uploadedByEmail: null,
         uploadedByName: null,
       }]);
+      setUploadReceiptByRequirement((prev) => {
+        if (!prev[form.name]) return prev;
+        const next = { ...prev };
+        delete next[form.name];
+        return next;
+      });
       toast({ title: 'File Removed', description: `${form.fileName} has been removed.`});
     } catch (error) {
       console.error("Error removing file:", error);
@@ -887,6 +992,12 @@ function PathwayPageContent() {
         uploadedByEmail: null,
         uploadedByName: null,
       }]);
+      setUploadReceiptByRequirement((prev) => {
+        if (!prev[form.name]) return prev;
+        const next = { ...prev };
+        delete next[form.name];
+        return next;
+      });
     }
   };
 
@@ -955,6 +1066,31 @@ function PathwayPageContent() {
         setIsSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    setShowMissingOnly(modeParam === 'upload-missing' || modeParam === 'missing');
+  }, [modeParam]);
+
+  useEffect(() => {
+    if (!focusRequirementIdParam || !application) {
+      setFocusedRequirementId('');
+      return;
+    }
+    const normalizedFocus = focusRequirementIdParam.toLowerCase();
+    const requirementOptions = getPathwayRequirements(
+      application.pathway as 'SNF Transition' | 'SNF Diversion',
+      application.healthPlan
+    );
+    const match = requirementOptions.find((req) => String(req.id || '').trim().toLowerCase() === normalizedFocus);
+    if (!match) return;
+    setFocusedRequirementId(match.id);
+    const cardId = `pathway-card-${match.id}`;
+    const timeout = setTimeout(() => {
+      const element = document.getElementById(cardId);
+      element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    return () => clearTimeout(timeout);
+  }, [focusRequirementIdParam, application]);
 
   if (isLoading || isUserLoading) {
     return (
@@ -1035,13 +1171,16 @@ function PathwayPageContent() {
     return items;
   })();
   const formStatusMap = new Map(getSafeForms(application.forms).map(f => [f.name, f]));
+  const reviewStateByRequirementId = new Map(
+    orderedPathwayRequirements.map((req) => [req.id, getRequirementReviewState(formStatusMap.get(req.title))] as const)
+  );
   const waiverFormStatus = formStatusMap.get('Waivers & Authorizations') as FormStatusType | undefined;
   const proofIncomeActualAmountRaw = String((application as any)?.proofIncomeActualAmount || '').trim();
   const proofIncomeActualAmount = parseCurrencyAmount(proofIncomeActualAmountRaw);
   const proofIncomeSocFlag = proofIncomeActualAmount != null && proofIncomeActualAmount > 1800;
   const completedCount = pathwayRequirements.reduce((acc, req) => {
-    const form = formStatusMap.get(req.title);
-    if (form?.status === 'Completed' && !hasOpenRevisionRequest(form)) return acc + 1;
+    const state = reviewStateByRequirementId.get(req.id) || 'pending';
+    if (state === 'under_review' || state === 'reviewed') return acc + 1;
     return acc;
   }, 0);
   
@@ -1049,8 +1188,8 @@ function PathwayPageContent() {
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
   const allRequiredFormsComplete = completedCount === totalCount;
   const missingRequiredRequirements = orderedPathwayRequirements.filter((req) => {
-    const formInfo = formStatusMap.get(req.title);
-    return formInfo?.status !== 'Completed' || hasOpenRevisionRequest(formInfo);
+    const state = reviewStateByRequirementId.get(req.id) || 'pending';
+    return state === 'pending' || state === 'needs_revision';
   });
   const rejectedRequirements = orderedPathwayRequirements
     .map((req) => {
@@ -1065,6 +1204,7 @@ function PathwayPageContent() {
     .filter((item): item is { title: string; reason: string } => Boolean(item));
 
   const servicesDeclined = waiverFormStatus?.choice === 'decline';
+  const visiblePathwayRequirements = showMissingOnly ? missingRequiredRequirements : orderedPathwayRequirements;
   const waiverMonthlyIncomeAmount =
     parseCurrencyAmount((waiverFormStatus as any)?.monthlyIncome) ??
     parseCurrencyAmount((application as any)?.monthlyIncome);
@@ -1086,7 +1226,6 @@ function PathwayPageContent() {
     (entry) => entry.direction === 'user_to_staff' && entry.requiresResponse && !entry.respondedAtIso
   ).length;
   const portalPlanTag = getHealthPlanTag();
-
   const consolidatedMedicalDocuments = [
       { id: 'lic-602a-check', name: "LIC 602A - Physician's Report" },
       { id: 'med-list-check', name: 'Medicine List' },
@@ -1105,7 +1244,7 @@ function PathwayPageContent() {
         { merge: true }
       );
       setApplication((prev) => (prev ? ({ ...(prev as any), ...patch } as Application) : prev));
-    } catch (e) {
+    } catch {
       toast({
         variant: 'destructive',
         title: 'Could not save proof of income details',
@@ -1268,6 +1407,8 @@ function PathwayPageContent() {
     const isCompleted = formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo);
     const reviewState = getRequirementReviewState(formInfo);
     const canEditUploadedDocument = !isReadOnly && reviewState !== 'reviewed';
+    const missingGuidance = getRequirementMissingGuidance(req as any, reviewState);
+    const uploadReceipt = uploadReceiptByRequirement[req.title];
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
     
     if (isReadOnly) {
@@ -1387,12 +1528,53 @@ function PathwayPageContent() {
     const isUploading = uploading[req.title];
     const currentProgress = uploadProgress[req.title];
     const isMultiple = req.title === 'Proof of Income';
+    const renderUploadReceipt = () => {
+      if (!uploadReceipt || uploadReceipt.fileCount <= 0) return null;
+      const uploadedAtLabel = uploadReceipt.uploadedAtIso
+        ? (() => {
+            try {
+              return format(new Date(uploadReceipt.uploadedAtIso), 'MMM d, yyyy h:mm a');
+            } catch {
+              return '';
+            }
+          })()
+        : '';
+      return (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-900">
+          <div className="font-medium">
+            Upload received ({uploadReceipt.fileCount} file{uploadReceipt.fileCount === 1 ? '' : 's'})
+          </div>
+          {uploadedAtLabel ? <div className="text-emerald-800">Saved: {uploadedAtLabel}</div> : null}
+          <div className="mt-1 space-y-0.5">
+            {uploadReceipt.fileNames.slice(0, 5).map((name) => (
+              <div key={`${req.id}-receipt-${name}`} className="truncate">
+                - {name}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+    const renderMissingGuidance = () => {
+      if (missingGuidance.length === 0) return null;
+      return (
+        <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">
+          <div className="font-medium text-foreground mb-1">What is still needed</div>
+          <ul className="list-disc pl-4 space-y-1">
+            {missingGuidance.map((item) => (
+              <li key={`${req.id}-guidance-${item}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      );
+    };
     
     switch (req.type) {
         case 'online-form':
             if (req.id === 'waivers') {
                 return (
                     <div className="space-y-3">
+                        {renderMissingGuidance()}
                         <div className="space-y-2 rounded-md border p-3">
                             {waiverSubTasks.map(task => (
                                 <div key={task.id} className="flex items-center space-x-2">
@@ -1413,22 +1595,24 @@ function PathwayPageContent() {
             }
             if (req.id === 'cs-summary') {
                 return (
-                    <div className="flex gap-2">
-                        <Button asChild variant="outline" className="flex-1 bg-slate-50 hover:bg-slate-100">
-                            <Link href={href}>{isCompleted ? 'View/Edit' : 'Start'} &rarr;</Link>
-                        </Button>
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="secondary" className="flex-1">Quick View</Button>
-                          </DialogTrigger>
-                          <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
-                            <DialogHeader>
-                              <DialogTitle>CS Summary: {application.memberFirstName} {application.memberLastName}</DialogTitle>
-                              <DialogDescription>
-                                Quick view of CS Summary details.
-                              </DialogDescription>
-                            </DialogHeader>
-                            <div className="space-y-6 py-2">
+                    <div className="space-y-2">
+                      {renderMissingGuidance()}
+                      <div className="flex gap-2">
+                          <Button asChild variant="outline" className="flex-1 bg-slate-50 hover:bg-slate-100">
+                              <Link href={href}>{isCompleted ? 'View/Edit' : 'Start'} &rarr;</Link>
+                          </Button>
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="secondary" className="flex-1">Quick View</Button>
+                            </DialogTrigger>
+                            <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+                              <DialogHeader>
+                                <DialogTitle>CS Summary: {application.memberFirstName} {application.memberLastName}</DialogTitle>
+                                <DialogDescription>
+                                  Quick view of CS Summary details.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-6 py-2">
                               <Section title="Member Information">
                                 <QuickViewField label="First Name" value={application.memberFirstName} />
                                 <QuickViewField label="Last Name" value={application.memberLastName} />
@@ -1485,16 +1669,20 @@ function PathwayPageContent() {
                                   fullWidth
                                 />
                               </Section>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                      </div>
                     </div>
                 );
             }
             return (
-                <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
-                    <Link href={href}>{isCompleted ? 'View/Edit' : 'Start'} &rarr;</Link>
-                </Button>
+                <div className="space-y-2">
+                  {renderMissingGuidance()}
+                  <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
+                      <Link href={href}>{isCompleted ? 'View/Edit' : 'Start'} &rarr;</Link>
+                  </Button>
+                </div>
             );
         case 'Upload':
              if (req.id === 'proof-of-income') {
@@ -1563,6 +1751,7 @@ function PathwayPageContent() {
                   return (
                     <div className="space-y-2">
                       {proofIncomeControl}
+                      {renderUploadReceipt()}
                       <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                         {(isAdmin || isSuperAdmin) && staffDownloadUrl ? (
                           <div className="flex items-center justify-between gap-2">
@@ -1634,6 +1823,8 @@ function PathwayPageContent() {
                 return (
                   <div className="space-y-2">
                     {proofIncomeControl}
+                    {renderMissingGuidance()}
+                    {renderUploadReceipt()}
                     {isUploading && (
                       <Progress value={currentProgress} className="h-1 w-full" />
                     )}
@@ -1651,7 +1842,9 @@ function PathwayPageContent() {
              if (isCompleted) {
                  const staffDownloadUrl = formInfo?.downloadURL || (formInfo?.name ? staffDownloadUrls[formInfo.name] : '');
                  return (
-                    <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
+                    <div className="space-y-2">
+                      {renderUploadReceipt()}
+                      <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                         {(isAdmin || isSuperAdmin) && staffDownloadUrl ? (
                           <div className="flex items-center justify-between gap-2">
                             <a
@@ -1694,7 +1887,7 @@ function PathwayPageContent() {
                                   className="sr-only"
                                   onChange={(e) => handleFileUpload(e, req.title, formInfo)}
                                   disabled={isUploading}
-                                  multiple={false}
+                                  multiple={isMultiple}
                                 />
                                 <Button
                                   type="button"
@@ -1715,11 +1908,14 @@ function PathwayPageContent() {
                             )}
                           </div>
                         )}
+                      </div>
                     </div>
                  )
              }
              return (
                 <div className="space-y-2">
+                    {renderMissingGuidance()}
+                    {renderUploadReceipt()}
                     {isUploading && (
                         <Progress value={currentProgress} className="h-1 w-full" />
                     )}
@@ -1749,7 +1945,7 @@ function PathwayPageContent() {
   const consolidatedProgress = uploadProgress['consolidated-medical-upload'];
   const isAnyConsolidatedChecked = Object.values(consolidatedUploadChecks).some(v => v);
   const userPrimaryCardsCount =
-    orderedPathwayRequirements.length + (!isReadOnly && consolidatedMedicalDocuments.length > 0 ? 1 : 0);
+    visiblePathwayRequirements.length + (!isReadOnly && consolidatedMedicalDocuments.length > 0 ? 1 : 0);
   const showUserPlaceholderCard = userPrimaryCardsCount % 2 === 1;
 
   return (
@@ -1830,11 +2026,23 @@ function PathwayPageContent() {
                         <span className="font-medium">Document Checklist</span>
                         <span>{completedCount} of {totalCount} completed</span>
                     </div>
+                    <Progress value={progress} className="h-2" />
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowMissingOnly((prev) => !prev)}
+                        className="text-xs"
+                      >
+                        {showMissingOnly ? 'Show all cards' : 'Upload missing only'}
+                      </Button>
+                    </div>
                     <div className="space-y-2 rounded-md border p-3">
                         {orderedPathwayRequirements.map((req) => {
                             const formInfo = formStatusMap.get(req.title);
-                            const isCompleted = formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo);
                             const reviewState = getRequirementReviewState(formInfo);
+                            const isCompleted = reviewState === 'under_review' || reviewState === 'reviewed';
                             return (
                                 <div key={req.id} className="flex items-center gap-2 text-sm">
                                     <Checkbox checked={isCompleted} disabled />
@@ -1991,9 +2199,15 @@ function PathwayPageContent() {
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {orderedPathwayRequirements.map((req) => {
+                {visiblePathwayRequirements.length === 0 ? (
+                  <Card className="md:col-span-2">
+                    <CardContent className="pt-6 text-sm text-muted-foreground">
+                      No missing cards right now. You can switch back to view all cards.
+                    </CardContent>
+                  </Card>
+                ) : null}
+                {visiblePathwayRequirements.map((req) => {
                     const formInfo = formStatusMap.get(req.title);
-                    const status = (formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo)) ? 'Completed' : 'Pending';
                     const reviewState = getRequirementReviewState(formInfo);
 
                     // Visual hierarchy: color-coded left border per state
@@ -2003,7 +2217,7 @@ function PathwayPageContent() {
                       ? 'border-l-4 border-l-green-400'
                       : reviewState === 'under_review'
                       ? 'border-l-4 border-l-blue-400'
-                      : status === 'Pending'
+                      : reviewState === 'pending'
                       ? 'border-l-4 border-l-gray-200'
                       : '';
 
@@ -2017,7 +2231,15 @@ function PathwayPageContent() {
                       : { text: 'Not yet submitted', cls: 'text-muted-foreground' };
                     
                     return (
-                        <Card key={req.id} className={cn("flex flex-col shadow-sm hover:shadow-md transition-shadow", cardBorderClass)}>
+                        <Card
+                          key={req.id}
+                          id={`pathway-card-${req.id}`}
+                          className={cn(
+                            "flex flex-col shadow-sm hover:shadow-md transition-shadow",
+                            cardBorderClass,
+                            focusedRequirementId === req.id && 'ring-2 ring-blue-400'
+                          )}
+                        >
                             <CardHeader className="pb-4">
                                 <div className="flex justify-between items-start gap-4">
                                     <CardTitle className="text-lg">{req.title}</CardTitle>
@@ -2034,7 +2256,7 @@ function PathwayPageContent() {
                                 )}
                             </CardHeader>
                             <CardContent className="flex flex-col flex-grow justify-end gap-4">
-                                <StatusIndicator status={status} />
+                                <StatusIndicator state={reviewState} isUpload={req.type === 'Upload'} />
                                 <p className={cn('text-xs', reviewBadge.cls)}>
                                   {reviewBadge.text}
                                 </p>
@@ -2100,7 +2322,7 @@ function PathwayPageContent() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col flex-grow justify-end gap-4">
-                            <StatusIndicator status={feedbackCompleted ? 'Completed' : 'Pending'} />
+                            <StatusIndicator state={feedbackCompleted ? 'reviewed' : 'pending'} />
                             <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
                                 <Link href={`/forms/customer-feedback?applicationId=${encodeURIComponent(String(applicationId || ''))}`}>
                                     {feedbackCompleted ? 'View/Edit Feedback' : 'Give Feedback'} &rarr;

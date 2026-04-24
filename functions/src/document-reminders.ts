@@ -6,6 +6,16 @@ import { defineSecret } from "firebase-functions/params";
 
 // Define the secret for Resend API key
 const resendApiKey = defineSecret("RESEND_API_KEY");
+const REQUIREMENT_TITLE_TO_ID: Record<string, string> = {
+  'cs member summary': 'cs-summary',
+  'cs summary': 'cs-summary',
+  'waivers & authorizations': 'waivers',
+  'proof of income': 'proof-of-income',
+  "lic 602a - physician's report": 'lic-602a',
+  'medicine list': 'medicine-list',
+  'declaration of eligibility': 'declaration-of-eligibility',
+  'snf facesheet': 'snf-facesheet',
+};
 
 // Scheduled function to run every day at 9 AM PST
 export const sendDocumentReminders = onSchedule({
@@ -221,8 +231,18 @@ async function sendDocumentReminderEmail(resend: Resend, reminder: any) {
   const { application, missingDocs, frequencyDays = 2 } = reminder;
   
   const missingDocsList = missingDocs.map((doc: string) => String(doc)).join(', ');
-  
-  const appLink = `${process.env.FUNCTIONS_EMULATOR ? 'http://localhost:3000' : 'https://connectcalaim.com'}/pathway?applicationId=${reminder.applicationId}`;
+  const focusRequirementId = (() => {
+    for (const doc of missingDocs) {
+      const key = String(doc || '').trim().toLowerCase();
+      if (REQUIREMENT_TITLE_TO_ID[key]) return REQUIREMENT_TITLE_TO_ID[key];
+    }
+    return '';
+  })();
+  const baseUrl = process.env.FUNCTIONS_EMULATOR ? 'http://localhost:3000' : 'https://connectcalaim.com';
+  const returnPath = `/pathway?applicationId=${encodeURIComponent(reminder.applicationId)}${
+    focusRequirementId ? `&focus=${encodeURIComponent(focusRequirementId)}&mode=upload-missing` : ''
+  }`;
+  const appLink = `${baseUrl}/login?redirect=${encodeURIComponent(returnPath)}&forceLogin=1`;
   const emailHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #2563eb;">Document Reminder - CalAIM Application</h2>

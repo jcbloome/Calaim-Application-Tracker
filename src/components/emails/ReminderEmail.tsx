@@ -7,6 +7,7 @@ interface ReminderEmailProps {
   applicationId: string;
   incompleteItems: string[];
   baseUrl?: string;
+  focusRequirementId?: string;
 }
 
 const container = {
@@ -80,10 +81,12 @@ const ReminderEmail: React.FC<Readonly<ReminderEmailProps>> = ({
   applicationId,
   incompleteItems,
   baseUrl,
+  focusRequirementId,
 }) => {
   const fallbackBaseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://calaim-pathfinder.web.app';
   const resolvedBaseUrl = baseUrl || fallbackBaseUrl;
-  const returnPath = `/pathway?applicationId=${applicationId}`;
+  const focusParam = String(focusRequirementId || '').trim();
+  const returnPath = `/pathway?applicationId=${encodeURIComponent(applicationId)}${focusParam ? `&focus=${encodeURIComponent(focusParam)}&mode=upload-missing` : ''}`;
   const continueUrl = `${resolvedBaseUrl}/login?redirect=${encodeURIComponent(returnPath)}&forceLogin=1`;
 
   return (

@@ -130,6 +130,25 @@ function getMissingRequestedDocuments(appData: Record<string, unknown>): string[
   return Array.from(new Set(items));
 }
 
+const REQUIREMENT_TITLE_TO_ID: Record<string, string> = {
+  'cs member summary': 'cs-summary',
+  'cs summary': 'cs-summary',
+  'waivers & authorizations': 'waivers',
+  'proof of income': 'proof-of-income',
+  "lic 602a - physician's report": 'lic-602a',
+  'medicine list': 'medicine-list',
+  'declaration of eligibility': 'declaration-of-eligibility',
+  'snf facesheet': 'snf-facesheet',
+};
+
+function getFocusRequirementId(missingDocuments: string[]): string {
+  for (const item of missingDocuments) {
+    const key = String(item || '').trim().toLowerCase();
+    if (REQUIREMENT_TITLE_TO_ID[key]) return REQUIREMENT_TITLE_TO_ID[key];
+  }
+  return '';
+}
+
 function getFirstNameOnly(name: string): string {
   const cleaned = String(name || '').trim();
   if (!cleaned) return '';
@@ -143,6 +162,7 @@ function buildDefaultDraft(params: {
   memberMrn: string;
   hasKaiserAuthorizationAtIntake: boolean;
   hasPriorIntroEmail: boolean;
+  focusRequirementId: string;
   baseUrl: string;
   missingDocuments: string[];
   senderName: string;
@@ -155,13 +175,17 @@ function buildDefaultDraft(params: {
     memberMrn,
     hasKaiserAuthorizationAtIntake,
     hasPriorIntroEmail,
+    focusRequirementId,
     baseUrl,
     missingDocuments,
     senderName,
     senderEmail,
   } = params;
   const greetingFirstName = getFirstNameOnly(contactName) || 'there';
-  const loginUrl = `${baseUrl}/login`;
+  const pathwayReturnPath = `/pathway?applicationId=${encodeURIComponent(applicationId)}${
+    focusRequirementId ? `&focus=${encodeURIComponent(focusRequirementId)}&mode=upload-missing` : ''
+  }`;
+  const loginUrl = `${baseUrl}/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
   const signupUrl = `${baseUrl}/signup`;
   const inviteUrl = `${baseUrl}/invite/continue?applicationId=${encodeURIComponent(applicationId)}`;
   const kaiserAuthorizationLine = hasKaiserAuthorizationAtIntake
@@ -277,6 +301,7 @@ export async function POST(request: NextRequest) {
     const replyToEmail = String(senderTransport.replyTo || '').trim();
     const baseUrl = getAppBaseUrl();
     const missingDocuments = getMissingRequestedDocuments(appData);
+    const focusRequirementId = getFocusRequirementId(missingDocuments);
     const hasPriorIntroEmail = Boolean(
       appData.introEmailLastSentAt ||
         (Array.isArray(appData.introEmailSendHistory) && (appData.introEmailSendHistory as unknown[]).length > 0)
@@ -288,6 +313,7 @@ export async function POST(request: NextRequest) {
       memberMrn,
       hasKaiserAuthorizationAtIntake,
       hasPriorIntroEmail,
+      focusRequirementId,
       baseUrl,
       missingDocuments,
       senderName,

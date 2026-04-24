@@ -31,6 +31,38 @@ const toMs = (value: any): number => {
   return Number.isNaN(ms) ? 0 : ms;
 };
 
+const REQUIREMENT_TITLE_TO_ID: Record<string, string> = {
+  'cs member summary': 'cs-summary',
+  'cs summary': 'cs-summary',
+  'waivers & authorizations': 'waivers',
+  'proof of income': 'proof-of-income',
+  "lic 602a - physician's report": 'lic-602a',
+  'medicine list': 'medicine-list',
+  'declaration of eligibility': 'declaration-of-eligibility',
+  'snf facesheet': 'snf-facesheet',
+};
+
+const resolveFocusRequirementId = (forms: any[]): string => {
+  for (const form of forms) {
+    const name = String(form?.name || '').trim().toLowerCase();
+    if (!name) continue;
+    const status = String(form?.status || '').trim().toLowerCase();
+    const revisionOpen = Boolean(form?.revisionRequestedAt) || Boolean(form?.revisionRequestedReason);
+    if (status !== 'completed' || revisionOpen) {
+      if (REQUIREMENT_TITLE_TO_ID[name]) return REQUIREMENT_TITLE_TO_ID[name];
+    }
+  }
+  return '';
+};
+
+const buildPathwayLoginRedirect = (applicationId: string, focusRequirementId: string): string => {
+  const base = String(process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://connectcalaim.com').replace(/\/$/, '');
+  const returnPath = `/pathway?applicationId=${encodeURIComponent(applicationId)}${
+    focusRequirementId ? `&focus=${encodeURIComponent(focusRequirementId)}&mode=upload-missing` : ''
+  }`;
+  return `${base}/login?redirect=${encodeURIComponent(returnPath)}&forceLogin=1`;
+};
+
 export async function POST(request: NextRequest) {
   try {
     const {
@@ -77,6 +109,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Application not found' }, { status: 404 });
     }
     const appData = appSnap.data() || {};
+    const forms = Array.isArray(appData?.forms) ? appData.forms : [];
     const statusRemindersEnabled = Boolean(appData?.statusRemindersEnabled);
     if (mode === 'auto' && !statusRemindersEnabled) {
       return NextResponse.json({ success: true, skippedDisabled: true });
@@ -131,6 +164,8 @@ export async function POST(request: NextRequest) {
       : processingSelected
         ? 'We received your CS Summary and are now processing your application. Our team will contact you if we need anything else.'
       : `Application progress update: ${statusText}.`;
+    const focusRequirementId = resolveFocusRequirementId(forms);
+    const portalDeepLink = buildPathwayLoginRedirect(applicationId, focusRequirementId);
 
     if (Boolean(previewOnly)) {
       return NextResponse.json({
@@ -155,6 +190,7 @@ export async function POST(request: NextRequest) {
       staffEmail: String(appData?.assignedStaffEmail || '').trim() || String(appData?.calaimCoordinatorEmail || '').trim() || undefined,
       message,
       status: 'In Progress',
+      portalUrl: portalDeepLink,
       healthPlan: String(appData?.healthPlan || '').trim(),
     });
 
