@@ -748,6 +748,23 @@ function MyTasksPageContent() {
     if (isYesterday(date)) return 'Yesterday';
     return format(date, 'MMM d, yyyy');
   };
+  const isClientFollowUpTask = (task: MyTask) =>
+    task.taskType === 'follow_up' && task.id.startsWith('client-followup-');
+  const formatTaskDate = (dateString?: string) => {
+    if (!dateString) return '—';
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return '—';
+    return format(date, 'MMM d, yyyy');
+  };
+  const getTaskDisplayTitle = (task: MyTask) => {
+    if (!isClientFollowUpTask(task)) return task.title;
+    const memberLabel = String(task.memberName || '').trim();
+    const idLabel = String(task.memberClientId || task.clientId2 || '').trim();
+    if (memberLabel && idLabel) return `Follow-up • ${memberLabel} • ${idLabel}`;
+    if (memberLabel) return `Follow-up • ${memberLabel}`;
+    if (idLabel) return `Follow-up • ${idLabel}`;
+    return 'Follow-up';
+  };
 
   const fetchFollowUpCalendar = async (month: Date) => {
     if (!user?.uid) return;
@@ -1328,16 +1345,23 @@ function MyTasksPageContent() {
                       {group.tasks.map((task) => (
                         <div key={task.id} className="flex items-start justify-between gap-4 rounded-md border px-3 py-2">
                           <div>
-                            <div className="font-medium text-sm">{task.title}</div>
-                            {task.memberName && (
+                            <div className="font-medium text-sm">{getTaskDisplayTitle(task)}</div>
+                            {task.memberName && !isClientFollowUpTask(task) && (
                               <div className="text-xs text-muted-foreground">
                                 {task.memberName} {task.memberClientId ? `• ${task.memberClientId}` : ''}
                               </div>
                             )}
                             {task.taskType === 'follow_up' && (
-                              <div className="text-xs text-muted-foreground">
-                                Follow-up: {format(new Date(task.dueDate), 'MMM d, yyyy')}
-                              </div>
+                              <>
+                                <div className="text-xs text-muted-foreground">
+                                  Follow-up: {formatTaskDate(task.dueDate)}
+                                </div>
+                                {isClientFollowUpTask(task) && (
+                                  <div className="text-xs text-muted-foreground">
+                                    Note date: {formatTaskDate(task.createdAt)}
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                           <div className="flex items-center gap-2">
@@ -1592,7 +1616,7 @@ function MyTasksPageContent() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             {getTaskTypeIcon(task.taskType)}
-                            <p className="font-medium leading-tight">{task.title}</p>
+                            <p className="font-medium leading-tight">{getTaskDisplayTitle(task)}</p>
                           </div>
                           {task.description && (
                             <p className="text-sm text-muted-foreground mt-1">{task.description}</p>
@@ -1622,7 +1646,7 @@ function MyTasksPageContent() {
                         <p className="text-muted-foreground">
                           Assigned By: <span className="text-foreground">{task.assignedByName}</span>
                         </p>
-                        {task.memberName && (
+                        {task.memberName && !isClientFollowUpTask(task) && (
                           <p className="text-muted-foreground">
                             Member: <span className="text-foreground">{task.memberName}{task.memberClientId ? ` • ${task.memberClientId}` : ''}</span>
                           </p>
@@ -1687,7 +1711,7 @@ function MyTasksPageContent() {
                             </div>
                             <div className="min-w-0 space-y-1">
                               <div className="flex items-start justify-between gap-3">
-                                <p className="font-medium leading-snug">{task.title}</p>
+                                <p className="font-medium leading-snug">{getTaskDisplayTitle(task)}</p>
                                 {task.taskType === 'follow_up' && task.id.startsWith('client-followup-') ? (
                                   <Button
                                     variant="outline"
@@ -1704,9 +1728,16 @@ function MyTasksPageContent() {
                                 <p className="text-sm text-muted-foreground leading-snug">{task.description}</p>
                               )}
                               {task.taskType === 'follow_up' && (
-                                <p className="text-xs text-muted-foreground">
-                                  Follow-up: {format(new Date(task.dueDate), 'MMM d, yyyy')}
-                                </p>
+                                <>
+                                  <p className="text-xs text-muted-foreground">
+                                    Follow-up: {formatTaskDate(task.dueDate)}
+                                  </p>
+                                  {isClientFollowUpTask(task) && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Note date: {formatTaskDate(task.createdAt)}
+                                    </p>
+                                  )}
+                                </>
                               )}
                               {task.taskType === 'kaiser_status' && (task.currentKaiserStatus || task.kaiserStatus) && (
                                 (() => {
@@ -1733,7 +1764,9 @@ function MyTasksPageContent() {
                               className="cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors space-y-1"
                               onClick={() => handleMemberClick(task.memberClientId!, task.memberName!, task.healthPlan || 'Unknown')}
                             >
-                              <p className="font-medium text-blue-600 hover:text-blue-800">{task.memberName}</p>
+                              {!isClientFollowUpTask(task) && (
+                                <p className="font-medium text-blue-600 hover:text-blue-800">{task.memberName}</p>
+                              )}
                               <p className="text-xs text-muted-foreground">{task.memberClientId}</p>
                               {task.healthPlan && (
                                 <Badge variant="outline" className="text-xs whitespace-nowrap">

@@ -523,6 +523,114 @@ async function createClientAndGetClientId2(
   throw new Error('Client was created, but generated client_ID2 was not available after retries.');
 }
 
+async function resolveClientNotesUserId(params: {
+  baseUrl: string;
+  token: string;
+  clientId2: string;
+  preferredUserId?: string;
+}): Promise<number> {
+  const preferredNumeric = Number.parseInt(clean(params.preferredUserId), 10);
+  if (Number.isFinite(preferredNumeric) && preferredNumeric > 0) {
+    return preferredNumeric;
+  }
+
+  try {
+    const where = buildEqualsClause('Client_ID2', params.clientId2);
+    if (where) {
+      const url =
+        `${params.baseUrl}/tables/connect_tbl_clientnotes/records` +
+        `?q.where=${encodeURIComponent(where)}` +
+        `&q.select=${encodeURIComponent('User_ID')}` +
+        `&q.orderBy=${encodeURIComponent('Time_Stamp DESC')}` +
+        `&q.limit=1`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${params.token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (response.ok) {
+        const json = await response.json().catch(() => ({} as any));
+        const row = Array.isArray(json?.Result) ? json.Result[0] : null;
+        const parsed = Number.parseInt(clean(row?.User_ID), 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
+    }
+  } catch {
+    // Fall back to safe default below.
+  }
+
+  return 1;
+}
+
+async function syncPrePushNoteToClientNotes(params: {
+  baseUrl: string;
+  token: string;
+  clientId2: string;
+  preAssessmentNotes: string;
+  firstName: string;
+  lastName: string;
+  assignedStaffId: string;
+  assignedStaffName: string;
+  applicationReference?: string;
+}) {
+  const clientId2 = clean(params.clientId2);
+  const prePushNotes = clean(params.preAssessmentNotes);
+  if (!prePushNotes) {
+    return { success: true, skipped: true, reason: 'no-pre-push-notes' as const };
+  }
+  if (!clientId2) {
+    return { success: false, skipped: true, reason: 'missing-client-id2' as const };
+  }
+
+  try {
+    const resolvedUserId = await resolveClientNotesUserId({
+      baseUrl: params.baseUrl,
+      token: params.token,
+      clientId2,
+      preferredUserId: params.assignedStaffId,
+    });
+    const suffix = params.applicationReference
+      ? ` [Admin push: ${params.applicationReference}]`
+      : ' [Admin push]';
+    const payload: Record<string, any> = {
+      Client_ID2: /^\d+$/.test(clientId2) ? Number(clientId2) : clientId2,
+      User_ID: resolvedUserId,
+      Comments: `${prePushNotes}${suffix}`,
+      Time_Stamp: new Date().toISOString(),
+      Follow_Up_Status: '🟢Open',
+    };
+    if (hasValue(params.assignedStaffId)) payload.Follow_Up_Assignment = params.assignedStaffId;
+    if (hasValue(params.assignedStaffName)) {
+      payload.Assigned_First = params.assignedStaffName;
+      payload.User_Full_Name = params.assignedStaffName;
+    }
+
+    const insertUrl = `${params.baseUrl}/tables/connect_tbl_clientnotes/records`;
+    const insertResponse = await fetch(insertUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${params.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!insertResponse.ok) {
+      const errorText = await insertResponse.text().catch(() => '');
+      throw new Error(`Caspio note insert failed: ${insertResponse.status} ${errorText}`);
+    }
+
+    return { success: true, skipped: false, reason: 'inserted' as const };
+  } catch (error: any) {
+    console.warn('Failed to sync pre-push notes to connect_tbl_clientnotes:', {
+      clientId2,
+      error: clean(error?.message || 'unknown'),
+    });
+    return { success: false, skipped: false, reason: 'insert-failed' as const, error: clean(error?.message || 'unknown') };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (isCaspioWriteReadOnly()) {
@@ -671,6 +779,11 @@ export async function POST(request: NextRequest) {
     const hintedMediCalNumber = clean(
       extractMediCalNumberFromApplication(applicationData as Record<string, any>) ||
       mappedMediCalEntry?.[1]
+    );
+    const applicationReference = clean(
+      applicationData?.applicationId ||
+      applicationData?.id ||
+      body?.applicationId
     );
 
     let existingRow: Record<string, any> | null = null;
@@ -876,6 +989,32 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify(payload),
       });
     };
+    const finalizeSuccessResponse = async (payload: Record<string, any>) => {
+      const resolvedClientId2 = clean(
+        payload?.clientId2 ||
+        memberData[clientIdField] ||
+        existingRow?.client_ID2 ||
+        existingRow?.Client_ID2 ||
+        hintedClientId2
+      );
+      const noteSync = await syncPrePushNoteToClientNotes({
+        baseUrl,
+        token,
+        clientId2: resolvedClientId2,
+        preAssessmentNotes,
+        firstName,
+        lastName,
+        assignedStaffId,
+        assignedStaffName,
+        applicationReference,
+      });
+      return NextResponse.json({
+        success: true,
+        ...payload,
+        clientId2: resolvedClientId2,
+        noteSync,
+      });
+    };
     let upsertResponse = await doUpsert(memberData);
     if (!upsertResponse.ok) {
       let firstErrorBody = await upsertResponse.text().catch(() => '');
@@ -890,8 +1029,7 @@ export async function POST(request: NextRequest) {
         upsertResponse = await doUpsert(fallbackData);
         if (upsertResponse.ok) {
           const result = await upsertResponse.json().catch(() => ({} as any));
-          return NextResponse.json({
-            success: true,
+          return finalizeSuccessResponse({
             message: isUpdate
               ? `Successfully updated Caspio profile for "${firstName} ${lastName}".`
               : `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio.`,
@@ -909,8 +1047,7 @@ export async function POST(request: NextRequest) {
         upsertResponse = await doUpsert(noHoldData);
         if (upsertResponse.ok) {
           const result = await upsertResponse.json().catch(() => ({} as any));
-          return NextResponse.json({
-            success: true,
+          return finalizeSuccessResponse({
             message: isUpdate
               ? `Successfully updated Caspio profile for "${firstName} ${lastName}" (hold column not available on this table).`
               : `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio (hold column not available on this table).`,
@@ -977,8 +1114,7 @@ export async function POST(request: NextRequest) {
           const updateFromDuplicateResponse = await doUpdateByPk(recoveredPk, memberData);
           if (updateFromDuplicateResponse?.ok) {
             const updateResult = await updateFromDuplicateResponse.json().catch(() => ({} as any));
-            return NextResponse.json({
-              success: true,
+            return finalizeSuccessResponse({
               message: `Successfully updated Caspio profile for "${firstName} ${lastName}" (matched existing record by ${duplicateBlankField}).`,
               mode: 'update',
               clientId2: clean(memberData[clientIdField] || recoveredRow?.client_ID2 || recoveredRow?.Client_ID2),
@@ -1001,8 +1137,7 @@ export async function POST(request: NextRequest) {
           const forcedCreateResponse = await doCreate(forceMediCalCreateData);
           if (forcedCreateResponse.ok) {
             const forcedCreateResult = await forcedCreateResponse.json().catch(() => ({} as any));
-            return NextResponse.json({
-              success: true,
+            return finalizeSuccessResponse({
               message: `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio (forced MediCal retry).`,
               mode: 'create',
               warning: 'forced-medical-number-retry',
@@ -1036,8 +1171,7 @@ export async function POST(request: NextRequest) {
           const minimalForcedResponse = await doCreate(minimalForcedCreateData);
           if (minimalForcedResponse.ok) {
             const minimalForcedResult = await minimalForcedResponse.json().catch(() => ({} as any));
-            return NextResponse.json({
-              success: true,
+            return finalizeSuccessResponse({
               message: `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio (minimal forced MediCal retry).`,
               mode: 'create',
               warning: 'minimal-forced-medical-number-retry',
@@ -1080,8 +1214,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await upsertResponse.json().catch(() => ({} as any));
-    return NextResponse.json({
-      success: true,
+    return finalizeSuccessResponse({
       message: isUpdate
         ? `Successfully updated Caspio profile for "${firstName} ${lastName}".`
         : `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio.`,
