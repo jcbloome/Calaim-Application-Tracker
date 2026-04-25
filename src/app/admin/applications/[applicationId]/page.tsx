@@ -848,8 +848,10 @@ function PushToCaspioDialog({
     const [isOpen, setIsOpen] = useState(false);
     const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
     const [isResettingCaspio, setIsResettingCaspio] = useState(false);
+    const [isClearingClientId2, setIsClearingClientId2] = useState(false);
+    const [clientId2ClearedLocally, setClientId2ClearedLocally] = useState(false);
     const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
-    const [skeletonPushEnabled, setSkeletonPushEnabled] = useState(false);
+    const skeletonPushEnabled = false;
 
     const docRef = useMemoFirebase(() => {
         if (!firestore || !application.id) return null;
@@ -931,7 +933,15 @@ function PushToCaspioDialog({
       (application as any)?.Hold_For_Social_Worker ||
       ''
     ).trim() || DEFAULT_SOCIAL_WORKER_HOLD_VALUE;
-    const existingClientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
+    const mediCalNumberForReadiness = String(
+      (application as any)?.memberMediCalNum ||
+      (application as any)?.confirmMemberMediCalNum ||
+      (application as any)?.MediCal_Number ||
+      (application as any)?.Medical_Number ||
+      ''
+    ).trim();
+    const existingClientId2Raw = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
+    const existingClientId2 = clientId2ClearedLocally ? '' : existingClientId2Raw;
     const hasExistingClientId2 = Boolean(existingClientId2);
     const clientIdConflictWarning =
       'This application already has Client_ID2. Delete the existing record in Caspio Clients Table and CalAIM Members tables before pushing again.';
@@ -983,6 +993,7 @@ function PushToCaspioDialog({
     const readinessChecks = [
       { key: 'memberFirstName', label: 'Member first name', required: true, ready: Boolean(toClean((application as any)?.memberFirstName)) },
       { key: 'memberLastName', label: 'Member last name', required: true, ready: Boolean(toClean((application as any)?.memberLastName)) },
+      { key: 'memberMediCalNum', label: 'Medi-Cal Number', required: true, ready: Boolean(mediCalNumberForReadiness) },
       { key: 'authorizationNumber', label: 'Authorization Number T038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_Number_T038)) },
       { key: 'authorizationStart', label: 'Authorization Start T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_Start_T2038)) },
       { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
@@ -1164,15 +1175,14 @@ function PushToCaspioDialog({
             console.warn('Failed to send Kaiser manager T2038-ready notification:', error);
         }
     };
-    const sendToCaspio = async (mappingOverride?: Record<string, string> | null) => {
-        if (hasExistingClientId2 && !isAlreadySent) {
-            toast({
-                variant: 'destructive',
-                title: 'Client_ID2 already exists',
-                description: clientIdConflictWarning,
-            });
-            return;
-        }
+    const sendToCaspio = async (
+        mappingOverride?: Record<string, string> | null,
+        options?: { applicationOverrides?: Record<string, any> }
+    ) => {
+        const effectiveApplicationData = {
+            ...application,
+            ...(options?.applicationOverrides || {}),
+        };
         if (!hasAssignedStaff) {
             toast({
                 variant: 'destructive',
@@ -1213,12 +1223,12 @@ function PushToCaspioDialog({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     applicationData: {
-                      ...application,
+                      ...effectiveApplicationData,
                       kaiserStatus: requestedKaiserStatus,
                       holdForSocialWorkerStatus: requestedSocialWorkerHold,
                     },
                     mapping: mappingOverride || caspioMappingPreview || null,
-                    skeletonPush: isKaiserHealthPlan && skeletonPushEnabled,
+                    skeletonPush: false,
                 }),
             });
             const result = await response.json().catch(() => ({} as any));
@@ -1326,24 +1336,17 @@ function PushToCaspioDialog({
             } else if (safeMessage) {
                 errorMessage = safeMessage;
             }
-            console.error('Caspio push error details:', error);
+            // Use warn so Next.js dev overlay does not interrupt staff workflow on handled push failures.
+            console.warn('Caspio push error details:', error);
             if (docRef) {
-                const safeDetailsText = (() => {
-                    try {
-                        if (!details) return '';
-                        return JSON.stringify(details).slice(0, 4000);
-                    } catch {
-                        return '';
-                    }
-                })();
                 await setDoc(
                     docRef,
                     {
-                        caspioPushLastStatus: 'error',
-                        caspioPushLastError: errorMessage,
-                        caspioPushLastErrorCode: safeCode || null,
-                        caspioPushLastErrorDetails: safeDetailsText || null,
-                        caspioPushLastErrorAt: serverTimestamp(),
+                        // Don't retain failed-push details between attempts.
+                        caspioPushLastStatus: 'idle',
+                        caspioPushLastError: null,
+                        caspioPushLastErrorCode: null,
+                        caspioPushLastErrorDetails: null,
                         lastUpdated: serverTimestamp(),
                     },
                     { merge: true }
@@ -1357,8 +1360,10 @@ function PushToCaspioDialog({
     };
 
     const isAlreadySent = Boolean((application as any)?.caspioSent);
-    const resetCaspioPush = async () => {
+    const resetCaspioPush = async (options?: { closeDialog?: boolean; showToast?: boolean }) => {
         if (!docRef) return;
+        const closeDialog = options?.closeDialog ?? true;
+        const showToast = options?.showToast ?? true;
         setIsResettingCaspio(true);
         try {
             await setDoc(
@@ -1377,12 +1382,16 @@ function PushToCaspioDialog({
                 },
                 { merge: true }
             );
-            toast({
-                title: 'Caspio push reset',
-                description: 'Push status was reset. You can push this application to Caspio again.',
-                className: 'bg-green-100 text-green-900 border-green-200',
-            });
-            setIsOpen(false);
+            if (showToast) {
+                toast({
+                    title: 'Caspio push reset',
+                    description: 'Push status was reset. You can push this application to Caspio again.',
+                    className: 'bg-green-100 text-green-900 border-green-200',
+                });
+            }
+            if (closeDialog) {
+                setIsOpen(false);
+            }
         } catch (error: any) {
             toast({
                 variant: 'destructive',
@@ -1391,6 +1400,66 @@ function PushToCaspioDialog({
             });
         } finally {
             setIsResettingCaspio(false);
+        }
+    };
+    const resetAndPushToCaspio = async () => {
+        if (!docRef) return;
+        try {
+            await resetCaspioPush({ closeDialog: false, showToast: false });
+            toast({
+                title: 'Caspio push reset',
+                description: 'Status reset complete. Starting fresh Caspio push...',
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+            await sendToCaspio(caspioMappingPreview, {
+                applicationOverrides: {
+                    caspioSent: false,
+                    caspioSentDate: null,
+                    caspioSentByName: null,
+                    caspioSentByEmail: null,
+                    caspioSentByUid: null,
+                    clientId2: '',
+                    client_ID2: '',
+                    caspioClientId2: '',
+                },
+            });
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Reset and push failed',
+                description: error?.message || 'Could not reset and push to Caspio.',
+            });
+        }
+    };
+    const clearStaleClientId2 = async () => {
+        if (!docRef) return;
+        setIsClearingClientId2(true);
+        try {
+            await setDoc(
+                docRef,
+                {
+                    clientId2: null,
+                    client_ID2: null,
+                    caspioClientId2: null,
+                    caspioPushLastStatus: 'reset',
+                    lastUpdated: serverTimestamp(),
+                },
+                { merge: true }
+            );
+            setClientId2ClearedLocally(true);
+            toast({
+                title: 'Client_ID2 cleared',
+                description: 'Local Client_ID2 was cleared. You can push again now.',
+                className: 'bg-green-100 text-green-900 border-green-200',
+            });
+        } catch (error: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Could not clear Client_ID2',
+                description: error?.message || 'Failed to clear local Client_ID2.',
+            });
+        } finally {
+            setIsClearingClientId2(false);
         }
     };
 
@@ -1428,7 +1497,7 @@ function PushToCaspioDialog({
                     <Alert>
                         <AlertTitle>This application is currently marked as already pushed.</AlertTitle>
                         <AlertDescription>
-                            If the Caspio record was deleted or needs to be recreated, use <strong>Reset push status</strong> first, then push again.
+                            Delete the existing Caspio member record in <strong>CalAIM_tbl_Members</strong> first, then use <strong>Reset push status</strong> and push again.
                         </AlertDescription>
                     </Alert>
                 )}
@@ -1436,7 +1505,30 @@ function PushToCaspioDialog({
                     <Alert variant="destructive">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle>Client_ID2 already exists: {existingClientId2}</AlertTitle>
-                        <AlertDescription>{clientIdConflictWarning}</AlertDescription>
+                        <AlertDescription className="space-y-2">
+                            <div>{clientIdConflictWarning}</div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    void clearStaleClientId2();
+                                }}
+                                disabled={isClearingClientId2 || isSendingToCaspio || isResettingCaspio}
+                            >
+                                {isClearingClientId2 ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                I deleted Caspio records - clear local Client_ID2
+                            </Button>
+                        </AlertDescription>
+                    </Alert>
+                )}
+                {!hasExistingClientId2 && clientId2ClearedLocally && !isAlreadySent && (
+                    <Alert className="border-green-200 bg-green-50 text-green-900">
+                        <CheckCircle2 className="h-4 w-4 text-green-700" />
+                        <AlertTitle>Client_ID2 cleared</AlertTitle>
+                        <AlertDescription>
+                            Local Client_ID2 was cleared successfully. You can push to Caspio again now.
+                        </AlertDescription>
                     </Alert>
                 )}
                 {!hasAssignedStaff && (
@@ -1473,29 +1565,12 @@ function PushToCaspioDialog({
                         </div>
                     ) : null}
                     {isKaiserHealthPlan ? (
-                        <div className="rounded-md border p-2 space-y-2">
-                          <label className="flex items-start gap-2 text-xs">
-                            <Checkbox
-                              checked={skeletonPushEnabled}
-                              onCheckedChange={(checked) => setSkeletonPushEnabled(Boolean(checked))}
-                              disabled={isSendingToCaspio}
-                            />
-                            <span>
-                              <span className="font-medium">Skeleton push</span>{' '}
-                              fills missing mapped values with placeholders so staff can create a Caspio record with essential member/contact info first.
-                            </span>
-                          </label>
-                          {skeletonPushEnabled ? (
-                            <div className="text-[11px] text-muted-foreground">
-                              Missing mapped fields are auto-filled with dummy placeholders. Use this for incomplete Kaiser intakes that still need claim/authorization workflow started.
-                            </div>
-                          ) : null}
+                        <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
+                          Skeleton push is disabled for stability. Push now uses the same pathway as normal applications.
                         </div>
                     ) : null}
                     <div className="text-xs text-muted-foreground">
-                        {skeletonPushEnabled
-                          ? 'Skeleton push allows missing Family/POA contact and CS Summary completion. You can update these fields later after outreach.'
-                          : 'Contact person name, email, and phone are required before push so automatic reminder outreach has a valid recipient.'}
+                        Contact person name, email, and phone are required before push so automatic reminder outreach has a valid recipient.
                     </div>
                     {isDraftLikeForPush ? (
                         <div className="text-xs text-muted-foreground">
@@ -1510,22 +1585,6 @@ function PushToCaspioDialog({
                               ? 'Change preview for already-pushed application'
                               : `Mapped fields: ${Object.keys(caspioMappingPreview).length}`}
                         </div>
-                        {String((application as any)?.caspioPushLastStatus || '').trim() === 'error' && (
-                            <Alert variant="destructive">
-                                <AlertTitle>Last push failed</AlertTitle>
-                                <AlertDescription className="space-y-1">
-                                    <div>{String((application as any)?.caspioPushLastError || 'Unknown Caspio error')}</div>
-                                    {String((application as any)?.caspioPushLastErrorCode || '').trim() && (
-                                      <div className="text-xs opacity-90">Code: {String((application as any).caspioPushLastErrorCode)}</div>
-                                    )}
-                                    {String((application as any)?.caspioPushLastErrorDetails || '').trim() && (
-                                      <div className="text-xs opacity-90 break-all">
-                                        Details: {String((application as any).caspioPushLastErrorDetails)}
-                                      </div>
-                                    )}
-                                </AlertDescription>
-                            </Alert>
-                        )}
                         {!isAlreadySent ? (
                           <div className="max-h-64 overflow-y-auto rounded border p-3 text-xs">
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
@@ -1584,17 +1643,38 @@ function PushToCaspioDialog({
 
                 <AlertDialogFooter>
                     {isAlreadySent && (
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                                void resetCaspioPush();
-                            }}
-                            disabled={isResettingCaspio || isSendingToCaspio}
-                        >
-                            {isResettingCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            Reset push status
-                        </Button>
+                        <>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                    void resetCaspioPush();
+                                }}
+                                disabled={isResettingCaspio || isSendingToCaspio}
+                            >
+                                {isResettingCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                Reset push status
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="default"
+                                onClick={() => {
+                                    void resetAndPushToCaspio();
+                                }}
+                                disabled={
+                                  isResettingCaspio ||
+                                  isSendingToCaspio ||
+                                  !hasAssignedStaff ||
+                                  !readinessComplete
+                                }
+                            >
+                                {isResettingCaspio || isSendingToCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                Reset and push now
+                            </Button>
+                            <div className="w-full rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                                Warning: delete existing Caspio member row before reset/re-push to avoid duplicate records.
+                            </div>
+                        </>
                     )}
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
@@ -1604,7 +1684,7 @@ function PushToCaspioDialog({
                               try {
                                 await sendToCaspio(caspioMappingPreview);
                               } catch (error) {
-                                console.error('Unhandled Caspio push error:', error);
+                                console.warn('Unhandled Caspio push error:', error);
                                 toast({
                                   variant: 'destructive',
                                   title: 'Error',
@@ -2033,6 +2113,19 @@ function AdminActions({ application }: { application: Application }) {
           updatedAtIso?: string;
         }>)
       : [];
+    const caspioSentDate = (application as any)?.caspioSentDate;
+    const caspioSentLabel = caspioSentDate
+      ? format(
+          typeof caspioSentDate?.toDate === 'function' ? caspioSentDate.toDate() : new Date(caspioSentDate),
+          'MMM d, yyyy h:mm a'
+        )
+      : 'Date unavailable';
+    const caspioSentByLabel = String(
+      (application as any)?.caspioSentByName ||
+      (application as any)?.caspioSentBy ||
+      (application as any)?.caspioSentByEmail ||
+      ''
+    ).trim();
 
     if (!isAdmin && !isSuperAdmin) {
         return null;
@@ -7004,19 +7097,36 @@ function ApplicationDetailPageContent() {
   const confirmCaspioPushAndRetrieveClientId2 = async () => {
     if (!docRef || !application) return;
     setIsConfirmingCaspioPush(true);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 15000);
       const res = await fetch('/api/admin/caspio/confirm-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           applicationData: {
             memberFirstName: (application as any)?.memberFirstName || '',
             memberLastName: (application as any)?.memberLastName || '',
             clientId2: (application as any)?.client_ID2 || (application as any)?.clientId2 || '',
             healthPlan: (application as any)?.healthPlan || '',
+            memberMediCalNum:
+              (application as any)?.memberMediCalNum ||
+              (application as any)?.confirmMemberMediCalNum ||
+              (application as any)?.MediCal_Number ||
+              (application as any)?.Medical_Number ||
+              '',
+            memberMrn:
+              (application as any)?.memberMrn ||
+              (application as any)?.medicalRecordNumber ||
+              (application as any)?.mrn ||
+              (application as any)?.Member_MRN ||
+              '',
           },
         }),
       });
+      if (timeoutId) clearTimeout(timeoutId);
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) {
         throw new Error(data?.message || data?.details || `Confirm failed (HTTP ${res.status})`);
@@ -7057,12 +7167,21 @@ function ApplicationDetailPageContent() {
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        toast({
+          variant: 'destructive',
+          title: 'Confirm timed out',
+          description: 'Caspio confirmation took too long. Please retry, or use Reset and push now if the record was deleted.',
+        });
+        return;
+      }
       toast({
         variant: 'destructive',
         title: 'Confirm failed',
         description: String(error?.message || 'Could not confirm pushed Caspio record.'),
       });
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setIsConfirmingCaspioPush(false);
     }
   };

@@ -194,6 +194,56 @@ const canonicalizeApplicationData = (raw: Record<string, any>) => {
     'memberHealthPlan',
     'CalAIM_MCP',
   ]) || fromNormalized('health plan') || fromNormalized('calaim mco'));
+  const ispLocationTypeValue = pickFirstNonEmpty(app, [
+    'ispLocationType',
+    'ispLocation',
+    'ISPLocationType',
+    'ISP_Location_Type',
+    'isp_location_type',
+  ]) || fromNormalized('isp location type') || fromNormalized('isp location');
+  setIfMissing('ispLocationType', ispLocationTypeValue);
+  // Keep backwards compatibility with older saved mappings that used ispLocation.
+  setIfMissing('ispLocation', ispLocationTypeValue);
+  const ispAddressValue = pickFirstNonEmpty(app, [
+    'ispAddress',
+    'ISP_Address',
+    'isp_location_address',
+    'ISPLocationAddress',
+    'ispStreetAddress',
+  ]) || fromNormalized('isp address');
+  setIfMissing('ispAddress', ispAddressValue);
+  const ispCityValue = pickFirstNonEmpty(app, [
+    'ispCity',
+    'ISP_City',
+    'isp_location_city',
+    'ISPLocationCity',
+  ]) || fromNormalized('isp city');
+  setIfMissing('ispCity', ispCityValue);
+  const ispStateValue = pickFirstNonEmpty(app, [
+    'ispState',
+    'ISP_State',
+    'isp_location_state',
+    'ISPLocationState',
+  ]) || fromNormalized('isp state');
+  setIfMissing('ispState', ispStateValue);
+  const ispZipValue = pickFirstNonEmpty(app, [
+    'ispZip',
+    'ISP_Zip',
+    'ISP_ZIP',
+    'isp_location_zip',
+    'ISPLocationZip',
+  ]) || fromNormalized('isp zip');
+  setIfMissing('ispZip', ispZipValue);
+  const ispFacilityNameValue = pickFirstNonEmpty(app, [
+    'ispFacilityName',
+    'ISP_Facility_Name',
+    'ispLocationName',
+    'ISPLocationName',
+    'ispFacility',
+  ]) || fromNormalized('isp facility name') || fromNormalized('isp location name');
+  setIfMissing('ispFacilityName', ispFacilityNameValue);
+  // Preserve older mapping key variants for location/facility naming.
+  setIfMissing('ispLocationName', ispFacilityNameValue);
 
   return app;
 };
@@ -220,6 +270,64 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
     const mediCalValue = extractMediCalNumberFromApplication(applicationData as Record<string, any>);
     if (mediCalValue) return mediCalValue;
   }
+  if (normalizedTarget === 'isplocation' || normalizedTarget === 'isplocationtype') {
+    const ispLocationValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'ispLocationType',
+      'ispLocation',
+      'ISPLocationType',
+      'ISP_Location_Type',
+      'isp_location_type',
+    ]);
+    if (hasValue(ispLocationValue)) return ispLocationValue;
+  }
+  if (normalizedTarget === 'ispaddress') {
+    const ispAddressValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'ispAddress',
+      'ISP_Address',
+      'isp_location_address',
+      'ISPLocationAddress',
+      'ispStreetAddress',
+    ]);
+    if (hasValue(ispAddressValue)) return ispAddressValue;
+  }
+  if (normalizedTarget === 'ispcity') {
+    const ispCityValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'ispCity',
+      'ISP_City',
+      'isp_location_city',
+      'ISPLocationCity',
+    ]);
+    if (hasValue(ispCityValue)) return ispCityValue;
+  }
+  if (normalizedTarget === 'ispstate') {
+    const ispStateValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'ispState',
+      'ISP_State',
+      'isp_location_state',
+      'ISPLocationState',
+    ]);
+    if (hasValue(ispStateValue)) return ispStateValue;
+  }
+  if (normalizedTarget === 'ispzip') {
+    const ispZipValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'ispZip',
+      'ISP_Zip',
+      'ISP_ZIP',
+      'isp_location_zip',
+      'ISPLocationZip',
+    ]);
+    if (hasValue(ispZipValue)) return ispZipValue;
+  }
+  if (normalizedTarget === 'ispfacilityname' || normalizedTarget === 'isplocationname') {
+    const ispFacilityNameValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'ispFacilityName',
+      'ISP_Facility_Name',
+      'ispLocationName',
+      'ISPLocationName',
+      'ispFacility',
+    ]);
+    if (hasValue(ispFacilityNameValue)) return ispFacilityNameValue;
+  }
   for (const [key, value] of Object.entries(applicationData)) {
     if (normalizeFieldName(key) === normalizedTarget && value !== undefined && value !== null && value !== '') {
       return value;
@@ -228,59 +336,56 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
   return '';
 };
 
-const buildSkeletonPlaceholder = (applicationData: any, csField: string, caspioField: string) => {
-  const normalized = normalizeFieldName(`${csField} ${caspioField}`);
-  const memberFirst = clean(applicationData?.memberFirstName);
-  const memberLast = clean(applicationData?.memberLastName);
-  const bestContactFirst = clean(applicationData?.bestContactFirstName || applicationData?.referrerFirstName);
-  const bestContactLast = clean(applicationData?.bestContactLastName || applicationData?.referrerLastName);
-  const bestContactEmail = clean(applicationData?.bestContactEmail || applicationData?.referrerEmail);
-  const bestContactPhone = clean(applicationData?.bestContactPhone || applicationData?.referrerPhone);
-  const memberMrn = clean(
-    applicationData?.memberMrn ||
-      applicationData?.medicalRecordNumber ||
-      applicationData?.mrn ||
-      applicationData?.Member_MRN
-  );
-  if (normalized.includes('clientid2') || normalized.includes('pkid')) return '';
-  if (normalized.includes('seniorfirst') || normalized.includes('memberfirst')) return memberFirst || 'Unknown';
-  if (normalized.includes('seniorlast') || normalized.includes('memberlast')) return memberLast || 'Unknown';
-  if (normalized.includes('mrn') || normalized.includes('medicalrecord')) return memberMrn || 'MRN-PENDING';
-  if (normalized.includes('phone')) return bestContactPhone || '5550000000';
-  if (normalized.includes('email')) return bestContactEmail || 'skeleton-push@placeholder.invalid';
-  if (normalized.includes('contactfirst') || normalized.includes('repfirst') || normalized.includes('caregiverfirst')) {
-    return bestContactFirst || 'Unknown';
-  }
-  if (normalized.includes('contactlast') || normalized.includes('replast') || normalized.includes('caregiverlast')) {
-    return bestContactLast || 'Unknown';
-  }
-  if (normalized.includes('contactname') || normalized.includes('caregivername') || normalized.includes('repname')) {
-    return `${bestContactFirst} ${bestContactLast}`.trim() || 'Unknown Contact';
-  }
-  if (normalized.includes('relationship')) return 'Unknown';
-  if (normalized.includes('dob') || normalized.includes('dateofbirth')) return '01/01/1900';
-  if (normalized.includes('zip')) return '99999';
-  if (normalized.includes('state')) return 'CA';
-  if (normalized.includes('city')) return 'Unknown';
-  if (normalized.includes('address')) return 'Pending Address';
-  if (normalized.includes('language')) return 'English';
-  if (normalized.includes('gender')) return 'Unknown';
-  if (normalized.includes('income') || normalized.includes('amount') || normalized.includes('monthly')) return '0';
-  if (normalized.includes('notes') || normalized.includes('comment')) return 'Skeleton push placeholder value';
-  if (normalized.includes('status')) return 'Pending';
-  return 'Pending details';
-};
-const looksLikePlaceholderValue = (value: string) => {
-  const lower = clean(value).toLowerCase();
+const looksLikeSyntheticFixtureValue = (value: string) => {
+  const normalized = clean(value);
+  const lower = normalized.toLowerCase();
   if (!lower) return false;
-  return (
+  if (
+    lower === 'unknown' ||
+    lower === 'unknown contact' ||
+    lower === 'mrn-pending' ||
+    lower === 'n/a' ||
+    lower === 'na' ||
+    lower === '-' ||
+    lower === 'dummy' ||
+    lower === '5550000000'
+  ) {
+    return true;
+  }
+  if (lower.includes('@placeholder.')) return true;
+  if (/^test[_\s-]/i.test(normalized)) return true;
+  if (/[_-]\d{4,}$/.test(normalized) && /^test/i.test(normalized)) return true;
+  return false;
+};
+const summarizeDebugValue = (raw: unknown) => {
+  const value = clean(raw);
+  if (!value) return { kind: 'empty', length: 0, preview: '' };
+  const lower = value.toLowerCase();
+  const isSynthetic =
     lower.includes('pending') ||
     lower.includes('unknown') ||
     lower.includes('placeholder') ||
     lower.includes('dummy') ||
-    lower === '0'
-  );
+    lower.includes('@placeholder.') ||
+    lower.includes('mrn-pending');
+  if (isSynthetic) {
+    return { kind: 'synthetic', length: value.length, preview: value.slice(0, 80) };
+  }
+  if (/^\d+$/.test(value)) {
+    return { kind: 'numeric', length: value.length, preview: `[numeric:${value.length}]` };
+  }
+  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(value)) {
+    return { kind: 'date-like', length: value.length, preview: '[date-like]' };
+  }
+  return { kind: 'text', length: value.length, preview: `[text:${value.length}]` };
 };
+const buildCaspioPayloadDebugSummary = (payload: Record<string, any>) =>
+  Object.entries(payload || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([field, rawValue]) => ({
+      field,
+      ...summarizeDebugValue(rawValue),
+    }));
 const getSharedLockedMapping = async (): Promise<Record<string, string> | null> => {
   if (!adminDb) return null;
   try {
@@ -297,32 +402,19 @@ const getSharedLockedMapping = async (): Promise<Record<string, string> | null> 
     return null;
   }
 };
-const buildTempMediCalNumber = (seed: string) => {
-  const normalizedSeed = clean(seed).replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6) || 'TEMP';
-  const timestampPart = String(Date.now()).slice(-8);
-  return `${normalizedSeed}${timestampPart}`;
-};
-
 const buildMemberDataFromMapping = (
   applicationData: any,
-  mapping?: Record<string, string> | null,
-  options?: { skeletonPush?: boolean }
+  mapping?: Record<string, string> | null
 ) => {
   const memberData: Record<string, any> = {};
   if (!mapping || typeof mapping !== 'object') return memberData;
-  const skeletonPush = Boolean(options?.skeletonPush);
 
   Object.entries(mapping).forEach(([csField, caspioField]) => {
     if (!caspioField) return;
     const value = getApplicationValueByCsField(applicationData, csField);
     if (value !== undefined && value !== null && value !== '') {
       memberData[caspioField] = value;
-      return;
     }
-    if (!skeletonPush) return;
-    const placeholder = buildSkeletonPlaceholder(applicationData, csField, caspioField);
-    if (!hasValue(placeholder)) return;
-    memberData[caspioField] = placeholder;
   });
 
   return memberData;
@@ -362,6 +454,37 @@ async function createClientAndGetClientId2(
   lastName: string
 ): Promise<string> {
   const clientTable = 'connect_tbl_clients';
+  const where = `First_Name='${esc(firstName)}' AND Last_Name='${esc(lastName)}'`;
+  const lookupOrderCandidates = ['client_ID2 DESC', 'Client_ID2 DESC', 'PK_ID DESC'];
+  const lookupExistingClientId2 = async (): Promise<string> => {
+    for (const orderBy of lookupOrderCandidates) {
+      const lookupUrl =
+        `${baseUrl}/tables/${clientTable}/records` +
+        `?q.where=${encodeURIComponent(where)}` +
+        `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Record_ID')}` +
+        `&q.orderBy=${encodeURIComponent(orderBy)}` +
+        `&q.limit=1`;
+      const lookupResponse = await fetch(lookupUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!lookupResponse.ok) continue;
+      const lookupJson = await lookupResponse.json().catch(() => ({} as any));
+      const row = Array.isArray(lookupJson?.Result) ? lookupJson.Result[0] : null;
+      const clientId2 = clean(row?.client_ID2 || row?.Client_ID2 || row?.clientid2 || row?.Record_ID);
+      if (clientId2) return clientId2;
+    }
+    return '';
+  };
+
+  // Prevent duplicate client rows on retries by reusing existing client_ID2 when possible.
+  const existingClientId2 = await lookupExistingClientId2();
+  if (existingClientId2) return existingClientId2;
+
   const createUrl = `${baseUrl}/tables/${clientTable}/records`;
   const createPayload = {
     First_Name: firstName,
@@ -390,32 +513,9 @@ async function createClientAndGetClientId2(
   );
   if (directClientId2) return directClientId2;
 
-  const where = `First_Name='${esc(firstName)}' AND Last_Name='${esc(lastName)}'`;
-  const lookupOrderCandidates = ['client_ID2 DESC', 'Client_ID2 DESC', 'PK_ID DESC'];
-
   for (let attempt = 1; attempt <= 10; attempt += 1) {
-    for (const orderBy of lookupOrderCandidates) {
-      const lookupUrl =
-        `${baseUrl}/tables/${clientTable}/records` +
-        `?q.where=${encodeURIComponent(where)}` +
-        `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Record_ID')}` +
-        `&q.orderBy=${encodeURIComponent(orderBy)}` +
-        `&q.limit=1`;
-      const lookupResponse = await fetch(lookupUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (lookupResponse.ok) {
-        const lookupJson = await lookupResponse.json().catch(() => ({} as any));
-        const row = Array.isArray(lookupJson?.Result) ? lookupJson.Result[0] : null;
-        const clientId2 = clean(row?.client_ID2 || row?.Client_ID2 || row?.clientid2 || row?.Record_ID);
-        if (clientId2) return clientId2;
-      }
-    }
+    const clientId2 = await lookupExistingClientId2();
+    if (clientId2) return clientId2;
 
     await sleep(250 * attempt);
   }
@@ -440,8 +540,6 @@ export async function POST(request: NextRequest) {
       providedMapping && typeof providedMapping === 'object' && Object.keys(providedMapping).length > 0
         ? providedMapping
         : fallbackMapping;
-    const skeletonPush = Boolean(body?.skeletonPush);
-
     if (!applicationData || typeof applicationData !== 'object') {
       return NextResponse.json({ success: false, message: 'Application data is required.' }, { status: 400 });
     }
@@ -560,24 +658,13 @@ export async function POST(request: NextRequest) {
         applicationData?.caspioClientId2
     );
     const isAlreadySent = Boolean(applicationData?.caspioSent);
-    if (hintedClientId2 && !isAlreadySent) {
-      return NextResponse.json(
-        {
-          success: false,
-          code: 'client-id2-conflict',
-          message:
-            'This application already has Client_ID2. Delete the existing record in Caspio Clients Table and CalAIM Members tables before pushing again.',
-        },
-        { status: 409 }
-      );
-    }
     const hintedMrn = clean(
       applicationData?.memberMrn ||
         applicationData?.medicalRecordNumber ||
         applicationData?.mrn ||
         applicationData?.Member_MRN
     );
-    const mappedFields = buildMemberDataFromMapping(applicationData, mapping, { skeletonPush });
+    const mappedFields = buildMemberDataFromMapping(applicationData, mapping);
     const mappedMediCalEntry = Object.entries(mappedFields).find(
       ([fieldName, value]) => looksLikeMedicalNumberField(fieldName) && hasValue(value)
     );
@@ -629,8 +716,7 @@ export async function POST(request: NextRequest) {
         if (existingRow) existingRowMatchSource = 'medi_cal';
       }
     }
-    const allowNameMatchLookup = !skeletonPush || Boolean(hintedClientId2 || hintedMrn || hintedMediCalNumber);
-    if (!existingRow && allowNameMatchLookup) {
+    if (!existingRow) {
       const where = `${firstNameField}='${esc(firstName)}' AND ${lastNameField}='${esc(lastName)}'`;
       existingRow = await trySearchMember(where);
       if (existingRow) existingRowMatchSource = 'name';
@@ -650,25 +736,23 @@ export async function POST(request: NextRequest) {
       clean(mappedClientIdField) ||
       clean(String(inferredClientIdFieldFromMap)) ||
       'client_ID2';
+    const isUpdate = Boolean(existingRow?.PK_ID || existingRow?.pk_id);
     const memberData: Record<string, any> = { ...mappedFields };
     if (!memberData[firstNameField]) memberData[firstNameField] = firstName;
     if (!memberData[lastNameField]) memberData[lastNameField] = lastName;
     const existingClientId2 = clean(existingRow?.client_ID2 || existingRow?.Client_ID2);
-    const canReuseExistingClientId2 =
-      Boolean(existingClientId2) && !(skeletonPush && existingRowMatchSource === 'name');
+    const canReuseExistingClientId2 = Boolean(existingClientId2);
     if (canReuseExistingClientId2) {
       memberData[clientIdField] = existingClientId2;
     } else {
       const currentClientId = clean(memberData[clientIdField]);
-      if (!currentClientId || looksLikePlaceholderValue(currentClientId)) {
+      if (!currentClientId && !isUpdate) {
         const generatedClientId2 = await createClientAndGetClientId2(baseUrl, token, firstName, lastName);
         memberData[clientIdField] = generatedClientId2;
       }
     }
-    if (hasValue(assignedStaffName) && !hasValue(memberData.Kaiser_User_Assignment)) {
-      // Keep Kaiser tracker assignment in Caspio aligned with admin assignment at push time.
-      memberData.Kaiser_User_Assignment = assignedStaffName;
-    }
+    // Do not auto-write Kaiser assignment during push; some Caspio environments
+    // reject this field and return InternalError. Staff can manage assignment directly in Caspio.
     memberData[CALAIM_STATUS_FIELD] = requestedCalAIMStatus;
     if (isKaiserApplication && requestedKaiserStatus) {
       memberData[KAISER_STATUS_FIELD] = requestedKaiserStatus;
@@ -681,14 +765,21 @@ export async function POST(request: NextRequest) {
     memberFieldNames.forEach((name) => {
       fieldNameByNormalized.set(normalizeFieldName(name), name);
     });
+    const mappedMedicalField = Object.keys(memberData).find((fieldName) => looksLikeMedicalNumberField(fieldName)) || '';
     const mediCalFieldName =
-      MEDICAL_NUMBER_FIELD_CANDIDATES.find((name) => fieldNameByNormalized.has(normalizeFieldName(name))) || '';
+      clean(mappedMedicalField) ||
+      MEDICAL_NUMBER_FIELD_CANDIDATES.find((name) => fieldNameByNormalized.has(normalizeFieldName(name))) ||
+      '';
     if (mediCalFieldName && !hasValue(memberData[mediCalFieldName])) {
       if (hintedMediCalNumber) {
         memberData[mediCalFieldName] = hintedMediCalNumber;
-      } else if (skeletonPush) {
-        memberData[mediCalFieldName] = buildTempMediCalNumber(`${firstName}${lastName}${hintedMrn || ''}`);
       }
+    }
+    if (mediCalFieldName) {
+      Object.keys(memberData).forEach((key) => {
+        if (key === mediCalFieldName) return;
+        if (looksLikeMedicalNumberField(key)) delete memberData[key];
+      });
     }
     if (preAssessmentNotes) {
       const mappedNotesField = Object.keys(memberData).find(
@@ -718,6 +809,20 @@ export async function POST(request: NextRequest) {
     Object.keys(memberData).forEach((key) => {
       if (looksLikePkField(key)) delete memberData[key];
     });
+    const removedSyntheticFields: string[] = [];
+    Object.entries(memberData).forEach(([fieldName, rawValue]) => {
+      const value = clean(rawValue);
+      if (!value) return;
+      if (!looksLikeSyntheticFixtureValue(value)) return;
+      delete memberData[fieldName];
+      removedSyntheticFields.push(fieldName);
+    });
+    if (removedSyntheticFields.length > 0) {
+      console.warn('Caspio push stripped synthetic values:', {
+        removedSyntheticFields,
+        removedCount: removedSyntheticFields.length,
+      });
+    }
     if (Object.keys(memberData).length === 0) {
       return NextResponse.json(
         {
@@ -729,7 +834,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const isUpdate = Boolean(existingRow?.PK_ID || existingRow?.pk_id) && !(skeletonPush && existingRowMatchSource === 'name');
     if (!isUpdate && isKaiserApplication) {
       // Only set default tier on first insert for Kaiser applications.
       memberData[MCO_AND_TIER_FIELD] = DEFAULT_KAISER_TIER_VALUE;
@@ -738,6 +842,7 @@ export async function POST(request: NextRequest) {
     const upsertUrl = isUpdate
       ? `${baseUrl}/tables/${membersTable}/records?q.where=${encodeURIComponent(updateWhere)}`
       : `${baseUrl}/tables/${membersTable}/records`;
+    const createUrl = `${baseUrl}/tables/${membersTable}/records`;
     const upsertMethod = isUpdate ? 'PUT' : 'POST';
     const doUpsert = async (payload: Record<string, any>) =>
       fetch(upsertUrl, {
@@ -748,6 +853,15 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify(payload),
     });
+    const doCreate = async (payload: Record<string, any>) =>
+      fetch(createUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
     const doUpdateByPk = async (pkId: number, payload: Record<string, any>) => {
       const safePk = Number(pkId || 0);
       if (!safePk) return null;
@@ -763,39 +877,8 @@ export async function POST(request: NextRequest) {
       });
     };
     let upsertResponse = await doUpsert(memberData);
-
-    // Some Caspio tables may not have Kaiser_User_Assignment. If so, retry once without it.
-    if (!upsertResponse.ok && hasValue(memberData.Kaiser_User_Assignment)) {
-      const firstErrText = await upsertResponse.text().catch(() => '');
-      const mentionsMissingAssignmentColumn =
-        /columnnotfound/i.test(firstErrText) && /kaiser_user_assignment/i.test(firstErrText);
-      if (mentionsMissingAssignmentColumn) {
-        const fallbackData = { ...memberData };
-        delete fallbackData.Kaiser_User_Assignment;
-        upsertResponse = await doUpsert(fallbackData);
-      } else {
-        return NextResponse.json(
-          {
-            success: false,
-            code: isUpdate ? 'caspio-update-failed' : 'caspio-insert-failed',
-            message: isUpdate
-              ? 'Failed to update member record in Caspio.'
-              : 'Failed to insert member record in Caspio.',
-            details: {
-              caspioStatus: upsertResponse.status,
-              caspioError: firstErrText,
-              memberName: `${firstName} ${lastName}`.trim(),
-              clientIdField,
-              mode: isUpdate ? 'update' : 'create',
-            },
-          },
-          { status: 500 }
-        );
-      }
-    }
-
     if (!upsertResponse.ok) {
-      const firstErrorBody = await upsertResponse.text().catch(() => '');
+      let firstErrorBody = await upsertResponse.text().catch(() => '');
       const holdPattern = /columnnotfound/i.test(firstErrorBody) && /hold[_\s-]*for[_\s-]*social[_\s-]*worker/i.test(firstErrorBody);
       if (holdPattern) {
         const fallbackData = { ...memberData };
@@ -839,6 +922,14 @@ export async function POST(request: NextRequest) {
         }
       }
       const caspioError = await upsertResponse.text().catch(() => '') || firstErrorBody;
+      console.warn('Caspio upsert failed diagnostics:', {
+        status: upsertResponse.status,
+        mode: isUpdate ? 'update' : 'create',
+        existingRowMatchSource,
+        duplicateBlankField: parseDuplicateOrBlankField(caspioError) || null,
+        errorPreview: clean(caspioError).slice(0, 1000),
+        payloadSummary: buildCaspioPayloadDebugSummary(memberData),
+      });
       const duplicateBlankField = parseDuplicateOrBlankField(caspioError);
       if (!isUpdate && duplicateBlankField) {
         const duplicateFieldCandidates = Array.from(
@@ -855,10 +946,7 @@ export async function POST(request: NextRequest) {
               hintedMediCalNumber,
               hintedMrn,
               mappedMediCalEntry?.[1],
-              memberData.Medical_Number,
-              memberData.MediCal_Number,
-              memberData.Medi_Cal_Number,
-              memberData.MCP_CIN,
+              memberData[mediCalFieldName],
             ]
               .map((value) => clean(value))
               .filter(Boolean)
@@ -898,6 +986,70 @@ export async function POST(request: NextRequest) {
               data: updateResult,
             });
           }
+        }
+        if (!recoveredPk && looksLikeMedicalNumberField(duplicateBlankField) && hintedMediCalNumber) {
+          const forceMediCalCreateData: Record<string, any> = { ...memberData };
+          forceMediCalCreateData[duplicateBlankField] = hintedMediCalNumber;
+          if (mediCalFieldName && duplicateBlankField !== mediCalFieldName) {
+            forceMediCalCreateData[mediCalFieldName] = hintedMediCalNumber;
+          }
+          console.warn('Caspio forced MediCal create retry:', {
+            duplicateBlankField,
+            mediCalFieldName: mediCalFieldName || null,
+            payloadSummary: buildCaspioPayloadDebugSummary(forceMediCalCreateData),
+          });
+          const forcedCreateResponse = await doCreate(forceMediCalCreateData);
+          if (forcedCreateResponse.ok) {
+            const forcedCreateResult = await forcedCreateResponse.json().catch(() => ({} as any));
+            return NextResponse.json({
+              success: true,
+              message: `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio (forced MediCal retry).`,
+              mode: 'create',
+              warning: 'forced-medical-number-retry',
+              clientId2: clean(forceMediCalCreateData[clientIdField]),
+              data: forcedCreateResult,
+            });
+          }
+          const forcedCreateError = await forcedCreateResponse.text().catch(() => '');
+          console.warn('Caspio forced MediCal create retry failed:', {
+            status: forcedCreateResponse.status,
+            errorPreview: clean(forcedCreateError).slice(0, 1000),
+          });
+          const minimalForcedCreateData: Record<string, any> = {
+            [firstNameField]: firstName,
+            [lastNameField]: lastName,
+            [duplicateBlankField]: hintedMediCalNumber,
+            [CALAIM_STATUS_FIELD]: requestedCalAIMStatus,
+          };
+          if (hasValue(memberData[clientIdField])) {
+            minimalForcedCreateData[clientIdField] = memberData[clientIdField];
+          }
+          if (isKaiserApplication && requestedKaiserStatus) {
+            minimalForcedCreateData[KAISER_STATUS_FIELD] = requestedKaiserStatus;
+          }
+          if (hasValue(requestedSocialWorkerHold)) {
+            minimalForcedCreateData[holdFieldName] = requestedSocialWorkerHold;
+          }
+          console.warn('Caspio minimal forced MediCal create retry:', {
+            payloadSummary: buildCaspioPayloadDebugSummary(minimalForcedCreateData),
+          });
+          const minimalForcedResponse = await doCreate(minimalForcedCreateData);
+          if (minimalForcedResponse.ok) {
+            const minimalForcedResult = await minimalForcedResponse.json().catch(() => ({} as any));
+            return NextResponse.json({
+              success: true,
+              message: `Successfully published CS Summary for "${firstName} ${lastName}" to Caspio (minimal forced MediCal retry).`,
+              mode: 'create',
+              warning: 'minimal-forced-medical-number-retry',
+              clientId2: clean(minimalForcedCreateData[clientIdField]),
+              data: minimalForcedResult,
+            });
+          }
+          const minimalForcedError = await minimalForcedResponse.text().catch(() => '');
+          console.warn('Caspio minimal forced MediCal create retry failed:', {
+            status: minimalForcedResponse.status,
+            errorPreview: clean(minimalForcedError).slice(0, 1000),
+          });
         }
       }
       const duplicateBlankMessage = duplicateBlankField

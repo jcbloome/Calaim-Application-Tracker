@@ -4,6 +4,16 @@ import { getCaspioServerAccessToken, getCaspioServerConfig } from '@/lib/caspio-
 const clean = (value: unknown) => String(value ?? '').trim();
 const esc = (value: unknown) => clean(value).replace(/'/g, "''");
 const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(value));
+const buildEqualsClause = (fieldName: string, value: unknown) => {
+  const normalizedValue = clean(value);
+  if (!normalizedValue) return '';
+  if (/^0\d+$/.test(normalizedValue)) {
+    return `${fieldName}='${esc(normalizedValue)}'`;
+  }
+  return looksLikeNumericId(normalizedValue)
+    ? `${fieldName}=${normalizedValue}`
+    : `${fieldName}='${esc(normalizedValue)}'`;
+};
 
 const MEMBERS_TABLE = 'CalAIM_tbl_Members';
 
@@ -28,7 +38,14 @@ const fetchMemberCandidates = async (
   });
   if (!response.ok) {
     const errorText = await response.text().catch(() => '');
-    throw new Error(`Caspio lookup failed: HTTP ${response.status} ${errorText}`);
+    // Some field candidates can be invalid in certain Caspio environments.
+    // Treat individual lookup failures as non-fatal and continue fallback matching.
+    console.warn('Caspio confirm lookup failed for where-clause:', {
+      status: response.status,
+      whereClause,
+      errorPreview: clean(errorText).slice(0, 500),
+    });
+    return [] as Array<Record<string, any>>;
   }
   const json = await response.json().catch(() => ({} as any));
   return Array.isArray(json?.Result) ? (json.Result as Array<Record<string, any>>) : [];
@@ -47,6 +64,20 @@ export async function POST(request: NextRequest) {
         applicationData?.caspioClientId2
     );
     const healthPlan = clean(applicationData?.healthPlan || applicationData?.CalAIM_MCO).toLowerCase();
+    const hintedMediCalNum = clean(
+      applicationData?.memberMediCalNum ||
+      applicationData?.confirmMemberMediCalNum ||
+      applicationData?.MediCal_Number ||
+      applicationData?.Medical_Number ||
+      applicationData?.MCP_CIN ||
+      applicationData?.cin
+    );
+    const hintedMrn = clean(
+      applicationData?.memberMrn ||
+      applicationData?.medicalRecordNumber ||
+      applicationData?.mrn ||
+      applicationData?.Member_MRN
+    );
 
     const caspioConfig = getCaspioServerConfig();
     const token = await getCaspioServerAccessToken(caspioConfig);
@@ -54,10 +85,13 @@ export async function POST(request: NextRequest) {
 
     let candidates: Array<Record<string, any>> = [];
     if (hintedClientId2) {
-      const whereByClient = looksLikeNumericId(hintedClientId2)
-        ? `client_ID2=${hintedClientId2}`
-        : `client_ID2='${esc(hintedClientId2)}'`;
-      candidates = await fetchMemberCandidates(baseUrl, token, whereByClient, 3);
+      const clientIdFields = ['client_ID2', 'Client_ID2', 'clientid2'];
+      for (const fieldName of clientIdFields) {
+        if (candidates.length > 0) break;
+        const whereByClient = buildEqualsClause(fieldName, hintedClientId2);
+        if (!whereByClient) continue;
+        candidates = await fetchMemberCandidates(baseUrl, token, whereByClient, 3);
+      }
     }
 
     if (candidates.length === 0 && firstName && lastName) {
@@ -68,7 +102,27 @@ export async function POST(request: NextRequest) {
       candidates = await fetchMemberCandidates(baseUrl, token, where, 5);
     }
 
-    const row = candidates[0] || null;
+    if (candidates.length === 0 && hintedMediCalNum) {
+      const mediCalFields = ['Medical_Number', 'MediCal_Number', 'Medi_Cal_Number', 'MCP_CIN', 'CIN'];
+      for (const fieldName of mediCalFields) {
+        if (candidates.length > 0) break;
+        const where = buildEqualsClause(fieldName, hintedMediCalNum);
+        if (!where) continue;
+        candidates = await fetchMemberCandidates(baseUrl, token, where, 5);
+      }
+    }
+
+    if (candidates.length === 0 && hintedMrn) {
+      const mrnFields = ['MRN', 'Member_MRN', 'Medical_Record_Number', 'MedicalRecordNumber'];
+      for (const fieldName of mrnFields) {
+        if (candidates.length > 0) break;
+        const where = buildEqualsClause(fieldName, hintedMrn);
+        if (!where) continue;
+        candidates = await fetchMemberCandidates(baseUrl, token, where, 5);
+      }
+    }
+
+    const row = candidates.find((candidate) => clean(candidate?.client_ID2 || candidate?.Client_ID2)) || candidates[0] || null;
     if (!row) {
       return NextResponse.json({
         success: true,

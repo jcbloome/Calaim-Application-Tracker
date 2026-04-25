@@ -62,6 +62,10 @@ export default function Step1({
   const repRelationship = watch('repRelationship');
   const repPhone = watch('repPhone');
   const repEmail = watch('repEmail');
+  const referrerFirstName = watch('referrerFirstName');
+  const referrerLastName = watch('referrerLastName');
+  const referrerPhone = watch('referrerPhone');
+  const referrerRelationship = watch('referrerRelationship');
   const referrerEmail = watch('referrerEmail');
   const agency = watch('agency');
   const submitterAlsoReceivesDocRequests = watch('submitterAlsoReceivesDocRequests');
@@ -102,59 +106,78 @@ export default function Step1({
   }, [memberDob, setValue]);
   
   useEffect(() => {
-    const isSameAsPrimary = hasLegalRep === 'same_as_primary';
-    
-    if (isSameAsPrimary) {
-        copyRepFromPrimaryContact();
-    } else {
-        const currentRepValues = {
-            repFirstName: getValues('repFirstName'),
-            repLastName: getValues('repLastName'),
-            repRelationship: getValues('repRelationship'),
-            repPhone: getValues('repPhone'),
-            repEmail: getValues('repEmail'),
-        };
-        const bestContactValues = {
-            repFirstName: getValues('bestContactFirstName'),
-            repLastName: getValues('bestContactLastName'),
-            repRelationship: getValues('bestContactRelationship'),
-            repPhone: getValues('bestContactPhone'),
-            repEmail: getValues('bestContactEmail'),
-        };
+    if (hasLegalRep !== 'same_as_primary') return;
+    // Keep legal-representative values synced as primary-contact details change.
+    copyRepFromPrimaryContact();
+  }, [
+    hasLegalRep,
+    bestContactFirstName,
+    bestContactLastName,
+    bestContactRelationship,
+    bestContactPhone,
+    bestContactEmail,
+    setValue,
+    getValues,
+    clearErrors,
+  ]);
 
-        // Only clear if the values were previously auto-filled
-        if (hasLegalRep !== 'no_capacity_has_rep' && JSON.stringify(currentRepValues) === JSON.stringify(bestContactValues)) {
-            setValue('repFirstName', '');
-            setValue('repLastName', '');
-            setValue('repRelationship', '');
-            setValue('repPhone', '');
-            setValue('repEmail', '');
-        }
-        
-        if (hasLegalRep === 'different') {
-          // You might want to trigger validation here if needed, but the main validation happens on submit
-        } else {
-          // Clear errors for other states
-          clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
-        }
+  useEffect(() => {
+    if (hasLegalRep === 'same_as_primary') return;
+    const currentRepValues = {
+      repFirstName: getValues('repFirstName'),
+      repLastName: getValues('repLastName'),
+      repRelationship: getValues('repRelationship'),
+      repPhone: getValues('repPhone'),
+      repEmail: getValues('repEmail'),
+    };
+    const bestContactValues = {
+      repFirstName: getValues('bestContactFirstName'),
+      repLastName: getValues('bestContactLastName'),
+      repRelationship: getValues('bestContactRelationship'),
+      repPhone: getValues('bestContactPhone'),
+      repEmail: getValues('bestContactEmail'),
+    };
+
+    // Only clear if the values were previously auto-filled.
+    if (hasLegalRep !== 'no_capacity_has_rep' && JSON.stringify(currentRepValues) === JSON.stringify(bestContactValues)) {
+      setValue('repFirstName', '');
+      setValue('repLastName', '');
+      setValue('repRelationship', '');
+      setValue('repPhone', '');
+      setValue('repEmail', '');
     }
 
+    if (hasLegalRep !== 'different') {
+      clearErrors(['repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail']);
+    }
   }, [hasLegalRep, setValue, getValues, clearErrors]);
 
-  // When marked as same-as-submitting-user, clear validation errors for primary contact.
-  // We intentionally do not auto-populate values; the checkbox itself is the source of truth.
+  // When marked as same-as-submitting-user, keep primary-contact fields synced to submitter values.
   useEffect(() => {
-    if (isPrimaryContactSameAsReferrer) {
-      clearErrors([
-        'bestContactFirstName',
-        'bestContactLastName',
-        'bestContactRelationship',
-        'bestContactPhone',
-        'bestContactEmail',
-        'bestContactLanguage',
-      ]);
-    }
-  }, [isPrimaryContactSameAsReferrer, clearErrors]);
+    if (!isPrimaryContactSameAsReferrer) return;
+    setValue('bestContactFirstName', String(referrerFirstName || '').trim());
+    setValue('bestContactLastName', String(referrerLastName || '').trim());
+    setValue('bestContactRelationship', String(referrerRelationship || '').trim());
+    setValue('bestContactPhone', String(referrerPhone || '').trim());
+    setValue('bestContactEmail', String(referrerEmail || '').trim());
+    clearErrors([
+      'bestContactFirstName',
+      'bestContactLastName',
+      'bestContactRelationship',
+      'bestContactPhone',
+      'bestContactEmail',
+      'bestContactLanguage',
+    ]);
+  }, [
+    isPrimaryContactSameAsReferrer,
+    referrerFirstName,
+    referrerLastName,
+    referrerRelationship,
+    referrerPhone,
+    referrerEmail,
+    setValue,
+    clearErrors,
+  ]);
 
   useEffect(() => {
     if (!forceSeparatePrimaryContactFromSubmitter) return;

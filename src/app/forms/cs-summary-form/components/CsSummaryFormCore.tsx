@@ -787,6 +787,51 @@ function CsSummaryFormComponent() {
              return;
         }
 
+        if (isEditingExistingApplication && isAdminView && firestore) {
+          const isFinalAdminApp = finalAppId.startsWith('admin_app_');
+          const finalDocRef = isFinalAdminApp
+            ? doc(firestore, 'applications', finalAppId)
+            : (targetUserId ? doc(firestore, `users/${targetUserId}/applications`, finalAppId) : null);
+          if (finalDocRef) {
+            try {
+              const finalSnap = await getDoc(finalDocRef);
+              const existingData = (finalSnap.exists() ? (finalSnap.data() as Application) : ({} as Application));
+              const forms = Array.isArray((existingData as any)?.forms) ? ([...(existingData as any).forms] as any[]) : [];
+              const csSummaryIndex = forms.findIndex((form) => {
+                const name = String(form?.name || '').trim();
+                return name === 'CS Member Summary' || name === 'CS Summary';
+              });
+              const completedEntry = {
+                name: 'CS Member Summary',
+                type: 'online-form',
+                status: 'Completed',
+                href: isAdminView ? '/admin/forms/edit' : '/forms/cs-summary-form',
+              };
+              if (csSummaryIndex >= 0) {
+                forms[csSummaryIndex] = {
+                  ...forms[csSummaryIndex],
+                  status: 'Completed',
+                };
+              } else {
+                forms.push(completedEntry);
+              }
+              await setDoc(finalDocRef, {
+                forms,
+                csSummaryComplete: true,
+                csSummaryCompletedAt: serverTimestamp(),
+                lastUpdated: serverTimestamp(),
+              }, { merge: true });
+            } catch (completionSyncError: any) {
+              console.warn('CS summary completion sync failed (non-blocking):', completionSyncError);
+              toast({
+                variant: 'destructive',
+                title: 'Saved, but completion flag update failed',
+                description: 'Your CS Summary data was saved. Please refresh and re-open the application if completion status does not update.',
+              });
+            }
+          }
+        }
+
         if (isEditingExistingApplication) {
           if (isAdminView) {
             router.push(`/admin/applications/${finalAppId}${appUserId ? `?userId=${appUserId}` : ''}`);
