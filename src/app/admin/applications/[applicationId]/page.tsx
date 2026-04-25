@@ -86,6 +86,18 @@ const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
 
 function toMillisSafe(value: unknown): number {
   try {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return Math.round(value);
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (/^\d+$/.test(trimmed)) {
+        const parsedNumeric = Number(trimmed);
+        if (Number.isFinite(parsedNumeric) && parsedNumeric > 0) {
+          return Math.round(parsedNumeric);
+        }
+      }
+    }
     const ts = value as { toDate?: () => Date; toMillis?: () => number } | null;
     if (ts && typeof ts.toDate === 'function') return ts.toDate().getTime();
     if (ts && typeof ts.toMillis === 'function') return Number(ts.toMillis()) || 0;
@@ -3665,7 +3677,8 @@ function ApplicationDetailPageContent() {
       };
       let shouldPersist = false;
 
-      if (isKaiserPlan && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus) {
+      const shouldAutoSyncKaiserFromCache = isKaiserPlan && !showDraftKaiserStatusSection;
+      if (shouldAutoSyncKaiserFromCache && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus) {
         updateData.kaiserStatus = incomingKaiserStatus;
         updateData.kaiserStatusSyncedFromCacheAt = serverTimestamp();
         updateData.kaiserStatusSyncSource = 'caspio_members_cache_live';
@@ -3694,7 +3707,7 @@ function ApplicationDetailPageContent() {
         prev
           ? ({
               ...prev,
-              ...(isKaiserPlan && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus
+              ...(shouldAutoSyncKaiserFromCache && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus
                 ? { kaiserStatus: incomingKaiserStatus }
                 : {}),
               ...(incomingCalAIMStatus && incomingCalAIMStatus !== currentCalAIMStatus
@@ -3713,6 +3726,7 @@ function ApplicationDetailPageContent() {
     firestore,
     docRef,
     isKaiserPlan,
+    showDraftKaiserStatusSection,
     (application as any)?.client_ID2,
     (application as any)?.clientId2,
     (application as any)?.kaiserStatus,
@@ -6783,6 +6797,18 @@ function ApplicationDetailPageContent() {
       { id: 'decl-elig-check', name: 'Declaration of Eligibility' },
   ].filter(doc => pathwayRequirements.some(req => req.title === doc.name));
 
+  const persistApplicationPatch = async (patch: Record<string, any>) => {
+    if (!docRef || !applicationId) return;
+    const writes: Array<Promise<void>> = [setDoc(docRef, patch, { merge: true })];
+    const isAdminStored = applicationId.startsWith('admin_app_') || !appUserId;
+    // Keep the top-level applications doc mirror in sync for admin reporting/tracking.
+    if (!isAdminStored && firestore) {
+      const adminMirrorRef = doc(firestore, 'applications', applicationId);
+      writes.push(setDoc(adminMirrorRef, patch, { merge: true }));
+    }
+    await Promise.all(writes);
+  };
+
   // Update application progression status
   const updateProgressionStatus = async (status: string, statusType: 'kaiser' | 'healthNet') => {
     if (!docRef || !application) return;
@@ -6793,7 +6819,7 @@ function ApplicationDetailPageContent() {
         ? { kaiserStatus: status }
         : { healthNetStatus: status };
       
-      await setDoc(docRef, updateData, { merge: true });
+      await persistApplicationPatch(updateData);
       
       // Update local state
       setApplication(prev => prev ? { ...prev, ...updateData } : null);
@@ -6983,14 +7009,10 @@ function ApplicationDetailPageContent() {
     const normalized = String(status || '').trim();
     if (!normalized) return;
     try {
-      await setDoc(
-        docRef,
-        {
-          kaiserStatus: normalized,
-          lastUpdated: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await persistApplicationPatch({
+        kaiserStatus: normalized,
+        lastUpdated: serverTimestamp(),
+      });
       setApplication((prev) =>
         prev
           ? ({
@@ -9503,18 +9525,6 @@ function ApplicationDetailPageContent() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs font-medium text-muted-foreground">Next status reminder date</Label>
-                      <Input
-                        type="date"
-                        value={toDateInputValue(statusReminderNextAtMs)}
-                        onChange={(event) => {
-                          const nextAtMs = fromDateInputToMs(event.target.value);
-                          updateReminderSettings({ statusReminderNextAtMs: nextAtMs });
-                        }}
-                        disabled={isUpdatingReminderControls}
-                      />
-                    </div>
-                    <div className="space-y-2">
                       <Label className="text-xs font-medium text-muted-foreground">CalAIM Status for Caspio</Label>
                       <Select
                         value={effectiveCaspioCalAIMStatus}
@@ -11253,19 +11263,6 @@ function ApplicationDetailPageContent() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="status-reminder-next-date-quick">Next status reminder date</Label>
-                    <Input
-                      id="status-reminder-next-date-quick"
-                      type="date"
-                      value={toDateInputValue(statusReminderNextAtMs)}
-                      onChange={(event) => {
-                        const nextAtMs = fromDateInputToMs(event.target.value);
-                        updateReminderSettings({ statusReminderNextAtMs: nextAtMs });
-                      }}
-                      disabled={isUpdatingReminderControls}
-                    />
                   </div>
                   <div className="space-y-2 p-3 border rounded-lg bg-muted/20">
                     <Label htmlFor="staff-test-status-reminder-email" className="text-sm font-medium">

@@ -610,108 +610,91 @@ function PathwayPageContent() {
       if (files.length === 0) {
         throw new Error('No files selected for upload.');
       }
-
-      const file = files[0];
-      
-      // Validate file size (max 10MB)
       const maxSize = 10 * 1024 * 1024; // 10MB
-      if (file.size > maxSize) {
-        throw new Error(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds the maximum limit of 10MB.`);
-      }
-
-      // Validate file type
       const allowedTypes = [
         'application/pdf',
         'image/jpeg',
-        'image/jpg', 
+        'image/jpg',
         'image/png',
         'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       ];
-      
-      if (!allowedTypes.includes(file.type)) {
-        throw new Error(`File type "${file.type}" is not supported. Please upload PDF, Word documents, or images (JPG, PNG).`);
+
+      const uploadSingleFile = (file: File, fileIndex: number, totalFiles: number) => {
+        if (file.size > maxSize) {
+          throw new Error(`${file.name}: File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds 10MB.`);
+        }
+        if (!allowedTypes.includes(file.type)) {
+          throw new Error(
+            `${file.name}: File type "${file.type}" is not supported. Please upload PDF, Word, JPG, or PNG files.`
+          );
+        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const storagePath = `user_uploads/${user.uid}/${applicationId}/${requirementTitle}/${timestamp}_${file.name}`;
+        const storageRef = ref(storage, storagePath);
+        return new Promise<{ downloadURL: string | null; path: string; fileName: string }>((resolve, reject) => {
+          const uploadTimeout = setTimeout(() => {
+            console.error('Upload timeout after 5 minutes');
+            reject(new Error(`${file.name}: Upload timeout - please try again with a smaller file.`));
+          }, 5 * 60 * 1000);
+          const uploadTask = uploadBytesResumable(storageRef, file);
+          uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+              const fileProgress = snapshot.totalBytes > 0 ? snapshot.bytesTransferred / snapshot.totalBytes : 0;
+              const aggregateProgress = ((fileIndex + fileProgress) / Math.max(totalFiles, 1)) * 100;
+              setUploadProgress((prev) => ({ ...prev, [requirementTitle]: aggregateProgress }));
+            },
+            (error) => {
+              clearTimeout(uploadTimeout);
+              let errorMessage = `${file.name}: Upload failed. Please try again.`;
+              if (error.code === 'storage/unauthorized') {
+                errorMessage = `${file.name}: Upload permission denied. Please check your authentication.`;
+              } else if (error.code === 'storage/canceled') {
+                errorMessage = `${file.name}: Upload was canceled.`;
+              } else if (error.code === 'storage/unknown') {
+                errorMessage = `${file.name}: Unknown upload error. Please check your internet connection.`;
+              } else if (error.code === 'storage/quota-exceeded') {
+                errorMessage = `${file.name}: Storage quota exceeded. Please contact support.`;
+              }
+              reject(new Error(errorMessage));
+            },
+            async () => {
+              try {
+                clearTimeout(uploadTimeout);
+                const isInternalStaffUpload = Boolean(isAdmin || isSuperAdmin);
+                if (isInternalStaffUpload) {
+                  const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                  resolve({ downloadURL, path: storagePath, fileName: file.name });
+                  return;
+                }
+                resolve({ downloadURL: null, path: storagePath, fileName: file.name });
+              } catch (error: any) {
+                clearTimeout(uploadTimeout);
+                reject(new Error(`${file.name}: Failed to finalize upload (${error?.message || 'unknown error'}).`));
+              }
+            }
+          );
+        });
+      };
+
+      const uploadResults: Array<{ downloadURL: string | null; path: string; fileName: string }> = [];
+      const uploadFailures: string[] = [];
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        try {
+          const result = await uploadSingleFile(file, i, files.length);
+          uploadResults.push(result);
+        } catch (error: any) {
+          uploadFailures.push(String(error?.message || `${file.name}: Upload failed.`));
+        }
       }
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const storagePath = `user_uploads/${user.uid}/${applicationId}/${requirementTitle}/${timestamp}_${file.name}`;
-      
-      console.log('Creating storage reference:', storagePath);
-      console.log('File info:', { name: file.name, size: file.size, type: file.type });
-      
-      const storageRef = ref(storage, storagePath);
+      if (uploadResults.length === 0) {
+        throw new Error(uploadFailures[0] || 'Upload failed - no files were uploaded.');
+      }
 
-      return new Promise<{ downloadURL: string | null, path: string }>((resolve, reject) => {
-            console.log('Starting upload task for file:', file.name, 'Size:', file.size, 'Type:', file.type);
-            console.log('Storage instance details:', {
-                app: storage.app.name,
-                bucket: storage.app.options.storageBucket,
-                project: storage.app.options.projectId
-            });
-            console.log('User details:', {
-                uid: user.uid,
-                email: user.email,
-                isAnonymous: user.isAnonymous
-            });
-            
-            // Add timeout to prevent hanging uploads
-            const uploadTimeout = setTimeout(() => {
-                console.error('Upload timeout after 5 minutes');
-                reject(new Error('Upload timeout - please try again with a smaller file'));
-            }, 5 * 60 * 1000); // 5 minutes
-
-            console.log('Creating uploadBytesResumable task...');
-            const uploadTask = uploadBytesResumable(storageRef, file);
-            console.log('Upload task created successfully:', uploadTask);
-
-          uploadTask.on('state_changed',
-              (snapshot) => {
-                  const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                  console.log(`Upload progress for ${requirementTitle}: ${progress}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)`);
-                  console.log('Upload state:', snapshot.state);
-                  setUploadProgress(prev => ({ ...prev, [requirementTitle]: progress }));
-              },
-              (error) => {
-                  console.error("Upload failed:", error);
-                  console.error("Error code:", error.code);
-                  console.error("Error message:", error.message);
-                  clearTimeout(uploadTimeout);
-                  
-                  // Provide more specific error messages
-                  let errorMessage = 'Upload failed. Please try again.';
-                  if (error.code === 'storage/unauthorized') {
-                      errorMessage = 'Upload permission denied. Please check your authentication.';
-                  } else if (error.code === 'storage/canceled') {
-                      errorMessage = 'Upload was canceled.';
-                  } else if (error.code === 'storage/unknown') {
-                      errorMessage = 'Unknown upload error. Please check your internet connection.';
-                  } else if (error.code === 'storage/quota-exceeded') {
-                      errorMessage = 'Storage quota exceeded. Please contact support.';
-                  }
-                  
-                  reject(new Error(errorMessage));
-              },
-              async () => {
-                  try {
-                      clearTimeout(uploadTimeout);
-                      const isInternalStaffUpload = Boolean(isAdmin || isSuperAdmin);
-                      if (isInternalStaffUpload) {
-                        console.log('Upload completed, getting download URL...');
-                        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                        console.log('Download URL obtained:', downloadURL);
-                        resolve({ downloadURL, path: storagePath });
-                        return;
-                      }
-                      // HIPAA: submitters can upload/replace but do not receive file URLs.
-                      resolve({ downloadURL: null, path: storagePath });
-                  } catch (error: any) {
-                      console.error('Error getting download URL:', error);
-                      clearTimeout(uploadTimeout);
-                      reject(new Error(`Failed to get download URL: ${error.message}`));
-                  }
-              }
-          );
-      });
+      return { uploadResults, uploadFailures };
   };
 
 
@@ -786,11 +769,7 @@ function PathwayPageContent() {
           }
         }
         console.log('Attempting upload with user:', user?.email, 'applicationId:', applicationId);
-        const uploadResults = [];
-        for (const file of files) {
-          const result = await doUpload([file], requirementTitle);
-          if (result) uploadResults.push(result);
-        }
+        const { uploadResults, uploadFailures } = await doUpload(files, requirementTitle);
         console.log('Upload results:', uploadResults);
 
         if (uploadResults.length > 0) {
@@ -812,7 +791,7 @@ function PathwayPageContent() {
                   .filter((entry: any) => Boolean(entry.fileName || entry.filePath)))
               : [];
             const combinedUploads = [...preservedExistingUploads, ...uploadResults.map((entry, index) => ({
-              fileName: files[index]?.name || entry.path.split('/').pop() || 'Uploaded file',
+              fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
               filePath: entry.path,
               downloadURL: null,
             }))];
@@ -841,9 +820,19 @@ function PathwayPageContent() {
             console.log('Form status updated successfully');
             toast({ 
               title: 'Upload Successful', 
-              description: `${requirementTitle} has been uploaded successfully.`,
+              description:
+                uploadFailures.length > 0
+                  ? `${uploadResults.length} file(s) uploaded. ${uploadFailures.length} file(s) failed.`
+                  : `${requirementTitle} has been uploaded successfully.`,
               className: 'bg-green-100 text-green-900 border-green-200'
             });
+            if (uploadFailures.length > 0) {
+              toast({
+                variant: 'destructive',
+                title: 'Some files failed',
+                description: uploadFailures.slice(0, 3).join(' | '),
+              });
+            }
         } else {
           throw new Error('Upload failed - no result returned');
         }
@@ -886,14 +875,20 @@ function PathwayPageContent() {
     setUploadProgress(prev => ({ ...prev, [consolidatedId]: 0 }));
 
     try {
-      const uploadResult = await doUpload(files, 'consolidated_medical');
-      if (uploadResult) {
+      const { uploadResults, uploadFailures } = await doUpload(files, 'consolidated_medical');
+      if (uploadResults.length > 0) {
+        const primaryUpload = uploadResults[0];
         const updates: Partial<FormStatusType>[] = formsToUpdate.map(formName => ({
           name: formName,
           status: 'Completed',
-          fileName: files.map(f => f.name).join(', '),
-          filePath: uploadResult.path,
+          fileName: uploadResults.map((entry) => entry.fileName).join(', '),
+          filePath: primaryUpload.path,
           downloadURL: null,
+          uploadedFiles: uploadResults.map((entry) => ({
+            fileName: entry.fileName,
+            filePath: entry.path,
+            downloadURL: null,
+          })),
           dateCompleted: Timestamp.now(),
           uploadedByUid: user.uid,
           uploadedByEmail: user.email || null,
@@ -913,7 +908,20 @@ function PathwayPageContent() {
           });
           return next;
         });
-        toast({ title: 'Upload Successful', description: 'Consolidated documents have been uploaded.' });
+        toast({
+          title: 'Upload Successful',
+          description:
+            uploadFailures.length > 0
+              ? `${uploadResults.length} consolidated file(s) uploaded. ${uploadFailures.length} failed.`
+              : 'Consolidated documents have been uploaded.',
+        });
+        if (uploadFailures.length > 0) {
+          toast({
+            variant: 'destructive',
+            title: 'Some files failed',
+            description: uploadFailures.slice(0, 3).join(' | '),
+          });
+        }
       }
     } catch {
       toast({ variant: 'destructive', title: 'Upload Failed', description: 'Could not upload consolidated documents.' });
