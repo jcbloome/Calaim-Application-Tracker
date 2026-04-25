@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
 import { storage } from '@/firebase';
@@ -56,6 +56,9 @@ type EraCacheHistoryItem = {
   totalRows: number;
   payer?: string;
   summary?: EraSummary | null;
+  totalsVerified?: boolean;
+  totalsVerifiedAt?: { _seconds?: number; seconds?: number } | string | null;
+  totalsVerifiedByUid?: string | null;
   updatedAt?: { _seconds?: number; seconds?: number } | string | null;
 };
 
@@ -521,6 +524,7 @@ const eraRowMatchKey = (row: EraRow) =>
 
 export default function EraParserPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isSuperAdmin, isLoading } = useAdmin();
   const auth = useAuth();
 
@@ -561,9 +565,17 @@ export default function EraParserPage() {
   const [lastExtracted, setLastExtracted] = useState<ExtractedPagesResult | null>(null);
   const [cacheHistory, setCacheHistory] = useState<EraCacheHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [activeCacheKey, setActiveCacheKey] = useState<string | null>(null);
+  const [activeTotalsVerified, setActiveTotalsVerified] = useState(false);
+  const [activeTotalsVerifiedAt, setActiveTotalsVerifiedAt] = useState<EraCacheHistoryItem['totalsVerifiedAt']>(null);
+  const [totalsReviewSaving, setTotalsReviewSaving] = useState(false);
   const [progressTick, setProgressTick] = useState(0);
   const localPathPickerRef = useRef<HTMLInputElement | null>(null);
   const matchedRowKeySet = useMemo(() => new Set(claimMatchedRowKeys), [claimMatchedRowKeys]);
+  const initialCacheKey = useMemo(() => {
+    const raw = String(searchParams?.get('cacheKey') || '').trim();
+    return raw || null;
+  }, [searchParams]);
 
   // Used to re-render elapsed time during long "Opening PDF..." work where pdf.js provides no byte progress.
   void progressTick;
@@ -588,6 +600,50 @@ export default function EraParserPage() {
     }
     return s.size;
   }, [rows]);
+  const paymentBreakdown = useMemo(() => {
+    const t2038Total = Number(summary?.t2038?.total_paid || 0);
+    const h2022Total = Number(summary?.h2022?.total_paid || 0);
+    const t2038Rows = Number(summary?.t2038?.rows || 0);
+    const h2022Rows = Number(summary?.h2022?.rows || 0);
+    const parsedSubtotal =
+      typeof summary?.parser_total === 'number'
+        ? Number(summary.parser_total)
+        : Number((t2038Total + h2022Total).toFixed(2));
+    const eraNetTotal =
+      typeof summary?.era_grand_total === 'number' && Number.isFinite(summary.era_grand_total)
+        ? Number(summary.era_grand_total)
+        : null;
+    const offsetAdjustment =
+      typeof eraNetTotal === 'number'
+        ? Number((eraNetTotal - parsedSubtotal).toFixed(2))
+        : null;
+    const allNegativeRows = rows.filter((r) => typeof r.paid === 'number' && Number.isFinite(r.paid) && r.paid < 0);
+    const negativeCount = allNegativeRows.length;
+    const negativeTotal = Number(allNegativeRows.reduce((sum, r) => sum + Number(r.paid || 0), 0).toFixed(2));
+    const t2038NegativeCount = rows.filter(
+      (r) => r.proc === 'T2038' && typeof r.paid === 'number' && Number.isFinite(r.paid) && r.paid < 0
+    ).length;
+    const h2022NegativeCount = rows.filter(
+      (r) => r.proc === 'H2022' && typeof r.paid === 'number' && Number.isFinite(r.paid) && r.paid < 0
+    ).length;
+    const t2038AveragePaid = t2038Rows > 0 ? Number((t2038Total / t2038Rows).toFixed(2)) : null;
+    const h2022AveragePaid = h2022Rows > 0 ? Number((h2022Total / h2022Rows).toFixed(2)) : null;
+    return {
+      t2038Total,
+      h2022Total,
+      t2038Rows,
+      h2022Rows,
+      t2038AveragePaid,
+      h2022AveragePaid,
+      parsedSubtotal,
+      eraNetTotal,
+      offsetAdjustment,
+      negativeCount,
+      negativeTotal,
+      t2038NegativeCount,
+      h2022NegativeCount,
+    };
+  }, [summary, rows]);
 
   const filteredRows = useMemo(() => {
     const q = String(resultsSearch || '').trim().toLowerCase();
@@ -1072,6 +1128,12 @@ export default function EraParserPage() {
     if (!v) return null;
     return `path:${v}`;
   };
+  const cacheKeyToLocalPath = (cacheKey: string) => {
+    const key = String(cacheKey || '').trim();
+    if (!key.toLowerCase().startsWith('path:')) return null;
+    const raw = key.slice(5).trim();
+    return raw || null;
+  };
 
   const fetchCacheHistory = useCallback(async () => {
     if (!auth?.currentUser) return;
@@ -1103,7 +1165,43 @@ export default function EraParserPage() {
     setPayer(String(data?.payer || 'Health Net'));
     setRows(Array.isArray(data?.rows) ? data.rows : []);
     setSummary((data?.summary || null) as EraSummary | null);
+    setActiveCacheKey(String(data?.cacheKey || cacheKey));
+    setActiveTotalsVerified(Boolean(data?.totalsVerified));
+    setActiveTotalsVerifiedAt((data?.totalsVerifiedAt || null) as EraCacheHistoryItem['totalsVerifiedAt']);
     return true;
+  };
+
+  const setTotalsReviewStatus = async (reviewed: boolean) => {
+    if (!activeCacheKey || !auth?.currentUser) return;
+    setTotalsReviewSaving(true);
+    setError(null);
+    setErrorDetails(null);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/admin/era/parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          action: 'set_totals_review',
+          cacheKey: activeCacheKey,
+          reviewed,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to update totals review status (HTTP ${res.status})`);
+      }
+      setActiveTotalsVerified(Boolean(data?.totalsVerified));
+      setActiveTotalsVerifiedAt((data?.totalsVerifiedAt || null) as EraCacheHistoryItem['totalsVerifiedAt']);
+      await fetchCacheHistory();
+    } catch (e: any) {
+      setError(e?.message || 'Failed to update totals review status.');
+    } finally {
+      setTotalsReviewSaving(false);
+    }
   };
 
   const saveToCache = async (payload: {
@@ -1143,6 +1241,30 @@ export default function EraParserPage() {
     fetchCacheHistory().catch(() => undefined);
   }, [auth?.currentUser, fetchCacheHistory]);
 
+  useEffect(() => {
+    if (!auth?.currentUser) return;
+    if (!initialCacheKey) return;
+    if (rows.length > 0 || uploading) return;
+    setUploading(true);
+    setError(null);
+    setErrorDetails(null);
+    setPhase('parsing');
+    tryLoadFromCache(initialCacheKey)
+      .then((loaded) => {
+        if (loaded) {
+          setPhase('done');
+          return;
+        }
+        setError('Could not load cached ERA parse from URL.');
+        setPhase('idle');
+      })
+      .catch((e: any) => {
+        setError(e?.message || 'Failed to load cached ERA parse from URL.');
+        setPhase('idle');
+      })
+      .finally(() => setUploading(false));
+  }, [auth?.currentUser, initialCacheKey]);
+
   const downloadCsv = () => {
     const csv = toCsv(rows);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -1173,6 +1295,9 @@ export default function EraParserPage() {
     setErrorDetails(null);
     setRows([]);
     setSummary(null);
+    setActiveCacheKey(null);
+    setActiveTotalsVerified(false);
+    setActiveTotalsVerifiedAt(null);
     setPhase('idle');
     setOpenProgress(null);
     setUploadProgress(null);
@@ -1199,6 +1324,9 @@ export default function EraParserPage() {
         summary: (extracted.summary || summary) as EraSummary | null,
         rows: Array.isArray(extracted.rows) ? extracted.rows : rows,
       });
+      setActiveCacheKey(cacheKey);
+      setActiveTotalsVerified(false);
+      setActiveTotalsVerifiedAt(null);
       await fetchCacheHistory();
       setPhase('done');
     } catch (e: any) {
@@ -1220,6 +1348,9 @@ export default function EraParserPage() {
     setFastFallbackNotice(null);
     setRows([]);
     setSummary(null);
+    setActiveCacheKey(null);
+    setActiveTotalsVerified(false);
+    setActiveTotalsVerifiedAt(null);
     setPhase('idle');
     setOpenProgress(null);
     setUploadProgress(null);
@@ -1265,6 +1396,9 @@ export default function EraParserPage() {
           summary: parsedSummary,
           rows: parsedRows,
         });
+        setActiveCacheKey(cacheKey);
+        setActiveTotalsVerified(false);
+        setActiveTotalsVerifiedAt(null);
         await fetchCacheHistory();
         // Best-effort cleanup (ignore failures due to rules).
         deleteObject(storageRef(storage, cleanupPath)).catch(() => undefined);
@@ -1284,6 +1418,9 @@ export default function EraParserPage() {
           summary: (extracted.summary || summary) as EraSummary | null,
           rows: Array.isArray(extracted.rows) ? extracted.rows : rows,
         });
+        setActiveCacheKey(cacheKey);
+        setActiveTotalsVerified(false);
+        setActiveTotalsVerifiedAt(null);
         await fetchCacheHistory();
       }
       setPhase('done');
@@ -1347,21 +1484,25 @@ export default function EraParserPage() {
     }
   };
 
-  const handleParseFromPath = async () => {
-    if (!localPdfPath.trim()) return;
+  const parseFromLocalPath = async (inputPath: string) => {
+    const resolvedPath = String(inputPath || '').trim();
+    if (!resolvedPath) return;
     if (!auth?.currentUser) return;
     setUploading(true);
     setError(null);
     setErrorDetails(null);
     setRows([]);
     setSummary(null);
+    setActiveCacheKey(null);
+    setActiveTotalsVerified(false);
+    setActiveTotalsVerifiedAt(null);
     setPhase('parsing');
     setOpenProgress(null);
     setUploadProgress(null);
     setLastExtracted(null);
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const cacheKey = toCacheKeyFromPath(localPdfPath);
+      const cacheKey = toCacheKeyFromPath(resolvedPath);
       const res = await fetch('/api/admin/era/parse', {
         method: 'POST',
         headers: {
@@ -1369,10 +1510,10 @@ export default function EraParserPage() {
           authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          pdfPath: localPdfPath.trim(),
+          pdfPath: resolvedPath,
           cacheKey,
           sourceMode: 'local_path',
-          fileName: localPdfPath.split(/[\\/]/).pop() || 'ERA PDF',
+          fileName: resolvedPath.split(/[\\/]/).pop() || 'ERA PDF',
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -1382,6 +1523,9 @@ export default function EraParserPage() {
       setPayer(String(data?.payer || 'Health Net'));
       setRows(Array.isArray(data?.rows) ? data.rows : []);
       setSummary((data?.summary || null) as any);
+      setActiveCacheKey(String(data?.cacheKey || cacheKey || '').trim() || null);
+      setActiveTotalsVerified(Boolean(data?.totalsVerified));
+      setActiveTotalsVerifiedAt((data?.totalsVerifiedAt || null) as EraCacheHistoryItem['totalsVerifiedAt']);
       await fetchCacheHistory();
       setPhase('done');
     } catch (e: any) {
@@ -1392,6 +1536,9 @@ export default function EraParserPage() {
     } finally {
       setUploading(false);
     }
+  };
+  const handleParseFromPath = async () => {
+    await parseFromLocalPath(localPdfPath);
   };
 
   const handlePickFileForLocalPath = (pickedFile: File | null) => {
@@ -1796,6 +1943,9 @@ export default function EraParserPage() {
               <Button variant="outline" onClick={handleParseFromPath} disabled={!localPdfPath.trim() || uploading}>
                 Parse local path (dev)
               </Button>
+              <Button variant="outline" onClick={() => router.push('/admin/era-parser/history')} disabled={uploading}>
+                Open parsed ERA tracker
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -1808,38 +1958,103 @@ export default function EraParserPage() {
             <CardDescription>
               Parsed {payer} ERA at {parsedAtLabel}
             </CardDescription>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium ${
+                  activeTotalsVerified ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {activeTotalsVerified ? 'Totals reviewed: Looks right' : 'Totals review pending'}
+              </span>
+              {activeTotalsVerifiedAt ? (
+                <span className="text-muted-foreground">Updated {formatCacheTimestamp(activeTotalsVerifiedAt)}</span>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={activeTotalsVerified ? 'outline' : 'default'}
+                disabled={!activeCacheKey || totalsReviewSaving}
+                onClick={() => setTotalsReviewStatus(true)}
+              >
+                {totalsReviewSaving ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                Totals look right
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={activeTotalsVerified ? 'default' : 'outline'}
+                disabled={!activeCacheKey || totalsReviewSaving}
+                onClick={() => setTotalsReviewStatus(false)}
+              >
+                Mark needs review
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-5">
             <div className="rounded-md border p-3">
               <div className="text-xs text-muted-foreground">T2038 payments (total paid)</div>
-              <div className="text-2xl font-semibold">${Number(summary?.t2038?.total_paid || 0).toFixed(2)}</div>
+              <div className="text-2xl font-semibold">${Number(paymentBreakdown.t2038Total || 0).toFixed(2)}</div>
               <div className="text-xs text-muted-foreground">
-                {summary?.t2038?.rows || 0} payments • {summary?.t2038?.members || 0} members
+                {summary?.t2038?.rows || 0} payments • {summary?.t2038?.members || 0} members • {paymentBreakdown.t2038NegativeCount}{' '}
+                offsets
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Avg paid per T2038 line: {typeof paymentBreakdown.t2038AveragePaid === 'number' ? `$${paymentBreakdown.t2038AveragePaid.toFixed(2)}` : '—'}
               </div>
             </div>
             <div className="rounded-md border p-3">
               <div className="text-xs text-muted-foreground">H2022 payments (total paid)</div>
-              <div className="text-2xl font-semibold">${Number(summary?.h2022?.total_paid || 0).toFixed(2)}</div>
+              <div className="text-2xl font-semibold">${Number(paymentBreakdown.h2022Total || 0).toFixed(2)}</div>
               <div className="text-xs text-muted-foreground">
-                {summary?.h2022?.rows || 0} payments • {summary?.h2022?.members || 0} members
+                {summary?.h2022?.rows || 0} payments • {summary?.h2022?.members || 0} members • {paymentBreakdown.h2022NegativeCount}{' '}
+                offsets
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Avg paid per H2022 line: {typeof paymentBreakdown.h2022AveragePaid === 'number' ? `$${paymentBreakdown.h2022AveragePaid.toFixed(2)}` : '—'}
               </div>
             </div>
             <div className="rounded-md border p-3">
-              <div className="text-xs text-muted-foreground">Total payments (T2038 + H2022)</div>
-              <div className="text-2xl font-semibold">
-                $
-                {(
-                  Number(summary?.t2038?.total_paid || 0) + Number(summary?.h2022?.total_paid || 0)
-                ).toFixed(2)}
-              </div>
+              <div className="text-xs text-muted-foreground">Subtotal (T2038 + H2022)</div>
+              <div className="text-2xl font-semibold">${Number(paymentBreakdown.parsedSubtotal || 0).toFixed(2)}</div>
               <div className="text-xs text-muted-foreground">
                 {summary?.total_rows || rows.length} payments • H2022 + T2038 only
               </div>
             </div>
             <div className="rounded-md border p-3">
-              <div className="text-xs text-muted-foreground">Total unique members</div>
-              <div className="text-2xl font-semibold">{totalMembers}</div>
-              <div className="text-xs text-muted-foreground">Deduped by ACNT (fallback: member name)</div>
+              <div className="text-xs text-muted-foreground">Offsets / adjustments</div>
+              <div
+                className={`text-2xl font-semibold ${
+                  typeof paymentBreakdown.offsetAdjustment === 'number' && Math.abs(paymentBreakdown.offsetAdjustment) > 0.01
+                    ? paymentBreakdown.offsetAdjustment > 0
+                      ? 'text-green-700'
+                      : 'text-amber-700'
+                    : ''
+                }`}
+              >
+                {typeof paymentBreakdown.offsetAdjustment === 'number'
+                  ? `$${Number(paymentBreakdown.offsetAdjustment).toFixed(2)}`
+                  : '—'}
+              </div>
+              <div className="text-xs text-muted-foreground">ERA total - (H2022 + T2038 subtotal)</div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">ERA net total</div>
+              <div className="text-2xl font-semibold">
+                {typeof paymentBreakdown.eraNetTotal === 'number'
+                  ? `$${Number(paymentBreakdown.eraNetTotal).toFixed(2)}`
+                  : '—'}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {paymentBreakdown.negativeCount} negative line items • ${Number(paymentBreakdown.negativeTotal || 0).toFixed(2)}
+              </div>
+            </div>
+          </CardContent>
+          <CardContent className="pt-0">
+            <div className="rounded-md border p-3 text-xs text-muted-foreground">
+              Total unique members: <span className="font-medium text-foreground">{totalMembers}</span>. H2022/T2038 totals are net totals and
+              already include negative payment lines for those codes.
             </div>
           </CardContent>
           <CardContent className="pt-0">
@@ -2277,141 +2492,6 @@ export default function EraParserPage() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent parsed ERAs</CardTitle>
-          <CardDescription>Saved in Firestore so repeated files can be opened quickly.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="rounded-md border p-3 space-y-2">
-            <div className="text-sm font-medium">Search across saved ERA batches</div>
-            <div className="text-xs text-muted-foreground">
-              Find whether a member was paid in prior parsed batches using name, HIC, ICN, or ACNT.
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Input
-                value={historyLookupQuery}
-                onChange={(e) => setHistoryLookupQuery(e.target.value)}
-                placeholder="Example: Smith, John • A123456789 • 20001234"
-                className="w-full sm:max-w-xl"
-              />
-              <Button variant="outline" onClick={runHistoryLookup} disabled={historyLookupLoading || uploading || !historyLookupQuery.trim()}>
-                {historyLookupLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Search History
-              </Button>
-            </div>
-            {historyLookupPaidAnywhere !== null ? (
-              <div
-                className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-medium ${
-                  historyLookupPaidAnywhere ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'
-                }`}
-              >
-                Paid anywhere: {historyLookupPaidAnywhere ? 'Yes' : 'No'}
-              </div>
-            ) : null}
-            {historyLookupQuery.trim() ? (
-              <div className="text-xs text-muted-foreground">
-                {historyLookupLoading
-                  ? 'Searching saved batches...'
-                  : `Searched ${historyLookupSearchedBatches} batch(es) • ${historyLookupResults.length} matched batch(es)`}
-              </div>
-            ) : null}
-            {!historyLookupLoading && historyLookupQuery.trim() && historyLookupResults.length === 0 ? (
-              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">No saved batches matched this lookup.</div>
-            ) : null}
-            {historyLookupResults.length > 0 ? (
-              <div className="space-y-2">
-                {historyLookupResults.map((b) => (
-                  <div key={b.cacheKey} className="rounded-md border p-3 space-y-2">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <div className="font-medium">{b.fileName || 'ERA PDF'}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {b.matchedRows} matching line{b.matchedRows === 1 ? '' : 's'} • {b.matchedMembers} member
-                          {b.matchedMembers === 1 ? '' : 's'} • Total paid ${Number(b.totalPaid || 0).toFixed(2)}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {formatCacheTimestamp(b.updatedAt)} • {b.sourceMode || 'unknown'} • {b.payer || 'Health Net'}
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" onClick={() => loadFromHistory(b.cacheKey)} disabled={uploading}>
-                        Open Batch
-                      </Button>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Sample matches: {b.sampleRows.map((row) => `${row.member_name || 'Member'} (${row.proc || '—'}: $${Number(row.paid || 0).toFixed(2)})`).join(' • ')}
-                    </div>
-                    {Array.isArray(b.matchedRowsPreview) && b.matchedRowsPreview.length > 0 ? (
-                      <div className="overflow-auto rounded-md border">
-                        <table className="w-full text-xs">
-                          <thead className="bg-slate-50">
-                            <tr className="text-left">
-                              <th className="px-2 py-1.5 whitespace-nowrap">Member</th>
-                              <th className="px-2 py-1.5 whitespace-nowrap">ACNT</th>
-                              <th className="px-2 py-1.5 whitespace-nowrap">ICN</th>
-                              <th className="px-2 py-1.5 whitespace-nowrap">HIC</th>
-                              <th className="px-2 py-1.5 whitespace-nowrap">PROC</th>
-                              <th className="px-2 py-1.5 whitespace-nowrap">Svc from</th>
-                              <th className="px-2 py-1.5 whitespace-nowrap">Svc to</th>
-                              <th className="px-2 py-1.5 whitespace-nowrap text-right">Paid</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {b.matchedRowsPreview.map((row, idx) => (
-                              <tr key={`${b.cacheKey}-preview-${idx}`} className="border-t">
-                                <td className="px-2 py-1.5 max-w-[240px] truncate">{row.member_name || '—'}</td>
-                                <td className="px-2 py-1.5 whitespace-nowrap">{row.acnt || '—'}</td>
-                                <td className="px-2 py-1.5 whitespace-nowrap">{row.icn || '—'}</td>
-                                <td className="px-2 py-1.5 whitespace-nowrap">{row.hic || '—'}</td>
-                                <td className="px-2 py-1.5 whitespace-nowrap">{row.proc || '—'}</td>
-                                <td className="px-2 py-1.5 whitespace-nowrap">{row.service_from || '—'}</td>
-                                <td className="px-2 py-1.5 whitespace-nowrap">{row.service_to || '—'}</td>
-                                <td className="px-2 py-1.5 whitespace-nowrap text-right">
-                                  {row.paid === null || row.paid === undefined ? '—' : `$${Number(row.paid).toFixed(2)}`}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : null}
-                    {b.matchedRows > (b.matchedRowsPreview?.length || 0) ? (
-                      <div className="text-[11px] text-muted-foreground">
-                        Showing {(b.matchedRowsPreview?.length || 0).toLocaleString()} of {b.matchedRows.toLocaleString()} matched rows.
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="flex justify-end">
-            <Button variant="outline" size="sm" onClick={fetchCacheHistory} disabled={historyLoading || uploading}>
-              {historyLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Refresh
-            </Button>
-          </div>
-          {cacheHistory.length === 0 ? (
-            <div className="rounded-md border p-3 text-sm text-muted-foreground">No parsed ERA files saved yet.</div>
-          ) : (
-            <div className="space-y-2">
-              {cacheHistory.map((item) => (
-                <div key={item.cacheKey} className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="font-medium">{item.fileName || 'ERA PDF'}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {item.totalRows || 0} rows • {item.sourceMode || 'unknown'} • {item.payer || 'Health Net'}
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => loadFromHistory(item.cacheKey)} disabled={uploading}>
-                    Open
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

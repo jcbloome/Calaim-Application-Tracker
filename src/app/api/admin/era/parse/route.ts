@@ -43,6 +43,9 @@ type EraCacheMeta = {
   parsedByUid: string;
   payer: string;
   summary: EraSummary | null;
+  totalsVerified?: boolean;
+  totalsVerifiedAt?: any;
+  totalsVerifiedByUid?: string | null;
   totalRows: number;
   chunkCount: number;
   createdAt?: any;
@@ -687,6 +690,9 @@ async function readCachedEra(adminDb: any, cacheKeyRaw: unknown) {
     cacheKey,
     payer: String(meta?.payer || 'Health Net'),
     summary: (meta?.summary || null) as EraSummary | null,
+    totalsVerified: Boolean(meta?.totalsVerified),
+    totalsVerifiedAt: meta?.totalsVerifiedAt || null,
+    totalsVerifiedByUid: String(meta?.totalsVerifiedByUid || '').trim() || null,
     rows,
     fileName: String(meta?.fileName || ''),
     sourceMode: String(meta?.sourceMode || 'unknown'),
@@ -756,6 +762,9 @@ async function writeCachedEra(
     parsedByUid: payload.parsedByUid,
     payer: String(payload.payer || 'Health Net'),
     summary: (payload.summary || null) as EraSummary | null,
+    totalsVerified: false,
+    totalsVerifiedAt: null,
+    totalsVerifiedByUid: null,
     totalRows: rows.length,
     chunkCount: chunks.length,
     updatedAt: nowTs,
@@ -768,6 +777,28 @@ async function writeCachedEra(
   await writeBatch.commit();
 
   return { cacheKey, totalRows: rows.length };
+}
+
+async function setEraTotalsVerification(adminDb: any, params: { cacheKey: unknown; reviewed: unknown; reviewedByUid: string }) {
+  const cacheKey = normalizeCacheKey(params.cacheKey);
+  if (!cacheKey) throw new Error('Missing cacheKey');
+  const metaRef = adminDb.collection(ERA_CACHE_COLLECTION).doc(cacheKey);
+  const snap = await metaRef.get();
+  if (!snap.exists) throw new Error('Cache not found');
+  const reviewed = Boolean(params.reviewed);
+  const payload: Record<string, any> = {
+    totalsVerified: reviewed,
+    totalsVerifiedAt: reviewed ? new Date() : null,
+    totalsVerifiedByUid: reviewed ? String(params.reviewedByUid || '').trim() || null : null,
+    updatedAt: new Date(),
+  };
+  await metaRef.set(payload, { merge: true });
+  return {
+    cacheKey,
+    totalsVerified: reviewed,
+    totalsVerifiedAt: payload.totalsVerifiedAt,
+    totalsVerifiedByUid: payload.totalsVerifiedByUid,
+  };
 }
 
 const toIsoFromMmddyy = (mmddyy: string) => {
@@ -1132,6 +1163,17 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ success: true, cached: true, ...saved }, { status: 200 });
     }
+    if (action === 'set_totals_review') {
+      if (!parsedByUid) {
+        return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 401 });
+      }
+      const updated = await setEraTotalsVerification(adminDb, {
+        cacheKey: body?.cacheKey,
+        reviewed: body?.reviewed,
+        reviewedByUid: parsedByUid,
+      });
+      return NextResponse.json({ success: true, ...updated }, { status: 200 });
+    }
 
     const cacheKey = normalizeCacheKey(body?.cacheKey);
     if (cacheKey) {
@@ -1343,6 +1385,9 @@ export async function GET(req: NextRequest) {
         totalRows: Number(x?.totalRows || 0),
         payer: String(x?.payer || 'Health Net'),
         summary: (x?.summary || null) as EraSummary | null,
+        totalsVerified: Boolean(x?.totalsVerified),
+        totalsVerifiedAt: x?.totalsVerifiedAt || null,
+        totalsVerifiedByUid: String(x?.totalsVerifiedByUid || '').trim() || null,
         updatedAt: x?.updatedAt || null,
       };
     });
