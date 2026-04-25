@@ -443,14 +443,23 @@ export async function GET(request: NextRequest) {
             const isOverdue = dueDate ? new Date(dueDate) < now : false;
             const noteId = String(data.noteId || docSnap.id).trim() || docSnap.id;
             const clientId2 = String(data.clientId2 || '').trim();
+            const memberName = String(
+              data.memberName ||
+              data.member_name ||
+              data.memberFullName ||
+              data.seniorFullName ||
+              `${data.memberFirstName || ''} ${data.memberLastName || ''}`
+            )
+              .trim()
+              .replace(/\s+/g, ' ');
             const kaiserStatus = clientId2 ? (kaiserStatusByClientId2.get(clientId2) || '') : '';
             followUpTasks.push({
               id: `client-followup-${noteId}`,
               noteId,
               clientId2,
-              title: `Client follow-up: ${clientId2 || 'Client'}`,
+              title: `Client follow-up: ${memberName || clientId2 || 'Client'}`,
               description: data.comments || '',
-              memberName: data.memberName || `Client ${clientId2 || ''}`.trim(),
+              memberName: memberName || `Client ${clientId2 || ''}`.trim(),
               memberClientId: clientId2,
               healthPlan: data.healthPlan || (kaiserStatus ? 'Kaiser' : undefined),
               taskType: 'follow_up',

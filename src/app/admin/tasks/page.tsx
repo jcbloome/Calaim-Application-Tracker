@@ -1360,14 +1360,14 @@ function MyTasksPageContent() {
       )}
 
       {/* Filters */}
-      <Card>
+      <Card className="border-slate-200/80">
         <CardHeader>
-          <CardTitle>Filters</CardTitle>
+          <CardTitle className="text-base">Filters</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full h-10 bg-white">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1380,7 +1380,7 @@ function MyTasksPageContent() {
             </Select>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full h-10 bg-white">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1393,7 +1393,7 @@ function MyTasksPageContent() {
             </Select>
 
             <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full h-10 bg-white">
                 <SelectValue placeholder="Source" />
               </SelectTrigger>
               <SelectContent>
@@ -1405,7 +1405,7 @@ function MyTasksPageContent() {
             </Select>
 
             <Select value={timeRange} onValueChange={(value: 'all' | 'daily' | 'weekly' | 'monthly') => setTimeRange(value)}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full h-10 bg-white">
                 <SelectValue placeholder="Time Range" />
               </SelectTrigger>
               <SelectContent>
@@ -1423,14 +1423,14 @@ function MyTasksPageContent() {
       <div ref={tabsAnchorRef} />
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
         <div className="overflow-x-auto pb-1">
-          <TabsList className="inline-flex w-max min-w-full sm:min-w-0">
-            <TabsTrigger value="all" className="shrink-0">All ({taskCounts.all})</TabsTrigger>
-            <TabsTrigger value="overdue" className="shrink-0">Overdue ({taskCounts.overdue})</TabsTrigger>
-            <TabsTrigger value="today" className="shrink-0">Today ({taskCounts.today})</TabsTrigger>
-            <TabsTrigger value="upcoming" className="shrink-0">Upcoming ({taskCounts.upcoming})</TabsTrigger>
-            <TabsTrigger value="followup" className="shrink-0">Follow-ups ({taskCounts.followup})</TabsTrigger>
-            <TabsTrigger value="followup_calendar" className="shrink-0">Calendar</TabsTrigger>
-            <TabsTrigger value="completed" className="shrink-0">Completed ({taskCounts.completed})</TabsTrigger>
+          <TabsList className="inline-flex h-auto w-max min-w-full sm:min-w-0 rounded-lg bg-muted p-1 gap-1">
+            <TabsTrigger value="all" className="shrink-0 rounded-md px-3 py-1.5 text-sm">All ({taskCounts.all})</TabsTrigger>
+            <TabsTrigger value="overdue" className="shrink-0 rounded-md px-3 py-1.5 text-sm">Overdue ({taskCounts.overdue})</TabsTrigger>
+            <TabsTrigger value="today" className="shrink-0 rounded-md px-3 py-1.5 text-sm">Today ({taskCounts.today})</TabsTrigger>
+            <TabsTrigger value="upcoming" className="shrink-0 rounded-md px-3 py-1.5 text-sm">Upcoming ({taskCounts.upcoming})</TabsTrigger>
+            <TabsTrigger value="followup" className="shrink-0 rounded-md px-3 py-1.5 text-sm">Follow-ups ({taskCounts.followup})</TabsTrigger>
+            <TabsTrigger value="followup_calendar" className="shrink-0 rounded-md px-3 py-1.5 text-sm">Calendar</TabsTrigger>
+            <TabsTrigger value="completed" className="shrink-0 rounded-md px-3 py-1.5 text-sm">Completed ({taskCounts.completed})</TabsTrigger>
           </TabsList>
         </div>
 
@@ -1662,32 +1662,32 @@ function MyTasksPageContent() {
                   ))}
                 </div>
 
-                <div className="hidden lg:block overflow-x-auto">
-                <Table className="min-w-[1200px]">
+                <div className="hidden lg:block overflow-x-auto rounded-md border">
+                <Table className="min-w-[1360px] table-fixed">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Task</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Member</TableHead>
-                      <TableHead>Assigned To</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Due Date</TableHead>
-                      <TableHead>Assigned By</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead className="w-[31%]">Task</TableHead>
+                      <TableHead className="w-[8%] whitespace-nowrap">Source</TableHead>
+                      <TableHead className="w-[20%]">Member</TableHead>
+                      <TableHead className="w-[9%] whitespace-nowrap">Assigned To</TableHead>
+                      <TableHead className="w-[7%] whitespace-nowrap">Priority</TableHead>
+                      <TableHead className="w-[8%] whitespace-nowrap">Status</TableHead>
+                      <TableHead className="w-[7%] whitespace-nowrap">Due Date</TableHead>
+                      <TableHead className="w-[10%] whitespace-nowrap">Assigned By</TableHead>
+                      <TableHead className="w-[12%] whitespace-nowrap text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredTasks.map((task) => (
-                      <TableRow key={task.id}>
-                        <TableCell>
+                      <TableRow key={task.id} className="align-top">
+                        <TableCell className="py-4 align-top">
                           <div className="flex items-start gap-3">
                             <div className="mt-1">
                               {getTaskTypeIcon(task.taskType)}
                             </div>
-                            <div>
+                            <div className="min-w-0 space-y-1">
                               <div className="flex items-start justify-between gap-3">
-                                <p className="font-medium">{task.title}</p>
+                                <p className="font-medium leading-snug">{task.title}</p>
                                 {task.taskType === 'follow_up' && task.id.startsWith('client-followup-') ? (
                                   <Button
                                     variant="outline"
@@ -1701,10 +1701,10 @@ function MyTasksPageContent() {
                                 ) : null}
                               </div>
                               {task.description && (
-                                <p className="text-sm text-muted-foreground">{task.description}</p>
+                                <p className="text-sm text-muted-foreground leading-snug">{task.description}</p>
                               )}
                               {task.taskType === 'follow_up' && (
-                                <p className="text-xs text-muted-foreground mt-1">
+                                <p className="text-xs text-muted-foreground">
                                   Follow-up: {format(new Date(task.dueDate), 'MMM d, yyyy')}
                                 </p>
                               )}
@@ -1722,21 +1722,21 @@ function MyTasksPageContent() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={getSourceBadge(task.source)}>
+                        <TableCell className="py-4 align-top">
+                          <Badge variant="outline" className={`${getSourceBadge(task.source)} whitespace-nowrap`}>
                             {task.source === 'applications' ? 'Applications' : task.source === 'notes' ? 'Notes' : 'Manual'}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="py-4 align-top">
                           {task.memberName && task.memberClientId ? (
                             <div 
-                              className="cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors"
+                              className="cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors space-y-1"
                               onClick={() => handleMemberClick(task.memberClientId!, task.memberName!, task.healthPlan || 'Unknown')}
                             >
                               <p className="font-medium text-blue-600 hover:text-blue-800">{task.memberName}</p>
-                              <p className="text-sm text-muted-foreground">{task.memberClientId}</p>
+                              <p className="text-xs text-muted-foreground">{task.memberClientId}</p>
                               {task.healthPlan && (
-                                <Badge variant="outline" className="text-xs">
+                                <Badge variant="outline" className="text-xs whitespace-nowrap">
                                   {task.healthPlan}
                                 </Badge>
                               )}
@@ -1754,45 +1754,45 @@ function MyTasksPageContent() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium text-sm">{task.assignedToName}</p>
+                        <TableCell className="py-4 align-top">
+                          <div className="space-y-1">
+                            <p className="font-medium text-sm leading-tight">{task.assignedToName}</p>
                             <p className="text-xs text-muted-foreground">
                               {task.assignedTo === user?.uid ? 'You' : 'Other Staff'}
                             </p>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={getPriorityColor(task.priority)}>
+                        <TableCell className="py-4 align-top">
+                          <Badge variant="outline" className={`${getPriorityColor(task.priority)} whitespace-nowrap`}>
                             {task.priority}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="py-4 align-top">
                           <div className="flex flex-wrap gap-2">
                             {task.taskType === 'follow_up' && task.id.startsWith('client-followup-') ? (
                               <Badge
                                 variant="outline"
-                                className={getNoteStateColor(followUpNoteState(task))}
+                                className={`${getNoteStateColor(followUpNoteState(task))} whitespace-nowrap`}
                                 title="Caspio Follow_Up_Status"
                               >
                                 {followUpNoteState(task)}
                               </Badge>
                             ) : null}
-                            <Badge variant="outline" className={getStatusColor(task.status)}>
+                            <Badge variant="outline" className={`${getStatusColor(task.status)} whitespace-nowrap`}>
                               {task.status.replace('_', ' ')}
                             </Badge>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div className={`font-medium ${task.status === 'overdue' ? 'text-red-600' : ''}`}>
+                        <TableCell className="py-4 align-top">
+                          <div className={`font-medium whitespace-nowrap ${task.status === 'overdue' ? 'text-red-600' : ''}`}>
                             {formatDueDate(task.dueDate)}
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <p className="text-sm">{task.assignedByName}</p>
+                        <TableCell className="py-4 align-top">
+                          <p className="text-sm leading-tight">{task.assignedByName}</p>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
+                        <TableCell className="py-4 align-top">
+                          <div className="flex flex-wrap justify-end gap-2">
                             {task.taskType === 'kaiser_status' && task.healthPlan === 'Kaiser' && task.status !== 'completed' ? (
                               <div className="flex flex-col gap-2">
                                 <Select 
