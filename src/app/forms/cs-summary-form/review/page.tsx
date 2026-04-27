@@ -183,7 +183,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                   applicationId,
                   userId: isAdminCreatedApp ? null : targetUserId,
                   statusValue: 'CS Summary Submitted - Processing',
-                  trigger: 'manual',
+                  trigger: 'auto',
                   sentByName: 'Connections Team',
                 }),
               });
