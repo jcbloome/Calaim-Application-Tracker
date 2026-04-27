@@ -63,6 +63,11 @@ const buildPathwayLoginRedirect = (applicationId: string, focusRequirementId: st
   return `${base}/login?redirect=${encodeURIComponent(returnPath)}&forceLogin=1`;
 };
 
+const isAdminDevelopingAsUser = (appData: any): boolean => {
+  if (!Boolean(appData?.createdByAdmin)) return false;
+  return !Boolean(appData?.linkedToFamilyAt) && !Boolean(appData?.linkedToFamilyEmail);
+};
+
 export async function POST(request: NextRequest) {
   try {
     const {
@@ -109,6 +114,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Application not found' }, { status: 404 });
     }
     const appData = appSnap.data() || {};
+    if (isAdminDevelopingAsUser(appData) && !Boolean(previewOnly) && !Boolean(testOnly)) {
+      return NextResponse.json({
+        success: true,
+        skippedAdminDevelopingAsUser: true,
+      });
+    }
     const forms = Array.isArray(appData?.forms) ? appData.forms : [];
     const statusRemindersEnabled = Boolean(appData?.statusRemindersEnabled);
     if (mode === 'auto' && !statusRemindersEnabled) {

@@ -8,6 +8,11 @@ import { FormValues } from '@/app/forms/cs-summary-form/schema';
 // DO NOT MOVE THIS IMPORT. It must be the first line to initialize Firebase Admin.
 import '@/ai/firebase';
 
+const isAdminDevelopingAsUser = (appData: any): boolean => {
+  if (!Boolean(appData?.createdByAdmin)) return false;
+  return !Boolean(appData?.linkedToFamilyAt) && !Boolean(appData?.linkedToFamilyEmail);
+};
+
 
 /**
  * This is a secure API route designed to be called by a cron job (e.g., Google Cloud Scheduler).
@@ -55,6 +60,7 @@ export async function GET(request: Request) {
     };
 
     const appsToRemind = allApplications.filter(({ data }) =>
+      !isAdminDevelopingAsUser(data) &&
       data.emailRemindersEnabled === true &&
       (data.status === 'In Progress' || data.status === 'Requires Revision') &&
       data.forms?.some(form => form.status === 'Pending') &&

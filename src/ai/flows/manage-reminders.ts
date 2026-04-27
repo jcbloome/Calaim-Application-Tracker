@@ -17,6 +17,12 @@ const INTERNAL_REMINDER_EXCLUSIONS = new Set([
   'eligibility check',
 ]);
 
+const isAdminDevelopingAsUser = (app: Application): boolean => {
+    const appData = app as any;
+    if (!Boolean(appData?.createdByAdmin)) return false;
+    return !Boolean(appData?.linkedToFamilyAt) && !Boolean(appData?.linkedToFamilyEmail);
+};
+
 interface SendRemindersOutput {
     success: boolean;
     sentCount: number;
@@ -35,6 +41,9 @@ export async function sendReminderEmails(applications: Application[]): Promise<S
         const firestore = admin.firestore();
 
         for (const app of applications) {
+            if (isAdminDevelopingAsUser(app)) {
+                continue;
+            }
             // Find pending forms or uploads
             const incompleteItems = app.forms
                 ?.filter((item: FormStatus) => {
