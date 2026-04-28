@@ -31,15 +31,9 @@ export interface KaiserSummaryCardsProps {
       totalMembers: KaiserMember[];
       criticalMembers: KaiserMember[];
       priorityMembers: KaiserMember[];
-      todayNotedMembers: KaiserMember[];
-      yesterdayNotedMembers: KaiserMember[];
       total: number;
       critical: number;
       priority: number;
-      notesTodayTotal: number;
-      notesYesterdayTotal: number;
-      membersWithNotesToday: number;
-      membersWithNotesYesterday: number;
     }>
   ) => void;
 }
@@ -401,95 +395,18 @@ export function KaiserSummaryCards({
 
   React.useEffect(() => {
     if (!onNoActionByStaffComputed) return;
-    const noActionByStaff = new Map(
-      noActionOverviewByStaffRows.map((row) => [
-        row.staffName || 'Unassigned',
-        {
-          totalMembers: row.staffMembers,
-          criticalMembers: row.priorityMembers,
-          priorityMembers: row.lesserMembers,
-          total: row.staffMembers.length,
-          critical: row.priorityMembers.length,
-          priority: row.lesserMembers.length,
-        },
-      ])
-    );
-
-    const notesTodayByStaff = members.reduce(
-      (acc, member) => {
-        const status = getEffectiveKaiserStatus(member);
-        const isActiveMember = activeStatusSet.has(normalize(status));
-        if (!isActiveMember) return acc;
-
-        const staffName = getAssignedStaffName(member) || 'Unassigned';
-        const clientId2 = String(member?.client_ID2 || '').trim();
-        // Recent Notes card totals should reflect notes authored by the assigned staff member for that member.
-        const notesToday = Number(assignedStaffMetaByClientId[clientId2]?.assignedStaffNotesTodayCount || 0);
-        const notesYesterday = Number(assignedStaffMetaByClientId[clientId2]?.assignedStaffNotesYesterdayCount || 0);
-        if (!acc[staffName]) {
-          acc[staffName] = {
-            notesTodayTotal: 0,
-            notesYesterdayTotal: 0,
-            todayNotedMembers: [] as KaiserMember[],
-            yesterdayNotedMembers: [] as KaiserMember[],
-            seen: new Set<string>(),
-            seenYesterday: new Set<string>(),
-          };
-        }
-        acc[staffName].notesTodayTotal += notesToday;
-        acc[staffName].notesYesterdayTotal += notesYesterday;
-        if (notesToday > 0 && !acc[staffName].seen.has(clientId2)) {
-          acc[staffName].seen.add(clientId2);
-          acc[staffName].todayNotedMembers.push(member);
-        }
-        if (notesYesterday > 0 && !acc[staffName].seenYesterday.has(clientId2)) {
-          acc[staffName].seenYesterday.add(clientId2);
-          acc[staffName].yesterdayNotedMembers.push(member);
-        }
-        return acc;
-      },
-      {} as Record<
-        string,
-        {
-          notesTodayTotal: number;
-          notesYesterdayTotal: number;
-          todayNotedMembers: KaiserMember[];
-          yesterdayNotedMembers: KaiserMember[];
-          seen: Set<string>;
-          seenYesterday: Set<string>;
-        }
-      >
-    );
-
-    const allStaffNames = new Set<string>([
-      ...Array.from(noActionByStaff.keys()),
-      ...Object.keys(notesTodayByStaff),
-    ]);
-
-    const rows = Array.from(allStaffNames).map((staffName) => {
-      const noAction = noActionByStaff.get(staffName);
-      const notesToday = notesTodayByStaff[staffName];
-      const todayNotedMembers = notesToday?.todayNotedMembers || [];
-      const yesterdayNotedMembers = notesToday?.yesterdayNotedMembers || [];
-      return {
-        staffName,
-        totalMembers: noAction?.totalMembers || [],
-        criticalMembers: noAction?.criticalMembers || [],
-        priorityMembers: noAction?.priorityMembers || [],
-        todayNotedMembers,
-        yesterdayNotedMembers,
-        total: Number(noAction?.total || 0),
-        critical: Number(noAction?.critical || 0),
-        priority: Number(noAction?.priority || 0),
-        notesTodayTotal: Number(notesToday?.notesTodayTotal || 0),
-        notesYesterdayTotal: Number(notesToday?.notesYesterdayTotal || 0),
-        membersWithNotesToday: todayNotedMembers.length,
-        membersWithNotesYesterday: yesterdayNotedMembers.length,
-      };
-    });
+    const rows = noActionOverviewByStaffRows.map((row) => ({
+      staffName: row.staffName || 'Unassigned',
+      totalMembers: row.staffMembers,
+      criticalMembers: row.priorityMembers,
+      priorityMembers: row.lesserMembers,
+      total: row.staffMembers.length,
+      critical: row.priorityMembers.length,
+      priority: row.lesserMembers.length,
+    }));
 
     onNoActionByStaffComputed(rows);
-  }, [activeStatusSet, assignedStaffMetaByClientId, noActionOverviewByStaffRows, onNoActionByStaffComputed]);
+  }, [noActionOverviewByStaffRows, onNoActionByStaffComputed]);
 
   const noActionAgingBuckets = React.useMemo(() => {
     const members7to13 = scopedNoActionMembers.filter((member) => {

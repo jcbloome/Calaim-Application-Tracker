@@ -303,15 +303,9 @@ function KaiserTrackerPageContent() {
         totalMembers: KaiserMember[];
         criticalMembers: KaiserMember[];
         priorityMembers: KaiserMember[];
-        todayNotedMembers: KaiserMember[];
-        yesterdayNotedMembers: KaiserMember[];
         total: number;
         critical: number;
         priority: number;
-        notesTodayTotal: number;
-        notesYesterdayTotal: number;
-        membersWithNotesToday: number;
-        membersWithNotesYesterday: number;
       }>
     ) => {
       setNoActionByStaffMap((prev) => {
@@ -333,11 +327,7 @@ function KaiserTrackerPageContent() {
           if (
             a.total !== b.total ||
             a.critical !== b.critical ||
-            a.priority !== b.priority ||
-            a.notesTodayTotal !== b.notesTodayTotal ||
-            a.notesYesterdayTotal !== b.notesYesterdayTotal ||
-            a.membersWithNotesToday !== b.membersWithNotesToday ||
-            a.membersWithNotesYesterday !== b.membersWithNotesYesterday
+            a.priority !== b.priority
           ) {
             return next;
           }
