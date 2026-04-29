@@ -5265,6 +5265,23 @@ function ApplicationDetailPageContent() {
     timestampMs: number;
   };
 
+  const stripUndefinedDeep = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => stripUndefinedDeep(item))
+        .filter((item) => item !== undefined);
+    }
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .filter(([, v]) => v !== undefined)
+          .map(([k, v]) => [k, stripUndefinedDeep(v)])
+          .filter(([, v]) => v !== undefined)
+      );
+    }
+    return value;
+  };
+
   const getEligibilityScreenshotUploads = (): EligibilityScreenshotUpload[] => {
     const raw = (application as any)?.eligibilityScreenshotUploads;
     if (!Array.isArray(raw)) return [];
@@ -5340,15 +5357,18 @@ function ApplicationDetailPageContent() {
     const next = [...entries]
       .sort((a, b) => Number(b.timestampMs || 0) - Number(a.timestampMs || 0))
       .slice(0, 300);
+    const firestoreSafeLog = next.map((entry) => stripUndefinedDeep(entry) as CommunicationNoteLogEntry);
     await setDoc(
       docRef,
       {
-        communicationNoteLog: next,
+        communicationNoteLog: firestoreSafeLog,
         lastUpdated: serverTimestamp(),
       } as any,
       { merge: true }
     );
-    setApplication((prev) => (prev ? ({ ...(prev as any), communicationNoteLog: next } as any) : prev));
+    setApplication((prev) =>
+      prev ? ({ ...(prev as any), communicationNoteLog: firestoreSafeLog } as any) : prev
+    );
   };
 
   const appendCommunicationNoteLog = async (
