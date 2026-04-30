@@ -3987,6 +3987,25 @@ function ApplicationDetailPageContent() {
       createdByName?: string;
     }>;
   }, [application]);
+  const latestAuthorizationRecord = useMemo(() => {
+    if (!authorizationRecords.length) return null;
+    return authorizationRecords.reduce((latest, record) => {
+      const recordMs = toMillisSafe((record as any)?.uploadedAt);
+      const latestMs = latest ? toMillisSafe((latest as any)?.uploadedAt) : 0;
+      if (!latest) return record;
+      return recordMs > latestMs ? record : latest;
+    }, null as (typeof authorizationRecords)[number] | null);
+  }, [authorizationRecords]);
+  const latestAuthorizationUploadLabel = useMemo(() => {
+    if (!latestAuthorizationRecord) return '';
+    const uploadedAtMs = toMillisSafe((latestAuthorizationRecord as any)?.uploadedAt);
+    if (!uploadedAtMs) return '';
+    try {
+      return format(new Date(uploadedAtMs), 'MMM d, yyyy h:mm a');
+    } catch {
+      return '';
+    }
+  }, [latestAuthorizationRecord]);
 
   const interofficeNotes = useMemo(() => {
     return ((application as any)?.interofficeNotes || []) as Array<{
@@ -4420,7 +4439,8 @@ function ApplicationDetailPageContent() {
 
       const file = authorizationUpload.file;
       const safeType = authorizationUpload.type.replace(/[^a-z0-9-_]/gi, '_');
-      const filePath = `authorizations/${appUserId}/${applicationId}/${safeType}-${Date.now()}-${file.name}`;
+      const storageOwnerId = currentUserId || appUserId || 'admin';
+      const filePath = `user_uploads/${storageOwnerId}/${applicationId}/authorizations/${safeType}-${Date.now()}-${file.name}`;
       const fileRef = ref(storage, filePath);
       const uploadTask = uploadBytesResumable(fileRef, file);
 
@@ -4447,7 +4467,7 @@ function ApplicationDetailPageContent() {
         endDate: authorizationUpload.endDate,
         fileName: buildUniqueFileName(authorizationUpload.type, file.name),
         downloadURL,
-        uploadedAt: serverTimestamp(),
+        uploadedAt: Timestamp.now(),
         createdBy: user?.uid || 'system',
         createdByName: user?.displayName || user?.email || 'Admin'
       };
@@ -4466,12 +4486,15 @@ function ApplicationDetailPageContent() {
         file: null
       });
       setAuthorizationUploadProgress(0);
-    } catch (uploadError) {
+    } catch (uploadError: any) {
       console.error('Authorization upload failed:', uploadError);
       toast({
         variant: 'destructive',
         title: 'Upload Failed',
-        description: 'Could not upload the authorization.'
+        description:
+          uploadError?.message ||
+          uploadError?.code ||
+          'Could not upload the authorization.'
       });
     } finally {
       setAuthorizationUploading(false);
@@ -4505,7 +4528,8 @@ function ApplicationDetailPageContent() {
 
       const file = ispUpload.file;
       const safeDate = ispUpload.planDate.replace(/[^0-9-]/g, '');
-      const filePath = `isps/${appUserId}/${applicationId}/${safeDate}-${Date.now()}-${file.name}`;
+      const storageOwnerId = currentUserId || appUserId || 'admin';
+      const filePath = `user_uploads/${storageOwnerId}/${applicationId}/isps/${safeDate}-${Date.now()}-${file.name}`;
       const fileRef = ref(storage, filePath);
       const uploadTask = uploadBytesResumable(fileRef, file);
 
@@ -4530,7 +4554,7 @@ function ApplicationDetailPageContent() {
         planDate: ispUpload.planDate,
         fileName: buildUniqueFileName('Individual service plans', file.name),
         downloadURL,
-        uploadedAt: serverTimestamp(),
+        uploadedAt: Timestamp.now(),
         createdBy: user?.uid || 'system',
         createdByName: user?.displayName || user?.email || 'Admin'
       };
@@ -4547,12 +4571,15 @@ function ApplicationDetailPageContent() {
         file: null
       });
       setIspUploadProgress(0);
-    } catch (uploadError) {
+    } catch (uploadError: any) {
       console.error('ISP upload failed:', uploadError);
       toast({
         variant: 'destructive',
         title: 'Upload Failed',
-        description: 'Could not upload the ISP.'
+        description:
+          uploadError?.message ||
+          uploadError?.code ||
+          'Could not upload the ISP.'
       });
     } finally {
       setIspUploading(false);
@@ -6174,8 +6201,68 @@ function ApplicationDetailPageContent() {
       uploadedAtIso: string;
     }>;
 
+    const rawAuthorization = Array.isArray((application as any)?.authorizationRecords)
+      ? ((application as any).authorizationRecords as any[])
+      : [];
+    const authorizationEntries = rawAuthorization
+      .map((record, idx) => {
+        const fileName = String(record?.fileName || '').trim() || `Authorization ${idx + 1}`;
+        const downloadURL = String(record?.downloadURL || '').trim();
+        const filePath = String(record?.filePath || '').trim();
+        if (!downloadURL && !filePath) return null;
+        const authType = String(record?.type || '').trim() || 'Authorization';
+        return {
+          id: `auth-file-${idx}-${authType}-${fileName}`,
+          category: 'Authorization upload',
+          documentName: authType,
+          fileName,
+          downloadURL,
+          filePath,
+          uploadedAtIso: toIso(record?.uploadedAt || record?.createdAt),
+        };
+      })
+      .filter(Boolean) as Array<{
+      id: string;
+      category: string;
+      documentName: string;
+      fileName: string;
+      downloadURL: string;
+      filePath: string;
+      uploadedAtIso: string;
+    }>;
+
+    const rawIsp = Array.isArray((application as any)?.ispRecords)
+      ? ((application as any).ispRecords as any[])
+      : [];
+    const ispEntries = rawIsp
+      .map((record, idx) => {
+        const fileName = String(record?.fileName || '').trim() || `ISP ${idx + 1}`;
+        const downloadURL = String(record?.downloadURL || '').trim();
+        const filePath = String(record?.filePath || '').trim();
+        if (!downloadURL && !filePath) return null;
+        const planDate = String(record?.planDate || '').trim();
+        return {
+          id: `isp-file-${idx}-${fileName}`,
+          category: 'ISP upload',
+          documentName: planDate ? `Individual Service Plan (${planDate})` : 'Individual Service Plan',
+          fileName,
+          downloadURL,
+          filePath,
+          uploadedAtIso: toIso(record?.uploadedAt || record?.createdAt),
+        };
+      })
+      .filter(Boolean) as Array<{
+      id: string;
+      category: string;
+      documentName: string;
+      fileName: string;
+      downloadURL: string;
+      filePath: string;
+      uploadedAtIso: string;
+    }>;
+
     const deduped = new Map<string, (typeof formEntries)[number]>();
-    [...formEntries, ...eligibilityEntries].forEach((entry) => {
+    [...formEntries, ...eligibilityEntries, ...authorizationEntries, ...ispEntries].forEach((entry) => {
       const key = `${entry.documentName}::${entry.fileName}::${entry.downloadURL || entry.filePath}`;
       if (!deduped.has(key)) deduped.set(key, entry);
     });
@@ -6205,7 +6292,7 @@ function ApplicationDetailPageContent() {
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>Files in Application</DialogTitle>
-          <DialogDescription>All member files in this application, including eligibility checks.</DialogDescription>
+          <DialogDescription>All member files in this application, including eligibility, authorization, and ISP uploads.</DialogDescription>
         </DialogHeader>
         {memberFileEntries.length === 0 ? (
           <div className="rounded-md border p-3 text-sm text-muted-foreground">No uploaded files found yet.</div>
@@ -11451,6 +11538,14 @@ function ApplicationDetailPageContent() {
                   Authorization uploads
                 </Button>
               </DialogTrigger>
+              {latestAuthorizationUploadLabel ? (
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                  Last authorization upload: {latestAuthorizationUploadLabel}
+                  {String(latestAuthorizationRecord?.type || '').trim()
+                    ? ` (${String(latestAuthorizationRecord?.type || '').trim()})`
+                    : ''}
+                </div>
+              ) : null}
               <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
                 <DialogHeader>
                   <DialogTitle>Authorization uploads</DialogTitle>
