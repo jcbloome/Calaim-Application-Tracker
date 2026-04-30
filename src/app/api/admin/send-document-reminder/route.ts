@@ -90,6 +90,13 @@ export async function POST(request: NextRequest) {
     }
     
     const appData = appDoc.data();
+    if (!previewOnly && appData?.emailRemindersEnabled !== true) {
+      return NextResponse.json({
+        success: true,
+        skippedDisabled: true,
+        message: 'Document reminders are disabled for this application',
+      });
+    }
     const missingItems = getMissingItemsFromForms(appData);
     
     if (missingItems.length === 0) {

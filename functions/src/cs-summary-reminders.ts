@@ -60,7 +60,7 @@ export const sendCsSummaryReminders = onSchedule({
       seenDocPaths.add(doc.ref.path);
       
       const application = doc.data();
-      const remindersEnabled = application.emailRemindersEnabled !== false;
+      const remindersEnabled = application.emailRemindersEnabled === true;
       const completedSummary = hasCompletedCsSummary(application);
       
       if (!remindersEnabled || completedSummary || !application.referrerEmail) {
@@ -149,7 +149,7 @@ export const triggerCsSummaryReminders = onCall({
       seenDocPaths.add(doc.ref.path);
       
       const application = doc.data();
-      const remindersEnabled = application.emailRemindersEnabled !== false;
+      const remindersEnabled = application.emailRemindersEnabled === true;
       const completedSummary = hasCompletedCsSummary(application);
       const reminderCount = Number(application.csSummaryReminderCount || 0);
       

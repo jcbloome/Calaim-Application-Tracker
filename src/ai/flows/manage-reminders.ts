@@ -44,6 +44,9 @@ export async function sendReminderEmails(applications: Application[]): Promise<S
             if (isAdminDevelopingAsUser(app)) {
                 continue;
             }
+            if ((app as any)?.emailRemindersEnabled !== true) {
+                continue;
+            }
             // Find pending forms or uploads
             const incompleteItems = app.forms
                 ?.filter((item: FormStatus) => {

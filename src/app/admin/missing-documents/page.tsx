@@ -342,14 +342,14 @@ export default function MissingDocumentsPage() {
                           <div className="flex flex-col gap-2">
                             <div className="flex items-center gap-2">
                               <Switch
-                                checked={(app as any)?.emailRemindersEnabled !== false}
+                                checked={(app as any)?.emailRemindersEnabled === true}
                                 onCheckedChange={(checked) =>
                                   updateReminderSettings(app, { emailRemindersEnabled: checked })
                                 }
                                 disabled={updatingSettings.has(app.id)}
                               />
                               <span className="text-xs text-muted-foreground">
-                                {((app as any)?.emailRemindersEnabled !== false) ? 'On' : 'Off'}
+                                {((app as any)?.emailRemindersEnabled === true) ? 'On' : 'Off'}
                               </span>
                             </div>
                             <div className="flex items-center gap-2">

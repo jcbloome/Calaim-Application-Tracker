@@ -78,6 +78,13 @@ export async function POST(request: NextRequest) {
     }
 
     const appData = appDoc.data();
+    if (reminderType === 'email' && appData?.emailRemindersEnabled !== true) {
+      return NextResponse.json({
+        success: true,
+        skippedDisabled: true,
+        message: 'Email reminders are disabled for this application',
+      });
+    }
     
     // Check if CS Summary is already confirmed
     if (appData?.csSummaryComplete) {

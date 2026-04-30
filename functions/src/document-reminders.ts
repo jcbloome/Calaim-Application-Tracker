@@ -51,7 +51,7 @@ export const sendDocumentReminders = onSchedule({
       
       // Check if application has missing required documents and reminders are enabled
       const missingDocs = getMissingRequiredDocuments(application);
-      const emailRemindersEnabled = application.emailRemindersEnabled !== false; // Default to true if not set
+      const emailRemindersEnabled = application.emailRemindersEnabled === true;
       
       if (missingDocs.length > 0 && emailRemindersEnabled) {
         const frequencyDays = Math.max(1, Number(application.documentReminderFrequencyDays) || defaultFrequencyDays);
@@ -144,7 +144,7 @@ export const triggerDocumentReminders = onCall({
       
       const application = doc.data();
       const missingDocs = getMissingRequiredDocuments(application);
-      const emailRemindersEnabled = application.emailRemindersEnabled !== false; // Default to true if not set
+      const emailRemindersEnabled = application.emailRemindersEnabled === true;
       
       if (missingDocs.length > 0 && application.referrerEmail && emailRemindersEnabled) {
         remindersToSend.push({

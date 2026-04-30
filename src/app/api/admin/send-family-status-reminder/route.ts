@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     }
     const forms = Array.isArray(appData?.forms) ? appData.forms : [];
     const statusRemindersEnabled = Boolean(appData?.statusRemindersEnabled);
-    if (mode === 'auto' && !statusRemindersEnabled) {
+    if (!statusRemindersEnabled && !Boolean(previewOnly) && !Boolean(testOnly)) {
       return NextResponse.json({ success: true, skippedDisabled: true });
     }
 
