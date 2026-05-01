@@ -450,18 +450,27 @@ async function fetchTableFieldNames(baseUrl: string, token: string, tableName: s
 async function createClientAndGetClientId2(
   baseUrl: string,
   token: string,
-  firstName: string,
-  lastName: string
+  memberFirstName: string,
+  memberLastName: string,
+  primaryContactFirstName: string,
+  primaryContactLastName: string
 ): Promise<string> {
   const clientTable = 'connect_tbl_clients';
-  const where = `First_Name='${esc(firstName)}' AND Last_Name='${esc(lastName)}'`;
+  const whereCandidates = [
+    // Current preferred lookup for client table records.
+    `Senior_First='${esc(memberFirstName)}' AND Senior_Last='${esc(memberLastName)}'`,
+    // Backward compatibility for old records created before Senior_* was enforced.
+    `First_Name='${esc(primaryContactFirstName)}' AND Last_Name='${esc(primaryContactLastName)}'`,
+    `First_Name='${esc(memberFirstName)}' AND Last_Name='${esc(memberLastName)}'`,
+  ];
   const lookupOrderCandidates = ['client_ID2 DESC', 'Client_ID2 DESC', 'PK_ID DESC'];
   const lookupExistingClientId2 = async (): Promise<string> => {
-    for (const orderBy of lookupOrderCandidates) {
+    for (const where of whereCandidates) {
+      for (const orderBy of lookupOrderCandidates) {
       const lookupUrl =
         `${baseUrl}/tables/${clientTable}/records` +
         `?q.where=${encodeURIComponent(where)}` +
-        `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Record_ID')}` +
+        `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Record_ID,Senior_First,Senior_Last,First_Name,Last_Name')}` +
         `&q.orderBy=${encodeURIComponent(orderBy)}` +
         `&q.limit=1`;
       const lookupResponse = await fetch(lookupUrl, {
@@ -477,6 +486,7 @@ async function createClientAndGetClientId2(
       const row = Array.isArray(lookupJson?.Result) ? lookupJson.Result[0] : null;
       const clientId2 = clean(row?.client_ID2 || row?.Client_ID2 || row?.clientid2 || row?.Record_ID);
       if (clientId2) return clientId2;
+      }
     }
     return '';
   };
@@ -487,8 +497,12 @@ async function createClientAndGetClientId2(
 
   const createUrl = `${baseUrl}/tables/${clientTable}/records`;
   const createPayload = {
-    First_Name: firstName,
-    Last_Name: lastName,
+    // Primary contact identity on client row.
+    First_Name: primaryContactFirstName,
+    Last_Name: primaryContactLastName,
+    // Member identity for reliable Senior_* lookup in clients table.
+    Senior_First: memberFirstName,
+    Senior_Last: memberLastName,
   };
 
   const createResponse = await fetch(createUrl, {
@@ -654,6 +668,16 @@ export async function POST(request: NextRequest) {
 
     const firstName = clean(applicationData.memberFirstName);
     const lastName = clean(applicationData.memberLastName);
+    const primaryContactFirstName = clean(
+      applicationData?.bestContactFirstName ||
+      applicationData?.referrerFirstName ||
+      firstName
+    );
+    const primaryContactLastName = clean(
+      applicationData?.bestContactLastName ||
+      applicationData?.referrerLastName ||
+      lastName
+    );
     const assignedStaffName = clean(applicationData?.assignedStaffName);
     const assignedStaffId = clean(applicationData?.assignedStaffId);
     const requestedCalAIMStatus = clean(applicationData?.caspioCalAIMStatus || applicationData?.CalAIM_Status);
@@ -860,7 +884,14 @@ export async function POST(request: NextRequest) {
     } else {
       const currentClientId = clean(memberData[clientIdField]);
       if (!currentClientId && !isUpdate) {
-        const generatedClientId2 = await createClientAndGetClientId2(baseUrl, token, firstName, lastName);
+        const generatedClientId2 = await createClientAndGetClientId2(
+          baseUrl,
+          token,
+          firstName,
+          lastName,
+          primaryContactFirstName,
+          primaryContactLastName
+        );
         memberData[clientIdField] = generatedClientId2;
       }
     }

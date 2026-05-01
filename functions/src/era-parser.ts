@@ -18,11 +18,14 @@ type EraRow = {
   paid: number | null;
   source_line: string;
 };
+type EraParserProfile = "health_net" | "claimsmd";
 
 // Capture amounts like 123.45, 5693.46, 1,234.56, -123.45, or (123.45)
 const AMOUNT_RE = /(?<!\d)(-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}|\((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\))(?!\d)/g;
 // Support PROC values with or without separator before modifiers (e.g. "T2038 U5" or "T2038U5")
 const PROC_RE = /\b(H2022|T2038)(?:\b|(?=[A-Z0-9]))/i;
+const normalizeEraParserProfile = (value: unknown): EraParserProfile =>
+  String(value || "").toLowerCase().includes("claims") ? "claimsmd" : "health_net";
 
 const toIsoFromMmddyy = (mmddyy: string) => {
   const raw = String(mmddyy || "").trim();
@@ -80,7 +83,117 @@ const extractNameHicAcntIcn = (line: string) => {
   return { name, hic, medi, acnt, icn };
 };
 
+type EraMemberContext = {
+  member_name: string;
+  hic: string | null;
+  medi: string | null;
+  acnt: string | null;
+  icn: string | null;
+};
+
+const parseUsDateToken = (value: string) => {
+  const raw = String(value || "").trim();
+  const m = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (!m) return null;
+  const mm = String(Number(m[1] || 0)).padStart(2, "0");
+  const dd = String(Number(m[2] || 0)).padStart(2, "0");
+  const yyyyRaw = String(m[3] || "").trim();
+  const yyyy = yyyyRaw.length === 2 ? String(2000 + Number(yyyyRaw)) : yyyyRaw;
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const extractPatientNameFromLine = (line: string) => {
+  const m = line.match(/\bPatient\s+Name\b/i);
+  if (!m) return null;
+  const start = (m.index ?? 0) + m[0].length;
+  const tail = line.slice(start);
+  const cutPatterns = [/\bYour\s+Acct\b/i, /\bClaim\s*#\b/i, /\bReceipt\s+Date\b/i, /\bCIN\b/i, /\bHealth\s+Net\b/i, /\bQuestions\?\b/i];
+  let cut = tail.length;
+  for (const re of cutPatterns) {
+    const found = tail.match(re);
+    if (found && typeof found.index === "number") cut = Math.min(cut, found.index);
+  }
+  const name = tail
+    .slice(0, cut)
+    .replace(/^[:#\s-]+/, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return name || null;
+};
+
+const extractCinFromLine = (line: string) => {
+  const m = line.match(/\bCIN\b\s*[:#]?\s*([A-Z0-9-]{4,})\b/i);
+  return m?.[1] ? String(m[1]).trim() : null;
+};
+
+const extractYourAcctFromLine = (line: string) => {
+  const m = line.match(/\bYour\s+Acct\s*#?\s*[:#]?\s*([A-Z0-9-]{2,})\b/i);
+  return m?.[1] ? String(m[1]).trim() : null;
+};
+
+const extractEraMemberContextFromLine = (
+  line: string,
+  current: EraMemberContext,
+  parserProfile: EraParserProfile
+): EraMemberContext | null => {
+  let next: EraMemberContext = { ...current };
+  let changed = false;
+
+  if (parserProfile === "health_net" && /^\s*NAME\b/i.test(line)) {
+    const parsed = extractNameHicAcntIcn(line);
+    next = {
+      member_name: parsed.name || "",
+      hic: parsed.hic,
+      medi: parsed.medi,
+      acnt: parsed.acnt,
+      icn: parsed.icn,
+    };
+    changed = true;
+  }
+
+  if (parserProfile === "claimsmd") {
+    const patientName = extractPatientNameFromLine(line);
+    if (patientName) {
+      next.member_name = patientName;
+      changed = true;
+    }
+    const cin = extractCinFromLine(line);
+    if (cin) {
+      next.icn = cin;
+      changed = true;
+    }
+    const yourAcct = extractYourAcctFromLine(line);
+    if (yourAcct) {
+      next.acnt = yourAcct;
+      changed = true;
+    }
+  }
+
+  return changed ? next : null;
+};
+
 function parseServiceDatesFromProcLine(line: string, remitDate: string | null) {
+  const explicitRange = line.match(/\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*[-–]\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/);
+  if (explicitRange?.[1] && explicitRange?.[2]) {
+    return {
+      service_from: parseUsDateToken(explicitRange[1]),
+      service_to: parseUsDateToken(explicitRange[2]),
+    };
+  }
+  const datedTokens = Array.from(line.matchAll(/\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/g))
+    .map((mm) => String(mm?.[0] || "").trim())
+    .filter(Boolean);
+  if (datedTokens.length >= 2) {
+    return {
+      service_from: parseUsDateToken(datedTokens[0]),
+      service_to: parseUsDateToken(datedTokens[1]),
+    };
+  }
+  if (datedTokens.length === 1) {
+    const d = parseUsDateToken(datedTokens[0]);
+    return { service_from: d, service_to: d };
+  }
+
   const tokens = String(line || "").trim().split(/\s+/).filter(Boolean);
   const mmdd = tokens.find((t) => /^\d{4}$/.test(t)) || null;
   const mmddyy = tokens.find((t) => /^\d{6}$/.test(t)) || null;
@@ -126,7 +239,8 @@ const gatherAmounts = (lines: string[], idx: number) => {
 
   const out: string[] = [...first];
   const stopLine = (ln: string) =>
-    /^\s*NAME\b/i.test(ln) ||
+    /\bPatient\s+Name\b/i.test(ln) ||
+    /\bNAME\b/i.test(ln) ||
     PROC_RE.test(ln) ||
     /^\s*PT\s*RESP\b/i.test(ln) ||
     /\bCLAIM\s+TOTALS\b/i.test(ln) ||
@@ -203,6 +317,7 @@ export const parseEraPdfFromStorage = onCall(
     await requireSuperAdmin(request.auth);
 
     const fullPath = String((request.data as any)?.fullPath || "").trim();
+    const parserProfile = normalizeEraParserProfile((request.data as any)?.parserProfile);
     if (!fullPath) throw new HttpsError("invalid-argument", "Missing fullPath.");
     if (!fullPath.startsWith("era_parser_uploads/")) {
       throw new HttpsError("invalid-argument", "fullPath must be under era_parser_uploads/.");
@@ -255,7 +370,7 @@ export const parseEraPdfFromStorage = onCall(
       }
 
       const remittance_date = parseRemitDate(lines);
-      let current = {
+      let current: EraMemberContext = {
         member_name: "",
         hic: null as string | null,
         medi: null as string | null,
@@ -265,10 +380,10 @@ export const parseEraPdfFromStorage = onCall(
 
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
-        if (/^\s*NAME\b/i.test(ln)) {
-          const parsed = extractNameHicAcntIcn(ln);
-          current = { member_name: parsed.name || "", hic: parsed.hic, medi: parsed.medi, acnt: parsed.acnt, icn: parsed.icn };
-          continue;
+        const contextUpdate = extractEraMemberContextFromLine(ln, current, parserProfile);
+        if (contextUpdate) {
+          current = contextUpdate;
+          if (!PROC_RE.test(ln)) continue;
         }
         const m = ln.match(PROC_RE);
         if (!m?.[1]) continue;

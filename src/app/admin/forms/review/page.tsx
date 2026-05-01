@@ -141,8 +141,8 @@ function ReviewPageComponent() {
                     </CardHeader>
                     <CardContent className="space-y-8">
                         <Section title="Member Information" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
-                            <Field label="First Name" value={application.memberFirstName} />
-                            <Field label="Last Name" value={application.memberLastName} />
+                            <Field label="Member First Name" value={application.memberFirstName} />
+                            <Field label="Member Last Name" value={application.memberLastName} />
                             <Field label="Date of Birth" value={dobFormatted} />
                             <Field label="Age" value={application.memberAge} />
                             <Field label="Medi-Cal Number" value={application.memberMediCalNum} />

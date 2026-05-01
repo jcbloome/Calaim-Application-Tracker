@@ -53,6 +53,7 @@ type EraCacheHistoryItem = {
   cacheKey: string;
   fileName: string;
   sourceMode: string;
+  parserProfile?: EraParserProfile;
   totalRows: number;
   payer?: string;
   summary?: EraSummary | null;
@@ -66,6 +67,7 @@ type EraHistoryLookupBatch = {
   cacheKey: string;
   fileName: string;
   sourceMode: string;
+  parserProfile?: EraParserProfile;
   payer: string;
   totalRows: number;
   updatedAt?: { _seconds?: number; seconds?: number } | string | null;
@@ -118,6 +120,7 @@ type ParsePhase = 'idle' | 'loading_pdfjs' | 'opening_pdf' | 'extracting' | 'upl
 type ExtractProgress = { currentPage: number; totalPages: number; startedAtMs: number; avgMsPerPage: number };
 type OpenProgress = { loaded: number; total: number; startedAtMs: number };
 type UploadProgress = { transferred: number; total: number };
+type EraParserProfile = 'health_net' | 'claimsmd';
 type ClaimResultViewFilter =
   | 'all'
   | 'matched'
@@ -129,6 +132,8 @@ type ClaimResultViewFilter =
   | 'variance';
 
 const getErrCode = (e: any) => String(e?.code || e?.details?.code || e?.cause?.code || '').toLowerCase();
+const normalizeEraParserProfile = (value: unknown): EraParserProfile =>
+  String(value || '').toLowerCase().includes('claims') ? 'claimsmd' : 'health_net';
 
 const normalizeLookupToken = (value: unknown) =>
   String(value || '')
@@ -290,7 +295,118 @@ const extractNameHicAcntIcn = (line: string) => {
   return { name, hic, medi, acnt, icn };
 };
 
+type EraMemberContext = {
+  member_name: string;
+  hic: string | null;
+  medi: string | null;
+  acnt: string | null;
+  icn: string | null;
+};
+
+const parseUsDateToken = (value: string) => {
+  const raw = String(value || '').trim();
+  const m = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (!m) return null;
+  const mm = String(Number(m[1] || 0)).padStart(2, '0');
+  const dd = String(Number(m[2] || 0)).padStart(2, '0');
+  const yyyyRaw = String(m[3] || '').trim();
+  const yyyy = yyyyRaw.length === 2 ? String(2000 + Number(yyyyRaw)) : yyyyRaw;
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const extractPatientNameFromLine = (line: string) => {
+  const m = line.match(/\bPatient\s+Name\b/i);
+  if (!m) return null;
+  const start = (m.index ?? 0) + m[0].length;
+  const tail = line.slice(start);
+  const cutPatterns = [/\bYour\s+Acct\b/i, /\bClaim\s*#\b/i, /\bReceipt\s+Date\b/i, /\bCIN\b/i, /\bHealth\s+Net\b/i, /\bQuestions\?\b/i];
+  let cut = tail.length;
+  for (const re of cutPatterns) {
+    const found = tail.match(re);
+    if (found && typeof found.index === 'number') cut = Math.min(cut, found.index);
+  }
+  const name = tail
+    .slice(0, cut)
+    .replace(/^[:#\s-]+/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return name || null;
+};
+
+const extractCinFromLine = (line: string) => {
+  const m = line.match(/\bCIN\b\s*[:#]?\s*([A-Z0-9-]{4,})\b/i);
+  return m?.[1] ? String(m[1]).trim() : null;
+};
+
+const extractYourAcctFromLine = (line: string) => {
+  const m = line.match(/\bYour\s+Acct\s*#?\s*[:#]?\s*([A-Z0-9-]{2,})\b/i);
+  return m?.[1] ? String(m[1]).trim() : null;
+};
+
+const extractEraMemberContextFromLine = (
+  line: string,
+  current: EraMemberContext,
+  parserProfile: EraParserProfile
+): EraMemberContext | null => {
+  let next: EraMemberContext = { ...current };
+  let changed = false;
+
+  if (parserProfile === 'health_net' && /^\s*NAME\b/i.test(line)) {
+    const parsed = extractNameHicAcntIcn(line);
+    next = {
+      member_name: parsed.name || '',
+      hic: parsed.hic,
+      medi: parsed.medi,
+      acnt: parsed.acnt,
+      icn: parsed.icn,
+    };
+    changed = true;
+  }
+
+  if (parserProfile === 'claimsmd') {
+    const patientName = extractPatientNameFromLine(line);
+    if (patientName) {
+      next.member_name = patientName;
+      changed = true;
+    }
+    const cin = extractCinFromLine(line);
+    if (cin) {
+      // ClaimsMD-style ERA labels Medi-Cal identifier as CIN.
+      next.icn = cin;
+      changed = true;
+    }
+    const yourAcct = extractYourAcctFromLine(line);
+    if (yourAcct) {
+      next.acnt = yourAcct;
+      changed = true;
+    }
+  }
+
+  return changed ? next : null;
+};
+
 function parseServiceDatesFromProcLine(line: string, remitDate: string | null) {
+  const explicitRange = line.match(/\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*[-–]\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/);
+  if (explicitRange?.[1] && explicitRange?.[2]) {
+    return {
+      service_from: parseUsDateToken(explicitRange[1]),
+      service_to: parseUsDateToken(explicitRange[2]),
+    };
+  }
+  const datedTokens = Array.from(line.matchAll(/\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/g))
+    .map((mm) => String(mm?.[0] || '').trim())
+    .filter(Boolean);
+  if (datedTokens.length >= 2) {
+    return {
+      service_from: parseUsDateToken(datedTokens[0]),
+      service_to: parseUsDateToken(datedTokens[1]),
+    };
+  }
+  if (datedTokens.length === 1) {
+    const d = parseUsDateToken(datedTokens[0]);
+    return { service_from: d, service_to: d };
+  }
+
   const tokens = String(line || '').trim().split(/\s+/).filter(Boolean);
   const mmdd = tokens.find((t) => /^\d{4}$/.test(t)) || null;
   const mmddyy = tokens.find((t) => /^\d{6}$/.test(t)) || null;
@@ -329,13 +445,14 @@ const extractAmountsFromLine = (line: string) =>
     .filter(Boolean)
     .map((v) => String(v));
 
-const gatherAmounts = (lines: string[], idx: number) => {
+const gatherAmounts = (lines: string[], idx: number, parserProfile: EraParserProfile) => {
   const first = extractAmountsFromLine(lines[idx] || '');
   if (first.length >= 3) return first.slice(0, 6);
 
   const out: string[] = [...first];
   const stopLine = (ln: string) =>
-    /^\s*NAME\b/i.test(ln) ||
+    (parserProfile === 'claimsmd' && /\bPatient\s+Name\b/i.test(ln)) ||
+    /\bNAME\b/i.test(ln) ||
     PROC_RE.test(ln) ||
     /^\s*PT\s*RESP\b/i.test(ln) ||
     /\bCLAIM\s+TOTALS\b/i.test(ln) ||
@@ -556,6 +673,8 @@ export default function EraParserPage() {
   const [pushSingleMatchLoading, setPushSingleMatchLoading] = useState(false);
   const [pushTestClaimKey, setPushTestClaimKey] = useState('');
   const [pushAuthorizationType, setPushAuthorizationType] = useState<'H2022' | 'T2038'>('H2022');
+  const [parserProfile, setParserProfile] = useState<EraParserProfile>('health_net');
+  const [activeParserProfile, setActiveParserProfile] = useState<EraParserProfile>('health_net');
   const [pushMatchResult, setPushMatchResult] = useState<{ candidates: number; pushed: number; failed: number } | null>(null);
   const [matchSortMode, setMatchSortMode] = useState<'none' | 'matched_first' | 'unmatched_first'>('none');
   const [phase, setPhase] = useState<ParsePhase>('idle');
@@ -982,7 +1101,7 @@ export default function EraParserPage() {
 
       // Parse this page immediately and append results to the table + summary.
       const remittance_date = parseRemitDate(lines);
-      let current = {
+      let current: EraMemberContext = {
         member_name: '',
         hic: null as string | null,
         medi: null as string | null,
@@ -993,23 +1112,17 @@ export default function EraParserPage() {
 
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
-        if (/^\s*NAME\b/i.test(ln)) {
-          const parsed = extractNameHicAcntIcn(ln);
-          current = {
-            member_name: parsed.name || '',
-            hic: parsed.hic,
-            medi: parsed.medi,
-            acnt: parsed.acnt,
-            icn: parsed.icn,
-          };
-          continue;
+        const contextUpdate = extractEraMemberContextFromLine(ln, current, parserProfile);
+        if (contextUpdate) {
+          current = contextUpdate;
+          if (!PROC_RE.test(ln)) continue;
         }
         const m = ln.match(PROC_RE);
         if (!m?.[1]) continue;
         const proc = String(m[1]).toUpperCase();
         if (proc !== 'H2022' && proc !== 'T2038') continue;
 
-        const amounts = gatherAmounts(lines, i);
+        const amounts = gatherAmounts(lines, i, parserProfile);
         const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
         const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
         const paid = pickPaid(amounts);
@@ -1165,6 +1278,7 @@ export default function EraParserPage() {
     setPayer(String(data?.payer || 'Health Net'));
     setRows(Array.isArray(data?.rows) ? data.rows : []);
     setSummary((data?.summary || null) as EraSummary | null);
+    setActiveParserProfile(normalizeEraParserProfile(data?.parserProfile));
     setActiveCacheKey(String(data?.cacheKey || cacheKey));
     setActiveTotalsVerified(Boolean(data?.totalsVerified));
     setActiveTotalsVerifiedAt((data?.totalsVerifiedAt || null) as EraCacheHistoryItem['totalsVerifiedAt']);
@@ -1227,6 +1341,7 @@ export default function EraParserPage() {
         cacheKey: payload.cacheKey,
         fileName: payload.fileName,
         sourceMode: payload.sourceMode,
+        parserProfile,
         fileSize: payload.fileSize ?? null,
         fileLastModified: payload.fileLastModified ?? null,
         payer: payload.payer,
@@ -1295,6 +1410,7 @@ export default function EraParserPage() {
     setErrorDetails(null);
     setRows([]);
     setSummary(null);
+    setActiveParserProfile(normalizeEraParserProfile(parserProfile));
     setActiveCacheKey(null);
     setActiveTotalsVerified(false);
     setActiveTotalsVerifiedAt(null);
@@ -1304,6 +1420,7 @@ export default function EraParserPage() {
     setLastExtracted(null);
     try {
       const cacheKey = toCacheKeyFromFile(file);
+      const activeParserProfile = normalizeEraParserProfile(parserProfile);
       const loadedFromCache = await tryLoadFromCache(cacheKey);
       if (loadedFromCache) {
         setPhase('done');
@@ -1378,7 +1495,7 @@ export default function EraParserPage() {
       if (cleanupPath) {
         // Prefer server-side parsing for large PDFs (fastest + avoids browser "Opening PDF..." stalls).
         const fn = httpsCallable(getFunctions(), 'parseEraPdfFromStorage');
-        const data: any = await fn({ fullPath: cleanupPath }).then((r) => r.data);
+        const data: any = await fn({ fullPath: cleanupPath, parserProfile: activeParserProfile }).then((r) => r.data);
         if (!data?.success) throw new Error(String(data?.error || 'Server parse failed.'));
         const parsedPayer = String(data?.payer || 'Health Net');
         const parsedRows = Array.isArray(data?.rows) ? data.rows : [];
@@ -1386,6 +1503,7 @@ export default function EraParserPage() {
         setPayer(parsedPayer);
         setRows(parsedRows);
         setSummary(parsedSummary);
+        setActiveParserProfile(activeParserProfile);
         await saveToCache({
           cacheKey,
           fileName: String(file?.name || 'ERA PDF'),
@@ -1493,6 +1611,7 @@ export default function EraParserPage() {
     setErrorDetails(null);
     setRows([]);
     setSummary(null);
+    setActiveParserProfile(normalizeEraParserProfile(parserProfile));
     setActiveCacheKey(null);
     setActiveTotalsVerified(false);
     setActiveTotalsVerifiedAt(null);
@@ -1503,6 +1622,7 @@ export default function EraParserPage() {
     try {
       const idToken = await auth.currentUser.getIdToken();
       const cacheKey = toCacheKeyFromPath(resolvedPath);
+      const activeParserProfile = normalizeEraParserProfile(parserProfile);
       const res = await fetch('/api/admin/era/parse', {
         method: 'POST',
         headers: {
@@ -1513,6 +1633,7 @@ export default function EraParserPage() {
           pdfPath: resolvedPath,
           cacheKey,
           sourceMode: 'local_path',
+          parserProfile: activeParserProfile,
           fileName: resolvedPath.split(/[\\/]/).pop() || 'ERA PDF',
         }),
       });
@@ -1523,6 +1644,7 @@ export default function EraParserPage() {
       setPayer(String(data?.payer || 'Health Net'));
       setRows(Array.isArray(data?.rows) ? data.rows : []);
       setSummary((data?.summary || null) as any);
+      setActiveParserProfile(normalizeEraParserProfile(data?.parserProfile));
       setActiveCacheKey(String(data?.cacheKey || cacheKey || '').trim() || null);
       setActiveTotalsVerified(Boolean(data?.totalsVerified));
       setActiveTotalsVerifiedAt((data?.totalsVerifiedAt || null) as EraCacheHistoryItem['totalsVerifiedAt']);
@@ -1933,6 +2055,29 @@ export default function EraParserPage() {
               ) : null}
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs">
+                <span className="text-muted-foreground">Parse layout:</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={parserProfile === 'health_net' ? 'default' : 'outline'}
+                  className="h-7 px-2 text-[11px]"
+                  disabled={uploading}
+                  onClick={() => setParserProfile('health_net')}
+                >
+                  Health Net version
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={parserProfile === 'claimsmd' ? 'default' : 'outline'}
+                  className="h-7 px-2 text-[11px]"
+                  disabled={uploading}
+                  onClick={() => setParserProfile('claimsmd')}
+                >
+                  ClaimsMD version
+                </Button>
+              </div>
               <Button onClick={handleParse} disabled={!file || uploading}>
                 {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
                 {uploading ? phaseLabel(phase) : 'Parse ERA (fast)'}
@@ -1958,6 +2103,12 @@ export default function EraParserPage() {
             <CardDescription>
               Parsed {payer} ERA at {parsedAtLabel}
             </CardDescription>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Parser mode:</span>
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700">
+                {activeParserProfile === 'claimsmd' ? 'ClaimsMD version' : 'Health Net version'}
+              </span>
+            </div>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span
                 className={`inline-flex items-center rounded-full px-2.5 py-1 font-medium ${

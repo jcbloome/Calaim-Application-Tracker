@@ -409,7 +409,7 @@ export default function Step1({
               name="memberFirstName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
+                  <FormLabel>Member First Name <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
                   </FormControl>
@@ -422,7 +422,7 @@ export default function Step1({
               name="memberLastName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
+                  <FormLabel>Member Last Name <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
                     <Input {...field} value={field.value ?? ''} onChange={e => field.onChange(formatName(e.target.value))} />
                   </FormControl>

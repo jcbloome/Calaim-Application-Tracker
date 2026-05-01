@@ -16,11 +16,15 @@ type EraSummary = {
   parser_total?: number | null;
   variance?: number | null;
 };
+type EraParserProfile = 'health_net' | 'claimsmd';
+const normalizeEraParserProfile = (value: unknown): EraParserProfile =>
+  String(value || '').toLowerCase().includes('claims') ? 'claimsmd' : 'health_net';
 
 type EraCacheHistoryItem = {
   cacheKey: string;
   fileName: string;
   sourceMode: string;
+  parserProfile?: EraParserProfile;
   totalRows: number;
   payer?: string;
   summary?: EraSummary | null;
@@ -131,6 +135,9 @@ export default function EraParserHistoryPage() {
                             Review pending
                           </span>
                         )}
+                        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                          {normalizeEraParserProfile(item.parserProfile) === 'claimsmd' ? 'ClaimsMD version' : 'Health Net version'}
+                        </span>
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {item.totalRows || 0} rows • {item.sourceMode || 'unknown'} • {item.payer || 'Health Net'} •{' '}

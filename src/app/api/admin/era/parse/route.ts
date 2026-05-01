@@ -33,11 +33,13 @@ type EraSummary = {
   parser_total?: number | null;
   variance?: number | null;
 };
+type EraParserProfile = 'health_net' | 'claimsmd';
 
 type EraCacheMeta = {
   cacheKey: string;
   fileName: string;
   sourceMode: 'fast' | 'local' | 'local_path' | 'unknown';
+  parserProfile?: EraParserProfile;
   fileSize: number | null;
   fileLastModified: number | null;
   parsedByUid: string;
@@ -101,6 +103,8 @@ const ERA_CACHE_COLLECTION = 'era_parser_cache';
 const ERA_CACHE_CHUNK_SIZE = 250;
 const ERA_HISTORY_LOOKUP_DEFAULT_LIMIT = 25;
 const ERA_HISTORY_LOOKUP_MAX_LIMIT = 100;
+const normalizeEraParserProfile = (value: unknown): EraParserProfile =>
+  String(value || '').toLowerCase().includes('claims') ? 'claimsmd' : 'health_net';
 
 const normalizeLookupToken = (value: unknown) =>
   String(value || '')
@@ -689,6 +693,7 @@ async function readCachedEra(adminDb: any, cacheKeyRaw: unknown) {
   return {
     cacheKey,
     payer: String(meta?.payer || 'Health Net'),
+    parserProfile: normalizeEraParserProfile(meta?.parserProfile),
     summary: (meta?.summary || null) as EraSummary | null,
     totalsVerified: Boolean(meta?.totalsVerified),
     totalsVerifiedAt: meta?.totalsVerifiedAt || null,
@@ -716,6 +721,7 @@ async function writeCachedEra(
     cacheKey: unknown;
     fileName?: unknown;
     sourceMode?: unknown;
+    parserProfile?: unknown;
     fileSize?: unknown;
     fileLastModified?: unknown;
     parsedByUid: string;
@@ -757,6 +763,7 @@ async function writeCachedEra(
     cacheKey,
     fileName: String(payload.fileName || 'Unknown PDF'),
     sourceMode: (String(payload.sourceMode || 'unknown') as EraCacheMeta['sourceMode']) || 'unknown',
+    parserProfile: normalizeEraParserProfile(payload.parserProfile),
     fileSize: typeof payload.fileSize === 'number' ? payload.fileSize : null,
     fileLastModified: typeof payload.fileLastModified === 'number' ? payload.fileLastModified : null,
     parsedByUid: payload.parsedByUid,
@@ -857,7 +864,117 @@ const extractNameHicAcntIcn = (line: string) => {
   return { name, hic, medi, acnt, icn };
 };
 
+type EraMemberContext = {
+  member_name: string;
+  hic: string | null;
+  medi: string | null;
+  acnt: string | null;
+  icn: string | null;
+};
+
+const parseUsDateToken = (value: string) => {
+  const raw = String(value || '').trim();
+  const m = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (!m) return null;
+  const mm = String(Number(m[1] || 0)).padStart(2, '0');
+  const dd = String(Number(m[2] || 0)).padStart(2, '0');
+  const yyyyRaw = String(m[3] || '').trim();
+  const yyyy = yyyyRaw.length === 2 ? String(2000 + Number(yyyyRaw)) : yyyyRaw;
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const extractPatientNameFromLine = (line: string) => {
+  const m = line.match(/\bPatient\s+Name\b/i);
+  if (!m) return null;
+  const start = (m.index ?? 0) + m[0].length;
+  const tail = line.slice(start);
+  const cutPatterns = [/\bYour\s+Acct\b/i, /\bClaim\s*#\b/i, /\bReceipt\s+Date\b/i, /\bCIN\b/i, /\bHealth\s+Net\b/i, /\bQuestions\?\b/i];
+  let cut = tail.length;
+  for (const re of cutPatterns) {
+    const found = tail.match(re);
+    if (found && typeof found.index === 'number') cut = Math.min(cut, found.index);
+  }
+  const name = tail
+    .slice(0, cut)
+    .replace(/^[:#\s-]+/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return name || null;
+};
+
+const extractCinFromLine = (line: string) => {
+  const m = line.match(/\bCIN\b\s*[:#]?\s*([A-Z0-9-]{4,})\b/i);
+  return m?.[1] ? String(m[1]).trim() : null;
+};
+
+const extractYourAcctFromLine = (line: string) => {
+  const m = line.match(/\bYour\s+Acct\s*#?\s*[:#]?\s*([A-Z0-9-]{2,})\b/i);
+  return m?.[1] ? String(m[1]).trim() : null;
+};
+
+const extractEraMemberContextFromLine = (
+  line: string,
+  current: EraMemberContext,
+  parserProfile: EraParserProfile
+): EraMemberContext | null => {
+  let next: EraMemberContext = { ...current };
+  let changed = false;
+
+  if (parserProfile === 'health_net' && /^\s*NAME\b/i.test(line)) {
+    const parsed = extractNameHicAcntIcn(line);
+    next = {
+      member_name: parsed.name || '',
+      hic: parsed.hic,
+      medi: parsed.medi,
+      acnt: parsed.acnt,
+      icn: parsed.icn,
+    };
+    changed = true;
+  }
+
+  if (parserProfile === 'claimsmd') {
+    const patientName = extractPatientNameFromLine(line);
+    if (patientName) {
+      next.member_name = patientName;
+      changed = true;
+    }
+    const cin = extractCinFromLine(line);
+    if (cin) {
+      next.icn = cin;
+      changed = true;
+    }
+    const yourAcct = extractYourAcctFromLine(line);
+    if (yourAcct) {
+      next.acnt = yourAcct;
+      changed = true;
+    }
+  }
+
+  return changed ? next : null;
+};
+
 function parseServiceDatesFromProcLine(line: string, remitDate: string | null) {
+  const explicitRange = line.match(/\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*[-–]\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/);
+  if (explicitRange?.[1] && explicitRange?.[2]) {
+    return {
+      service_from: parseUsDateToken(explicitRange[1]),
+      service_to: parseUsDateToken(explicitRange[2]),
+    };
+  }
+  const datedTokens = Array.from(line.matchAll(/\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/g))
+    .map((mm) => String(mm?.[0] || '').trim())
+    .filter(Boolean);
+  if (datedTokens.length >= 2) {
+    return {
+      service_from: parseUsDateToken(datedTokens[0]),
+      service_to: parseUsDateToken(datedTokens[1]),
+    };
+  }
+  if (datedTokens.length === 1) {
+    const d = parseUsDateToken(datedTokens[0]);
+    return { service_from: d, service_to: d };
+  }
+
   const tokens = String(line || '').trim().split(/\s+/).filter(Boolean);
   const mmdd = tokens.find((t) => /^\d{4}$/.test(t)) || null;
   const mmddyy = tokens.find((t) => /^\d{6}$/.test(t)) || null;
@@ -903,7 +1020,7 @@ const parseEraGrandTotalFromLines = (lines: string[]) => {
   return null as number | null;
 };
 
-function parseEraFromPages(pages: string[][]) {
+function parseEraFromPages(pages: string[][], parserProfile: EraParserProfile) {
   const payer = 'Health Net';
   const allRows: EraRow[] = [];
   let eraGrandTotal: number | null = null;
@@ -915,7 +1032,7 @@ function parseEraFromPages(pages: string[][]) {
       eraGrandTotal = pageGrandTotal;
     }
     const remittance_date = parseRemitDate(lines);
-    let current = {
+    let current: EraMemberContext = {
       member_name: '',
       hic: null as string | null,
       medi: null as string | null,
@@ -924,10 +1041,10 @@ function parseEraFromPages(pages: string[][]) {
     };
 
     for (const ln of lines) {
-      if (/^\s*NAME\b/i.test(ln)) {
-        const parsed = extractNameHicAcntIcn(ln);
-        current = { member_name: parsed.name || '', hic: parsed.hic, medi: parsed.medi, acnt: parsed.acnt, icn: parsed.icn };
-        continue;
+      const contextUpdate = extractEraMemberContextFromLine(ln, current, parserProfile);
+      if (contextUpdate) {
+        current = contextUpdate;
+        if (!PROC_RE.test(ln)) continue;
       }
 
       const m = ln.match(PROC_RE);
@@ -1154,6 +1271,7 @@ export async function POST(req: NextRequest) {
         cacheKey: body?.cacheKey,
         fileName: body?.fileName,
         sourceMode: body?.sourceMode,
+        parserProfile: body?.parserProfile,
         fileSize: body?.fileSize,
         fileLastModified: body?.fileLastModified,
         parsedByUid,
@@ -1249,7 +1367,8 @@ export async function POST(req: NextRequest) {
         { status: 422 }
       );
     }
-    const payload = parseEraFromPages(pages as any);
+    const parserProfile = normalizeEraParserProfile(body?.parserProfile);
+    const payload = parseEraFromPages(pages as any, parserProfile);
     const rows = Array.isArray((payload as any)?.rows) ? (payload as any).rows : [];
     if (rows.length === 0) {
       return NextResponse.json(
@@ -1266,6 +1385,7 @@ export async function POST(req: NextRequest) {
     const responsePayload = {
       success: true,
       payer: (payload as any)?.payer || 'Health Net',
+      parserProfile,
       summary: (payload as any)?.summary || null,
       rows,
       cached: false,
@@ -1277,6 +1397,7 @@ export async function POST(req: NextRequest) {
         cacheKey,
         fileName: body?.fileName || (pdfPath ? path.basename(pdfPath) : 'ERA PDF'),
         sourceMode: body?.sourceMode || (pdfPath ? 'local_path' : 'unknown'),
+        parserProfile,
         fileSize: typeof body?.fileSize === 'number' ? body.fileSize : null,
         fileLastModified: typeof body?.fileLastModified === 'number' ? body.fileLastModified : null,
         parsedByUid,
@@ -1321,6 +1442,7 @@ export async function GET(req: NextRequest) {
         cacheKey: string;
         fileName: string;
         sourceMode: string;
+        parserProfile: EraParserProfile;
         payer: string;
         totalRows: number;
         updatedAt: any;
@@ -1361,6 +1483,7 @@ export async function GET(req: NextRequest) {
           cacheKey: d.id,
           fileName: String(x?.fileName || 'ERA PDF'),
           sourceMode: String(x?.sourceMode || 'unknown'),
+          parserProfile: normalizeEraParserProfile(x?.parserProfile),
           payer: String(x?.payer || 'Health Net'),
           totalRows: Number(x?.totalRows || 0),
           updatedAt: x?.updatedAt || null,
@@ -1382,6 +1505,7 @@ export async function GET(req: NextRequest) {
         cacheKey: d.id,
         fileName: String(x?.fileName || ''),
         sourceMode: String(x?.sourceMode || 'unknown'),
+        parserProfile: normalizeEraParserProfile(x?.parserProfile),
         totalRows: Number(x?.totalRows || 0),
         payer: String(x?.payer || 'Health Net'),
         summary: (x?.summary || null) as EraSummary | null,
