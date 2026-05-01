@@ -657,6 +657,7 @@ const quickStatusItems = [
   { key: 'SNF Facesheet', label: 'SNF' },
   { key: 'Eligibility Check', label: 'Elig' },
   { key: 'Sent to Caspio', label: 'Caspio' },
+  { key: 'ALFT Status', label: 'ALFT' },
   { key: 'Room and Board/Tier Level Agreement', label: 'R&B/Tier' },
 ];
 
@@ -3419,6 +3420,14 @@ function ApplicationDetailPageContent() {
   };
 
   const handleFamilyStatusProgressChange = async (value: string) => {
+    if (!isKaiserPlan && value === alfaVisitCompleteStatusLabel) {
+      toast({
+        variant: 'destructive',
+        title: 'Kaiser only status',
+        description: 'ALFA visit complete status is only available for Kaiser members.',
+      });
+      return;
+    }
     const previousStatus = familyStatusProgressValue;
     if (value === 'none') {
       await updateReminderSettings({
@@ -3574,6 +3583,10 @@ function ApplicationDetailPageContent() {
       return '';
     }
   })();
+  const alftAssignmentStatusLabel = isLoadingSwPortalAssignment
+    ? 'Loading...'
+    : String(swPortalAssignment?.assignmentStatus || '').trim() || 'Not assigned';
+  const hasAlftAssignmentStatus = !isLoadingSwPortalAssignment && Boolean(String(swPortalAssignment?.assignmentStatus || '').trim());
   const memberPortalUserId = useMemo(() => {
     const fromQuery = String(appUserId || '').trim();
     if (fromQuery) return fromQuery;
@@ -3843,6 +3856,7 @@ function ApplicationDetailPageContent() {
     (application as any)?.caspioCalAIMStatus,
   ]);
 
+  const alfaVisitCompleteStatusLabel = 'ALFA Visit Complete with Signoffs and Sent to ILS';
   const kaiserFamilyProgressOptions = useMemo(
     () => [
       'Application Received',
@@ -3853,6 +3867,7 @@ function ApplicationDetailPageContent() {
       'Authorization Denied',
       'RN/MSW Visit Scheduled',
       'RN/MSW Visit Complete',
+      alfaVisitCompleteStatusLabel,
       'Tier Level Requested from MCP',
       'Tier Level Received',
       'Locating RCFEs',
@@ -3861,7 +3876,7 @@ function ApplicationDetailPageContent() {
       'Member Ready for Move-In',
       'Member Moved into RCFE',
     ],
-    []
+    [alfaVisitCompleteStatusLabel]
   );
   const healthNetFamilyProgressOptions = useMemo(
     () => [
@@ -3882,6 +3897,7 @@ function ApplicationDetailPageContent() {
       ? healthNetFamilyProgressOptions
       : [];
   const familyStatusProgressValue = String((application as any)?.familyStatusProgress || '').trim();
+  const isAlfaVisitCompleteStatusSelected = familyStatusProgressValue === alfaVisitCompleteStatusLabel;
   const familyProgressNeedsDeniedReason = /authorization denied/i.test(familyStatusProgressValue);
   const familyStatusDeniedReason = String((application as any)?.familyStatusDeniedReason || '');
   const familyStatusLastEmail = (application as any)?.familyStatusLastEmail || null;
@@ -5172,6 +5188,18 @@ function ApplicationDetailPageContent() {
     }
     if (componentKey === 'Sent to Caspio') {
       return (application as any)?.caspioSent ? 'Completed' : 'Pending';
+    }
+    if (componentKey === 'ALFT Status') {
+      if (!isKaiserPlan) return 'Not Applicable';
+      const normalizedAlftStatus = String(swPortalAssignment?.assignmentStatus || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[_-]+/g, ' ');
+      if (!normalizedAlftStatus) return 'Pending';
+      const isComplete = ['complete', 'completed', 'sent to ils', 'submitted'].some((token) =>
+        normalizedAlftStatus.includes(token)
+      );
+      return isComplete ? 'Completed' : 'Pending';
     }
     if (componentKey === 'Declaration of Eligibility' && application?.pathway !== 'SNF Diversion') {
       return 'Not Applicable';
@@ -10187,6 +10215,21 @@ function ApplicationDetailPageContent() {
                         : 'SW Hold for Caspio: Pending selection'}
                     </span>
                   </div>
+                  {isKaiserPlan ? (
+                    <div
+                      className={cn(
+                        'flex items-center gap-2 text-base font-semibold',
+                        hasAlftAssignmentStatus ? 'text-green-700' : 'text-amber-700'
+                      )}
+                    >
+                      {hasAlftAssignmentStatus ? (
+                        <CheckCircle2 className="h-5 w-5" />
+                      ) : (
+                        <XCircle className="h-5 w-5" />
+                      )}
+                      <span>{`ALFT Status: ${alftAssignmentStatusLabel}`}</span>
+                    </div>
+                  ) : null}
                   <div className={cn('flex items-center gap-2 text-base font-semibold', staffAssigned ? 'text-green-700' : 'text-amber-700')}>
                     {staffAssigned ? (
                       <CheckCircle2 className="h-5 w-5" />
@@ -10431,7 +10474,7 @@ function ApplicationDetailPageContent() {
                           </div>
                         </div>
                         <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                          Status: {swPortalAssignment?.assignmentStatus || 'Not assigned'}
+                          ALFT Status: {isLoadingSwPortalAssignment ? 'Loading...' : swPortalAssignment?.assignmentStatus || 'Not assigned'}
                         </div>
                         {swPortalAssignmentError ? (
                           <p className="text-xs text-amber-700">{swPortalAssignmentError}</p>
@@ -12135,6 +12178,31 @@ function ApplicationDetailPageContent() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {isKaiserPlan ? (
+                    <div className="rounded-lg border bg-muted/20 p-3">
+                      <label className="flex items-start gap-2">
+                        <Checkbox
+                          checked={isAlfaVisitCompleteStatusSelected}
+                          onCheckedChange={(checked) => {
+                            if (Boolean(checked)) {
+                              void handleFamilyStatusProgressChange(alfaVisitCompleteStatusLabel);
+                              return;
+                            }
+                            if (isAlfaVisitCompleteStatusSelected) {
+                              void handleFamilyStatusProgressChange('none');
+                            }
+                          }}
+                          disabled={isUpdatingReminderControls}
+                        />
+                        <div className="space-y-1">
+                          <span className="text-sm font-medium">ALFA visit complete with signoffs and sent to ILS</span>
+                          <p className="text-xs text-muted-foreground">
+                            Marks this status update and syncs the Application progress value below.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  ) : null}
                   <div className="space-y-2 p-3 border rounded-lg bg-muted/20">
                     <Label htmlFor="staff-test-status-reminder-email" className="text-sm font-medium">
                       Staff test status email
