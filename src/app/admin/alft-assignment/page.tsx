@@ -89,6 +89,16 @@ const isWithinPastDays = (value: string, days: number): boolean => {
   return Math.floor((a - b) / 86400000) <= days;
 };
 
+const formatDobLabel = (value: string): string => {
+  const dt = parseFlexibleDate(value);
+  if (!dt) return '';
+  try {
+    return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return '';
+  }
+};
+
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   assigned: { label: 'Assigned', color: 'bg-blue-100 text-blue-800 border-blue-200' },
   in_progress: { label: 'In Progress', color: 'bg-amber-100 text-amber-800 border-amber-200' },
@@ -379,6 +389,7 @@ export default function AdminAlftAssignmentPage() {
                     const fresh = isWithinPastDays(m.ispContactConfirmDate, 3);
                     const statusMeta = STATUS_LABELS[assignment?.status || ''] || null;
                     const currentSwEmail = assignment?.assignedSwEmail || '';
+                    const dobLabel = formatDobLabel(m.birthDate);
 
                     return (
                       <TableRow key={m.id} className={assignment?.status === 'submitted' ? 'bg-green-50/50' : ''}>
@@ -386,9 +397,9 @@ export default function AdminAlftAssignmentPage() {
                         <TableCell>
                           <div className="font-medium text-sm">{m.memberName}</div>
                           {m.memberMrn && <div className="text-xs text-muted-foreground font-mono">MRN: {m.memberMrn}</div>}
-                          {m.birthDate && (
+                          {dobLabel && (
                             <div className="text-xs text-muted-foreground">
-                              DOB: {new Date(m.birthDate + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                              DOB: {dobLabel}
                             </div>
                           )}
                         </TableCell>
