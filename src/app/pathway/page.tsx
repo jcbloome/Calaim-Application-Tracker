@@ -1471,17 +1471,18 @@ function PathwayPageContent() {
     const missingGuidance = getRequirementMissingGuidance(req as any, reviewState);
     const uploadReceipt = uploadReceiptByRequirement[req.title];
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
+    const csSummaryPdfHref = `/forms/cs-summary-form/printable?applicationId=${encodeURIComponent(applicationId)}`;
     
     if (isReadOnly) {
        if (req.id === 'cs-summary') {
          return (
-           <div className="flex gap-2">
-             <Button asChild variant="outline" className="flex-1 bg-slate-50">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Button asChild variant="outline" className="bg-slate-50">
                  <Link href={href}>View</Link>
              </Button>
              <Dialog>
                <DialogTrigger asChild>
-                 <Button variant="secondary" className="flex-1">
+                <Button variant="secondary">
                    Quick View
                  </Button>
                </DialogTrigger>
@@ -1552,6 +1553,11 @@ function PathwayPageContent() {
                  </div>
                </DialogContent>
              </Dialog>
+            <Button asChild variant="outline" className="bg-slate-50">
+              <Link href={csSummaryPdfHref} target="_blank" rel="noopener noreferrer">
+                Download PDF
+              </Link>
+            </Button>
            </div>
          );
        }
@@ -1658,13 +1664,13 @@ function PathwayPageContent() {
                 return (
                     <div className="space-y-2">
                       {renderMissingGuidance()}
-                      <div className="flex gap-2">
-                          <Button asChild variant="outline" className="flex-1 bg-slate-50 hover:bg-slate-100">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          <Button asChild variant="outline" className="bg-slate-50 hover:bg-slate-100">
                               <Link href={href}>{isCompleted ? 'View/Edit' : 'Start'} &rarr;</Link>
                           </Button>
                           <Dialog>
                             <DialogTrigger asChild>
-                              <Button variant="secondary" className="flex-1">Quick View</Button>
+                              <Button variant="secondary">Quick View</Button>
                             </DialogTrigger>
                             <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
                               <DialogHeader>
@@ -1733,6 +1739,11 @@ function PathwayPageContent() {
                               </div>
                             </DialogContent>
                           </Dialog>
+                          <Button asChild variant="outline" className="bg-slate-50 hover:bg-slate-100">
+                            <Link href={csSummaryPdfHref} target="_blank" rel="noopener noreferrer">
+                              Download PDF
+                            </Link>
+                          </Button>
                       </div>
                     </div>
                 );

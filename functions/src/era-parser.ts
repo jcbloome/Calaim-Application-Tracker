@@ -91,6 +91,11 @@ type EraMemberContext = {
   icn: string | null;
 };
 
+const PATIENT_NAME_LABEL_RE = /\bPatient\s*Name\b/i;
+const YOUR_ACCT_LABEL_RE = /\bYour\s*Acct\b/i;
+const CLAIM_LABEL_RE = /\bClaim\s*#\b/i;
+const RECEIPT_DATE_LABEL_RE = /\bReceipt\s*Date\b/i;
+
 const parseUsDateToken = (value: string) => {
   const raw = String(value || "").trim();
   const m = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
@@ -103,11 +108,11 @@ const parseUsDateToken = (value: string) => {
 };
 
 const extractPatientNameFromLine = (line: string) => {
-  const m = line.match(/\bPatient\s+Name\b/i);
+  const m = line.match(PATIENT_NAME_LABEL_RE);
   if (!m) return null;
   const start = (m.index ?? 0) + m[0].length;
   const tail = line.slice(start);
-  const cutPatterns = [/\bYour\s+Acct\b/i, /\bClaim\s*#\b/i, /\bReceipt\s+Date\b/i, /\bCIN\b/i, /\bHealth\s+Net\b/i, /\bQuestions\?\b/i];
+  const cutPatterns = [YOUR_ACCT_LABEL_RE, CLAIM_LABEL_RE, RECEIPT_DATE_LABEL_RE, /\bCIN\b/i, /\bHealth\s+Net\b/i, /\bQuestions\?\b/i];
   let cut = tail.length;
   for (const re of cutPatterns) {
     const found = tail.match(re);
@@ -123,12 +128,242 @@ const extractPatientNameFromLine = (line: string) => {
 
 const extractCinFromLine = (line: string) => {
   const m = line.match(/\bCIN\b\s*[:#]?\s*([A-Z0-9-]{4,})\b/i);
-  return m?.[1] ? String(m[1]).trim() : null;
+  const token = m?.[1] ? String(m[1]).trim() : "";
+  if (!token) return null;
+  // Avoid right-column bleed like "CIN  Claim # ..."
+  if (!/\d/.test(token)) return null;
+  if (/^(claim|receipt|your)$/i.test(token)) return null;
+  return token;
 };
 
 const extractYourAcctFromLine = (line: string) => {
-  const m = line.match(/\bYour\s+Acct\s*#?\s*[:#]?\s*([A-Z0-9-]{2,})\b/i);
+  const m = line.match(/\bYour\s*Acct\s*#?\s*[:#]?\s*([A-Z0-9-]{2,})\b/i);
   return m?.[1] ? String(m[1]).trim() : null;
+};
+
+const isLikelyMemberName = (value: string) => {
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  if (!raw) return false;
+  if (!/[A-Za-z]/.test(raw)) return false;
+  if (/\d/.test(raw)) return false;
+  const words = raw.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false;
+  if (
+    /\b(your\s+acct|claim\s*#|receipt\s+date|member\s+plan\s+code|health\s+net|questions\?|provider_services|po\s+box)\b/i.test(
+      raw
+    )
+  ) {
+    return false;
+  }
+  return true;
+};
+
+const extractAccountTokenFromLine = (line: string) => {
+  const matches = Array.from(String(line || "").matchAll(/\b(\d{3,6})\b/g)).map((m) => String(m[1] || ""));
+  for (const token of matches) {
+    const n = Number(token);
+    if (token.length === 4 && Number.isFinite(n) && n >= 1900 && n <= 2100) continue;
+    return token;
+  }
+  return null;
+};
+
+const extractCinTokenFromLine = (line: string) => {
+  const tokens = Array.from(String(line || "").matchAll(/\b([A-Z0-9-]{6,14})\b/gi)).map((m) => String(m[1] || "").trim());
+  const cleaned = tokens.filter((t) => {
+    if (!t) return false;
+    if (/^(claim|receipt|your|acct|date)$/i.test(t)) return false;
+    if (/^\d{4}$/.test(t)) return false;
+    if (!/\d/.test(t)) return false;
+    if (!/[A-Z]/i.test(t)) return false;
+    return true;
+  });
+  const preferred = cleaned.find((t) => !t.includes("-") && t.length >= 8 && t.length <= 12);
+  if (preferred) return preferred;
+  return cleaned[0] || null;
+};
+
+const stripAfterHeaderLabels = (value: string) =>
+  String(value || "").split(/\b(Claim\s*#|Receipt\s*Date|Your\s*Acct|Patient\s*Name|CIN)\b/i)[0].trim();
+
+const normalizeMemberCandidate = (value: string) =>
+  stripAfterHeaderLabels(String(value || "").replace(/\s+(?=[A-Z0-9-]*\d)[A-Z0-9-]{3,}\s*$/i, "").trim());
+
+const normalizeAcctToken = (value: string | null) => {
+  const token = String(value || "").trim();
+  if (!/^\d{4,6}$/.test(token)) return null;
+  if (/^(19|20)\d{2}$/.test(token)) return null;
+  const n = Number(token);
+  if (!Number.isFinite(n) || n < 1000) return null;
+  return token;
+};
+
+const parseHealthNetContextFromHeader = (lines: string[], headerIdx: number): EraMemberContext => {
+  let member_name = "";
+  let icn: string | null = null;
+  let acnt: string | null = null;
+  const maxEnd = Math.min(lines.length - 1, headerIdx + 14);
+  for (let j = headerIdx; j <= maxEnd; j++) {
+    const ln = String(lines[j] || "").replace(/\s+/g, " ").trim();
+    if (!ln) continue;
+    if (j > headerIdx && PATIENT_NAME_LABEL_RE.test(ln)) break;
+    if (PATIENT_NAME_LABEL_RE.test(ln) && !member_name) {
+      const inline = normalizeMemberCandidate(extractPatientNameFromLine(ln) || "");
+      if (inline && isLikelyMemberName(inline)) member_name = inline;
+      continue;
+    }
+    if (/\bCIN\b/i.test(ln) && !icn) {
+      icn = extractCinFromLine(ln) || extractCinTokenFromLine(String(lines[j + 1] || "").replace(/\s+/g, " ").trim()) || null;
+      continue;
+    }
+    if (YOUR_ACCT_LABEL_RE.test(ln) && !acnt) {
+      acnt =
+        normalizeAcctToken(extractYourAcctFromLine(ln)) ||
+        normalizeAcctToken(extractAccountTokenFromLine(String(lines[j + 1] || "").replace(/\s+/g, " ").trim()));
+      continue;
+    }
+  }
+  return { member_name, hic: null, medi: null, acnt, icn };
+};
+
+type HealthNetCinIndexValue = { member_name: string; acnt: string | null };
+const buildHealthNetCinIndex = (lines: string[]) => {
+  const map = new Map<string, HealthNetCinIndexValue>();
+  for (let i = 0; i < lines.length; i++) {
+    const ln = String(lines[i] || "").replace(/\s+/g, " ").trim();
+    if (!ln || !PATIENT_NAME_LABEL_RE.test(ln)) continue;
+    const parsed = parseHealthNetContextFromHeader(lines, i);
+    const icn = String(parsed.icn || "").trim().toUpperCase();
+    if (!icn || !parsed.member_name) continue;
+    map.set(icn, { member_name: parsed.member_name, acnt: parsed.acnt || null });
+  }
+  return map;
+};
+
+type HealthNetMemberBlock = { start: number; end: number; context: EraMemberContext };
+const parseHealthNetBlockContextByRange = (lines: string[], start: number, end: number): EraMemberContext => {
+  let member_name = "";
+  let icn: string | null = null;
+  let acnt: string | null = null;
+  const maxScan = Math.min(end, start + 14);
+  for (let j = start; j <= maxScan; j++) {
+    const ln = String(lines[j] || "").replace(/\s+/g, " ").trim();
+    if (!ln) continue;
+    if (PATIENT_NAME_LABEL_RE.test(ln) && !member_name) {
+      const inline = normalizeMemberCandidate(extractPatientNameFromLine(ln) || "");
+      if (inline && isLikelyMemberName(inline)) member_name = inline;
+      continue;
+    }
+    if (!member_name) {
+      const candidate = normalizeMemberCandidate(ln);
+      if (candidate && isLikelyMemberName(candidate)) member_name = candidate;
+    }
+    if (!icn && /\bCIN\b/i.test(ln)) {
+      icn = extractCinFromLine(ln) || extractCinTokenFromLine(String(lines[j + 1] || "").replace(/\s+/g, " ").trim()) || null;
+      continue;
+    }
+    if (!acnt && YOUR_ACCT_LABEL_RE.test(ln)) {
+      acnt =
+        normalizeAcctToken(extractYourAcctFromLine(ln)) ||
+        normalizeAcctToken(extractAccountTokenFromLine(String(lines[j + 1] || "").replace(/\s+/g, " ").trim()));
+      continue;
+    }
+  }
+  return { member_name, hic: null, medi: null, acnt, icn };
+};
+const buildHealthNetMemberBlocks = (lines: string[]) => {
+  const headers: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (PATIENT_NAME_LABEL_RE.test(String(lines[i] || ""))) headers.push(i);
+  }
+  const blocks: HealthNetMemberBlock[] = [];
+  for (let i = 0; i < headers.length; i++) {
+    const start = headers[i];
+    const end = i + 1 < headers.length ? headers[i + 1] - 1 : lines.length - 1;
+    blocks.push({ start, end, context: parseHealthNetBlockContextByRange(lines, start, end) });
+  }
+  return blocks;
+};
+const resolveHealthNetBlockContextForRow = (idx: number, blocks: HealthNetMemberBlock[], fallback: EraMemberContext): EraMemberContext => {
+  for (const block of blocks) {
+    if (idx >= block.start && idx <= block.end) {
+      return {
+        member_name: block.context.member_name || "",
+        hic: null,
+        medi: null,
+        acnt: block.context.acnt || null,
+        icn: block.context.icn || null,
+      };
+    }
+  }
+  return fallback;
+};
+
+const resolveHealthNetContextBackward = (lines: string[], idx: number, current: EraMemberContext): EraMemberContext => {
+  const clean = (v: string) => String(v || "").replace(/\s+/g, " ").trim();
+  let member = "";
+  let acnt: string | null = null;
+  let icn: string | null = null;
+  const radius = 180;
+
+  const nearestLabelIndex = (labelRe: RegExp) => {
+    let bestIdx = -1;
+    let bestDist = Number.POSITIVE_INFINITY;
+    const min = Math.max(0, idx - radius);
+    const max = Math.min(lines.length - 1, idx + radius);
+    for (let j = min; j <= max; j++) {
+      const ln = clean(lines[j] || "");
+      if (!ln || !labelRe.test(ln)) continue;
+      const dist = Math.abs(j - idx);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = j;
+      }
+    }
+    return bestIdx;
+  };
+
+  const memberFromLabel = (at: number) => {
+    const ln = clean(lines[at] || "");
+    const inline = normalizeMemberCandidate(extractPatientNameFromLine(ln) || "");
+    if (inline && isLikelyMemberName(inline)) return inline;
+    const next = clean(lines[at + 1] || "");
+    const fallback = normalizeMemberCandidate(next);
+    if (fallback && isLikelyMemberName(fallback)) return fallback;
+    return "";
+  };
+
+  const acctFromLabel = (at: number) => {
+    const ln = clean(lines[at] || "");
+    const inline = normalizeAcctToken((ln.match(/\bYour\s*Acct\s*#?\s*[:#]?\s*(\d{4,6})\b/i)?.[1] || "").trim());
+    if (inline) return inline;
+    const next = clean(lines[at + 1] || "");
+    if (/\b(claim\s*#|receipt\s*date)\b/i.test(next)) return null;
+    return normalizeAcctToken((next.match(/\b(\d{4,6})\b/)?.[1] || "").trim());
+  };
+
+  const cinFromLabel = (at: number) => {
+    const ln = clean(lines[at] || "");
+    const inline = extractCinFromLine(ln);
+    if (inline) return inline;
+    const next = clean(lines[at + 1] || "");
+    return extractCinTokenFromLine(next);
+  };
+
+  const patientIdx = nearestLabelIndex(PATIENT_NAME_LABEL_RE);
+  const acctIdx = nearestLabelIndex(YOUR_ACCT_LABEL_RE);
+  const cinIdx = nearestLabelIndex(/\bCIN\b/i);
+  if (patientIdx >= 0) member = memberFromLabel(patientIdx);
+  if (acctIdx >= 0) acnt = acctFromLabel(acctIdx);
+  if (cinIdx >= 0) icn = cinFromLabel(cinIdx);
+  const foundAnyLabel = patientIdx >= 0 || acctIdx >= 0 || cinIdx >= 0;
+  return {
+    member_name: member || (!foundAnyLabel ? String(current.member_name || "").trim() : "") || "",
+    hic: null,
+    medi: null,
+    acnt: acnt || (!foundAnyLabel ? String(current.acnt || "").trim() : "") || null,
+    icn: icn || (!foundAnyLabel ? String(current.icn || "").trim() : "") || null,
+  };
 };
 
 const extractEraMemberContextFromLine = (
@@ -139,16 +374,60 @@ const extractEraMemberContextFromLine = (
   let next: EraMemberContext = { ...current };
   let changed = false;
 
-  if (parserProfile === "health_net" && /^\s*NAME\b/i.test(line)) {
+  if (
+    parserProfile === "health_net" &&
+    /\bNAME\b/i.test(line) &&
+    /\b(HIC|ACNT|ICN)\b/i.test(line) &&
+    !PATIENT_NAME_LABEL_RE.test(line)
+  ) {
     const parsed = extractNameHicAcntIcn(line);
-    next = {
-      member_name: parsed.name || "",
-      hic: parsed.hic,
-      medi: parsed.medi,
-      acnt: parsed.acnt,
-      icn: parsed.icn,
+    const merged: EraMemberContext = {
+      member_name: parsed.name || next.member_name,
+      hic: parsed.hic || next.hic,
+      medi: parsed.medi || next.medi,
+      acnt: parsed.acnt || next.acnt,
+      icn: parsed.icn || next.icn,
     };
-    changed = true;
+    if (
+      merged.member_name !== next.member_name ||
+      merged.hic !== next.hic ||
+      merged.medi !== next.medi ||
+      merged.acnt !== next.acnt ||
+      merged.icn !== next.icn
+    ) {
+      next = merged;
+      changed = true;
+    }
+  }
+
+  // Health Net files sometimes place account/CIN/name on separate nearby lines.
+  if (parserProfile === "health_net") {
+    const patientName = extractPatientNameFromLine(line);
+    if (
+      patientName &&
+      !/\b(your\s*acct|claim\s*#|receipt\s*date)\b/i.test(patientName) &&
+      /[A-Za-z]/.test(patientName)
+    ) {
+      // New patient block: reset context so multi-member pages do not bleed values.
+      next = {
+        member_name: patientName,
+        hic: null,
+        medi: null,
+        acnt: null,
+        icn: null,
+      };
+      changed = true;
+    }
+    const yourAcct = extractYourAcctFromLine(line);
+    if (yourAcct && next.acnt !== yourAcct) {
+      next.acnt = yourAcct;
+      changed = true;
+    }
+    const cin = extractCinFromLine(line);
+    if (cin && next.icn !== cin) {
+      next.icn = cin;
+      changed = true;
+    }
   }
 
   if (parserProfile === "claimsmd") {
@@ -215,6 +494,117 @@ function parseServiceDatesFromProcLine(line: string, remitDate: string | null) {
   const fromIso = mmdd && year ? toIsoFromMmdd(mmdd, year) : null;
   return { service_from: fromIso, service_to: toIso };
 }
+
+const parseServiceDatesNearProcLine = (lines: string[], idx: number, remitDate: string | null) => {
+  const candidates = [lines[idx], lines[idx - 1], lines[idx + 1], lines[idx - 2], lines[idx + 2]];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const parsed = parseServiceDatesFromProcLine(candidate, remitDate);
+    if (parsed.service_from || parsed.service_to) return parsed;
+  }
+  return { service_from: null, service_to: null };
+};
+
+const resolveContextNearProcLine = (
+  lines: string[],
+  idx: number,
+  current: EraMemberContext,
+  parserProfile: EraParserProfile
+): EraMemberContext => {
+  if (parserProfile === "health_net") {
+    return resolveHealthNetContextBackward(lines, idx, current);
+  }
+
+  let resolved: EraMemberContext = { ...current };
+
+  // Health Net remits can contain multiple member blocks per page.
+  // Anchor each PROC row to the nearest preceding member header to avoid cross-member bleed.
+  let start = Math.max(0, idx - 12);
+  if (parserProfile === "health_net") {
+    const minScan = Math.max(0, idx - 120);
+    for (let j = idx; j >= minScan; j--) {
+      const ln = String(lines[j] || "");
+      if (/\bPatient\s+Name\b/i.test(ln)) {
+        start = j;
+        break;
+      }
+    }
+    // Fresh context from the detected member block.
+    resolved = {
+      member_name: "",
+      hic: null,
+      medi: null,
+      acnt: null,
+      icn: null,
+    };
+  }
+
+  const end = Math.min(lines.length - 1, idx + 2);
+  for (let j = start; j <= end; j++) {
+    const update = extractEraMemberContextFromLine(lines[j] || "", resolved, parserProfile);
+    if (update) resolved = update;
+  }
+
+  // Extra Health Net fallback: labels and values are often split across adjacent lines.
+  if (parserProfile === "health_net") {
+    const cleanLine = (value: string) => String(value || "").replace(/\s+/g, " ").trim();
+    const nextNonLabelLine = (from: number, maxAhead = 3) => {
+      for (let k = from + 1; k <= Math.min(end, from + maxAhead); k++) {
+        const cand = cleanLine(lines[k] || "");
+        if (!cand) continue;
+        if (/\b(patient\s+name|cin|your\s+acct|claim\s*#|receipt\s+date)\b/i.test(cand)) continue;
+        return cand;
+      }
+      return "";
+    };
+
+    let lastPatientIdx = -1;
+    let lastCinIdx = -1;
+    let lastAcctIdx = -1;
+    for (let j = start; j <= end; j++) {
+      const ln = cleanLine(lines[j] || "");
+      if (!ln) continue;
+      if (/\bPatient\s+Name\b/i.test(ln)) lastPatientIdx = j;
+      if (/\bCIN\b/i.test(ln)) lastCinIdx = j;
+      if (/\bYour\s+Acct\b/i.test(ln)) lastAcctIdx = j;
+    }
+
+    if (lastPatientIdx >= 0) {
+      const pLine = cleanLine(lines[lastPatientIdx] || "");
+      const inline = normalizeMemberCandidate(extractPatientNameFromLine(pLine) || "");
+      if (inline && isLikelyMemberName(inline)) {
+        resolved.member_name = inline;
+      } else {
+        const fallback = normalizeMemberCandidate(nextNonLabelLine(lastPatientIdx));
+        if (fallback && isLikelyMemberName(fallback)) resolved.member_name = fallback;
+      }
+    }
+
+    if (lastCinIdx >= 0) {
+      const cLine = cleanLine(lines[lastCinIdx] || "");
+      const inlineCin = extractCinFromLine(cLine);
+      if (inlineCin) {
+        resolved.icn = inlineCin;
+      } else {
+        const fallbackCin = extractCinTokenFromLine(nextNonLabelLine(lastCinIdx));
+        if (fallbackCin) resolved.icn = fallbackCin;
+      }
+    }
+
+    if (lastAcctIdx >= 0) {
+      const aLine = cleanLine(lines[lastAcctIdx] || "");
+      const inlineAcct = extractYourAcctFromLine(aLine);
+      if (inlineAcct) {
+        resolved.acnt = inlineAcct;
+      } else {
+        const fallbackAcct = extractAccountTokenFromLine(nextNonLabelLine(lastAcctIdx));
+        if (fallbackAcct) resolved.acnt = fallbackAcct;
+      }
+    }
+  }
+
+  return resolved;
+};
 
 const toNum = (v?: string | null) => {
   if (!v) return null;
@@ -377,6 +767,9 @@ export const parseEraPdfFromStorage = onCall(
         acnt: null as string | null,
         icn: null as string | null,
       };
+      const healthNetCinIndex =
+        parserProfile === "health_net" ? buildHealthNetCinIndex(lines) : new Map<string, HealthNetCinIndexValue>();
+      const healthNetBlocks = parserProfile === "health_net" ? buildHealthNetMemberBlocks(lines) : [];
 
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
@@ -390,21 +783,30 @@ export const parseEraPdfFromStorage = onCall(
         const proc = String(m[1]).toUpperCase();
         if (proc !== "H2022" && proc !== "T2038") continue;
 
+        const rowContextRaw = resolveContextNearProcLine(lines, i, current, parserProfile);
+        const rowContext =
+          parserProfile === "health_net" ? resolveHealthNetBlockContextForRow(i, healthNetBlocks, rowContextRaw) : rowContextRaw;
+        current = rowContext;
+        const cinMapped =
+          parserProfile === "health_net" && rowContext.icn
+            ? healthNetCinIndex.get(String(rowContext.icn || "").trim().toUpperCase())
+            : null;
+
         const amounts = gatherAmounts(lines, i);
         const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
         const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
         const paid = pickPaid(amounts);
-        const svc = parseServiceDatesFromProcLine(ln, remittance_date);
+        const svc = parseServiceDatesNearProcLine(lines, i, remittance_date);
 
         allRows.push({
           payer,
           remittance_date,
           page: pageNum,
-          member_name: String(current.member_name || "").trim(),
-          hic: current.hic,
-          medi_cal_number: current.medi,
-          acnt: current.acnt,
-          icn: current.icn,
+          member_name: String(cinMapped?.member_name || rowContext.member_name || "").trim(),
+          hic: rowContext.hic,
+          medi_cal_number: rowContext.medi,
+          acnt: cinMapped?.acnt || rowContext.acnt,
+          icn: rowContext.icn,
           proc: proc as any,
           service_from: svc.service_from,
           service_to: svc.service_to,

@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, FileUp, Download, FileText, FolderOpen } from 'lucide-react';
+import { Loader2, FileUp, Download, FileText, Trash2 } from 'lucide-react';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 
 type ExtractedPagesResult = {
@@ -38,6 +38,8 @@ type EraRow = {
   allowed?: number | null;
   paid?: number | null;
   source_line?: string;
+  debug_block?: string | null;
+  debug_mapped_member?: string | null;
 };
 
 type EraSummary = {
@@ -121,6 +123,9 @@ type ExtractProgress = { currentPage: number; totalPages: number; startedAtMs: n
 type OpenProgress = { loaded: number; total: number; startedAtMs: number };
 type UploadProgress = { transferred: number; total: number };
 type EraParserProfile = 'health_net' | 'claimsmd';
+
+// Bump when extraction rules change so old cached parses are not reused.
+const ERA_PARSER_CACHE_VERSION = 8;
 type ClaimResultViewFilter =
   | 'all'
   | 'matched'
@@ -303,6 +308,11 @@ type EraMemberContext = {
   icn: string | null;
 };
 
+const PATIENT_NAME_LABEL_RE = /\bPatient\s*Name\b/i;
+const YOUR_ACCT_LABEL_RE = /\bYour\s*Acct\b/i;
+const CLAIM_LABEL_RE = /\bClaim\s*#\b/i;
+const RECEIPT_DATE_LABEL_RE = /\bReceipt\s*Date\b/i;
+
 const parseUsDateToken = (value: string) => {
   const raw = String(value || '').trim();
   const m = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
@@ -315,11 +325,11 @@ const parseUsDateToken = (value: string) => {
 };
 
 const extractPatientNameFromLine = (line: string) => {
-  const m = line.match(/\bPatient\s+Name\b/i);
+  const m = line.match(PATIENT_NAME_LABEL_RE);
   if (!m) return null;
   const start = (m.index ?? 0) + m[0].length;
   const tail = line.slice(start);
-  const cutPatterns = [/\bYour\s+Acct\b/i, /\bClaim\s*#\b/i, /\bReceipt\s+Date\b/i, /\bCIN\b/i, /\bHealth\s+Net\b/i, /\bQuestions\?\b/i];
+  const cutPatterns = [YOUR_ACCT_LABEL_RE, CLAIM_LABEL_RE, RECEIPT_DATE_LABEL_RE, /\bCIN\b/i, /\bHealth\s+Net\b/i, /\bQuestions\?\b/i];
   let cut = tail.length;
   for (const re of cutPatterns) {
     const found = tail.match(re);
@@ -335,12 +345,289 @@ const extractPatientNameFromLine = (line: string) => {
 
 const extractCinFromLine = (line: string) => {
   const m = line.match(/\bCIN\b\s*[:#]?\s*([A-Z0-9-]{4,})\b/i);
-  return m?.[1] ? String(m[1]).trim() : null;
+  const token = m?.[1] ? String(m[1]).trim() : '';
+  if (!token) return null;
+  // Avoid right-column bleed like "CIN  Claim # ..."
+  if (!/\d/.test(token)) return null;
+  if (/^(claim|receipt|your)$/i.test(token)) return null;
+  return token;
 };
 
 const extractYourAcctFromLine = (line: string) => {
-  const m = line.match(/\bYour\s+Acct\s*#?\s*[:#]?\s*([A-Z0-9-]{2,})\b/i);
+  const m = line.match(/\bYour\s*Acct\s*#?\s*[:#]?\s*([A-Z0-9-]{2,})\b/i);
   return m?.[1] ? String(m[1]).trim() : null;
+};
+
+const isLikelyMemberName = (value: string) => {
+  const raw = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!raw) return false;
+  if (!/[A-Za-z]/.test(raw)) return false;
+  if (/\d/.test(raw)) return false;
+  const words = raw.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false;
+  if (
+    /\b(your\s+acct|claim\s*#|receipt\s+date|member\s+plan\s+code|health\s+net|questions\?|provider_services|po\s+box)\b/i.test(
+      raw
+    )
+  ) {
+    return false;
+  }
+  return true;
+};
+
+const extractAccountTokenFromLine = (line: string) => {
+  const matches = Array.from(String(line || '').matchAll(/\b(\d{3,6})\b/g)).map((m) => String(m[1] || ''));
+  for (const token of matches) {
+    const n = Number(token);
+    if (token.length === 4 && Number.isFinite(n) && n >= 1900 && n <= 2100) continue; // avoid years (e.g. 2026)
+    return token;
+  }
+  return null;
+};
+
+const extractCinTokenFromLine = (line: string) => {
+  const tokens = Array.from(String(line || '').matchAll(/\b([A-Z0-9-]{6,14})\b/gi)).map((m) => String(m[1] || '').trim());
+  const cleaned = tokens.filter((t) => {
+    if (!t) return false;
+    if (/^(claim|receipt|your|acct|date)$/i.test(t)) return false;
+    if (/^\d{4}$/.test(t)) return false;
+    if (!/\d/.test(t)) return false;
+    if (!/[A-Z]/i.test(t)) return false;
+    return true;
+  });
+  const preferred = cleaned.find((t) => !t.includes('-') && t.length >= 8 && t.length <= 12);
+  if (preferred) return preferred;
+  return cleaned[0] || null;
+};
+
+const stripAfterHeaderLabels = (value: string) =>
+  String(value || '').split(/\b(Claim\s*#|Receipt\s*Date|Your\s*Acct|Patient\s*Name|CIN)\b/i)[0].trim();
+
+const normalizeMemberCandidate = (value: string) =>
+  stripAfterHeaderLabels(String(value || '').replace(/\s+(?=[A-Z0-9-]*\d)[A-Z0-9-]{3,}\s*$/i, '').trim());
+
+const normalizeAcctToken = (value: string | null) => {
+  const token = String(value || '').trim();
+  if (!/^\d{4,6}$/.test(token)) return null;
+  if (/^(19|20)\d{2}$/.test(token)) return null;
+  const n = Number(token);
+  if (!Number.isFinite(n) || n < 1000) return null;
+  return token;
+};
+
+const parseHealthNetContextFromHeader = (lines: string[], headerIdx: number): EraMemberContext => {
+  let member_name = '';
+  let icn: string | null = null;
+  let acnt: string | null = null;
+  const maxEnd = Math.min(lines.length - 1, headerIdx + 14);
+
+  for (let j = headerIdx; j <= maxEnd; j++) {
+    const ln = String(lines[j] || '').replace(/\s+/g, ' ').trim();
+    if (!ln) continue;
+    if (j > headerIdx && PATIENT_NAME_LABEL_RE.test(ln)) break;
+
+    if (PATIENT_NAME_LABEL_RE.test(ln) && !member_name) {
+      const inline = normalizeMemberCandidate(extractPatientNameFromLine(ln) || '');
+      if (inline && isLikelyMemberName(inline)) member_name = inline;
+      continue;
+    }
+
+    if (/\bCIN\b/i.test(ln) && !icn) {
+      icn = extractCinFromLine(ln) || null;
+      if (!icn) {
+        const next = String(lines[j + 1] || '').replace(/\s+/g, ' ').trim();
+        icn = extractCinTokenFromLine(next) || null;
+      }
+      continue;
+    }
+
+    if (YOUR_ACCT_LABEL_RE.test(ln) && !acnt) {
+      acnt = normalizeAcctToken(extractYourAcctFromLine(ln));
+      if (!acnt) {
+        const next = String(lines[j + 1] || '').replace(/\s+/g, ' ').trim();
+        acnt = normalizeAcctToken(extractAccountTokenFromLine(next));
+      }
+      continue;
+    }
+
+    if (!member_name && j <= headerIdx + 3) {
+      const candidate = normalizeMemberCandidate(ln);
+      if (isLikelyMemberName(candidate)) member_name = candidate;
+    }
+  }
+
+  return {
+    member_name,
+    hic: null,
+    medi: null,
+    acnt,
+    icn,
+  };
+};
+
+type HealthNetCinIndexValue = {
+  member_name: string;
+  acnt: string | null;
+};
+
+const buildHealthNetCinIndex = (lines: string[]) => {
+  const map = new Map<string, HealthNetCinIndexValue>();
+  for (let i = 0; i < lines.length; i++) {
+    const ln = String(lines[i] || '').replace(/\s+/g, ' ').trim();
+    if (!ln || !PATIENT_NAME_LABEL_RE.test(ln)) continue;
+    const parsed = parseHealthNetContextFromHeader(lines, i);
+    const icn = String(parsed.icn || '').trim().toUpperCase();
+    if (!icn || !parsed.member_name) continue;
+    map.set(icn, { member_name: parsed.member_name, acnt: parsed.acnt || null });
+  }
+  return map;
+};
+
+type HealthNetMemberBlock = {
+  start: number;
+  end: number;
+  context: EraMemberContext;
+};
+
+const parseHealthNetBlockContextByRange = (lines: string[], start: number, end: number): EraMemberContext => {
+  let member_name = '';
+  let icn: string | null = null;
+  let acnt: string | null = null;
+  const maxScan = Math.min(end, start + 14);
+  for (let j = start; j <= maxScan; j++) {
+    const ln = String(lines[j] || '').replace(/\s+/g, ' ').trim();
+    if (!ln) continue;
+    if (PATIENT_NAME_LABEL_RE.test(ln) && !member_name) {
+      const inline = normalizeMemberCandidate(extractPatientNameFromLine(ln) || '');
+      if (inline && isLikelyMemberName(inline)) member_name = inline;
+      continue;
+    }
+    if (!member_name) {
+      const candidate = normalizeMemberCandidate(ln);
+      if (candidate && isLikelyMemberName(candidate)) member_name = candidate;
+    }
+    if (!icn && /\bCIN\b/i.test(ln)) {
+      icn = extractCinFromLine(ln) || extractCinTokenFromLine(String(lines[j + 1] || '').replace(/\s+/g, ' ').trim()) || null;
+      continue;
+    }
+    if (!acnt && YOUR_ACCT_LABEL_RE.test(ln)) {
+      acnt =
+        normalizeAcctToken(extractYourAcctFromLine(ln)) ||
+        normalizeAcctToken(extractAccountTokenFromLine(String(lines[j + 1] || '').replace(/\s+/g, ' ').trim()));
+      continue;
+    }
+  }
+  return { member_name, hic: null, medi: null, acnt, icn };
+};
+
+const buildHealthNetMemberBlocks = (lines: string[]) => {
+  const headers: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (PATIENT_NAME_LABEL_RE.test(String(lines[i] || ''))) headers.push(i);
+  }
+  const blocks: HealthNetMemberBlock[] = [];
+  for (let i = 0; i < headers.length; i++) {
+    const start = headers[i];
+    const end = i + 1 < headers.length ? headers[i + 1] - 1 : lines.length - 1;
+    blocks.push({
+      start,
+      end,
+      context: parseHealthNetBlockContextByRange(lines, start, end),
+    });
+  }
+  return blocks;
+};
+
+const resolveHealthNetBlockContextForRow = (idx: number, blocks: HealthNetMemberBlock[], fallback: EraMemberContext): EraMemberContext => {
+  for (const block of blocks) {
+    if (idx >= block.start && idx <= block.end) {
+      return {
+        member_name: block.context.member_name || '',
+        hic: null,
+        medi: null,
+        acnt: block.context.acnt || null,
+        icn: block.context.icn || null,
+      };
+    }
+  }
+  return fallback;
+};
+
+const findHealthNetBlockForRow = (idx: number, blocks: HealthNetMemberBlock[]) => {
+  for (const block of blocks) {
+    if (idx >= block.start && idx <= block.end) return block;
+  }
+  return null;
+};
+
+const resolveHealthNetContextBackward = (lines: string[], idx: number, current: EraMemberContext): EraMemberContext => {
+  const clean = (v: string) => String(v || '').replace(/\s+/g, ' ').trim();
+  let member = '';
+  let acnt: string | null = null;
+  let icn: string | null = null;
+  const radius = 180;
+
+  const nearestLabelIndex = (labelRe: RegExp) => {
+    let bestIdx = -1;
+    let bestDist = Number.POSITIVE_INFINITY;
+    const min = Math.max(0, idx - radius);
+    const max = Math.min(lines.length - 1, idx + radius);
+    for (let j = min; j <= max; j++) {
+      const ln = clean(lines[j] || '');
+      if (!ln || !labelRe.test(ln)) continue;
+      const dist = Math.abs(j - idx);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = j;
+      }
+    }
+    return bestIdx;
+  };
+
+  const memberFromLabel = (at: number) => {
+    const ln = clean(lines[at] || '');
+    const inline = normalizeMemberCandidate(extractPatientNameFromLine(ln) || '');
+    if (inline && isLikelyMemberName(inline)) return inline;
+    const next = clean(lines[at + 1] || '');
+    const fallback = normalizeMemberCandidate(next);
+    if (fallback && isLikelyMemberName(fallback)) return fallback;
+    return '';
+  };
+
+  const acctFromLabel = (at: number) => {
+    const ln = clean(lines[at] || '');
+    const inline = normalizeAcctToken((ln.match(/\bYour\s*Acct\s*#?\s*[:#]?\s*(\d{4,6})\b/i)?.[1] || '').trim());
+    if (inline) return inline;
+    const next = clean(lines[at + 1] || '');
+    if (/\b(claim\s*#|receipt\s*date)\b/i.test(next)) return null;
+    return normalizeAcctToken((next.match(/\b(\d{4,6})\b/)?.[1] || '').trim());
+  };
+
+  const cinFromLabel = (at: number) => {
+    const ln = clean(lines[at] || '');
+    const inline = extractCinFromLine(ln);
+    if (inline) return inline;
+    const next = clean(lines[at + 1] || '');
+    return extractCinTokenFromLine(next);
+  };
+
+  const patientIdx = nearestLabelIndex(PATIENT_NAME_LABEL_RE);
+  const acctIdx = nearestLabelIndex(YOUR_ACCT_LABEL_RE);
+  const cinIdx = nearestLabelIndex(/\bCIN\b/i);
+
+  if (patientIdx >= 0) member = memberFromLabel(patientIdx);
+  if (acctIdx >= 0) acnt = acctFromLabel(acctIdx);
+  if (cinIdx >= 0) icn = cinFromLabel(cinIdx);
+
+  const foundAnyLabel = patientIdx >= 0 || acctIdx >= 0 || cinIdx >= 0;
+
+  return {
+    member_name: member || (!foundAnyLabel ? String(current.member_name || '').trim() : '') || '',
+    hic: null,
+    medi: null,
+    acnt: acnt || (!foundAnyLabel ? String(current.acnt || '').trim() : '') || null,
+    icn: icn || (!foundAnyLabel ? String(current.icn || '').trim() : '') || null,
+  };
 };
 
 const extractEraMemberContextFromLine = (
@@ -351,16 +638,60 @@ const extractEraMemberContextFromLine = (
   let next: EraMemberContext = { ...current };
   let changed = false;
 
-  if (parserProfile === 'health_net' && /^\s*NAME\b/i.test(line)) {
+  if (
+    parserProfile === 'health_net' &&
+    /\bNAME\b/i.test(line) &&
+    /\b(HIC|ACNT|ICN)\b/i.test(line) &&
+    !PATIENT_NAME_LABEL_RE.test(line)
+  ) {
     const parsed = extractNameHicAcntIcn(line);
-    next = {
-      member_name: parsed.name || '',
-      hic: parsed.hic,
-      medi: parsed.medi,
-      acnt: parsed.acnt,
-      icn: parsed.icn,
+    const merged: EraMemberContext = {
+      member_name: parsed.name || next.member_name,
+      hic: parsed.hic || next.hic,
+      medi: parsed.medi || next.medi,
+      acnt: parsed.acnt || next.acnt,
+      icn: parsed.icn || next.icn,
     };
-    changed = true;
+    if (
+      merged.member_name !== next.member_name ||
+      merged.hic !== next.hic ||
+      merged.medi !== next.medi ||
+      merged.acnt !== next.acnt ||
+      merged.icn !== next.icn
+    ) {
+      next = merged;
+      changed = true;
+    }
+  }
+
+  // Health Net files sometimes place account/CIN/name on separate nearby lines.
+  if (parserProfile === 'health_net') {
+    const patientName = extractPatientNameFromLine(line);
+    if (
+      patientName &&
+      !/\b(your\s*acct|claim\s*#|receipt\s*date)\b/i.test(patientName) &&
+      /[A-Za-z]/.test(patientName)
+    ) {
+      // New patient block: reset context so multi-member pages do not bleed values.
+      next = {
+        member_name: patientName,
+        hic: null,
+        medi: null,
+        acnt: null,
+        icn: null,
+      };
+      changed = true;
+    }
+    const yourAcct = extractYourAcctFromLine(line);
+    if (yourAcct && next.acnt !== yourAcct) {
+      next.acnt = yourAcct;
+      changed = true;
+    }
+    const cin = extractCinFromLine(line);
+    if (cin && next.icn !== cin) {
+      next.icn = cin;
+      changed = true;
+    }
   }
 
   if (parserProfile === 'claimsmd') {
@@ -428,6 +759,117 @@ function parseServiceDatesFromProcLine(line: string, remitDate: string | null) {
   const fromIso = mmdd && year ? toIsoFromMmdd(mmdd, year) : null;
   return { service_from: fromIso, service_to: toIso };
 }
+
+const parseServiceDatesNearProcLine = (lines: string[], idx: number, remitDate: string | null) => {
+  const candidates = [lines[idx], lines[idx - 1], lines[idx + 1], lines[idx - 2], lines[idx + 2]];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const parsed = parseServiceDatesFromProcLine(candidate, remitDate);
+    if (parsed.service_from || parsed.service_to) return parsed;
+  }
+  return { service_from: null, service_to: null };
+};
+
+const resolveContextNearProcLine = (
+  lines: string[],
+  idx: number,
+  current: EraMemberContext,
+  parserProfile: EraParserProfile
+): EraMemberContext => {
+  if (parserProfile === 'health_net') {
+    return resolveHealthNetContextBackward(lines, idx, current);
+  }
+
+  let resolved: EraMemberContext = { ...current };
+
+  // Health Net remits can contain multiple member blocks per page.
+  // Anchor each PROC row to the nearest preceding member header to avoid cross-member bleed.
+  let start = Math.max(0, idx - 12);
+  if (parserProfile === 'health_net') {
+    const minScan = Math.max(0, idx - 120);
+    for (let j = idx; j >= minScan; j--) {
+      const ln = String(lines[j] || '');
+      if (/\bPatient\s+Name\b/i.test(ln)) {
+        start = j;
+        break;
+      }
+    }
+    // Fresh context from the detected member block.
+    resolved = {
+      member_name: '',
+      hic: null,
+      medi: null,
+      acnt: null,
+      icn: null,
+    };
+  }
+
+  const end = Math.min(lines.length - 1, idx + 2);
+  for (let j = start; j <= end; j++) {
+    const update = extractEraMemberContextFromLine(lines[j] || '', resolved, parserProfile);
+    if (update) resolved = update;
+  }
+
+  // Extra Health Net fallback: labels and values are often split across adjacent lines.
+  if (parserProfile === 'health_net') {
+    const cleanLine = (value: string) => String(value || '').replace(/\s+/g, ' ').trim();
+    const nextNonLabelLine = (from: number, maxAhead = 3) => {
+      for (let k = from + 1; k <= Math.min(end, from + maxAhead); k++) {
+        const cand = cleanLine(lines[k] || '');
+        if (!cand) continue;
+        if (/\b(patient\s+name|cin|your\s+acct|claim\s*#|receipt\s+date)\b/i.test(cand)) continue;
+        return cand;
+      }
+      return '';
+    };
+
+    let lastPatientIdx = -1;
+    let lastCinIdx = -1;
+    let lastAcctIdx = -1;
+    for (let j = start; j <= end; j++) {
+      const ln = cleanLine(lines[j] || '');
+      if (!ln) continue;
+      if (/\bPatient\s+Name\b/i.test(ln)) lastPatientIdx = j;
+      if (/\bCIN\b/i.test(ln)) lastCinIdx = j;
+      if (/\bYour\s+Acct\b/i.test(ln)) lastAcctIdx = j;
+    }
+
+    if (lastPatientIdx >= 0) {
+      const pLine = cleanLine(lines[lastPatientIdx] || '');
+      const inline = normalizeMemberCandidate(extractPatientNameFromLine(pLine) || '');
+      if (inline && isLikelyMemberName(inline)) {
+        resolved.member_name = inline;
+      } else {
+        const fallback = normalizeMemberCandidate(nextNonLabelLine(lastPatientIdx));
+        if (fallback && isLikelyMemberName(fallback)) resolved.member_name = fallback;
+      }
+    }
+
+    if (lastCinIdx >= 0) {
+      const cLine = cleanLine(lines[lastCinIdx] || '');
+      const inlineCin = extractCinFromLine(cLine);
+      if (inlineCin) {
+        resolved.icn = inlineCin;
+      } else {
+        const fallbackCin = extractCinTokenFromLine(nextNonLabelLine(lastCinIdx));
+        if (fallbackCin) resolved.icn = fallbackCin;
+      }
+    }
+
+    if (lastAcctIdx >= 0) {
+      const aLine = cleanLine(lines[lastAcctIdx] || '');
+      const inlineAcct = extractYourAcctFromLine(aLine);
+      if (inlineAcct) {
+        resolved.acnt = inlineAcct;
+      } else {
+        const fallbackAcct = extractAccountTokenFromLine(nextNonLabelLine(lastAcctIdx));
+        if (fallbackAcct) resolved.acnt = fallbackAcct;
+      }
+    }
+  }
+
+  return resolved;
+};
 
 const toNum = (v?: string | null) => {
   if (!v) return null;
@@ -646,8 +1088,6 @@ export default function EraParserPage() {
   const auth = useAuth();
 
   const [file, setFile] = useState<File | null>(null);
-  const [localPdfPath, setLocalPdfPath] = useState('');
-  const [localPathPickHint, setLocalPathPickHint] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
@@ -689,7 +1129,14 @@ export default function EraParserPage() {
   const [activeTotalsVerifiedAt, setActiveTotalsVerifiedAt] = useState<EraCacheHistoryItem['totalsVerifiedAt']>(null);
   const [totalsReviewSaving, setTotalsReviewSaving] = useState(false);
   const [progressTick, setProgressTick] = useState(0);
-  const localPathPickerRef = useRef<HTMLInputElement | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState<{ currentPage: number; totalPages: number; scannedLines: number } | null>(
+    null
+  );
+  const [previewRow, setPreviewRow] = useState<EraRow | null>(null);
+  const [previewRows, setPreviewRows] = useState<EraRow[]>([]);
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const matchedRowKeySet = useMemo(() => new Set(claimMatchedRowKeys), [claimMatchedRowKeys]);
   const initialCacheKey = useMemo(() => {
     const raw = String(searchParams?.get('cacheKey') || '').trim();
@@ -710,6 +1157,13 @@ export default function EraParserPage() {
     if (!isSuperAdmin || isLoading) return;
     loadPdfJs().catch(() => undefined);
   }, [isSuperAdmin, isLoading]);
+
+  useEffect(() => {
+    setPreviewRow(null);
+    setPreviewRows([]);
+    setPreviewMessage(null);
+    setPreviewProgress(null);
+  }, [file, parserProfile]);
 
   const totalMembers = useMemo(() => {
     const s = new Set<string>();
@@ -1108,10 +1562,17 @@ export default function EraParserPage() {
         acnt: null as string | null,
         icn: null as string | null,
       };
+      const healthNetCinIndex =
+        parserProfile === 'health_net' ? buildHealthNetCinIndex(lines) : new Map<string, HealthNetCinIndexValue>();
+      const healthNetBlocks = parserProfile === 'health_net' ? buildHealthNetMemberBlocks(lines) : [];
       const pageRows: EraRow[] = [];
 
       for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
+        if (parserProfile === 'health_net' && PATIENT_NAME_LABEL_RE.test(ln)) {
+          current = parseHealthNetContextFromHeader(lines, i);
+          if (!PROC_RE.test(ln)) continue;
+        }
         const contextUpdate = extractEraMemberContextFromLine(ln, current, parserProfile);
         if (contextUpdate) {
           current = contextUpdate;
@@ -1122,22 +1583,32 @@ export default function EraParserPage() {
         const proc = String(m[1]).toUpperCase();
         if (proc !== 'H2022' && proc !== 'T2038') continue;
 
+        const rowContextRaw = resolveContextNearProcLine(lines, i, current, parserProfile);
+        const rowContext =
+          parserProfile === 'health_net' ? resolveHealthNetBlockContextForRow(i, healthNetBlocks, rowContextRaw) : rowContextRaw;
+        current = rowContext;
+        const rowBlock = parserProfile === 'health_net' ? findHealthNetBlockForRow(i, healthNetBlocks) : null;
+        const cinMapped =
+          parserProfile === 'health_net' && rowContext.icn
+            ? healthNetCinIndex.get(String(rowContext.icn || '').trim().toUpperCase())
+            : null;
+
         const amounts = gatherAmounts(lines, i, parserProfile);
         const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
         const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
         const paid = pickPaid(amounts);
 
-        const svc = parseServiceDatesFromProcLine(ln, remittance_date);
+        const svc = parseServiceDatesNearProcLine(lines, i, remittance_date);
 
         pageRows.push({
           payer: payerLocal,
           remittance_date,
           page: pageNum,
-          member_name: String(current.member_name || '').trim(),
-          hic: current.hic,
-          medi_cal_number: current.medi,
-          acnt: current.acnt,
-          icn: current.icn,
+          member_name: String(cinMapped?.member_name || rowContext.member_name || '').trim(),
+          hic: rowContext.hic,
+          medi_cal_number: rowContext.medi,
+          acnt: cinMapped?.acnt || rowContext.acnt,
+          icn: rowContext.icn,
           proc: proc as any,
           service_from: svc.service_from,
           service_to: svc.service_to,
@@ -1145,6 +1616,8 @@ export default function EraParserPage() {
           allowed,
           paid,
           source_line: [lines[i], lines[i + 1], lines[i + 2]].filter(Boolean).join(' | '),
+          debug_block: rowBlock ? `${rowBlock.start}-${rowBlock.end}` : null,
+          debug_mapped_member: cinMapped?.member_name || null,
         });
       }
 
@@ -1214,6 +1687,185 @@ export default function EraParserPage() {
     }
   };
 
+  const hasPreviewFields = (row: EraRow | null) => {
+    if (!row) return false;
+    return Boolean(
+      String(row.member_name || '').trim() ||
+        String(row.acnt || '').trim() ||
+        String(row.icn || '').trim() ||
+        String(row.hic || '').trim() ||
+        String(row.service_from || '').trim() ||
+        String(row.service_to || '').trim()
+    );
+  };
+
+  const runPreviewScan = async (mode: 'first_populated' | 'first_10') => {
+    if (!file) return;
+    setPreviewing(true);
+    setPreviewProgress(null);
+    setPreviewRow(null);
+    setPreviewRows([]);
+    setPreviewMessage(null);
+    setError(null);
+    setErrorDetails(null);
+    try {
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        const pdfjs: any = await loadPdfJs();
+        const loadingTask = pdfjs.getDocument({
+          url: objectUrl,
+          disableRange: false,
+          disableStream: false,
+          disableAutoFetch: false,
+        });
+        const pdf = await loadingTask.promise;
+        let scannedLines = 0;
+        let fallbackFirstRow: EraRow | null = null;
+        const collectedRows: EraRow[] = [];
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          setPreviewProgress({ currentPage: pageNum, totalPages: pdf.numPages, scannedLines });
+          const page = await pdf.getPage(pageNum);
+          const tc = await page.getTextContent();
+          const items = (tc.items || []) as Array<any>;
+          const textRows: Array<{ str: string; x: number; y: number }> = [];
+          for (const it of items) {
+            const str = String(it?.str || '').trim();
+            if (!str) continue;
+            const tr = it?.transform || [];
+            const x = Number(tr?.[4] ?? 0);
+            const y = Number(tr?.[5] ?? 0);
+            textRows.push({ str, x, y });
+          }
+          const byY = new Map<number, Array<{ str: string; x: number }>>();
+          for (const r of textRows) {
+            const yk = Math.round(r.y);
+            const arr = byY.get(yk) || [];
+            arr.push({ str: r.str, x: r.x });
+            byY.set(yk, arr);
+          }
+          const yKeys = Array.from(byY.keys()).sort((a, b) => b - a);
+          const lines: string[] = [];
+          for (const yk of yKeys) {
+            const parts = (byY.get(yk) || []).sort((a, b) => a.x - b.x).map((p) => p.str);
+            const ln = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
+            if (ln) lines.push(ln);
+          }
+          scannedLines += lines.length;
+          const remittance_date = parseRemitDate(lines);
+          let current: EraMemberContext = {
+            member_name: '',
+            hic: null,
+            medi: null,
+            acnt: null,
+            icn: null,
+          };
+          const healthNetCinIndex =
+            parserProfile === 'health_net' ? buildHealthNetCinIndex(lines) : new Map<string, HealthNetCinIndexValue>();
+          const healthNetBlocks = parserProfile === 'health_net' ? buildHealthNetMemberBlocks(lines) : [];
+
+          for (let i = 0; i < lines.length; i++) {
+            const ln = lines[i];
+            if (parserProfile === 'health_net' && PATIENT_NAME_LABEL_RE.test(ln)) {
+              current = parseHealthNetContextFromHeader(lines, i);
+              if (!PROC_RE.test(ln)) continue;
+            }
+            const contextUpdate = extractEraMemberContextFromLine(ln, current, parserProfile);
+            if (contextUpdate) {
+              current = contextUpdate;
+              if (!PROC_RE.test(ln)) continue;
+            }
+            const m = ln.match(PROC_RE);
+            if (!m?.[1]) continue;
+            const proc = String(m[1]).toUpperCase();
+            if (proc !== 'H2022' && proc !== 'T2038') continue;
+
+            const rowContextRaw = resolveContextNearProcLine(lines, i, current, parserProfile);
+            const rowContext =
+              parserProfile === 'health_net' ? resolveHealthNetBlockContextForRow(i, healthNetBlocks, rowContextRaw) : rowContextRaw;
+            current = rowContext;
+            const rowBlock = parserProfile === 'health_net' ? findHealthNetBlockForRow(i, healthNetBlocks) : null;
+            const cinMapped =
+              parserProfile === 'health_net' && rowContext.icn
+                ? healthNetCinIndex.get(String(rowContext.icn || '').trim().toUpperCase())
+                : null;
+
+            const amounts = gatherAmounts(lines, i, parserProfile);
+            const billed = amounts.length >= 1 ? toNum(amounts[0]) : null;
+            const allowed = amounts.length >= 2 ? toNum(amounts[1]) : null;
+            const paid = pickPaid(amounts);
+            const svc = parseServiceDatesNearProcLine(lines, i, remittance_date);
+
+            const candidate: EraRow = {
+              payer: 'Health Net',
+              remittance_date,
+              page: pageNum,
+              member_name: String(cinMapped?.member_name || rowContext.member_name || '').trim(),
+              hic: rowContext.hic,
+              medi_cal_number: rowContext.medi,
+              acnt: cinMapped?.acnt || rowContext.acnt,
+              icn: rowContext.icn,
+              proc,
+              service_from: svc.service_from,
+              service_to: svc.service_to,
+              billed,
+              allowed,
+              paid,
+              source_line: [lines[i - 1], lines[i], lines[i + 1], lines[i + 2]].filter(Boolean).join(' | '),
+              debug_block: rowBlock ? `${rowBlock.start}-${rowBlock.end}` : null,
+              debug_mapped_member: cinMapped?.member_name || null,
+            };
+
+            if (!fallbackFirstRow) fallbackFirstRow = candidate;
+            collectedRows.push(candidate);
+
+            if (mode === 'first_populated' && hasPreviewFields(candidate)) {
+              setPreviewRow(candidate);
+              setPreviewRows([candidate]);
+              setPreviewMessage(`Preview found populated fields on page ${pageNum}.`);
+              setPreviewProgress({ currentPage: pageNum, totalPages: pdf.numPages, scannedLines });
+              return;
+            }
+
+            if (mode === 'first_10' && collectedRows.length >= 10) {
+              setPreviewRows(collectedRows.slice(0, 10));
+              setPreviewRow(collectedRows[0] || null);
+              setPreviewMessage(`Preview collected first ${Math.min(10, collectedRows.length)} payment rows.`);
+              setPreviewProgress({ currentPage: pageNum, totalPages: pdf.numPages, scannedLines });
+              return;
+            }
+          }
+        }
+
+        if (mode === 'first_10' && collectedRows.length) {
+          setPreviewRows(collectedRows.slice(0, 10));
+          setPreviewRow(collectedRows[0] || null);
+          setPreviewMessage(`Preview collected ${collectedRows.length} payment row(s).`);
+          return;
+        }
+
+        if (fallbackFirstRow) {
+          setPreviewRow(fallbackFirstRow);
+          setPreviewRows([fallbackFirstRow]);
+          setPreviewMessage('Preview found a payment row, but member/date fields are still empty.');
+        } else {
+          setPreviewMessage('Preview found no H2022/T2038 payment row in this file.');
+        }
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to preview ERA records.');
+      const detail = String(e?.stack || e?.cause || '').trim();
+      if (detail) setErrorDetails(detail.slice(0, 4000));
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handlePreviewFirstRecord = async () => runPreviewScan('first_populated');
+  const handlePreviewFirstTenRecords = async () => runPreviewScan('first_10');
+
   useEffect(() => {
     if (!isLoading && !isSuperAdmin) router.replace('/admin');
   }, [isLoading, isSuperAdmin, router]);
@@ -1231,21 +1883,15 @@ export default function EraParserPage() {
     return new Date(seconds * 1000).toLocaleString();
   };
 
-  const toCacheKeyFromFile = (f: File | null) => {
+  const toCacheKeyFromFile = (f: File | null, profile: EraParserProfile) => {
     if (!f) return null;
-    return `file:${String(f.name || '').toLowerCase()}|${Number(f.size || 0)}|${Number(f.lastModified || 0)}`;
+    return `file:${String(f.name || '').toLowerCase()}|${Number(f.size || 0)}|${Number(f.lastModified || 0)}|profile:${profile}|v:${ERA_PARSER_CACHE_VERSION}`;
   };
 
-  const toCacheKeyFromPath = (p: string) => {
+  const toCacheKeyFromPath = (p: string, profile: EraParserProfile) => {
     const v = String(p || '').trim().toLowerCase();
     if (!v) return null;
-    return `path:${v}`;
-  };
-  const cacheKeyToLocalPath = (cacheKey: string) => {
-    const key = String(cacheKey || '').trim();
-    if (!key.toLowerCase().startsWith('path:')) return null;
-    const raw = key.slice(5).trim();
-    return raw || null;
+    return `path:${v}|profile:${profile}|v:${ERA_PARSER_CACHE_VERSION}`;
   };
 
   const fetchCacheHistory = useCallback(async () => {
@@ -1419,8 +2065,8 @@ export default function EraParserPage() {
     setUploadProgress(null);
     setLastExtracted(null);
     try {
-      const cacheKey = toCacheKeyFromFile(file);
       const activeParserProfile = normalizeEraParserProfile(parserProfile);
+      const cacheKey = toCacheKeyFromFile(file, activeParserProfile);
       const loadedFromCache = await tryLoadFromCache(cacheKey);
       if (loadedFromCache) {
         setPhase('done');
@@ -1459,6 +2105,7 @@ export default function EraParserPage() {
   const handleParse = async () => {
     if (!file) return;
     if (!auth?.currentUser) return;
+    const activeParserProfile = normalizeEraParserProfile(parserProfile);
     setUploading(true);
     setError(null);
     setErrorDetails(null);
@@ -1473,7 +2120,7 @@ export default function EraParserPage() {
     setUploadProgress(null);
     setLastExtracted(null);
     try {
-      const cacheKey = toCacheKeyFromFile(file);
+      const cacheKey = toCacheKeyFromFile(file, activeParserProfile);
       const loadedFromCache = await tryLoadFromCache(cacheKey);
       if (loadedFromCache) {
         setPhase('done');
@@ -1551,7 +2198,7 @@ export default function EraParserPage() {
           if (!extracted.pagesCount || extracted.totalLines === 0) {
             throw new Error('No selectable text was found in this PDF (it may be scanned).');
           }
-          const cacheKey = toCacheKeyFromFile(file);
+          const cacheKey = toCacheKeyFromFile(file, activeParserProfile);
           await saveToCache({
             cacheKey,
             fileName: String(file?.name || 'ERA PDF'),
@@ -1602,81 +2249,13 @@ export default function EraParserPage() {
     }
   };
 
-  const parseFromLocalPath = async (inputPath: string) => {
-    const resolvedPath = String(inputPath || '').trim();
-    if (!resolvedPath) return;
-    if (!auth?.currentUser) return;
-    setUploading(true);
-    setError(null);
-    setErrorDetails(null);
-    setRows([]);
-    setSummary(null);
-    setActiveParserProfile(normalizeEraParserProfile(parserProfile));
-    setActiveCacheKey(null);
-    setActiveTotalsVerified(false);
-    setActiveTotalsVerifiedAt(null);
-    setPhase('parsing');
-    setOpenProgress(null);
-    setUploadProgress(null);
-    setLastExtracted(null);
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      const cacheKey = toCacheKeyFromPath(resolvedPath);
-      const activeParserProfile = normalizeEraParserProfile(parserProfile);
-      const res = await fetch('/api/admin/era/parse', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          pdfPath: resolvedPath,
-          cacheKey,
-          sourceMode: 'local_path',
-          parserProfile: activeParserProfile,
-          fileName: resolvedPath.split(/[\\/]/).pop() || 'ERA PDF',
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `Failed to parse local pdfPath (HTTP ${res.status}).`);
-      }
-      setPayer(String(data?.payer || 'Health Net'));
-      setRows(Array.isArray(data?.rows) ? data.rows : []);
-      setSummary((data?.summary || null) as any);
-      setActiveParserProfile(normalizeEraParserProfile(data?.parserProfile));
-      setActiveCacheKey(String(data?.cacheKey || cacheKey || '').trim() || null);
-      setActiveTotalsVerified(Boolean(data?.totalsVerified));
-      setActiveTotalsVerifiedAt((data?.totalsVerifiedAt || null) as EraCacheHistoryItem['totalsVerifiedAt']);
-      await fetchCacheHistory();
-      setPhase('done');
-    } catch (e: any) {
-      setError(e?.message || 'Failed to parse local pdf path.');
-      const detail = String(e?.stack || e?.cause || '').trim();
-      if (detail) setErrorDetails(detail.slice(0, 4000));
-      setPhase('idle');
-    } finally {
-      setUploading(false);
-    }
-  };
-  const handleParseFromPath = async () => {
-    await parseFromLocalPath(localPdfPath);
-  };
-
-  const handlePickFileForLocalPath = (pickedFile: File | null) => {
-    if (!pickedFile) return;
-    const nativePath = String((pickedFile as any)?.path || '').trim();
-    if (nativePath) {
-      setLocalPdfPath(nativePath);
-      setFile(pickedFile);
-      setLocalPathPickHint(`Selected: ${nativePath}`);
-      return;
-    }
-    // Some browsers hide native file paths for security. Keep the file selected for local parsing fallback.
-    setFile(pickedFile);
-    setLocalPathPickHint(
-      'This browser does not expose full local paths. Use "Parse locally (slow)" with the selected file, or paste full path manually.'
-    );
+  const clearSelectedFile = () => {
+    setFile(null);
+    setPreviewRow(null);
+    setPreviewRows([]);
+    setPreviewMessage(null);
+    setPreviewProgress(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const loadFromHistory = async (cacheKey: string) => {
@@ -1945,49 +2524,17 @@ export default function EraParserPage() {
             </Alert>
           ) : null}
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1 space-y-2">
+          <div className="space-y-3">
+            <div className="space-y-2">
               <div className="text-sm font-medium">ERA PDF</div>
               <Input
+                ref={fileInputRef}
                 type="file"
                 accept="application/pdf,.pdf"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
               />
               <div className="text-xs text-muted-foreground">
                 Best results when the PDF has selectable text (not a scanned image).
-              </div>
-              <div className="space-y-1">
-                <div className="text-xs font-medium">Or parse by local file path (dev)</div>
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    value={localPdfPath}
-                    onChange={(e) => setLocalPdfPath(e.target.value)}
-                    placeholder="C:\\Users\\...\\era_*.pdf"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => localPathPickerRef.current?.click()}
-                    disabled={uploading}
-                  >
-                    <FolderOpen className="mr-2 h-4 w-4" />
-                    Select File
-                  </Button>
-                  <input
-                    ref={localPathPickerRef}
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    className="hidden"
-                    onChange={(e) => handlePickFileForLocalPath(e.target.files?.[0] || null)}
-                  />
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  Use this for local debug when Python is unavailable. Works only in local development.
-                </div>
-                {localPathPickHint ? (
-                  <div className="text-[11px] text-muted-foreground">{localPathPickHint}</div>
-                ) : null}
               </div>
               {uploading ? (
                 <div className="space-y-2 pt-1">
@@ -2054,8 +2601,8 @@ export default function EraParserPage() {
                 </div>
               ) : null}
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs sm:col-span-2 lg:col-span-3 xl:col-span-4">
                 <span className="text-muted-foreground">Parse layout:</span>
                 <Button
                   type="button"
@@ -2078,21 +2625,135 @@ export default function EraParserPage() {
                   ClaimsMD version
                 </Button>
               </div>
-              <Button onClick={handleParse} disabled={!file || uploading}>
+              <Button onClick={handleParse} disabled={!file || uploading} className="w-full justify-start">
                 {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
-                {uploading ? phaseLabel(phase) : 'Parse ERA (fast)'}
+                {uploading
+                  ? phase === 'extracting' && extractProgress
+                    ? `Parsing pages ${extractProgress.currentPage}/${extractProgress.totalPages}`
+                    : phaseLabel(phase)
+                  : 'Parse ERA (fast)'}
               </Button>
-              <Button variant="outline" onClick={handleParseLocal} disabled={!file || uploading}>
+              <Button
+                variant="secondary"
+                onClick={handlePreviewFirstRecord}
+                disabled={!file || uploading || previewing}
+                className="w-full justify-start"
+              >
+                {previewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Preview first record
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handlePreviewFirstTenRecords}
+                disabled={!file || uploading || previewing}
+                className="w-full justify-start"
+              >
+                {previewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Preview first 10 records
+              </Button>
+              <Button variant="outline" onClick={handleParseLocal} disabled={!file || uploading} className="w-full justify-start">
                 Parse locally (slow)
               </Button>
-              <Button variant="outline" onClick={handleParseFromPath} disabled={!localPdfPath.trim() || uploading}>
-                Parse local path (dev)
+              <Button variant="outline" onClick={clearSelectedFile} disabled={uploading || !file} className="w-full justify-start">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete selected file
               </Button>
-              <Button variant="outline" onClick={() => router.push('/admin/era-parser/history')} disabled={uploading}>
-                Open parsed ERA tracker
+              <Button
+                variant="outline"
+                onClick={() => router.push('/admin/era-parser/history')}
+                disabled={uploading}
+                className="w-full justify-start"
+              >
+                Open ERA tracker
               </Button>
             </div>
           </div>
+          {(previewing || previewRow || previewRows.length || previewMessage) && !uploading ? (
+            <div className="rounded-md border bg-muted/20 p-3 space-y-2 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-medium">ERA preview (before full parse)</div>
+                {previewProgress ? (
+                  <div className="text-xs text-muted-foreground tabular-nums">
+                    Page {previewProgress.currentPage}/{previewProgress.totalPages} • {previewProgress.scannedLines} lines scanned
+                  </div>
+                ) : null}
+              </div>
+              {previewProgress ? (
+                <Progress
+                  value={Math.round((previewProgress.currentPage / Math.max(1, previewProgress.totalPages)) * 100)}
+                  className="h-2"
+                />
+              ) : null}
+              {previewMessage ? <div className="text-xs text-muted-foreground">{previewMessage}</div> : null}
+              {previewRow ? (
+                <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="min-w-0 break-words"><span className="text-muted-foreground">Member:</span> {String(previewRow.member_name || '').trim() || '—'}</div>
+                  <div className="min-w-0 break-all"><span className="text-muted-foreground">ACNT:</span> {String(previewRow.acnt || '').trim() || '—'}</div>
+                  <div className="min-w-0 break-all"><span className="text-muted-foreground">ICN:</span> {String(previewRow.icn || '').trim() || '—'}</div>
+                  <div className="min-w-0 break-all"><span className="text-muted-foreground">HIC:</span> {String(previewRow.hic || '').trim() || '—'}</div>
+                  <div className="min-w-0 break-all"><span className="text-muted-foreground">Svc from:</span> {String(previewRow.service_from || '').trim() || '—'}</div>
+                  <div className="min-w-0 break-all"><span className="text-muted-foreground">Svc to:</span> {String(previewRow.service_to || '').trim() || '—'}</div>
+                  <div className="min-w-0 break-all"><span className="text-muted-foreground">PROC:</span> {String(previewRow.proc || '').trim() || '—'}</div>
+                  <div className="min-w-0 break-all">
+                    <span className="text-muted-foreground">Paid:</span>{' '}
+                    {typeof previewRow.paid === 'number' && Number.isFinite(previewRow.paid)
+                      ? `$${previewRow.paid.toFixed(2)}`
+                      : '—'}
+                  </div>
+                </div>
+              ) : null}
+              {previewRow?.source_line ? (
+                <pre className="max-h-28 overflow-auto rounded-md bg-white/70 p-2 text-[11px] whitespace-pre-wrap break-all">
+                  {previewRow.source_line}
+                </pre>
+              ) : null}
+              {previewRows.length > 1 ? (
+                <div className="rounded-md border bg-white/70">
+                  <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground">First 10 records debug</div>
+                  <div className="max-h-72 overflow-auto">
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-slate-50">
+                        <tr className="text-left">
+                          <th className="px-2 py-1">#</th>
+                          <th className="px-2 py-1">Pg</th>
+                          <th className="px-2 py-1">PROC</th>
+                          <th className="px-2 py-1">Member</th>
+                          <th className="px-2 py-1">ACNT</th>
+                          <th className="px-2 py-1">ICN</th>
+                          <th className="px-2 py-1">Block</th>
+                          <th className="px-2 py-1">Mapped</th>
+                          <th className="px-2 py-1">HIC</th>
+                          <th className="px-2 py-1">Svc from</th>
+                          <th className="px-2 py-1">Svc to</th>
+                          <th className="px-2 py-1 text-right">Paid</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewRows.map((r, idx) => (
+                          <tr key={`preview-${idx}-${r.page}-${r.proc}-${r.paid}`} className="border-t align-top">
+                            <td className="px-2 py-1">{idx + 1}</td>
+                            <td className="px-2 py-1">{r.page || '—'}</td>
+                            <td className="px-2 py-1">{r.proc || '—'}</td>
+                            <td className="px-2 py-1 max-w-[220px] break-words">{r.member_name || '—'}</td>
+                            <td className="px-2 py-1 break-all">{r.acnt || '—'}</td>
+                            <td className="px-2 py-1 break-all">{r.icn || '—'}</td>
+                            <td className="px-2 py-1 break-all">{r.debug_block || '—'}</td>
+                            <td className="px-2 py-1 max-w-[180px] break-words">{r.debug_mapped_member || '—'}</td>
+                            <td className="px-2 py-1 break-all">{r.hic || '—'}</td>
+                            <td className="px-2 py-1 break-all">{r.service_from || '—'}</td>
+                            <td className="px-2 py-1 break-all">{r.service_to || '—'}</td>
+                            <td className="px-2 py-1 text-right">
+                              {typeof r.paid === 'number' && Number.isFinite(r.paid) ? `$${r.paid.toFixed(2)}` : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
