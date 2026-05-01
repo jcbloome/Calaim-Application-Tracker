@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Suspense, useState, useEffect, type ReactNode } from 'react';
+import { Suspense, useState, useEffect, useCallback, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { format } from 'date-fns';
@@ -28,6 +28,7 @@ import {
   ArrowLeft,
   AlertTriangle,
   MessageSquareHeart,
+  RefreshCw,
 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { useEnhancedToast } from '@/components/ui/enhanced-toast';
@@ -1121,6 +1122,7 @@ function PathwayPageContent() {
           ? `${swAssignment.assignedSwName || swAssignment.assignedSwEmail} was invited to the SW portal.`
           : 'Invite checkbox was turned off.',
       });
+      void loadSwAssignment();
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -1161,13 +1163,13 @@ function PathwayPageContent() {
     setSwInviteEnabled(Boolean((application as any)?.swPortalInviteEnabled));
   }, [application]);
 
-  useEffect(() => {
+  const loadSwAssignment = useCallback(async () => {
     const isKaiser = String(application?.healthPlan || '').trim().toLowerCase().includes('kaiser');
     if (!application || !isKaiser) {
       setSwAssignment(null);
       setSwAssignmentError('');
       setSwAssignmentLoading(false);
-      return;
+      return false;
     }
 
     const memberMrn = String(application.memberMrn || '').trim();
@@ -1180,58 +1182,50 @@ function PathwayPageContent() {
       setSwAssignment(null);
       setSwAssignmentError('Missing member identifiers needed to resolve social worker assignment.');
       setSwAssignmentLoading(false);
-      return;
+      return false;
     }
-
-    let cancelled = false;
     setSwAssignmentLoading(true);
     setSwAssignmentError('');
-
-    const params = new URLSearchParams({
-      memberMrn,
-      memberMediCalNum,
-      memberClientId2,
-      memberFirstName,
-      memberLastName,
-    });
-
-    fetch(`/api/pathway/sw-assignment?${params.toString()}`, { cache: 'no-store' })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({} as any));
-        if (!res.ok || !data?.success) {
-          throw new Error(data?.error || 'Could not load social worker assignment.');
-        }
-        if (!cancelled) {
-          if (!data?.found) {
-            setSwAssignment(null);
-            setSwAssignmentError('No RN Visit Needed assignment found for this member yet.');
-          } else {
-            setSwAssignment({
-              found: Boolean(data?.found),
-              eligible: Boolean(data?.eligible),
-              memberId: String(data?.memberId || '').trim(),
-              kaiserStatus: String(data?.kaiserStatus || '').trim(),
-              assignedSwEmail: String(data?.assignedSwEmail || '').trim().toLowerCase(),
-              assignedSwName: String(data?.assignedSwName || '').trim(),
-              assignmentStatus: String(data?.assignmentStatus || '').trim(),
-            });
-          }
-        }
-      })
-      .catch((err: any) => {
-        if (!cancelled) {
-          setSwAssignment(null);
-          setSwAssignmentError(err?.message || 'Could not load social worker assignment.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setSwAssignmentLoading(false);
+    try {
+      const params = new URLSearchParams({
+        memberMrn,
+        memberMediCalNum,
+        memberClientId2,
+        memberFirstName,
+        memberLastName,
       });
-
-    return () => {
-      cancelled = true;
-    };
+      const res = await fetch(`/api/pathway/sw-assignment?${params.toString()}`, { cache: 'no-store' });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Could not load social worker assignment.');
+      }
+      if (!data?.found) {
+        setSwAssignment(null);
+        setSwAssignmentError('No social worker assignment found for this member yet.');
+        return false;
+      }
+      setSwAssignment({
+        found: Boolean(data?.found),
+        eligible: Boolean(data?.eligible),
+        memberId: String(data?.memberId || '').trim(),
+        kaiserStatus: String(data?.kaiserStatus || '').trim(),
+        assignedSwEmail: String(data?.assignedSwEmail || '').trim().toLowerCase(),
+        assignedSwName: String(data?.assignedSwName || '').trim(),
+        assignmentStatus: String(data?.assignmentStatus || '').trim(),
+      });
+      return true;
+    } catch (err: any) {
+      setSwAssignment(null);
+      setSwAssignmentError(err?.message || 'Could not load social worker assignment.');
+      return false;
+    } finally {
+      setSwAssignmentLoading(false);
+    }
   }, [application]);
+
+  useEffect(() => {
+    void loadSwAssignment();
+  }, [loadSwAssignment]);
 
   if (isLoading || isUserLoading) {
     return (
@@ -2097,7 +2091,20 @@ function PathwayPageContent() {
                   <div className="rounded-md border p-3 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-semibold">Social Worker Assignment (ALFT)</div>
-                      {swAssignmentLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                      <div className="flex items-center gap-2">
+                        {swAssignmentLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => void loadSwAssignment()}
+                          disabled={swAssignmentLoading}
+                        >
+                          <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                          Refresh
+                        </Button>
+                      </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                       <div>

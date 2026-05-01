@@ -22,6 +22,36 @@ function namesMatch(row: any, firstName: string, lastName: string): boolean {
   return true;
 }
 
+function pickAssignedSocialWorkerEmail(row: any): string {
+  const candidates = [
+    row?.Social_Worker_Assigned,
+    row?.SocialWorkerAssigned,
+    row?.socialWorkerAssigned,
+    row?.Assigned_Social_Worker,
+    row?.assignedSocialWorker,
+  ];
+  for (const candidate of candidates) {
+    const email = String(candidate || '').trim().toLowerCase();
+    if (email) return email;
+  }
+  return '';
+}
+
+function pickAssignedSocialWorkerName(row: any): string {
+  const candidates = [
+    row?.Social_Worker_Assigned_Name,
+    row?.SocialWorkerAssignedName,
+    row?.socialWorkerAssignedName,
+    row?.Assigned_Social_Worker_Name,
+    row?.assignedSocialWorkerName,
+  ];
+  for (const candidate of candidates) {
+    const name = String(candidate || '').trim();
+    if (name) return name;
+  }
+  return '';
+}
+
 async function resolveSocialWorkerDisplayName(swEmail: string): Promise<string> {
   const email = normalize(swEmail);
   if (!email) return '';
@@ -76,11 +106,12 @@ export async function GET(request: NextRequest) {
       candidateRows = medSnap.docs.map((d) => d.data());
     }
 
-    const matching = candidateRows.find((row) => {
-      if (!row) return false;
-      if (!isRnVisitNeeded(row.Kaiser_Status)) return false;
-      return namesMatch(row, memberFirstName, memberLastName);
-    });
+    const namedRows = candidateRows.filter((row) => row && namesMatch(row, memberFirstName, memberLastName));
+    const matchingPool = namedRows.length ? namedRows : candidateRows.filter(Boolean);
+    const matching =
+      matchingPool.find((row) => isRnVisitNeeded(row?.Kaiser_Status)) ||
+      matchingPool.find((row) => pickAssignedSocialWorkerEmail(row)) ||
+      matchingPool[0];
 
     if (!matching) {
       return NextResponse.json({
@@ -90,10 +121,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const swEmail = String(matching.Social_Worker_Assigned || '').trim().toLowerCase();
-    const swNameFromCache = String(matching.Social_Worker_Assigned_Name || '').trim();
+    const swEmail = pickAssignedSocialWorkerEmail(matching);
+    const swNameFromCache = pickAssignedSocialWorkerName(matching);
     const swName = swNameFromCache || (await resolveSocialWorkerDisplayName(swEmail));
     const memberId = String(matching.Client_ID2 || matching.client_ID2 || '').trim();
+    const kaiserStatus = String(matching.Kaiser_Status || '').trim();
 
     let assignmentStatus = '';
     if (memberId) {
@@ -111,9 +143,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       found: true,
-      eligible: true,
+      eligible: isRnVisitNeeded(kaiserStatus),
       memberId,
-      kaiserStatus: String(matching.Kaiser_Status || '').trim(),
+      kaiserStatus,
       assignedSwEmail: swEmail,
       assignedSwName: swName,
       assignmentStatus,
