@@ -2700,6 +2700,14 @@ function ApplicationDetailPageContent() {
   const [authorizationUploading, setAuthorizationUploading] = useState(false);
   const [authorizationUploadProgress, setAuthorizationUploadProgress] = useState(0);
   const [authorizationSearch, setAuthorizationSearch] = useState('');
+  const [isMemberFilesDialogOpen, setIsMemberFilesDialogOpen] = useState(false);
+  const [isDownloadingAllMemberFiles, setIsDownloadingAllMemberFiles] = useState(false);
+  const [memberFilesDownloadProgress, setMemberFilesDownloadProgress] = useState(0);
+  const [memberFilesDownloadStatusLabel, setMemberFilesDownloadStatusLabel] = useState('');
+  const [memberFileResolvedUrls, setMemberFileResolvedUrls] = useState<Record<string, string>>({});
+  const [memberFileUrlLoading, setMemberFileUrlLoading] = useState<Record<string, boolean>>({});
+  const memberFilesDownloadCancelRef = useRef(false);
+  const memberFilesDownloadAbortRef = useRef<AbortController | null>(null);
   const [ispUpload, setIspUpload] = useState<{
     planDate: string;
     file: File | null;
@@ -4466,6 +4474,7 @@ function ApplicationDetailPageContent() {
         startDate: authorizationUpload.startDate,
         endDate: authorizationUpload.endDate,
         fileName: buildUniqueFileName(authorizationUpload.type, file.name),
+        filePath,
         downloadURL,
         uploadedAt: Timestamp.now(),
         createdBy: user?.uid || 'system',
@@ -4553,6 +4562,7 @@ function ApplicationDetailPageContent() {
         id: `isp-${Date.now()}`,
         planDate: ispUpload.planDate,
         fileName: buildUniqueFileName('Individual service plans', file.name),
+        filePath,
         downloadURL,
         uploadedAt: Timestamp.now(),
         createdBy: user?.uid || 'system',
@@ -6145,24 +6155,53 @@ function ApplicationDetailPageContent() {
     };
 
     const rawForms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
-    const formEntries = rawForms
-      .map((form, idx) => {
-        const documentName = String(form?.name || '').trim() || 'Application File';
-        const fileName = String(form?.fileName || '').trim() || documentName;
-        const downloadURL = String(form?.downloadURL || '').trim();
-        const filePath = String(form?.filePath || '').trim();
-        if (!downloadURL && !filePath && !fileName) return null;
-        return {
-          id: `form-file-${idx}-${documentName}-${fileName}`,
-          category: 'Application form',
-          documentName,
-          fileName,
-          downloadURL,
-          filePath,
-          uploadedAtIso: toIso(form?.dateCompleted || form?.uploadedAt || form?.createdAt),
-        };
-      })
-      .filter(Boolean) as Array<{
+    const formEntries = rawForms.flatMap((form, idx) => {
+      const documentName = String(form?.name || '').trim() || 'Application File';
+      const uploadedAtIso = toIso(form?.dateCompleted || form?.uploadedAt || form?.createdAt);
+      const perFileEntries = (Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [])
+        .map((item: any, fileIdx: number) => {
+          const fileName = String(item?.fileName || '').trim() || String(form?.fileName || '').trim() || `${documentName} ${fileIdx + 1}`;
+          const downloadURL = String(item?.downloadURL || item?.url || item?.uploadUrl || '').trim();
+          const filePath = String(item?.filePath || item?.storagePath || item?.path || '').trim();
+          if (!downloadURL && !filePath) return null;
+          return {
+            id: `form-uploaded-file-${idx}-${fileIdx}-${documentName}-${fileName}`,
+            category: 'Application form',
+            documentName,
+            fileName,
+            downloadURL,
+            filePath,
+            uploadedAtIso,
+          };
+        })
+        .filter(Boolean);
+
+      if (perFileEntries.length > 0) {
+        return perFileEntries as Array<{
+          id: string;
+          category: string;
+          documentName: string;
+          fileName: string;
+          downloadURL: string;
+          filePath: string;
+          uploadedAtIso: string;
+        }>;
+      }
+
+      const fallbackFileName = String(form?.fileName || '').trim() || documentName;
+      const fallbackDownloadURL = String(form?.downloadURL || form?.uploadUrl || form?.url || '').trim();
+      const fallbackFilePath = String(form?.filePath || form?.storagePath || form?.path || '').trim();
+      if (!fallbackDownloadURL && !fallbackFilePath) return [];
+      return [{
+        id: `form-file-${idx}-${documentName}-${fallbackFileName}`,
+        category: 'Application form',
+        documentName,
+        fileName: fallbackFileName,
+        downloadURL: fallbackDownloadURL,
+        filePath: fallbackFilePath,
+        uploadedAtIso,
+      }];
+    }) as Array<{
       id: string;
       category: string;
       documentName: string;
@@ -6178,8 +6217,8 @@ function ApplicationDetailPageContent() {
     const eligibilityEntries = rawEligibility
       .map((upload, idx) => {
         const fileName = String(upload?.fileName || '').trim() || `Eligibility Screenshot ${idx + 1}`;
-        const downloadURL = String(upload?.downloadURL || '').trim();
-        const filePath = String(upload?.filePath || '').trim();
+        const downloadURL = String(upload?.downloadURL || upload?.url || upload?.uploadUrl || '').trim();
+        const filePath = String(upload?.filePath || upload?.storagePath || upload?.path || '').trim();
         if (!downloadURL && !filePath) return null;
         return {
           id: `elig-file-${idx}-${fileName}`,
@@ -6207,8 +6246,8 @@ function ApplicationDetailPageContent() {
     const authorizationEntries = rawAuthorization
       .map((record, idx) => {
         const fileName = String(record?.fileName || '').trim() || `Authorization ${idx + 1}`;
-        const downloadURL = String(record?.downloadURL || '').trim();
-        const filePath = String(record?.filePath || '').trim();
+        const downloadURL = String(record?.downloadURL || record?.url || record?.uploadUrl || '').trim();
+        const filePath = String(record?.filePath || record?.storagePath || record?.path || '').trim();
         if (!downloadURL && !filePath) return null;
         const authType = String(record?.type || '').trim() || 'Authorization';
         return {
@@ -6237,8 +6276,8 @@ function ApplicationDetailPageContent() {
     const ispEntries = rawIsp
       .map((record, idx) => {
         const fileName = String(record?.fileName || '').trim() || `ISP ${idx + 1}`;
-        const downloadURL = String(record?.downloadURL || '').trim();
-        const filePath = String(record?.filePath || '').trim();
+        const downloadURL = String(record?.downloadURL || record?.url || record?.uploadUrl || '').trim();
+        const filePath = String(record?.filePath || record?.storagePath || record?.path || '').trim();
         if (!downloadURL && !filePath) return null;
         const planDate = String(record?.planDate || '').trim();
         return {
@@ -6261,8 +6300,86 @@ function ApplicationDetailPageContent() {
       uploadedAtIso: string;
     }>;
 
+    const authorizationRequestSheetEntry = (() => {
+      if (!isKaiserPlan) return null;
+      const kaiserAuthorizationModeLocal = String((application as any)?.kaiserAuthorizationMode || '').trim().toLowerCase();
+      const isKaiserAuthReceivedIntakeLocal =
+        kaiserAuthorizationModeLocal === 'authorization_received'
+          ? true
+          : kaiserAuthorizationModeLocal === 'authorization_needed'
+            ? false
+            : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
+              String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils' ||
+              String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
+      const qaMemberAddress = [
+        String((application as any)?.currentAddress || '').trim(),
+        String((application as any)?.currentCity || '').trim(),
+        [String((application as any)?.currentState || '').trim(), String((application as any)?.currentZip || '').trim()]
+          .filter(Boolean)
+          .join(' '),
+      ]
+        .filter(Boolean)
+        .join(', ')
+        .replace(/,\s*,/g, ', ')
+        .trim();
+      const qaReferrerName =
+        `${String((application as any)?.referrerFirstName || '').trim()} ${String((application as any)?.referrerLastName || '').trim()}`.trim();
+      const qaMemberPhone =
+        String((application as any)?.memberPhone || '').trim() ||
+        String((application as any)?.bestContactPhone || '').trim();
+      const qaMemberEmail =
+        String((application as any)?.memberEmail || '').trim() ||
+        String((application as any)?.bestContactEmail || '').trim();
+      const qaReferralQuery = new URLSearchParams({
+        applicationId: String(applicationId || ''),
+        userId: String(appUserId || ''),
+        returnTo: `/admin/applications/${encodeURIComponent(String(applicationId || ''))}?userId=${encodeURIComponent(String(appUserId || ''))}`,
+        memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
+        memberDob: String((application as any)?.memberDob || '').trim(),
+        memberPhone: qaMemberPhone,
+        memberEmail: qaMemberEmail,
+        memberAddress: qaMemberAddress,
+        memberMrn: String((application as any)?.memberMrn || '').trim(),
+        memberMediCal: String((application as any)?.memberMediCalNum || '').trim(),
+        caregiverName: `${String((application as any)?.bestContactFirstName || '').trim()} ${String((application as any)?.bestContactLastName || '').trim()}`.trim(),
+        caregiverContact: String((application as any)?.bestContactPhone || '').trim() || String((application as any)?.bestContactEmail || '').trim(),
+        referralDate: format(new Date(), 'yyyy-MM-dd'),
+        referrerName: qaReferrerName,
+        referrerOrganization: 'Connections Care Home Consultants, LLC',
+        referrerNpi: '1508537325',
+        referrerAddress: '1763 East Sandalwood Drive, Palm Springs, CA 92262',
+        referrerEmail: 'deydry@carehomefinders.com',
+        referrerPhone: '800-330-5993',
+        referrerRelationship: 'Other',
+        currentLocationName: String((application as any)?.currentLocationName || '').trim(),
+        currentLocationAddress: qaMemberAddress,
+        healthPlan: String((application as any)?.healthPlan || '').trim(),
+        memberCounty: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
+        kaiserAuthAlreadyReceived: isKaiserAuthReceivedIntakeLocal ? '1' : '0',
+        kaiserReferralSubmittedAtIso: String((application as any)?.kaiserReferralSubmission?.submittedAtIso || '').trim(),
+      });
+      return {
+        id: 'kaiser-authorization-request-sheet',
+        category: 'Authorization request sheet',
+        documentName: 'Kaiser Referral Form (Pre-Filled)',
+        fileName: 'Kaiser Authorization Request Sheet',
+        downloadURL: `/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`,
+        filePath: '',
+        uploadedAtIso: toIso(
+          (application as any)?.kaiserReferralSubmission?.submittedAt ||
+            (application as any)?.kaiserReferralSubmission?.submittedAtIso
+        ),
+      };
+    })();
+
     const deduped = new Map<string, (typeof formEntries)[number]>();
-    [...formEntries, ...eligibilityEntries, ...authorizationEntries, ...ispEntries].forEach((entry) => {
+    [
+      ...formEntries,
+      ...eligibilityEntries,
+      ...authorizationEntries,
+      ...ispEntries,
+      ...(authorizationRequestSheetEntry ? [authorizationRequestSheetEntry] : []),
+    ].forEach((entry) => {
       const key = `${entry.documentName}::${entry.fileName}::${entry.downloadURL || entry.filePath}`;
       if (!deduped.has(key)) deduped.set(key, entry);
     });
@@ -6273,6 +6390,281 @@ function ApplicationDetailPageContent() {
       return bMs - aMs;
     });
   })();
+  const sanitizeMemberFileName = (name: string, fallback = 'file'): string => {
+    const cleaned = String(name || '')
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleaned || fallback;
+  };
+  const parseStoragePathFromUrl = (url: string): string => {
+    try {
+      const input = String(url || '').trim();
+      if (!input) return '';
+      if (input.startsWith('gs://')) return input;
+      const parsed = new URL(input, typeof window !== 'undefined' ? window.location.origin : undefined);
+      if (!parsed.pathname.includes('/o/')) return '';
+      const afterO = parsed.pathname.split('/o/')[1] || '';
+      if (!afterO) return '';
+      return decodeURIComponent(afterO);
+    } catch {
+      return '';
+    }
+  };
+  const resolveMemberFileUrl = async (entry: {
+    id: string;
+    filePath: string;
+    downloadURL: string;
+  }): Promise<string> => {
+    const cached = memberFileResolvedUrls[entry.id];
+    if (cached) return cached;
+    const rawDownloadUrl = String(entry.downloadURL || '').trim();
+    if (rawDownloadUrl && !rawDownloadUrl.startsWith('gs://')) {
+      setMemberFileResolvedUrls((prev) => ({ ...prev, [entry.id]: rawDownloadUrl }));
+      return rawDownloadUrl;
+    }
+    if (!storage) throw new Error('Storage is unavailable');
+    const candidatePaths = [
+      String(entry.filePath || '').trim(),
+      parseStoragePathFromUrl(rawDownloadUrl),
+    ].filter(Boolean);
+    for (const path of candidatePaths) {
+      try {
+        const resolved = await getDownloadURL(ref(storage, path));
+        if (resolved) {
+          setMemberFileResolvedUrls((prev) => ({ ...prev, [entry.id]: resolved }));
+          return resolved;
+        }
+      } catch {
+        // continue
+      }
+    }
+    throw new Error('File URL unavailable');
+  };
+  const handleViewMemberFile = async (entry: {
+    id: string;
+    filePath: string;
+    downloadURL: string;
+  }) => {
+    setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: true }));
+    try {
+      const url = await resolveMemberFileUrl(entry);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Unable to open file',
+        description: String(error?.message || 'Could not resolve file URL.'),
+      });
+    } finally {
+      setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: false }));
+    }
+  };
+  const handleDownloadMemberFile = async (entry: {
+    id: string;
+    category: string;
+    documentName: string;
+    fileName: string;
+    filePath: string;
+    downloadURL: string;
+  }) => {
+    setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: true }));
+    try {
+      const idToken = await user?.getIdToken?.();
+      if (!idToken) {
+        throw new Error('Unable to verify admin session. Please refresh and try again.');
+      }
+      const response = await fetch('/api/admin/member-file-download', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          entry: {
+            category: String(entry.category || ''),
+            documentName: String(entry.documentName || ''),
+            fileName: String(entry.fileName || ''),
+            filePath: String(entry.filePath || ''),
+            downloadURL: String(entry.downloadURL || ''),
+          },
+        }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(errorText || `Download failed (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const contentDisposition = String(response.headers.get('content-disposition') || '');
+      const fileNameMatch = contentDisposition.match(/filename="([^"]+)"/i);
+      const serverFileName = fileNameMatch?.[1] ? fileNameMatch[1] : '';
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = sanitizeMemberFileName(serverFileName || entry.fileName || entry.documentName || 'file');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Unable to download file',
+        description: String(error?.message || 'Could not download this file.'),
+      });
+    } finally {
+      setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: false }));
+    }
+  };
+  const downloadAllMemberFiles = async () => {
+    if (!memberFileEntries.length) {
+      toast({ variant: 'destructive', title: 'No files', description: 'No uploaded files found yet.' });
+      return;
+    }
+    if (!storage) {
+      toast({ variant: 'destructive', title: 'Storage unavailable', description: 'Storage is not ready right now.' });
+      return;
+    }
+    const extensionFromMime = (mime: string): string => {
+      const normalized = String(mime || '').trim().toLowerCase();
+      if (normalized.includes('pdf')) return '.pdf';
+      if (normalized.includes('png')) return '.png';
+      if (normalized.includes('jpeg') || normalized.includes('jpg')) return '.jpg';
+      if (normalized.includes('msword')) return '.doc';
+      if (normalized.includes('officedocument.wordprocessingml.document')) return '.docx';
+      if (normalized.includes('json')) return '.json';
+      if (normalized.includes('text/html')) return '.html';
+      if (normalized.includes('text/plain')) return '.txt';
+      return '';
+    };
+    const ensureExtension = (name: string, blob: Blob): string => {
+      const trimmed = String(name || '').trim();
+      if (/\.[a-z0-9]{2,8}$/i.test(trimmed)) return trimmed;
+      const ext = extensionFromMime(blob.type);
+      return `${trimmed || 'file'}${ext || '.bin'}`;
+    };
+    const toZipName = (): string => {
+      const lastName = sanitizeMemberFileName(String((application as any)?.memberLastName || '').trim(), 'UnknownLast');
+      const firstName = sanitizeMemberFileName(String((application as any)?.memberFirstName || '').trim(), 'UnknownFirst');
+      const mrn = sanitizeMemberFileName(
+        String(
+          (application as any)?.memberMrn ||
+          (application as any)?.memberMRN ||
+          (application as any)?.medicalRecordNumber ||
+          ''
+        ).trim(),
+        'UnknownMRN'
+      );
+      return `${lastName}, ${firstName} Member ${mrn}.zip`;
+    };
+    memberFilesDownloadCancelRef.current = false;
+    setIsDownloadingAllMemberFiles(true);
+    setMemberFilesDownloadProgress(5);
+    setMemberFilesDownloadStatusLabel(`Preparing ${memberFileEntries.length} files...`);
+    let progressTicker: ReturnType<typeof setInterval> | null = null;
+
+    try {
+      const idToken = await user?.getIdToken?.();
+      if (!idToken) {
+        toast({
+          variant: 'destructive',
+          title: 'Download failed',
+          description: 'Unable to verify admin session. Please refresh and try again.',
+        });
+        return;
+      }
+      setMemberFilesDownloadProgress(15);
+      setMemberFilesDownloadStatusLabel('Requesting ZIP from server...');
+      progressTicker = setInterval(() => {
+        setMemberFilesDownloadProgress((prev) => (prev < 85 ? prev + 1 : prev));
+      }, 400);
+
+      const controller = new AbortController();
+      memberFilesDownloadAbortRef.current = controller;
+      const payloadEntries = memberFileEntries.map((entry) => ({
+        category: String(entry.category || ''),
+        documentName: String(entry.documentName || ''),
+        fileName: String(entry.fileName || ''),
+        downloadURL: String(entry.downloadURL || ''),
+        filePath: String(entry.filePath || ''),
+      }));
+      const response = await fetch('/api/admin/member-files-zip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          zipFileName: toZipName(),
+          entries: payloadEntries,
+        }),
+        signal: controller.signal,
+      }).finally(() => {
+        if (memberFilesDownloadAbortRef.current === controller) {
+          memberFilesDownloadAbortRef.current = null;
+        }
+      });
+
+      if (memberFilesDownloadCancelRef.current) {
+        toast({ title: 'Download canceled', description: 'ZIP download was canceled.' });
+        return;
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(errorText || `ZIP request failed (${response.status})`);
+      }
+
+      setMemberFilesDownloadProgress(95);
+      setMemberFilesDownloadStatusLabel('Finalizing ZIP...');
+      const zipBlob = await response.blob();
+      const objectUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = toZipName();
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+
+      const downloadedCount = Number(response.headers.get('x-downloaded-count') || payloadEntries.length);
+      const skippedCount = Number(response.headers.get('x-skipped-count') || 0);
+      const failedCount = Number(response.headers.get('x-failed-count') || 0);
+      toast({
+        title: 'Download complete',
+        description: `${downloadedCount} downloaded${skippedCount ? ` • ${skippedCount} skipped` : ''}${failedCount ? ` • ${failedCount} failed` : ''}`,
+      });
+    } catch (error: any) {
+      if (memberFilesDownloadCancelRef.current || error?.name === 'AbortError') {
+        toast({ title: 'Download canceled', description: 'ZIP download was canceled.' });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Download failed',
+          description: String(error?.message || 'Could not create ZIP download.'),
+        });
+      }
+    } finally {
+      if (progressTicker) clearInterval(progressTicker);
+      memberFilesDownloadCancelRef.current = false;
+      if (memberFilesDownloadAbortRef.current) {
+        memberFilesDownloadAbortRef.current.abort();
+        memberFilesDownloadAbortRef.current = null;
+      }
+      setMemberFilesDownloadProgress(0);
+      setMemberFilesDownloadStatusLabel('');
+      setIsDownloadingAllMemberFiles(false);
+    }
+  };
+  const cancelDownloadAllMemberFiles = () => {
+    memberFilesDownloadCancelRef.current = true;
+    setMemberFilesDownloadStatusLabel('Canceling...');
+    if (memberFilesDownloadAbortRef.current) {
+      memberFilesDownloadAbortRef.current.abort();
+      memberFilesDownloadAbortRef.current = null;
+    }
+  };
   const MemberFilesDialog = ({
     triggerLabel,
     triggerClassName,
@@ -6282,7 +6674,7 @@ function ApplicationDetailPageContent() {
     triggerClassName?: string;
     triggerVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
   }) => (
-    <Dialog>
+    <Dialog open={isMemberFilesDialogOpen} onOpenChange={setIsMemberFilesDialogOpen}>
       <DialogTrigger asChild>
         <Button variant={triggerVariant} className={triggerClassName || 'w-full justify-start gap-2'}>
           <File className="h-4 w-4" />
@@ -6294,6 +6686,45 @@ function ApplicationDetailPageContent() {
           <DialogTitle>Files in Application</DialogTitle>
           <DialogDescription>All member files in this application, including eligibility, authorization, and ISP uploads.</DialogDescription>
         </DialogHeader>
+        <div className="flex items-center justify-end gap-2">
+          {isDownloadingAllMemberFiles ? (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={cancelDownloadAllMemberFiles}
+            >
+              Cancel download
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void downloadAllMemberFiles()}
+            disabled={isDownloadingAllMemberFiles || memberFileEntries.length === 0}
+          >
+            {isDownloadingAllMemberFiles ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Downloading...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Download all files (ZIP)
+              </>
+            )}
+          </Button>
+        </div>
+        {isDownloadingAllMemberFiles ? (
+          <div className="space-y-2">
+            <Progress value={memberFilesDownloadProgress} className="h-2 w-full" />
+            <div className="text-xs text-muted-foreground">
+              {memberFilesDownloadStatusLabel || `Preparing files... ${memberFilesDownloadProgress}%`}
+            </div>
+          </div>
+        ) : null}
         {memberFileEntries.length === 0 ? (
           <div className="rounded-md border p-3 text-sm text-muted-foreground">No uploaded files found yet.</div>
         ) : (
@@ -6307,13 +6738,37 @@ function ApplicationDetailPageContent() {
                   ) : null}
                 </div>
                 <div className="text-sm font-medium">{entry.documentName}</div>
-                {entry.downloadURL ? (
-                  <a href={entry.downloadURL} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-700 underline underline-offset-2">
-                    {entry.fileName}
-                  </a>
-                ) : (
-                  <div className="text-xs text-muted-foreground">{entry.fileName}</div>
-                )}
+                <div className="mt-1 text-xs text-muted-foreground">{entry.fileName}</div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleViewMemberFile(entry)}
+                    disabled={Boolean(memberFileUrlLoading[entry.id])}
+                  >
+                    {memberFileUrlLoading[entry.id] ? (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Eye className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    View
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleDownloadMemberFile(entry)}
+                    disabled={Boolean(memberFileUrlLoading[entry.id])}
+                  >
+                    {memberFileUrlLoading[entry.id] ? (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    Download
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
