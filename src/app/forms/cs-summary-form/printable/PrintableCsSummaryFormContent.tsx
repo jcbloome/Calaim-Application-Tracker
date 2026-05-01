@@ -47,10 +47,10 @@ export function PrintableCsSummaryFormContent() {
             </div>
             <div className="space-y-4">
                 <div>
-                <SectionTitle>Section 1: Member Information</SectionTitle>
+                <SectionTitle>Section 1: Member Details</SectionTitle>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-                    <Field label="First Name" />
-                    <Field label="Last Name" />
+                    <Field label="Member First Name" />
+                    <Field label="Member Last Name" />
                     <Field label="Date of Birth (MM/DD/YYYY)" />
                     <Field label="Age" />
                     <Field 

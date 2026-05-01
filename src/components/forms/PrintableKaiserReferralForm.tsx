@@ -965,7 +965,7 @@ export function PrintableKaiserReferralForm({
           <div className="mt-1 h-[6px] w-full bg-black" />
           <div className="mt-2 text-[12px]">Fields marked with an asterisk (*) are mandatory</div>
 
-          <div className="mt-2 text-[18px] font-bold leading-none">Member Information</div>
+          <div className="mt-2 text-[18px] font-bold leading-none">Member Details</div>
           <div className="mt-1 border-2 border-black text-[13px]">
             <div className="border-b border-black p-1.5">
               <div className="font-semibold">Member Name (First Name, Middle Initial, Last Name)*</div>

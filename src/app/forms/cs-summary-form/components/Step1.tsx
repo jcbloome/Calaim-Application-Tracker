@@ -399,7 +399,7 @@ export default function Step1({
       </div>
 
       <FormSection 
-        title="Section 1: Member Information" 
+        title="Section 1: Member Details" 
         required={true}
         description="Basic information about the CalAIM member"
       >

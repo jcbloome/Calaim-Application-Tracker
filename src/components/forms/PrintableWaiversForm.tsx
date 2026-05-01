@@ -25,8 +25,8 @@ export function PrintableWaiversForm({
       applicationData={{ id: applicationId }}
       showPrintButton={showPrintButton}
     >
-      {/* Member Information */}
-      <PrintableFormSection title="Member Information">
+      {/* Member Details */}
+      <PrintableFormSection title="Member Details">
         <PrintableField
           label="Member Name"
           value={memberName}

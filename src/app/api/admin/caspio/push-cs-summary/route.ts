@@ -464,36 +464,69 @@ async function createClientAndGetClientId2(
     `First_Name='${esc(memberFirstName)}' AND Last_Name='${esc(memberLastName)}'`,
   ];
   const lookupOrderCandidates = ['client_ID2 DESC', 'Client_ID2 DESC', 'PK_ID DESC'];
-  const lookupExistingClientId2 = async (): Promise<string> => {
+  const lookupExistingClient = async (): Promise<{ clientId2: string; row: Record<string, any> | null }> => {
     for (const where of whereCandidates) {
       for (const orderBy of lookupOrderCandidates) {
-      const lookupUrl =
-        `${baseUrl}/tables/${clientTable}/records` +
-        `?q.where=${encodeURIComponent(where)}` +
-        `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Record_ID,Senior_First,Senior_Last,First_Name,Last_Name')}` +
-        `&q.orderBy=${encodeURIComponent(orderBy)}` +
-        `&q.limit=1`;
-      const lookupResponse = await fetch(lookupUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+        const lookupUrl =
+          `${baseUrl}/tables/${clientTable}/records` +
+          `?q.where=${encodeURIComponent(where)}` +
+          `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Record_ID,Senior_First,Senior_Last,First_Name,Last_Name')}` +
+          `&q.orderBy=${encodeURIComponent(orderBy)}` +
+          `&q.limit=1`;
+        const lookupResponse = await fetch(lookupUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
-      if (!lookupResponse.ok) continue;
-      const lookupJson = await lookupResponse.json().catch(() => ({} as any));
-      const row = Array.isArray(lookupJson?.Result) ? lookupJson.Result[0] : null;
-      const clientId2 = clean(row?.client_ID2 || row?.Client_ID2 || row?.clientid2 || row?.Record_ID);
-      if (clientId2) return clientId2;
+        if (!lookupResponse.ok) continue;
+        const lookupJson = await lookupResponse.json().catch(() => ({} as any));
+        const row = Array.isArray(lookupJson?.Result) ? lookupJson.Result[0] : null;
+        const clientId2 = clean(row?.client_ID2 || row?.Client_ID2 || row?.clientid2 || row?.Record_ID);
+        if (clientId2) return { clientId2, row: row || null };
       }
     }
-    return '';
+    return { clientId2: '', row: null };
+  };
+
+  const updateClientNameFields = async (pkId: number) => {
+    const safePk = Number(pkId || 0);
+    if (!safePk) return;
+    const where = `PK_ID=${safePk}`;
+    const updateUrl = `${baseUrl}/tables/${clientTable}/records?q.where=${encodeURIComponent(where)}`;
+    const response = await fetch(updateUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        First_Name: primaryContactFirstName,
+        Last_Name: primaryContactLastName,
+        Senior_First: memberFirstName,
+        Senior_Last: memberLastName,
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.text().catch(() => '');
+      console.warn('Client name-field sync failed in connect_tbl_clients:', {
+        status: response.status,
+        errorPreview: clean(err).slice(0, 300),
+        pkId: safePk,
+      });
+    }
   };
 
   // Prevent duplicate client rows on retries by reusing existing client_ID2 when possible.
-  const existingClientId2 = await lookupExistingClientId2();
-  if (existingClientId2) return existingClientId2;
+  const existingClient = await lookupExistingClient();
+  const existingClientId2 = existingClient.clientId2;
+  if (existingClientId2) {
+    const existingPkId = Number(existingClient.row?.PK_ID || existingClient.row?.pk_id || 0);
+    if (existingPkId) await updateClientNameFields(existingPkId);
+    return existingClientId2;
+  }
 
   const createUrl = `${baseUrl}/tables/${clientTable}/records`;
   const createPayload = {
@@ -528,8 +561,12 @@ async function createClientAndGetClientId2(
   if (directClientId2) return directClientId2;
 
   for (let attempt = 1; attempt <= 10; attempt += 1) {
-    const clientId2 = await lookupExistingClientId2();
-    if (clientId2) return clientId2;
+    const existing = await lookupExistingClient();
+    if (existing.clientId2) {
+      const existingPkId = Number(existing.row?.PK_ID || existing.row?.pk_id || 0);
+      if (existingPkId) await updateClientNameFields(existingPkId);
+      return existing.clientId2;
+    }
 
     await sleep(250 * attempt);
   }

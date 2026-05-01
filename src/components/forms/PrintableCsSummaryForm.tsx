@@ -35,7 +35,7 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
         </p>
       </div>
       {/* Step 1: Member & Contact Information */}
-      <PrintableFormSection title="Section 1: Member Information">
+      <PrintableFormSection title="Section 1: Member Details">
         <PrintableField
           label="Member First Name"
           value={data.memberFirstName}

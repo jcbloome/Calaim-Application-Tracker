@@ -276,7 +276,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-8">
-                        <Section title="Member Information" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
+                        <Section title="Member Details" editLink={getEditLink(1)} isReadOnly={isReadOnly}>
                             <Field label="Member First Name" value={application.memberFirstName} />
                             <Field label="Member Last Name" value={application.memberLastName} />
                             <Field label="Date of Birth" value={dobFormatted} />
