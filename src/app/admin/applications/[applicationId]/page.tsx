@@ -2975,6 +2975,18 @@ function ApplicationDetailPageContent() {
   const [isUpdatingTracking, setIsUpdatingTracking] = useState(false);
   const [isUpdatingCaspioStatus, setIsUpdatingCaspioStatus] = useState(false);
   const [isUpdatingSocialWorkerHold, setIsUpdatingSocialWorkerHold] = useState(false);
+  const [isLoadingSwPortalAssignment, setIsLoadingSwPortalAssignment] = useState(false);
+  const [swPortalAssignmentError, setSwPortalAssignmentError] = useState('');
+  const [swPortalAssignment, setSwPortalAssignment] = useState<{
+    memberId: string;
+    kaiserStatus: string;
+    assignedSwName: string;
+    assignedSwEmail: string;
+    assignmentStatus: string;
+    eligible: boolean;
+  } | null>(null);
+  const [swPortalInviteEnabled, setSwPortalInviteEnabled] = useState(false);
+  const [isSavingSwPortalInvite, setIsSavingSwPortalInvite] = useState(false);
   const [isUpdatingKaiserAuthorizationMode, setIsUpdatingKaiserAuthorizationMode] = useState(false);
   const [isSendingProofIncomeSocWarning, setIsSendingProofIncomeSocWarning] = useState(false);
   const [isSocWarningPreviewOpen, setIsSocWarningPreviewOpen] = useState(false);
@@ -3553,6 +3565,15 @@ function ApplicationDetailPageContent() {
     Boolean((application as any)?.createdByAdmin);
   const showPrePushNotesSection = isDraftLikeApplication && (isKaiserPlan || isHealthNetPlan);
   const showDraftKaiserStatusSection = isDraftLikeApplication && isKaiserPlan;
+  const swPortalInviteSentAtLabel = (() => {
+    const ms = toMillisSafe((application as any)?.swPortalInviteSentAt);
+    if (!ms) return '';
+    try {
+      return format(new Date(ms), 'MMM d, yyyy h:mm a');
+    } catch {
+      return '';
+    }
+  })();
   const memberPortalUserId = useMemo(() => {
     const fromQuery = String(appUserId || '').trim();
     if (fromQuery) return fromQuery;
@@ -3586,6 +3607,87 @@ function ApplicationDetailPageContent() {
       return ms >= now - windowDays * 24 * 60 * 60 * 1000;
     });
   }, [memberPortalLoginLog, memberPortalLoginStatusFilter, memberPortalLoginRangeFilter]);
+
+  useEffect(() => {
+    setSwPortalInviteEnabled(Boolean((application as any)?.swPortalInviteEnabled));
+  }, [(application as any)?.swPortalInviteEnabled]);
+
+  useEffect(() => {
+    if (!isKaiserPlan || !application) {
+      setSwPortalAssignment(null);
+      setSwPortalAssignmentError('');
+      setIsLoadingSwPortalAssignment(false);
+      return;
+    }
+
+    const memberMrn = String((application as any)?.memberMrn || '').trim();
+    const memberMediCalNum = String((application as any)?.memberMediCalNum || '').trim();
+    const memberClientId2 = String((application as any)?.clientId2 || (application as any)?.client_ID2 || '').trim();
+    const memberFirstName = String((application as any)?.memberFirstName || '').trim();
+    const memberLastName = String((application as any)?.memberLastName || '').trim();
+
+    if (!memberMrn && !memberMediCalNum && !memberClientId2) {
+      setSwPortalAssignment(null);
+      setSwPortalAssignmentError('Missing member identifiers for social worker lookup.');
+      setIsLoadingSwPortalAssignment(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingSwPortalAssignment(true);
+    setSwPortalAssignmentError('');
+
+    const params = new URLSearchParams({
+      memberMrn,
+      memberMediCalNum,
+      memberClientId2,
+      memberFirstName,
+      memberLastName,
+    });
+
+    fetch(`/api/pathway/sw-assignment?${params.toString()}`, { cache: 'no-store' })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.success) {
+          throw new Error(data?.error || 'Failed to load social worker assignment.');
+        }
+        if (cancelled) return;
+        if (!data?.found) {
+          setSwPortalAssignment(null);
+          setSwPortalAssignmentError('No RN Visit Needed social worker assignment found yet.');
+          return;
+        }
+        setSwPortalAssignment({
+          memberId: String(data?.memberId || '').trim(),
+          kaiserStatus: String(data?.kaiserStatus || '').trim(),
+          assignedSwName: String(data?.assignedSwName || '').trim(),
+          assignedSwEmail: String(data?.assignedSwEmail || '').trim().toLowerCase(),
+          assignmentStatus: String(data?.assignmentStatus || '').trim(),
+          eligible: Boolean(data?.eligible),
+        });
+      })
+      .catch((error: any) => {
+        if (cancelled) return;
+        setSwPortalAssignment(null);
+        setSwPortalAssignmentError(String(error?.message || 'Failed to load social worker assignment.'));
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingSwPortalAssignment(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    application?.id,
+    (application as any)?.memberMrn,
+    (application as any)?.memberMediCalNum,
+    (application as any)?.clientId2,
+    (application as any)?.client_ID2,
+    (application as any)?.memberFirstName,
+    (application as any)?.memberLastName,
+    isKaiserPlan,
+  ]);
 
   useEffect(() => {
     const existing = String((application as any)?.preAssessmentCareNeedsNotes || '').trim();
@@ -7566,6 +7668,141 @@ function ApplicationDetailPageContent() {
     }
   };
 
+  const handleSaveSwPortalInvite = async () => {
+    if (!docRef || !application) return;
+    if (!swPortalAssignment?.eligible) {
+      toast({
+        variant: 'destructive',
+        title: 'Social worker assignment unavailable',
+        description: 'Kaiser status must be RN Visit Needed with an assigned social worker.',
+      });
+      return;
+    }
+    if (!swPortalAssignment.assignedSwEmail) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing social worker email',
+        description: 'No assigned social worker email was found for this member.',
+      });
+      return;
+    }
+
+    setIsSavingSwPortalInvite(true);
+    try {
+      const memberName =
+        `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim() ||
+        'Member';
+      const memberId =
+        String(swPortalAssignment.memberId || '').trim() ||
+        String((application as any)?.clientId2 || (application as any)?.client_ID2 || '').trim();
+      const actorName = String(user?.displayName || user?.email || 'Staff').trim();
+      const actorEmail = String(user?.email || '').trim().toLowerCase();
+
+      if (swPortalInviteEnabled && firestore && memberId) {
+        await setDoc(
+          doc(firestore, 'alft_assignments', memberId),
+          {
+            memberId,
+            memberName,
+            memberFirstName: String((application as any)?.memberFirstName || '').trim(),
+            memberLastName: String((application as any)?.memberLastName || '').trim(),
+            memberMrn: String((application as any)?.memberMrn || '').trim(),
+            birthDate: String((application as any)?.memberDob || '').trim(),
+            kaiserStatus: swPortalAssignment.kaiserStatus || 'RN Visit Needed',
+            assignedSwEmail: swPortalAssignment.assignedSwEmail,
+            assignedSwName: swPortalAssignment.assignedSwName || swPortalAssignment.assignedSwEmail,
+            assignedByEmail: actorEmail,
+            assignedByName: actorName,
+            assignedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            status: 'assigned',
+          },
+          { merge: true }
+        );
+
+        const response = await fetch('/api/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: swPortalAssignment.assignedSwEmail,
+            includeBcc: false,
+            subject: `ALFT Invite: ${memberName}`,
+            memberName: swPortalAssignment.assignedSwName || 'Social Worker',
+            staffName: actorName,
+            staffTitle: 'ALFT Assignment Coordinator',
+            staffEmail: actorEmail || undefined,
+            status: 'In Progress',
+            healthPlan: 'Kaiser',
+            portalUrl: `${window.location.origin}/sw-login`,
+            message: [
+              `You have been assigned to complete the ALFT workflow for ${memberName}.`,
+              '',
+              'Please log in to the Social Worker Portal and open ALFT Upload to continue.',
+              `Portal login: ${window.location.origin}/sw-login`,
+            ].join('\n'),
+          }),
+        });
+        const result = await response.json().catch(() => ({} as any));
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Failed to send social worker invite email.');
+        }
+      }
+
+      await setDoc(
+        docRef,
+        {
+          swPortalInviteEnabled,
+          swPortalAssignedName: swPortalAssignment.assignedSwName || swPortalAssignment.assignedSwEmail,
+          swPortalAssignedEmail: swPortalAssignment.assignedSwEmail,
+          swPortalKaiserStatus: swPortalAssignment.kaiserStatus,
+          swPortalMemberId: memberId || null,
+          swPortalInviteUpdatedAt: serverTimestamp(),
+          swPortalInviteUpdatedBy: actorName,
+          swPortalInviteUpdatedByEmail: actorEmail || null,
+          ...(swPortalInviteEnabled
+            ? {
+                swPortalInviteSentAt: serverTimestamp(),
+                swPortalInviteSentBy: actorName,
+                swPortalInviteSentByEmail: actorEmail || null,
+              }
+            : {}),
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      setApplication((prev) =>
+        prev
+          ? ({
+              ...prev,
+              swPortalInviteEnabled,
+              swPortalAssignedName: swPortalAssignment.assignedSwName || swPortalAssignment.assignedSwEmail,
+              swPortalAssignedEmail: swPortalAssignment.assignedSwEmail,
+              swPortalKaiserStatus: swPortalAssignment.kaiserStatus,
+              swPortalMemberId: memberId || null,
+            } as any)
+          : prev
+      );
+
+      toast({
+        title: swPortalInviteEnabled ? 'Social worker invited' : 'Social worker invite updated',
+        description: swPortalInviteEnabled
+          ? `${swPortalAssignment.assignedSwName || swPortalAssignment.assignedSwEmail} has been invited.`
+          : 'Invite checkbox was turned off.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error: any) {
+      console.error('Error saving SW portal invite:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Save Failed',
+        description: String(error?.message || 'Could not save social worker invite settings.'),
+      });
+    } finally {
+      setIsSavingSwPortalInvite(false);
+    }
+  };
+
   const updateDraftKaiserStatus = async (status: string) => {
     if (!docRef || !application || !showDraftKaiserStatusSection) return;
     const normalized = String(status || '').trim();
@@ -10011,7 +10248,7 @@ function ApplicationDetailPageContent() {
                       Open reminder preview tools
                     </Button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 pl-7">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 pl-7 rounded-lg border bg-muted/10 p-3">
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-muted-foreground">Email reminders frequency</Label>
                       <Select
@@ -10086,28 +10323,68 @@ function ApplicationDetailPageContent() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-muted-foreground">CalAIM Status for Caspio</Label>
-                      <Select
-                        value={effectiveCaspioCalAIMStatus}
-                        onValueChange={(value) => {
-                          if (value === 'Authorized' || value === 'Pending') {
-                            void updateCaspioCalAIMStatus(value);
-                          }
-                        }}
-                        disabled
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Synced from Caspio" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Authorized">Authorized</SelectItem>
-                          <SelectItem value="Pending">Pending</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        Synced from Caspio. Manual CalAIM status push from this page is disabled.
-                      </p>
+                    <div className="space-y-3 md:col-span-2">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-2 rounded-md border bg-background p-3">
+                          <Label className="text-xs font-medium text-muted-foreground">CalAIM Status for Caspio</Label>
+                          <Select
+                            value={effectiveCaspioCalAIMStatus}
+                            onValueChange={(value) => {
+                              if (value === 'Authorized' || value === 'Pending') {
+                                void updateCaspioCalAIMStatus(value);
+                              }
+                            }}
+                            disabled
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Synced from Caspio" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Authorized">Authorized</SelectItem>
+                              <SelectItem value="Pending">Pending</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Synced from Caspio.
+                          </p>
+                        </div>
+                        {isKaiserPlan ? (
+                          <div className="space-y-2 rounded-md border bg-background p-3">
+                            <Label className="text-xs font-medium text-muted-foreground">Kaiser Status</Label>
+                            {showDraftKaiserStatusSection ? (
+                              <>
+                                <Select
+                                  value={kaiserStatusPickerValue || prePushKaiserStatusOptions[0]}
+                                  onValueChange={(value) => void updateDraftKaiserStatus(value)}
+                                >
+                                  <SelectTrigger className="h-9">
+                                    <SelectValue placeholder="Select draft Kaiser status" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {prePushKaiserStatusOptions.map((option) => (
+                                      <SelectItem key={option} value={option}>
+                                        {option}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                  Draft-only status before Caspio push.
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
+                                  {kaiserStatusPickerValue || 'Not set'}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Read only. Synced from Caspio.
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-muted-foreground">SW Hold for Caspio</Label>
@@ -10133,39 +10410,71 @@ function ApplicationDetailPageContent() {
                       </p>
                     </div>
                     {isKaiserPlan ? (
-                      <div className="space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground">Kaiser Status</Label>
-                        {showDraftKaiserStatusSection ? (
-                          <>
-                            <Select
-                              value={kaiserStatusPickerValue || prePushKaiserStatusOptions[0]}
-                              onValueChange={(value) => void updateDraftKaiserStatus(value)}
-                            >
-                              <SelectTrigger className="h-9">
-                                <SelectValue placeholder="Select draft Kaiser status" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {prePushKaiserStatusOptions.map((option) => (
-                                  <SelectItem key={option} value={option}>
-                                    {option}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <p className="text-xs text-muted-foreground">
-                              Draft-only status for tracker visibility before Caspio push.
-                            </p>
-                          </>
-                        ) : (
-                          <>
+                      <div className="space-y-2 md:col-span-2 rounded-md border bg-background p-3">
+                        <Label className="text-xs font-medium text-muted-foreground">Social Worker Assignment</Label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-muted-foreground">Social Worker Assigned</Label>
                             <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
-                              {kaiserStatusPickerValue || 'Not set'}
+                              {isLoadingSwPortalAssignment
+                                ? 'Loading social worker assignment...'
+                                : swPortalAssignment?.assignedSwName || 'Not assigned'}
                             </div>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-medium text-muted-foreground">Social Worker Email</Label>
+                            <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
+                              {isLoadingSwPortalAssignment
+                                ? 'Loading email...'
+                                : swPortalAssignment?.assignedSwEmail || 'Not available'}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex h-9 items-center rounded-md border bg-muted/30 px-3 text-sm text-muted-foreground">
+                          Status: {swPortalAssignment?.assignmentStatus || 'Not assigned'}
+                        </div>
+                        {swPortalAssignmentError ? (
+                          <p className="text-xs text-amber-700">{swPortalAssignmentError}</p>
+                        ) : null}
+                        <div className="flex items-start gap-2 rounded-md border p-2">
+                          <Checkbox
+                            id="sw-portal-invite-admin"
+                            checked={swPortalInviteEnabled}
+                            onCheckedChange={(checked) => setSwPortalInviteEnabled(Boolean(checked))}
+                            disabled={!swPortalAssignment?.eligible || !swPortalAssignment?.assignedSwEmail || isSavingSwPortalInvite}
+                          />
+                          <div className="space-y-1">
+                            <Label htmlFor="sw-portal-invite-admin" className="text-xs font-medium text-muted-foreground">
+                              Invite to SW Portal ALFT workflow
+                            </Label>
                             <p className="text-xs text-muted-foreground">
-                              Read only. This value syncs from Caspio webhook/cache updates.
+                              Sends an invite when Kaiser status is RN Visit Needed.
                             </p>
-                          </>
-                        )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void handleSaveSwPortalInvite()}
+                            disabled={!swPortalAssignment?.eligible || !swPortalAssignment?.assignedSwEmail || isSavingSwPortalInvite}
+                          >
+                            {isSavingSwPortalInvite ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              'Save Invite'
+                            )}
+                          </Button>
+                          {swPortalInviteSentAtLabel ? (
+                            <span className="text-xs text-muted-foreground">
+                              Sent: {swPortalInviteSentAtLabel}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     ) : null}
                   </div>

@@ -271,6 +271,16 @@ function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser So
   return kaiserNorthCounties.has(normalized) ? 'Kaiser North' : 'Kaiser South';
 }
 
+type PathwaySwAssignment = {
+  found: boolean;
+  eligible: boolean;
+  memberId: string;
+  kaiserStatus: string;
+  assignedSwEmail: string;
+  assignedSwName: string;
+  assignmentStatus: string;
+};
+
 function PathwayPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -306,6 +316,11 @@ function PathwayPageContent() {
   const [uploadReceiptByRequirement, setUploadReceiptByRequirement] = useState<
     Record<string, { uploadedAtIso: string; fileNames: string[]; fileCount: number }>
   >({});
+  const [swAssignmentLoading, setSwAssignmentLoading] = useState(false);
+  const [swAssignmentError, setSwAssignmentError] = useState('');
+  const [swAssignment, setSwAssignment] = useState<PathwaySwAssignment | null>(null);
+  const [swInviteEnabled, setSwInviteEnabled] = useState(false);
+  const [swInviteSaving, setSwInviteSaving] = useState(false);
 
   const isAdminCreatedApp = applicationId?.startsWith('admin_app_');
 
@@ -997,6 +1012,126 @@ function PathwayPageContent() {
     }
   };
 
+  const handleSaveSocialWorkerInvite = async () => {
+    if (!docRef || !application) return;
+    if (!swAssignment?.eligible) {
+      toast({
+        variant: 'destructive',
+        title: 'Social worker assignment unavailable',
+        description: 'This member is not currently in Kaiser status "RN Visit Needed".',
+      });
+      return;
+    }
+    if (!swAssignment.assignedSwEmail) {
+      toast({
+        variant: 'destructive',
+        title: 'No social worker email found',
+        description: 'Please assign a social worker first before sending an invite.',
+      });
+      return;
+    }
+
+    setSwInviteSaving(true);
+    try {
+      const memberName =
+        `${String(application.memberFirstName || '').trim()} ${String(application.memberLastName || '').trim()}`.trim() ||
+        'Member';
+      const actorName = String(user?.displayName || user?.email || 'Staff').trim();
+      const actorEmail = String(user?.email || '').trim().toLowerCase();
+      const memberId =
+        swAssignment.memberId ||
+        String((application as any)?.clientId2 || (application as any)?.client_ID2 || '').trim();
+
+      if (swInviteEnabled && firestore && memberId) {
+        await setDoc(
+          doc(firestore, 'alft_assignments', memberId),
+          {
+            memberId,
+            memberName,
+            memberFirstName: String(application.memberFirstName || '').trim(),
+            memberLastName: String(application.memberLastName || '').trim(),
+            memberMrn: String(application.memberMrn || '').trim(),
+            birthDate: String((application as any)?.memberDob || '').trim(),
+            kaiserStatus: swAssignment.kaiserStatus || 'RN Visit Needed',
+            assignedSwEmail: swAssignment.assignedSwEmail,
+            assignedSwName: swAssignment.assignedSwName || swAssignment.assignedSwEmail,
+            assignedByEmail: actorEmail,
+            assignedByName: actorName,
+            assignedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            status: 'assigned',
+          },
+          { merge: true }
+        );
+
+        const response = await fetch('/api/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: swAssignment.assignedSwEmail,
+            includeBcc: false,
+            subject: `ALFT Invite: ${memberName}`,
+            memberName: swAssignment.assignedSwName || 'Social Worker',
+            staffName: actorName,
+            staffTitle: 'ALFT Assignment Coordinator',
+            staffEmail: actorEmail || undefined,
+            status: 'In Progress',
+            healthPlan: 'Kaiser',
+            portalUrl: `${window.location.origin}/sw-login`,
+            message: [
+              `You have been assigned to complete the ALFT workflow for ${memberName}.`,
+              '',
+              'Please log in to the Social Worker Portal and open ALFT Upload to continue.',
+              `Portal login: ${window.location.origin}/sw-login`,
+            ].join('\n'),
+          }),
+        });
+        const result = await response.json().catch(() => ({} as any));
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || 'Failed to send social worker invite email.');
+        }
+      }
+
+      await setDoc(
+        docRef,
+        {
+          swPortalInviteEnabled: swInviteEnabled,
+          swPortalAssignedEmail: swAssignment.assignedSwEmail,
+          swPortalAssignedName: swAssignment.assignedSwName || swAssignment.assignedSwEmail,
+          swPortalKaiserStatus: swAssignment.kaiserStatus,
+          swPortalMemberId: memberId || null,
+          swPortalInviteUpdatedAt: serverTimestamp(),
+          swPortalInviteUpdatedBy: actorName,
+          swPortalInviteUpdatedByEmail: actorEmail || null,
+          ...(swInviteEnabled
+            ? {
+                swPortalInviteSentAt: serverTimestamp(),
+                swPortalInviteSentBy: actorName,
+                swPortalInviteSentByEmail: actorEmail || null,
+              }
+            : {}),
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      toast({
+        title: swInviteEnabled ? 'Social worker invited' : 'Social worker invite setting saved',
+        description: swInviteEnabled
+          ? `${swAssignment.assignedSwName || swAssignment.assignedSwEmail} was invited to the SW portal.`
+          : 'Invite checkbox was turned off.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not update social worker invite',
+        description: error?.message || 'Please try again.',
+      });
+    } finally {
+      setSwInviteSaving(false);
+    }
+  };
+
   useEffect(() => {
     setShowMissingOnly(modeParam === 'upload-missing' || modeParam === 'missing');
   }, [modeParam]);
@@ -1021,6 +1156,82 @@ function PathwayPageContent() {
     }, 150);
     return () => clearTimeout(timeout);
   }, [focusRequirementIdParam, application]);
+
+  useEffect(() => {
+    setSwInviteEnabled(Boolean((application as any)?.swPortalInviteEnabled));
+  }, [application]);
+
+  useEffect(() => {
+    const isKaiser = String(application?.healthPlan || '').trim().toLowerCase().includes('kaiser');
+    if (!application || !isKaiser) {
+      setSwAssignment(null);
+      setSwAssignmentError('');
+      setSwAssignmentLoading(false);
+      return;
+    }
+
+    const memberMrn = String(application.memberMrn || '').trim();
+    const memberMediCalNum = String((application as any)?.memberMediCalNum || '').trim();
+    const memberClientId2 = String((application as any)?.clientId2 || (application as any)?.client_ID2 || '').trim();
+    const memberFirstName = String(application.memberFirstName || '').trim();
+    const memberLastName = String(application.memberLastName || '').trim();
+
+    if (!memberMrn && !memberMediCalNum && !memberClientId2) {
+      setSwAssignment(null);
+      setSwAssignmentError('Missing member identifiers needed to resolve social worker assignment.');
+      setSwAssignmentLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSwAssignmentLoading(true);
+    setSwAssignmentError('');
+
+    const params = new URLSearchParams({
+      memberMrn,
+      memberMediCalNum,
+      memberClientId2,
+      memberFirstName,
+      memberLastName,
+    });
+
+    fetch(`/api/pathway/sw-assignment?${params.toString()}`, { cache: 'no-store' })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({} as any));
+        if (!res.ok || !data?.success) {
+          throw new Error(data?.error || 'Could not load social worker assignment.');
+        }
+        if (!cancelled) {
+          if (!data?.found) {
+            setSwAssignment(null);
+            setSwAssignmentError('No RN Visit Needed assignment found for this member yet.');
+          } else {
+            setSwAssignment({
+              found: Boolean(data?.found),
+              eligible: Boolean(data?.eligible),
+              memberId: String(data?.memberId || '').trim(),
+              kaiserStatus: String(data?.kaiserStatus || '').trim(),
+              assignedSwEmail: String(data?.assignedSwEmail || '').trim().toLowerCase(),
+              assignedSwName: String(data?.assignedSwName || '').trim(),
+              assignmentStatus: String(data?.assignmentStatus || '').trim(),
+            });
+          }
+        }
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          setSwAssignment(null);
+          setSwAssignmentError(err?.message || 'Could not load social worker assignment.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSwAssignmentLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [application]);
 
   if (isLoading || isUserLoading) {
     return (
@@ -1871,6 +2082,73 @@ function PathwayPageContent() {
                     <div className="truncate col-span-2 sm:col-span-1"><strong>Application ID:</strong> <span className="font-mono text-xs">{application.id}</span></div>
                     <div><strong>Status:</strong> <span className="font-semibold">{application.status}</span></div>
                 </div>
+                {(isAdmin || isSuperAdmin) && String(application.healthPlan || '').toLowerCase().includes('kaiser') && (
+                  <div className="rounded-md border p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold">Social Worker Assignment (ALFT)</div>
+                      {swAssignmentLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <strong>Kaiser Status:</strong>{' '}
+                        <span>{swAssignment?.kaiserStatus || 'Not found'}</span>
+                      </div>
+                      <div>
+                        <strong>Assigned Social Worker:</strong>{' '}
+                        <span>
+                          {swAssignment?.assignedSwName || swAssignment?.assignedSwEmail || 'Not assigned'}
+                        </span>
+                      </div>
+                    </div>
+                    {swAssignmentError ? (
+                      <div className="text-xs text-amber-700">{swAssignmentError}</div>
+                    ) : null}
+                    <div className="flex items-start gap-2 rounded-md border p-2">
+                      <Checkbox
+                        id="sw-portal-invite"
+                        checked={swInviteEnabled}
+                        onCheckedChange={(checked) => setSwInviteEnabled(Boolean(checked))}
+                        disabled={isReadOnly || !swAssignment?.eligible || !swAssignment?.assignedSwEmail}
+                      />
+                      <div className="space-y-1">
+                        <Label htmlFor="sw-portal-invite" className="text-sm font-medium">
+                          Invite assigned social worker to Social Worker Portal for ALFT
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Enabled only when Kaiser Status is RN Visit Needed and a Social Worker is assigned.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleSaveSocialWorkerInvite()}
+                        disabled={swInviteSaving || isReadOnly || !swAssignment?.eligible || !swAssignment?.assignedSwEmail}
+                      >
+                        {swInviteSaving ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Saving...
+                          </>
+                        ) : swInviteEnabled ? (
+                          <>
+                            <Send className="mr-2 h-4 w-4" />
+                            Save & Send Invite
+                          </>
+                        ) : (
+                          'Save'
+                        )}
+                      </Button>
+                      {Boolean((application as any)?.swPortalInviteSentBy) ? (
+                        <span className="text-xs text-muted-foreground">
+                          Last invite sent by {String((application as any)?.swPortalInviteSentBy || '').trim()}.
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2">
                     <div className="flex justify-between text-sm text-muted-foreground">
                         <span className="font-medium">Document Checklist</span>
