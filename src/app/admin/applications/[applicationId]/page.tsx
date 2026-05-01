@@ -2707,6 +2707,17 @@ function ApplicationDetailPageContent() {
   const [memberFilesDownloadStatusLabel, setMemberFilesDownloadStatusLabel] = useState('');
   const [memberFileResolvedUrls, setMemberFileResolvedUrls] = useState<Record<string, string>>({});
   const [memberFileUrlLoading, setMemberFileUrlLoading] = useState<Record<string, boolean>>({});
+  const [alftCompletionFileEntries, setAlftCompletionFileEntries] = useState<
+    Array<{
+      id: string;
+      category: string;
+      documentName: string;
+      fileName: string;
+      downloadURL: string;
+      filePath: string;
+      uploadedAtIso: string;
+    }>
+  >([]);
   const memberFilesDownloadCancelRef = useRef(false);
   const memberFilesDownloadAbortRef = useRef<AbortController | null>(null);
   const [ispUpload, setIspUpload] = useState<{
@@ -3624,6 +3635,155 @@ function ApplicationDetailPageContent() {
   useEffect(() => {
     setSwPortalInviteEnabled(Boolean((application as any)?.swPortalInviteEnabled));
   }, [(application as any)?.swPortalInviteEnabled]);
+
+  useEffect(() => {
+    if (!firestore || !application || !isKaiserPlan) {
+      setAlftCompletionFileEntries([]);
+      return;
+    }
+
+    const memberMrn = String((application as any)?.memberMrn || '').trim();
+    const memberMediCalNum = String((application as any)?.memberMediCalNum || '').trim();
+    const memberFirstName = String((application as any)?.memberFirstName || '').trim().toLowerCase();
+    const memberLastName = String((application as any)?.memberLastName || '').trim().toLowerCase();
+
+    const identifiers = Array.from(new Set([memberMrn, memberMediCalNum].map((v) => v.trim()).filter(Boolean)));
+    if (identifiers.length === 0) {
+      setAlftCompletionFileEntries([]);
+      return;
+    }
+
+    const toIso = (value: unknown): string => {
+      if (!value) return '';
+      try {
+        if (typeof (value as any)?.toDate === 'function') {
+          return (value as any).toDate().toISOString();
+        }
+        if (typeof (value as any)?.seconds === 'number') {
+          return new Date((value as any).seconds * 1000).toISOString();
+        }
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const parsed = new Date(raw);
+        return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString();
+      } catch {
+        return '';
+      }
+    };
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const byId = new Map<string, any>();
+        const lookups: Array<Promise<void>> = [];
+
+        identifiers.forEach((identifier) => {
+          lookups.push(
+            getDocs(
+              query(
+                collection(firestore, 'standalone_upload_submissions'),
+                where('medicalRecordNumber', '==', identifier),
+                limit(40)
+              )
+            ).then((snap) => {
+              snap.docs.forEach((d) => byId.set(d.id, d.data()));
+            })
+          );
+          lookups.push(
+            getDocs(
+              query(
+                collection(firestore, 'standalone_upload_submissions'),
+                where('kaiserMrn', '==', identifier),
+                limit(40)
+              )
+            ).then((snap) => {
+              snap.docs.forEach((d) => byId.set(d.id, d.data()));
+            })
+          );
+        });
+
+        await Promise.all(lookups);
+
+        const entries = Array.from(byId.entries())
+          .flatMap(([docId, row]) => {
+            const toolCode = String(row?.toolCode || '').trim().toLowerCase();
+            const documentType = String(row?.documentType || '').trim().toLowerCase();
+            if (toolCode !== 'alft' && !documentType.includes('alft')) return [];
+
+            const rowFirst = String(row?.memberFirstName || '').trim().toLowerCase();
+            const rowLast = String(row?.memberLastName || '').trim().toLowerCase();
+            if (memberFirstName && rowFirst && memberFirstName !== rowFirst) return [];
+            if (memberLastName && rowLast && memberLastName !== rowLast) return [];
+
+            const packetPath = String(row?.alftSignature?.packetPdfStoragePath || '').trim();
+            const signaturePagePath = String(row?.alftSignature?.signaturePagePdfStoragePath || '').trim();
+            const completedAtIso = toIso(row?.alftSignature?.completedAt || row?.updatedAt || row?.createdAt);
+            const displayMemberName =
+              `${String(row?.memberFirstName || '').trim()} ${String(row?.memberLastName || '').trim()}`.trim() ||
+              String(row?.memberName || '').trim() ||
+              `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim() ||
+              'Member';
+
+            const out: Array<{
+              id: string;
+              category: string;
+              documentName: string;
+              fileName: string;
+              downloadURL: string;
+              filePath: string;
+              uploadedAtIso: string;
+            }> = [];
+            if (packetPath) {
+              out.push({
+                id: `alft-completed-packet-${docId}`,
+                category: 'ALFT completion',
+                documentName: 'ALFT Packet (Signed)',
+                fileName: `${displayMemberName} - ALFT Packet (Signed).pdf`,
+                downloadURL: '',
+                filePath: packetPath,
+                uploadedAtIso: completedAtIso,
+              });
+            }
+            if (signaturePagePath) {
+              out.push({
+                id: `alft-completed-signature-${docId}`,
+                category: 'ALFT completion',
+                documentName: 'ALFT Signature Page',
+                fileName: `${displayMemberName} - ALFT Signature Page.pdf`,
+                downloadURL: '',
+                filePath: signaturePagePath,
+                uploadedAtIso: completedAtIso,
+              });
+            }
+            return out;
+          })
+          .sort((a, b) => {
+            const aMs = a.uploadedAtIso ? new Date(a.uploadedAtIso).getTime() : 0;
+            const bMs = b.uploadedAtIso ? new Date(b.uploadedAtIso).getTime() : 0;
+            return bMs - aMs;
+          });
+
+        if (!cancelled) setAlftCompletionFileEntries(entries);
+      } catch (error) {
+        console.warn('Failed to load ALFT completion files:', error);
+        if (!cancelled) setAlftCompletionFileEntries([]);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    firestore,
+    isKaiserPlan,
+    application?.id,
+    (application as any)?.memberMrn,
+    (application as any)?.memberMediCalNum,
+    (application as any)?.memberFirstName,
+    (application as any)?.memberLastName,
+  ]);
 
   useEffect(() => {
     if (!isKaiserPlan || !application) {
@@ -6508,6 +6668,7 @@ function ApplicationDetailPageContent() {
       ...eligibilityEntries,
       ...authorizationEntries,
       ...ispEntries,
+      ...alftCompletionFileEntries,
       ...(authorizationRequestSheetEntry ? [authorizationRequestSheetEntry] : []),
     ].forEach((entry) => {
       const key = `${entry.documentName}::${entry.fileName}::${entry.downloadURL || entry.filePath}`;
@@ -10053,6 +10214,11 @@ function ApplicationDetailPageContent() {
                   );
                 })()}
                 </CardDescription>
+                {isKaiserPlan ? (
+                  <Button asChild type="button" variant="outline" size="sm" className="w-full sm:w-auto">
+                    <Link href="/admin/alft-assignment">Open ALFT Assignment Queue</Link>
+                  </Button>
+                ) : null}
             </div>
             </CardHeader>
             <CardContent className="space-y-4">

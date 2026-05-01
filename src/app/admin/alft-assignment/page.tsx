@@ -172,7 +172,22 @@ export default function AdminAlftAssignmentPage() {
         })
         .filter((sw) => Boolean(sw.email))
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
-      setSocialWorkers(list);
+
+      // Guard against duplicate emails in Firestore to avoid duplicate Select keys/values.
+      const dedupedByEmail = new Map<string, SocialWorker>();
+      list.forEach((sw) => {
+        const existing = dedupedByEmail.get(sw.email);
+        if (!existing) {
+          dedupedByEmail.set(sw.email, sw);
+          return;
+        }
+        const existingLooksLikeEmail = existing.displayName.toLowerCase() === existing.email;
+        const nextLooksLikeEmail = sw.displayName.toLowerCase() === sw.email;
+        if (existingLooksLikeEmail && !nextLooksLikeEmail) {
+          dedupedByEmail.set(sw.email, sw);
+        }
+      });
+      setSocialWorkers(Array.from(dedupedByEmail.values()));
     } catch {
       // best-effort
     }
@@ -416,7 +431,7 @@ export default function AdminAlftAssignmentPage() {
                               </SelectTrigger>
                               <SelectContent>
                                 {socialWorkers.map((sw) => (
-                                  <SelectItem key={sw.email} value={sw.email} className="text-xs">
+                                  <SelectItem key={`${sw.uid}-${sw.email}`} value={sw.email} className="text-xs">
                                     {sw.displayName}
                                   </SelectItem>
                                 ))}
