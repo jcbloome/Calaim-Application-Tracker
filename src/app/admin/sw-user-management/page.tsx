@@ -84,6 +84,7 @@ export default function SWUserManagementPage() {
   const [socialWorkers, setSocialWorkers] = useState<SocialWorkerUser[]>([]);
   const [syncedStaff, setSyncedStaff] = useState<SyncedSocialWorker[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isBackfillingSwContacts, setIsBackfillingSwContacts] = useState(false);
   const [updatingAccess, setUpdatingAccess] = useState<Record<string, boolean>>({});
   const [updatingAllAccess, setUpdatingAllAccess] = useState(false);
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
@@ -307,6 +308,45 @@ export default function SWUserManagementPage() {
     }
   };
 
+  const backfillSwContactFields = async () => {
+    setIsBackfillingSwContacts(true);
+    try {
+      let idToken = '';
+      try {
+        idToken = (await adminUser?.getIdToken?.()) || '';
+      } catch {
+        idToken = '';
+      }
+      const response = await fetch('/api/tools/sw-userregistration-addresses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({ dryRun: false }),
+      });
+      const payload = await response.json().catch(() => ({} as any));
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || 'Failed to sync SW contact fields.');
+      }
+      toast({
+        title: 'SW contact fields synced',
+        description: `Updated ${Number(payload?.updated || 0)} rows in CalAIM_tbl_Social_Worker (matched ${Number(
+          payload?.matched || 0
+        )}, unchanged ${Number(payload?.unchanged || 0)}).`,
+      });
+      void loadFromCaspio();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'SW contact sync failed',
+        description: String(error?.message || 'Could not update SW County/Phone/Address/City/Zip fields.'),
+      });
+    } finally {
+      setIsBackfillingSwContacts(false);
+    }
+  };
+
   const togglePortalAccess = async (staff: SyncedSocialWorker, nextActive: boolean) => {
     if (!firestore || !adminUser) return;
     const staffEmail = normalizeEmail(staff.email);
@@ -409,6 +449,16 @@ export default function SWUserManagementPage() {
           <Button onClick={() => { void loadSocialWorkers(); void loadFromCaspio(); }} variant="outline">
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
+          </Button>
+          <Button onClick={() => void backfillSwContactFields()} variant="outline" disabled={isBackfillingSwContacts}>
+            {isBackfillingSwContacts ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Syncing SW contacts...
+              </>
+            ) : (
+              'Sync SW Contact Fields'
+            )}
           </Button>
         </div>
       </div>
