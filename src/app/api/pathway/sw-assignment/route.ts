@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/firebase-admin';
+import {
+  fetchCaspioSocialWorkers,
+  getCaspioCredentialsFromEnv,
+  normalizeSocialWorkerName,
+} from '@/lib/caspio-api-utils';
 
 function normalize(value: unknown): string {
   return String(value ?? '').trim().toLowerCase();
@@ -25,6 +30,9 @@ function namesMatch(row: any, firstName: string, lastName: string): boolean {
 function pickAssignedSocialWorkerEmail(row: any): string {
   const candidates = [
     row?.Social_Worker_Assigned,
+    row?.Social_Worker_Email,
+    row?.SocialWorkerEmail,
+    row?.socialWorkerEmail,
     row?.SocialWorkerAssigned,
     row?.socialWorkerAssigned,
     row?.Assigned_Social_Worker,
@@ -50,6 +58,86 @@ function pickAssignedSocialWorkerName(row: any): string {
     if (name) return name;
   }
   return '';
+}
+
+function isEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
+}
+
+function extractTrailingSwId(value: string): string {
+  const match = String(value || '').trim().match(/(\d+)$/);
+  return match ? match[1] : '';
+}
+
+function pickAssignedSocialWorkerRaw(row: any): string {
+  const candidates = [
+    row?.Social_Worker_Assigned,
+    row?.SocialWorkerAssigned,
+    row?.socialWorkerAssigned,
+    row?.Assigned_Social_Worker,
+    row?.assignedSocialWorker,
+  ];
+  for (const candidate of candidates) {
+    const raw = String(candidate || '').trim();
+    if (raw) return raw;
+  }
+  return '';
+}
+
+async function resolveSocialWorkerIdentity(row: any): Promise<{ email: string; name: string }> {
+  const assignedRaw = pickAssignedSocialWorkerRaw(row);
+  const initialEmailCandidate = pickAssignedSocialWorkerEmail(row);
+  const initialNameCandidate = pickAssignedSocialWorkerName(row);
+  const normalizedRawName = normalizeSocialWorkerName(assignedRaw);
+  const normalizedInitialName = normalizeSocialWorkerName(initialNameCandidate);
+  const swId = String(row?.SW_ID || row?.sw_id || row?.Social_Worker_ID || '').trim() || extractTrailingSwId(assignedRaw);
+
+  let resolvedEmail = isEmail(initialEmailCandidate) ? initialEmailCandidate : '';
+  let resolvedName = initialNameCandidate;
+
+  if (!resolvedName && assignedRaw && !isEmail(assignedRaw)) {
+    resolvedName = assignedRaw;
+  }
+  if (!resolvedEmail && isEmail(assignedRaw)) {
+    resolvedEmail = assignedRaw.trim().toLowerCase();
+  }
+
+  const needsCaspioLookup = !resolvedEmail || !resolvedName;
+  if (needsCaspioLookup) {
+    try {
+      const credentials = getCaspioCredentialsFromEnv();
+      const staff = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
+
+      const byId = swId
+        ? staff.find((item: any) => String(item?.sw_id || '').trim() === swId)
+        : null;
+      const byName = !byId
+        ? staff.find((item: any) => {
+            const candidate = normalizeSocialWorkerName(String(item?.name || '').trim());
+            return Boolean(candidate) && (candidate === normalizedInitialName || candidate === normalizedRawName);
+          })
+        : null;
+      const matched = byId || byName;
+
+      if (matched) {
+        const matchedEmail = String((matched as any)?.email || '').trim().toLowerCase();
+        const matchedName = String((matched as any)?.name || '').trim();
+        if (!resolvedEmail && matchedEmail) {
+          resolvedEmail = matchedEmail;
+        }
+        if ((!resolvedName || normalizeSocialWorkerName(resolvedName) !== normalizeSocialWorkerName(matchedName)) && matchedName) {
+          resolvedName = matchedName;
+        }
+      }
+    } catch {
+      // best effort
+    }
+  }
+
+  return {
+    email: String(resolvedEmail || '').trim().toLowerCase(),
+    name: String(resolvedName || '').trim(),
+  };
 }
 
 async function resolveSocialWorkerDisplayName(swEmail: string): Promise<string> {
@@ -121,8 +209,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const swEmail = pickAssignedSocialWorkerEmail(matching);
-    const swNameFromCache = pickAssignedSocialWorkerName(matching);
+    const resolvedIdentity = await resolveSocialWorkerIdentity(matching);
+    const swEmail = resolvedIdentity.email;
+    const swNameFromCache = resolvedIdentity.name;
     const swName = swNameFromCache || (await resolveSocialWorkerDisplayName(swEmail));
     const memberId = String(matching.Client_ID2 || matching.client_ID2 || '').trim();
     const kaiserStatus = String(matching.Kaiser_Status || '').trim();
