@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye, History, MoreVertical, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Loader2, RefreshCw, Search, ShieldAlert, Trash2, Ban, CheckCircle2, Eye, History, MoreVertical, ArrowUpDown, ArrowUp, ArrowDown, Mail, Users } from 'lucide-react';
+import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +12,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
@@ -24,7 +24,7 @@ import { useToast } from '@/hooks/use-toast';
 
 type AccountKind = 'staff' | 'social_worker' | 'user' | 'unknown';
 
-type SortKey = 'type' | 'status' | 'email';
+type SortKey = 'email' | 'name' | 'type' | 'status' | 'createdAt' | 'lastSignInAt';
 type SortDir = 'asc' | 'desc';
 
 type ListedUser = {
@@ -51,6 +51,23 @@ const fmt = (iso: string | null) => {
   return d.toLocaleString();
 };
 
+const normalizeName = (value: string) => String(value || '').trim().replace(/\s+/g, ' ');
+
+const getNameSortValue = (displayName: string) => {
+  const normalized = normalizeName(displayName);
+  if (!normalized) return '';
+  const parts = normalized.split(' ');
+  const lastName = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+  const firstNames = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+  return `${lastName}, ${firstNames}`.trim().toLowerCase();
+};
+
+const toTimestamp = (iso: string | null): number | null => {
+  if (!iso) return null;
+  const ts = new Date(iso).getTime();
+  return Number.isFinite(ts) ? ts : null;
+};
+
 export default function RegisteredUsersPage() {
   const { isSuperAdmin, isLoading } = useAdmin();
   const auth = useAuth();
@@ -71,9 +88,8 @@ export default function RegisteredUsersPage() {
   const [detail, setDetail] = useState<UserDetailsResult | null>(null);
 
   const [actionLoadingUid, setActionLoadingUid] = useState<string | null>(null);
-  const [actionMode, setActionMode] = useState<'disable' | 'enable' | 'delete'>('disable');
-  const [sortKey, setSortKey] = useState<SortKey>('email');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [sortKey, setSortKey] = useState<SortKey>('createdAt');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   useEffect(() => {
     if (!isLoading && !isSuperAdmin) router.replace('/admin');
@@ -140,9 +156,21 @@ export default function RegisteredUsersPage() {
     const cmp = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' });
 
     const arr = [...filtered];
+    const cmpDate = (aIso: string | null, bIso: string | null) => {
+      const aTs = toTimestamp(aIso);
+      const bTs = toTimestamp(bIso);
+      if (aTs == null && bTs == null) return 0;
+      if (aTs == null) return 1;
+      if (bTs == null) return -1;
+      return dir * (aTs - bTs);
+    };
+
     arr.sort((a, b) => {
+      if (sortKey === 'name') return dir * cmp(getNameSortValue(a.displayName), getNameSortValue(b.displayName));
       if (sortKey === 'type') return dir * cmp(typeLabel(a.kind), typeLabel(b.kind));
       if (sortKey === 'status') return dir * cmp(statusLabel(a), statusLabel(b));
+      if (sortKey === 'createdAt') return cmpDate(a.createdAt, b.createdAt);
+      if (sortKey === 'lastSignInAt') return cmpDate(a.lastSignInAt, b.lastSignInAt);
       return dir * cmp(String(a.email || ''), String(b.email || ''));
     });
     return arr;
@@ -305,6 +333,18 @@ export default function RegisteredUsersPage() {
             <RefreshCw className="h-4 w-4 mr-2" />
             {loadingList ? 'Refreshing…' : 'Refresh'}
           </Button>
+          <Button asChild className="w-full sm:w-auto">
+            <Link href="/admin/system-configuration/welcoming-user-screen">
+              <Mail className="h-4 w-4 mr-2" />
+              Welcoming User Screen
+            </Link>
+          </Button>
+          <Button asChild className="w-full sm:w-auto" variant="outline">
+            <Link href="/admin/caspio-users-registration">
+              <Users className="h-4 w-4 mr-2" />
+              Caspio User Registration
+            </Link>
+          </Button>
         </div>
       </div>
 
@@ -333,7 +373,7 @@ export default function RegisteredUsersPage() {
                 value={`${sortKey}:${sortDir}`}
                 onValueChange={(v) => {
                   const [k, d] = String(v).split(':');
-                  setSortKey((k as any) || 'email');
+                  setSortKey((k as SortKey) || 'createdAt');
                   setSortDir((d as any) || 'asc');
                 }}
               >
@@ -341,6 +381,12 @@ export default function RegisteredUsersPage() {
                   <SelectValue placeholder="Sort" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[60vh] overflow-auto z-[60]">
+                  <SelectItem value="createdAt:desc">Created (Newest→Oldest)</SelectItem>
+                  <SelectItem value="createdAt:asc">Created (Oldest→Newest)</SelectItem>
+                  <SelectItem value="lastSignInAt:desc">Last Login (Newest→Oldest)</SelectItem>
+                  <SelectItem value="lastSignInAt:asc">Last Login (Oldest→Newest)</SelectItem>
+                  <SelectItem value="name:asc">Last Name (A→Z)</SelectItem>
+                  <SelectItem value="name:desc">Last Name (Z→A)</SelectItem>
                   <SelectItem value="email:asc">Email (A→Z)</SelectItem>
                   <SelectItem value="email:desc">Email (Z→A)</SelectItem>
                   <SelectItem value="type:asc">Type (A→Z)</SelectItem>
@@ -438,8 +484,24 @@ export default function RegisteredUsersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[220px] whitespace-nowrap">Email</TableHead>
-                  <TableHead className="min-w-[180px]">Name</TableHead>
+                  <TableHead className="min-w-[220px] whitespace-nowrap">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:underline"
+                      onClick={() => toggleSort('email')}
+                    >
+                      Email {sortIcon('email')}
+                    </button>
+                  </TableHead>
+                  <TableHead className="min-w-[180px]">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:underline"
+                      onClick={() => toggleSort('name')}
+                    >
+                      Name {sortIcon('name')}
+                    </button>
+                  </TableHead>
                   <TableHead className="min-w-[140px] whitespace-nowrap">
                     <button
                       type="button"
@@ -458,8 +520,24 @@ export default function RegisteredUsersPage() {
                       Status {sortIcon('status')}
                     </button>
                   </TableHead>
-                  <TableHead className="min-w-[180px]">Created</TableHead>
-                  <TableHead className="min-w-[180px] whitespace-nowrap">Last login</TableHead>
+                  <TableHead className="min-w-[180px] whitespace-nowrap">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:underline"
+                      onClick={() => toggleSort('createdAt')}
+                    >
+                      Created {sortIcon('createdAt')}
+                    </button>
+                  </TableHead>
+                  <TableHead className="min-w-[180px] whitespace-nowrap">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 hover:underline"
+                      onClick={() => toggleSort('lastSignInAt')}
+                    >
+                      Last login {sortIcon('lastSignInAt')}
+                    </button>
+                  </TableHead>
                   <TableHead className="min-w-[200px] text-right sticky right-0 bg-white">Actions</TableHead>
                 </TableRow>
               </TableHeader>

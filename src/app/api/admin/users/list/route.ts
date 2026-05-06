@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminApiAuth } from '@/lib/admin-api-auth';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

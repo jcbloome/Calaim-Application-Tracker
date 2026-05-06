@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Wrench, Settings, BellRing, ArrowRight, Bell } from 'lucide-react';
+import { Wrench, Settings, BellRing, ArrowRight, Bell, Mail } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -30,6 +30,13 @@ const systemTools = [
     icon: Settings,
     href: '/admin/notification-settings',
     color: 'text-blue-600'
+  },
+  {
+    title: 'Welcoming User Screen',
+    description: 'Edit and preview the webhook-triggered welcome email for activated users',
+    icon: Mail,
+    href: '/admin/system-configuration/welcoming-user-screen',
+    color: 'text-cyan-600'
   },
   {
     title: 'Priority Note Monitor',

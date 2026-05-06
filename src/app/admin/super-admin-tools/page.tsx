@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useAdmin } from '@/hooks/use-admin';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench, Mail, Receipt } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { Loader2, Settings, Database, TestTube, FileText, Upload, RefreshCw, HardDrive, Globe, Zap, Code, Bug, Wrench, Mail, Receipt, Users } from 'lucide-react';
 import Link from 'next/link';
 
 interface ToolCard {
@@ -43,6 +42,22 @@ const tools: ToolCard[] = [
         href: '/admin/email-test',
         category: 'testing',
         status: 'beta'
+    },
+    {
+        title: 'Welcoming User Screen',
+        description: 'Manage welcome email template and preview for newly activated users',
+        icon: <Mail className="h-6 w-6" />,
+        href: '/admin/system-configuration/welcoming-user-screen',
+        category: 'testing',
+        status: 'active'
+    },
+    {
+        title: 'Caspio User Registration',
+        description: 'Manage and manually send welcome emails for connect_tbl_userregistration users',
+        icon: <Users className="h-6 w-6" />,
+        href: '/admin/caspio-users-registration',
+        category: 'testing',
+        status: 'active'
     },
     {
         title: 'RCFE Bulk Email',
@@ -183,9 +198,8 @@ const statusConfig = {
 };
 
 export default function SuperAdminToolsPage() {
-    const { isSuperAdmin, isAdmin, isLoading: isAdminLoading } = useAdmin();
+    const { isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
     const router = useRouter();
-    const { toast } = useToast();
 
     // Redirect if not super admin
     useEffect(() => {
