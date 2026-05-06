@@ -30,12 +30,23 @@ export async function GET(req: NextRequest) {
         normalized === 'r & b sent pending ils contract'
       );
     };
+    const pickFirstNonEmpty = (...values: unknown[]) => {
+      for (const value of values) {
+        const normalized = String(value ?? '').trim();
+        if (normalized) return normalized;
+      }
+      return '';
+    };
     const hasAnyAuthData = (rawMember: any) =>
       Boolean(
         rawMember.Authorization_Start_Date_T2038 ||
           rawMember.Authorization_End_Date_T2038 ||
           rawMember.Authorization_Start_Date_H2022 ||
-          rawMember.Authorization_End_Date_H2022
+          rawMember.Authorization_End_Date_H2022 ||
+          rawMember.Authorization_End_Date_H222 ||
+          rawMember.Next_Auth_Start_H2022 ||
+          rawMember.Next_Auth_End_H2022 ||
+          rawMember.Next_Auth_H2022_Number
       );
     const isKaiserMember = (rawMember: any) =>
       normalizeValue(rawMember.CalAIM_MCO).includes('kaiser');
@@ -87,11 +98,13 @@ export async function GET(req: NextRequest) {
           rawMember.RCFE_Admin_Phone ||
           '',
         authorizationNumber:
-          rawMember.Authorization_Number_T038 ||
-          rawMember.Authorization_Number_T2038 ||
-          rawMember.Authorization_Number ||
-          rawMember.Authorization_Number_H2022 ||
-          '',
+          pickFirstNonEmpty(
+            rawMember.Next_Auth_H2022_Number,
+            rawMember.Authorization_Number_T038,
+            rawMember.Authorization_Number_T2038,
+            rawMember.Authorization_Number,
+            rawMember.Authorization_Number_H2022
+          ),
         tierLevel:
           rawMember.MCO_and_Tier ||
           rawMember.Tier_Level ||
@@ -102,8 +115,18 @@ export async function GET(req: NextRequest) {
         // Authorization fields (from raw Caspio data)
         authStartDateT2038: rawMember.Authorization_Start_Date_T2038 || '',
         authEndDateT2038: rawMember.Authorization_End_Date_T2038 || '',
-        authStartDateH2022: rawMember.Authorization_Start_Date_H2022 || '',
-        authEndDateH2022: rawMember.Authorization_End_Date_H2022 || '',
+        authStartDateH2022: pickFirstNonEmpty(
+          rawMember.Next_Auth_Start_H2022,
+          rawMember.Authorization_Start_Date_H2022
+        ),
+        authEndDateH2022: pickFirstNonEmpty(
+          rawMember.Next_Auth_End_H2022,
+          rawMember.Authorization_End_Date_H2022,
+          rawMember.Authorization_End_Date_H222
+        ),
+        nextAuthStartDateH2022: rawMember.Next_Auth_Start_H2022 || '',
+        nextAuthEndDateH2022: rawMember.Next_Auth_End_H2022 || '',
+        nextAuthNumberH2022: rawMember.Next_Auth_H2022_Number || '',
         authExtRequestDateT2038: rawMember.Requested_Auth_Extension_T2038 || rawMember.Auth_Ext_Request_Date_T2038 || '',
         authExtRequestDateH2022: rawMember.Requested_Auth_Extension_H2022 || '',
         

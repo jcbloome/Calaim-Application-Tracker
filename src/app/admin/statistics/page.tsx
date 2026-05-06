@@ -87,12 +87,74 @@ const capitalizeRcfeName = (value: unknown) => {
     .join(' ');
 };
 
+const stripCityZipFromAddress = (address: unknown, city: unknown) => {
+  const rawAddress = String(address || '').trim();
+  if (!rawAddress) return '—';
+  const rawCity = String(city || '').trim();
+  if (!rawCity) return rawAddress;
+
+  const escapedCity = rawCity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patterns = [
+    new RegExp(`,\\s*${escapedCity}\\s*,\\s*\\d{5}(?:-\\d{4})?$`, 'i'),
+    new RegExp(`,\\s*${escapedCity}\\s+\\d{5}(?:-\\d{4})?$`, 'i'),
+    new RegExp(`,\\s*${escapedCity}$`, 'i'),
+  ];
+
+  let cleaned = rawAddress;
+  for (const pattern of patterns) {
+    cleaned = cleaned.replace(pattern, '').trim();
+  }
+  return cleaned || rawAddress;
+};
+
+const toTitleCaseWords = (value: string) =>
+  value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => {
+      if (/^\d+[a-z]?$/i.test(part)) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join(' ');
+
+const normalizeRcfeCity = (city: unknown) => {
+  const raw = String(city || '').trim();
+  if (!raw) return '—';
+  return raw
+    .split(/[,\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+};
+
+const normalizeRcfeStreetAddress = (address: unknown, city: unknown) => {
+  const streetOnly = stripCityZipFromAddress(address, city);
+  if (!streetOnly || streetOnly === '—') return '—';
+  const normalizedSpacing = streetOnly
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*/g, ', ')
+    .trim();
+  const segments = normalizedSpacing
+    .split(',')
+    .map((segment) => toTitleCaseWords(segment.trim()))
+    .filter(Boolean);
+  return segments.join(', ') || normalizedSpacing;
+};
+
 const formatDateCell = (raw: string) => {
   const value = String(raw || '').trim();
   if (!value) return '—';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return format(parsed, 'MMM d, yyyy');
+};
+
+const pickFirstNonEmpty = (...values: unknown[]) => {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized) return normalized;
+  }
+  return '';
 };
 
 
@@ -198,21 +260,40 @@ export default function AdminStatisticsPage() {
         .map((member: any, idx: number) => {
           const memberFirstName = String(member?.memberFirstName || '').trim();
           const memberLastName = String(member?.memberLastName || '').trim();
-          const authStartDate = String(member?.authStartDateH2022 || member?.authStartDateT2038 || '').trim();
-          const authEndDate = String(member?.authEndDateH2022 || member?.authEndDateT2038 || '').trim();
+          const authStartDate = pickFirstNonEmpty(
+            member?.nextAuthStartDateH2022,
+            member?.Next_Auth_Start_H2022,
+            member?.authStartDateH2022,
+            member?.Authorization_Start_Date_H2022,
+            member?.authStartDateT2038
+          );
+          const authEndDate = pickFirstNonEmpty(
+            member?.nextAuthEndDateH2022,
+            member?.Next_Auth_End_H2022,
+            member?.authEndDateH2022,
+            member?.Authorization_End_Date_H2022,
+            member?.Authorization_End_Date_H222,
+            member?.authEndDateT2038
+          );
+          const authorizationNumber = pickFirstNonEmpty(
+            member?.nextAuthNumberH2022,
+            member?.Next_Auth_H2022_Number,
+            member?.authorizationNumber,
+            member?.Authorization_Number_H2022
+          );
           const memberId = String(member?.memberMediCalNum || member?.memberMrn || member?.clientId2 || '').trim();
           return {
             id: String(member?.recordId || member?.clientId2 || `${member?.memberFirstName || ''}-${member?.memberLastName || ''}-${idx}`),
             memberId: memberId || '—',
             memberFirstName: memberFirstName || '—',
             memberLastName: memberLastName || '—',
-            authorizationNumber: String(member?.authorizationNumber || '').trim() || '—',
+            authorizationNumber: authorizationNumber || '—',
             memberTier: normalizeMemberTier(member?.tierLevel),
             authStartDate: authStartDate || '—',
             authEndDate: authEndDate || '—',
             assistedLivingFacilityName: capitalizeRcfeName(member?.rcfeName),
-            alfAddress: String(member?.rcfeAddress || '').trim() || '—',
-            alfCity: String(member?.rcfeCity || '').trim() || '—',
+            alfAddress: normalizeRcfeStreetAddress(member?.rcfeAddress, member?.rcfeCity),
+            alfCity: normalizeRcfeCity(member?.rcfeCity),
             memberName: `${memberFirstName} ${memberLastName}`.trim() || 'Unknown',
           };
         })
