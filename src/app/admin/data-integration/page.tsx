@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Brain, Database, FolderSync, ArrowRight } from 'lucide-react';
+import { Brain, Database, FolderSync, ArrowRight, BarChart3 } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -44,6 +44,13 @@ const integrationTools = [
     icon: FolderSync,
     href: '/admin/migrate-drive',
     color: 'text-red-600'
+  },
+  {
+    title: 'Statistics Dashboard',
+    description: 'View data and information metrics including authorized members and RCFE reporting exports',
+    icon: BarChart3,
+    href: '/admin/statistics',
+    color: 'text-emerald-600'
   }
 ];
 

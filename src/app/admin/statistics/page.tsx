@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useFirestore } from '@/firebase';
 import { collection, query, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
-import { Loader2, RefreshCw, Users, Building2, Stethoscope, UserCheck, Activity, BarChart3 } from 'lucide-react';
+import { Loader2, RefreshCw, Users, Building2, Stethoscope, UserCheck, Activity, BarChart3, FileDown } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -54,6 +54,47 @@ const DataList = ({ data, emptyText = "No data available." }: { data: { name: st
     </div>
 );
 
+type HealthNetRcfeReportRow = {
+  id: string;
+  memberId: string;
+  memberFirstName: string;
+  memberLastName: string;
+  authorizationNumber: string;
+  memberTier: string;
+  authEndDate: string;
+  alfCity: string;
+  memberName: string;
+  authStartDate: string;
+  assistedLivingFacilityName: string;
+  alfAddress: string;
+};
+
+const normalizeStatus = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+const normalizeMemberTier = (value: unknown) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '—';
+  const withoutHealthNet = raw.replace(/health\s*net/gi, '').replace(/^[\s\-:]+|[\s\-:]+$/g, '').trim();
+  return withoutHealthNet || '—';
+};
+
+const capitalizeRcfeName = (value: unknown) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '—';
+  return raw
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+};
+
+const formatDateCell = (raw: string) => {
+  const value = String(raw || '').trim();
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return format(parsed, 'MMM d, yyyy');
+};
+
 
 export default function AdminStatisticsPage() {
   const firestore = useFirestore();
@@ -79,6 +120,10 @@ export default function AdminStatisticsPage() {
   const [statsError, setStatsError] = useState<string | null>(null);
 
   const [selectedMemberFilter, setSelectedMemberFilter] = useState<'authorized' | 'rcfe' | 'social_worker' | 'rn' | null>(null);
+  const [healthNetRcfeRows, setHealthNetRcfeRows] = useState<HealthNetRcfeReportRow[]>([]);
+  const [healthNetRcfeLoading, setHealthNetRcfeLoading] = useState(false);
+  const [healthNetRcfeError, setHealthNetRcfeError] = useState<string | null>(null);
+  const [isExportingHealthNetExcel, setIsExportingHealthNetExcel] = useState(false);
 
   const fetchApps = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
@@ -129,6 +174,95 @@ export default function AdminStatisticsPage() {
       setStatsLoading(false);
     }
   }, [isAdmin]);
+
+  const fetchHealthNetRcfeReport = useCallback(async () => {
+    if (!isAdmin) return;
+
+    setHealthNetRcfeLoading(true);
+    setHealthNetRcfeError(null);
+    try {
+      const response = await fetch('/api/authorization/all-members?refresh=true', { cache: 'no-store' });
+      const payload = await response.json();
+      if (!response.ok || !payload?.success) {
+        throw new Error(String(payload?.error || `Failed to load report (HTTP ${response.status})`));
+      }
+
+      const members = Array.isArray(payload?.members) ? payload.members : [];
+      const filteredRows: HealthNetRcfeReportRow[] = members
+        .filter((member: any) => {
+          const healthPlan = String(member?.memberHealthPlan || '').toLowerCase();
+          const status = normalizeStatus(member?.memberStatus ?? member?.calaimStatus);
+          const hasRcfe = Boolean(String(member?.rcfeName || '').trim());
+          return healthPlan.includes('health net') && status === 'authorized' && hasRcfe;
+        })
+        .map((member: any, idx: number) => {
+          const memberFirstName = String(member?.memberFirstName || '').trim();
+          const memberLastName = String(member?.memberLastName || '').trim();
+          const authStartDate = String(member?.authStartDateH2022 || member?.authStartDateT2038 || '').trim();
+          const authEndDate = String(member?.authEndDateH2022 || member?.authEndDateT2038 || '').trim();
+          const memberId = String(member?.memberMediCalNum || member?.memberMrn || member?.clientId2 || '').trim();
+          return {
+            id: String(member?.recordId || member?.clientId2 || `${member?.memberFirstName || ''}-${member?.memberLastName || ''}-${idx}`),
+            memberId: memberId || '—',
+            memberFirstName: memberFirstName || '—',
+            memberLastName: memberLastName || '—',
+            authorizationNumber: String(member?.authorizationNumber || '').trim() || '—',
+            memberTier: normalizeMemberTier(member?.tierLevel),
+            authStartDate: authStartDate || '—',
+            authEndDate: authEndDate || '—',
+            assistedLivingFacilityName: capitalizeRcfeName(member?.rcfeName),
+            alfAddress: String(member?.rcfeAddress || '').trim() || '—',
+            alfCity: String(member?.rcfeCity || '').trim() || '—',
+            memberName: `${memberFirstName} ${memberLastName}`.trim() || 'Unknown',
+          };
+        })
+        .sort((a, b) => {
+          const byRcfe = a.assistedLivingFacilityName.localeCompare(b.assistedLivingFacilityName);
+          if (byRcfe !== 0) return byRcfe;
+          return a.memberName.localeCompare(b.memberName);
+        });
+
+      setHealthNetRcfeRows(filteredRows);
+    } catch (error: any) {
+      setHealthNetRcfeRows([]);
+      setHealthNetRcfeError(String(error?.message || 'Could not load Health Net RCFE report.'));
+    } finally {
+      setHealthNetRcfeLoading(false);
+    }
+  }, [isAdmin]);
+
+  const exportHealthNetRcfeExcel = useCallback(async () => {
+    if (healthNetRcfeRows.length === 0) return;
+
+    setIsExportingHealthNetExcel(true);
+    try {
+      const xlsxMod: any = await import('xlsx');
+      const XLSX = xlsxMod?.default ?? xlsxMod;
+      const rowsForExcel = healthNetRcfeRows.map((row) => ({
+        'Member ID': row.memberId,
+        'Member First Name': row.memberFirstName,
+        'Member Last Name': row.memberLastName,
+        'Authorization #': row.authorizationNumber,
+        'Member Tier': row.memberTier,
+        'Auth Start Date': formatDateCell(row.authStartDate),
+        'Auth End Date': formatDateCell(row.authEndDate),
+        'Assisted Living Facility Name': row.assistedLivingFacilityName,
+        'ALF Address': row.alfAddress,
+        'ALF City': row.alfCity,
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(rowsForExcel);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'HealthNet RCFE');
+      const stamp = format(new Date(), 'yyyy-MM-dd');
+      XLSX.writeFile(workbook, `ALF_Data_Request_Health_Net_${stamp}.xlsx`);
+    } catch (error) {
+      console.error('Health Net RCFE Excel export failed:', error);
+      setHealthNetRcfeError('Could not generate Excel. Please try again.');
+    } finally {
+      setIsExportingHealthNetExcel(false);
+    }
+  }, [healthNetRcfeRows]);
 
   // Fetch resource data (staff, RCFEs, members)
   const fetchResourceData = useCallback(async () => {
@@ -210,7 +344,8 @@ export default function AdminStatisticsPage() {
     await Promise.all([
       fetchApps(),
       fetchResourceData(),
-      fetchStatusStats()
+      fetchStatusStats(),
+      fetchHealthNetRcfeReport()
     ]);
   };
 
@@ -550,6 +685,84 @@ export default function AdminStatisticsPage() {
               </Card>
             )}
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-3">
+              <span>Health Net Authorized Members at RCFEs</span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={fetchHealthNetRcfeReport} disabled={healthNetRcfeLoading || isAdminLoading}>
+                  {healthNetRcfeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                  Refresh Report
+                </Button>
+                <Button onClick={exportHealthNetRcfeExcel} disabled={healthNetRcfeRows.length === 0 || isExportingHealthNetExcel}>
+                  {isExportingHealthNetExcel ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileDown className="mr-2 h-4 w-4" />}
+                  Export Excel
+                </Button>
+              </div>
+            </CardTitle>
+            <CardDescription>
+              Matches the ALF Data Request spreadsheet columns for all authorized Health Net members currently assigned to an RCFE.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {healthNetRcfeError ? (
+              <p className="mb-3 text-sm text-destructive">{healthNetRcfeError}</p>
+            ) : null}
+
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-end justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Health Net Members at RCFEs</h3>
+                  <p className="text-xs text-muted-foreground">Generated {format(new Date(), 'MMM d, yyyy h:mm a')}</p>
+                </div>
+                <div className="text-sm font-medium">Total: {healthNetRcfeRows.length}</div>
+              </div>
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member ID</TableHead>
+                      <TableHead>Member First Name</TableHead>
+                      <TableHead>Member Last Name</TableHead>
+                      <TableHead>Authorization #</TableHead>
+                      <TableHead>Member Tier</TableHead>
+                      <TableHead>Auth Start Date</TableHead>
+                      <TableHead>Auth End Date</TableHead>
+                      <TableHead>Assisted Living Facility Name</TableHead>
+                      <TableHead>ALF Address</TableHead>
+                      <TableHead>ALF City</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {healthNetRcfeRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
+                          {healthNetRcfeLoading ? 'Loading report data…' : 'No matching Health Net authorized RCFE members found.'}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      healthNetRcfeRows.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>{row.memberId}</TableCell>
+                          <TableCell>{row.memberFirstName}</TableCell>
+                          <TableCell>{row.memberLastName}</TableCell>
+                          <TableCell>{row.authorizationNumber}</TableCell>
+                          <TableCell>{row.memberTier}</TableCell>
+                          <TableCell>{formatDateCell(row.authStartDate)}</TableCell>
+                          <TableCell>{formatDateCell(row.authEndDate)}</TableCell>
+                          <TableCell>{row.assistedLivingFacilityName}</TableCell>
+                          <TableCell>{row.alfAddress}</TableCell>
+                          <TableCell>{row.alfCity}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
 
         {/* Application Statistics */}

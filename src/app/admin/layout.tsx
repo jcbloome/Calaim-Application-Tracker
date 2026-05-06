@@ -185,6 +185,7 @@ const superAdminNavLinks = [
       { href: '/admin/electron-controls', label: 'Electron Controls', icon: Monitor },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
+      { href: '/admin/statistics', label: 'Data & Statistics', icon: BarChart3 },
       { href: '/admin/era-parser', label: 'ERA Parser', icon: Receipt },
       { href: '/admin/communication-notes', label: 'Communication & Notes', icon: MessageSquareText },
       { href: '/admin/development-testing', label: 'Development & Testing', icon: TestTube2 }

@@ -68,6 +68,7 @@ export async function GET(req: NextRequest) {
         memberCounty: rawMember.Member_County || 'Los Angeles',
         memberHealthPlan: rawMember.CalAIM_MCO || 'Unknown',
         memberStatus: rawMember.CalAIM_Status || '',
+        calaimStatus: rawMember.CalAIM_Status || '',
         kaiserStatus: rawMember.Kaiser_Status || '',
         rcfeName: rawMember.RCFE_Name || '',
         rcfeAddress: [
@@ -79,6 +80,24 @@ export async function GET(req: NextRequest) {
           .filter(Boolean)
           .join(', '),
         rcfeAdminName: rawMember.RCFE_Administrator || rawMember.RCFE_Admin_Name || '',
+        rcfeCity: rawMember.RCFE_City || '',
+        rcfePhone:
+          rawMember.RCFE_Administrator_Phone ||
+          rawMember.RCFE_Phone ||
+          rawMember.RCFE_Admin_Phone ||
+          '',
+        authorizationNumber:
+          rawMember.Authorization_Number_T038 ||
+          rawMember.Authorization_Number_T2038 ||
+          rawMember.Authorization_Number ||
+          rawMember.Authorization_Number_H2022 ||
+          '',
+        tierLevel:
+          rawMember.MCO_and_Tier ||
+          rawMember.Tier_Level ||
+          rawMember.Kaiser_Tier_Level_Received ||
+          rawMember.Kaiser_Tier_Level_Requested ||
+          '',
         
         // Authorization fields (from raw Caspio data)
         authStartDateT2038: rawMember.Authorization_Start_Date_T2038 || '',
