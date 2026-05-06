@@ -289,6 +289,9 @@ export default function AdminAlftTrackerPage() {
 
   const [sigRequestingId, setSigRequestingId] = useState('');
   const [sendingCompletedId, setSendingCompletedId] = useState('');
+  const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
+  const [sendConfirmChecked, setSendConfirmChecked] = useState(false);
+  const [sendConfirmRow, setSendConfirmRow] = useState<StandaloneUpload | null>(null);
   const [managerReviewingId, setManagerReviewingId] = useState('');
   const [rejectingId, setRejectingId] = useState('');
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -774,11 +777,20 @@ export default function AdminAlftTrackerPage() {
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) throw new Error(String(data?.error || `Send failed (HTTP ${res.status})`));
       toast({ title: 'Completed ALFT emailed', description: `Sent to ${String(data?.to || 'jocelyn@ilshealth.com')}.` });
+      setSendConfirmOpen(false);
+      setSendConfirmChecked(false);
+      setSendConfirmRow(null);
     } catch (e: any) {
       toast({ title: 'Could not send completed email', description: e?.message || 'Send failed.', variant: 'destructive' });
     } finally {
       setSendingCompletedId('');
     }
+  };
+
+  const openSendConfirm = (row: StandaloneUpload) => {
+    setSendConfirmRow(row);
+    setSendConfirmChecked(false);
+    setSendConfirmOpen(true);
   };
 
   const markManagerFinalReview = async (row: StandaloneUpload) => {
@@ -1232,7 +1244,7 @@ export default function AdminAlftTrackerPage() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => void sendCompletedToJh(r)}
+                              onClick={() => openSendConfirm(r)}
                               disabled={
                                 sendingCompletedId === r.id ||
                                 !canRunManagerWorkflow ||
@@ -1250,7 +1262,7 @@ export default function AdminAlftTrackerPage() {
                               }
                             >
                               <Send className="h-4 w-4 mr-2" />
-                              {sendingCompletedId === r.id ? 'Sending…' : 'Email completed to Jocelyn'}
+                              {sendingCompletedId === r.id ? 'Sending…' : 'Preview + email completed PDF'}
                             </Button>
                             <Button size="sm" onClick={() => void markCompleted(r)}>
                               <CheckCircle2 className="h-4 w-4 mr-2" />
@@ -1532,6 +1544,63 @@ export default function AdminAlftTrackerPage() {
             <Button onClick={() => void rejectToSw()} disabled={Boolean(rejectingId) || !String(rejectReason).trim()}>
               {rejectingId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Return to SW
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={sendConfirmOpen} onOpenChange={setSendConfirmOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Final preview before sending</DialogTitle>
+            <DialogDescription>
+              Review the final ALFT PDF packet, then confirm to email it to Jocelyn.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md border p-3">
+              <div className="text-sm font-medium">{sendConfirmRow?.memberName || '—'}</div>
+              <div className="text-xs text-muted-foreground font-mono">{sendConfirmRow?.medicalRecordNumber || '—'}</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" asChild>
+                <Link href={`/admin/alft-view/${encodeURIComponent(String(sendConfirmRow?.id || ''))}`} target="_blank">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Open final preview
+                </Link>
+              </Button>
+              {sendConfirmRow?.alftSignature?.requestId ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void downloadSignaturePdf(String(sendConfirmRow.alftSignature?.requestId), 'packet')}
+                  disabled={!sendConfirmRow?.alftSignature?.packetPdfStoragePath}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download final PDF packet
+                </Button>
+              ) : null}
+            </div>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={sendConfirmChecked}
+                onChange={(e) => setSendConfirmChecked(e.target.checked)}
+              />
+              I reviewed the final preview and confirm this completed ALFT should be sent as PDF.
+            </label>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setSendConfirmOpen(false)} disabled={Boolean(sendingCompletedId)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => sendConfirmRow && void sendCompletedToJh(sendConfirmRow)}
+              disabled={!sendConfirmChecked || Boolean(sendingCompletedId)}
+            >
+              {sendingCompletedId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+              Send completed PDF
             </Button>
           </DialogFooter>
         </DialogContent>

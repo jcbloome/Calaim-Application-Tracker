@@ -23,12 +23,9 @@ import {
 import {
   collection,
   doc,
-  getDocs,
   onSnapshot,
-  query,
   serverTimestamp,
   setDoc,
-  where,
 } from 'firebase/firestore';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -61,7 +58,16 @@ type AlftAssignment = {
   memberName: string;
   assignedSwEmail: string;
   assignedSwName: string;
-  status: 'assigned' | 'in_progress' | 'submitted' | 'completed';
+  status:
+    | 'assigned'
+    | 'in_progress'
+    | 'submitted'
+    | 'completed'
+    | 'sw_form_in_progress'
+    | 'awaiting_manager_review'
+    | 'returned_to_sw_for_changes'
+    | 'awaiting_rn_final_review'
+    | 'rn_finalized_ready_for_ils';
   assignedAt: any;
   assignedByEmail: string;
   assignedByName: string;
@@ -99,8 +105,38 @@ const formatDobLabel = (value: string): string => {
   }
 };
 
+const normalizePersonName = (value: string): string =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w\s,]/g, ' ')
+    .replace(/\s+/g, ' ');
+
+const nameKeys = (raw: string): string[] => {
+  const normalized = normalizePersonName(raw);
+  if (!normalized) return [];
+  const keys = new Set<string>([normalized]);
+  const parts = normalized.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 2) {
+    keys.add(`${parts[1]} ${parts[0]}`.trim());
+  }
+  const words = normalized.split(' ').filter(Boolean);
+  if (words.length >= 2) {
+    const first = words[0];
+    const last = words[words.length - 1];
+    keys.add(`${first} ${last}`.trim());
+    keys.add(`${last}, ${first}`.trim());
+  }
+  return Array.from(keys);
+};
+
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   assigned: { label: 'Assigned', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+  sw_form_in_progress: { label: 'SW filling ALFT form', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+  awaiting_manager_review: { label: 'Awaiting ALFT manager review', color: 'bg-amber-100 text-amber-800 border-amber-200' },
+  returned_to_sw_for_changes: { label: 'Returned to SW for changes', color: 'bg-red-100 text-red-800 border-red-200' },
+  awaiting_rn_final_review: { label: 'Awaiting RN final review/sign', color: 'bg-purple-100 text-purple-800 border-purple-200' },
+  rn_finalized_ready_for_ils: { label: 'RN finalized, ready for ILS', color: 'bg-green-100 text-green-800 border-green-200' },
   in_progress: { label: 'In Progress', color: 'bg-amber-100 text-amber-800 border-amber-200' },
   submitted: { label: 'Submitted', color: 'bg-green-100 text-green-800 border-green-200' },
   completed: { label: 'Completed', color: 'bg-gray-100 text-gray-700 border-gray-200' },
@@ -162,28 +198,24 @@ export default function AdminAlftAssignmentPage() {
     }
   }, [toast]);
 
-  // ── Load social workers from Firestore ─────────────────────────────────────────
+  // ── Load social workers from Caspio ────────────────────────────────────────────
 
   const loadSocialWorkers = useCallback(async () => {
-    if (!firestore) return;
     try {
-      const snap = await getDocs(
-        query(collection(firestore, 'socialWorkers'), where('isActive', '==', true))
-      );
-      const list: SocialWorker[] = snap.docs
-        .map((d) => {
-          const data = d.data() as any;
-          return {
-            uid: d.id,
-            email: String(data?.email || '').trim().toLowerCase(),
-            displayName: String(data?.displayName || data?.email || 'Social Worker').trim(),
-            isActive: Boolean(data?.isActive),
-          };
-        })
+      const res = await fetch('/api/caspio-staff', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data?.success) throw new Error(data?.error || `HTTP ${res.status}`);
+      const list: SocialWorker[] = (Array.isArray(data?.staff) ? data.staff : [])
+        .map((sw: any) => ({
+          uid: String(sw?.sw_id || sw?.id || sw?.email || sw?.name || '').trim().toLowerCase(),
+          email: String(sw?.email || '').trim().toLowerCase(),
+          displayName: String(sw?.name || sw?.displayName || sw?.email || 'Social Worker').trim(),
+          isActive: true,
+        }))
         .filter((sw) => Boolean(sw.email))
         .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-      // Guard against duplicate emails in Firestore to avoid duplicate Select keys/values.
+      // Guard against duplicate emails to avoid duplicate Select keys/values.
       const dedupedByEmail = new Map<string, SocialWorker>();
       list.forEach((sw) => {
         const existing = dedupedByEmail.get(sw.email);
@@ -198,10 +230,14 @@ export default function AdminAlftAssignmentPage() {
         }
       });
       setSocialWorkers(Array.from(dedupedByEmail.values()));
-    } catch {
-      // best-effort
+    } catch (e: any) {
+      toast({
+        title: 'Could not load Caspio social workers',
+        description: e?.message || 'Try refreshing.',
+        variant: 'destructive',
+      });
     }
-  }, [firestore]);
+  }, [toast]);
 
   // ── Live-listen to alft_assignments ──────────────────────────────────────────
 
@@ -223,6 +259,30 @@ export default function AdminAlftAssignmentPage() {
       void loadSocialWorkers();
     }
   }, [adminLoading, isAdmin, loadSocialWorkers]);
+
+  useEffect(() => {
+    if (members.length === 0 || socialWorkers.length === 0) return;
+    setPickedSw((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      members.forEach((member) => {
+        if (next[member.id] || assignments[member.id]?.assignedSwEmail) return;
+        const swRaw = String(member.socialWorkerAssigned || '').trim();
+        if (!swRaw) return;
+        const memberKeys = nameKeys(swRaw);
+        if (memberKeys.length === 0) return;
+        const match = socialWorkers.find((sw) => {
+          const swKeys = nameKeys(sw.displayName);
+          return swKeys.some((key) => memberKeys.includes(key));
+        });
+        if (match?.email) {
+          next[member.id] = match.email;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [assignments, members, socialWorkers]);
 
   // ── Assign SW to member ───────────────────────────────────────────────────────
 
@@ -252,11 +312,21 @@ export default function AdminAlftAssignmentPage() {
           kaiserStatus: member.kaiserStatus,
           assignedSwEmail: sw.email,
           assignedSwName: sw.displayName,
+          caspioSocialWorkerAssigned: member.socialWorkerAssigned,
           assignedByEmail: adminEmail,
           assignedByName: adminName,
           assignedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-          status: 'assigned',
+          status: 'sw_form_in_progress',
+          workflowStage: 'sw_fill_form',
+          workflowOrder: [
+            'sw_fill_form',
+            'manager_review',
+            'sw_corrections_if_needed',
+            'sw_signature',
+            'rn_final_review_signature',
+            'ready_for_ils',
+          ],
         };
 
         await setDoc(doc(firestore, 'alft_assignments', member.id), assignment, { merge: true });
@@ -328,7 +398,7 @@ export default function AdminAlftAssignmentPage() {
                 ALFT Assignment Queue
               </CardTitle>
               <CardDescription>
-                Assign Kaiser members (RN Visit Needed) to social workers for the ALFT assessment.
+                Select Kaiser members from Caspio and start the ALFT workflow with their Caspio-assigned social worker.
               </CardDescription>
             </div>
             <Button variant="outline" asChild>
@@ -348,7 +418,7 @@ export default function AdminAlftAssignmentPage() {
             />
             <Button variant="outline" size="sm" onClick={() => void loadMembers()} disabled={loading}>
               {loading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-              Load from Cache
+              Load Caspio Members
             </Button>
             <div className="flex gap-2 ml-auto text-sm text-muted-foreground">
               <Badge variant="outline">{filtered.length} shown</Badge>
@@ -361,7 +431,7 @@ export default function AdminAlftAssignmentPage() {
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Click <strong>Load from Cache</strong> to view RN Visit Needed members from the latest shared cache.
+                Click <strong>Load Caspio Members</strong> to view Kaiser members (RN Visit Needed) and their social worker assignment from Caspio.
               </AlertDescription>
             </Alert>
           )}
@@ -379,7 +449,7 @@ export default function AdminAlftAssignmentPage() {
                   <TableRow className="bg-muted/50">
                     <TableHead className="w-52">Member</TableHead>
                     <TableHead>ISP Info</TableHead>
-                    <TableHead className="w-56">Assign to SW</TableHead>
+                    <TableHead className="w-56">Caspio SW → ALFT Assignment</TableHead>
                     <TableHead className="w-36">Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -433,6 +503,9 @@ export default function AdminAlftAssignmentPage() {
                         {/* SW assignment picker */}
                         <TableCell>
                           <div className="space-y-2">
+                            <div className="text-[11px] text-muted-foreground">
+                              Caspio SW: {m.socialWorkerAssigned || 'Not set'}
+                            </div>
                             <Select
                               value={pickedSw[m.id] || currentSwEmail || ''}
                               onValueChange={(val) => setPickedSw((p) => ({ ...p, [m.id]: val }))}
@@ -464,7 +537,7 @@ export default function AdminAlftAssignmentPage() {
                               ) : (
                                 <UserCheck className="h-3 w-3 mr-1" />
                               )}
-                              {currentSwEmail ? 'Re-assign' : 'Assign'}
+                              {currentSwEmail ? 'Update assignment' : 'Start ALFT workflow'}
                             </Button>
                             {currentSwEmail && assignment?.assignedSwName && (
                               <div className="text-[10px] text-muted-foreground flex items-center gap-1">

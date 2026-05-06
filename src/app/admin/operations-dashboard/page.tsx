@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Kanban, DollarSign, Calendar, Activity, ArrowRight, Mail, UserCheck } from 'lucide-react';
+import { Kanban, DollarSign, Calendar, Activity, ArrowRight, Mail, UserCheck, ClipboardList } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -37,6 +37,13 @@ const operationsTools = [
     icon: UserCheck,
     href: '/admin/assignment-tracker',
     color: 'text-cyan-600'
+  },
+  {
+    title: 'ALFT Assignment',
+    description: 'Pick Kaiser members from Caspio, use Caspio SW assignment, and launch SW → Manager → RN → ILS ALFT workflow',
+    icon: ClipboardList,
+    href: '/admin/alft-assignment',
+    color: 'text-violet-600'
   },
   {
     title: 'Login Activity',
