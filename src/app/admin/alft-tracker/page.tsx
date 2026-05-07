@@ -1803,6 +1803,18 @@ export default function AdminAlftTrackerPage() {
                                 <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
                               ) : null}
                             </button>
+                            <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
+                              <span className="text-blue-700">•</span> 5) Social worker completes/submits ALFT with signature.
+                            </div>
+                            <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
+                              <span className="text-blue-700">•</span> 6) Manager first review (return loop if revisions are needed).
+                            </div>
+                            <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
+                              <span className="text-blue-700">•</span> 7) RN notified, reviews packet, makes changes, and signs.
+                            </div>
+                            <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
+                              <span className="text-blue-700">•</span> 8) Back to manager for final review, then send completed ALFT tool to Jocelyn.
+                            </div>
                           </div>
                         </div>
                       </div>

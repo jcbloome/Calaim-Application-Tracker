@@ -49,6 +49,44 @@ async function triggerMembersCacheSync(params: { mode: "incremental" | "full" })
   }
 }
 
+async function triggerSocialWorkersCacheSync() {
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl.replace(/\/$/, "")}/api/caspio/social-workers-cache/sync`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20 * 60 * 1000);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${cronSecret.value()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ mode: "full" }),
+      signal: controller.signal,
+    });
+
+    const text = await res.text().catch(() => "");
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // ignore
+    }
+
+    if (!res.ok) {
+      throw new Error(`social-workers sync failed (HTTP ${res.status}): ${text || res.statusText}`);
+    }
+    if (json && json.success === false) {
+      throw new Error(`social-workers sync reported failure: ${json.error || text || "unknown error"}`);
+    }
+    return json || { success: true, raw: text };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // Daily: incremental sync for SW roster freshness.
 export const syncCaspioMembersCacheIncremental = onSchedule(
   {
@@ -76,6 +114,21 @@ export const syncCaspioMembersCacheFull = onSchedule(
     console.log("🌙 Starting Caspio members cache FULL sync...");
     const result = await triggerMembersCacheSync({ mode: "full" });
     console.log("✅ Caspio members cache FULL sync complete:", result);
+  }
+);
+
+// Daily: sync social worker directory (SW_ID/email) for intake workflows.
+export const syncCaspioSocialWorkersCacheDaily = onSchedule(
+  {
+    // Daily 8:45 PM Eastern
+    schedule: "45 20 * * *",
+    timeZone: "America/New_York",
+    secrets: [cronSecret],
+  },
+  async () => {
+    console.log("👥 Starting Caspio social worker cache sync...");
+    const result = await triggerSocialWorkersCacheSync();
+    console.log("✅ Caspio social worker cache sync complete:", result);
   }
 );
 
