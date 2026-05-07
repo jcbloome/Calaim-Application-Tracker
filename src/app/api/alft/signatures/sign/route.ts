@@ -440,10 +440,13 @@ export async function POST(req: NextRequest) {
             .limit(30)
             .get()
             .catch(() => null);
-          const managerUids = (managerUsersSnap?.docs || []).map((d) => clean(d.id, 128)).filter(Boolean);
-          if (managerUids.length > 0) {
+          const superAdminSnap = await adminDb.collection('roles_super_admin').limit(100).get().catch(() => null);
+          const recipientUids = new Set<string>();
+          (managerUsersSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
+          (superAdminSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
+          if (recipientUids.size > 0) {
             await Promise.all(
-              managerUids.map((managerUid) =>
+              Array.from(recipientUids).map((managerUid) =>
                 adminDb.collection('staff_notifications').add({
                   userId: managerUid,
                   recipientName: 'Kaiser Manager',
@@ -468,12 +471,25 @@ export async function POST(req: NextRequest) {
             );
           }
 
-          const managerEmails = (managerUsersSnap?.docs || [])
-            .map((d: any) => ({
+          const superAdminUsersSnap = superAdminSnap && !superAdminSnap.empty
+            ? await adminDb
+                .collection('users')
+                .where(admin.firestore.FieldPath.documentId(), 'in', superAdminSnap.docs.slice(0, 30).map((d: any) => d.id))
+                .get()
+                .catch(() => null)
+            : null;
+          const managerEmails = [
+            ...(managerUsersSnap?.docs || []).map((d: any) => ({
               email: clean((d.data() as any)?.email, 220).toLowerCase(),
               name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Manager',
-            }))
-            .filter((m: any) => Boolean(m.email));
+            })),
+            ...((superAdminUsersSnap?.docs || []).map((d: any) => ({
+              email: clean((d.data() as any)?.email, 220).toLowerCase(),
+              name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Super Admin',
+            }))),
+          ]
+            .filter((m: any) => Boolean(m.email))
+            .filter((m: any, idx: number, arr: any[]) => arr.findIndex((x: any) => x.email === m.email) === idx);
           let managerStep4SentCount = 0;
           if (managerEmails.length > 0) {
             const results = await Promise.all(

@@ -108,8 +108,41 @@ export async function POST(req: NextRequest) {
     let rnUid = forceDefaultRn ? '' : clean((intake as any)?.alftRnUid, 128);
     let rnEmail = forceDefaultRn
       ? DEFAULT_RN_EMAIL
-      : clean((intake as any)?.alftRnEmail, 200).toLowerCase() || DEFAULT_RN_EMAIL;
-    let rnName = forceDefaultRn ? DEFAULT_RN_NAME : clean((intake as any)?.alftRnName, 160) || DEFAULT_RN_NAME;
+      : clean((intake as any)?.alftRnEmail, 200).toLowerCase();
+    let rnName = forceDefaultRn ? DEFAULT_RN_NAME : clean((intake as any)?.alftRnName, 160);
+    if (!forceDefaultRn && (!rnUid || !rnEmail)) {
+      try {
+        const rnStaffSnap = await adminDb
+          .collection('users')
+          .where('isRnStaff', '==', true)
+          .limit(20)
+          .get();
+        if (!rnStaffSnap.empty) {
+          const rnCandidates = rnStaffSnap.docs
+            .map((docSnap: any) => ({
+              uid: clean(docSnap.id, 128),
+              email: clean((docSnap.data() as any)?.email, 220).toLowerCase(),
+              name:
+                clean((docSnap.data() as any)?.displayName, 160) ||
+                clean(`${clean((docSnap.data() as any)?.firstName, 80)} ${clean((docSnap.data() as any)?.lastName, 80)}`, 160),
+            }))
+            .filter((r: any) => Boolean(r.email));
+          const preferred =
+            rnCandidates.find((r: any) => r.email === DEFAULT_RN_EMAIL) ||
+            rnCandidates[0] ||
+            null;
+          if (preferred) {
+            rnUid = rnUid || preferred.uid;
+            rnEmail = rnEmail || preferred.email;
+            rnName = rnName || preferred.name;
+          }
+        }
+      } catch {
+        // fallback below
+      }
+    }
+    rnEmail = rnEmail || DEFAULT_RN_EMAIL;
+    rnName = rnName || DEFAULT_RN_NAME;
     if (!rnUid) {
       try {
         const byEmailSnap = await adminDb.collection('users').where('email', '==', rnEmail).limit(1).get();
@@ -221,6 +254,42 @@ export async function POST(req: NextRequest) {
         },
         { merge: true }
       );
+
+    try {
+      const settingsSnap = await adminDb.collection('system_settings').doc('review_notifications').get().catch(() => null);
+      const recipients = ((settingsSnap?.data() as any)?.recipients || {}) as Record<string, any>;
+      const rnVisitAssignerUids = Object.entries(recipients)
+        .filter(([, rec]) => Boolean((rec as any)?.enabled) && Boolean((rec as any)?.kaiserRnVisitAssigner))
+        .map(([key, rec]) => clean((rec as any)?.uid || key, 128))
+        .filter(Boolean);
+      if (rnVisitAssignerUids.length > 0) {
+        await Promise.all(
+          rnVisitAssignerUids.map((recipientUid) =>
+            adminDb.collection('staff_notifications').add({
+              userId: recipientUid,
+              recipientName: 'RN Visit Assigner',
+              title: 'ALFT sent to RN',
+              message: `${memberName} • MRN ${mrn || '—'}\nRN requested. Follow up if no RN response within 2 days.`,
+              memberName,
+              type: 'alft_rn_requested',
+              priority: 'Priority',
+              status: 'Open',
+              isRead: false,
+              source: 'system',
+              createdBy: requesterUid,
+              createdByName: requesterName,
+              senderName: requesterName,
+              senderId: requesterUid,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+              standaloneUploadId: intakeId,
+            })
+          )
+        );
+      }
+    } catch {
+      // best-effort only
+    }
 
     const adminSignUrl = `/admin/alft-sign/${encodeURIComponent(rnToken)}`;
     const swSignUrl = `/sw-portal/alft-sign/${encodeURIComponent(mswToken)}`;

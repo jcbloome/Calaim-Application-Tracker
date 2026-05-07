@@ -203,7 +203,6 @@ interface AlftWorkflowStartPayload {
     memberName: string;
     mrn?: string;
     portalUrl?: string;
-    assignmentUrl?: string;
     assignedBy?: string;
 }
 
@@ -776,11 +775,7 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
 
     const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
     const portalUrlRaw = String(payload.portalUrl || '/sw-portal/alft-upload').trim();
-    const assignmentUrlRaw = String(payload.assignmentUrl || '/admin/alft-assignment').trim();
     const portalUrl = portalUrlRaw.startsWith('http') ? portalUrlRaw : `${baseUrl}${portalUrlRaw.startsWith('/') ? '' : '/'}${portalUrlRaw}`;
-    const assignmentUrl = assignmentUrlRaw.startsWith('http')
-      ? assignmentUrlRaw
-      : `${baseUrl}${assignmentUrlRaw.startsWith('/') ? '' : '/'}${assignmentUrlRaw}`;
 
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
     const memberName = String(payload.memberName || '').trim() || 'Member';
@@ -806,9 +801,6 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
             <a href="${portalUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; display: inline-block; font-weight: 600;">
               Open SW Portal ALFT Form
             </a>
-          </p>
-          <p style="margin: 0; color: #64748b; font-size: 12px;">
-            Manager tracking queue: <a href="${assignmentUrl}">${assignmentUrl}</a>
           </p>
         </div>
       </div>

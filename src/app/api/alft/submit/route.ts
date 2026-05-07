@@ -19,6 +19,7 @@ type SubmitBody = {
     medicalRecordNumber?: string;
     mediCalNumber?: string;
     kaiserMrn?: string;
+    expectedVisitDate?: string;
     prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
     prefillSourceLabel?: string;
   };
@@ -60,6 +61,7 @@ const cleanDeep = (value: unknown): any => {
   }
   return null;
 };
+const JOHN_EMAIL = 'john@carehomefinders.com';
 
 async function resolveUidByEmail(admin: any, adminDb: any, emailRaw: string): Promise<string> {
   const email = clean(emailRaw, 200).toLowerCase();
@@ -183,6 +185,7 @@ export async function POST(request: NextRequest) {
     const medicalRecordNumberRaw = clean(body?.member?.medicalRecordNumber, 80);
     const mediCalNumberRaw = clean(body?.member?.mediCalNumber, 80);
     const kaiserMrnRaw = clean(body?.member?.kaiserMrn, 80);
+    const expectedVisitDate = clean(body?.member?.expectedVisitDate, 40);
     const medicalRecordNumber = medicalRecordNumberRaw || kaiserMrnRaw || mediCalNumberRaw;
 
     const planLower = healthPlan.toLowerCase();
@@ -262,6 +265,7 @@ export async function POST(request: NextRequest) {
       mediCalNumber: mediCalNumber || null,
       kaiserMrn: kaiserMrn || null,
       alftUploadDate: uploadDate || null,
+      alftExpectedVisitDate: expectedVisitDate || null,
       // Foundation for collaborative ALFT editing by SW, staff, RN, and admins.
       alftCollaboration: {
         allowAllPartiesEdit: true,
@@ -288,6 +292,20 @@ export async function POST(request: NextRequest) {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+
+    if (memberId) {
+      await adminDb.collection('alft_assignments').doc(memberId).set(
+        {
+          expectedVisitDate: expectedVisitDate || null,
+          alftExpectedVisitDate: expectedVisitDate || null,
+          expectedVisitDateUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          expectedVisitDateUpdatedByUid: uploaderUid,
+          expectedVisitDateUpdatedByName: uploaderName,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      ).catch(() => null);
+    }
 
     const intakeId = ref.id;
 
@@ -332,6 +350,9 @@ export async function POST(request: NextRequest) {
           }))
           .filter((m: any) => Boolean(m.email));
       }
+      if (!managerEmails.some((m) => m.email === JOHN_EMAIL)) {
+        managerEmails.push({ email: JOHN_EMAIL, name: 'John' });
+      }
       managerStage2EmailRecipients = managerEmails.length;
 
       if (managerEmails.length > 0) {
@@ -352,6 +373,34 @@ export async function POST(request: NextRequest) {
           )
         );
         managerStage2EmailSentCount = results.filter(Boolean).length;
+      }
+    } catch {
+      // best-effort only
+    }
+
+    try {
+      const johnUid = await resolveUidByEmail(admin, adminDb, JOHN_EMAIL);
+      if (johnUid) {
+        await adminDb.collection('staff_notifications').add({
+          userId: johnUid,
+          recipientName: 'John',
+          title: 'ALFT manager review item',
+          message: `${memberName} • MRN ${kaiserMrn || medicalRecordNumber || '—'}\nSW submitted/signature complete and ready for your review.`,
+          memberName,
+          type: 'alft_manager_step_john',
+          priority: 'Priority',
+          status: 'Open',
+          isRead: false,
+          source: 'system',
+          createdBy: uploaderUid,
+          createdByName: uploaderName,
+          senderName: uploaderName,
+          senderId: uploaderUid,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          actionUrl: focusUrl(intakeId),
+          intakeId,
+          standaloneUploadId: intakeId,
+        });
       }
     } catch {
       // best-effort only

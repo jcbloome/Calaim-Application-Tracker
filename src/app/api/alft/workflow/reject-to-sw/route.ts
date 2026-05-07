@@ -11,6 +11,7 @@ type Body = {
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
+const JOHN_EMAIL = 'john@carehomefinders.com';
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     if (!intakeSnap.exists) return NextResponse.json({ success: false, error: 'ALFT intake not found' }, { status: 404 });
+    const intakeRef = adminDb.collection('standalone_upload_submissions').doc(intakeId);
     const intake = intakeSnap.data() || {};
 
     const me = meSnap?.exists ? (meSnap.data() as any) : null;
@@ -153,6 +155,34 @@ export async function POST(req: NextRequest) {
         actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
         standaloneUploadId: intakeId,
       });
+    }
+
+    try {
+      const johnUserSnap = await adminDb.collection('users').where('email', '==', JOHN_EMAIL).limit(1).get().catch(() => null);
+      const johnUid = clean(johnUserSnap?.docs?.[0]?.id, 128);
+      if (johnUid) {
+        await adminDb.collection('staff_notifications').add({
+          userId: johnUid,
+          recipientName: 'John',
+          title: 'ALFT returned to SW',
+          message: `${memberName} • MRN ${mrn || '—'}\nReturned to SW for revisions.\nReason: ${reason}`,
+          memberName,
+          type: 'alft_manager_step_john',
+          priority: 'Priority',
+          status: 'Open',
+          isRead: false,
+          source: 'system',
+          createdBy: uid,
+          createdByName: name,
+          senderName: name,
+          senderId: uid,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+          standaloneUploadId: intakeId,
+        });
+      }
+    } catch {
+      // best-effort only
     }
 
     return NextResponse.json({ success: true, intakeId });

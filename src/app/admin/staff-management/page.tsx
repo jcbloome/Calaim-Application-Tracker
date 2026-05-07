@@ -26,6 +26,7 @@ interface StaffMember {
     isKaiserStaff?: boolean;
     isHealthNetStaff?: boolean;
     isClaimsStaff?: boolean;
+    isRnStaff?: boolean;
     isKaiserAssignmentManager?: boolean;
     hasRegistered?: boolean;
 }
@@ -196,6 +197,7 @@ export default function StaffManagementPage() {
                     isKaiserStaff: Boolean(userData.isKaiserStaff),
                     isHealthNetStaff: Boolean(userData.isHealthNetStaff),
                     isClaimsStaff: Boolean(userData.isClaimsStaff),
+                    isRnStaff: Boolean(userData.isRnStaff),
                     isKaiserAssignmentManager: Boolean(userData.isKaiserAssignmentManager),
                     hasRegistered,
                 };
@@ -243,7 +245,7 @@ export default function StaffManagementPage() {
 
     const handlePlanFlagUpdate = async (
       uid: string,
-      patch: Partial<Pick<StaffMember, 'isKaiserStaff' | 'isHealthNetStaff' | 'isClaimsStaff' | 'isKaiserAssignmentManager'>>
+      patch: Partial<Pick<StaffMember, 'isKaiserStaff' | 'isHealthNetStaff' | 'isClaimsStaff' | 'isRnStaff' | 'isKaiserAssignmentManager'>>
     ) => {
       if (!firestore) return;
       const cleanUid = String(uid || '').trim();
@@ -1365,20 +1367,6 @@ export default function StaffManagementPage() {
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
-                                                <ShieldCheck className={`h-4 w-4 ${staff.isKaiserAssignmentManager ? 'text-orange-700' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`kaiser-assignment-manager-${staff.uid}`} className="text-sm font-medium">Kaiser assignment manager</Label>
-                                            </div>
-                                            <Checkbox
-                                                id={`kaiser-assignment-manager-${staff.uid}`}
-                                                checked={Boolean(staff.isKaiserAssignmentManager)}
-                                                onCheckedChange={(checked) => {
-                                                    handlePlanFlagUpdate(staff.uid, { isKaiserAssignmentManager: Boolean(checked) }).catch(() => undefined);
-                                                }}
-                                                aria-label={`Toggle Kaiser assignment manager for ${staff.email}`}
-                                            />
-                                        </div>
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-2">
                                                 <Users className={`h-4 w-4 ${staff.isHealthNetStaff ? 'text-blue-600' : 'text-muted-foreground'}`} />
                                                 <Label htmlFor={`hn-staff-${staff.uid}`} className="text-sm font-medium">Health Net staff</Label>
                                             </div>
@@ -1403,6 +1391,55 @@ export default function StaffManagementPage() {
                                                     handlePlanFlagUpdate(staff.uid, { isClaimsStaff: Boolean(checked) }).catch(() => undefined);
                                                 }}
                                                 aria-label={`Toggle claims access for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <CalendarCheck className={`h-4 w-4 ${staff.isRnStaff ? 'text-violet-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`rn-staff-${staff.uid}`} className="text-sm font-medium">RN (ALFT route)</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`rn-staff-${staff.uid}`}
+                                                checked={Boolean(staff.isRnStaff)}
+                                                onCheckedChange={(checked) => {
+                                                    handlePlanFlagUpdate(staff.uid, { isRnStaff: Boolean(checked) }).catch(() => undefined);
+                                                }}
+                                                aria-label={`Toggle RN ALFT route for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <CalendarCheck className={`h-4 w-4 ${Boolean(reviewRecipient.kaiserRnVisitAssigner) ? 'text-purple-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`review-alft-reviewer-${staff.uid}`} className="text-sm font-medium">ALFT (Reviewer)</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`review-alft-reviewer-${staff.uid}`}
+                                                checked={Boolean(reviewRecipient.kaiserRnVisitAssigner)}
+                                                disabled={!reviewPopupsEnabled}
+                                                onCheckedChange={(checked) => {
+                                                    const nextValue = Boolean(checked);
+                                                    const keepEnabled = nextValue || Boolean(reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft);
+                                                    setReviewRecipient(
+                                                      staff.uid,
+                                                      { kaiserRnVisitAssigner: nextValue, enabled: keepEnabled },
+                                                      staff
+                                                    );
+                                                }}
+                                                aria-label={`Toggle ALFT reviewer routing for ${staff.email}`}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <ShieldCheck className={`h-4 w-4 ${staff.isKaiserAssignmentManager ? 'text-orange-700' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`kaiser-assignment-manager-${staff.uid}`} className="text-sm font-medium">Kaiser assignment manager</Label>
+                                            </div>
+                                            <Checkbox
+                                                id={`kaiser-assignment-manager-${staff.uid}`}
+                                                checked={Boolean(staff.isKaiserAssignmentManager)}
+                                                onCheckedChange={(checked) => {
+                                                    handlePlanFlagUpdate(staff.uid, { isKaiserAssignmentManager: Boolean(checked) }).catch(() => undefined);
+                                                }}
+                                                aria-label={`Toggle Kaiser assignment manager for ${staff.email}`}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
@@ -1521,27 +1558,6 @@ export default function StaffManagementPage() {
                                                 checked={swVisitDeletePermissions.includes(staff.uid)}
                                                 onCheckedChange={(checked) => handleSwVisitDeleteToggle(staff.uid, !!checked)}
                                                 aria-label={`Toggle SW visit delete permissions for ${staff.email}`}
-                                            />
-                                        </div>
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-2">
-                                                <CalendarCheck className={`h-4 w-4 ${Boolean(reviewRecipient.kaiserRnVisitAssigner) ? 'text-purple-700' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`review-rn-visit-assigner-${staff.uid}`} className="text-sm font-medium">RN Visit Assigner (Kaiser)</Label>
-                                            </div>
-                                            <Checkbox
-                                                id={`review-rn-visit-assigner-${staff.uid}`}
-                                                checked={Boolean(reviewRecipient.kaiserRnVisitAssigner)}
-                                                disabled={!reviewPopupsEnabled}
-                                                onCheckedChange={(checked) => {
-                                                    const nextValue = Boolean(checked);
-                                                    const keepEnabled = nextValue || Boolean(reviewRecipient.documents || reviewRecipient.csSummary || reviewRecipient.eligibility || reviewRecipient.standalone || reviewRecipient.alftReviewer || reviewRecipient.alft);
-                                                    setReviewRecipient(
-                                                      staff.uid,
-                                                      { kaiserRnVisitAssigner: nextValue, enabled: keepEnabled },
-                                                      staff
-                                                    );
-                                                }}
-                                                aria-label={`Toggle RN visit assigner routing for ${staff.email}`}
                                             />
                                         </div>
                                     </div>

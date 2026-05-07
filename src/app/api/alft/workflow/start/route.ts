@@ -573,7 +573,6 @@ export async function POST(req: NextRequest) {
           memberName: resolvedMemberName,
           mrn: resolvedMemberMrn || undefined,
           portalUrl: '/sw-portal/alft-upload',
-          assignmentUrl: `/admin/alft-assignment?member=${encodeURIComponent(memberName)}`,
           assignedBy: displayName,
         });
         swEmailSent = true;

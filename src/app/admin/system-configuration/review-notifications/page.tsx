@@ -23,6 +23,7 @@ type RecipientSettings = {
   standalone: boolean;
   alft: boolean;
   alftReviewer?: boolean;
+  alftRnReviewer?: boolean;
   kaiserRnVisitAssigner?: boolean;
   label?: string;
   email?: string;
@@ -166,6 +167,7 @@ export default function ReviewNotificationsPage() {
         standalone: Boolean((existing as any).standalone),
         alft: Boolean((existing as any).alft),
         alftReviewer: Boolean((existing as any).alftReviewer ?? (existing as any).alft),
+        alftRnReviewer: Boolean((existing as any).alftRnReviewer),
         kaiserRnVisitAssigner: Boolean((existing as any).kaiserRnVisitAssigner),
         email: existing.email || email,
         label: existing.label || label
@@ -179,6 +181,7 @@ export default function ReviewNotificationsPage() {
       standalone: false,
       alft: false,
       alftReviewer: false,
+      alftRnReviewer: false,
       kaiserRnVisitAssigner: false,
       email,
       label
@@ -399,6 +402,26 @@ export default function ReviewNotificationsPage() {
                           disabled={!r.enabled}
                           onCheckedChange={(checked) =>
                             updateRecipient(person.uid, { alftReviewer: Boolean(checked), alft: Boolean(checked) } as any, person.email, person.label)
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-muted-foreground">ALFT RN</Label>
+                        <Switch
+                          checked={Boolean(r.alftRnReviewer)}
+                          disabled={!r.enabled}
+                          onCheckedChange={(checked) =>
+                            updateRecipient(person.uid, { alftRnReviewer: Boolean(checked) } as any, person.email, person.label)
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-muted-foreground">RN Visit Assigner</Label>
+                        <Switch
+                          checked={Boolean(r.kaiserRnVisitAssigner)}
+                          disabled={!r.enabled}
+                          onCheckedChange={(checked) =>
+                            updateRecipient(person.uid, { kaiserRnVisitAssigner: Boolean(checked) } as any, person.email, person.label)
                           }
                         />
                       </div>

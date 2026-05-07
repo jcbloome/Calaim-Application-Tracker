@@ -25,81 +25,132 @@ const FLOW_STEPS: FlowStep[] = [
   {
     id: 'assigner',
     step: '1',
-    title: 'Start from Caspio Assignment',
-    details: 'Load Kaiser members and start ALFT from the member SW fields (SW_ID + Social_Worker_Assigned).',
+    title: 'Open verification tool',
+    details: 'Staff opens verification tool and confirms all required prefill fields are correct for ALFT prefill.',
     href: '/admin/alft-assignment',
-    cta: 'Open ALFT Assignment Queue',
-    roleLabel: 'ALFT Assigner',
-    defaultName: 'John',
-    defaultEmail: 'john@carehomefinders.com',
+    cta: 'Open ALFT Intake Queue',
+    roleLabel: 'Intake Staff',
+    defaultName: 'Intake Staff',
+    defaultEmail: 'intake@carehomefinders.com',
     colorClass: 'border-blue-500 bg-blue-50',
-    routeLabel: 'Assigner starts workflow and routes to Social Worker',
+    routeLabel: 'Verification review before SW email send',
+  },
+  {
+    id: 'verification_checkbox',
+    step: '2',
+    title: 'Verification checkbox sign-off',
+    details: 'Staff checks verification checkbox with staff name and timestamp to confirm prefill is ready.',
+    href: '/admin/alft-tracker',
+    cta: 'Open ALFT Workflow Intake',
+    roleLabel: 'Verified By',
+    defaultName: 'Intake Staff',
+    defaultEmail: 'intake@carehomefinders.com',
+    colorClass: 'border-cyan-500 bg-cyan-50',
+    routeLabel: 'Verification signer + timestamp captured',
+  },
+  {
+    id: 'sw_email_preview',
+    step: '3',
+    title: 'Preview SW email',
+    details: 'Review SW email content and confirm the preview does not include a manager queue link line.',
+    href: '/admin/alft-tracker',
+    cta: 'Open SW Email Preview',
+    roleLabel: 'Intake Staff',
+    defaultName: 'Intake Staff',
+    defaultEmail: 'intake@carehomefinders.com',
+    colorClass: 'border-sky-500 bg-sky-50',
+    routeLabel: 'SW email preview approved',
+  },
+  {
+    id: 'sw_email_send',
+    step: '4',
+    title: 'Send SW email with timestamp',
+    details: 'Send SW email invite and capture timestamp for the send event.',
+    href: '/admin/alft-tracker',
+    cta: 'Send SW Notice',
+    roleLabel: 'Intake Staff',
+    defaultName: 'Intake Staff',
+    defaultEmail: 'intake@carehomefinders.com',
+    colorClass: 'border-indigo-500 bg-indigo-50',
+    routeLabel: 'SW notice sent (timestamped)',
   },
   {
     id: 'social_worker_submit',
-    step: '2',
-    title: 'Social Worker Draft Submission',
-    details: 'SW fills/submits ALFT form and packet enters intake workflow for manager review.',
+    step: '5',
+    title: 'SW completes and signs',
+    details: 'Social Worker completes ALFT and signs, then routes to ALTA manager (John) for first review.',
     href: '/admin/alft-tracker',
-    cta: 'Open ALFT Workflow Intake',
+    cta: 'Track SW Submission',
     roleLabel: 'Social Worker',
     defaultName: 'Bob Wizard',
     defaultEmail: 'bob.wizard@carehomefinders.com',
     colorClass: 'border-emerald-500 bg-emerald-50',
-    routeLabel: 'Submission routes directly to ALFT Manager review',
+    routeLabel: 'Submission routes to John first review',
   },
   {
-    id: 'manager_review',
-    step: '3',
-    title: 'ALFT Manager Review / Return Loop',
-    details:
-      'ALFT manager reviews and either returns to SW for revisions or advances to RN/signature. Returned forms route to Deydry (not John).',
+    id: 'john_first_review',
+    step: '6',
+    title: 'John first review (approve/reject)',
+    details: 'John reviews first and either approves or rejects with needed SW changes.',
     href: '/admin/alft-tracker',
-    cta: 'Review / Return in Tracker',
-    roleLabel: 'ALFT Manager',
-    defaultName: 'Deydry',
-    defaultEmail: 'deydry@carehomefinders.com',
+    cta: 'Run First Review',
+    roleLabel: 'ALTA Manager',
+    defaultName: 'John',
+    defaultEmail: 'john@carehomefinders.com',
     colorClass: 'border-amber-500 bg-amber-50',
-    routeLabel: 'Return loop owner: Deydry',
+    routeLabel: 'First review decision + timestamp',
   },
   {
-    id: 'signature_phase',
-    step: '4',
-    title: 'SW + RN Signature Sequence',
-    details: 'Request signatures, complete SW and RN sign-off, and confirm packet generation.',
+    id: 'john_recheck_send_rn',
+    step: '7',
+    title: 'John re-check and send to RN',
+    details: 'After SW corrections, John re-checks and sends packet to RN.',
     href: '/admin/alft-tracker',
-    cta: 'Run Signature Workflow',
-    roleLabel: 'RN + Signature Team',
+    cta: 'Re-check and Send to RN',
+    roleLabel: 'ALTA Manager',
+    defaultName: 'John',
+    defaultEmail: 'john@carehomefinders.com',
+    colorClass: 'border-orange-500 bg-orange-50',
+    routeLabel: 'Re-check complete before RN handoff',
+  },
+  {
+    id: 'rn_review',
+    step: '8',
+    title: 'RN review, edits, and signature',
+    details: 'RN reviews packet, makes edits if needed, and signs with timestamp.',
+    href: '/admin/alft-tracker',
+    cta: 'Run RN Review',
+    roleLabel: 'RN',
     defaultName: 'Leslie (RN)',
     defaultEmail: 'rn@carehomefinders.com',
     colorClass: 'border-violet-500 bg-violet-50',
-    routeLabel: 'RN signs after manager pre-review',
+    routeLabel: 'RN sign-off complete',
   },
   {
     id: 'final_send',
-    step: '5',
-    title: 'Final Preview and PDF Send',
-    details: 'Use final preview confirmation gate, then send completed ALFT as PDF.',
+    step: '9',
+    title: 'Final review by Deydry/Jason',
+    details: 'Deydry/Jason performs final review before final delivery.',
     href: '/admin/alft-tracker',
-    cta: 'Preview + Send Completed PDF',
+    cta: 'Run Final Review',
+    roleLabel: 'Final Reviewer',
+    defaultName: 'Deydry',
+    defaultEmail: 'deydry@carehomefinders.com',
+    colorClass: 'border-fuchsia-500 bg-fuchsia-50',
+    routeLabel: 'Final review approval + timestamp',
+  },
+  {
+    id: 'jocelyn_receive',
+    step: '10',
+    title: 'Send completed PDF to Jocelyn',
+    details: 'Completed ALFT PDF is sent to Jocelyn and final send timestamp is recorded.',
+    href: '/admin/alft-tracker',
+    cta: 'Send Completed PDF',
     roleLabel: 'Final Receiver',
     defaultName: 'Jocelyn',
     defaultEmail: 'jocelyn@carehomefinders.com',
-    colorClass: 'border-fuchsia-500 bg-fuchsia-50',
-    routeLabel: 'Completed packet handoff',
-  },
-  {
-    id: 'dummy_preview',
-    step: '6',
-    title: 'Quality Dry-Run with Dummy Packet',
-    details: 'Use the full dummy ALFT editor/print preview to validate formatting and end-to-end process safely.',
-    href: '/admin/alft-tracker/dummy-preview',
-    cta: 'Open Dummy ALFT Workflow',
-    roleLabel: 'QA Tester',
-    defaultName: 'Bob Wizard',
-    defaultEmail: 'bob.wizard@carehomefinders.com',
-    colorClass: 'border-slate-500 bg-slate-50',
-    routeLabel: 'Training simulation and print validation',
+    colorClass: 'border-green-500 bg-green-50',
+    routeLabel: 'Workflow completed',
   },
 ];
 
@@ -118,7 +169,7 @@ export default function AlftWorkflowSamplePage() {
   const [testerEmail, setTesterEmail] = useState('');
   const [dummyMemberName, setDummyMemberName] = useState('Forrest Kendrick');
   const [memberInfoSource, setMemberInfoSource] = useState<'App CS Summary' | 'Caspio only'>('App CS Summary');
-  const [finalManagerName, setFinalManagerName] = useState('Deydry');
+  const [finalManagerName, setFinalManagerName] = useState('Deydry/Jason');
   const [finalManagerEmail, setFinalManagerEmail] = useState('deydry@carehomefinders.com');
   const [routeInputs, setRouteInputs] = useState<RouteInput>(initialInputs);
   const [finishedSteps, setFinishedSteps] = useState<Set<string>>(new Set());
@@ -155,12 +206,9 @@ export default function AlftWorkflowSamplePage() {
     const receiver = routeInputs[step.id] || { name: '', email: '' };
     const stepIndex = FLOW_STEPS.findIndex((s) => s.id === step.id);
     const nextStep = stepIndex >= 0 ? FLOW_STEPS[stepIndex + 1] : null;
-    const nextTarget =
-      step.id === 'final_send'
-        ? `${finalManagerName || 'ALFT Manager'} (${finalManagerEmail || 'manager email pending'})`
-        : nextStep
-          ? `${routeInputs[nextStep.id]?.name || nextStep.defaultName} (${routeInputs[nextStep.id]?.email || nextStep.defaultEmail})`
-          : 'Completed';
+    const nextTarget = nextStep
+      ? `${routeInputs[nextStep.id]?.name || nextStep.defaultName} (${routeInputs[nextStep.id]?.email || nextStep.defaultEmail})`
+      : 'Completed';
     setFinishedSteps((prev) => new Set([...prev, step.id]));
     setEventLog((prev) => [
       `${new Date().toLocaleTimeString()} - ${dummyMemberName}: Step ${step.step} processed by ${receiver.name || 'Unassigned'} (${receiver.email || 'no-email'}) -> next: ${nextTarget}`,
@@ -177,7 +225,7 @@ export default function AlftWorkflowSamplePage() {
     setTesterEmail('');
     setDummyMemberName('Forrest Kendrick');
     setMemberInfoSource('App CS Summary');
-    setFinalManagerName('Deydry');
+    setFinalManagerName('Deydry/Jason');
     setFinalManagerEmail('deydry@carehomefinders.com');
   };
 
@@ -223,7 +271,7 @@ export default function AlftWorkflowSamplePage() {
             />
           </div>
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Routing policy for this test flow: John can assign in Step 1, Bob Wizard can run SW steps, and final ALFT manager review is routed to the assigned manager (Deydry or you).
+            Routing policy for this test flow: Intake verifies first, SW signs, John runs first review and re-check, RN signs, then Deydry/Jason final review before PDF send to Jocelyn.
           </div>
           <div className={`rounded-md border p-3 text-sm ${memberInfoSource === 'App CS Summary' ? 'border-green-300 bg-green-50 text-green-900' : 'border-blue-300 bg-blue-50 text-blue-900'}`}>
             {memberInfoSource === 'App CS Summary' ? 'Member info source in this flow: App CS Summary' : 'Member info source in this flow: Caspio only'}
@@ -259,13 +307,13 @@ export default function AlftWorkflowSamplePage() {
           const done = finishedSteps.has(item.id);
           const nextStep = FLOW_STEPS[idx + 1];
           const nextName =
-            item.id === 'final_send'
+            item.id === 'rn_review'
               ? finalManagerName
               : nextStep
                 ? routeInputs[nextStep.id]?.name || nextStep.defaultName
                 : 'Completed';
           const nextEmail =
-            item.id === 'final_send'
+            item.id === 'rn_review'
               ? finalManagerEmail
               : nextStep
                 ? routeInputs[nextStep.id]?.email || nextStep.defaultEmail

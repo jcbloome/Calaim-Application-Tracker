@@ -113,6 +113,7 @@ export async function GET(request: NextRequest) {
         const allowEligibility = Boolean(recipient?.eligibility);
         const allowStandalone = Boolean(recipient?.standalone);
         const allowAlft = Boolean(recipient?.alftReviewer ?? recipient?.alft);
+        const allowAlftRnReviewer = Boolean(recipient?.alftRnReviewer);
         const allowRnVisitAssigner = Boolean(recipient?.kaiserRnVisitAssigner);
         return {
           enabled,
@@ -123,6 +124,7 @@ export async function GET(request: NextRequest) {
           allowEligibility,
           allowStandalone,
           allowAlft,
+          allowAlftRnReviewer,
           allowRnVisitAssigner,
         };
       } catch {
@@ -135,13 +137,14 @@ export async function GET(request: NextRequest) {
           allowEligibility: false,
           allowStandalone: false,
           allowAlft: false,
+          allowAlftRnReviewer: false,
           allowRnVisitAssigner: false,
         };
       }
     };
 
     const reviewPrefs = onlyFollowUp
-      ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false, allowEligibility: false, allowStandalone: false, allowAlft: false, allowRnVisitAssigner: false }
+      ? { enabled: false, pollIntervalSeconds: 180, recipientEnabled: false, allowCs: false, allowDocs: false, allowEligibility: false, allowStandalone: false, allowAlft: false, allowAlftRnReviewer: false, allowRnVisitAssigner: false }
       : await loadReviewNotificationRecipient();
 
     const fetchAllDocs = async (
@@ -532,6 +535,104 @@ export async function GET(request: NextRequest) {
       // Kaiser_H2022_Needs_RN_Reauth.
       try {
         if (reviewPrefs.allowRnVisitAssigner) {
+          const nowMs = Date.now();
+          const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
+
+          try {
+            const alftAssignmentsSnap = await adminDb.collection('alft_assignments').limit(3000).get().catch(() => null);
+            alftAssignmentsSnap?.docs?.forEach((docSnap) => {
+              const data = docSnap.data() || {};
+              const status = String(data?.status || '').trim().toLowerCase();
+              if (status === 'completed') return;
+              const expectedVisitDate = String(data?.expectedVisitDate || data?.alftExpectedVisitDate || '').trim();
+              if (expectedVisitDate) return;
+              const assignedAtMs =
+                parseMs(data?.assignedAt?.toDate?.()?.toISOString?.() || data?.assignedAt || data?.updatedAt || '') || nowMs;
+              const dueMs = assignedAtMs + twoDaysMs;
+              followUpTasks.push({
+                id: `alft-visit-date-missing-${docSnap.id}`,
+                title: `ALFT visit date missing: ${String(data?.memberName || 'Member').trim() || 'Member'}`,
+                description: 'Expected visit date is not entered by SW. Follow up with social worker.',
+                memberName: String(data?.memberName || '').trim() || 'Member',
+                memberClientId: String(data?.memberId || '').trim() || undefined,
+                healthPlan: 'Kaiser',
+                taskType: 'follow_up',
+                priority: nowMs > dueMs ? 'Urgent' : 'Priority',
+                status: nowMs > dueMs ? 'overdue' : 'pending',
+                dueDate: new Date(dueMs).toISOString(),
+                assignedBy: 'system',
+                assignedByName: 'System',
+                assignedTo: userId,
+                assignedToName: staffName,
+                createdAt: new Date(assignedAtMs).toISOString(),
+                updatedAt: new Date().toISOString(),
+                notes: 'ALFT assignment is missing expected visit date from SW.',
+                source: 'applications',
+                actionUrl: `/admin/alft-assignment?member=${encodeURIComponent(String(data?.memberName || '').trim() || 'Member')}`,
+                reminderType: 'alft_expected_visit_date_missing',
+              });
+            });
+          } catch (alftVisitDateError) {
+            console.warn('Failed to build ALFT missing-visit-date reminders:', alftVisitDateError);
+          }
+
+          try {
+            const alftIntakesSnap = await adminDb
+              .collection('standalone_upload_submissions')
+              .where('toolCode', '==', 'ALFT')
+              .limit(3000)
+              .get()
+              .catch(() => null);
+            alftIntakesSnap?.docs?.forEach((docSnap) => {
+              const data = docSnap.data() || {};
+              const workflowStatus = String(data?.workflowStatus || '').trim().toLowerCase();
+              const awaitingRn =
+                workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
+                workflowStatus.includes('awaiting_rn_final_signature');
+              if (!awaitingRn) return;
+              const rnSignedAtMs =
+                parseMs(data?.alftSignature?.rnSignedAt?.toDate?.()?.toISOString?.() || data?.alftSignature?.rnSignedAt || '') || 0;
+              if (rnSignedAtMs > 0) return;
+              const rnRequestedAtMs =
+                parseMs(
+                  data?.alftSignature?.rnRequestedAt?.toDate?.()?.toISOString?.() ||
+                    data?.alftSignature?.rnRequestedAt ||
+                    data?.updatedAt?.toDate?.()?.toISOString?.() ||
+                    data?.updatedAt ||
+                    ''
+                ) || 0;
+              if (!rnRequestedAtMs) return;
+              const dueMs = rnRequestedAtMs + twoDaysMs;
+              if (nowMs < dueMs) return;
+              const memberName = String(data?.memberName || '').trim() || 'Member';
+              const mrn = String(data?.medicalRecordNumber || data?.kaiserMrn || '').trim();
+              followUpTasks.push({
+                id: `alft-rn-no-response-${docSnap.id}`,
+                title: `ALFT RN no response (2+ days): ${memberName}`,
+                description: `RN response pending for more than 2 days${mrn ? ` • MRN ${mrn}` : ''}.`,
+                memberName,
+                memberClientId: String(data?.memberId || '').trim() || undefined,
+                healthPlan: 'Kaiser',
+                taskType: 'follow_up',
+                priority: 'Urgent',
+                status: 'overdue',
+                dueDate: new Date(dueMs).toISOString(),
+                assignedBy: 'system',
+                assignedByName: 'System',
+                assignedTo: userId,
+                assignedToName: staffName,
+                createdAt: new Date(rnRequestedAtMs).toISOString(),
+                updatedAt: new Date().toISOString(),
+                notes: 'ALFT is waiting on RN review/signature; escalate with RN visit assigner.',
+                source: 'applications',
+                actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(docSnap.id)}`,
+                reminderType: 'alft_rn_no_response_2_days',
+              });
+            });
+          } catch (alftRnResponseError) {
+            console.warn('Failed to build ALFT RN no-response reminders:', alftRnResponseError);
+          }
+
           const normalizeIso = (value: any) => {
             if (!value) return '';
             try {
@@ -643,7 +744,7 @@ export async function GET(request: NextRequest) {
         if (
           reviewPrefs.enabled &&
           reviewPrefs.recipientEnabled &&
-          (reviewPrefs.allowCs || reviewPrefs.allowDocs || reviewPrefs.allowEligibility || reviewPrefs.allowStandalone || reviewPrefs.allowAlft)
+          (reviewPrefs.allowCs || reviewPrefs.allowDocs || reviewPrefs.allowEligibility || reviewPrefs.allowStandalone || reviewPrefs.allowAlft || reviewPrefs.allowAlftRnReviewer)
         ) {
           const maxItems = 60;
 
@@ -835,7 +936,7 @@ export async function GET(request: NextRequest) {
             });
           }
 
-          if (reviewPrefs.allowStandalone || reviewPrefs.allowAlft) {
+          if (reviewPrefs.allowStandalone || reviewPrefs.allowAlft || reviewPrefs.allowAlftRnReviewer) {
             const standaloneSnap = await adminDb
               .collection('standalone_upload_submissions')
               .where('status', '==', 'pending')
@@ -852,7 +953,16 @@ export async function GET(request: NextRequest) {
             standaloneSnap?.docs?.forEach((docSnap: any) => {
               const data = docSnap.data() || {};
               const alft = isAlftDoc(data);
-              if (alft && !reviewPrefs.allowAlft) return;
+              const workflowStatus = String(data?.workflowStatus || '').trim().toLowerCase();
+              const isRnStage =
+                workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
+                workflowStatus.includes('awaiting_rn_final_signature');
+              const rnUid = String(data?.alftRnUid || '').trim();
+              const rnEmail = String(data?.alftRnEmail || '').trim().toLowerCase();
+              const isAssignedRn = (rnUid && rnUid === userId) || (rnEmail && staffEmail && rnEmail === staffEmail);
+              if (alft && isRnStage && reviewPrefs.allowAlftRnReviewer && !isAssignedRn) return;
+              if (alft && !isRnStage && !reviewPrefs.allowAlft) return;
+              if (alft && isRnStage && !reviewPrefs.allowAlftRnReviewer && !reviewPrefs.allowAlft) return;
               if (!alft && !reviewPrefs.allowStandalone) return;
 
               const memberName = String(data.memberName || '').trim() || 'Member';
@@ -863,9 +973,10 @@ export async function GET(request: NextRequest) {
               const mcpName = String(data.mcpName || data.healthPlan || '').trim() || '—';
               const pathway = String(data.pathway || '').trim() || '—';
               const dueDate = formatIso(data.createdAt || data.updatedAt || new Date());
+              const alftRnTask = Boolean(alft && isRnStage && reviewPrefs.allowAlftRnReviewer);
               reviewTasks.push({
-                id: `${alft ? 'review-alft' : 'review-standalone'}-${docSnap.id}`,
-                title: alft ? 'ALFT Upload Intake' : 'Standalone Upload Intake',
+                id: `${alftRnTask ? 'review-alft-rn' : alft ? 'review-alft' : 'review-standalone'}-${docSnap.id}`,
+                title: alftRnTask ? 'ALFT RN Review/Signature' : alft ? 'ALFT Upload Intake' : 'Standalone Upload Intake',
                 description:
                   `${docType}\n` +
                   `MRN: ${memberMrn} • DOB: ${memberDob} • County: ${memberCounty}\n` +
@@ -874,7 +985,7 @@ export async function GET(request: NextRequest) {
                 memberClientId: String(data.medicalRecordNumber || data.kaiserMrn || data.mediCalNumber || '').trim(),
                 healthPlan: String(data.healthPlan || '').trim(),
                 taskType: 'review',
-                reviewKind: alft ? 'alft' : 'standalone',
+                reviewKind: alftRnTask ? 'alft_rn' : alft ? 'alft' : 'standalone',
                 priority: 'High',
                 status: 'pending',
                 dueDate,

@@ -88,6 +88,51 @@ export async function POST(req: NextRequest) {
       { merge: true }
     );
 
+    try {
+      const managerUsersSnap = await adminDb
+        .collection('users')
+        .where('isKaiserAssignmentManager', '==', true)
+        .limit(50)
+        .get()
+        .catch(() => null);
+      const superAdminsSnap = await adminDb.collection('roles_super_admin').limit(100).get().catch(() => null);
+      const recipientUids = new Set<string>();
+      (managerUsersSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
+      (superAdminsSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
+
+      const memberName = clean((intake as any)?.memberName, 160) || 'Member';
+      const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
+      if (recipientUids.size > 0) {
+        await Promise.all(
+          Array.from(recipientUids)
+            .filter(Boolean)
+            .map((recipientUid) =>
+              adminDb.collection('staff_notifications').add({
+                userId: recipientUid,
+                recipientName: 'Kaiser Manager',
+                title: 'ALFT final review complete',
+                message: `${memberName} • MRN ${mrn || '—'}\nFinal review complete. Ready to send completed packet to Jocelyn.`,
+                memberName,
+                type: 'alft_ready_to_send_jocelyn',
+                priority: 'Priority',
+                status: 'Open',
+                isRead: false,
+                source: 'system',
+                createdBy: uid,
+                createdByName: name,
+                senderName: name,
+                senderId: uid,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+                standaloneUploadId: intakeId,
+              })
+            )
+        );
+      }
+    } catch {
+      // best-effort only
+    }
+
     return NextResponse.json({ success: true, intakeId });
   } catch (e: any) {
     console.error('[alft/workflow/final-review] error', e);

@@ -127,6 +127,53 @@ export async function POST(req: NextRequest) {
       { merge: true }
     );
 
+    try {
+      const managerUsersSnap = await adminDb
+        .collection('users')
+        .where('isKaiserAssignmentManager', '==', true)
+        .limit(50)
+        .get()
+        .catch(() => null);
+      const superAdminsSnap = await adminDb.collection('roles_super_admin').limit(100).get().catch(() => null);
+      const reviewSettingsSnap = await adminDb.collection('system_settings').doc('review_notifications').get().catch(() => null);
+      const reviewRecipients = ((reviewSettingsSnap?.data() as any)?.recipients || {}) as Record<string, any>;
+      const rnVisitAssignerUids = Object.entries(reviewRecipients)
+        .filter(([, rec]) => Boolean((rec as any)?.enabled) && Boolean((rec as any)?.kaiserRnVisitAssigner))
+        .map(([key, rec]) => clean((rec as any)?.uid || key, 128))
+        .filter(Boolean);
+
+      const recipientUids = new Set<string>(rnVisitAssignerUids);
+      (managerUsersSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
+      (superAdminsSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
+      if (recipientUids.size > 0) {
+        await Promise.all(
+          Array.from(recipientUids).map((recipientUid) =>
+            adminDb.collection('staff_notifications').add({
+              userId: recipientUid,
+              recipientName: 'Kaiser Manager',
+              title: 'ALFT completed and sent',
+              message: `${memberName} • MRN ${mrn || '—'}\nCompleted packet was sent to Jocelyn.`,
+              memberName,
+              type: 'alft_completed_sent_jocelyn',
+              priority: 'Priority',
+              status: 'Open',
+              isRead: false,
+              source: 'system',
+              createdBy: uid,
+              createdByName: email || 'Manager',
+              senderName: email || 'Manager',
+              senderId: uid,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+              standaloneUploadId: intakeId,
+            })
+          )
+        );
+      }
+    } catch {
+      // best-effort only
+    }
+
     return NextResponse.json({ success: true, to });
   } catch (e: any) {
     console.error('[alft/workflow/send-completed] error', e);

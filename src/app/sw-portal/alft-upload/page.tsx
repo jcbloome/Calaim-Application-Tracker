@@ -70,6 +70,7 @@ type KaiserMember = {
   prefillSourceLabel?: string;
   prefillPurpose?: string;
   alftPlanId?: string;
+  expectedVisitDate?: string;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -344,6 +345,7 @@ export default function SwKaiserAlftPage() {
   const [submitPending, setSubmitPending] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [swSignature, setSwSignature] = useState(''); // typed signature before submit
+  const [expectedVisitDate, setExpectedVisitDate] = useState('');
 
   // ── Load assigned members from Firestore alft_assignments ─────────────────────
 
@@ -397,6 +399,7 @@ export default function SwKaiserAlftPage() {
             prefillSourceLabel: String(data.prefillSourceLabel || '').trim(),
             prefillPurpose: String(data.prefillPurpose || '').trim(),
             alftPlanId: String(data.alftPlanId || '').trim(),
+            expectedVisitDate: String(data.expectedVisitDate || data.alftExpectedVisitDate || '').trim(),
           };
           if (row.id && row.assignmentStatus !== 'completed') {
             byMemberId.set(row.id, row);
@@ -427,6 +430,7 @@ export default function SwKaiserAlftPage() {
     setSelectedMember(m);
     setSubmitted(false);
     setMode('edit');
+    setExpectedVisitDate(String(m.expectedVisitDate || '').trim());
     const base = buildDefaultAnswers();
     const draft = loadDraftLocally(m.id);
     if (draft) {
@@ -438,6 +442,20 @@ export default function SwKaiserAlftPage() {
       setDraftSavedAt(null);
     }
   }, [swName, toast]);
+
+  const markMemberViewed = useCallback(async (memberId: string) => {
+    if (!auth?.currentUser || !memberId) return;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      await fetch('/api/alft/workflow/sw-member-view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, memberId }),
+      }).catch(() => null);
+    } catch {
+      // best effort
+    }
+  }, [auth]);
 
   // ── Answer helpers ────────────────────────────────────────────────────────────
 
@@ -497,6 +515,7 @@ export default function SwKaiserAlftPage() {
           kaiserMrn: selectedMember.memberMrn || '',
           prefillSourceMode: selectedMember.prefillSourceMode || '',
           prefillSourceLabel: selectedMember.prefillSourceLabel || '',
+          expectedVisitDate: expectedVisitDate || '',
         },
         alftForm: {
           formVersion: 'digital-v1',
@@ -562,7 +581,7 @@ export default function SwKaiserAlftPage() {
       setSubmitting(false);
       setSubmitPending(false);
     }
-  }, [answers, auth, firestore, selectedMember, swEmail, swName, swSignature, toast]);
+  }, [answers, auth, expectedVisitDate, firestore, selectedMember, swEmail, swName, swSignature, toast]);
 
   // ── Derived state ─────────────────────────────────────────────────────────────
 
@@ -678,7 +697,10 @@ export default function SwKaiserAlftPage() {
               <button
                 key={m.id}
                 type="button"
-                onClick={() => selectMember(m)}
+                onClick={() => {
+                  selectMember(m);
+                  void markMemberViewed(m.id);
+                }}
                 className="flex w-full items-center gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/50 active:bg-muted"
               >
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">
@@ -697,6 +719,7 @@ export default function SwKaiserAlftPage() {
                     {m.memberMrn && <span>MRN: {m.memberMrn}</span>}
                     {m.ispCurrentLocation && <span>{m.ispCurrentLocation}</span>}
                     {m.kaiserStatus && <span>Status: {m.kaiserStatus}</span>}
+                    {m.expectedVisitDate && <span>Expected visit: {m.expectedVisitDate}</span>}
                   </div>
                 </div>
                 <ChevronDown className="-rotate-90 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -756,6 +779,16 @@ export default function SwKaiserAlftPage() {
             </Button>
           )}
           {/* SW signature before submit */}
+          <div className="flex items-center gap-1.5 border rounded-md px-2 bg-white">
+            <span className="text-[10px] text-zinc-500 whitespace-nowrap">Expected visit:</span>
+            <input
+              type="date"
+              value={expectedVisitDate}
+              onChange={(e) => setExpectedVisitDate(e.target.value)}
+              className="h-7 w-36 bg-transparent text-xs focus:outline-none border-b border-zinc-400"
+              title="Expected visit date (required for RN Visit Assigner reminders)"
+            />
+          </div>
           <div className="flex items-center gap-1.5 border rounded-md px-2 bg-white">
             <span className="text-[10px] text-zinc-500 whitespace-nowrap">Sign:</span>
             <input

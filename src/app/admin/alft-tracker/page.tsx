@@ -425,16 +425,16 @@ const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
     return 'Next: SW logs into portal, completes prepopulated ALFT, and submits with signature.';
   }
   if (workflowStatus.includes('awaiting_manager_review_pre_rn')) {
-    return 'Next: ALFT manager reviews; return to SW for corrections or advance to RN/signature step.';
+    return 'Next: John (ALTA manager) does first review and either rejects for SW changes or approves to send to RN.';
   }
   if (workflowStatus.includes('returned_to_sw_for_revision')) {
-    return 'Next: SW applies corrections, re-signs, and resubmits for manager review.';
+    return 'Next: SW applies requested changes, signs again, and routes back to John for re-check.';
   }
   if (workflowStatus.includes('awaiting_rn_revision_and_signatures') || workflowStatus.includes('awaiting_rn_final_signature')) {
-    return 'Next: RN reviews/edits and signs; then manager is notified for final review.';
+    return 'Next: RN reviews, edits as needed, and signs; then packet routes to Deydry/Jason for final review.';
   }
   if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
-    return 'Next: Manager final review, then PDF packet is ready for download/send.';
+    return 'Next: Deydry/Jason final review, then send completed ALFT PDF to Jocelyn.';
   }
   return 'Next: Preview prefilled pages, then send workflow notice to SW.';
 };
@@ -602,19 +602,28 @@ const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
   const workflow = String(row.workflowStatus || '').toLowerCase();
   const status = String(row.status || '').toLowerCase();
   const hasInvite = workflow.includes('sw_invited') || status === 'sw_form_in_progress';
-  const swSubmitted = workflow.includes('awaiting_manager_review_pre_rn');
-  const managerLoop = workflow.includes('returned_to_sw_for_revision') || workflow.includes('awaiting_manager_review_pre_rn');
+  const swSubmitted =
+    workflow.includes('awaiting_manager_review_pre_rn') ||
+    workflow.includes('returned_to_sw_for_revision') ||
+    workflow.includes('awaiting_rn_revision_and_signatures') ||
+    workflow.includes('awaiting_rn_final_signature') ||
+    workflow.includes('awaiting_kaiser_manager_final_review') ||
+    workflow.includes('completed_sent_to_jocelyn');
+  const returnedToSw = workflow.includes('returned_to_sw_for_revision');
   const rnStep = workflow.includes('awaiting_rn') || workflow.includes('awaiting_rn_revision_and_signatures') || workflow.includes('awaiting_rn_final_signature');
   const finalManager = workflow.includes('awaiting_kaiser_manager_final_review');
   const complete = workflow.includes('completed_sent_to_jocelyn') || status === 'completed';
 
   return [
-    { step: 1, chip: 'Prefill Ready', label: 'ALFT prefill prepared (Page 1-2)', done: true, current: !hasInvite },
-    { step: 2, chip: 'SW Notified', label: 'SW notice sent + portal access enabled', done: hasInvite, current: hasInvite && !swSubmitted },
-    { step: 3, chip: 'SW Submitted', label: 'SW completes/signs ALFT form in SW Portal', done: swSubmitted, current: hasInvite && !swSubmitted },
-    { step: 4, chip: 'Manager Review', label: 'ALFT manager review (return loop if needed)', done: managerLoop, current: swSubmitted && !rnStep },
-    { step: 5, chip: 'RN Review', label: 'RN review/edits/signs final clinical packet', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
-    { step: 6, chip: 'Final + Jocelyn Email', label: 'Final manager review, full form preview, then email PDF to Jocelyn', done: finalManager || complete, current: finalManager && !complete },
+    { step: 1, chip: 'Verify Prefill', label: 'Staff verifies required ALFT prefill fields', done: hasInvite || swSubmitted, current: !hasInvite },
+    { step: 2, chip: 'Verify Checkbox', label: 'Staff verification checkbox sign-off with timestamp', done: hasInvite || swSubmitted, current: false },
+    { step: 3, chip: 'SW Email Preview', label: 'Preview SW email content (no manager queue link)', done: hasInvite || swSubmitted, current: false },
+    { step: 4, chip: 'SW Email Sent', label: 'Send SW email notice with timestamp', done: hasInvite, current: hasInvite && !swSubmitted },
+    { step: 5, chip: 'SW Signed', label: 'SW completes and signs ALFT packet', done: swSubmitted, current: hasInvite && !swSubmitted },
+    { step: 6, chip: 'John First Review', label: 'John approves or rejects with needed changes', done: swSubmitted, current: swSubmitted && !returnedToSw && !rnStep },
+    { step: 7, chip: 'Return + Re-check', label: 'If rejected, SW updates and John re-checks before RN', done: returnedToSw || rnStep || finalManager || complete, current: returnedToSw },
+    { step: 8, chip: 'RN Review + Sign', label: 'RN reviews, edits as needed, and signs', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
+    { step: 9, chip: 'Final + Jocelyn', label: 'Deydry/Jason final review then send completed PDF to Jocelyn', done: finalManager || complete, current: finalManager && !complete },
   ];
 };
 
@@ -1092,7 +1101,6 @@ export default function AdminAlftTrackerPage() {
     const swName = String(swEmailPreviewRow.assignedSwName || 'Social Worker').trim();
     const swEmail = String(swEmailPreviewRow.assignedSwEmail || '').trim();
     const portalPath = '/sw-portal/alft-upload';
-    const assignmentPath = '/admin/alft-assignment';
     return {
       to: swEmail || 'Missing email',
       subject: `ALFT assigned: ${memberName}`,
@@ -1105,8 +1113,6 @@ export default function AdminAlftTrackerPage() {
         `1) Go to portal: ${portalPath}`,
         '2) Login with your account',
         '3) Open ALFT Assignment page (ALFT Upload) and complete the form',
-        '',
-        `Manager queue link: ${assignmentPath}`,
       ].join('\n'),
     };
   }, [swEmailPreviewRow]);
@@ -1968,7 +1974,7 @@ export default function AdminAlftTrackerPage() {
                                 }}
                               />
                               <span className={isVerified ? 'text-green-700' : 'text-blue-700'}>{isVerified ? '✓' : '•'}</span>
-                              2) Verification checkbox (required to enable Send SW notice)
+                              2) Verification checkbox with staff name + timestamp (required before Step 4)
                             </label>
                             <button
                               type="button"
@@ -1978,7 +1984,7 @@ export default function AdminAlftTrackerPage() {
                                 setSwEmailPreviewOpen(true);
                               }}
                             >
-                              <span className="text-blue-700">•</span> 3) Preview SW email (confirm portal instructions).
+                              <span className="text-blue-700">•</span> 3) Preview SW email (confirm portal instructions, no manager queue link).
                             </button>
                             <button
                               type="button"
@@ -1991,22 +1997,25 @@ export default function AdminAlftTrackerPage() {
                               onClick={() => void startWorkflowFromIntake(row)}
                             >
                               <span className={isVerified ? 'text-blue-700' : 'text-slate-400'}>{isVerified ? '•' : '○'}</span>{' '}
-                              4) {String(row.workflowStatus || '').toLowerCase().includes('sw_invited') ? 'Re-send SW notice' : 'Send SW notice'} (enabled after Step 2)
+                              4) {String(row.workflowStatus || '').toLowerCase().includes('sw_invited') ? 'Re-send SW email' : 'Send SW email'} with timestamp (enabled after Step 2)
                               {startingWorkflowFor === (row.memberId || row.id) ? (
                                 <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
                               ) : null}
                             </button>
                             <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
-                              <span className="text-blue-700">•</span> 5) Social worker completes/submits ALFT with signature.
+                              <span className="text-blue-700">•</span> 5) Social worker completes/submits ALFT with signature (timestamp captured).
                             </div>
                             <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
-                              <span className="text-blue-700">•</span> 6) Manager first review (return loop if revisions are needed).
+                              <span className="text-blue-700">•</span> 6) John first review: approve or reject with needed changes (timestamp captured).
                             </div>
                             <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
-                              <span className="text-blue-700">•</span> 7) RN notified, reviews packet, makes changes, and signs.
+                              <span className="text-blue-700">•</span> 7) If rejected, SW updates then routes back to John for re-check and send-to-RN (timestamp captured).
                             </div>
                             <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
-                              <span className="text-blue-700">•</span> 8) Back to manager for final review, then send completed ALFT tool to Jocelyn.
+                              <span className="text-blue-700">•</span> 8) RN review, edits, and signature (timestamp captured).
+                            </div>
+                            <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
+                              <span className="text-blue-700">•</span> 9) Deydry/Jason final review, then send completed ALFT PDF to Jocelyn (timestamp captured).
                             </div>
                           </div>
                         </div>

@@ -1361,6 +1361,35 @@ function AdminHeader() {
     const sLabel = showStandalone ? `S(${standalonePendingCount})` : null;
     const notesLabel = priorityNotesCount > 0 ? `Notes(${priorityNotesCount})` : null;
     const assignmentsLabel = assignmentAlertCount > 0 ? `My Tasks(${assignmentAlertCount})` : null;
+
+    const normalizeIdentity = (value: string) =>
+      String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+    const hasAliasHit = (value: string, aliases: string[]) => {
+      const normalized = normalizeIdentity(value);
+      if (!normalized) return false;
+      return aliases.some((alias) => {
+        const a = normalizeIdentity(alias);
+        return Boolean(a) && (normalized === a || normalized.includes(a));
+      });
+    };
+    const countDocsForAliases = (aliases: string[]) =>
+      docsByAssignedStaff.reduce((sum, row) => {
+        const matchesStaff = hasAliasHit(row.staff, aliases);
+        const matchesStaffKey = hasAliasHit(row.staffKey, aliases);
+        return matchesStaff || matchesStaffKey ? sum + Number(row.total || 0) : sum;
+      }, 0);
+
+    const johnDocActionCount = countDocsForAliases(['john', 'john@carehomefinders.com']);
+    const kaiserManagerDocActionCount = countDocsForAliases([
+      'jason',
+      'jason@carehomefinders.com',
+      'deydry',
+      'deydry@carehomefinders.com',
+    ]);
+
     const items: Array<{ key: string; label: string; href: string; dot: string; dim?: boolean; title?: string; isNew?: boolean }> = [];
     if (csLabel) {
       items.push({
@@ -1409,6 +1438,26 @@ function AdminHeader() {
         title: 'New Kaiser/Health Net staff assignments',
       });
     }
+    if (johnDocActionCount > 0) {
+      items.push({
+        key: 'john-docs',
+        label: `John Docs(${johnDocActionCount})`,
+        href: '/admin/applications?review=docs',
+        dot: 'bg-rose-600',
+        isNew: true,
+        title: 'Document actions pending for John (ALFT manager)',
+      });
+    }
+    if (kaiserManagerDocActionCount > 0) {
+      items.push({
+        key: 'kaiser-manager-docs',
+        label: `Kaiser Mgr Docs(${kaiserManagerDocActionCount})`,
+        href: '/admin/applications?review=docs&plan=kaiser',
+        dot: 'bg-red-600',
+        isNew: true,
+        title: 'Document actions pending for Kaiser managers (Jason / Deydry)',
+      });
+    }
 
     if (items.length === 0) return null;
     return (
@@ -1426,6 +1475,9 @@ function AdminHeader() {
           >
             <span className={`h-2 w-2 rounded-full ${item.dot}`} />
             {item.key === 'notes' && item.isNew ? <BellRing className="h-3 w-3 text-blue-600" /> : null}
+            {item.key === 'john-docs' || item.key === 'kaiser-manager-docs' ? (
+              <AlertTriangle className="h-3 w-3 text-red-600" />
+            ) : null}
             <span className="font-semibold text-foreground">{item.label}</span>
           </button>
         ))}
@@ -1446,6 +1498,20 @@ function AdminHeader() {
     const viewerName = normalizeIdentity(String(user?.displayName || ''));
     const viewerEmail = normalizeIdentity(String(user?.email || ''));
     const viewerEmailPrefix = viewerEmail.includes('@') ? viewerEmail.split('@')[0] : viewerEmail;
+    const hasAliasHit = (value: string, aliases: string[]) => {
+      const normalized = normalizeIdentity(value);
+      if (!normalized) return false;
+      return aliases.some((alias) => {
+        const aliasNorm = normalizeIdentity(alias);
+        return Boolean(aliasNorm) && (normalized === aliasNorm || normalized.includes(aliasNorm));
+      });
+    };
+    const isJohnManagerRow = (row: { staff: string; staffKey: string }) =>
+      hasAliasHit(row.staff, ['john', 'john@carehomefinders.com']) ||
+      hasAliasHit(row.staffKey, ['john', 'john@carehomefinders.com']);
+    const isKaiserManagerRow = (row: { staff: string; staffKey: string }) =>
+      hasAliasHit(row.staff, ['jason', 'jason@carehomefinders.com', 'deydry', 'deydry@carehomefinders.com']) ||
+      hasAliasHit(row.staffKey, ['jason', 'jason@carehomefinders.com', 'deydry', 'deydry@carehomefinders.com']);
     const docsRowsBase = docsOnlyMine
       ? docsByAssignedStaff.filter((row) => {
           const staffNormalized = normalizeIdentity(row.staff);
@@ -1475,6 +1541,9 @@ function AdminHeader() {
       const renderRow = (row: (typeof docsByAssignedStaff)[number], opts?: { forceWarn?: boolean }) => {
         const isUnassigned = row.staff === unassignedLabel;
         const shouldWarn = Boolean(opts?.forceWarn || isUnassigned);
+        const isJohnRow = isJohnManagerRow(row);
+        const isKaiserMgrRow = isKaiserManagerRow(row);
+        const shouldManagerHighlight = isJohnRow || isKaiserMgrRow;
         const planCount = plan === 'Kaiser' ? row.kaiser : row.healthNet;
         const memberPreview = row.members
           .filter((m) => m.plan === plan)
@@ -1486,7 +1555,10 @@ function AdminHeader() {
           <DropdownMenuItem
             key={`docs-by-staff-${plan}-${row.staff}`}
             asChild
-            className={cn(shouldWarn && 'bg-amber-50 text-amber-900 focus:bg-amber-100')}
+            className={cn(
+              shouldWarn && 'bg-amber-50 text-amber-900 focus:bg-amber-100',
+              !shouldWarn && shouldManagerHighlight && 'bg-red-50 text-red-900 focus:bg-red-100'
+            )}
           >
             <Link
               href={`/admin/applications?review=docs&plan=${encodeURIComponent(plan.toLowerCase())}&staff=${encodeURIComponent(row.staff)}`}
@@ -1495,15 +1567,22 @@ function AdminHeader() {
               <div className="flex w-full items-center justify-between gap-2">
                 <span className="font-medium inline-flex items-center gap-1">
                   {shouldWarn ? <AlertTriangle className="h-3 w-3 text-amber-600" /> : null}
+                  {!shouldWarn && shouldManagerHighlight ? <AlertTriangle className="h-3 w-3 text-red-600" /> : null}
                   {row.staff}
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className={cn('text-xs', shouldManagerHighlight ? 'text-red-700' : 'text-muted-foreground')}>
                   {plan === 'Kaiser' ? 'K' : 'HN'} {planCount}
                 </span>
               </div>
               <div className="w-full truncate text-xs text-muted-foreground">
                 {memberPreview || `Open ${plan} docs for this staff`}
               </div>
+              {isJohnRow ? (
+                <div className="text-[10px] text-red-700">ALFT manager action item</div>
+              ) : null}
+              {!isJohnRow && isKaiserMgrRow ? (
+                <div className="text-[10px] text-red-700">Kaiser manager action item</div>
+              ) : null}
             </Link>
           </DropdownMenuItem>
         );
