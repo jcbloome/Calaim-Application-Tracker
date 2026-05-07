@@ -42,6 +42,20 @@ type KaiserMember = {
   memberLastName?: string;
   memberMrn?: string;
   birthDate?: string;
+  memberSex?: string;
+  memberPrimaryLanguage?: string;
+  memberPhone?: string;
+  ispCurrentAddressStreet?: string;
+  ispCurrentAddressCity?: string;
+  ispCurrentAddressState?: string;
+  ispCurrentAddressZip?: string;
+  currentLocationType?: string;
+  assessmentSite?: string;
+  homeAddressStreet?: string;
+  homeAddressCity?: string;
+  homeAddressState?: string;
+  homeAddressZip?: string;
+  ispFacilityName?: string;
   kaiserStatus?: string;
   alftAssigned?: string;
   ispCurrentLocation?: string;
@@ -52,6 +66,10 @@ type KaiserMember = {
   assignedSwEmail?: string;
   assignedSwName?: string;
   assignmentStatus?: string;
+  prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
+  prefillSourceLabel?: string;
+  prefillPurpose?: string;
+  alftPlanId?: string;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -117,6 +135,36 @@ const todayLocalKey = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+const toYmdOrRaw = (value: string | undefined) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const usFmt = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (usFmt) {
+    return `${usFmt[3]}-${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}`;
+  }
+  const isoLike = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoLike) {
+    return `${isoLike[1]}-${isoLike[2].padStart(2, '0')}-${isoLike[3].padStart(2, '0')}`;
+  }
+  return raw;
+};
+
+const splitName = (member: KaiserMember) => {
+  const first = String(member.memberFirstName || '').trim();
+  const last = String(member.memberLastName || '').trim();
+  if (first || last) return { first, last };
+  const full = String(member.memberName || '').trim();
+  if (full.includes(',')) {
+    const [ln, fn] = full.split(',', 2).map((s) => s.trim());
+    return { first: fn || '', last: ln || '' };
+  }
+  const parts = full.split(/\s+/).filter(Boolean);
+  return {
+    first: parts[0] || '',
+    last: parts.slice(1).join(' '),
+  };
+};
+
 function buildDefaultAnswers(): Record<string, AnswerValue> {
   const out: Record<string, AnswerValue> = {};
   SOURCE.forEach((page) => {
@@ -135,26 +183,46 @@ function preFillFromMember(
   swName: string,
 ): Record<string, AnswerValue> {
   const next = { ...base };
-  const fullName = member.memberName || `${member.memberFirstName || ''} ${member.memberLastName || ''}`.trim();
+  const parsedName = splitName(member);
+  const fullName =
+    member.memberName ||
+    [parsedName.last, parsedName.first].filter(Boolean).join(', ') ||
+    `${parsedName.first} ${parsedName.last}`.trim();
+
   next.p1_member_name = fullName;
-  next.p1_assessor_name = swName;
+  next.p1_assessor_name = String(member.assignedSwName || '').trim() || swName;
   next.p1_assessment_date = todayLocalKey();
-  next.p1_agency = 'ILS Health';
-  if (member.memberFirstName) next.p1_first_name = member.memberFirstName;
-  if (member.memberLastName) next.p1_last_name = member.memberLastName;
+  next.p1_agency = 'Connections Care Home Consultants';
+  if (parsedName.first) next.p1_first_name = parsedName.first;
+  if (parsedName.last) next.p1_last_name = parsedName.last;
   if (member.memberMrn) next.p1_mrn = member.memberMrn;
-  // Date of birth — format as YYYY-MM-DD for the date field
-  if (member.birthDate) {
-    const dob = String(member.birthDate).trim();
-    // Convert M/D/YYYY → YYYY-MM-DD if needed
-    const usFmt = dob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    next.p1_dob = usFmt
-      ? `${usFmt[3]}-${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}`
-      : dob;
+  if (member.alftPlanId || member.memberMrn) next.p1_plan_id = String(member.alftPlanId || member.memberMrn || '').trim();
+  const purpose = String(member.prefillPurpose || '').trim();
+  if (purpose === 'initial' || purpose === 'change_condition' || purpose === 'review') {
+    next.p1_purpose = purpose;
   }
-  if (member.ispContactPhone) next.p1_phone = member.ispContactPhone;
-  if (member.ispCurrentLocation) next.p2_facility_name = member.ispCurrentLocation;
-  if (member.ispContactConfirmDate) next.p2_assessment_site = member.ispCurrentLocation || '';
+  if (member.birthDate) next.p1_dob = toYmdOrRaw(member.birthDate);
+  if (member.ispContactConfirmDate) next.p1_referral_date = toYmdOrRaw(member.ispContactConfirmDate);
+
+  const primaryPhone = String(member.ispContactPhone || member.memberPhone || '').trim();
+  if (primaryPhone) next.p1_phone = primaryPhone;
+  if (member.memberSex) next.p1_sex = member.memberSex;
+  if (member.memberPrimaryLanguage) next.p1_primary_language = member.memberPrimaryLanguage;
+
+  const facilityName = String(member.ispFacilityName || member.ispCurrentLocation || '').trim();
+  if (facilityName) next.p2_facility_name = facilityName;
+  if (member.currentLocationType) next.p2_current_type = member.currentLocationType;
+  if (member.assessmentSite) next.p2_assessment_site = member.assessmentSite;
+
+  if (member.ispCurrentAddressStreet) next.p2_current_street = member.ispCurrentAddressStreet;
+  if (member.ispCurrentAddressCity) next.p2_current_city = member.ispCurrentAddressCity;
+  next.p2_current_state = String(member.ispCurrentAddressState || '').trim() || 'CA';
+  if (member.ispCurrentAddressZip) next.p2_current_zip = member.ispCurrentAddressZip;
+  if (member.homeAddressStreet) next.p2_home_street = member.homeAddressStreet;
+  if (member.homeAddressCity) next.p2_home_city = member.homeAddressCity;
+  next.p2_home_state = String(member.homeAddressState || '').trim() || 'CA';
+  if (member.homeAddressZip) next.p2_home_zip = member.homeAddressZip;
+
   return next;
 }
 
@@ -253,6 +321,11 @@ export default function SwKaiserAlftPage() {
   const { user, socialWorkerData, isSocialWorker, isLoading: swLoading } = useSocialWorker();
 
   const swEmail = String((user as any)?.email || '').trim().toLowerCase();
+  const swId = String(
+    (socialWorkerData as any)?.sw_id ||
+    (socialWorkerData as any)?.SW_ID ||
+    ''
+  ).trim().toLowerCase();
   const swName = String(
     (socialWorkerData as any)?.displayName || (user as any)?.displayName || ''
   ).trim() || swEmail.split('@')[0];
@@ -275,36 +348,61 @@ export default function SwKaiserAlftPage() {
   // ── Load assigned members from Firestore alft_assignments ─────────────────────
 
   const loadMembers = useCallback(async () => {
-    if (!firestore || !swEmail) return;
+    if (!firestore || (!swEmail && !swId)) return;
     setLoadingMembers(true);
     try {
-      // Primary: Firestore assignments for this SW
-      const snap = await getDocs(
-        query(collection(firestore, 'alft_assignments'), where('assignedSwEmail', '==', swEmail))
-      );
-      if (!snap.empty) {
-        const assigned: KaiserMember[] = snap.docs
-          .map((d) => {
-            const data = d.data() as any;
-            return {
-              id: String(data.memberId || d.id).trim(),
-              memberName: String(data.memberName || '').trim(),
-              memberFirstName: String(data.memberFirstName || '').trim(),
-              memberLastName: String(data.memberLastName || '').trim(),
-              memberMrn: String(data.memberMrn || '').trim(),
-              birthDate: String(data.birthDate || '').trim(),
-              ispCurrentLocation: String(data.ispCurrentLocation || '').trim(),
-              ispContactPhone: String(data.ispContactPhone || '').trim(),
-              ispContactEmail: String(data.ispContactEmail || '').trim(),
-              ispContactConfirmDate: String(data.ispContactConfirmDate || '').trim(),
-              kaiserStatus: String(data.kaiserStatus || '').trim(),
-              assignedSwEmail: String(data.assignedSwEmail || '').trim(),
-              assignedSwName: String(data.assignedSwName || '').trim(),
-              assignmentStatus: String(data.status || 'assigned').trim(),
-            };
-          })
-          .filter((m) => Boolean(m.id) && m.assignmentStatus !== 'completed')
-          .sort((a, b) => a.memberName.localeCompare(b.memberName));
+      const snaps = await Promise.all([
+        swEmail
+          ? getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwEmail', '==', swEmail)))
+          : Promise.resolve(null as any),
+        swId
+          ? getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwId', '==', swId)))
+          : Promise.resolve(null as any),
+      ]);
+      const docs = [...(snaps[0]?.docs || []), ...(snaps[1]?.docs || [])];
+      if (docs.length > 0) {
+        const byMemberId = new Map<string, KaiserMember>();
+        docs.forEach((d: any) => {
+          const data = d.data() as any;
+          const row: KaiserMember = {
+            id: String(data.memberId || d.id).trim(),
+            memberName: String(data.memberName || '').trim(),
+            memberFirstName: String(data.memberFirstName || '').trim(),
+            memberLastName: String(data.memberLastName || '').trim(),
+            memberMrn: String(data.memberMrn || '').trim(),
+            birthDate: String(data.birthDate || '').trim(),
+            memberSex: String(data.memberSex || '').trim(),
+            memberPrimaryLanguage: String(data.memberPrimaryLanguage || '').trim(),
+            memberPhone: String(data.memberPhone || '').trim(),
+            ispCurrentAddressStreet: String(data.ispCurrentAddressStreet || '').trim(),
+            ispCurrentAddressCity: String(data.ispCurrentAddressCity || '').trim(),
+            ispCurrentAddressState: String(data.ispCurrentAddressState || '').trim(),
+            ispCurrentAddressZip: String(data.ispCurrentAddressZip || '').trim(),
+            currentLocationType: String(data.currentLocationType || '').trim(),
+            assessmentSite: String(data.assessmentSite || '').trim(),
+            homeAddressStreet: String(data.homeAddressStreet || '').trim(),
+            homeAddressCity: String(data.homeAddressCity || '').trim(),
+            homeAddressState: String(data.homeAddressState || '').trim(),
+            homeAddressZip: String(data.homeAddressZip || '').trim(),
+            ispFacilityName: String(data.ispFacilityName || '').trim(),
+            ispCurrentLocation: String(data.ispCurrentLocation || '').trim(),
+            ispContactPhone: String(data.ispContactPhone || '').trim(),
+            ispContactEmail: String(data.ispContactEmail || '').trim(),
+            ispContactConfirmDate: String(data.ispContactConfirmDate || '').trim(),
+            kaiserStatus: String(data.kaiserStatus || '').trim(),
+            assignedSwEmail: String(data.assignedSwEmail || '').trim(),
+            assignedSwName: String(data.assignedSwName || '').trim(),
+            assignmentStatus: String(data.status || 'assigned').trim(),
+            prefillSourceMode: String(data.prefillSourceMode || '').trim(),
+            prefillSourceLabel: String(data.prefillSourceLabel || '').trim(),
+            prefillPurpose: String(data.prefillPurpose || '').trim(),
+            alftPlanId: String(data.alftPlanId || '').trim(),
+          };
+          if (row.id && row.assignmentStatus !== 'completed') {
+            byMemberId.set(row.id, row);
+          }
+        });
+        const assigned = Array.from(byMemberId.values()).sort((a, b) => a.memberName.localeCompare(b.memberName));
         setMembers(assigned);
         setLoadingMembers(false);
         return;
@@ -316,7 +414,7 @@ export default function SwKaiserAlftPage() {
     } finally {
       setLoadingMembers(false);
     }
-  }, [firestore, swEmail, toast]);
+  }, [firestore, swEmail, swId, toast]);
 
   useEffect(() => {
     if (swLoading || !isSocialWorker) return;
@@ -374,10 +472,13 @@ export default function SwKaiserAlftPage() {
       const firstName = String(selectedMember.memberFirstName || selectedMember.memberName.split(' ')[0] || '').trim();
       const lastName = String(selectedMember.memberLastName || selectedMember.memberName.split(' ').slice(1).join(' ') || '').trim();
 
-      // Embed SW signature into the answers as the assessor fields
+      // Keep assessor aligned to assigned SW while storing typed signature separately.
       const finalAnswers = {
         ...answers,
-        p1_assessor_name: swSignature.trim() || swName,
+        p1_assessor_name:
+          String(answers.p1_assessor_name || '').trim() ||
+          String(selectedMember.assignedSwName || '').trim() ||
+          swName,
         p14_print_name: swSignature.trim() || swName,
         p14_date: todayLocalKey(),
       };
@@ -609,6 +710,7 @@ export default function SwKaiserAlftPage() {
           <div className="text-xs text-zinc-500 flex flex-wrap gap-2 mt-0.5">
             {selectedMember.memberMrn && <span>MRN: {selectedMember.memberMrn}</span>}
             {selectedMember.ispCurrentLocation && <span>• {selectedMember.ispCurrentLocation}</span>}
+            {selectedMember.prefillSourceLabel && <span>• Prefill: {selectedMember.prefillSourceLabel}</span>}
             {draftSavedAt && (
               <span className="text-amber-600">
                 • Draft saved {new Date(draftSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

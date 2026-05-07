@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -111,6 +111,58 @@ type StandaloneUpload = {
     changedExactQuestionCount?: number;
     note?: string | null;
   }>;
+  workflowEmailStatus?: {
+    managerStep2Recipients?: number;
+    managerStep2SentCount?: number;
+    managerStep2EmailSentAt?: any;
+    managerStep4Recipients?: number;
+    managerStep4SentCount?: number;
+    managerStep4EmailSentAt?: any;
+  } | null;
+  alftCompletionEmail?: {
+    to?: string | null;
+    sentByUid?: string | null;
+    sentByEmail?: string | null;
+    sentAt?: any;
+  } | null;
+};
+
+type AlftAssignmentQueueRow = {
+  id: string;
+  memberId: string;
+  memberName: string;
+  memberMrn?: string | null;
+  assignedSwId?: string | null;
+  assignedSwName?: string | null;
+  assignedSwEmail?: string | null;
+  memberFirstName?: string | null;
+  memberLastName?: string | null;
+  birthDate?: string | null;
+  memberSex?: string | null;
+  memberPrimaryLanguage?: string | null;
+  memberPhone?: string | null;
+  alftPlanId?: string | null;
+  ispCurrentAddressStreet?: string | null;
+  ispCurrentAddressCity?: string | null;
+  ispCurrentAddressState?: string | null;
+  ispCurrentAddressZip?: string | null;
+  currentLocationType?: string | null;
+  assessmentSite?: string | null;
+  homeAddressStreet?: string | null;
+  homeAddressCity?: string | null;
+  homeAddressState?: string | null;
+  homeAddressZip?: string | null;
+  ispFacilityName?: string | null;
+  prefillPurpose?: string | null;
+  prefillSourceLabel?: string | null;
+  status?: string | null;
+  workflowStatus?: string | null;
+  workflowStage?: string | null;
+  workflowInvites?: {
+    swPortalPath?: string | null;
+    managerWorkflowPath?: string | null;
+  } | null;
+  updatedAt?: any;
 };
 
 type StaffOption = { uid: string; label: string; email: string; role: 'Admin' | 'Super Admin' | 'Staff' };
@@ -252,6 +304,102 @@ const stageBadge = (stage: StageKey) => {
   }
 };
 
+const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
+  const status = String(row?.status || '').toLowerCase();
+  const workflowStatus = String(row?.workflowStatus || '').toLowerCase();
+  if (workflowStatus.includes('sw_invited') || status === 'sw_form_in_progress') {
+    return 'Next: SW logs into portal, completes prepopulated ALFT, and submits with signature.';
+  }
+  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) {
+    return 'Next: ALFT manager reviews; return to SW for corrections or advance to RN/signature step.';
+  }
+  if (workflowStatus.includes('returned_to_sw_for_revision')) {
+    return 'Next: SW applies corrections, re-signs, and resubmits for manager review.';
+  }
+  if (workflowStatus.includes('awaiting_rn_revision_and_signatures') || workflowStatus.includes('awaiting_rn_final_signature')) {
+    return 'Next: RN reviews/edits and signs; then manager is notified for final review.';
+  }
+  if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
+    return 'Next: Manager final review, then PDF packet is ready for download/send.';
+  }
+  return 'Next: Preview prefilled pages, then send workflow notice to SW.';
+};
+
+const asAnswer = (value: unknown) => String(value ?? '').trim();
+
+const REQUIRED_PREFILL_FIELDS: Array<{ key: string; label: string }> = [
+  { key: 'p1_plan_id', label: 'Plan ID' },
+  { key: 'p1_mrn', label: 'MRN Number' },
+  { key: 'p1_member_name', label: 'Member Name' },
+  { key: 'p1_assessor_name', label: 'Assessor Name' },
+  { key: 'p2_first_name', label: 'First Name' },
+  { key: 'p2_last_name', label: 'Last Name' },
+  { key: 'p1_phone', label: 'Phone Number' },
+  { key: 'p2_dob', label: 'Date of Birth' },
+  { key: 'p2_sex', label: 'Sex' },
+  { key: 'p1_primary_language', label: 'Primary Language' },
+  { key: 'p2_current_street', label: 'Current Location Street' },
+  { key: 'p2_current_city', label: 'Current Location City' },
+  { key: 'p2_current_state', label: 'Current Location State' },
+  { key: 'p2_current_zip', label: 'Current Location Zip' },
+  { key: 'p2_current_type', label: 'Current Location Type' },
+  { key: 'p2_assessment_site', label: 'Assessment Site' },
+  { key: 'p2_home_street', label: 'Home Address Street' },
+  { key: 'p2_home_city', label: 'Home Address City' },
+  { key: 'p2_home_state', label: 'Home Address State' },
+  { key: 'p2_home_zip', label: 'Home Address Zip' },
+];
+
+const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
+  const workflow = String(row.workflowStatus || '').toLowerCase();
+  const status = String(row.status || '').toLowerCase();
+  const hasInvite = workflow.includes('sw_invited') || status === 'sw_form_in_progress';
+  const swSubmitted = workflow.includes('awaiting_manager_review_pre_rn');
+  const managerLoop = workflow.includes('returned_to_sw_for_revision') || workflow.includes('awaiting_manager_review_pre_rn');
+  const rnStep = workflow.includes('awaiting_rn') || workflow.includes('awaiting_rn_revision_and_signatures') || workflow.includes('awaiting_rn_final_signature');
+  const finalManager = workflow.includes('awaiting_kaiser_manager_final_review');
+  const complete = workflow.includes('completed_sent_to_jocelyn') || status === 'completed';
+
+  return [
+    { step: 1, label: 'ALFT prefill prepared (Page 1-2)', done: true, current: !hasInvite },
+    { step: 2, label: 'SW notice sent + portal access enabled', done: hasInvite, current: hasInvite && !swSubmitted },
+    { step: 3, label: 'SW completes/signs ALFT form in SW Portal', done: swSubmitted, current: hasInvite && !swSubmitted },
+    { step: 4, label: 'ALFT manager review (return loop if needed)', done: managerLoop, current: swSubmitted && !rnStep },
+    { step: 5, label: 'RN review/edits/signs final clinical packet', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
+    { step: 6, label: 'Kaiser manager final review + send PDF', done: finalManager || complete, current: finalManager && !complete },
+  ];
+};
+
+const workflowChecklistFor = (r: StandaloneUpload) => {
+  const workflowStatus = String((r as any)?.workflowStatus || '').toLowerCase();
+  const managerStatus = String((r as any)?.alftManagerReview?.status || '').toLowerCase();
+  const steps = [
+    {
+      label: '1) SW invited + form started',
+      done: workflowStatus.includes('sw_invited') || workflowStatus.includes('awaiting_manager_review_pre_rn') || Boolean(toMs(r.createdAt)),
+    },
+    {
+      label: '2) SW submitted + signed',
+      done: workflowStatus.includes('awaiting_manager_review_pre_rn') || Boolean((r as any)?.alftSignature?.mswSignedAt),
+    },
+    {
+      label: '3) Manager review (with return loop)',
+      done: workflowStatus.includes('returned_to_sw_for_revision') || workflowStatus.includes('manager_review_pre_rn_complete_ready_for_rn'),
+    },
+    {
+      label: '4) RN review + signature',
+      done: Boolean((r as any)?.alftSignature?.rnSignedAt),
+    },
+    {
+      label: '5) Manager final + PDF ready',
+      done:
+        managerStatus === 'approved' &&
+        Boolean((r as any)?.alftSignature?.packetPdfStoragePath || (r as any)?.alftSignature?.signaturePagePdfStoragePath),
+    },
+  ];
+  return steps;
+};
+
 const toIsoToday = () => {
   const d = new Date();
   const y = d.getFullYear();
@@ -262,6 +410,7 @@ const toIsoToday = () => {
 
 export default function AdminAlftTrackerPage() {
   const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
+  const router = useRouter();
   const firestore = useFirestore();
   const storage = useStorage();
   const auth = useAuth();
@@ -269,6 +418,7 @@ export default function AdminAlftTrackerPage() {
   const searchParams = useSearchParams();
 
   const [rows, setRows] = useState<StandaloneUpload[]>([]);
+  const [assignmentRows, setAssignmentRows] = useState<AlftAssignmentQueueRow[]>([]);
   const [search, setSearch] = useState('');
   const [focusId, setFocusId] = useState('');
 
@@ -318,10 +468,96 @@ export default function AdminAlftTrackerPage() {
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
+  const [prefillPreviewOpen, setPrefillPreviewOpen] = useState(false);
+  const [prefillPreviewRow, setPrefillPreviewRow] = useState<AlftAssignmentQueueRow | null>(null);
+  const [prefillPurpose, setPrefillPurpose] = useState('review');
+  const [prefillPreviewResolved, setPrefillPreviewResolved] = useState<Record<string, string>>({});
+  const [prefillPreviewLoading, setPrefillPreviewLoading] = useState(false);
+  const [importingPrefillId, setImportingPrefillId] = useState('');
+  const [startingWorkflowFor, setStartingWorkflowFor] = useState('');
 
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
     if (focus) setFocusId(focus);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!prefillPreviewRow) return;
+    const fromRow = String(prefillPreviewRow.prefillPurpose || '').trim();
+    if (fromRow === 'initial' || fromRow === 'change_condition' || fromRow === 'review') {
+      setPrefillPurpose(fromRow);
+    } else {
+      setPrefillPurpose('review');
+    }
+  }, [prefillPreviewRow]);
+
+  useEffect(() => {
+    if (!prefillPreviewOpen || !prefillPreviewRow) {
+      setPrefillPreviewResolved({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setPrefillPreviewLoading(true);
+      try {
+        if (!user) throw new Error('Sign in required.');
+        const idToken = await user.getIdToken();
+        const targetId = String(prefillPreviewRow.memberId || prefillPreviewRow.id).trim();
+        const liveRes = await fetch('/api/alft/prefill/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, memberId: targetId }),
+          cache: 'no-store',
+        });
+        const liveData = (await liveRes.json().catch(() => ({}))) as any;
+        if (!liveRes.ok || !liveData?.ok) {
+          throw new Error(String(liveData?.error || `Live Caspio prefill failed (HTTP ${liveRes.status})`));
+        }
+        const resolved = (liveData?.resolved || {}) as Record<string, string>;
+        const pickMapped = (alftField: string) => String(resolved[alftField] || '').trim();
+
+        const next: Record<string, string> = {
+          alftPlanId: pickMapped('p1_plan_id'),
+          memberMrn: pickMapped('p1_mrn'),
+          memberName: pickMapped('p1_member_name'),
+          assessorName: pickMapped('p1_assessor_name'),
+          currentStreet: pickMapped('p2_current_street'),
+          currentCity: pickMapped('p2_current_city'),
+          currentState: pickMapped('p2_current_state'),
+          currentZip: pickMapped('p2_current_zip'),
+          currentType: pickMapped('p2_current_type'),
+          assessmentSite: pickMapped('p2_assessment_site'),
+          homeStreet: pickMapped('p2_home_street'),
+          homeCity: pickMapped('p2_home_city'),
+          homeState: pickMapped('p2_home_state'),
+          homeZip: pickMapped('p2_home_zip'),
+          facilityName: pickMapped('p2_facility_name'),
+          primaryLanguage: pickMapped('p1_primary_language'),
+          phone: pickMapped('p1_phone'),
+        };
+
+        if (!cancelled) setPrefillPreviewResolved(next);
+      } catch (e: any) {
+        if (!cancelled) {
+          setPrefillPreviewResolved({});
+          toast({
+            title: 'Live Caspio pull required',
+            description: e?.message || 'Could not pull live Caspio member record.',
+            variant: 'destructive',
+          });
+        }
+      } finally {
+        if (!cancelled) setPrefillPreviewLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [prefillPreviewOpen, prefillPreviewRow, user]);
+
+  useEffect(() => {
+    const memberQuery = String(searchParams?.get('member') || '').trim();
+    if (memberQuery) setSearch(memberQuery);
   }, [searchParams]);
 
   useEffect(() => {
@@ -383,11 +619,65 @@ export default function AdminAlftTrackerPage() {
 
             alftRevisions: Array.isArray(r.alftRevisions) ? r.alftRevisions : [],
             alftEditHistory: Array.isArray((r as any)?.alftEditHistory) ? (r as any).alftEditHistory : [],
+            workflowEmailStatus: (r as any)?.workflowEmailStatus || null,
+            alftCompletionEmail: (r as any)?.alftCompletionEmail || null,
           }))
           .filter((r) => isAlft(r)) as StandaloneUpload[];
         setRows(mapped);
       },
       () => setRows([])
+    );
+    return () => unsub();
+  }, [firestore, isAdmin]);
+
+  useEffect(() => {
+    if (!firestore || !isAdmin) return;
+    const unsub = onSnapshot(
+      collection(firestore, 'alft_assignments'),
+      (snap) => {
+        const mapped = snap.docs
+          .map((d) => {
+            const r = d.data() as any;
+            return {
+              id: toLabel(d.id),
+              memberId: toLabel(r.memberId || d.id),
+              memberName: toLabel(r.memberName),
+              memberMrn: toLabel(r.memberMrn) || null,
+              assignedSwId: toLabel(r.assignedSwId) || null,
+              assignedSwName: toLabel(r.assignedSwName) || null,
+              assignedSwEmail: toLabel(r.assignedSwEmail) || null,
+              memberFirstName: toLabel(r.memberFirstName) || null,
+              memberLastName: toLabel(r.memberLastName) || null,
+              birthDate: toLabel(r.birthDate) || null,
+              memberSex: toLabel(r.memberSex) || null,
+              memberPrimaryLanguage: toLabel(r.memberPrimaryLanguage) || null,
+              memberPhone: toLabel(r.memberPhone) || null,
+              alftPlanId: toLabel(r.alftPlanId) || null,
+              ispCurrentAddressStreet: toLabel(r.ispCurrentAddressStreet) || null,
+              ispCurrentAddressCity: toLabel(r.ispCurrentAddressCity) || null,
+              ispCurrentAddressState: toLabel(r.ispCurrentAddressState) || null,
+              ispCurrentAddressZip: toLabel(r.ispCurrentAddressZip) || null,
+              currentLocationType: toLabel(r.currentLocationType) || null,
+              assessmentSite: toLabel(r.assessmentSite) || null,
+              homeAddressStreet: toLabel(r.homeAddressStreet) || null,
+              homeAddressCity: toLabel(r.homeAddressCity) || null,
+              homeAddressState: toLabel(r.homeAddressState) || null,
+              homeAddressZip: toLabel(r.homeAddressZip) || null,
+              ispFacilityName: toLabel(r.ispFacilityName) || null,
+              prefillPurpose: toLabel(r.prefillPurpose) || null,
+              prefillSourceLabel: toLabel(r.prefillSourceLabel) || null,
+              status: toLabel(r.status) || null,
+              workflowStatus: toLabel(r.workflowStatus) || null,
+              workflowStage: toLabel(r.workflowStage) || null,
+              workflowInvites: (r.workflowInvites || null) as any,
+              updatedAt: r.updatedAt,
+            } as AlftAssignmentQueueRow;
+          })
+          .filter((r) => Boolean(r.memberId) && String(r.status || '').toLowerCase() !== 'completed')
+          .sort((a, b) => (toMs(b.updatedAt) || 0) - (toMs(a.updatedAt) || 0));
+        setAssignmentRows(mapped);
+      },
+      () => setAssignmentRows([])
     );
     return () => unsub();
   }, [firestore, isAdmin]);
@@ -451,6 +741,45 @@ export default function AdminAlftTrackerPage() {
       });
   }, [rows, search]);
 
+  const filteredAssignments = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return assignmentRows.filter((r) => {
+      if (!s) return true;
+      return (
+        toLabel(r.memberName).toLowerCase().includes(s) ||
+        toLabel(r.memberMrn).toLowerCase().includes(s) ||
+        toLabel(r.assignedSwName).toLowerCase().includes(s) ||
+        toLabel(r.assignedSwEmail).toLowerCase().includes(s)
+      );
+    });
+  }, [assignmentRows, search]);
+
+  const prefillPreviewFields = useMemo(() => {
+    const row = prefillPreviewRow;
+    if (!row) return [] as Array<{ label: string; value: string }>;
+    return [
+      { label: 'Agency', value: 'Connections Care Home Consultants' },
+      { label: 'Plan ID', value: asAnswer(prefillPreviewResolved.alftPlanId) },
+      { label: 'MRN Number', value: asAnswer(prefillPreviewResolved.memberMrn) },
+      { label: 'Member Name', value: asAnswer(prefillPreviewResolved.memberName) },
+      { label: 'Assessor Name', value: asAnswer(prefillPreviewResolved.assessorName) },
+      { label: 'Purpose of assessment', value: prefillPurpose },
+      { label: 'Current Location Street', value: asAnswer(prefillPreviewResolved.currentStreet) },
+      { label: 'Current Location City', value: asAnswer(prefillPreviewResolved.currentCity) },
+      { label: 'Current Location State', value: asAnswer(prefillPreviewResolved.currentState) },
+      { label: 'Current Location Zip', value: asAnswer(prefillPreviewResolved.currentZip) },
+      { label: 'Current Location Type', value: asAnswer(prefillPreviewResolved.currentType) },
+      { label: 'Assessment Site', value: asAnswer(prefillPreviewResolved.assessmentSite) },
+      { label: 'Home Address Street', value: asAnswer(prefillPreviewResolved.homeStreet) },
+      { label: 'Home Address City', value: asAnswer(prefillPreviewResolved.homeCity) },
+      { label: 'Home Address State', value: asAnswer(prefillPreviewResolved.homeState) },
+      { label: 'Home Address Zip', value: asAnswer(prefillPreviewResolved.homeZip) },
+      { label: 'Facility Name', value: asAnswer(prefillPreviewResolved.facilityName) },
+      { label: 'Primary Language', value: asAnswer(prefillPreviewResolved.primaryLanguage) },
+      { label: 'Phone Number', value: asAnswer(prefillPreviewResolved.phone) },
+    ];
+  }, [prefillPreviewResolved, prefillPreviewRow, prefillPurpose]);
+
   const openAssign = useCallback((row: StandaloneUpload, kind: 'rn' | 'staff') => {
     setAssignRow(row);
     setAssignKind(kind);
@@ -513,6 +842,147 @@ export default function AdminAlftTrackerPage() {
       return [row.uploaderUid, row.alftRnUid, row.alftStaffUid].map((v) => String(v || '').trim()).includes(uid);
     },
     [isAdmin, isKaiserAssignmentManager, user?.uid, user?.email]
+  );
+
+  const startWorkflowFromIntake = useCallback(
+    async (row: AlftAssignmentQueueRow) => {
+      if (!auth?.currentUser) {
+        toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
+        return;
+      }
+      setStartingWorkflowFor(row.memberId || row.id);
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const memberId = String(row.memberId || row.id || '').trim();
+        const prefillRes = await fetch('/api/alft/prefill/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, memberId }),
+          cache: 'no-store',
+        });
+        const prefillData = (await prefillRes.json().catch(() => ({}))) as any;
+        if (!prefillRes.ok || !prefillData?.ok) {
+          throw new Error(String(prefillData?.error || `Could not validate required prefill fields (HTTP ${prefillRes.status})`));
+        }
+        const resolved = (prefillData?.resolved || {}) as Record<string, string>;
+        const missing = REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(resolved?.[key] || '').trim());
+        if (missing.length > 0) {
+          const shortList = missing.slice(0, 8).map((m) => m.label).join(', ');
+          throw new Error(
+            `Required prefill fields are missing in Caspio (${missing.length}): ${shortList}${missing.length > 8 ? ', ...' : ''}`
+          );
+        }
+        const pick = (key: string, fallback = '') => String(resolved?.[key] || '').trim() || fallback;
+        const res = await fetch('/api/alft/workflow/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idToken,
+            member: {
+              id: memberId,
+              memberName: pick('p1_member_name', row.memberName || ''),
+              memberFirstName: pick('p2_first_name', row.memberFirstName || ''),
+              memberLastName: pick('p2_last_name', row.memberLastName || ''),
+              memberMrn: pick('p1_mrn', row.memberMrn || ''),
+              birthDate: pick('p2_dob', row.birthDate || ''),
+              memberSex: pick('p2_sex', row.memberSex || ''),
+              memberPrimaryLanguage: pick('p1_primary_language', row.memberPrimaryLanguage || ''),
+              memberPhone: pick('p1_phone', row.memberPhone || ''),
+              ispCurrentAddressStreet: pick('p2_current_street', row.ispCurrentAddressStreet || ''),
+              ispCurrentAddressCity: pick('p2_current_city', row.ispCurrentAddressCity || ''),
+              ispCurrentAddressState: pick('p2_current_state', row.ispCurrentAddressState || ''),
+              ispCurrentAddressZip: pick('p2_current_zip', row.ispCurrentAddressZip || ''),
+              currentLocationType: pick('p2_current_type', row.currentLocationType || ''),
+              assessmentSite: pick('p2_assessment_site', row.assessmentSite || ''),
+              homeAddressStreet: pick('p2_home_street', row.homeAddressStreet || ''),
+              homeAddressCity: pick('p2_home_city', row.homeAddressCity || ''),
+              homeAddressState: pick('p2_home_state', row.homeAddressState || ''),
+              homeAddressZip: pick('p2_home_zip', row.homeAddressZip || ''),
+              ispFacilityName: pick('p2_facility_name', row.ispFacilityName || ''),
+              ispCurrentLocation: pick('p2_facility_name', row.ispFacilityName || ''),
+              ispContactPhone: pick('p1_phone', row.memberPhone || ''),
+              alftPlanId: pick('p1_plan_id', row.alftPlanId || row.memberMrn || ''),
+              swId: row.assignedSwId || '',
+              socialWorkerAssigned: row.assignedSwName || '',
+              prefillPurpose,
+            },
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok || !data?.success) {
+          throw new Error(String(data?.error || `Failed to start workflow (HTTP ${res.status})`));
+        }
+        toast({
+          title: 'Workflow notice sent',
+          description: `${row.memberName || 'Member'} invite sent/re-sent to assigned social worker.`,
+        });
+      } catch (e: any) {
+        toast({
+          title: 'Could not send SW notice',
+          description: e?.message || 'Try again.',
+          variant: 'destructive',
+        });
+      } finally {
+        setStartingWorkflowFor('');
+      }
+    },
+    [auth?.currentUser, prefillPurpose, toast]
+  );
+
+  const importMappedMemberPrefill = useCallback(
+    async (row: AlftAssignmentQueueRow) => {
+      if (!firestore) {
+        toast({ title: 'Firestore unavailable', description: 'Could not import mapped values.', variant: 'destructive' });
+        return;
+      }
+      const id = String(row.memberId || row.id || '').trim();
+      if (!id) return;
+      setImportingPrefillId(id);
+      try {
+        const mappedName = asAnswer(prefillPreviewResolved.memberName || row.memberName);
+        const inferredFirst = mappedName.includes(',') ? mappedName.split(',', 2)[1]?.trim() || '' : '';
+        const inferredLast = mappedName.includes(',') ? mappedName.split(',', 2)[0]?.trim() || '' : '';
+
+        await updateDoc(doc(firestore, 'alft_assignments', id), {
+          alftPlanId: asAnswer(prefillPreviewResolved.alftPlanId || row.alftPlanId || row.memberMrn),
+          memberMrn: asAnswer(prefillPreviewResolved.memberMrn || row.memberMrn),
+          memberName: mappedName || row.memberName || '',
+          memberFirstName: asAnswer(row.memberFirstName) || inferredFirst,
+          memberLastName: asAnswer(row.memberLastName) || inferredLast,
+          memberPrimaryLanguage: asAnswer(prefillPreviewResolved.primaryLanguage || row.memberPrimaryLanguage),
+          memberPhone: asAnswer(prefillPreviewResolved.phone || row.memberPhone),
+          ispCurrentAddressStreet: asAnswer(prefillPreviewResolved.currentStreet || row.ispCurrentAddressStreet),
+          ispCurrentAddressCity: asAnswer(prefillPreviewResolved.currentCity || row.ispCurrentAddressCity),
+          ispCurrentAddressState: asAnswer(prefillPreviewResolved.currentState || row.ispCurrentAddressState || 'CA'),
+          ispCurrentAddressZip: asAnswer(prefillPreviewResolved.currentZip || row.ispCurrentAddressZip),
+          currentLocationType: asAnswer(prefillPreviewResolved.currentType || row.currentLocationType),
+          assessmentSite: asAnswer(prefillPreviewResolved.assessmentSite || row.assessmentSite),
+          homeAddressStreet: asAnswer(prefillPreviewResolved.homeStreet || row.homeAddressStreet),
+          homeAddressCity: asAnswer(prefillPreviewResolved.homeCity || row.homeAddressCity),
+          homeAddressState: asAnswer(prefillPreviewResolved.homeState || row.homeAddressState || 'CA'),
+          homeAddressZip: asAnswer(prefillPreviewResolved.homeZip || row.homeAddressZip),
+          ispFacilityName: asAnswer(prefillPreviewResolved.facilityName || row.ispFacilityName),
+          prefillPurpose,
+          prefillImportedAt: serverTimestamp(),
+          prefillImportedBy: String(user?.email || user?.uid || '').trim(),
+          updatedAt: serverTimestamp(),
+        });
+
+        toast({
+          title: 'Member fields imported',
+          description: `${row.memberName || 'Member'} mapped values imported into ALFT assignment.`,
+        });
+      } catch (e: any) {
+        toast({
+          title: 'Import failed',
+          description: e?.message || 'Could not import member fields.',
+          variant: 'destructive',
+        });
+      } finally {
+        setImportingPrefillId('');
+      }
+    },
+    [firestore, prefillPreviewResolved, prefillPurpose, toast, user?.email, user?.uid]
   );
 
   const openEdit = useCallback((row: StandaloneUpload) => {
@@ -969,22 +1439,6 @@ export default function AdminAlftTrackerPage() {
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={filtered.length > 0 ? 'secondary' : 'outline'}>{filtered.length} pending</Badge>
-          <Button variant="outline" asChild>
-            <Link href="/admin/alft-log">
-              <ClipboardList className="h-4 w-4 mr-2" />
-              ALFT Log
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/admin/alft-tracker/dummy-preview">
-              View dummy ALFT (ILS PDF preview)
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/admin/alft-assignment">
-              Open ALFT Assignment Queue
-            </Link>
-          </Button>
           <Button variant="outline" onClick={() => setSearch('')} disabled={!search}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Clear search
@@ -1013,7 +1467,78 @@ export default function AdminAlftTrackerPage() {
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {filtered.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-6">No pending ALFT uploads found.</div>
+            <div className="space-y-3 py-4">
+              <div className="text-sm text-muted-foreground">No pending ALFT uploads found.</div>
+              {filteredAssignments.length > 0 ? (
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <div className="text-sm font-semibold">Pre-submission ALFT workflow queue</div>
+                  <div className="text-xs text-muted-foreground mb-2">
+                    These members are in workflow before upload appears in intake. No file upload is needed to start.
+                  </div>
+                  <div className="space-y-2">
+                    {filteredAssignments.slice(0, 10).map((row) => (
+                      <div key={row.id} className="rounded border bg-background p-2">
+                        <div className="text-sm font-medium">{row.memberName || 'Member'}</div>
+                        <div className="text-xs text-muted-foreground">
+                          MRN: {row.memberMrn || '—'} • SW: {row.assignedSwName || row.assignedSwEmail || row.assignedSwId || '—'}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Status: {row.workflowStatus || row.status || 'not started'}
+                        </div>
+                        {row.prefillSourceLabel ? (
+                          <div className="text-xs text-muted-foreground">
+                            Prefill source: {row.prefillSourceLabel}
+                          </div>
+                        ) : null}
+                        <div className="text-xs text-muted-foreground">
+                          ALFT form location: <span className="font-medium">SW Portal → ALFT Upload</span>
+                        </div>
+                        <div className="mt-1 rounded border bg-muted/20 p-2 text-[11px]">
+                          {assignmentWorkflowSteps(row).map((step) => (
+                            <div key={`${row.id}-step-${step.step}`} className="flex items-center gap-1.5">
+                              <span className={step.done ? 'text-green-700' : step.current ? 'text-blue-700' : 'text-muted-foreground'}>
+                                {step.done ? '✓' : step.current ? '→' : '○'}
+                              </span>
+                              <span className={step.done ? 'text-foreground' : step.current ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                                {step.step}) {step.label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="text-xs">{nextStepForAssignment(row)}</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              const memberId = encodeURIComponent(String(row.memberId || row.id || '').trim());
+                              router.push(`/admin/alft-caspio-mapping?memberId=${memberId}&from=alft-intake`);
+                            }}
+                          >
+                            Pull prefilled fields
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={
+                              startingWorkflowFor === (row.memberId || row.id) ||
+                              (!row.assignedSwId && !row.assignedSwName)
+                            }
+                            onClick={() => void startWorkflowFromIntake(row)}
+                          >
+                            {startingWorkflowFor === (row.memberId || row.id) ? (
+                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            ) : null}
+                            {String(row.workflowStatus || '').toLowerCase().includes('sw_invited') ? 'Re-send SW notice' : 'Send SW notice'}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -1049,7 +1574,26 @@ export default function AdminAlftTrackerPage() {
                       <TableCell className="min-w-[220px]">
                         <div className="space-y-2">
                           <div>{stageBadge(stage)}</div>
+                          <div className="rounded border bg-muted/20 p-2 text-[11px]">
+                            {workflowChecklistFor(r).map((step) => (
+                              <div key={step.label} className="flex items-center gap-1.5">
+                                <span className={step.done ? 'text-green-700' : 'text-muted-foreground'}>{step.done ? '✓' : '○'}</span>
+                                <span className={step.done ? 'text-foreground' : 'text-muted-foreground'}>{step.label}</span>
+                              </div>
+                            ))}
+                          </div>
                           <div className="space-y-1 text-[11px] text-muted-foreground">
+                            <div className="flex flex-wrap gap-1">
+                              <Badge variant="outline" className="text-[10px]">
+                                Manager step2 email: {toMs((r as any)?.workflowEmailStatus?.managerStep2EmailSentAt) > 0 ? 'sent' : 'pending'}
+                              </Badge>
+                              <Badge variant="outline" className="text-[10px]">
+                                Manager step4 email: {toMs((r as any)?.workflowEmailStatus?.managerStep4EmailSentAt) > 0 ? 'sent' : 'pending'}
+                              </Badge>
+                              <Badge variant="outline" className="text-[10px]">
+                                Final PDF email: {toMs((r as any)?.alftCompletionEmail?.sentAt) > 0 ? 'sent' : 'pending'}
+                              </Badge>
+                            </div>
                             {timelineFor(r)
                               .slice(-6)
                               .map((t) => (
@@ -1306,6 +1850,88 @@ export default function AdminAlftTrackerPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={prefillPreviewOpen} onOpenChange={setPrefillPreviewOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Prefilled ALFT preview (Page 1-2)</DialogTitle>
+            <DialogDescription>
+              Review these prefilled values, then send or re-send notice to the assigned social worker to complete the ALFT tool.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md border p-3">
+              <div className="text-sm font-medium">{prefillPreviewRow?.memberName || 'Member'}</div>
+              <div className="text-xs text-muted-foreground">
+                MRN: {prefillPreviewRow?.memberMrn || '—'} • SW: {prefillPreviewRow?.assignedSwName || prefillPreviewRow?.assignedSwEmail || '—'}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Purpose of assessment</Label>
+              <Select value={prefillPurpose} onValueChange={setPrefillPurpose}>
+                <SelectTrigger className="max-w-sm">
+                  <SelectValue placeholder="Select purpose" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="initial">Initial</SelectItem>
+                  <SelectItem value="change_condition">Change of Condition</SelectItem>
+                  <SelectItem value="review">Review</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {prefillPreviewLoading ? (
+              <div className="inline-flex items-center gap-2 rounded border bg-muted/20 px-2 py-1 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Pulling member directly from Caspio + applying current mapping...
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">
+                Preview values resolved from live Caspio member data using latest ALFT mapping.
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {prefillPreviewFields.map((f) => (
+                <div key={f.label} className="rounded border bg-muted/20 p-2">
+                  <div className="text-[11px] text-muted-foreground">{f.label}</div>
+                  <div className="text-sm">{f.value || '—'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setPrefillPreviewOpen(false)}>
+              Close
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => (prefillPreviewRow ? void importMappedMemberPrefill(prefillPreviewRow) : undefined)}
+              disabled={
+                !prefillPreviewRow ||
+                prefillPreviewLoading ||
+                importingPrefillId === (prefillPreviewRow?.memberId || prefillPreviewRow?.id)
+              }
+            >
+              {importingPrefillId === (prefillPreviewRow?.memberId || prefillPreviewRow?.id) ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Import member mapped fields
+            </Button>
+            <Button
+              onClick={() => (prefillPreviewRow ? void startWorkflowFromIntake(prefillPreviewRow) : undefined)}
+              disabled={
+                !prefillPreviewRow ||
+                startingWorkflowFor === (prefillPreviewRow?.memberId || prefillPreviewRow?.id) ||
+                (!prefillPreviewRow?.assignedSwId && !prefillPreviewRow?.assignedSwName)
+              }
+            >
+              {startingWorkflowFor === (prefillPreviewRow?.memberId || prefillPreviewRow?.id) ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Send SW notice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">

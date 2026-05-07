@@ -225,11 +225,21 @@ export async function GET(request: NextRequest) {
       }
 
       const transformedMembers = cached.map((member: any) => ({
+        caspioRaw: member,
         // Prefer ISP-specific fields for ALFT location/contact context.
         ISP_Current_Location: pickFirstPopulated(member, ['ISP_Current_Location', 'ISP_Current_Address']),
+        ISP_Current_Address: pickFirstPopulated(member, ['ISP_Current_Address', 'Member_Address', 'Address', 'Street_Address']),
+        ISP_Current_City: pickFirstPopulated(member, ['ISP_Current_City', 'Member_City', 'MemberCity', 'City']),
+        ISP_Current_State: pickFirstPopulated(member, ['ISP_Current_State', 'Member_State', 'State']),
+        ISP_Current_Zip: pickFirstPopulated(member, ['ISP_Current_Zip', 'Member_Zip', 'Zip']),
         ISP_Contact_Phone: pickFirstPopulated(member, ['ISP_Contact_Phone', 'Member_Phone']),
         ISP_Contact_Email: pickFirstPopulated(member, ['ISP_Contact_Email', 'Member_Email']),
-        ISP_Contact_Confirm_Field: pickFirstPopulated(member, ['ISP_Contact_Confirm_Field']),
+        ISP_Contact_Confirm_Field: pickFirstPopulated(member, [
+          'ISP_Contact_Confirm_Field',
+          'ISP_Contact_Confirm_Date',
+          'ISP_Contact_Confirm',
+          'ISP_Confirm_Date',
+        ]),
         id: member.Client_ID2 || member.client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
         Client_ID2: member.Client_ID2 || member.client_ID2,
         client_ID2: member.Client_ID2 || member.client_ID2,
@@ -252,6 +262,19 @@ export async function GET(request: NextRequest) {
         Birth_Date: member.Birth_Date || '',
         birthDate: member.Birth_Date || '',
         memberPhone: member.Member_Phone || member.memberPhone || '',
+        memberSex: pickFirstPopulated(member, ['memberSex', 'Sex', 'Gender', 'Member_Gender', 'Senior_Gender']),
+        memberPrimaryLanguage: pickFirstPopulated(member, [
+          'memberPrimaryLanguage',
+          'Primary_Language',
+          'Member_Language',
+          'memberLanguage',
+          'Language',
+        ]),
+        ispCurrentAddressStreet: pickFirstPopulated(member, ['ISP_Current_Address', 'Member_Address', 'Address', 'Street_Address']),
+        ispCurrentAddressCity: pickFirstPopulated(member, ['ISP_Current_City', 'Member_City', 'MemberCity', 'City']),
+        ispCurrentAddressState: pickFirstPopulated(member, ['ISP_Current_State', 'Member_State', 'State']),
+        ispCurrentAddressZip: pickFirstPopulated(member, ['ISP_Current_Zip', 'Member_Zip', 'Zip']),
+        ispFacilityName: pickFirstPopulated(member, ['ISP_Current_Location', 'RCFE_Name', 'Facility_Name']),
         memberEmail: member.Member_Email || member.memberEmail || '',
         CalAIM_MCO: member.CalAIM_MCO,
         CalAIM_Status: toCanonicalCalaimStatus(
@@ -638,11 +661,21 @@ export async function GET(request: NextRequest) {
 
     // Transform the data to match expected format
       const transformedMembers = (membersData.Result || []).map((member: any) => ({
+      caspioRaw: member,
       // Prefer ISP-specific fields for ALFT location/contact context.
       ISP_Current_Location: pickFirstPopulated(member, ['ISP_Current_Location', 'ISP_Current_Address']),
+      ISP_Current_Address: pickFirstPopulated(member, ['ISP_Current_Address', 'Member_Address', 'Address', 'Street_Address']),
+      ISP_Current_City: pickFirstPopulated(member, ['ISP_Current_City', 'Member_City', 'MemberCity', 'City']),
+      ISP_Current_State: pickFirstPopulated(member, ['ISP_Current_State', 'Member_State', 'State']),
+      ISP_Current_Zip: pickFirstPopulated(member, ['ISP_Current_Zip', 'Member_Zip', 'Zip']),
       ISP_Contact_Phone: pickFirstPopulated(member, ['ISP_Contact_Phone', 'Member_Phone']),
       ISP_Contact_Email: pickFirstPopulated(member, ['ISP_Contact_Email', 'Member_Email']),
-      ISP_Contact_Confirm_Field: pickFirstPopulated(member, ['ISP_Contact_Confirm_Field']),
+      ISP_Contact_Confirm_Field: pickFirstPopulated(member, [
+        'ISP_Contact_Confirm_Field',
+        'ISP_Contact_Confirm_Date',
+        'ISP_Contact_Confirm',
+        'ISP_Confirm_Date',
+      ]),
       id: member.Client_ID2 || `member-${Math.random().toString(36).substring(7)}`,
       Client_ID2: member.Client_ID2,
       client_ID2: member.Client_ID2, // Duplicate for compatibility
@@ -657,6 +690,19 @@ export async function GET(request: NextRequest) {
       Birth_Date: member.Birth_Date || '',
       birthDate: member.Birth_Date || '',
       memberPhone: member.memberPhone || member.Member_Phone || '',
+      memberSex: pickFirstPopulated(member, ['memberSex', 'Sex', 'Gender', 'Member_Gender', 'Senior_Gender']),
+      memberPrimaryLanguage: pickFirstPopulated(member, [
+        'memberPrimaryLanguage',
+        'Primary_Language',
+        'Member_Language',
+        'memberLanguage',
+        'Language',
+      ]),
+      ispCurrentAddressStreet: pickFirstPopulated(member, ['ISP_Current_Address', 'Member_Address', 'Address', 'Street_Address']),
+      ispCurrentAddressCity: pickFirstPopulated(member, ['ISP_Current_City', 'Member_City', 'MemberCity', 'City']),
+      ispCurrentAddressState: pickFirstPopulated(member, ['ISP_Current_State', 'Member_State', 'State']),
+      ispCurrentAddressZip: pickFirstPopulated(member, ['ISP_Current_Zip', 'Member_Zip', 'Zip']),
+      ispFacilityName: pickFirstPopulated(member, ['ISP_Current_Location', 'RCFE_Name', 'Facility_Name']),
       memberEmail: member.memberEmail || member.Member_Email || '',
       CalAIM_MCO: member.CalAIM_MCO,
       CalAIM_Status: toCanonicalCalaimStatus(

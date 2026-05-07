@@ -112,8 +112,6 @@ const adminNavLinks = [
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
       { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
       { href: '/admin/standalone-uploads', label: 'Standalone Upload Intake', icon: UploadCloud },
-      { href: '/admin/alft-tracker', label: 'ALFT Workflow Intake', icon: UploadCloud },
-      { href: '/admin/alft-assignment', label: 'ALFT Assignment Queue', icon: UserCheck },
       { href: '/admin/eligibility-checks', label: 'Eligibility Checks', icon: Shield },
       { href: '/admin/progress-tracker', label: 'Progress Tracker', icon: ListChecks },
       { href: '/admin/member-notes', label: 'Member Notes Lookup', icon: MessageSquareText },
@@ -163,6 +161,7 @@ const adminNavLinks = [
       { href: '/admin/california-map-enhanced', label: 'Map Intelligence', icon: Navigation },
       { href: '/admin/california-counties', label: 'County Analysis', icon: MapIcon },
       { href: '/admin/reports', label: 'Reports', icon: FileText },
+      { href: '/admin/tools/kaiser-alft', label: 'Kaiser ALFT Hub', icon: ClipboardList },
     ],
   },
 ];
@@ -1788,7 +1787,7 @@ function AdminHeader() {
                               </DropdownMenuLabel>
                             </div>
                           ) : (
-                            <DropdownMenuItem key={item.href} asChild>
+                            <DropdownMenuItem key={`${item.href}-${item.label}`} asChild>
                               <Link
                                 href={item.href}
                                 className={cn(
@@ -2010,7 +2009,7 @@ function AdminHeader() {
                               </div>
                             ) : (
                               <Link
-                                key={item.href}
+                                key={`${item.href}-${item.label}`}
                                 href={item.href}
                                 onClick={() => setMobileMenuOpen(false)}
                                 className={cn(

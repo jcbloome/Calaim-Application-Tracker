@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendAlftUploadEmail } from '@/app/actions/send-email';
+import { sendAlftManagerWorkflowStageEmail, sendAlftUploadEmail } from '@/app/actions/send-email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -237,6 +237,47 @@ export async function POST(request: NextRequest) {
       console.warn('[alft/submit] Email failed:', e);
     }
 
+    let managerStage2EmailRecipients = 0;
+    let managerStage2EmailSentCount = 0;
+    // Manager email: SW submitted + signed, ready for first manager review.
+    try {
+      const managerUsersSnap = await adminDb
+        .collection('users')
+        .where('isKaiserAssignmentManager', '==', true)
+        .limit(30)
+        .get()
+        .catch(() => null);
+      const managerEmails = (managerUsersSnap?.docs || [])
+        .map((d: any) => ({
+          email: clean((d.data() as any)?.email, 220).toLowerCase(),
+          name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Manager',
+        }))
+        .filter((m: any) => Boolean(m.email));
+      managerStage2EmailRecipients = managerEmails.length;
+
+      if (managerEmails.length > 0) {
+        const results = await Promise.all(
+          managerEmails.map((manager: any) =>
+            sendAlftManagerWorkflowStageEmail({
+              to: manager.email,
+              managerName: manager.name,
+              memberName,
+              mrn: kaiserMrn || medicalRecordNumber || undefined,
+              stageLabel: 'Step 2/5 SW submitted + signed',
+              nextAction: 'Review ALFT, return to SW if corrections are needed, or send forward to RN/signature phase.',
+              actionUrl: focusUrl(intakeId),
+              triggeredBy: uploaderName,
+            })
+              .then(() => true)
+              .catch(() => false)
+          )
+        );
+        managerStage2EmailSentCount = results.filter(Boolean).length;
+      }
+    } catch {
+      // best-effort only
+    }
+
     let electronNotified = false;
     try {
       const settingsSnap = await adminDb.collection('system_settings').doc('review_notifications').get();
@@ -314,6 +355,12 @@ export async function POST(request: NextRequest) {
             emailSent,
             electronNotified,
             lastNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          workflowEmailStatus: {
+            managerStep2Recipients: managerStage2EmailRecipients,
+            managerStep2SentCount: managerStage2EmailSentCount,
+            managerStep2EmailSentAt:
+              managerStage2EmailSentCount > 0 ? admin.firestore.FieldValue.serverTimestamp() : null,
           },
         },
         { merge: true }

@@ -197,6 +197,27 @@ interface AlftCompletedWorkflowPayload {
     revisionFiles?: Array<{ fileName?: string; downloadURL?: string }>;
 }
 
+interface AlftWorkflowStartPayload {
+    to: string;
+    socialWorkerName: string;
+    memberName: string;
+    mrn?: string;
+    portalUrl?: string;
+    assignmentUrl?: string;
+    assignedBy?: string;
+}
+
+interface AlftManagerWorkflowStagePayload {
+    to: string;
+    managerName?: string;
+    memberName: string;
+    mrn?: string;
+    stageLabel: string;
+    nextAction: string;
+    actionUrl: string;
+    triggeredBy?: string;
+}
+
 interface RoomBoardTierAgreementInvitePayload {
     to: string;
     recipientName: string;
@@ -743,6 +764,123 @@ export const sendAlftUploadEmail = async (payload: AlftUploadPayload) => {
         template: 'alft_upload',
         source: 'sendAlftUploadEmail',
         metadata: { memberName },
+    });
+};
+
+export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const portalUrlRaw = String(payload.portalUrl || '/sw-portal/alft-upload').trim();
+    const assignmentUrlRaw = String(payload.assignmentUrl || '/admin/alft-assignment').trim();
+    const portalUrl = portalUrlRaw.startsWith('http') ? portalUrlRaw : `${baseUrl}${portalUrlRaw.startsWith('/') ? '' : '/'}${portalUrlRaw}`;
+    const assignmentUrl = assignmentUrlRaw.startsWith('http')
+      ? assignmentUrlRaw
+      : `${baseUrl}${assignmentUrlRaw.startsWith('/') ? '' : '/'}${assignmentUrlRaw}`;
+
+    const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const mrn = String(payload.mrn || '').trim();
+    const assignedBy = String(payload.assignedBy || '').trim() || 'ALFT Manager';
+
+    const html = `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
+        <div style="background: #0f172a; border-radius: 10px 10px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;">CalAIM ALFT Workflow</p>
+          <h2 style="margin: 6px 0 0; color: #ffffff; font-size: 20px;">ALFT form assigned to you</h2>
+        </div>
+        <div style="border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px; padding: 24px;">
+          <p style="margin: 0 0 10px;">Hi ${socialWorkerName},</p>
+          <p style="margin: 0 0 14px;">
+            An ALFT workflow has been started for <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''}.
+            Please log in and complete the ALFT form with your signature.
+          </p>
+          <p style="margin: 0 0 14px; color: #334155;">
+            Assigned by: <strong>${assignedBy}</strong>
+          </p>
+          <p style="margin: 0 0 14px;">
+            <a href="${portalUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; display: inline-block; font-weight: 600;">
+              Open SW Portal ALFT Form
+            </a>
+          </p>
+          <p style="margin: 0; color: #64748b; font-size: 12px;">
+            Manager tracking queue: <a href="${assignmentUrl}">${assignmentUrl}</a>
+          </p>
+        </div>
+      </div>
+    `;
+
+    return await sendViaResendWithLog({
+        resend,
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `ALFT assigned: ${memberName}`,
+        html,
+        template: 'alft_workflow_start',
+        source: 'sendAlftWorkflowStartEmail',
+        metadata: { memberName, mrn },
+    });
+};
+
+export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWorkflowStagePayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const actionUrlRaw = String(payload.actionUrl || '').trim();
+    const actionUrl = actionUrlRaw.startsWith('http')
+      ? actionUrlRaw
+      : `${baseUrl}${actionUrlRaw.startsWith('/') ? '' : '/'}${actionUrlRaw}`;
+
+    const managerName = String(payload.managerName || '').trim() || 'Manager';
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const mrn = String(payload.mrn || '').trim();
+    const stageLabel = String(payload.stageLabel || '').trim() || 'Workflow update';
+    const nextAction = String(payload.nextAction || '').trim() || 'Please review and continue workflow.';
+    const triggeredBy = String(payload.triggeredBy || '').trim();
+
+    const html = `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
+        <div style="background: #0f172a; border-radius: 10px 10px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;">CalAIM ALFT Workflow</p>
+          <h2 style="margin: 6px 0 0; color: #ffffff; font-size: 20px;">Manager workflow update</h2>
+        </div>
+        <div style="border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px; padding: 24px;">
+          <p style="margin: 0 0 10px;">Hi ${managerName},</p>
+          <p style="margin: 0 0 14px;">
+            <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''} reached:
+            <strong> ${stageLabel}</strong>
+          </p>
+          <p style="margin: 0 0 14px; color: #334155;">
+            <strong>Next action:</strong> ${nextAction}
+          </p>
+          ${triggeredBy ? `<p style="margin: 0 0 14px; color: #334155;">Triggered by: <strong>${triggeredBy}</strong></p>` : ''}
+          <p style="margin: 0 0 14px;">
+            <a href="${actionUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; display: inline-block; font-weight: 600;">
+              Open ALFT workflow
+            </a>
+          </p>
+          <p style="margin: 0; color: #64748b; font-size: 12px;">${actionUrl}</p>
+        </div>
+      </div>
+    `;
+
+    return await sendViaResendWithLog({
+        resend,
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `ALFT manager update: ${memberName} — ${stageLabel}`,
+        html,
+        template: 'alft_manager_workflow_stage',
+        source: 'sendAlftManagerWorkflowStageEmail',
+        metadata: { memberName, stageLabel },
     });
 };
 
