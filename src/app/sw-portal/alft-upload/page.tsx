@@ -489,11 +489,14 @@ export default function SwKaiserAlftPage() {
         uploadDate: todayLocalKey(),
         uploader: { displayName: swName, email: swEmail },
         member: {
+          id: selectedMember.id,
           name: selectedMember.memberName,
           firstName,
           lastName,
           healthPlan: 'Kaiser',
           kaiserMrn: selectedMember.memberMrn || '',
+          prefillSourceMode: selectedMember.prefillSourceMode || '',
+          prefillSourceLabel: selectedMember.prefillSourceLabel || '',
         },
         alftForm: {
           formVersion: 'digital-v1',
@@ -540,7 +543,15 @@ export default function SwKaiserAlftPage() {
         }
 
         clearDraftLocally(memberAtSubmit.id);
-        toast({ title: 'ALFT submitted', description: `${memberAtSubmit.memberName}'s assessment has been sent to the admin team for RN review.` });
+        const nextName = String((data as any)?.nextInLine?.name || '').trim();
+        const nextEmail = String((data as any)?.nextInLine?.email || '').trim();
+        const nextRecipient = [nextName, nextEmail].filter(Boolean).join(' • ');
+        toast({
+          title: 'ALFT submitted',
+          description: nextRecipient
+            ? `${memberAtSubmit.memberName}'s assessment is now routed to: ${nextRecipient}.`
+            : `${memberAtSubmit.memberName}'s assessment has been sent to the ALFT manager review queue.`,
+        });
       };
 
       await persistSubmission();
@@ -655,7 +666,7 @@ export default function SwKaiserAlftPage() {
             <User className="h-10 w-10" />
             <p className="font-medium">No ALFT assessments assigned to you</p>
             <p className="max-w-xs text-sm">
-              Your ALFT manager (John) will assign Kaiser members to you once they are ready for assessment. Check back soon.
+              Your ALFT manager team (led by Deydry) will assign Kaiser members to you once they are ready for assessment. Check back soon.
             </p>
           </div>
         )}

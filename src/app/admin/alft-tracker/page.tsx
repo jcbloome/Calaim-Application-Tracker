@@ -42,6 +42,8 @@ type StandaloneUpload = {
   uploaderName?: string;
   uploaderEmail?: string;
   memberName: string;
+  prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string | null;
+  prefillSourceLabel?: string | null;
   healthPlan?: string;
   medicalRecordNumber?: string | null;
   alftUploadDate?: string | null;
@@ -124,6 +126,19 @@ type StandaloneUpload = {
     sentByUid?: string | null;
     sentByEmail?: string | null;
     sentAt?: any;
+  } | null;
+  workflowRouting?: {
+    nextStepKey?: string | null;
+    nextStepLabel?: string | null;
+    nextRecipientName?: string | null;
+    nextRecipientEmail?: string | null;
+    finalReviewOwnerName?: string | null;
+    finalReviewOwnerEmail?: string | null;
+  } | null;
+  assignedManager?: {
+    uid?: string | null;
+    name?: string | null;
+    email?: string | null;
   } | null;
 };
 
@@ -317,6 +332,92 @@ const stageBadge = (stage: StageKey) => {
   }
 };
 
+const stageBlockClass = (stage: StageKey) => {
+  switch (stage) {
+    case 'received':
+      return 'border-slate-300 bg-slate-50 text-slate-900';
+    case 'returned_to_sw':
+      return 'border-red-300 bg-red-50 text-red-900';
+    case 'rn_assigned':
+      return 'border-indigo-300 bg-indigo-50 text-indigo-900';
+    case 'rn_downloaded':
+      return 'border-blue-300 bg-blue-50 text-blue-900';
+    case 'rn_reuploaded':
+      return 'border-purple-300 bg-purple-50 text-purple-900';
+    case 'staff_assigned':
+      return 'border-amber-300 bg-amber-50 text-amber-900';
+    case 'sent_for_signature':
+      return 'border-emerald-300 bg-emerald-50 text-emerald-900';
+    case 'manager_review':
+      return 'border-sky-300 bg-sky-50 text-sky-900';
+    case 'ready_to_send':
+      return 'border-violet-300 bg-violet-50 text-violet-900';
+    case 'completed':
+      return 'border-green-300 bg-green-50 text-green-900';
+  }
+};
+
+const nextFlowForRow = (r: StandaloneUpload) => {
+  const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
+  const signatureStatus = toLabel((r as any)?.alftSignature?.status).toLowerCase();
+  const managerName = toLabel(
+    (r as any)?.workflowRouting?.nextRecipientName ||
+      (r as any)?.assignedManager?.name ||
+      (r as any)?.workflowRouting?.finalReviewOwnerName ||
+      (r as any)?.alftManagerReview?.reviewedByName
+  ) || 'ALFT Manager';
+  const managerEmail = toLabel(
+    (r as any)?.workflowRouting?.nextRecipientEmail ||
+      (r as any)?.assignedManager?.email ||
+      (r as any)?.workflowRouting?.finalReviewOwnerEmail ||
+      (r as any)?.alftManagerReview?.reviewedByEmail
+  );
+  const swName = toLabel(r.uploaderName) || 'Social Worker';
+  const swEmail = toLabel(r.uploaderEmail);
+  const rnName = toLabel(r.alftRnName) || 'Assigned RN';
+  const rnEmail = toLabel(r.alftRnEmail);
+
+  if (workflowStatus.includes('completed_sent_to_jocelyn') || toLabel(r.status).toLowerCase() !== 'pending') {
+    return { label: 'Completed', name: 'Jocelyn', email: toLabel((r as any)?.alftCompletionEmail?.to), color: 'border-green-300 bg-green-50 text-green-900' };
+  }
+  if (workflowStatus.includes('returned_to_sw_for_revision')) {
+    return { label: 'SW revision needed', name: swName, email: swEmail, color: 'border-red-300 bg-red-50 text-red-900' };
+  }
+  if (
+    workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
+    workflowStatus.includes('awaiting_rn_final_signature') ||
+    signatureStatus.includes('awaiting_rn')
+  ) {
+    return { label: 'RN review/signature', name: rnName, email: rnEmail, color: 'border-violet-300 bg-violet-50 text-violet-900' };
+  }
+  if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
+    return { label: 'Final manager review', name: managerName, email: managerEmail, color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900' };
+  }
+  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) {
+    return { label: 'Manager pre-review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
+  }
+  if (workflowStatus.includes('sw_invited') || workflowStatus.includes('sw_form')) {
+    return { label: 'SW complete + submit', name: swName, email: swEmail, color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
+  }
+  return { label: 'Start workflow', name: swName, email: swEmail, color: 'border-slate-300 bg-slate-50 text-slate-900' };
+};
+
+const prefillSourceFlowLabel = (r: StandaloneUpload) => {
+  const mode = toLabel((r as any)?.prefillSourceMode).toLowerCase();
+  const label = toLabel((r as any)?.prefillSourceLabel);
+  if (mode === 'cs_summary_app') return 'Member info source: App';
+  if (mode === 'caspio_selected_fields') return 'Member info source: Caspio';
+  if (label) return `Member info source: ${label}`;
+  return 'Member info source: Not captured';
+};
+
+const prefillSourceFlowClass = (r: StandaloneUpload) => {
+  const mode = toLabel((r as any)?.prefillSourceMode).toLowerCase();
+  if (mode === 'cs_summary_app') return 'border-green-300 bg-green-50 text-green-900';
+  if (mode === 'caspio_selected_fields') return 'border-blue-300 bg-blue-50 text-blue-900';
+  return 'border-slate-300 bg-slate-50 text-slate-800';
+};
+
 const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
   const status = String(row?.status || '').toLowerCase();
   const workflowStatus = String(row?.workflowStatus || '').toLowerCase();
@@ -336,6 +437,65 @@ const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
     return 'Next: Manager final review, then PDF packet is ready for download/send.';
   }
   return 'Next: Preview prefilled pages, then send workflow notice to SW.';
+};
+
+const assignmentStageBlock = (row: AlftAssignmentQueueRow) => {
+  const status = String(row?.status || '').toLowerCase();
+  const workflowStatus = String(row?.workflowStatus || '').toLowerCase();
+  if (workflowStatus.includes('completed_sent_to_jocelyn') || status === 'completed') {
+    return { label: 'Completed', color: 'border-green-300 bg-green-50 text-green-900' };
+  }
+  if (workflowStatus.includes('returned_to_sw_for_revision')) {
+    return { label: 'Returned to SW', color: 'border-red-300 bg-red-50 text-red-900' };
+  }
+  if (workflowStatus.includes('awaiting_rn_revision_and_signatures') || workflowStatus.includes('awaiting_rn_final_signature')) {
+    return { label: 'RN review/signature', color: 'border-violet-300 bg-violet-50 text-violet-900' };
+  }
+  if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
+    return { label: 'Final manager review', color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900' };
+  }
+  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) {
+    return { label: 'Manager pre-review', color: 'border-sky-300 bg-sky-50 text-sky-900' };
+  }
+  if (workflowStatus.includes('sw_invited') || status === 'sw_form_in_progress') {
+    return { label: 'SW invited/submitting', color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
+  }
+  return { label: 'Prefill ready', color: 'border-slate-300 bg-slate-50 text-slate-900' };
+};
+
+const assignmentNextRecipientBlock = (row: AlftAssignmentQueueRow) => {
+  const workflowStatus = String(row?.workflowStatus || '').toLowerCase();
+  const swName = toLabel(row.assignedSwName) || 'Social Worker';
+  const swEmail = toLabel(row.assignedSwEmail);
+  const managerName = toLabel(
+    (row as any)?.alftManagerName ||
+    (row as any)?.assignedManagerName ||
+    (row as any)?.assignedByName
+  ) || 'Deydry';
+  const managerEmail = toLabel(
+    (row as any)?.alftManagerEmail ||
+    (row as any)?.assignedManagerEmail ||
+    (row as any)?.assignedByEmail
+  ) || 'deydry@carehomefinders.com';
+
+  if (workflowStatus.includes('returned_to_sw_for_revision')) {
+    return { label: 'SW revision needed', name: swName, email: swEmail, color: 'border-red-300 bg-red-50 text-red-900' };
+  }
+  if (workflowStatus.includes('awaiting_rn_revision_and_signatures') || workflowStatus.includes('awaiting_rn_final_signature')) {
+    return { label: 'RN review/signature', name: 'Leslie (RN)', email: 'rn@carehomefinders.com', color: 'border-violet-300 bg-violet-50 text-violet-900' };
+  }
+  if (workflowStatus.includes('awaiting_kaiser_manager_final_review') || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
+    return { label: 'Manager review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
+  }
+  return { label: 'SW complete + submit', name: swName, email: swEmail, color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
+};
+
+const assignmentSourceBlock = (row: AlftAssignmentQueueRow) => {
+  const mode = resolvePrefillSourceMode(row);
+  if (mode === 'cs_summary_app') {
+    return { label: 'Member info source: App', value: 'cs_summary_app', color: 'border-green-300 bg-green-50 text-green-900' };
+  }
+  return { label: 'Member info source: Caspio', value: 'caspio_selected_fields', color: 'border-blue-300 bg-blue-50 text-blue-900' };
 };
 
 const asAnswer = (value: unknown) => String(value ?? '').trim();
@@ -1648,6 +1808,28 @@ export default function AdminAlftTrackerPage() {
       </div>
 
       <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Flow Color Legend</CardTitle>
+          <CardDescription className="text-xs">
+            Same color blocks are used in pre-submission assignment and intake flow views.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-slate-900">Prefill / Start</span>
+            <span className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-emerald-900">SW step</span>
+            <span className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-sky-900">Manager pre-review</span>
+            <span className="rounded-md border border-violet-300 bg-violet-50 px-2 py-1 text-violet-900">RN review/signature</span>
+            <span className="rounded-md border border-fuchsia-300 bg-fuchsia-50 px-2 py-1 text-fuchsia-900">Final manager review</span>
+            <span className="rounded-md border border-red-300 bg-red-50 px-2 py-1 text-red-900">Returned to SW</span>
+            <span className="rounded-md border border-blue-300 bg-blue-50 px-2 py-1 text-blue-900">Caspio source</span>
+            <span className="rounded-md border border-green-300 bg-green-50 px-2 py-1 text-green-900">App source</span>
+            <span className="rounded-md border border-green-400 bg-green-100 px-2 py-1 text-green-900">Completed</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">ALFT intake queue</CardTitle>
           <CardDescription>All items shown here are pending ALFT uploads (from `standalone_upload_submissions`).</CardDescription>
@@ -1705,6 +1887,9 @@ export default function AdminAlftTrackerPage() {
                         const isVerified = Boolean(verifiedPrefillIds[memberIdKey]);
                         const orderedSteps = assignmentWorkflowSteps(row);
                         const doneCount = orderedSteps.filter((s) => s.done).length;
+                        const stageBlock = assignmentStageBlock(row);
+                        const nextBlock = assignmentNextRecipientBlock(row);
+                        const sourceBlock = assignmentSourceBlock(row);
                         return (
                       <div key={row.id} className="rounded border bg-background p-2">
                         <div className="text-sm font-medium">{row.memberName || 'Member'}</div>
@@ -1715,18 +1900,26 @@ export default function AdminAlftTrackerPage() {
                           SW Email: {row.assignedSwEmail || 'Missing email'}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          Status: {row.workflowStatus || row.status || 'not started'}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          <Badge variant="outline" className="h-5 px-2 text-xs">
-                            {prefillSourceBadgeLabel(row)}
-                          </Badge>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
                           ALFT form location: <span className="font-medium">SW Portal → ALFT Upload</span>
                         </div>
 
                         <div className="mt-2 rounded border bg-blue-50/40 p-3 text-sm">
+                          <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+                            <div className={`rounded-md border p-2 text-xs ${stageBlock.color}`}>
+                              <div className="font-semibold">Current stage</div>
+                              <div className="mt-0.5">{stageBlock.label}</div>
+                              <div className="truncate opacity-90">{row.workflowStatus || row.status || 'not started'}</div>
+                            </div>
+                            <div className={`rounded-md border p-2 text-xs ${nextBlock.color}`}>
+                              <div className="font-semibold">Next in line: {nextBlock.label}</div>
+                              <div className="mt-0.5 truncate">{nextBlock.name}</div>
+                              <div className="truncate opacity-90">{nextBlock.email || 'email pending'}</div>
+                            </div>
+                            <div className={`rounded-md border p-2 text-xs ${sourceBlock.color}`}>
+                              <div className="font-semibold">{sourceBlock.label}</div>
+                              <div className="mt-0.5 truncate">{sourceBlock.value}</div>
+                            </div>
+                          </div>
                           <div className="font-medium mb-1">Workflow summary</div>
                           <div className="text-sm text-muted-foreground">{nextStepForAssignment(row)}</div>
                           <div className="mt-1 text-xs text-muted-foreground">
@@ -1832,6 +2025,7 @@ export default function AdminAlftTrackerPage() {
                   <TableHead>Member</TableHead>
                   <TableHead>MRN</TableHead>
                   <TableHead>Stage</TableHead>
+                  <TableHead>Flow / Next</TableHead>
                   <TableHead>SW uploader</TableHead>
                   <TableHead>RN</TableHead>
                   <TableHead>Files</TableHead>
@@ -1842,6 +2036,7 @@ export default function AdminAlftTrackerPage() {
                 {filtered.map((r) => {
                   const focused = focusId && r.id === focusId;
                   const stage = computeStage(r);
+                  const nextFlow = nextFlowForRow(r);
                   const latestRevision = (r.alftRevisions || []).slice(-1)[0];
                   const recentEdits = (r.alftEditHistory || [])
                     .slice()
@@ -1894,6 +2089,34 @@ export default function AdminAlftTrackerPage() {
                                   </div>
                                 </div>
                               ))}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="min-w-[280px]">
+                        <div className="space-y-2">
+                          <div className={`rounded-md border p-2 text-xs ${stageBlockClass(stage)}`}>
+                            <div className="font-semibold">Current stage</div>
+                            <div className="mt-0.5">{toLabel((r as any)?.workflowStatus) || toLabel(r.status) || 'pending'}</div>
+                          </div>
+                          <div className={`rounded-md border p-2 text-xs ${nextFlow.color}`}>
+                            <div className="font-semibold">Next in line: {nextFlow.label}</div>
+                            <div className="mt-0.5 truncate">{nextFlow.name || 'Unassigned'}</div>
+                            {nextFlow.email ? <div className="truncate opacity-90">{nextFlow.email}</div> : null}
+                          </div>
+                          <div className={`rounded-md border p-2 text-xs ${prefillSourceFlowClass(r)}`}>
+                            <div className="font-semibold">{prefillSourceFlowLabel(r)}</div>
+                            <div className="mt-0.5 truncate">
+                              {toLabel((r as any)?.prefillSourceMode) || 'unknown'}
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                            <div className="font-semibold">Final ALFT manager</div>
+                            <div className="truncate">
+                              {toLabel((r as any)?.assignedManager?.name || (r as any)?.workflowRouting?.finalReviewOwnerName) || 'Unassigned'}
+                            </div>
+                            <div className="truncate opacity-90">
+                              {toLabel((r as any)?.assignedManager?.email || (r as any)?.workflowRouting?.finalReviewOwnerEmail) || 'manager email pending'}
+                            </div>
                           </div>
                         </div>
                       </TableCell>

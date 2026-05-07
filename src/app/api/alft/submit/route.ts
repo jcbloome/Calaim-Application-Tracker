@@ -11,6 +11,7 @@ type SubmitBody = {
   uploader?: { firstName?: string; lastName?: string; email?: string; displayName?: string };
   uploadDate?: string; // YYYY-MM-DD (entered by SW)
   member?: {
+    id?: string;
     name?: string;
     firstName?: string;
     lastName?: string;
@@ -18,6 +19,8 @@ type SubmitBody = {
     medicalRecordNumber?: string;
     mediCalNumber?: string;
     kaiserMrn?: string;
+    prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
+    prefillSourceLabel?: string;
   };
   alftForm?: {
     formVersion?: string;
@@ -86,6 +89,7 @@ export async function POST(request: NextRequest) {
     const idToken = clean(body?.idToken, 5000);
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
 
+    const memberId = clean(body?.member?.id, 120);
     const memberFirstName = clean(body?.member?.firstName, 80);
     const memberLastName = clean(body?.member?.lastName, 80);
     const memberNameRaw = clean(body?.member?.name, 140);
@@ -170,6 +174,12 @@ export async function POST(request: NextRequest) {
       'Social Worker';
 
     const healthPlan = clean(body?.member?.healthPlan, 40) || 'Kaiser';
+    const rawPrefillSourceMode = clean(body?.member?.prefillSourceMode, 60).toLowerCase();
+    const prefillSourceMode =
+      rawPrefillSourceMode === 'cs_summary_app' || rawPrefillSourceMode === 'caspio_selected_fields'
+        ? rawPrefillSourceMode
+        : '';
+    const prefillSourceLabel = clean(body?.member?.prefillSourceLabel, 120);
     const medicalRecordNumberRaw = clean(body?.member?.medicalRecordNumber, 80);
     const mediCalNumberRaw = clean(body?.member?.mediCalNumber, 80);
     const kaiserMrnRaw = clean(body?.member?.kaiserMrn, 80);
@@ -183,6 +193,45 @@ export async function POST(request: NextRequest) {
 
     const focusUrl = (id: string) => `/admin/alft-tracker?focus=${encodeURIComponent(id)}`;
 
+    let assignedManagerName = '';
+    let assignedManagerEmail = '';
+    let assignedManagerUid = '';
+    if (memberId) {
+      try {
+        const assignmentSnap = await adminDb.collection('alft_assignments').doc(memberId).get();
+        const assignment = assignmentSnap.exists ? (assignmentSnap.data() as any) : null;
+        if (assignment) {
+          assignedManagerName = clean(
+            assignment?.alftManagerName ||
+            assignment?.managerName ||
+            assignment?.assignedManagerName ||
+            assignment?.assignedByName,
+            160
+          );
+          assignedManagerEmail = clean(
+            assignment?.alftManagerEmail ||
+            assignment?.managerEmail ||
+            assignment?.assignedManagerEmail ||
+            assignment?.assignedByEmail,
+            220
+          ).toLowerCase();
+          assignedManagerUid = clean(
+            assignment?.alftManagerUid ||
+            assignment?.managerUid ||
+            assignment?.assignedManagerUid,
+            128
+          );
+        }
+      } catch {
+        // best-effort lookup only
+      }
+    }
+
+    const fallbackManagerName = 'Deydry';
+    const fallbackManagerEmail = 'deydry@carehomefinders.com';
+    const primaryManagerName = assignedManagerName || fallbackManagerName;
+    const primaryManagerEmail = assignedManagerEmail || fallbackManagerEmail;
+
     const ref = await adminDb.collection('standalone_upload_submissions').add({
       status: 'pending',
       source: 'sw-portal',
@@ -195,7 +244,16 @@ export async function POST(request: NextRequest) {
       uploaderUid,
       uploaderEmail: uploaderEmail || null,
       uploaderName,
+      memberId: memberId || null,
       memberName,
+      prefillSourceMode: prefillSourceMode || null,
+      prefillSourceLabel:
+        prefillSourceLabel ||
+        (prefillSourceMode === 'cs_summary_app'
+          ? 'App CS Summary'
+          : prefillSourceMode === 'caspio_selected_fields'
+            ? 'Caspio selected fields'
+            : null),
       memberFirstName,
       memberLastName,
       memberNameSearch: `${memberLastName.toLowerCase()}|${memberFirstName.toLowerCase()}|${memberName.toLowerCase()}`.slice(0, 300),
@@ -213,6 +271,19 @@ export async function POST(request: NextRequest) {
       },
       workflowStatus: 'awaiting_manager_review_pre_rn',
       workflowStage: 'submitted_by_sw_waiting_manager_review',
+      workflowRouting: {
+        nextStepKey: 'manager_review',
+        nextStepLabel: 'ALFT Manager Review',
+        nextRecipientName: primaryManagerName || null,
+        nextRecipientEmail: primaryManagerEmail || null,
+        finalReviewOwnerName: primaryManagerName || null,
+        finalReviewOwnerEmail: primaryManagerEmail || null,
+      },
+      assignedManager: {
+        uid: assignedManagerUid || null,
+        name: primaryManagerName || null,
+        email: primaryManagerEmail || null,
+      },
       workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -220,7 +291,7 @@ export async function POST(request: NextRequest) {
 
     const intakeId = ref.id;
 
-    const notifyTo = 'john@carehomefinders.com';
+    const notifyTo = primaryManagerEmail;
     let emailSent = false;
     try {
       await sendAlftUploadEmail({
@@ -241,18 +312,26 @@ export async function POST(request: NextRequest) {
     let managerStage2EmailSentCount = 0;
     // Manager email: SW submitted + signed, ready for first manager review.
     try {
-      const managerUsersSnap = await adminDb
-        .collection('users')
-        .where('isKaiserAssignmentManager', '==', true)
-        .limit(30)
-        .get()
-        .catch(() => null);
-      const managerEmails = (managerUsersSnap?.docs || [])
-        .map((d: any) => ({
-          email: clean((d.data() as any)?.email, 220).toLowerCase(),
-          name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Manager',
-        }))
-        .filter((m: any) => Boolean(m.email));
+      let managerEmails: Array<{ email: string; name: string }> = [];
+      if (primaryManagerEmail) {
+        managerEmails = [{
+          email: primaryManagerEmail,
+          name: primaryManagerName || 'Manager',
+        }];
+      } else {
+        const managerUsersSnap = await adminDb
+          .collection('users')
+          .where('isKaiserAssignmentManager', '==', true)
+          .limit(30)
+          .get()
+          .catch(() => null);
+        managerEmails = (managerUsersSnap?.docs || [])
+          .map((d: any) => ({
+            email: clean((d.data() as any)?.email, 220).toLowerCase(),
+            name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Manager',
+          }))
+          .filter((m: any) => Boolean(m.email));
+      }
       managerStage2EmailRecipients = managerEmails.length;
 
       if (managerEmails.length > 0) {
@@ -264,7 +343,7 @@ export async function POST(request: NextRequest) {
               memberName,
               mrn: kaiserMrn || medicalRecordNumber || undefined,
               stageLabel: 'Step 2/5 SW submitted + signed',
-              nextAction: 'Review ALFT, return to SW if corrections are needed, or send forward to RN/signature phase.',
+              nextAction: 'Review ALFT, return to SW if corrections are needed, or send forward to RN/signature phase. Final review owner remains the assigned ALFT manager for this member.',
               actionUrl: focusUrl(intakeId),
               triggeredBy: uploaderName,
             })
@@ -369,7 +448,17 @@ export async function POST(request: NextRequest) {
       // ignore
     }
 
-    return NextResponse.json({ success: true, id: intakeId, emailSent, electronNotified });
+    return NextResponse.json({
+      success: true,
+      id: intakeId,
+      emailSent,
+      electronNotified,
+      nextInLine: {
+        role: 'ALFT Manager Review',
+        name: primaryManagerName || null,
+        email: primaryManagerEmail || null,
+      },
+    });
   } catch (error: any) {
     console.error('[alft/submit] Error:', error);
     return NextResponse.json(
