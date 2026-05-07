@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAuth, useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -257,9 +258,11 @@ function toDefaultState(): Record<string, RowState> {
 
 export default function AdminAlftCaspioMappingPage() {
   const searchParams = useSearchParams();
-  const requestedMemberId = clean(searchParams?.get('memberId'));
-  const openedFrom = clean(searchParams?.get('from'));
-  const readOnlyValidationMode = openedFrom === 'alft-intake';
+  const initialUrlParams =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const requestedMemberId = clean(searchParams?.get('memberId') || initialUrlParams?.get('memberId'));
+  const openedFrom = clean(searchParams?.get('from') || initialUrlParams?.get('from'));
+  const readOnlyValidationMode = openedFrom === 'alft-intake' || Boolean(requestedMemberId);
   const rows = useMemo(() => PAGE_1_2_MAPPINGS, []);
   const firestore = useFirestore();
   const auth = useAuth();
@@ -276,6 +279,11 @@ export default function AdminAlftCaspioMappingPage() {
   const [selectedMemberResolved, setSelectedMemberResolved] = useState<Record<string, string>>({});
   const [loadingSelectedSource, setLoadingSelectedSource] = useState(false);
   const [selectedMemberReloadNonce, setSelectedMemberReloadNonce] = useState(0);
+  const [hasManualPull, setHasManualPull] = useState(false);
+  const backToMemberHref = useMemo(() => {
+    const member = encodeURIComponent(selectedMemberId || requestedMemberId || '');
+    return member ? `/admin/alft-tracker?member=${member}&focus=${member}` : '/admin/alft-tracker';
+  }, [requestedMemberId, selectedMemberId]);
 
   const sortedAvailableFields = useMemo(() => {
     const merged = new Set<string>([
@@ -427,9 +435,19 @@ export default function AdminAlftCaspioMappingPage() {
   }, [rowState]);
 
   useEffect(() => {
+    // Prevent stale readiness/errors from briefly showing when switching members/routes.
+    setHasManualPull(false);
+    setSelectedMemberResolved({});
+    setSelectedMemberSource(null);
+  }, [requestedMemberId, openedFrom]);
+
+  useEffect(() => {
     if (!selectedMemberId) {
       setSelectedMemberSource(null);
       setSelectedMemberResolved({});
+      return;
+    }
+    if (readOnlyValidationMode && !hasManualPull) {
       return;
     }
     let cancelled = false;
@@ -473,7 +491,7 @@ export default function AdminAlftCaspioMappingPage() {
     return () => {
       cancelled = true;
     };
-  }, [auth?.currentUser, selectedMemberId, selectedMemberReloadNonce, toast]);
+  }, [auth?.currentUser, hasManualPull, readOnlyValidationMode, selectedMemberId, selectedMemberReloadNonce, toast]);
 
   const setPrimary = (alftField: string, value: string) => {
     setRowState((prev) => {
@@ -575,6 +593,13 @@ export default function AdminAlftCaspioMappingPage() {
               ? 'Read-only live prefill check for the selected member before sending SW notice.'
               : 'Match ALFT fields to live Caspio fields and validate values per selected member before sending workflow notice.'}
           </CardDescription>
+          {readOnlyValidationMode ? (
+            <div>
+              <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                <Link href={backToMemberHref}>Back to member</Link>
+              </Button>
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -602,7 +627,10 @@ export default function AdminAlftCaspioMappingPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedMemberReloadNonce((n) => n + 1)}
+                  onClick={() => {
+                    setHasManualPull(true);
+                    setSelectedMemberReloadNonce((n) => n + 1);
+                  }}
                   disabled={!requestedMemberId || loadingSelectedSource}
                 >
                   {loadingSelectedSource ? <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
@@ -697,25 +725,31 @@ export default function AdminAlftCaspioMappingPage() {
               </div>
             </div>
           ) : null}
-          <div className="mb-4 rounded-md border bg-muted/20 p-3 text-xs">
-            <div className="font-semibold">Required prefill readiness</div>
-            {missingRequiredFields.length === 0 ? (
-              <div className="mt-1 text-green-700">All required mapped Caspio fields for ALFT prefill are present.</div>
-            ) : (
-              <div className="mt-1">
-                <div className="text-amber-700">
-                  Required: Missing {missingRequiredFields.length} field(s). Assigned staff must update these in Caspio before SW notice is sent:
+          {!readOnlyValidationMode || hasManualPull ? (
+            <div className="mb-4 rounded-md border bg-muted/20 p-3 text-xs">
+              <div className="font-semibold">Required prefill readiness</div>
+              {missingRequiredFields.length === 0 ? (
+                <div className="mt-1 text-green-700">All required mapped Caspio fields for ALFT prefill are present.</div>
+              ) : (
+                <div className="mt-1">
+                  <div className="text-amber-700">
+                    Required: Missing {missingRequiredFields.length} field(s). Assigned staff must update these in Caspio before SW notice is sent:
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {missingRequiredFields.map((item) => (
+                      <Badge key={`missing-${item.alftField}`} variant="outline">
+                        {item.label} ({item.sourceField || 'no source set'})
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {missingRequiredFields.map((item) => (
-                    <Badge key={`missing-${item.alftField}`} variant="outline">
-                      {item.label} ({item.sourceField || 'no source set'})
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          ) : (
+            <div className="mb-4 rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+              Click <span className="font-medium">Refresh Selected Member (Live)</span> to pull current Caspio values and run readiness checks.
+            </div>
+          )}
           <Table>
             <TableHeader>
               <TableRow>

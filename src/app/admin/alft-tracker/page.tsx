@@ -153,6 +153,7 @@ type AlftAssignmentQueueRow = {
   homeAddressState?: string | null;
   homeAddressZip?: string | null;
   ispFacilityName?: string | null;
+  prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string | null;
   prefillPurpose?: string | null;
   prefillSourceLabel?: string | null;
   status?: string | null;
@@ -350,6 +351,19 @@ const REQUIRED_PREFILL_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'p2_home_zip', label: 'Home Address Zip' },
 ];
 
+const resolvePrefillSourceMode = (row: AlftAssignmentQueueRow): 'cs_summary_app' | 'caspio_selected_fields' => {
+  const mode = String(row.prefillSourceMode || '').trim().toLowerCase();
+  if (mode === 'cs_summary_app') return 'cs_summary_app';
+  if (mode === 'caspio_selected_fields') return 'caspio_selected_fields';
+  const label = String(row.prefillSourceLabel || '').trim().toLowerCase();
+  return label.includes('app cs summary') ? 'cs_summary_app' : 'caspio_selected_fields';
+};
+
+const prefillSourceBadgeLabel = (row: AlftAssignmentQueueRow) => {
+  const mode = resolvePrefillSourceMode(row);
+  return mode === 'cs_summary_app' ? 'Source: App' : 'Source: Caspio';
+};
+
 const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
   const workflow = String(row.workflowStatus || '').toLowerCase();
   const status = String(row.status || '').toLowerCase();
@@ -475,6 +489,7 @@ export default function AdminAlftTrackerPage() {
   const [prefillPreviewLoading, setPrefillPreviewLoading] = useState(false);
   const [importingPrefillId, setImportingPrefillId] = useState('');
   const [startingWorkflowFor, setStartingWorkflowFor] = useState('');
+  const [assignmentQueueIndex, setAssignmentQueueIndex] = useState(0);
 
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
@@ -664,6 +679,7 @@ export default function AdminAlftTrackerPage() {
               homeAddressState: toLabel(r.homeAddressState) || null,
               homeAddressZip: toLabel(r.homeAddressZip) || null,
               ispFacilityName: toLabel(r.ispFacilityName) || null,
+              prefillSourceMode: toLabel(r.prefillSourceMode) || null,
               prefillPurpose: toLabel(r.prefillPurpose) || null,
               prefillSourceLabel: toLabel(r.prefillSourceLabel) || null,
               status: toLabel(r.status) || null,
@@ -753,6 +769,14 @@ export default function AdminAlftTrackerPage() {
       );
     });
   }, [assignmentRows, search]);
+
+  useEffect(() => {
+    if (filteredAssignments.length === 0) {
+      setAssignmentQueueIndex(0);
+      return;
+    }
+    setAssignmentQueueIndex((prev) => Math.min(Math.max(prev, 0), filteredAssignments.length - 1));
+  }, [filteredAssignments.length]);
 
   const prefillPreviewFields = useMemo(() => {
     const row = prefillPreviewRow;
@@ -854,23 +878,27 @@ export default function AdminAlftTrackerPage() {
       try {
         const idToken = await auth.currentUser.getIdToken();
         const memberId = String(row.memberId || row.id || '').trim();
-        const prefillRes = await fetch('/api/alft/prefill/resolve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken, memberId }),
-          cache: 'no-store',
-        });
-        const prefillData = (await prefillRes.json().catch(() => ({}))) as any;
-        if (!prefillRes.ok || !prefillData?.ok) {
-          throw new Error(String(prefillData?.error || `Could not validate required prefill fields (HTTP ${prefillRes.status})`));
-        }
-        const resolved = (prefillData?.resolved || {}) as Record<string, string>;
-        const missing = REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(resolved?.[key] || '').trim());
-        if (missing.length > 0) {
-          const shortList = missing.slice(0, 8).map((m) => m.label).join(', ');
-          throw new Error(
-            `Required prefill fields are missing in Caspio (${missing.length}): ${shortList}${missing.length > 8 ? ', ...' : ''}`
-          );
+        const prefillSourceMode = resolvePrefillSourceMode(row);
+        let resolved: Record<string, string> = {};
+        if (prefillSourceMode === 'caspio_selected_fields') {
+          const prefillRes = await fetch('/api/alft/prefill/resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken, memberId }),
+            cache: 'no-store',
+          });
+          const prefillData = (await prefillRes.json().catch(() => ({}))) as any;
+          if (!prefillRes.ok || !prefillData?.ok) {
+            throw new Error(String(prefillData?.error || `Could not validate required prefill fields (HTTP ${prefillRes.status})`));
+          }
+          resolved = (prefillData?.resolved || {}) as Record<string, string>;
+          const missing = REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(resolved?.[key] || '').trim());
+          if (missing.length > 0) {
+            const shortList = missing.slice(0, 8).map((m) => m.label).join(', ');
+            throw new Error(
+              `Required prefill fields are missing in Caspio (${missing.length}): ${shortList}${missing.length > 8 ? ', ...' : ''}`
+            );
+          }
         }
         const pick = (key: string, fallback = '') => String(resolved?.[key] || '').trim() || fallback;
         const res = await fetch('/api/alft/workflow/start', {
@@ -902,6 +930,7 @@ export default function AdminAlftTrackerPage() {
               ispCurrentLocation: pick('p2_facility_name', row.ispFacilityName || ''),
               ispContactPhone: pick('p1_phone', row.memberPhone || ''),
               alftPlanId: pick('p1_plan_id', row.alftPlanId || row.memberMrn || ''),
+              prefillSourceMode,
               swId: row.assignedSwId || '',
               socialWorkerAssigned: row.assignedSwName || '',
               prefillPurpose,
@@ -1471,12 +1500,45 @@ export default function AdminAlftTrackerPage() {
               <div className="text-sm text-muted-foreground">No pending ALFT uploads found.</div>
               {filteredAssignments.length > 0 ? (
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <div className="text-sm font-semibold">Pre-submission ALFT workflow queue</div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-semibold">Pre-submission ALFT workflow queue</div>
+                    <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                      <Link href="/admin/alft-assignment">Back to Assignment Queue</Link>
+                    </Button>
+                  </div>
                   <div className="text-xs text-muted-foreground mb-2">
                     These members are in workflow before upload appears in intake. No file upload is needed to start.
                   </div>
+                  <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      Showing {Math.min(assignmentQueueIndex + 1, filteredAssignments.length)} of {filteredAssignments.length}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => setAssignmentQueueIndex((i) => Math.max(0, i - 1))}
+                        disabled={assignmentQueueIndex <= 0}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => setAssignmentQueueIndex((i) => Math.min(filteredAssignments.length - 1, i + 1))}
+                        disabled={assignmentQueueIndex >= filteredAssignments.length - 1}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
                   <div className="space-y-2">
-                    {filteredAssignments.slice(0, 10).map((row) => (
+                    {filteredAssignments[assignmentQueueIndex] ? (
+                      (() => {
+                        const row = filteredAssignments[assignmentQueueIndex];
+                        return (
                       <div key={row.id} className="rounded border bg-background p-2">
                         <div className="text-sm font-medium">{row.memberName || 'Member'}</div>
                         <div className="text-xs text-muted-foreground">
@@ -1485,11 +1547,11 @@ export default function AdminAlftTrackerPage() {
                         <div className="text-xs text-muted-foreground">
                           Status: {row.workflowStatus || row.status || 'not started'}
                         </div>
-                        {row.prefillSourceLabel ? (
-                          <div className="text-xs text-muted-foreground">
-                            Prefill source: {row.prefillSourceLabel}
-                          </div>
-                        ) : null}
+                        <div className="text-xs text-muted-foreground">
+                          <Badge variant="outline" className="h-5 px-2 text-[10px]">
+                            {prefillSourceBadgeLabel(row)}
+                          </Badge>
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           ALFT form location: <span className="font-medium">SW Portal → ALFT Upload</span>
                         </div>
@@ -1534,7 +1596,9 @@ export default function AdminAlftTrackerPage() {
                           </Button>
                         </div>
                       </div>
-                    ))}
+                        );
+                      })()
+                    ) : null}
                   </div>
                 </div>
               ) : null}
