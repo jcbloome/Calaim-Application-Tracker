@@ -7,7 +7,6 @@ import { useFirestore } from '@/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -28,9 +27,7 @@ import {
 import {
   collection,
   getDocs,
-  query,
-  where,
-  orderBy,
+  onSnapshot,
 } from 'firebase/firestore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -44,6 +41,9 @@ type AlftRecord = {
   documentType?: string;
   memberName?: string;
   medicalRecordNumber?: string | null;
+  memberMrn?: string | null;
+  assignedSwName?: string | null;
+  assignedSwEmail?: string | null;
   uploaderName?: string | null;
   uploaderEmail?: string | null;
   workflowStatus?: string | null;
@@ -145,12 +145,6 @@ const fmtDate = (v: any) => {
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-const isAlft = (r: any) => {
-  const tc = String(r?.toolCode ?? '').toUpperCase();
-  const dt = String(r?.documentType ?? '').toLowerCase();
-  return tc === 'ALFT' || dt.includes('alft');
-};
-
 type StageKey =
   | 'received'
   | 'returned_to_sw'
@@ -226,6 +220,53 @@ const stageFilterMatch = (stage: StageKey, filter: StageFilter): boolean => {
   if (filter === 'manager_review') return ['manager_review', 'ready_to_send'].includes(stage);
   if (filter === 'completed') return stage === 'completed';
   return true;
+};
+
+const queueProgressChips = (r: AlftRecord) => {
+  const workflow = String(r.workflowStatus || '').toLowerCase();
+  const status = String(r.status || '').toLowerCase();
+  const hasInvite = workflow.includes('sw_invited') || status === 'sw_form_in_progress';
+  const swSubmitted = workflow.includes('awaiting_manager_review_pre_rn');
+  const managerLoop = workflow.includes('returned_to_sw_for_revision') || workflow.includes('awaiting_manager_review_pre_rn');
+  const rnStep = workflow.includes('awaiting_rn') || workflow.includes('awaiting_rn_revision_and_signatures') || workflow.includes('awaiting_rn_final_signature');
+  const finalManager = workflow.includes('awaiting_kaiser_manager_final_review');
+  const complete = workflow.includes('completed_sent_to_jocelyn') || status === 'completed';
+
+  return [
+    { key: 'prefill', label: 'Prefill', done: true, current: !hasInvite },
+    { key: 'sw_notice', label: 'SW Notice', done: hasInvite, current: hasInvite && !swSubmitted },
+    { key: 'sw_submit', label: 'SW Submit', done: swSubmitted, current: hasInvite && !swSubmitted },
+    { key: 'manager', label: 'Manager', done: managerLoop, current: swSubmitted && !rnStep },
+    { key: 'rn', label: 'RN', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
+    { key: 'final', label: 'Final', done: finalManager || complete, current: finalManager && !complete },
+  ];
+};
+
+const PROGRESSION_COLUMNS: Array<{ key: string; abbr: string; label: string }> = [
+  { key: 'prefill', abbr: 'PF', label: 'Prefill Ready' },
+  { key: 'sw_notice', abbr: 'SWN', label: 'SW Notice Sent' },
+  { key: 'sw_submit', abbr: 'SWS', label: 'SW Submitted/Signed' },
+  { key: 'manager', abbr: 'MGR', label: 'Manager Review' },
+  { key: 'rn', abbr: 'RN', label: 'RN Review/Sign' },
+  { key: 'final', abbr: 'FIN', label: 'Final Preview + Jocelyn Email' },
+];
+
+const getProgressState = (r: AlftRecord) => {
+  const map: Record<string, { done: boolean; current: boolean }> = {};
+  queueProgressChips(r).forEach((chip) => {
+    map[chip.key] = { done: chip.done, current: chip.current };
+  });
+  return map;
+};
+
+const progressDot = (state: { done: boolean; current: boolean } | undefined) => {
+  if (state?.done) {
+    return <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-emerald-300 bg-emerald-100 text-emerald-700 text-[11px]">✓</span>;
+  }
+  if (state?.current) {
+    return <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-amber-700 text-[11px]">●</span>;
+  }
+  return <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-300 text-[11px]">○</span>;
 };
 
 // ─── Timeline ─────────────────────────────────────────────────────────────────
@@ -325,7 +366,7 @@ function AlftDetailModal({ record, onClose }: { record: AlftRecord; onClose: () 
           </div>
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">RN (Leslie)</p>
-            <p>{record.alftRnName || record.alftRnEmail || 'Not assigned'}</p>
+            <p>{record.alftRnName || record.alftRnEmail || 'Leslie'}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">Current stage</p>
@@ -460,37 +501,54 @@ export default function AlftLogPage() {
 
   useEffect(() => {
     if (!firestore || !isAdmin) return;
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      try {
-        // Fetch ALL standalone_upload_submissions (pending + processed/completed).
-        // We filter to ALFT client-side since toolCode may vary.
-        const [pendingSnap, processedSnap] = await Promise.all([
-          getDocs(query(collection(firestore, 'standalone_upload_submissions'), where('status', '==', 'pending'), orderBy('createdAt', 'desc'))).catch(() => null),
-          getDocs(query(collection(firestore, 'standalone_upload_submissions'), where('status', '!=', 'pending'), orderBy('status'), orderBy('createdAt', 'desc'))).catch(() => null),
-        ]);
-        if (cancelled) return;
-        const raw: AlftRecord[] = [];
-        for (const snap of [pendingSnap, processedSnap]) {
-          if (!snap) continue;
-          snap.docs.forEach((d) => {
-            const data = d.data() as any;
-            if (isAlft(data)) raw.push({ id: d.id, ...data } as AlftRecord);
-          });
-        }
-        // De-dupe by id
-        const seen = new Set<string>();
-        const deduped = raw.filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
-        // Sort newest first
-        deduped.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
-        if (!cancelled) setRecords(deduped);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    setLoading(true);
+    const mapAssignmentDocs = (docs: Array<{ id: string; data: () => any }>) => {
+      const raw: AlftRecord[] = docs.map((d) => {
+        const data = d.data() as any;
+        return {
+          id: d.id,
+          ...data,
+          status: String(data?.status || ''),
+          memberName: String(data?.memberName || ''),
+          memberMrn: String(data?.memberMrn || ''),
+          medicalRecordNumber: String(data?.memberMrn || ''),
+          assignedSwName: String(data?.assignedSwName || ''),
+          assignedSwEmail: String(data?.assignedSwEmail || ''),
+          uploaderName: String(data?.assignedSwName || ''),
+          uploaderEmail: String(data?.assignedSwEmail || ''),
+          createdAt: data?.assignedAt || data?.createdAt,
+          updatedAt: data?.updatedAt || data?.assignedAt || data?.createdAt,
+            workflowStatus: String(data?.workflowStatus || ''),
+          workflowStage: String(data?.workflowStage || ''),
+            alftRnName: String(data?.alftRnName || 'Leslie'),
+            alftRnEmail: String(data?.alftRnEmail || ''),
+        } as AlftRecord;
+      });
+      raw.sort((a, b) => toMs(b.updatedAt || b.createdAt) - toMs(a.updatedAt || a.createdAt));
+      return raw;
     };
-    void load();
-    return () => { cancelled = true; };
+
+    const loadSnapshotFallback = async () => {
+      const snap = await getDocs(collection(firestore, 'alft_assignments')).catch(() => null);
+      if (!snap) return;
+      setRecords(mapAssignmentDocs(snap.docs as any));
+      setLoading(false);
+    };
+
+    void loadSnapshotFallback();
+
+    const unsub = onSnapshot(
+      collection(firestore, 'alft_assignments'),
+      (snap) => {
+        setRecords(mapAssignmentDocs(snap.docs as any));
+        setLoading(false);
+      },
+      async () => {
+        // Keep existing records on transient listener issues; try one-time fetch fallback.
+        await loadSnapshotFallback();
+      }
+    );
+    return () => unsub();
   }, [firestore, isAdmin]);
 
   const filtered = useMemo(() => {
@@ -571,7 +629,7 @@ export default function AlftLogPage() {
             <ClipboardList className="h-6 w-6" /> ALFT Log
           </h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            Full audit log of all ALFT forms — current stage, timeline, edit history, and document links.
+            Queue log of ALFT members — filter by stage and quickly see where each member is in progression.
           </p>
         </div>
       </div>
@@ -606,14 +664,53 @@ export default function AlftLogPage() {
         ))}
       </div>
 
+      <Card>
+        <CardContent className="pt-4 text-xs text-muted-foreground">
+          <div className="font-medium mb-1 text-foreground">ALFT Progress Legend</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {PROGRESSION_COLUMNS.map((col) => (
+              <span key={`legend-${col.key}`}>
+                <span className="font-medium">{col.abbr}</span> = {col.label}
+              </span>
+            ))}
+            <span>
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-emerald-300 bg-emerald-100 text-emerald-700 text-[10px] mr-1">✓</span>
+              Completed step
+            </span>
+            <span>
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-amber-700 text-[10px] mr-1">●</span>
+              Current step in progress
+            </span>
+            <span>
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-300 text-[10px] mr-1">○</span>
+              Not started yet
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Search */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2 items-center">
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search member name, MRN, social worker, RN…"
           className="max-w-md"
         />
+        <Select value={stageFilter} onValueChange={(v) => setStageFilter(v as StageFilter)}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Filter by stage" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All stages</SelectItem>
+            <SelectItem value="received">Received</SelectItem>
+            <SelectItem value="returned_to_sw">Returned to SW</SelectItem>
+            <SelectItem value="rn_assigned">With RN / Staff</SelectItem>
+            <SelectItem value="signatures">Signatures</SelectItem>
+            <SelectItem value="manager_review">Kaiser Review</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+          </SelectContent>
+        </Select>
         {search && (
           <Button variant="ghost" size="sm" onClick={() => setSearch('')}>Clear</Button>
         )}
@@ -640,17 +737,20 @@ export default function AlftLogPage() {
                 <TableRow>
                   <TableHead>Member</TableHead>
                   <TableHead>MRN</TableHead>
-                  <TableHead>Stage</TableHead>
                   <TableHead>Social Worker</TableHead>
                   <TableHead>RN Assigned</TableHead>
-                  <TableHead>Submitted</TableHead>
+                  {PROGRESSION_COLUMNS.map((col) => (
+                    <TableHead key={`th-${col.key}`} className="text-center font-mono text-[10px]">
+                      {col.abbr}
+                    </TableHead>
+                  ))}
                   <TableHead>Last Activity</TableHead>
-                  <TableHead className="w-10" />
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((r) => {
-                  const stage = computeStage(r);
+                  const p = getProgressState(r);
                   const lastActivity = Math.max(
                     toMs(r.updatedAt),
                     toMs(r.workflowUpdatedAt),
@@ -662,15 +762,17 @@ export default function AlftLogPage() {
                   return (
                     <TableRow
                       key={r.id}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => setSelected(r)}
+                      className="hover:bg-muted/50"
                     >
                       <TableCell className="font-medium">{r.memberName || '—'}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{r.medicalRecordNumber || '—'}</TableCell>
-                      <TableCell>{stageBadge(stage)}</TableCell>
-                      <TableCell className="text-sm">{r.uploaderName || r.uploaderEmail || '—'}</TableCell>
-                      <TableCell className="text-sm">{r.alftRnName || r.alftRnEmail || <span className="text-muted-foreground">Not assigned</span>}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{fmtDate(r.createdAt)}</TableCell>
+                      <TableCell className="text-sm">{r.assignedSwName || r.assignedSwEmail || r.uploaderName || r.uploaderEmail || '—'}</TableCell>
+                      <TableCell className="text-sm">{r.alftRnName || r.alftRnEmail || 'Leslie'}</TableCell>
+                      {PROGRESSION_COLUMNS.map((col) => (
+                        <TableCell key={`${r.id}-pc-${col.key}`} className="text-center" title={col.label}>
+                          {progressDot(p[col.key])}
+                        </TableCell>
+                      ))}
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         <div>{lastActivity > 0 ? fmtDate(lastActivity) : '—'}</div>
                         {editCount > 0 && (
@@ -678,7 +780,16 @@ export default function AlftLogPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSelected(r)}>
+                            Quick view
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
+                            <Link href={`/admin/alft-tracker?member=${encodeURIComponent(String(r.id || ''))}&focus=${encodeURIComponent(String(r.id || ''))}`}>
+                              Workflow intake
+                            </Link>
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

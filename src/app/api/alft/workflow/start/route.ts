@@ -235,15 +235,49 @@ export async function POST(req: NextRequest) {
     }
 
     let swEmail = '';
+    let caspioStaff: Array<{ sw_id?: string; email?: string; name?: string }> = [];
     try {
-      if (swId) {
+      if (swId || swName) {
         const credentials = getCaspioCredentialsFromEnv();
         const staff = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
-        const match = staff.find((s) => clean((s as any)?.sw_id, 80).toLowerCase() === swId);
-        swEmail = clean(match?.email, 220).toLowerCase();
+        caspioStaff = (staff || []) as Array<{ sw_id?: string; email?: string; name?: string }>;
+        const normalizedSwName = formatSocialWorkerName(swName);
+        let match = staff.find((s) => clean((s as any)?.sw_id, 80).toLowerCase() === swId);
+        if (!match && normalizedSwName) {
+          const byName = staff.filter((s) => formatSocialWorkerName((s as any)?.name) === normalizedSwName);
+          if (byName.length === 1) match = byName[0];
+        }
+        swEmail = clean((match as any)?.email, 220).toLowerCase();
       }
     } catch {
       // best-effort only
+    }
+
+    // Fallback: try SW management docs in Firestore if Caspio lookup didn't yield an email.
+    if (!swEmail) {
+      try {
+        if (swId) {
+          const bySwIdLower = await adminDb.collection('socialWorkers').where('sw_id', '==', swId).limit(1).get();
+          if (!bySwIdLower.empty) swEmail = clean((bySwIdLower.docs[0]?.data() as any)?.email, 220).toLowerCase();
+        }
+        if (!swEmail && swId) {
+          const bySwIdUpper = await adminDb.collection('socialWorkers').where('SW_ID', '==', swId).limit(1).get();
+          if (!bySwIdUpper.empty) swEmail = clean((bySwIdUpper.docs[0]?.data() as any)?.email, 220).toLowerCase();
+        }
+      } catch {
+        // ignore fallback lookup failures
+      }
+    }
+
+    // Last-resort fallback: match by normalized SW name within Caspio social worker roster.
+    if (!swEmail && swName && caspioStaff.length > 0) {
+      const normalizedSwName = formatSocialWorkerName(swName);
+      if (normalizedSwName) {
+        const byName = caspioStaff.filter((s) => formatSocialWorkerName((s as any)?.name) === normalizedSwName);
+        if (byName.length === 1) {
+          swEmail = clean((byName[0] as any)?.email, 220).toLowerCase();
+        }
+      }
     }
 
     // Try to resolve SW user by email or SW_ID for in-app notifications.

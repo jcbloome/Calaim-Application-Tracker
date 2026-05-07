@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, UploadCloud, ExternalLink, RefreshCw, UserCheck, CheckCircle2, Send, Download, ClipboardList } from 'lucide-react';
+import { Loader2, UploadCloud, ExternalLink, RefreshCw, UserCheck, CheckCircle2, Send, Download } from 'lucide-react';
 import { ExactAlftQuestionnaire, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import {
   addDoc,
@@ -162,6 +162,18 @@ type AlftAssignmentQueueRow = {
   workflowInvites?: {
     swPortalPath?: string | null;
     managerWorkflowPath?: string | null;
+    invitedAt?: any;
+  } | null;
+  workflowStepsAt?: {
+    swInviteSentAt?: any;
+    swSubmittedAt?: any;
+    managerReviewedAt?: any;
+    rnReviewedAt?: any;
+    finalReadyAt?: any;
+    jocelynEmailSentAt?: any;
+  } | null;
+  alftCompletionEmail?: {
+    sentAt?: any;
   } | null;
   updatedAt?: any;
 };
@@ -333,11 +345,11 @@ const REQUIRED_PREFILL_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'p1_mrn', label: 'MRN Number' },
   { key: 'p1_member_name', label: 'Member Name' },
   { key: 'p1_assessor_name', label: 'Assessor Name' },
-  { key: 'p2_first_name', label: 'First Name' },
-  { key: 'p2_last_name', label: 'Last Name' },
+  { key: 'p1_first_name', label: 'First Name' },
+  { key: 'p1_last_name', label: 'Last Name' },
   { key: 'p1_phone', label: 'Phone Number' },
-  { key: 'p2_dob', label: 'Date of Birth' },
-  { key: 'p2_sex', label: 'Sex' },
+  { key: 'p1_dob', label: 'Date of Birth' },
+  { key: 'p1_sex', label: 'Sex' },
   { key: 'p1_primary_language', label: 'Primary Language' },
   { key: 'p2_current_street', label: 'Current Location Street' },
   { key: 'p2_current_city', label: 'Current Location City' },
@@ -350,6 +362,11 @@ const REQUIRED_PREFILL_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'p2_home_state', label: 'Home Address State' },
   { key: 'p2_home_zip', label: 'Home Address Zip' },
 ];
+
+const NON_BLOCKING_PREFILL_FIELD_KEYS = new Set(['p1_phone', 'p1_primary_language']);
+const BLOCKING_REQUIRED_PREFILL_FIELDS = REQUIRED_PREFILL_FIELDS.filter(
+  ({ key }) => !NON_BLOCKING_PREFILL_FIELD_KEYS.has(key)
+);
 
 const resolvePrefillSourceMode = (row: AlftAssignmentQueueRow): 'cs_summary_app' | 'caspio_selected_fields' => {
   const mode = String(row.prefillSourceMode || '').trim().toLowerCase();
@@ -364,6 +381,63 @@ const prefillSourceBadgeLabel = (row: AlftAssignmentQueueRow) => {
   return mode === 'cs_summary_app' ? 'Source: App' : 'Source: Caspio';
 };
 
+const getRequiredValueFromAssignmentRow = (row: AlftAssignmentQueueRow, key: string) => {
+  switch (key) {
+    case 'p1_plan_id':
+      return toLabel(row.alftPlanId || row.memberMrn);
+    case 'p1_mrn':
+      return toLabel(row.memberMrn);
+    case 'p1_member_name':
+      return toLabel(row.memberName);
+    case 'p1_assessor_name':
+      return toLabel(row.assignedSwName);
+    case 'p1_first_name':
+      return toLabel(row.memberFirstName);
+    case 'p1_last_name':
+      return toLabel(row.memberLastName);
+    case 'p1_phone':
+      return toLabel(row.memberPhone);
+    case 'p1_dob':
+      return toLabel(row.birthDate);
+    case 'p1_sex':
+      return toLabel(row.memberSex);
+    case 'p1_primary_language':
+      return toLabel(row.memberPrimaryLanguage);
+    case 'p2_current_street':
+      return toLabel(row.ispCurrentAddressStreet);
+    case 'p2_current_city':
+      return toLabel(row.ispCurrentAddressCity);
+    case 'p2_current_state':
+      return toLabel(row.ispCurrentAddressState);
+    case 'p2_current_zip':
+      return toLabel(row.ispCurrentAddressZip);
+    case 'p2_current_type':
+      return toLabel(row.currentLocationType);
+    case 'p2_assessment_site':
+      return toLabel(row.assessmentSite);
+    case 'p2_home_street':
+      return toLabel(row.homeAddressStreet);
+    case 'p2_home_city':
+      return toLabel(row.homeAddressCity);
+    case 'p2_home_state':
+      return toLabel(row.homeAddressState);
+    case 'p2_home_zip':
+      return toLabel(row.homeAddressZip);
+    default:
+      return '';
+  }
+};
+
+const getRequiredValueFromResolvedOrAssignment = (
+  row: AlftAssignmentQueueRow,
+  key: string,
+  resolved: Record<string, string>
+) => {
+  const fromResolved = String(resolved?.[key] || '').trim();
+  if (fromResolved) return fromResolved;
+  return String(getRequiredValueFromAssignmentRow(row, key) || '').trim();
+};
+
 const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
   const workflow = String(row.workflowStatus || '').toLowerCase();
   const status = String(row.status || '').toLowerCase();
@@ -375,13 +449,25 @@ const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
   const complete = workflow.includes('completed_sent_to_jocelyn') || status === 'completed';
 
   return [
-    { step: 1, label: 'ALFT prefill prepared (Page 1-2)', done: true, current: !hasInvite },
-    { step: 2, label: 'SW notice sent + portal access enabled', done: hasInvite, current: hasInvite && !swSubmitted },
-    { step: 3, label: 'SW completes/signs ALFT form in SW Portal', done: swSubmitted, current: hasInvite && !swSubmitted },
-    { step: 4, label: 'ALFT manager review (return loop if needed)', done: managerLoop, current: swSubmitted && !rnStep },
-    { step: 5, label: 'RN review/edits/signs final clinical packet', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
-    { step: 6, label: 'Kaiser manager final review + send PDF', done: finalManager || complete, current: finalManager && !complete },
+    { step: 1, chip: 'Prefill Ready', label: 'ALFT prefill prepared (Page 1-2)', done: true, current: !hasInvite },
+    { step: 2, chip: 'SW Notified', label: 'SW notice sent + portal access enabled', done: hasInvite, current: hasInvite && !swSubmitted },
+    { step: 3, chip: 'SW Submitted', label: 'SW completes/signs ALFT form in SW Portal', done: swSubmitted, current: hasInvite && !swSubmitted },
+    { step: 4, chip: 'Manager Review', label: 'ALFT manager review (return loop if needed)', done: managerLoop, current: swSubmitted && !rnStep },
+    { step: 5, chip: 'RN Review', label: 'RN review/edits/signs final clinical packet', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
+    { step: 6, chip: 'Final + Jocelyn Email', label: 'Final manager review, full form preview, then email PDF to Jocelyn', done: finalManager || complete, current: finalManager && !complete },
   ];
+};
+
+const stepChipClass = (step: { done: boolean; current: boolean }) => {
+  if (step.done) return 'border-emerald-300 bg-emerald-50 text-emerald-800';
+  if (step.current) return 'border-blue-300 bg-blue-50 text-blue-800';
+  return 'border-slate-200 bg-slate-50 text-slate-500';
+};
+
+const stepDotClass = (step: { done: boolean; current: boolean }) => {
+  if (step.done) return 'bg-emerald-500';
+  if (step.current) return 'bg-blue-500';
+  return 'bg-slate-300';
 };
 
 const workflowChecklistFor = (r: StandaloneUpload) => {
@@ -414,17 +500,8 @@ const workflowChecklistFor = (r: StandaloneUpload) => {
   return steps;
 };
 
-const toIsoToday = () => {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
 export default function AdminAlftTrackerPage() {
   const { isAdmin, isSuperAdmin, isLoading, user } = useAdmin();
-  const router = useRouter();
   const firestore = useFirestore();
   const storage = useStorage();
   const auth = useAuth();
@@ -490,11 +567,41 @@ export default function AdminAlftTrackerPage() {
   const [importingPrefillId, setImportingPrefillId] = useState('');
   const [startingWorkflowFor, setStartingWorkflowFor] = useState('');
   const [assignmentQueueIndex, setAssignmentQueueIndex] = useState(0);
+  const [verifiedPrefillIds, setVerifiedPrefillIds] = useState<Record<string, number>>({});
+  const [swEmailPreviewOpen, setSwEmailPreviewOpen] = useState(false);
+  const [swEmailPreviewRow, setSwEmailPreviewRow] = useState<AlftAssignmentQueueRow | null>(null);
+  const [swEmailById, setSwEmailById] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
     if (focus) setFocusId(focus);
   }, [searchParams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!isAdmin) return;
+      try {
+        const res = await fetch('/api/caspio-staff', { cache: 'no-store' });
+        const payload = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok || !payload?.success) return;
+        const staff = Array.isArray(payload?.staff) ? payload.staff : [];
+        const next: Record<string, string> = {};
+        staff.forEach((row: any) => {
+          const swId = toLabel(row?.sw_id).toLowerCase();
+          const email = toLabel(row?.email).toLowerCase();
+          if (swId && email && !next[swId]) next[swId] = email;
+        });
+        if (!cancelled) setSwEmailById(next);
+      } catch {
+        // best-effort only: queue still works without this fallback map.
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!prefillPreviewRow) return;
@@ -686,6 +793,8 @@ export default function AdminAlftTrackerPage() {
               workflowStatus: toLabel(r.workflowStatus) || null,
               workflowStage: toLabel(r.workflowStage) || null,
               workflowInvites: (r.workflowInvites || null) as any,
+              workflowStepsAt: (r.workflowStepsAt || null) as any,
+              alftCompletionEmail: (r.alftCompletionEmail || null) as any,
               updatedAt: r.updatedAt,
             } as AlftAssignmentQueueRow;
           })
@@ -757,9 +866,21 @@ export default function AdminAlftTrackerPage() {
       });
   }, [rows, search]);
 
+  const assignmentRowsWithResolvedSwEmail = useMemo(
+    () =>
+      assignmentRows.map((row) => {
+        if (toLabel(row.assignedSwEmail)) return row;
+        const swIdKey = toLabel(row.assignedSwId).toLowerCase();
+        const email = swIdKey ? toLabel(swEmailById[swIdKey]).toLowerCase() : '';
+        if (!email) return row;
+        return { ...row, assignedSwEmail: email };
+      }),
+    [assignmentRows, swEmailById]
+  );
+
   const filteredAssignments = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return assignmentRows.filter((r) => {
+    return assignmentRowsWithResolvedSwEmail.filter((r) => {
       if (!s) return true;
       return (
         toLabel(r.memberName).toLowerCase().includes(s) ||
@@ -768,7 +889,7 @@ export default function AdminAlftTrackerPage() {
         toLabel(r.assignedSwEmail).toLowerCase().includes(s)
       );
     });
-  }, [assignmentRows, search]);
+  }, [assignmentRowsWithResolvedSwEmail, search]);
 
   useEffect(() => {
     if (filteredAssignments.length === 0) {
@@ -803,6 +924,32 @@ export default function AdminAlftTrackerPage() {
       { label: 'Phone Number', value: asAnswer(prefillPreviewResolved.phone) },
     ];
   }, [prefillPreviewResolved, prefillPreviewRow, prefillPurpose]);
+
+  const swEmailPreview = useMemo(() => {
+    if (!swEmailPreviewRow) return null;
+    const memberName = String(swEmailPreviewRow.memberName || 'Member').trim();
+    const mrn = String(swEmailPreviewRow.memberMrn || '').trim();
+    const swName = String(swEmailPreviewRow.assignedSwName || 'Social Worker').trim();
+    const swEmail = String(swEmailPreviewRow.assignedSwEmail || '').trim();
+    const portalPath = '/sw-portal/alft-upload';
+    const assignmentPath = '/admin/alft-assignment';
+    return {
+      to: swEmail || 'Missing email',
+      subject: `ALFT assigned: ${memberName}`,
+      body: [
+        `Hi ${swName},`,
+        '',
+        `An ALFT workflow has been started for ${memberName}${mrn ? ` (MRN: ${mrn})` : ''}.`,
+        'Please log in to the portal and complete the ALFT form with your signature.',
+        '',
+        `1) Go to portal: ${portalPath}`,
+        '2) Login with your account',
+        '3) Open ALFT Assignment page (ALFT Upload) and complete the form',
+        '',
+        `Manager queue link: ${assignmentPath}`,
+      ].join('\n'),
+    };
+  }, [swEmailPreviewRow]);
 
   const openAssign = useCallback((row: StandaloneUpload, kind: 'rn' | 'staff') => {
     setAssignRow(row);
@@ -874,10 +1021,19 @@ export default function AdminAlftTrackerPage() {
         toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
         return;
       }
+      const memberId = String(row.memberId || row.id || '').trim();
+      if (!memberId) return;
+      if (!verifiedPrefillIds[memberId]) {
+        toast({
+          title: 'Step 1 required',
+          description: 'Open the verification tool and check the verification checkbox before sending SW notice.',
+          variant: 'destructive',
+        });
+        return;
+      }
       setStartingWorkflowFor(row.memberId || row.id);
       try {
         const idToken = await auth.currentUser.getIdToken();
-        const memberId = String(row.memberId || row.id || '').trim();
         const prefillSourceMode = resolvePrefillSourceMode(row);
         let resolved: Record<string, string> = {};
         if (prefillSourceMode === 'caspio_selected_fields') {
@@ -892,7 +1048,9 @@ export default function AdminAlftTrackerPage() {
             throw new Error(String(prefillData?.error || `Could not validate required prefill fields (HTTP ${prefillRes.status})`));
           }
           resolved = (prefillData?.resolved || {}) as Record<string, string>;
-          const missing = REQUIRED_PREFILL_FIELDS.filter(({ key }) => !String(resolved?.[key] || '').trim());
+          const missing = BLOCKING_REQUIRED_PREFILL_FIELDS.filter(
+            ({ key }) => !getRequiredValueFromResolvedOrAssignment(row, key, resolved)
+          );
           if (missing.length > 0) {
             const shortList = missing.slice(0, 8).map((m) => m.label).join(', ');
             throw new Error(
@@ -909,11 +1067,11 @@ export default function AdminAlftTrackerPage() {
             member: {
               id: memberId,
               memberName: pick('p1_member_name', row.memberName || ''),
-              memberFirstName: pick('p2_first_name', row.memberFirstName || ''),
-              memberLastName: pick('p2_last_name', row.memberLastName || ''),
+              memberFirstName: pick('p1_first_name', row.memberFirstName || ''),
+              memberLastName: pick('p1_last_name', row.memberLastName || ''),
               memberMrn: pick('p1_mrn', row.memberMrn || ''),
-              birthDate: pick('p2_dob', row.birthDate || ''),
-              memberSex: pick('p2_sex', row.memberSex || ''),
+              birthDate: pick('p1_dob', row.birthDate || ''),
+              memberSex: pick('p1_sex', row.memberSex || ''),
               memberPrimaryLanguage: pick('p1_primary_language', row.memberPrimaryLanguage || ''),
               memberPhone: pick('p1_phone', row.memberPhone || ''),
               ispCurrentAddressStreet: pick('p2_current_street', row.ispCurrentAddressStreet || ''),
@@ -955,7 +1113,7 @@ export default function AdminAlftTrackerPage() {
         setStartingWorkflowFor('');
       }
     },
-    [auth?.currentUser, prefillPurpose, toast]
+    [auth?.currentUser, prefillPurpose, toast, verifiedPrefillIds]
   );
 
   const importMappedMemberPrefill = useCallback(
@@ -1502,9 +1660,14 @@ export default function AdminAlftTrackerPage() {
                 <div className="rounded-md border bg-muted/20 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-sm font-semibold">Pre-submission ALFT workflow queue</div>
-                    <Button asChild size="sm" variant="outline" className="h-7 text-xs">
-                      <Link href="/admin/alft-assignment">Back to Assignment Queue</Link>
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                        <Link href="/admin/alft-assignment">Back to Assignment Queue</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                        <Link href="/admin/alft-log">Open ALFT Log</Link>
+                      </Button>
+                    </div>
                   </div>
                   <div className="text-xs text-muted-foreground mb-2">
                     These members are in workflow before upload appears in intake. No file upload is needed to start.
@@ -1538,62 +1701,109 @@ export default function AdminAlftTrackerPage() {
                     {filteredAssignments[assignmentQueueIndex] ? (
                       (() => {
                         const row = filteredAssignments[assignmentQueueIndex];
+                        const memberIdKey = String(row.memberId || row.id || '').trim();
+                        const isVerified = Boolean(verifiedPrefillIds[memberIdKey]);
+                        const orderedSteps = assignmentWorkflowSteps(row);
+                        const doneCount = orderedSteps.filter((s) => s.done).length;
                         return (
                       <div key={row.id} className="rounded border bg-background p-2">
                         <div className="text-sm font-medium">{row.memberName || 'Member'}</div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-sm text-muted-foreground">
                           MRN: {row.memberMrn || '—'} • SW: {row.assignedSwName || row.assignedSwEmail || row.assignedSwId || '—'}
                         </div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-sm text-muted-foreground">
+                          SW Email: {row.assignedSwEmail || 'Missing email'}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
                           Status: {row.workflowStatus || row.status || 'not started'}
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          <Badge variant="outline" className="h-5 px-2 text-[10px]">
+                        <div className="text-sm text-muted-foreground">
+                          <Badge variant="outline" className="h-5 px-2 text-xs">
                             {prefillSourceBadgeLabel(row)}
                           </Badge>
                         </div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-sm text-muted-foreground">
                           ALFT form location: <span className="font-medium">SW Portal → ALFT Upload</span>
                         </div>
-                        <div className="mt-1 rounded border bg-muted/20 p-2 text-[11px]">
-                          {assignmentWorkflowSteps(row).map((step) => (
-                            <div key={`${row.id}-step-${step.step}`} className="flex items-center gap-1.5">
-                              <span className={step.done ? 'text-green-700' : step.current ? 'text-blue-700' : 'text-muted-foreground'}>
-                                {step.done ? '✓' : step.current ? '→' : '○'}
+
+                        <div className="mt-2 rounded border bg-blue-50/40 p-3 text-sm">
+                          <div className="font-medium mb-1">Workflow summary</div>
+                          <div className="text-sm text-muted-foreground">{nextStepForAssignment(row)}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Progress: {doneCount}/{orderedSteps.length} steps completed
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {orderedSteps.map((step) => (
+                              <span
+                                key={`${row.id}-step-chip-${step.step}`}
+                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${stepChipClass(step)}`}
+                                title={step.label}
+                              >
+                                <span className={`mr-1 inline-block h-2 w-2 rounded-full ${stepDotClass(step)}`} />
+                                {step.step}. {step.chip}
                               </span>
-                              <span className={step.done ? 'text-foreground' : step.current ? 'text-foreground font-medium' : 'text-muted-foreground'}>
-                                {step.step}) {step.label}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="text-xs">{nextStepForAssignment(row)}</div>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs"
-                            onClick={() => {
-                              const memberId = encodeURIComponent(String(row.memberId || row.id || '').trim());
-                              router.push(`/admin/alft-caspio-mapping?memberId=${memberId}&from=alft-intake`);
-                            }}
-                          >
-                            Pull prefilled fields
-                          </Button>
-                          <Button
-                            size="sm"
-                            className="h-7 text-xs"
-                            disabled={
-                              startingWorkflowFor === (row.memberId || row.id) ||
-                              (!row.assignedSwId && !row.assignedSwName)
-                            }
-                            onClick={() => void startWorkflowFromIntake(row)}
-                          >
-                            {startingWorkflowFor === (row.memberId || row.id) ? (
-                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                            ) : null}
-                            {String(row.workflowStatus || '').toLowerCase().includes('sw_invited') ? 'Re-send SW notice' : 'Send SW notice'}
-                          </Button>
+                            ))}
+                          </div>
+                          <div className="mt-2 space-y-1.5">
+                            <div className="font-medium text-sm">Ordered steps (click to run)</div>
+                            <button
+                              type="button"
+                              className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm hover:bg-slate-50"
+                              onClick={() => {
+                                setPrefillPreviewRow(row);
+                                setPrefillPreviewOpen(true);
+                              }}
+                            >
+                              <span className={isVerified ? 'text-green-700' : 'text-amber-700'}>{isVerified ? '✓' : '•'}</span>{' '}
+                              1) Open verification tool (review mapped fields)
+                            </button>
+                            <label className="flex w-full items-center gap-2 rounded border bg-white px-2 py-1.5 text-left text-sm hover:bg-slate-50">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={isVerified}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setVerifiedPrefillIds((prev) => ({ ...prev, [memberIdKey]: Date.now() }));
+                                  } else {
+                                    setVerifiedPrefillIds((prev) => {
+                                      const next = { ...prev };
+                                      delete next[memberIdKey];
+                                      return next;
+                                    });
+                                  }
+                                }}
+                              />
+                              <span className={isVerified ? 'text-green-700' : 'text-blue-700'}>{isVerified ? '✓' : '•'}</span>
+                              2) Verification checkbox (required to enable Send SW notice)
+                            </label>
+                            <button
+                              type="button"
+                              className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm hover:bg-slate-50"
+                              onClick={() => {
+                                setSwEmailPreviewRow(row);
+                                setSwEmailPreviewOpen(true);
+                              }}
+                            >
+                              <span className="text-blue-700">•</span> 3) Preview SW email (confirm portal instructions).
+                            </button>
+                            <button
+                              type="button"
+                              className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm hover:bg-slate-50 disabled:opacity-60"
+                              disabled={
+                                startingWorkflowFor === (row.memberId || row.id) ||
+                                !isVerified ||
+                                (!row.assignedSwId && !row.assignedSwName)
+                              }
+                              onClick={() => void startWorkflowFromIntake(row)}
+                            >
+                              <span className={isVerified ? 'text-blue-700' : 'text-slate-400'}>{isVerified ? '•' : '○'}</span>{' '}
+                              4) {String(row.workflowStatus || '').toLowerCase().includes('sw_invited') ? 'Re-send SW notice' : 'Send SW notice'} (enabled after Step 2)
+                              {startingWorkflowFor === (row.memberId || row.id) ? (
+                                <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
+                              ) : null}
+                            </button>
+                          </div>
                         </div>
                       </div>
                         );
@@ -1914,6 +2124,36 @@ export default function AdminAlftTrackerPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={swEmailPreviewOpen} onOpenChange={setSwEmailPreviewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Social Worker email preview</DialogTitle>
+            <DialogDescription>
+              Preview the workflow notice email that will be sent for portal login and ALFT completion.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <div>
+              <span className="font-medium">To:</span> {swEmailPreview?.to || '—'}
+            </div>
+            <div>
+              <span className="font-medium">Subject:</span> {swEmailPreview?.subject || '—'}
+            </div>
+            <div>
+              <span className="font-medium">Body:</span>
+              <pre className="mt-1 whitespace-pre-wrap rounded border bg-muted/20 p-2 text-xs">
+                {swEmailPreview?.body || '—'}
+              </pre>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSwEmailPreviewOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={prefillPreviewOpen} onOpenChange={setPrefillPreviewOpen}>
         <DialogContent className="max-w-3xl">
