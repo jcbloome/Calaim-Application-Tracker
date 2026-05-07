@@ -512,6 +512,12 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const trackerQuery = new URLSearchParams({
+      member: resolvedMemberName,
+      memberId,
+    }).toString();
+    const trackerActionUrl = `/admin/alft-tracker?${trackerQuery}`;
+
     // Notify Kaiser assignment managers in-app that workflow started.
     try {
       const managersSnap = await adminDb.collection('users').where('isKaiserAssignmentManager', '==', true).get();
@@ -532,7 +538,7 @@ export async function POST(req: NextRequest) {
           senderName: displayName,
           senderId: uid,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          actionUrl: `/admin/alft-tracker?member=${encodeURIComponent(memberName)}`,
+          actionUrl: trackerActionUrl,
           memberClientId: memberId,
         })
       );
@@ -554,7 +560,7 @@ export async function POST(req: NextRequest) {
               mrn: resolvedMemberMrn || undefined,
               stageLabel: 'Step 1/5 started (SW invited)',
               nextAction: 'Monitor for SW submission and signature, then review in ALFT tracker.',
-              actionUrl: `/admin/alft-tracker?member=${encodeURIComponent(memberName)}`,
+              actionUrl: trackerActionUrl,
               triggeredBy: displayName,
             }).catch(() => null)
           )

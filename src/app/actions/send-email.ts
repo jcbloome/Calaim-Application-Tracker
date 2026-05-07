@@ -34,7 +34,8 @@ function getResendClient(): Resend | null {
   return resendClient;
 }
 
-const DEFAULT_PORTAL_LOGIN_URL = 'https://connectcalaim.com/login';
+const DEFAULT_APP_BASE_URL = 'https://connectcalaim.com';
+const DEFAULT_PORTAL_LOGIN_URL = `${DEFAULT_APP_BASE_URL}/login`;
 const REQUIREMENT_TITLE_TO_ID: Record<string, string> = {
     'cs member summary': 'cs-summary',
     'cs summary': 'cs-summary',
@@ -66,6 +67,22 @@ function resolvePortalLoginUrl(rawPortalUrl?: string): string {
         return parsed.toString();
     } catch {
         return DEFAULT_PORTAL_LOGIN_URL;
+    }
+}
+
+function resolveAppBaseUrl(rawBaseUrl?: string): string {
+    const raw = String(rawBaseUrl || '').trim();
+    if (!raw) return DEFAULT_APP_BASE_URL;
+
+    try {
+        const parsed = new URL(raw);
+        const host = parsed.hostname.toLowerCase();
+        if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) {
+            return DEFAULT_APP_BASE_URL;
+        }
+        return parsed.origin;
+    } catch {
+        return DEFAULT_APP_BASE_URL;
     }
 }
 
@@ -737,7 +754,7 @@ export const sendAlftUploadEmail = async (payload: AlftUploadPayload) => {
     if (!to) throw new Error('Email recipient is required.');
 
     const intakeUrlRaw = String(payload.intakeUrl || '').trim();
-    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
     const intakeUrl = intakeUrlRaw.startsWith('http') ? intakeUrlRaw : `${baseUrl}${intakeUrlRaw.startsWith('/') ? '' : '/'}${intakeUrlRaw}`;
 
     const memberName = String(payload.memberName || '').trim() || 'Member';
@@ -773,7 +790,7 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
     const portalUrlRaw = String(payload.portalUrl || '/sw-portal/alft-upload').trim();
     const portalUrl = portalUrlRaw.startsWith('http') ? portalUrlRaw : `${baseUrl}${portalUrlRaw.startsWith('/') ? '' : '/'}${portalUrlRaw}`;
 
@@ -784,11 +801,11 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
 
     const html = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
-        <div style="background: #0f172a; border-radius: 10px 10px 0 0; padding: 20px 24px;">
-          <p style="margin: 0; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;">CalAIM ALFT Workflow</p>
-          <h2 style="margin: 6px 0 0; color: #ffffff; font-size: 20px;">ALFT form assigned to you</h2>
+        <div style="background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%); border: 1px solid #bfdbfe; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #1d4ed8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ALFT Workflow</p>
+          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">ALFT form assigned to you</h2>
         </div>
-        <div style="border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px; padding: 24px;">
+        <div style="border: 1px solid #bfdbfe; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
           <p style="margin: 0 0 10px;">Hi ${socialWorkerName},</p>
           <p style="margin: 0 0 14px;">
             An ALFT workflow has been started for <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''}.
@@ -798,7 +815,7 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
             Assigned by: <strong>${assignedBy}</strong>
           </p>
           <p style="margin: 0 0 14px;">
-            <a href="${portalUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; display: inline-block; font-weight: 600;">
+            <a href="${portalUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
               Open SW Portal ALFT Form
             </a>
           </p>
@@ -825,7 +842,7 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
     const actionUrlRaw = String(payload.actionUrl || '').trim();
     const actionUrl = actionUrlRaw.startsWith('http')
       ? actionUrlRaw
@@ -840,11 +857,11 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
 
     const html = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
-        <div style="background: #0f172a; border-radius: 10px 10px 0 0; padding: 20px 24px;">
-          <p style="margin: 0; color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;">CalAIM ALFT Workflow</p>
-          <h2 style="margin: 6px 0 0; color: #ffffff; font-size: 20px;">Manager workflow update</h2>
+        <div style="background: linear-gradient(135deg, #f0f9ff 0%, #ede9fe 100%); border-radius: 12px 12px 0 0; border: 1px solid #c4b5fd; border-bottom: none; padding: 20px 24px;">
+          <p style="margin: 0; color: #6d28d9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ALFT Workflow</p>
+          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">Manager workflow update</h2>
         </div>
-        <div style="border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px; padding: 24px;">
+        <div style="border: 1px solid #c4b5fd; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
           <p style="margin: 0 0 10px;">Hi ${managerName},</p>
           <p style="margin: 0 0 14px;">
             <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''} reached:
@@ -855,7 +872,7 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
           </p>
           ${triggeredBy ? `<p style="margin: 0 0 14px; color: #334155;">Triggered by: <strong>${triggeredBy}</strong></p>` : ''}
           <p style="margin: 0 0 14px;">
-            <a href="${actionUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; display: inline-block; font-weight: 600;">
+            <a href="${actionUrl}" style="background: #4338ca; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
               Open ALFT workflow
             </a>
           </p>
@@ -883,7 +900,7 @@ export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureReques
     const to = String(payload.to || '').trim();
     if (!to) throw new Error('Email recipient is required.');
 
-    const baseUrl = String(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
+    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
     const signUrlRaw = String(payload.signUrl || '').trim();
     const signUrl = signUrlRaw.startsWith('http') ? signUrlRaw : `${baseUrl}${signUrlRaw.startsWith('/') ? '' : '/'}${signUrlRaw}`;
 

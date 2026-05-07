@@ -196,6 +196,18 @@ type AlftAssignmentQueueRow = {
 type StaffOption = { uid: string; label: string; email: string; role: 'Admin' | 'Super Admin' | 'Staff' };
 
 const toLabel = (value: any) => String(value ?? '').trim();
+const searchTokens = (value: string) =>
+  String(value || '')
+    .toLowerCase()
+    .split(/[\s,]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+const matchesAllTokens = (queryValue: string, fields: Array<unknown>) => {
+  const tokens = searchTokens(queryValue);
+  if (tokens.length === 0) return true;
+  const haystack = fields.map((field) => toLabel(field).toLowerCase()).join(' ');
+  return tokens.every((token) => haystack.includes(token));
+};
 
 const isAlft = (row: Partial<StandaloneUpload>) => {
   const toolCode = toLabel((row as any)?.toolCode).toUpperCase();
@@ -848,7 +860,9 @@ export default function AdminAlftTrackerPage() {
 
   useEffect(() => {
     const memberQuery = String(searchParams?.get('member') || '').trim();
-    if (memberQuery) setSearch(memberQuery);
+    const memberIdQuery = String(searchParams?.get('memberId') || '').trim();
+    const merged = [memberQuery, memberIdQuery].filter(Boolean).join(' ');
+    if (merged) setSearch(merged);
   }, [searchParams]);
 
   useEffect(() => {
@@ -1019,14 +1033,15 @@ export default function AdminAlftTrackerPage() {
     return rows
       .filter((r) => {
         if (!s) return true;
-        return (
-          toLabel(r.memberName).toLowerCase().includes(s) ||
-          toLabel(r.medicalRecordNumber).toLowerCase().includes(s) ||
-          toLabel(r.uploaderName).toLowerCase().includes(s) ||
-          toLabel(r.uploaderEmail).toLowerCase().includes(s) ||
-          toLabel(r.alftRnName).toLowerCase().includes(s) ||
-          toLabel(r.alftStaffName).toLowerCase().includes(s)
-        );
+        return matchesAllTokens(s, [
+          r.id,
+          r.memberName,
+          r.medicalRecordNumber,
+          r.uploaderName,
+          r.uploaderEmail,
+          r.alftRnName,
+          r.alftStaffName,
+        ]);
       })
       .sort((a, b) => {
         const aMs = Math.max(toMs(a.updatedAt), toMs(a.createdAt));
@@ -1051,12 +1066,14 @@ export default function AdminAlftTrackerPage() {
     const s = search.trim().toLowerCase();
     return assignmentRowsWithResolvedSwEmail.filter((r) => {
       if (!s) return true;
-      return (
-        toLabel(r.memberName).toLowerCase().includes(s) ||
-        toLabel(r.memberMrn).toLowerCase().includes(s) ||
-        toLabel(r.assignedSwName).toLowerCase().includes(s) ||
-        toLabel(r.assignedSwEmail).toLowerCase().includes(s)
-      );
+      return matchesAllTokens(s, [
+        r.id,
+        r.memberId,
+        r.memberName,
+        r.memberMrn,
+        r.assignedSwName,
+        r.assignedSwEmail,
+      ]);
     });
   }, [assignmentRowsWithResolvedSwEmail, search]);
 
