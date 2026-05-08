@@ -290,6 +290,8 @@ function LoginPageContent() {
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
+                  className="pr-10"
+                  autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -299,6 +301,8 @@ function LoginPageContent() {
                   variant="ghost"
                   size="icon"
                   className="absolute right-1 top-7 h-7 w-7"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
                   onClick={() => setShowPassword((prev) => !prev)}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

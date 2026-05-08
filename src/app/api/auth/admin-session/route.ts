@@ -25,20 +25,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Admin access removed for this account' }, { status: 403 });
     }
 
-    // Enforce lane separation: SW accounts cannot establish admin sessions.
-    const [swUidDoc, swEmailDoc, swByEmailSnap] = await Promise.all([
-      adminDb.collection('socialWorkers').doc(uid).get(),
-      adminDb.collection('socialWorkers').doc(email).get(),
-      adminDb.collection('socialWorkers').where('email', '==', email).limit(1).get(),
-    ]);
-    const hasSwLaneRecord = swUidDoc.exists || swEmailDoc.exists || !swByEmailSnap.empty;
-    if (hasSwLaneRecord) {
-      return NextResponse.json(
-        { error: 'This email is reserved for Social Worker login. Please use a dedicated Admin email.' },
-        { status: 403 }
-      );
-    }
-
     let isAdmin = isHardcodedAdminEmail(email);
     let isSuperAdmin = isAdmin;
 
@@ -61,7 +47,21 @@ export async function POST(request: NextRequest) {
       isAdmin = emailAdminDoc.exists || isSuperAdmin;
     }
 
+    // Enforce lane separation only when the account does not have admin access.
+    // This allows explicit admin accounts that also have SW records to sign in.
     if (!isAdmin) {
+      const [swUidDoc, swEmailDoc, swByEmailSnap] = await Promise.all([
+        adminDb.collection('socialWorkers').doc(uid).get(),
+        adminDb.collection('socialWorkers').doc(email).get(),
+        adminDb.collection('socialWorkers').where('email', '==', email).limit(1).get(),
+      ]);
+      const hasSwLaneRecord = swUidDoc.exists || swEmailDoc.exists || !swByEmailSnap.empty;
+      if (hasSwLaneRecord) {
+        return NextResponse.json(
+          { error: 'This email is reserved for Social Worker login. Please use a dedicated Admin email.' },
+          { status: 403 }
+        );
+      }
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
