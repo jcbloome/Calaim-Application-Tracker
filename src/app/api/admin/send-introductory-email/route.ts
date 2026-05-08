@@ -411,14 +411,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Application ID is required.' }, { status: 400 });
     }
 
-    const appRef = adminCheck.adminDb.collection('applications').doc(applicationId);
-    const appSnap = await appRef.get();
+    let appRef = adminCheck.adminDb.collection('applications').doc(applicationId);
+    let appSnap = await appRef.get();
+    let resolvedUserId = String(body.userId || '').trim();
+
+    // Backward-compat: some applications only exist under users/{uid}/applications/{id}.
+    if (!appSnap.exists && resolvedUserId) {
+      const userScopedRef = adminCheck.adminDb
+        .collection('users')
+        .doc(resolvedUserId)
+        .collection('applications')
+        .doc(applicationId);
+      const userScopedSnap = await userScopedRef.get();
+      if (userScopedSnap.exists) {
+        appRef = userScopedRef;
+        appSnap = userScopedSnap;
+      }
+    }
+
+    // Last-resort lookup when userId is missing from query params.
+    if (!appSnap.exists) {
+      const cgSnap = await adminCheck.adminDb
+        .collectionGroup('applications')
+        .where(admin.firestore.FieldPath.documentId(), '==', applicationId)
+        .limit(1)
+        .get();
+      if (!cgSnap.empty) {
+        const first = cgSnap.docs[0];
+        appRef = first.ref;
+        appSnap = first;
+        resolvedUserId = String(first.ref.parent?.parent?.id || '').trim();
+      }
+    }
+
     if (!appSnap.exists) {
       return NextResponse.json({ success: false, error: 'Application not found.' }, { status: 404 });
     }
 
     const appData = (appSnap.data() || {}) as Record<string, unknown>;
-    const requestedUserId = String(body.userId || appData.userId || '').trim();
+    const requestedUserId = String(body.userId || appData.userId || resolvedUserId || '').trim();
     let effectiveAppData: Record<string, unknown> = { ...appData };
     if (requestedUserId && applicationId) {
       try {
