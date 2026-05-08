@@ -1097,6 +1097,7 @@ export default function EraParserPage() {
   const [payer, setPayer] = useState<string>('Health Net');
   const [resultsSearch, setResultsSearch] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'zero' | 'negative'>('all');
+  const [procFilter, setProcFilter] = useState<string>('all');
   const [batchLookupQuery, setBatchLookupQuery] = useState('');
   const [historyLookupQuery, setHistoryLookupQuery] = useState('');
   const [historyLookupLoading, setHistoryLookupLoading] = useState(false);
@@ -1217,9 +1218,25 @@ export default function EraParserPage() {
       h2022NegativeCount,
     };
   }, [summary, rows]);
+  const procFilterOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    rows.forEach((row) => {
+      const proc = String(row.proc || '').trim().toUpperCase();
+      if (!proc) return;
+      counts.set(proc, (counts.get(proc) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([value, count]) => ({ value, count }));
+  }, [rows]);
 
   const filteredRows = useMemo(() => {
     const q = String(resultsSearch || '').trim().toLowerCase();
+    const activeProc = String(procFilter || 'all').trim().toUpperCase();
+    const applyProcFilter = (list: EraRow[]) => {
+      if (!activeProc || activeProc === 'ALL') return list;
+      return list.filter((r) => String(r.proc || '').trim().toUpperCase() === activeProc);
+    };
     const applyPaymentFilter = (list: EraRow[]) => {
       if (paymentFilter === 'all') return list;
       return list.filter((r) => {
@@ -1240,7 +1257,7 @@ export default function EraParserPage() {
       });
       return copy;
     };
-    if (!q) return applyMatchSort(applyPaymentFilter(rows));
+    if (!q) return applyMatchSort(applyPaymentFilter(applyProcFilter(rows)));
     const qToken = normalizeLookupToken(q);
     const qName = normalizeNameForLookup(q);
     const qNameTokens = qName.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
@@ -1269,8 +1286,8 @@ export default function EraParserPage() {
         nameMatchesByTokens
       );
     });
-    return applyMatchSort(applyPaymentFilter(base));
-  }, [rows, resultsSearch, paymentFilter, matchedRowKeySet, claimMatchEvaluated, matchSortMode]);
+    return applyMatchSort(applyPaymentFilter(applyProcFilter(base)));
+  }, [rows, resultsSearch, paymentFilter, procFilter, matchedRowKeySet, claimMatchEvaluated, matchSortMode]);
 
   const batchLookup = useMemo(() => {
     const rawQuery = String(batchLookupQuery || '').trim();
@@ -2943,6 +2960,26 @@ export default function EraParserPage() {
                 >
                   Negative only
                 </Button>
+                <span className="mx-1 text-xs text-muted-foreground">PROC:</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={procFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setProcFilter('all')}
+                >
+                  All PROC
+                </Button>
+                {procFilterOptions.map((option) => (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    size="sm"
+                    variant={procFilter === option.value ? 'default' : 'outline'}
+                    onClick={() => setProcFilter(option.value)}
+                  >
+                    {option.value} ({option.count})
+                  </Button>
+                ))}
                 <Button variant="outline" onClick={downloadCsv}>
                   <Download className="mr-2 h-4 w-4" />
                   Download CSV
