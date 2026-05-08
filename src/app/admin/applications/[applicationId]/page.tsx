@@ -856,6 +856,12 @@ function PushToCaspioDialog({
     const [isClearingClientId2, setIsClearingClientId2] = useState(false);
     const [clientId2ClearedLocally, setClientId2ClearedLocally] = useState(false);
     const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
+    const [caspioMappingDraftMeta, setCaspioMappingDraftMeta] = useState<{
+      draftName?: string;
+      savedAtIso?: string;
+      lockedAtIso?: string;
+      source?: 'shared' | 'user' | 'local';
+    } | null>(null);
     const skeletonPushEnabled = false;
 
     const docRef = useMemoFirebase(() => {
@@ -881,7 +887,15 @@ function PushToCaspioDialog({
                         const sharedData = (sharedSnap.data() || {}) as Record<string, any>;
                         const sharedLocked = sharedData?.lockedMappings;
                         if (sharedLocked && typeof sharedLocked === 'object' && Object.keys(sharedLocked).length > 0) {
-                            if (!cancelled) setCaspioMappingPreview(sharedLocked as Record<string, string>);
+                            if (!cancelled) {
+                              setCaspioMappingPreview(sharedLocked as Record<string, string>);
+                              setCaspioMappingDraftMeta({
+                                source: 'shared',
+                                draftName: String(sharedData?.lockedDraftName || '').trim() || undefined,
+                                savedAtIso: String(sharedData?.lockedDraftSavedAtIso || '').trim() || undefined,
+                                lockedAtIso: String(sharedData?.lockedAtIso || '').trim() || undefined,
+                              });
+                            }
                             return;
                         }
                     }
@@ -895,7 +909,19 @@ function PushToCaspioDialog({
                         const cloudData = (cloudSnap.data() || {}) as Record<string, any>;
                         const locked = cloudData?.lockedMappings;
                         if (locked && typeof locked === 'object' && Object.keys(locked).length > 0) {
-                            if (!cancelled) setCaspioMappingPreview(locked as Record<string, string>);
+                            if (!cancelled) {
+                              setCaspioMappingPreview(locked as Record<string, string>);
+                              const cloudLockedMeta = cloudData?.lockedDraftMeta;
+                              setCaspioMappingDraftMeta({
+                                source: 'user',
+                                draftName:
+                                  String(cloudLockedMeta?.draftName || cloudData?.lockedDraftName || '').trim() || undefined,
+                                savedAtIso:
+                                  String(cloudLockedMeta?.savedAtIso || cloudData?.lockedDraftSavedAtIso || '').trim() || undefined,
+                                lockedAtIso:
+                                  String(cloudLockedMeta?.lockedAtIso || cloudData?.lockedAtIso || '').trim() || undefined,
+                              });
+                            }
                             return;
                         }
                     }
@@ -912,14 +938,32 @@ function PushToCaspioDialog({
                     }
                     const parsed = JSON.parse(stored);
                     if (parsed && typeof parsed === 'object') {
-                        if (!cancelled) setCaspioMappingPreview(parsed);
+                        if (!cancelled) {
+                          setCaspioMappingPreview(parsed);
+                          let localMeta: Record<string, any> | null = null;
+                          try {
+                            const localMetaRaw = localStorage.getItem('calaim_cs_caspio_mapping_locked_draft_meta');
+                            localMeta = localMetaRaw ? JSON.parse(localMetaRaw) : null;
+                          } catch {
+                            localMeta = null;
+                          }
+                          setCaspioMappingDraftMeta({
+                            source: 'local',
+                            draftName: String(localMeta?.draftName || '').trim() || undefined,
+                            savedAtIso: String(localMeta?.savedAtIso || '').trim() || undefined,
+                            lockedAtIso: String(localMeta?.lockedAtIso || '').trim() || undefined,
+                          });
+                        }
                         return;
                     }
                 } catch (error) {
                     console.warn('Failed to load local Caspio mapping preview:', error);
                 }
             }
-            if (!cancelled) setCaspioMappingPreview(null);
+            if (!cancelled) {
+              setCaspioMappingPreview(null);
+              setCaspioMappingDraftMeta(null);
+            }
         };
         void loadMappingPreview();
         return () => {
@@ -929,6 +973,17 @@ function PushToCaspioDialog({
 
     const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
     const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
+    const mappingDraftName = String(caspioMappingDraftMeta?.draftName || '').trim();
+    const mappingDraftSavedAtIso = String(caspioMappingDraftMeta?.savedAtIso || '').trim();
+    const mappingDraftSavedAtLabel = mappingDraftSavedAtIso ? new Date(mappingDraftSavedAtIso).toLocaleString() : '';
+    const mappingSourceLabel =
+      caspioMappingDraftMeta?.source === 'shared'
+        ? 'Latest locked mapping (shared admin settings)'
+        : caspioMappingDraftMeta?.source === 'user'
+          ? 'Locked mapping (your admin settings)'
+          : caspioMappingDraftMeta?.source === 'local'
+            ? 'Locked mapping (local browser cache)'
+            : 'Locked mapping';
     const isKaiserHealthPlan = String((application as any)?.healthPlan || '').trim().toLowerCase().includes('kaiser');
     const caspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
     const requestedKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
@@ -1239,6 +1294,7 @@ function PushToCaspioDialog({
                       holdForSocialWorkerStatus: requestedSocialWorkerHold,
                     },
                     mapping: mappingOverride || caspioMappingPreview || null,
+                    mappingDraftMeta: caspioMappingDraftMeta || null,
                     skeletonPush: false,
                 }),
             });
@@ -1254,9 +1310,23 @@ function PushToCaspioDialog({
 
             const data = result as any;
             if (data?.success) {
+                const resolvedDraftMeta = (data?.mappingDraftMeta || caspioMappingDraftMeta || null) as Record<string, any> | null;
+                const draftName = String(resolvedDraftMeta?.draftName || '').trim();
+                const savedAtIso = String(resolvedDraftMeta?.savedAtIso || '').trim();
+                const savedAtLabel = savedAtIso
+                  ? new Date(savedAtIso).toLocaleString()
+                  : '';
+                const mappingDraftMessage =
+                  draftName && savedAtLabel
+                    ? `Using mapping draft "${draftName}" (saved ${savedAtLabel}).`
+                    : draftName
+                      ? `Using mapping draft "${draftName}".`
+                      : savedAtLabel
+                        ? `Using locked mapping saved ${savedAtLabel}.`
+                        : '';
                 toast({
                     title: 'Pushed to Caspio',
-                    description: data.message || 'Successfully published to Caspio.',
+                    description: [data.message || 'Successfully published to Caspio.', mappingDraftMessage].filter(Boolean).join(' '),
                     className: 'bg-green-100 text-green-900 border-green-200',
                 });
 
@@ -1296,6 +1366,8 @@ function PushToCaspioDialog({
                             caspioLastPushedMappedData: pushedMappedSnapshot,
                             caspioLastPushedMappingCount: Object.keys(pushedMappedSnapshot).length,
                             caspioLastPushedSpecialData: pushedSpecialSnapshot,
+                            caspioLastPushedMappingDraftName: draftName || null,
+                            caspioLastPushedMappingDraftSavedAt: savedAtIso || null,
                             caspioLastPushedAt: serverTimestamp(),
                             lastUpdated: serverTimestamp(),
                         },
@@ -1503,6 +1575,35 @@ function PushToCaspioDialog({
                         This will publish CS Summary fields into `CalAIM_tbl_Members` using the locked mapping.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
+
+                <Alert className="border-blue-200 bg-blue-50 text-blue-900">
+                    <AlertTitle>Mapping draft/version used for this push</AlertTitle>
+                    <AlertDescription className="space-y-1">
+                        <div>{mappingSourceLabel}</div>
+                        <div>
+                            {mappingDraftName
+                              ? `Draft: ${mappingDraftName}`
+                              : 'Draft: Not named (using currently locked mapping)'}
+                        </div>
+                        <div>
+                            {mappingDraftSavedAtLabel
+                              ? `Draft saved: ${mappingDraftSavedAtLabel}`
+                              : 'Draft saved time: Not available'}
+                        </div>
+                        <div className="text-xs text-blue-800">
+                            Push uses the latest locked draft version available at the time you open this dialog.
+                        </div>
+                    </AlertDescription>
+                </Alert>
+                {!mappingDraftSavedAtLabel ? (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Mapping saved time is missing</AlertTitle>
+                        <AlertDescription>
+                            This looks like an older locked mapping without timestamp metadata. Re-save the draft and lock mappings again in the CS Summary → Caspio mapping screen before pushing.
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
 
                 {isAlreadySent && (
                     <Alert>
@@ -2442,7 +2543,6 @@ function ApplicationDetailPageContent() {
   const [eligibilityPasteLoading, setEligibilityPasteLoading] = useState(false);
   const [isResettingEligibilityUploads, setIsResettingEligibilityUploads] = useState(false);
   const authorizedCalaimBackfillRef = useRef<string>('');
-  const healthNetMediCalBackfillRef = useRef<string>('');
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [prePushNotesDraft, setPrePushNotesDraft] = useState('');
@@ -5969,42 +6069,6 @@ function ApplicationDetailPageContent() {
     })();
   }, [application, applicationId, docRef]);
 
-  useEffect(() => {
-    if (!docRef || !application) return;
-    const planLower = String((application as any)?.healthPlan || '').trim().toLowerCase();
-    const isHealthNetPlanLocal =
-      planLower.includes('health net') ||
-      planLower.includes('healthnet') ||
-      planLower === 'hn';
-    if (!isHealthNetPlanLocal) return;
-
-    const appId = String((application as any)?.id || applicationId || '').trim();
-    const currentMrn = String((application as any)?.memberMrn || '').trim();
-    const memberMediCal = String(
-      (application as any)?.memberMediCalNum ||
-      (application as any)?.confirmMemberMediCalNum ||
-      ''
-    ).trim();
-    if (!appId || !memberMediCal || currentMrn) return;
-
-    const key = `${appId}:health-net-mrn:${memberMediCal}`;
-    if (healthNetMediCalBackfillRef.current === key) return;
-    healthNetMediCalBackfillRef.current = key;
-
-    void (async () => {
-      try {
-        const patch = {
-          memberMrn: memberMediCal,
-          lastUpdated: serverTimestamp(),
-        };
-        await setDoc(docRef, patch, { merge: true });
-        setApplication((prev) => (prev ? ({ ...prev, ...patch } as any) : prev));
-      } catch (error) {
-        console.warn('Failed to backfill Health Net MRN from Medi-Cal Number:', error);
-      }
-    })();
-  }, [application, applicationId, docRef]);
-
   if (isLoading || isUserLoading) {
     return (
         <div className="flex items-center justify-center h-full">
@@ -7623,8 +7687,20 @@ function ApplicationDetailPageContent() {
 
     setIsUpdatingTracking(true);
     try {
+      const isEligibilityDecision =
+        status === 'CalAIM Eligible' || status === 'Not CalAIM Eligible';
+      const now = new Date();
+      const eligibilityCheckDate = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(
+        now.getDate()
+      ).padStart(2, '0')}/${now.getFullYear()}`;
       const updateData = {
         calaimTrackingStatus: status,
+        ...(isEligibilityDecision
+          ? {
+              lastEligibilityCheckAt: now.toISOString(),
+              lastEligibilityCheckDate: eligibilityCheckDate,
+            }
+          : {}),
         calaimTrackingReason:
           status === 'Not CalAIM Eligible'
             ? (application as any)?.calaimTrackingReason || ''

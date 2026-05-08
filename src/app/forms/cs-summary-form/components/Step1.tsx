@@ -48,7 +48,12 @@ export default function Step1({
   const { control, watch, setValue, getValues, clearErrors, trigger } = useFormContext<FormValues>();
   
   const memberDob = watch('memberDob');
+  const healthPlan = watch('healthPlan');
   const memberLanguage = watch('memberLanguage');
+  const memberMediCalNum = watch('memberMediCalNum');
+  const confirmMemberMediCalNum = watch('confirmMemberMediCalNum');
+  const memberMrn = watch('memberMrn');
+  const confirmMemberMrn = watch('confirmMemberMrn');
   const hasLegalRep = watch('hasLegalRep');
   const isPrimaryContactSameAsReferrer = watch('isPrimaryContactSameAsReferrer');
   const bestContactFirstName = watch('bestContactFirstName');
@@ -104,6 +109,32 @@ export default function Step1({
       }
     }
   }, [memberDob, setValue]);
+
+  useEffect(() => {
+    const normalizedPlan = String(healthPlan || '').trim().toLowerCase();
+    const isHealthNetPlan =
+      normalizedPlan === 'health net' ||
+      normalizedPlan === 'healthnet' ||
+      normalizedPlan === 'hn';
+    if (!isHealthNetPlan) return;
+
+    const resolvedMediCalNum = String(confirmMemberMediCalNum || memberMediCalNum || '').trim();
+    if (!resolvedMediCalNum) return;
+
+    if (!String(memberMrn || '').trim()) {
+      setValue('memberMrn', resolvedMediCalNum, { shouldDirty: true });
+    }
+    if (!String(confirmMemberMrn || '').trim()) {
+      setValue('confirmMemberMrn', resolvedMediCalNum, { shouldDirty: true });
+    }
+  }, [
+    healthPlan,
+    memberMediCalNum,
+    confirmMemberMediCalNum,
+    memberMrn,
+    confirmMemberMrn,
+    setValue,
+  ]);
   
   useEffect(() => {
     if (hasLegalRep !== 'same_as_primary') return;

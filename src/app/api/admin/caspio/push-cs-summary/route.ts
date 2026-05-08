@@ -65,6 +65,12 @@ const PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES = [
   'Care_Needs_Notes',
   'Care_Notes',
 ];
+const LAST_ELIGIBILITY_CHECK_FIELD_CANDIDATES = [
+  'Last_Eligibility_Check',
+  'LastEligibilityCheck',
+  'Eligibility_Check_Date',
+  'Last_Eligibility_Date',
+];
 const MEDICAL_NUMBER_FIELD_CANDIDATES = [
   'Medical_Number',
   'MedicalNumber',
@@ -124,6 +130,25 @@ const pickFirstNonEmpty = (source: Record<string, any>, candidates: string[]) =>
     }
   }
   return '';
+};
+const toCaspioDate = (value: unknown) => {
+  const raw = clean(value);
+  if (!raw) return '';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    const mmddyyyy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (mmddyyyy) {
+      const mm = String(mmddyyyy[1]).padStart(2, '0');
+      const dd = String(mmddyyyy[2]).padStart(2, '0');
+      const yyyy = mmddyyyy[3];
+      return `${mm}/${dd}/${yyyy}`;
+    }
+    return '';
+  }
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  return `${mm}/${dd}/${yyyy}`;
 };
 const canonicalizeApplicationData = (raw: Record<string, any>) => {
   const app = { ...(raw || {}) } as Record<string, any>;
@@ -407,20 +432,45 @@ const buildCaspioPayloadDebugSummary = (payload: Record<string, any>) =>
       field,
       ...summarizeDebugValue(rawValue),
     }));
-const getSharedLockedMapping = async (): Promise<Record<string, string> | null> => {
-  if (!adminDb) return null;
+type MappingDraftMeta = {
+  draftName?: string;
+  savedAtIso?: string;
+  lockedAtIso?: string;
+  source?: string;
+} | null;
+
+const getSharedLockedMapping = async (): Promise<{
+  lockedMappings: Record<string, string> | null;
+  mappingDraftMeta: MappingDraftMeta;
+}> => {
+  if (!adminDb) return { lockedMappings: null, mappingDraftMeta: null };
   try {
     const sharedSnap = await adminDb.collection('admin-settings').doc('caspio-field-mapping').get();
-    if (!sharedSnap.exists) return null;
+    if (!sharedSnap.exists) return { lockedMappings: null, mappingDraftMeta: null };
     const data = (sharedSnap.data() || {}) as Record<string, any>;
     const locked = data?.lockedMappings;
-    if (!locked || typeof locked !== 'object') return null;
+    const draftName = clean(data?.lockedDraftName);
+    const savedAtIso = clean(data?.lockedDraftSavedAtIso);
+    const lockedAtIso = clean(data?.lockedAtIso);
+    const mappingDraftMeta: MappingDraftMeta =
+      draftName || savedAtIso || lockedAtIso
+        ? {
+            draftName: draftName || undefined,
+            savedAtIso: savedAtIso || undefined,
+            lockedAtIso: lockedAtIso || undefined,
+            source: 'shared',
+          }
+        : null;
+    if (!locked || typeof locked !== 'object') return { lockedMappings: null, mappingDraftMeta };
     const entries = Object.entries(locked).filter(([k, v]) => hasValue(k) && hasValue(v));
-    if (!entries.length) return null;
-    return Object.fromEntries(entries) as Record<string, string>;
+    if (!entries.length) return { lockedMappings: null, mappingDraftMeta };
+    return {
+      lockedMappings: Object.fromEntries(entries) as Record<string, string>,
+      mappingDraftMeta,
+    };
   } catch (error) {
     console.warn('Failed to load shared locked Caspio mapping in API:', error);
-    return null;
+    return { lockedMappings: null, mappingDraftMeta: null };
   }
 };
 const buildMemberDataFromMapping = (
@@ -715,7 +765,24 @@ export async function POST(request: NextRequest) {
       ? canonicalizeApplicationData(rawApplicationData as Record<string, any>)
       : null;
     const providedMapping = (body?.mapping || null) as Record<string, string> | null;
-    const fallbackMapping = await getSharedLockedMapping();
+    const sharedMappingPayload = await getSharedLockedMapping();
+    const fallbackMapping = sharedMappingPayload?.lockedMappings || null;
+    const requestedMappingDraftMeta = (() => {
+      const raw = body?.mappingDraftMeta;
+      if (!raw || typeof raw !== 'object') return null;
+      const draftName = clean((raw as any)?.draftName);
+      const savedAtIso = clean((raw as any)?.savedAtIso);
+      const lockedAtIso = clean((raw as any)?.lockedAtIso);
+      const source = clean((raw as any)?.source);
+      if (!draftName && !savedAtIso && !lockedAtIso && !source) return null;
+      return {
+        draftName: draftName || undefined,
+        savedAtIso: savedAtIso || undefined,
+        lockedAtIso: lockedAtIso || undefined,
+        source: source || undefined,
+      };
+    })();
+    const resolvedMappingDraftMeta = requestedMappingDraftMeta || sharedMappingPayload?.mappingDraftMeta || null;
     const mapping =
       providedMapping && typeof providedMapping === 'object' && Object.keys(providedMapping).length > 0
         ? providedMapping
@@ -751,6 +818,18 @@ export async function POST(request: NextRequest) {
       applicationData?.proofIncomeActualAmount ||
       applicationData?.monthlyIncome ||
       applicationData?.Monthly_Income
+    );
+    const resolvedLastEligibilityCheckDate = toCaspioDate(
+      pickFirstNonEmpty(applicationData as Record<string, any>, [
+        'lastEligibilityCheckDate',
+        'lastEligibilityCheckAt',
+        'last_eligibility_check_date',
+        'last_eligibility_check_at',
+        'eligibilityCheckDate',
+        'eligibilityCheckedAt',
+        'eligibilityVerifiedAt',
+        'verifiedAt',
+      ])
     );
     const preAssessmentNotes = clean(
       applicationData?.preAssessmentCareNeedsNotes ||
@@ -999,6 +1078,15 @@ export async function POST(request: NextRequest) {
         memberData[kaiserStaffFieldName] = requestedKaiserStaffAssigned;
       }
     }
+    if (resolvedLastEligibilityCheckDate) {
+      const lastEligibilityCheckField =
+        LAST_ELIGIBILITY_CHECK_FIELD_CANDIDATES.find((name) =>
+          fieldNameByNormalized.has(normalizeFieldName(name))
+        ) || '';
+      if (lastEligibilityCheckField && !hasValue(memberData[lastEligibilityCheckField])) {
+        memberData[lastEligibilityCheckField] = resolvedLastEligibilityCheckDate;
+      }
+    }
     const mappedMedicalField = Object.keys(memberData).find((fieldName) => looksLikeMedicalNumberField(fieldName)) || '';
     const mediCalFieldName =
       clean(mappedMedicalField) ||
@@ -1134,6 +1222,7 @@ export async function POST(request: NextRequest) {
         ...payload,
         clientId2: resolvedClientId2,
         noteSync,
+        mappingDraftMeta: resolvedMappingDraftMeta,
       });
     };
     let upsertResponse = await doUpsert(memberData);

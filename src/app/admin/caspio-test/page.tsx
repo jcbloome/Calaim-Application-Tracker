@@ -305,9 +305,15 @@ export default function CaspioTestPage() {
   const [lockedMappingCount, setLockedMappingCount] = useState(0);
   const [draftName, setDraftName] = useState('');
   const [namedDrafts, setNamedDrafts] = useState<Record<string, {[key: string]: string}>>({});
+  const [namedDraftMeta, setNamedDraftMeta] = useState<Record<string, { savedAtIso?: string }>>({});
   const [selectedDraftName, setSelectedDraftName] = useState('');
   const [lastDraftName, setLastDraftName] = useState('');
   const [currentDraftMappings, setCurrentDraftMappings] = useState<{[key: string]: string} | null>(null);
+  const [lockedDraftMeta, setLockedDraftMeta] = useState<{
+    draftName?: string;
+    savedAtIso?: string;
+    lockedAtIso?: string;
+  } | null>(null);
   const [hasLoadedCloudDrafts, setHasLoadedCloudDrafts] = useState(false);
   const [isApplyingCloudDrafts, setIsApplyingCloudDrafts] = useState(false);
   const [fieldSearchQuery, setFieldSearchQuery] = useState('');
@@ -316,7 +322,9 @@ export default function CaspioTestPage() {
   const lockedKey = 'calaim_cs_caspio_mapping';
   const caspioFieldsKey = 'calaim_caspio_fields_cache';
   const namedDraftsKey = 'calaim_cs_caspio_mapping_named_drafts';
+  const namedDraftMetaKey = 'calaim_cs_caspio_mapping_named_drafts_meta';
   const lastDraftNameKey = 'calaim_cs_caspio_mapping_last_draft_name';
+  const lockedDraftMetaKey = 'calaim_cs_caspio_mapping_locked_draft_meta';
   const currentDraftOptionValue = '__current_draft__';
   
   // Use new Caspio integration module
@@ -365,9 +373,23 @@ export default function CaspioTestPage() {
           setNamedDrafts(parsedNamed);
         }
       }
+      const namedDraftMetaStored = localStorage.getItem(namedDraftMetaKey);
+      if (namedDraftMetaStored) {
+        const parsedNamedMeta = JSON.parse(namedDraftMetaStored);
+        if (parsedNamedMeta && typeof parsedNamedMeta === 'object') {
+          setNamedDraftMeta(parsedNamedMeta);
+        }
+      }
       const lastDraftStored = localStorage.getItem(lastDraftNameKey);
       if (lastDraftStored) {
         setLastDraftName(lastDraftStored);
+      }
+      const lockedDraftMetaStored = localStorage.getItem(lockedDraftMetaKey);
+      if (lockedDraftMetaStored) {
+        const parsedLockedMeta = JSON.parse(lockedDraftMetaStored);
+        if (parsedLockedMeta && typeof parsedLockedMeta === 'object') {
+          setLockedDraftMeta(parsedLockedMeta);
+        }
       }
     } catch (error) {
       console.error('Failed to load saved field mappings:', error);
@@ -423,7 +445,25 @@ export default function CaspioTestPage() {
                   lockedMappings: localLocked && typeof localLocked === 'object' ? localLocked : null,
                   currentDraftMappings: localCurrent && typeof localCurrent === 'object' ? localCurrent : null,
                   namedDrafts: localNamed && typeof localNamed === 'object' ? localNamed : {},
+                  namedDraftMeta:
+                    (() => {
+                      try {
+                        const parsed = JSON.parse(localStorage.getItem(namedDraftMetaKey) || '{}');
+                        return parsed && typeof parsed === 'object' ? parsed : {};
+                      } catch {
+                        return {};
+                      }
+                    })(),
                   lastDraftName: localLastName || null,
+                  lockedDraftMeta:
+                    (() => {
+                      try {
+                        const parsed = JSON.parse(localStorage.getItem(lockedDraftMetaKey) || 'null');
+                        return parsed && typeof parsed === 'object' ? parsed : null;
+                      } catch {
+                        return null;
+                      }
+                    })(),
                   migratedFromLocalStorageAt: serverTimestamp(),
                   updatedAt: serverTimestamp(),
                 },
@@ -438,7 +478,11 @@ export default function CaspioTestPage() {
         const cloudLocked = data.lockedMappings && typeof data.lockedMappings === 'object' ? data.lockedMappings : null;
         const cloudCurrent = data.currentDraftMappings && typeof data.currentDraftMappings === 'object' ? data.currentDraftMappings : null;
         const cloudNamed = data.namedDrafts && typeof data.namedDrafts === 'object' ? data.namedDrafts : {};
+        const cloudNamedMeta = data.namedDraftMeta && typeof data.namedDraftMeta === 'object' ? data.namedDraftMeta : {};
         const cloudLastName = String(data.lastDraftName || '').trim();
+        const cloudLockedMeta = data.lockedDraftMeta && typeof data.lockedDraftMeta === 'object'
+          ? data.lockedDraftMeta
+          : null;
 
         if (cloudLocked && Object.keys(cloudLocked).length > 0) {
           setLockedMappings(cloudLocked);
@@ -462,10 +506,18 @@ export default function CaspioTestPage() {
         }
 
         setNamedDrafts(cloudNamed);
+        setNamedDraftMeta(cloudNamedMeta);
         setLastDraftName(cloudLastName);
+        setLockedDraftMeta(cloudLockedMeta);
         if (typeof window !== 'undefined') {
           localStorage.setItem(namedDraftsKey, JSON.stringify(cloudNamed));
+          localStorage.setItem(namedDraftMetaKey, JSON.stringify(cloudNamedMeta));
           if (cloudLastName) localStorage.setItem(lastDraftNameKey, cloudLastName);
+          if (cloudLockedMeta) {
+            localStorage.setItem(lockedDraftMetaKey, JSON.stringify(cloudLockedMeta));
+          } else {
+            localStorage.removeItem(lockedDraftMetaKey);
+          }
         }
       } catch (error) {
         console.warn('Failed to load cloud mapping drafts:', error);
@@ -475,7 +527,7 @@ export default function CaspioTestPage() {
       }
     };
     readCloudDrafts();
-  }, [draftKey, firestore, lastDraftNameKey, lockedKey, namedDraftsKey, user?.uid]);
+  }, [draftKey, firestore, lastDraftNameKey, lockedDraftMetaKey, lockedKey, namedDraftMetaKey, namedDraftsKey, user?.uid]);
 
   useEffect(() => {
     if (!firestore || !user?.uid) return;
@@ -488,7 +540,9 @@ export default function CaspioTestPage() {
         ? null
         : currentDraftMappings || (Object.keys(fieldMappings).length > 0 ? fieldMappings : null),
       namedDrafts,
+      namedDraftMeta,
       lastDraftName: lastDraftName || null,
+      lockedDraftMeta: lockedDraftMeta || null,
       updatedByUid: user.uid,
       updatedAt: serverTimestamp(),
     };
@@ -500,6 +554,9 @@ export default function CaspioTestPage() {
         sharedMappingRef,
         {
           lockedMappings,
+          lockedDraftName: String(lockedDraftMeta?.draftName || '').trim() || null,
+          lockedDraftSavedAtIso: String(lockedDraftMeta?.savedAtIso || '').trim() || null,
+          lockedAtIso: String(lockedDraftMeta?.lockedAtIso || '').trim() || null,
           updatedByUid: user.uid,
           updatedAt: serverTimestamp(),
         },
@@ -515,7 +572,9 @@ export default function CaspioTestPage() {
     hasLoadedCloudDrafts,
     isApplyingCloudDrafts,
     lastDraftName,
+    lockedDraftMeta,
     lockedMappings,
+    namedDraftMeta,
     namedDrafts,
     user?.uid,
   ]);
@@ -1163,6 +1222,14 @@ export default function CaspioTestPage() {
     ? Object.entries(lockedMappings).sort(([a], [b]) => a.localeCompare(b))
     : [];
   const autoSaveLabel = lastDraftName || 'Draft 1';
+  const lockedDraftNameLabel = String(lockedDraftMeta?.draftName || '').trim();
+  const lockedDraftSavedAtIso = String(lockedDraftMeta?.savedAtIso || '').trim();
+  const lockedDraftSavedAtLabel = lockedDraftSavedAtIso ? new Date(lockedDraftSavedAtIso).toLocaleString() : '';
+  const currentPushVersionLabel = lockedMappings
+    ? (lockedDraftNameLabel
+      ? `${lockedDraftNameLabel}${lockedDraftSavedAtLabel ? ` (saved ${lockedDraftSavedAtLabel})` : ''}`
+      : `Locked mapping (${Object.keys(lockedMappings).length} fields)${lockedDraftSavedAtLabel ? ` - saved ${lockedDraftSavedAtLabel}` : ''}`)
+    : 'No locked version selected';
   const draftSourceMappings = lockedMappings || fieldMappings;
   const getNextDraftName = () => {
     const names = Object.keys(namedDrafts);
@@ -1185,18 +1252,26 @@ export default function CaspioTestPage() {
       return;
     }
     const resolvedDraftName = draftName.trim() || getNextDraftName();
+    const savedAtIso = new Date().toISOString();
     const updatedDrafts = {
       ...namedDrafts,
       [resolvedDraftName]: draftSourceMappings,
     };
+    const updatedDraftMeta = {
+      ...namedDraftMeta,
+      [resolvedDraftName]: { savedAtIso },
+    };
     setNamedDrafts(updatedDrafts);
+    setNamedDraftMeta(updatedDraftMeta);
     setLastDraftName(resolvedDraftName);
     localStorage.setItem(namedDraftsKey, JSON.stringify(updatedDrafts));
+    localStorage.setItem(namedDraftMetaKey, JSON.stringify(updatedDraftMeta));
     localStorage.setItem(lastDraftNameKey, resolvedDraftName);
+    setSelectedDraftName(resolvedDraftName);
     setHasDraftMappings(true);
     toast({
       title: "Draft Saved",
-      description: `Draft "${resolvedDraftName}" saved.`,
+      description: `Draft "${resolvedDraftName}" saved at ${new Date(savedAtIso).toLocaleString()}.`,
     });
     setDraftName('');
   };
@@ -1592,6 +1667,14 @@ export default function CaspioTestPage() {
                     <p className="text-xs text-blue-700 mt-1">
                       Recent draft: {lastDraftName || (hasDraftMappings ? 'Current auto-saved draft' : 'None')}
                     </p>
+                    <p className="text-xs text-blue-800 mt-1 font-medium">
+                      Current version used for future pushes: {currentPushVersionLabel}
+                    </p>
+                    {!lockedMappings ? (
+                      <p className="text-xs text-amber-700 mt-1">
+                        Lock mappings to set the version used by all future Caspio pushes.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <AlertDialog open={clearAllOpen} onOpenChange={setClearAllOpen}>
@@ -1613,9 +1696,11 @@ export default function CaspioTestPage() {
                             onClick={() => {
                               setFieldMappings({});
                               setLockedMappings(null);
+                              setLockedDraftMeta(null);
                               setCurrentDraftMappings(null);
                               setSelectedDraftName('');
                               localStorage.removeItem(lockedKey);
+                              localStorage.removeItem(lockedDraftMetaKey);
                               localStorage.removeItem(draftKey);
                               setHasLockedMappings(false);
                               setLockedMappingCount(0);
@@ -1651,8 +1736,25 @@ export default function CaspioTestPage() {
                               });
                               return;
                             }
+                            const selectedIsNamedDraft =
+                              Boolean(selectedDraftName) &&
+                              selectedDraftName !== currentDraftOptionValue &&
+                              Object.prototype.hasOwnProperty.call(namedDrafts, selectedDraftName);
+                            const resolvedDraftName = selectedIsNamedDraft
+                              ? selectedDraftName
+                              : (lastDraftName || (currentDraftMappings ? 'Current auto-saved draft' : ''));
+                            const resolvedDraftSavedAtIso = selectedIsNamedDraft
+                              ? String(namedDraftMeta[selectedDraftName]?.savedAtIso || '').trim()
+                              : String(namedDraftMeta[lastDraftName]?.savedAtIso || '').trim();
+                            const nextLockedDraftMeta = {
+                              draftName: resolvedDraftName || 'Current auto-saved draft',
+                              savedAtIso: resolvedDraftSavedAtIso || undefined,
+                              lockedAtIso: new Date().toISOString(),
+                            };
                             setLockedMappings(fieldMappings);
+                            setLockedDraftMeta(nextLockedDraftMeta);
                             localStorage.setItem(lockedKey, JSON.stringify(fieldMappings));
+                            localStorage.setItem(lockedDraftMetaKey, JSON.stringify(nextLockedDraftMeta));
                             localStorage.removeItem(draftKey);
                             setCurrentDraftMappings(null);
                             setHasDraftMappings(false);
@@ -1673,9 +1775,11 @@ export default function CaspioTestPage() {
                         <DropdownMenuItem
                           onSelect={() => {
                             setLockedMappings(null);
+                            setLockedDraftMeta(null);
                             if (lockedMappings) {
                               setFieldMappings(lockedMappings);
                             }
+                            localStorage.removeItem(lockedDraftMetaKey);
                             toast({
                               title: "Mappings Unlocked",
                               description: "You can edit mappings again.",
@@ -1701,6 +1805,15 @@ export default function CaspioTestPage() {
                               if (parsed && typeof parsed === 'object') {
                                 setLockedMappings(parsed);
                                 setFieldMappings((prev) => ({ ...parsed, ...prev }));
+                                try {
+                                  const metaRaw = localStorage.getItem(lockedDraftMetaKey);
+                                  const parsedMeta = metaRaw ? JSON.parse(metaRaw) : null;
+                                  if (parsedMeta && typeof parsedMeta === 'object') {
+                                    setLockedDraftMeta(parsedMeta as any);
+                                  }
+                                } catch {
+                                  // Keep existing metadata if local parse fails.
+                                }
                                 const count = Object.keys(parsed).length;
                                 setLockedMappingCount(count);
                                 setHasLockedMappings(count > 0);
@@ -1729,7 +1842,9 @@ export default function CaspioTestPage() {
                         size="sm"
                         onClick={() => {
                           setLockedMappings(null);
+                          setLockedDraftMeta(null);
                           setFieldMappings(lockedMappings);
+                          localStorage.removeItem(lockedDraftMetaKey);
                           toast({
                             title: "Mappings Unlocked",
                             description: "You can edit mappings again.",

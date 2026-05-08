@@ -335,13 +335,6 @@ export default function CaspioFieldMappingPage() {
               </div>
               <div className="flex gap-2">
                 <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setFieldMappings({})}
-                >
-                  Clear All
-                </Button>
-                <Button 
                   size="sm"
                   onClick={() => {
                     // Auto-map obvious matches
