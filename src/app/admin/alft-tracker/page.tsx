@@ -187,8 +187,22 @@ type AlftAssignmentQueueRow = {
     finalReadyAt?: any;
     jocelynEmailSentAt?: any;
   } | null;
+  workflowSteps?: {
+    swInviteSent?: boolean;
+    swSubmittedSigned?: boolean;
+    managerReview?: string;
+    rnReviewSignature?: string;
+    pdfReady?: boolean;
+  } | null;
   alftCompletionEmail?: {
     sentAt?: any;
+  } | null;
+  verificationSignoff?: {
+    verified?: boolean | null;
+    verifiedAt?: any;
+    verifiedByUid?: string | null;
+    verifiedByEmail?: string | null;
+    verifiedByName?: string | null;
   } | null;
   updatedAt?: any;
 };
@@ -740,15 +754,9 @@ export default function AdminAlftTrackerPage() {
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
-  const [prefillPreviewOpen, setPrefillPreviewOpen] = useState(false);
-  const [prefillPreviewRow, setPrefillPreviewRow] = useState<AlftAssignmentQueueRow | null>(null);
-  const [prefillPurpose, setPrefillPurpose] = useState('review');
-  const [prefillPreviewResolved, setPrefillPreviewResolved] = useState<Record<string, string>>({});
-  const [prefillPreviewLoading, setPrefillPreviewLoading] = useState(false);
-  const [importingPrefillId, setImportingPrefillId] = useState('');
   const [startingWorkflowFor, setStartingWorkflowFor] = useState('');
   const [assignmentQueueIndex, setAssignmentQueueIndex] = useState(0);
-  const [verifiedPrefillIds, setVerifiedPrefillIds] = useState<Record<string, number>>({});
+  const [verifyingMemberId, setVerifyingMemberId] = useState('');
   const [swEmailPreviewOpen, setSwEmailPreviewOpen] = useState(false);
   const [swEmailPreviewRow, setSwEmailPreviewRow] = useState<AlftAssignmentQueueRow | null>(null);
   const [swEmailById, setSwEmailById] = useState<Record<string, string>>({});
@@ -783,80 +791,6 @@ export default function AdminAlftTrackerPage() {
       cancelled = true;
     };
   }, [isAdmin]);
-
-  useEffect(() => {
-    if (!prefillPreviewRow) return;
-    const fromRow = String(prefillPreviewRow.prefillPurpose || '').trim();
-    if (fromRow === 'initial' || fromRow === 'change_condition' || fromRow === 'review') {
-      setPrefillPurpose(fromRow);
-    } else {
-      setPrefillPurpose('review');
-    }
-  }, [prefillPreviewRow]);
-
-  useEffect(() => {
-    if (!prefillPreviewOpen || !prefillPreviewRow) {
-      setPrefillPreviewResolved({});
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      setPrefillPreviewLoading(true);
-      try {
-        if (!user) throw new Error('Sign in required.');
-        const idToken = await user.getIdToken();
-        const targetId = String(prefillPreviewRow.memberId || prefillPreviewRow.id).trim();
-        const liveRes = await fetch('/api/alft/prefill/resolve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken, memberId: targetId }),
-          cache: 'no-store',
-        });
-        const liveData = (await liveRes.json().catch(() => ({}))) as any;
-        if (!liveRes.ok || !liveData?.ok) {
-          throw new Error(String(liveData?.error || `Live Caspio prefill failed (HTTP ${liveRes.status})`));
-        }
-        const resolved = (liveData?.resolved || {}) as Record<string, string>;
-        const pickMapped = (alftField: string) => String(resolved[alftField] || '').trim();
-
-        const next: Record<string, string> = {
-          alftPlanId: pickMapped('p1_plan_id'),
-          memberMrn: pickMapped('p1_mrn'),
-          memberName: pickMapped('p1_member_name'),
-          assessorName: pickMapped('p1_assessor_name'),
-          currentStreet: pickMapped('p2_current_street'),
-          currentCity: pickMapped('p2_current_city'),
-          currentState: pickMapped('p2_current_state'),
-          currentZip: pickMapped('p2_current_zip'),
-          currentType: pickMapped('p2_current_type'),
-          assessmentSite: pickMapped('p2_assessment_site'),
-          homeStreet: pickMapped('p2_home_street'),
-          homeCity: pickMapped('p2_home_city'),
-          homeState: pickMapped('p2_home_state'),
-          homeZip: pickMapped('p2_home_zip'),
-          facilityName: pickMapped('p2_facility_name'),
-          primaryLanguage: pickMapped('p1_primary_language'),
-          phone: pickMapped('p1_phone'),
-        };
-
-        if (!cancelled) setPrefillPreviewResolved(next);
-      } catch (e: any) {
-        if (!cancelled) {
-          setPrefillPreviewResolved({});
-          toast({
-            title: 'Live Caspio pull required',
-            description: e?.message || 'Could not pull live Caspio member record.',
-            variant: 'destructive',
-          });
-        }
-      } finally {
-        if (!cancelled) setPrefillPreviewLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [prefillPreviewOpen, prefillPreviewRow, user]);
 
   useEffect(() => {
     const memberQuery = String(searchParams?.get('member') || '').trim();
@@ -977,7 +911,9 @@ export default function AdminAlftTrackerPage() {
               workflowStage: toLabel(r.workflowStage) || null,
               workflowInvites: (r.workflowInvites || null) as any,
               workflowStepsAt: (r.workflowStepsAt || null) as any,
+              workflowSteps: (r.workflowSteps || null) as any,
               alftCompletionEmail: (r.alftCompletionEmail || null) as any,
+              verificationSignoff: (r.verificationSignoff || null) as any,
               updatedAt: r.updatedAt,
             } as AlftAssignmentQueueRow;
           })
@@ -1085,38 +1021,19 @@ export default function AdminAlftTrackerPage() {
     setAssignmentQueueIndex((prev) => Math.min(Math.max(prev, 0), filteredAssignments.length - 1));
   }, [filteredAssignments.length]);
 
-  const prefillPreviewFields = useMemo(() => {
-    const row = prefillPreviewRow;
-    if (!row) return [] as Array<{ label: string; value: string }>;
-    return [
-      { label: 'Agency', value: 'Connections Care Home Consultants' },
-      { label: 'Plan ID', value: asAnswer(prefillPreviewResolved.alftPlanId) },
-      { label: 'MRN Number', value: asAnswer(prefillPreviewResolved.memberMrn) },
-      { label: 'Member Name', value: asAnswer(prefillPreviewResolved.memberName) },
-      { label: 'Assessor Name', value: asAnswer(prefillPreviewResolved.assessorName) },
-      { label: 'Purpose of assessment', value: prefillPurpose },
-      { label: 'Current Location Street', value: asAnswer(prefillPreviewResolved.currentStreet) },
-      { label: 'Current Location City', value: asAnswer(prefillPreviewResolved.currentCity) },
-      { label: 'Current Location State', value: asAnswer(prefillPreviewResolved.currentState) },
-      { label: 'Current Location Zip', value: asAnswer(prefillPreviewResolved.currentZip) },
-      { label: 'Current Location Type', value: asAnswer(prefillPreviewResolved.currentType) },
-      { label: 'Assessment Site', value: asAnswer(prefillPreviewResolved.assessmentSite) },
-      { label: 'Home Address Street', value: asAnswer(prefillPreviewResolved.homeStreet) },
-      { label: 'Home Address City', value: asAnswer(prefillPreviewResolved.homeCity) },
-      { label: 'Home Address State', value: asAnswer(prefillPreviewResolved.homeState) },
-      { label: 'Home Address Zip', value: asAnswer(prefillPreviewResolved.homeZip) },
-      { label: 'Facility Name', value: asAnswer(prefillPreviewResolved.facilityName) },
-      { label: 'Primary Language', value: asAnswer(prefillPreviewResolved.primaryLanguage) },
-      { label: 'Phone Number', value: asAnswer(prefillPreviewResolved.phone) },
-    ];
-  }, [prefillPreviewResolved, prefillPreviewRow, prefillPurpose]);
-
   const swEmailPreview = useMemo(() => {
     if (!swEmailPreviewRow) return null;
     const memberName = String(swEmailPreviewRow.memberName || 'Member').trim();
     const mrn = String(swEmailPreviewRow.memberMrn || '').trim();
     const swName = String(swEmailPreviewRow.assignedSwName || 'Social Worker').trim();
     const swEmail = String(swEmailPreviewRow.assignedSwEmail || '').trim();
+    const verified = Boolean(swEmailPreviewRow.verificationSignoff?.verified);
+    const verifiedBy =
+      String(swEmailPreviewRow.verificationSignoff?.verifiedByName || '').trim() ||
+      String(swEmailPreviewRow.verificationSignoff?.verifiedByEmail || '').trim() ||
+      'Unknown user';
+    const verifiedAtMs = toMs(swEmailPreviewRow.verificationSignoff?.verifiedAt);
+    const verifiedAtLabel = verifiedAtMs ? fmtTimeline(verifiedAtMs) : '';
     const portalPath = '/sw-portal/alft-upload';
     return {
       to: swEmail || 'Missing email',
@@ -1126,6 +1043,8 @@ export default function AdminAlftTrackerPage() {
         '',
         `An ALFT workflow has been started for ${memberName}${mrn ? ` (MRN: ${mrn})` : ''}.`,
         'Please log in to the portal and complete the ALFT form with your signature.',
+        '',
+        `Verification checkbox: ${verified ? `Checked by ${verifiedBy}${verifiedAtLabel ? ` on ${verifiedAtLabel}` : ''}` : 'Not checked yet'}`,
         '',
         `1) Go to portal: ${portalPath}`,
         '2) Login with your account',
@@ -1206,7 +1125,7 @@ export default function AdminAlftTrackerPage() {
       }
       const memberId = String(row.memberId || row.id || '').trim();
       if (!memberId) return;
-      if (!verifiedPrefillIds[memberId]) {
+      if (!Boolean((row.verificationSignoff as any)?.verified)) {
         toast({
           title: 'Step 1 required',
           description: 'Open the verification tool and check the verification checkbox before sending SW notice.',
@@ -1217,6 +1136,11 @@ export default function AdminAlftTrackerPage() {
       setStartingWorkflowFor(row.memberId || row.id);
       try {
         const idToken = await auth.currentUser.getIdToken();
+        const rowPrefillPurpose = String(row.prefillPurpose || '').trim();
+        const prefillPurpose =
+          rowPrefillPurpose === 'initial' || rowPrefillPurpose === 'change_condition' || rowPrefillPurpose === 'review'
+            ? rowPrefillPurpose
+            : 'review';
         const prefillSourceMode = resolvePrefillSourceMode(row);
         let resolved: Record<string, string> = {};
         if (prefillSourceMode === 'caspio_selected_fields') {
@@ -1296,63 +1220,54 @@ export default function AdminAlftTrackerPage() {
         setStartingWorkflowFor('');
       }
     },
-    [auth?.currentUser, prefillPurpose, toast, verifiedPrefillIds]
+    [auth?.currentUser, toast]
   );
 
-  const importMappedMemberPrefill = useCallback(
-    async (row: AlftAssignmentQueueRow) => {
-      if (!firestore) {
-        toast({ title: 'Firestore unavailable', description: 'Could not import mapped values.', variant: 'destructive' });
+  const setVerificationForMember = useCallback(
+    async (row: AlftAssignmentQueueRow, checked: boolean) => {
+      if (!firestore || !user?.uid) {
+        toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
         return;
       }
-      const id = String(row.memberId || row.id || '').trim();
-      if (!id) return;
-      setImportingPrefillId(id);
+      const memberId = String(row.memberId || row.id || '').trim();
+      if (!memberId) return;
+      setVerifyingMemberId(memberId);
       try {
-        const mappedName = asAnswer(prefillPreviewResolved.memberName || row.memberName);
-        const inferredFirst = mappedName.includes(',') ? mappedName.split(',', 2)[1]?.trim() || '' : '';
-        const inferredLast = mappedName.includes(',') ? mappedName.split(',', 2)[0]?.trim() || '' : '';
-
-        await updateDoc(doc(firestore, 'alft_assignments', id), {
-          alftPlanId: asAnswer(prefillPreviewResolved.alftPlanId || row.alftPlanId || row.memberMrn),
-          memberMrn: asAnswer(prefillPreviewResolved.memberMrn || row.memberMrn),
-          memberName: mappedName || row.memberName || '',
-          memberFirstName: asAnswer(row.memberFirstName) || inferredFirst,
-          memberLastName: asAnswer(row.memberLastName) || inferredLast,
-          memberPrimaryLanguage: asAnswer(prefillPreviewResolved.primaryLanguage || row.memberPrimaryLanguage),
-          memberPhone: asAnswer(prefillPreviewResolved.phone || row.memberPhone),
-          ispCurrentAddressStreet: asAnswer(prefillPreviewResolved.currentStreet || row.ispCurrentAddressStreet),
-          ispCurrentAddressCity: asAnswer(prefillPreviewResolved.currentCity || row.ispCurrentAddressCity),
-          ispCurrentAddressState: asAnswer(prefillPreviewResolved.currentState || row.ispCurrentAddressState || 'CA'),
-          ispCurrentAddressZip: asAnswer(prefillPreviewResolved.currentZip || row.ispCurrentAddressZip),
-          currentLocationType: asAnswer(prefillPreviewResolved.currentType || row.currentLocationType),
-          assessmentSite: asAnswer(prefillPreviewResolved.assessmentSite || row.assessmentSite),
-          homeAddressStreet: asAnswer(prefillPreviewResolved.homeStreet || row.homeAddressStreet),
-          homeAddressCity: asAnswer(prefillPreviewResolved.homeCity || row.homeAddressCity),
-          homeAddressState: asAnswer(prefillPreviewResolved.homeState || row.homeAddressState || 'CA'),
-          homeAddressZip: asAnswer(prefillPreviewResolved.homeZip || row.homeAddressZip),
-          ispFacilityName: asAnswer(prefillPreviewResolved.facilityName || row.ispFacilityName),
-          prefillPurpose,
-          prefillImportedAt: serverTimestamp(),
-          prefillImportedBy: String(user?.email || user?.uid || '').trim(),
+        const actorEmail = toLabel(user.email).toLowerCase() || null;
+        const actorName = toLabel((user as any)?.displayName) || actorEmail || user.uid;
+        await updateDoc(doc(firestore, 'alft_assignments', memberId), {
+          verificationSignoff: checked
+            ? {
+                verified: true,
+                verifiedAt: serverTimestamp(),
+                verifiedByUid: user.uid,
+                verifiedByEmail: actorEmail,
+                verifiedByName: actorName,
+              }
+            : {
+                verified: false,
+                verifiedAt: null,
+                verifiedByUid: null,
+                verifiedByEmail: null,
+                verifiedByName: null,
+                clearedAt: serverTimestamp(),
+                clearedByUid: user.uid,
+                clearedByEmail: actorEmail,
+                clearedByName: actorName,
+              },
           updatedAt: serverTimestamp(),
-        });
-
-        toast({
-          title: 'Member fields imported',
-          description: `${row.memberName || 'Member'} mapped values imported into ALFT assignment.`,
         });
       } catch (e: any) {
         toast({
-          title: 'Import failed',
-          description: e?.message || 'Could not import member fields.',
+          title: 'Could not update verification checkbox',
+          description: e?.message || 'Please retry.',
           variant: 'destructive',
         });
       } finally {
-        setImportingPrefillId('');
+        setVerifyingMemberId('');
       }
     },
-    [firestore, prefillPreviewResolved, prefillPurpose, toast, user?.email, user?.uid]
+    [firestore, toast, user]
   );
 
   const openEdit = useCallback((row: StandaloneUpload) => {
@@ -1907,7 +1822,13 @@ export default function AdminAlftTrackerPage() {
                       (() => {
                         const row = filteredAssignments[assignmentQueueIndex];
                         const memberIdKey = String(row.memberId || row.id || '').trim();
-                        const isVerified = Boolean(verifiedPrefillIds[memberIdKey]);
+                        const isVerified = Boolean(row.verificationSignoff?.verified);
+                        const verifiedAtMs = toMs(row.verificationSignoff?.verifiedAt);
+                        const verifiedAtLabel = verifiedAtMs ? fmtTimeline(verifiedAtMs) : '';
+                        const verifiedByLabel =
+                          toLabel(row.verificationSignoff?.verifiedByName) ||
+                          toLabel(row.verificationSignoff?.verifiedByEmail) ||
+                          'Unknown user';
                         const orderedSteps = assignmentWorkflowSteps(row);
                         const doneCount = orderedSteps.filter((s) => s.done).length;
                         const stageBlock = assignmentStageBlock(row);
@@ -1966,33 +1887,34 @@ export default function AdminAlftTrackerPage() {
                               type="button"
                               className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm hover:bg-slate-50"
                               onClick={() => {
-                                setPrefillPreviewRow(row);
-                                setPrefillPreviewOpen(true);
+                                const params = new URLSearchParams({
+                                  memberId: String(row.memberId || row.id || '').trim(),
+                                  member: String(row.memberName || '').trim(),
+                                  mrn: String(row.memberMrn || '').trim(),
+                                });
+                                window.location.assign(`/admin/alft-verification?${params.toString()}`);
                               }}
                             >
                               <span className={isVerified ? 'text-green-700' : 'text-amber-700'}>{isVerified ? '✓' : '•'}</span>{' '}
-                              1) Open verification tool (review mapped fields)
+                              1) Open verification tool data page (manual sync)
                             </button>
                             <label className="flex w-full items-center gap-2 rounded border bg-white px-2 py-1.5 text-left text-sm hover:bg-slate-50">
                               <input
                                 type="checkbox"
                                 className="h-4 w-4"
                                 checked={isVerified}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setVerifiedPrefillIds((prev) => ({ ...prev, [memberIdKey]: Date.now() }));
-                                  } else {
-                                    setVerifiedPrefillIds((prev) => {
-                                      const next = { ...prev };
-                                      delete next[memberIdKey];
-                                      return next;
-                                    });
-                                  }
-                                }}
+                                disabled={verifyingMemberId === memberIdKey}
+                                onChange={(e) => void setVerificationForMember(row, e.target.checked)}
                               />
                               <span className={isVerified ? 'text-green-700' : 'text-blue-700'}>{isVerified ? '✓' : '•'}</span>
                               2) Verification checkbox with staff name + timestamp (required before Step 4)
                             </label>
+                            {isVerified ? (
+                              <div className="rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-800">
+                                Verified by <span className="font-medium">{verifiedByLabel}</span>
+                                {verifiedAtLabel ? ` on ${verifiedAtLabel}` : ''}.
+                              </div>
+                            ) : null}
                             <button
                               type="button"
                               className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm hover:bg-slate-50"
@@ -2001,7 +1923,7 @@ export default function AdminAlftTrackerPage() {
                                 setSwEmailPreviewOpen(true);
                               }}
                             >
-                              <span className="text-blue-700">•</span> 3) Preview SW email (confirm portal instructions, no manager queue link).
+                              <span className="text-blue-700">•</span> 3) Preview SW email (confirm portal instructions).
                             </button>
                             <button
                               type="button"
@@ -2014,7 +1936,7 @@ export default function AdminAlftTrackerPage() {
                               onClick={() => void startWorkflowFromIntake(row)}
                             >
                               <span className={isVerified ? 'text-blue-700' : 'text-slate-400'}>{isVerified ? '•' : '○'}</span>{' '}
-                              4) {String(row.workflowStatus || '').toLowerCase().includes('sw_invited') ? 'Re-send SW email' : 'Send SW email'} with timestamp (enabled after Step 2)
+                              4) {Boolean(row.workflowSteps?.swInviteSent) || Boolean(row.workflowStepsAt?.swInviteSentAt) ? 'Re-send SW email' : 'Send SW email'} with timestamp (enabled after Step 2)
                               {startingWorkflowFor === (row.memberId || row.id) ? (
                                 <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
                               ) : null}
@@ -2411,88 +2333,6 @@ export default function AdminAlftTrackerPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setSwEmailPreviewOpen(false)}>
               Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={prefillPreviewOpen} onOpenChange={setPrefillPreviewOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Prefilled ALFT preview (Page 1-2)</DialogTitle>
-            <DialogDescription>
-              Review these prefilled values, then send or re-send notice to the assigned social worker to complete the ALFT tool.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="rounded-md border p-3">
-              <div className="text-sm font-medium">{prefillPreviewRow?.memberName || 'Member'}</div>
-              <div className="text-xs text-muted-foreground">
-                MRN: {prefillPreviewRow?.memberMrn || '—'} • SW: {prefillPreviewRow?.assignedSwName || prefillPreviewRow?.assignedSwEmail || '—'}
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>Purpose of assessment</Label>
-              <Select value={prefillPurpose} onValueChange={setPrefillPurpose}>
-                <SelectTrigger className="max-w-sm">
-                  <SelectValue placeholder="Select purpose" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="initial">Initial</SelectItem>
-                  <SelectItem value="change_condition">Change of Condition</SelectItem>
-                  <SelectItem value="review">Review</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {prefillPreviewLoading ? (
-              <div className="inline-flex items-center gap-2 rounded border bg-muted/20 px-2 py-1 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Pulling member directly from Caspio + applying current mapping...
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">
-                Preview values resolved from live Caspio member data using latest ALFT mapping.
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              {prefillPreviewFields.map((f) => (
-                <div key={f.label} className="rounded border bg-muted/20 p-2">
-                  <div className="text-[11px] text-muted-foreground">{f.label}</div>
-                  <div className="text-sm">{f.value || '—'}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setPrefillPreviewOpen(false)}>
-              Close
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => (prefillPreviewRow ? void importMappedMemberPrefill(prefillPreviewRow) : undefined)}
-              disabled={
-                !prefillPreviewRow ||
-                prefillPreviewLoading ||
-                importingPrefillId === (prefillPreviewRow?.memberId || prefillPreviewRow?.id)
-              }
-            >
-              {importingPrefillId === (prefillPreviewRow?.memberId || prefillPreviewRow?.id) ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Import member mapped fields
-            </Button>
-            <Button
-              onClick={() => (prefillPreviewRow ? void startWorkflowFromIntake(prefillPreviewRow) : undefined)}
-              disabled={
-                !prefillPreviewRow ||
-                startingWorkflowFor === (prefillPreviewRow?.memberId || prefillPreviewRow?.id) ||
-                (!prefillPreviewRow?.assignedSwId && !prefillPreviewRow?.assignedSwName)
-              }
-            >
-              {startingWorkflowFor === (prefillPreviewRow?.memberId || prefillPreviewRow?.id) ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Send SW notice
             </Button>
           </DialogFooter>
         </DialogContent>

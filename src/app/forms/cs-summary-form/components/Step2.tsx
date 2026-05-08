@@ -108,9 +108,27 @@ export default function Step2() {
   
   const formatName = (value: string) => {
     if (!value) return '';
-    return value
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    const capitalizePiece = (piece: string) => {
+      const trimmed = String(piece || '').trim();
+      if (!trimmed) return '';
+      // Preserve acronyms/abbreviations typed in uppercase (LA, SNF, UCLA, RCFE, etc.)
+      if (/^[A-Z0-9]{2,5}$/.test(trimmed)) return trimmed;
+      return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+    };
+    const capitalizeWord = (word: string) =>
+      String(word || '')
+        .split('-')
+        .map((hyphenPart) =>
+          hyphenPart
+            .split("'")
+            .map((piece) => capitalizePiece(piece))
+            .join("'")
+        )
+        .join('-');
+
+    return String(value || '')
+      .split(/\s+/)
+      .map((word) => capitalizeWord(word))
       .join(' ');
   };
   

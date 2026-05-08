@@ -353,10 +353,7 @@ export function PrintableKaiserReferralForm({
     if (requiredAlft22Choice === 'A' || requiredAlft22Choice === 'B' || requiredAlft22Choice === 'C') {
       return requiredAlft22Choice;
     }
-    const hasAlfLocationDetails = Boolean(
-      String(prefill.currentLocationName || '').trim() || String(prefill.currentLocationAddress || '').trim()
-    );
-    return hasAlfLocationDetails ? 'C' : '';
+    return '';
   });
   const [isSendingToKaiser, setIsSendingToKaiser] = React.useState(false);
   const [isStep3Confirmed, setIsStep3Confirmed] = React.useState(false);
@@ -394,6 +391,12 @@ export function PrintableKaiserReferralForm({
   const memberCounty = lineValue(prefill.memberCounty);
   const kaiserRegion = getKaiserRegionFromCounty(memberCounty);
   const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
+  const currentLivingLocationLabel = React.useMemo(() => {
+    if (currentLivingLocation === 'A') return 'A - Skilled Nursing Facility (SNF)';
+    if (currentLivingLocation === 'B') return 'B - At home or in public subsidized housing';
+    if (currentLivingLocation === 'C') return 'C - In an Assisted Living Facility / Board and Care';
+    return 'Not selected';
+  }, [currentLivingLocation]);
   const resolvedMemberName = memberName || 'Member';
   const resolvedMrn = formValues.memberMrn || 'N/A';
   const subjectLine = `Authorization Request for ${resolvedMemberName} and MRN: ${resolvedMrn}`;
@@ -650,6 +653,9 @@ export function PrintableKaiserReferralForm({
           <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
             <div className="font-medium">Step 2: View PDF</div>
             <div className="mt-1 text-xs">Open external printable preview, review it, then close it and continue.</div>
+            <div className="mt-1 text-xs">
+              Selected for 2.2: <span className="font-semibold">{currentLivingLocationLabel}</span>
+            </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Button
                 type="button"

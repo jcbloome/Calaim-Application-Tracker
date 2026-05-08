@@ -45,12 +45,112 @@ function htmlEscape(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
+function toSafeHttpUrl(raw: string): string {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+function renderTextWithLinks(text: string): string {
+  const raw = String(text || '');
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  let output = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = urlRegex.exec(raw)) !== null) {
+    const fullMatch = String(match[0] || '');
+    const start = match.index;
+    const end = start + fullMatch.length;
+    output += htmlEscape(raw.slice(lastIndex, start));
+
+    const safeUrl = toSafeHttpUrl(fullMatch);
+    if (safeUrl) {
+      output += `<a href="${htmlEscape(safeUrl)}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">${htmlEscape(fullMatch)}</a>`;
+    } else {
+      output += htmlEscape(fullMatch);
+    }
+    lastIndex = end;
+  }
+
+  output += htmlEscape(raw.slice(lastIndex));
+  return output;
+}
+
+function renderPortalLinkAction(label: string, buttonLabel: string, url: string): string {
+  const safeUrl = toSafeHttpUrl(url);
+  if (!safeUrl) return `<li>${renderTextWithLinks(`${label}: ${url}`)}</li>`;
+  return `<li style="margin: 8px 0;">
+      <span style="display: inline-block; min-width: 170px; color: #334155;">${htmlEscape(label)}:</span>
+      <a href="${htmlEscape(safeUrl)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 8px 12px; border-radius: 8px; font-weight: 600;">
+        ${htmlEscape(buttonLabel)}
+      </a>
+    </li>`;
+}
+
 function toHtmlBody(message: string): string {
-  return `
-    <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.6; max-width: 640px;">
-      ${htmlEscape(message).replaceAll('\n', '<br/>')}
-    </div>
-  `;
+  const lines = String(message || '').split('\n');
+  const chunks: string[] = [];
+  let bulletBuffer: string[] = [];
+
+  const flushBullets = () => {
+    if (bulletBuffer.length === 0) return;
+    const renderedItems = bulletBuffer
+      .map((item) => {
+        const loginMatch = item.match(/^Open your secure portal login:\s*(https?:\/\/\S+)/i);
+        if (loginMatch) return renderPortalLinkAction('Portal Login', 'Open Portal', loginMatch[1]);
+
+        const signupMatch = item.match(/^Create your portal account \(if needed\):\s*(https?:\/\/\S+)/i);
+        if (signupMatch) return renderPortalLinkAction('Create Account', 'Create Account', signupMatch[1]);
+
+        const connectMatch = item.match(/^Connect application:\s*(https?:\/\/\S+)/i);
+        if (connectMatch) return renderPortalLinkAction('Connect Application', 'Connect App', connectMatch[1]);
+
+        return `<li>${renderTextWithLinks(item)}</li>`;
+      })
+      .join('');
+    chunks.push(`<ul style="margin: 6px 0 14px 18px; padding: 0; color: #0f172a;">${renderedItems}</ul>`);
+    bulletBuffer = [];
+  };
+
+  for (const lineRaw of lines) {
+    const line = String(lineRaw || '').trim();
+    if (!line) {
+      flushBullets();
+      chunks.push('<div style="height: 8px;"></div>');
+      continue;
+    }
+
+    if (line.startsWith('- ')) {
+      bulletBuffer.push(line.slice(2).trim());
+      continue;
+    }
+
+    flushBullets();
+    const isHeading =
+      line.endsWith(':') &&
+      (line.toLowerCase().includes('required documents') ||
+        line.toLowerCase().includes('please continue') ||
+        line.toLowerCase().includes('you may be asked to verify'));
+
+    if (isHeading) {
+      chunks.push(`<p style="margin: 0 0 8px; font-weight: 700;">${renderTextWithLinks(line)}</p>`);
+    } else {
+      chunks.push(`<p style="margin: 0 0 8px;">${renderTextWithLinks(line)}</p>`);
+    }
+  }
+
+  flushBullets();
+
+  return `<div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.6; max-width: 640px;">
+    ${chunks.join('')}
+  </div>`;
 }
 
 function getAppBaseUrl(): string {
@@ -106,6 +206,8 @@ async function resolveAssignedCaseManagerSender(args: {
 
 function getMissingRequestedDocuments(appData: Record<string, unknown>): string[] {
   const forms = Array.isArray(appData?.forms) ? (appData.forms as Array<Record<string, unknown>>) : [];
+  const healthPlan = String(appData?.healthPlan || '').trim().toLowerCase();
+  const pathway = String(appData?.pathway || '').trim().toLowerCase();
   const internalExclusions = new Set([
     'eligibility screenshot',
     'eligibility check',
@@ -113,9 +215,48 @@ function getMissingRequestedDocuments(appData: Record<string, unknown>): string[
     'room and board/tier level commitment',
     'room and board commitment',
   ]);
-  const items = forms
+  const canonicalName = (name: unknown): string => {
+    const raw = String(name || '').trim();
+    if (!raw) return '';
+    const lowered = raw.toLowerCase();
+    if (lowered === 'waivers') return 'Waivers & Authorizations';
+    if (
+      lowered === 'room and board commitment' ||
+      lowered === 'room and board/tier level commitment'
+    ) {
+      return 'Room and Board/Tier Level Agreement';
+    }
+    return raw;
+  };
+
+  const statusByCanonicalName = new Map<string, string>();
+  forms.forEach((form) => {
+    const name = canonicalName(form?.name);
+    if (!name) return;
+    const status = String(form?.status || '').trim().toLowerCase();
+    const prev = String(statusByCanonicalName.get(name) || '').trim().toLowerCase();
+    if (prev === 'completed') return;
+    statusByCanonicalName.set(name, status);
+  });
+
+  const expectedByPathway: string[] = [
+    'Waivers & Authorizations',
+    "LIC 602A - Physician's Report",
+    'Medicine List',
+    ...(healthPlan.includes('health net') ? [] : ['Proof of Income']),
+    ...(pathway === 'snf transition' ? ['SNF Facesheet'] : []),
+    ...(pathway === 'snf diversion' && healthPlan.includes('health net')
+      ? ['Declaration of Eligibility']
+      : []),
+  ];
+  const expectedPending = expectedByPathway.filter((name) => {
+    const status = String(statusByCanonicalName.get(name) || '').trim().toLowerCase();
+    return status !== 'completed';
+  });
+
+  const pendingFromForms = forms
     .filter((form) => {
-      const name = String(form?.name || '').trim();
+      const name = canonicalName(form?.name);
       if (!name) return false;
       const normalizedName = name.toLowerCase();
       if (normalizedName === 'cs member summary' || normalizedName === 'cs summary') return false;
@@ -124,10 +265,10 @@ function getMissingRequestedDocuments(appData: Record<string, unknown>): string[
       const status = String(form?.status || '').trim().toLowerCase();
       return status !== 'completed';
     })
-    .map((form) => String(form?.name || '').trim())
+    .map((form) => canonicalName(form?.name))
     .filter(Boolean);
 
-  return Array.from(new Set(items));
+  return Array.from(new Set([...expectedPending, ...pendingFromForms]));
 }
 
 const REQUIREMENT_TITLE_TO_ID: Record<string, string> = {
@@ -153,6 +294,21 @@ function getFirstNameOnly(name: string): string {
   const cleaned = String(name || '').trim();
   if (!cleaned) return '';
   return cleaned.split(/\s+/)[0] || '';
+}
+
+function buildPortalLinks(params: {
+  applicationId: string;
+  focusRequirementId: string;
+  baseUrl: string;
+}) {
+  const { applicationId, focusRequirementId, baseUrl } = params;
+  const pathwayReturnPath = `/pathway?applicationId=${encodeURIComponent(applicationId)}${
+    focusRequirementId ? `&focus=${encodeURIComponent(focusRequirementId)}&mode=upload-missing` : ''
+  }`;
+  const loginUrl = `${baseUrl}/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
+  const signupUrl = `${baseUrl}/signup`;
+  const inviteUrl = `${baseUrl}/invite/continue?applicationId=${encodeURIComponent(applicationId)}`;
+  return { loginUrl, signupUrl, inviteUrl };
 }
 
 function buildDefaultDraft(params: {
@@ -182,12 +338,7 @@ function buildDefaultDraft(params: {
     senderEmail,
   } = params;
   const greetingFirstName = getFirstNameOnly(contactName) || 'there';
-  const pathwayReturnPath = `/pathway?applicationId=${encodeURIComponent(applicationId)}${
-    focusRequirementId ? `&focus=${encodeURIComponent(focusRequirementId)}&mode=upload-missing` : ''
-  }`;
-  const loginUrl = `${baseUrl}/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
-  const signupUrl = `${baseUrl}/signup`;
-  const inviteUrl = `${baseUrl}/invite/continue?applicationId=${encodeURIComponent(applicationId)}`;
+  const { loginUrl, signupUrl, inviteUrl } = buildPortalLinks({ applicationId, focusRequirementId, baseUrl });
   const kaiserAuthorizationLine = hasKaiserAuthorizationAtIntake
     ? hasPriorIntroEmail
       ? `This is a reminder to sign in and continue the existing Kaiser-authorized CalAIM Assisted Living Transitions application for ${memberName}${memberMrn ? ` (MRN: ${memberMrn})` : ''}.`
@@ -198,10 +349,14 @@ function buildDefaultDraft(params: {
   const missingDocumentsSection = missingDocuments.length
     ? [
         '',
-        'Missing documents requested:',
+        'Required documents to upload:',
         ...missingDocuments.map((item) => `- ${item}`),
       ]
-    : [];
+    : [
+        '',
+        'Required documents to upload:',
+        '- Please upload each document marked Pending in your portal checklist.',
+      ];
   const supportLine = `For any questions, please contact ${senderName || 'our team'}${senderEmail ? ` at ${senderEmail}` : ''} or call 800-330-5993.`;
 
   return {
@@ -213,17 +368,17 @@ function buildDefaultDraft(params: {
       '',
       kaiserAuthorizationLine,
       '',
-      'Please sign in to the Connect CalAIM portal to continue and upload required documents:',
-      `- Sign in: ${loginUrl}`,
-      `- Create account (if new): ${signupUrl}`,
+      'Please continue in the Connect CalAIM portal:',
+      `- Open your secure portal login: ${loginUrl}`,
+      `- Create your portal account (if needed): ${signupUrl}`,
       '',
       'Please use this same email address for your account so we can match it correctly.',
       ...missingDocumentsSection,
       '',
       'After signing in, open My Applications and select the member application.',
       '',
-      "If you do not see the application, use this secure link to connect it:",
-      inviteUrl,
+      "If you do not see the application, use this secure application link:",
+      `- Connect application: ${inviteUrl}`,
       '',
       'You may be asked to verify:',
       '- Application ID',
@@ -263,27 +418,56 @@ export async function POST(request: NextRequest) {
     }
 
     const appData = (appSnap.data() || {}) as Record<string, unknown>;
-    const assignedStaffId = String(appData.assignedStaffId || '').trim();
-    const memberName = String(
-      `${appData.memberFirstName || ''} ${appData.memberLastName || ''}`
-    ).trim() || 'CalAIM Member';
+    const requestedUserId = String(body.userId || appData.userId || '').trim();
+    let effectiveAppData: Record<string, unknown> = { ...appData };
+    if (requestedUserId && applicationId) {
+      try {
+        const userAppSnap = await adminCheck.adminDb
+          .collection('users')
+          .doc(requestedUserId)
+          .collection('applications')
+          .doc(applicationId)
+          .get();
+        if (userAppSnap.exists) {
+          const userAppData = (userAppSnap.data() || {}) as Record<string, unknown>;
+          const mergedForms =
+            Array.isArray(appData.forms) && appData.forms.length > 0
+              ? appData.forms
+              : Array.isArray(userAppData.forms)
+                ? userAppData.forms
+                : appData.forms;
+          effectiveAppData = {
+            ...userAppData,
+            ...appData,
+            forms: mergedForms,
+          };
+        }
+      } catch {
+        // Best effort: keep admin app data if user copy lookup fails.
+      }
+    }
+    const assignedStaffId = String(effectiveAppData.assignedStaffId || '').trim();
+    const memberName =
+      String(`${effectiveAppData.memberFirstName || ''} ${effectiveAppData.memberLastName || ''}`)
+        .replace(/\s+/g, ' ')
+        .trim() || 'CalAIM Member';
     const contactName = String(
-      `${appData.bestContactFirstName || ''} ${appData.bestContactLastName || ''}`
+      `${effectiveAppData.bestContactFirstName || ''} ${effectiveAppData.bestContactLastName || ''}`
     ).trim();
-    const memberMrn = String(appData.memberMrn || '').trim();
-    const kaiserAuthorizationMode = String(appData.kaiserAuthorizationMode || '').trim().toLowerCase();
-    const intakeType = String(appData.intakeType || '').trim().toLowerCase();
+    const memberMrn = String(effectiveAppData.memberMrn || '').trim();
+    const kaiserAuthorizationMode = String(effectiveAppData.kaiserAuthorizationMode || '').trim().toLowerCase();
+    const intakeType = String(effectiveAppData.intakeType || '').trim().toLowerCase();
     const hasKaiserAuthorizationAtIntake =
       kaiserAuthorizationMode === 'authorization_received' ||
-      Boolean(appData.kaiserAuthReceivedViaIls) ||
+      Boolean(effectiveAppData.kaiserAuthReceivedViaIls) ||
       intakeType === 'kaiser_auth_received_via_ils';
-    const toEmailDefault = normalizeEmail(appData.bestContactEmail);
-    const primaryContactEmail = normalizeEmail(appData.bestContactEmail);
+    const toEmailDefault = normalizeEmail(effectiveAppData.bestContactEmail);
+    const primaryContactEmail = normalizeEmail(effectiveAppData.bestContactEmail);
     const fallbackSenderName = String(adminCheck.name || adminCheck.email || 'Staff').trim();
     const fallbackSenderEmail = normalizeEmail(adminCheck.email);
     const senderResolved = await resolveAssignedCaseManagerSender({
       adminDb: adminCheck.adminDb,
-      appData,
+      appData: effectiveAppData,
       fallbackName: fallbackSenderName,
       fallbackEmail: fallbackSenderEmail,
     });
@@ -300,11 +484,27 @@ export async function POST(request: NextRequest) {
     const fromEmail = String(senderTransport.fromEmail || '').trim();
     const replyToEmail = String(senderTransport.replyTo || '').trim();
     const baseUrl = getAppBaseUrl();
-    const missingDocuments = getMissingRequestedDocuments(appData);
+    const missingDocuments = getMissingRequestedDocuments(effectiveAppData);
     const focusRequirementId = getFocusRequirementId(missingDocuments);
+    const introSendHistory = Array.isArray(effectiveAppData.introEmailSendHistory)
+      ? (effectiveAppData.introEmailSendHistory as Array<Record<string, unknown>>)
+      : [];
+    const latestSendHistoryEntry = introSendHistory
+      .map((entry) => {
+        const iso = String(entry?.sentAtIso || '').trim();
+        const ms = iso ? new Date(iso).getTime() : 0;
+        return { entry, iso, ms };
+      })
+      .filter((item) => Boolean(item.iso) && Number.isFinite(item.ms) && item.ms > 0)
+      .sort((a, b) => b.ms - a.ms)[0];
+    const lastSentAtIso = String(latestSendHistoryEntry?.iso || '').trim();
+    const lastSentTo = String(
+      effectiveAppData.introEmailLastSentTo || latestSendHistoryEntry?.entry?.to || ''
+    ).trim();
     const hasPriorIntroEmail = Boolean(
-      appData.introEmailLastSentAt ||
-        (Array.isArray(appData.introEmailSendHistory) && (appData.introEmailSendHistory as unknown[]).length > 0)
+      effectiveAppData.introEmailLastSentAt ||
+        (Array.isArray(effectiveAppData.introEmailSendHistory) &&
+          (effectiveAppData.introEmailSendHistory as unknown[]).length > 0)
     );
     const defaults = buildDefaultDraft({
       applicationId,
@@ -344,6 +544,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         draft: { to: toRecipients.join(', '), cc: ccRecipients.join(', '), subject, message },
+        missingDocuments,
+        portalLinks: buildPortalLinks({ applicationId, focusRequirementId, baseUrl }),
+        acknowledgement: {
+          lastSentAtIso: lastSentAtIso || null,
+          lastSentTo: lastSentTo || null,
+        },
         sender: {
           name: senderName || null,
           email: senderEmail || null,
@@ -382,6 +588,7 @@ export async function POST(request: NextRequest) {
 
     let providerMessageId = '';
     try {
+      const sentAtIso = new Date().toISOString();
       const result = await resend.emails.send({
         from: fromEmail,
         to: toRecipients,
@@ -435,7 +642,7 @@ export async function POST(request: NextRequest) {
           introEmailLastSentByUid: adminCheck.uid,
           introEmailLastSentByEmail: adminCheck.email,
           introEmailSendHistory: admin.firestore.FieldValue.arrayUnion({
-            sentAtIso: new Date().toISOString(),
+            sentAtIso,
             to: toRecipients.join(', '),
             sentByUid: adminCheck.uid,
             sentByEmail: adminCheck.email,
@@ -481,6 +688,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Introductory email sent successfully.',
+      sentAtIso: new Date().toISOString(),
+      sentTo: toRecipients.join(', '),
     });
   } catch (error: any) {
     return NextResponse.json(

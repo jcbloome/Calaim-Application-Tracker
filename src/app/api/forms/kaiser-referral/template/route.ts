@@ -270,9 +270,7 @@ export async function GET(req: NextRequest) {
       const resolvedAlft22Choice =
         prefill.alft22Choice === 'A' || prefill.alft22Choice === 'B' || prefill.alft22Choice === 'C'
           ? prefill.alft22Choice
-          : prefill.currentLocationName || prefill.currentLocationAddress
-            ? 'C'
-            : '';
+          : '';
       if (resolvedAlft22Choice === 'A' || resolvedAlft22Choice === 'B' || resolvedAlft22Choice === 'C') {
         const alft22Index = resolvedAlft22Choice === 'B' ? 1 : resolvedAlft22Choice === 'C' ? 2 : 0;
         selectWidgetOptionByIndex('ALF 2.2', alft22Index);

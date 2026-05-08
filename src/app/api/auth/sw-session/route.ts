@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -62,6 +63,26 @@ export async function POST(request: NextRequest) {
 
     if (!email || !uid) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    // Enforce lane separation: admin accounts cannot establish SW sessions.
+    const [uidAdminDoc, uidSuperAdminDoc, emailAdminDoc, emailSuperAdminDoc] = await Promise.all([
+      adminDb.collection('roles_admin').doc(uid).get(),
+      adminDb.collection('roles_super_admin').doc(uid).get(),
+      adminDb.collection('roles_admin').doc(email).get(),
+      adminDb.collection('roles_super_admin').doc(email).get(),
+    ]);
+    const isAdminLaneAccount =
+      isHardcodedAdminEmail(email) ||
+      uidAdminDoc.exists ||
+      uidSuperAdminDoc.exists ||
+      emailAdminDoc.exists ||
+      emailSuperAdminDoc.exists;
+    if (isAdminLaneAccount) {
+      return NextResponse.json(
+        { error: 'This email is reserved for admin login. Please use a dedicated Social Worker email.' },
+        { status: 403 }
+      );
     }
 
     // Determine SW eligibility and active flag from Firestore (admin privileges).

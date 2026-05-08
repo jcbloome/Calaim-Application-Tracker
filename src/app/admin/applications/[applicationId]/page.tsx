@@ -570,14 +570,6 @@ const getPathwayRequirements = (
       icon: UploadCloud,
       href: '#',
     },
-    {
-      id: 'alternative-contact-screenshot',
-      title: 'Alternative Contact Screenshot',
-      description: 'Upload screenshot(s) showing alternate contact details for outreach fallback.',
-      type: 'Upload',
-      icon: UploadCloud,
-      href: '#',
-    },
   ];
 
   const eligibilityReq = commonRequirements.find((req) => req.id === 'eligibility-screenshot') as
@@ -967,6 +959,11 @@ function PushToCaspioDialog({
           ? false
           : Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
             String((application as any)?.intakeType || '').trim().toLowerCase() === 'kaiser_auth_received_via_ils';
+    const derivedCaspioCalAIMStatus =
+      caspioCalAIMStatus ||
+      (isKaiserHealthPlan
+        ? (isKaiserAuthReceivedIntake ? 'Authorized' : (requestedKaiserStatus || 'T2038 Requested'))
+        : '');
     const allowDraftCaspioPush = Boolean((application as any)?.allowDraftCaspioPush);
     const isDraftLikeForPush =
       String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
@@ -1012,7 +1009,7 @@ function PushToCaspioDialog({
       { key: 'authorizationEnd', label: 'Authorization End T2038', required: isKaiserAuthReceivedIntake && !allowDraftCaspioPush && !skeletonPushEnabled, ready: Boolean(toClean((application as any)?.Authorization_End_T2038)) },
       { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
-      { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(caspioCalAIMStatus) },
+      { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(derivedCaspioCalAIMStatus) },
       { key: 'kaiserStatus', label: 'Kaiser Status', required: isKaiserHealthPlan, ready: Boolean(requestedKaiserStatus) },
       { key: 'socialWorkerHold', label: 'SW Hold for Caspio', required: true, ready: Boolean(requestedSocialWorkerHold) },
       {
@@ -1078,13 +1075,13 @@ function PushToCaspioDialog({
           ''
         ).trim();
         return {
-            CalAIM_Status: String(caspioCalAIMStatus || '').trim(),
+            CalAIM_Status: String(derivedCaspioCalAIMStatus || '').trim(),
             Kaiser_Status: String(requestedKaiserStatus || '').trim(),
             Hold_For_Social_Worker_Visit: String(requestedSocialWorkerHold || '').trim(),
             Monthly_Income: monthlyIncomeForCaspio,
             Pre_Assessment_Care_Needs_Notes: prePushNotes,
         } as Record<string, string>;
-    }, [application, caspioCalAIMStatus, requestedKaiserStatus, requestedSocialWorkerHold, prePushNotes]);
+    }, [application, derivedCaspioCalAIMStatus, requestedKaiserStatus, requestedSocialWorkerHold, prePushNotes]);
     const previousSpecialSnapshot = useMemo(() => {
         const raw = (application as any)?.caspioLastPushedSpecialData;
         if (!raw || typeof raw !== 'object') return {} as Record<string, string>;
@@ -1237,6 +1234,7 @@ function PushToCaspioDialog({
                 body: JSON.stringify({
                     applicationData: {
                       ...effectiveApplicationData,
+                      caspioCalAIMStatus: String(derivedCaspioCalAIMStatus || '').trim(),
                       kaiserStatus: requestedKaiserStatus,
                       holdForSocialWorkerStatus: requestedSocialWorkerHold,
                     },
@@ -1731,26 +1729,11 @@ function IntroductoryEmailDialog({
   buttonVariant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
   buttonClassName?: string;
 }) {
-  const { user } = useUser();
-  const { toast } = useToast();
-  const [isOpen, setIsOpen] = useState(false);
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-  const [isSending, setIsSending] = useState(false);
-  const [to, setTo] = useState('');
-  const [cc, setCc] = useState('');
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
-  const [senderFromLabel, setSenderFromLabel] = useState('');
-  const [senderWarning, setSenderWarning] = useState('');
-  const [senderUsesFallbackFrom, setSenderUsesFallbackFrom] = useState(false);
-  const [lastSentAtMs, setLastSentAtMs] = useState(() =>
-    toMillisSafe((application as any)?.introEmailLastSentAt || (application as any)?.introEmailLastSentDate)
-  );
-  const [lastSentTo, setLastSentTo] = useState(String((application as any)?.introEmailLastSentTo || '').trim());
-
+  const searchParams = useSearchParams();
+  const appUserId = String(searchParams.get('userId') || '').trim();
   const primaryContactEmail = String((application as any)?.bestContactEmail || '').trim();
-  const hasAssignedCaseManager = Boolean(String((application as any)?.assignedStaffId || '').trim());
-  const recipientHint = primaryContactEmail;
+  const lastSentAtMs = toMillisSafe((application as any)?.introEmailLastSentAt || (application as any)?.introEmailLastSentDate);
+  const lastSentTo = String((application as any)?.introEmailLastSentTo || '').trim();
   const lastSentLabel = useMemo(() => {
     if (!lastSentAtMs) return '';
     try {
@@ -1781,242 +1764,41 @@ function IntroductoryEmailDialog({
     return `1st invite: ${firstLabel} • 2nd invite: ${secondLabel}`;
   }, [application]);
 
-  useEffect(() => {
-    setLastSentAtMs(toMillisSafe((application as any)?.introEmailLastSentAt || (application as any)?.introEmailLastSentDate));
-    setLastSentTo(String((application as any)?.introEmailLastSentTo || '').trim());
-  }, [application]);
-
-  const loadPreview = async () => {
-    const applicationId = String(application.id || '').trim();
-    if (!applicationId) return;
-    if (!user) {
-      toast({ title: 'Not signed in', description: 'Please refresh and try again.', variant: 'destructive' });
-      return;
-    }
-    setIsLoadingPreview(true);
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/admin/send-introductory-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          applicationId,
-          mode: 'preview',
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || 'Failed to load invitation preview.');
-      }
-      setTo(String(data?.draft?.to || '').trim());
-      setCc(String(data?.draft?.cc || '').trim());
-      setSubject(String(data?.draft?.subject || '').trim());
-      setMessage(String(data?.draft?.message || '').trim());
-      setSenderFromLabel(String(data?.sender?.from || '').trim());
-      setSenderWarning(String(data?.sender?.warning || '').trim());
-      setSenderUsesFallbackFrom(Boolean(data?.sender?.usesFallbackFrom));
-    } catch (error: any) {
-      toast({
-        title: 'Preview failed',
-        description: String(error?.message || 'Unable to load introductory email preview.'),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoadingPreview(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!isOpen) return;
-    if (subject || message || to || cc) return;
-    void loadPreview();
-  }, [isOpen]);
-
-  const sendEmail = async () => {
-    const applicationId = String(application.id || '').trim();
-    if (!applicationId) return;
-    if (!user) {
-      toast({ title: 'Not signed in', description: 'Please refresh and try again.', variant: 'destructive' });
-      return;
-    }
-    if (!to.trim() || !subject.trim() || !message.trim()) {
-      toast({
-        title: 'Missing email content',
-        description: 'Recipient, subject, and message are required before sending.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    setIsSending(true);
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/admin/send-introductory-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          applicationId,
-          mode: 'send',
-          to: String(to || '').trim(),
-          cc: String(cc || '').trim(),
-          subject: String(subject || '').trim(),
-          message: String(message || '').trim(),
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as any;
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || 'Failed to send invitation email.');
-      }
-      toast({
-        title: 'Invitation sent',
-        description: `Introductory email sent to ${String(to || '').trim()}.`,
-      });
-      setLastSentAtMs(Date.now());
-      setLastSentTo(String(to || '').trim());
-      setIsOpen(false);
-    } catch (error: any) {
-      toast({
-        title: 'Send failed',
-        description: String(error?.message || 'Unable to send introductory email.'),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSending(false);
-    }
-  };
+  const hasAssignedCaseManager = Boolean(String((application as any)?.assignedStaffId || '').trim());
+  const pageHref = `/admin/applications/${encodeURIComponent(String(application.id || ''))}/email-primary-contact${
+    appUserId ? `?userId=${encodeURIComponent(appUserId)}` : ''
+  }`;
 
   return (
     <div className="space-y-1">
-      <Dialog
-        open={isOpen}
-        onOpenChange={(next) => {
-          setIsOpen(next);
-          if (!next) {
-            setIsLoadingPreview(false);
-            setIsSending(false);
-          }
-        }}
+      <Button
+        asChild
+        variant={buttonVariant}
+        className={buttonClassName}
+        title={!primaryContactEmail ? 'Add primary contact email first' : undefined}
       >
-        <DialogTrigger asChild>
-          <Button
-            variant={buttonVariant}
-            className={buttonClassName}
-            title={!recipientHint ? 'Add primary contact email first' : undefined}
-          >
-            <Mail className="h-4 w-4" />
-            {lastSentAtMs ? 'Resend Introductory Invite' : 'Send Introductory Invite'}
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Invite primary contact</DialogTitle>
-            <DialogDescription>
-              Send the portal invitation so the primary contact can complete remaining forms after draft/Caspio readiness. You can resend if the family did not receive the first email.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-          {lastSentLabel ? (
-            <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
-              Last sent: {lastSentLabel}
-              {lastSentTo ? ` to ${lastSentTo}` : ''}. This send is retained in Email Logs.
-            </div>
-          ) : (
-            <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
-              This send will be timestamped and retained in Email Logs.
-            </div>
-          )}
-          {senderFromLabel ? (
-            <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
-              Sending as: <span className="font-medium">{senderFromLabel}</span>
-            </div>
-          ) : null}
-          {senderWarning ? (
-            <Alert variant={senderUsesFallbackFrom ? 'warning' : 'default'}>
-              <AlertTitle>Sender fallback notice</AlertTitle>
-              <AlertDescription>{senderWarning}</AlertDescription>
-            </Alert>
-          ) : null}
-          {!hasAssignedCaseManager ? (
-            <Alert variant="destructive">
-              <AlertTitle>Assigned case manager required</AlertTitle>
-              <AlertDescription>
-                Assign staff first. Introductory invites are locked until a case manager is assigned.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {!recipientHint ? (
-            <Alert variant="destructive">
-              <AlertTitle>No contact email found</AlertTitle>
-              <AlertDescription>
-                Add a primary contact email first, then use this invitation action.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          <Button type="button" variant="outline" size="sm" onClick={() => void loadPreview()} disabled={isLoadingPreview || isSending}>
-            {isLoadingPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Refresh Preview
-          </Button>
-          <div className="space-y-2">
-            <Label>To</Label>
-            <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder={recipientHint || 'contact@example.com'} />
-          </div>
-          <div className="space-y-2">
-            <Label>CC (Staff)</Label>
-            <Input
-              value={cc}
-              onChange={(e) => setCc(e.target.value)}
-              placeholder={String(user?.email || '').trim() || 'staff@carehomefinders.com'}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Subject</Label>
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Message</Label>
-            <Textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={10} />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setIsOpen(false)} disabled={isSending}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void sendEmail()}
-              disabled={isSending || isLoadingPreview || !recipientHint || !hasAssignedCaseManager}
-            >
-              {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              {lastSentAtMs ? 'Resend Invitation' : 'Send Invitation'}
-            </Button>
-          </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        <Link href={pageHref}>
+          <Mail className="h-4 w-4" />
+          {lastSentAtMs ? 'Re-email Primary Contact' : 'Email Primary Contact'}
+        </Link>
+      </Button>
       {introInviteHistoryLabel ? (
         <div className="text-[11px] text-muted-foreground">
           {introInviteHistoryLabel}
         </div>
       ) : null}
       {lastSentLabel ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800 space-y-2">
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
           <div>
-            Introductory invite sent {lastSentLabel}{lastSentTo ? ` to ${lastSentTo}` : ''}. Logged in Email Logs.
+            Primary contact email sent {lastSentLabel}{lastSentTo ? ` to ${lastSentTo}` : ''}. Logged in Email Logs.
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setIsOpen(true)}
-            disabled={isLoadingPreview || isSending || !recipientHint || !hasAssignedCaseManager}
-            className="h-7 px-2 text-xs"
-          >
-            Resend Invite
-          </Button>
+        </div>
+      ) : null}
+      {(!hasAssignedCaseManager || !primaryContactEmail) ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+          {!hasAssignedCaseManager
+            ? 'Assign case manager before sending this email.'
+            : 'Add primary contact email before sending this email.'}
         </div>
       ) : null}
     </div>
@@ -2977,6 +2759,7 @@ function ApplicationDetailPageContent() {
   ]);
   
   const [consolidatedUploadChecks, setConsolidatedUploadChecks] = useState<Record<string, boolean>>({
+    'Waivers & Authorizations': false,
     'LIC 602A - Physician\'s Report': false,
     'Medicine List': false,
     'SNF Facesheet': false,
@@ -3062,6 +2845,7 @@ function ApplicationDetailPageContent() {
   const [rejectDialogForm, setRejectDialogForm] = useState<string | null>(null);
   const [rejectScopeByForm, setRejectScopeByForm] = useState<Record<string, 'form' | 'file'>>({});
   const [rejectFileByForm, setRejectFileByForm] = useState<Record<string, string>>({});
+  const [rejectRecipientByForm, setRejectRecipientByForm] = useState<Record<string, 'applicant' | 'primary'>>({});
   const [resolvedStorageUrls, setResolvedStorageUrls] = useState<Record<string, string>>({});
   const emailReminderSectionRef = useRef<HTMLDivElement | null>(null);
   const statusReminderSectionRef = useRef<HTMLDivElement | null>(null);
@@ -3576,6 +3360,7 @@ function ApplicationDetailPageContent() {
     planLower.includes('healthnet') ||
     planLower === 'hn';
   const prePushKaiserStatusOptions = [
+    'T2038 Requested',
     'T2038 Received, Need First Contact',
     'T2038 Received, Unreachable',
     'T2038 Received, doc collection',
@@ -5522,7 +5307,7 @@ function ApplicationDetailPageContent() {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
-    if (!event.target.files?.length || !appUserId) return;
+    if (!event.target.files?.length) return;
     const files = Array.from(event.target.files);
     
     setUploading(prev => ({ ...prev, [requirementTitle]: true }));
@@ -6021,7 +5806,7 @@ function ApplicationDetailPageContent() {
   };
 
   const handleConsolidatedUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files?.length || !appUserId) return;
+    if (!event.target.files?.length) return;
     const files = Array.from(event.target.files);
 
     const formsToUpdate = Object.entries(consolidatedUploadChecks)
@@ -6048,6 +5833,16 @@ function ApplicationDetailPageContent() {
                 downloadURL: uploadResult.downloadURL,
                 dateCompleted: Timestamp.now(),
             }));
+            updates.push({
+              name: 'Consolidated Medical Documents',
+              status: 'Completed',
+              type: 'Upload',
+              dateCompleted: Timestamp.now(),
+              acknowledged: false,
+              acknowledgedBy: null,
+              acknowledgedByUid: null,
+              acknowledgedDate: null,
+            });
             await handleFormStatusUpdate(updates);
             toast({ title: 'Upload Successful', description: 'Consolidated documents have been uploaded.' });
         }
@@ -6056,7 +5851,13 @@ function ApplicationDetailPageContent() {
     } finally {
         setUploading(prev => ({ ...prev, [consolidatedId]: false }));
         setUploadProgress(prev => ({ ...prev, [consolidatedId]: 0 }));
-        setConsolidatedUploadChecks({ 'LIC 602A - Physician\'s Report': false, 'Medicine List': false, 'SNF Facesheet': false, 'Declaration of Eligibility': false });
+        setConsolidatedUploadChecks({
+          'Waivers & Authorizations': false,
+          'LIC 602A - Physician\'s Report': false,
+          'Medicine List': false,
+          'SNF Facesheet': false,
+          'Declaration of Eligibility': false,
+        });
         event.target.value = '';
     }
   };
@@ -6097,7 +5898,7 @@ function ApplicationDetailPageContent() {
   };
 
   const markFormAsComplete = async (formName: string) => {
-    if (!application || !applicationId || !appUserId) return;
+    if (!application || !applicationId) return;
     if (STRICT_UPLOAD_REQUIRED_FOR_COMPLETION.has(formName)) {
       toast({
         variant: 'destructive',
@@ -6199,7 +6000,6 @@ function ApplicationDetailPageContent() {
   const eligibilityRequirementIds = new Set([
     'eligibility-screenshot',
     'primary-contact-screenshot',
-    'alternative-contact-screenshot',
   ]);
   const eligibilityRequirements = pathwayRequirements.filter(req => eligibilityRequirementIds.has(req.id));
   const displayedPathwayRequirements = (() => {
@@ -7131,7 +6931,14 @@ function ApplicationDetailPageContent() {
           String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
   const effectiveCaspioCalAIMStatus = (() => {
     const raw = String((application as any)?.caspioCalAIMStatus || '').trim();
-    if (!raw) return isKaiserAuthReceivedIntake ? 'Authorized' : '';
+    if (!raw) {
+      if (isKaiserAuthReceivedIntake) return 'Authorized';
+      if (isKaiserPlan) return currentKaiserStatus || 'T2038 Requested';
+      return '';
+    }
+    if (!isKaiserAuthReceivedIntake && isKaiserPlan && raw.toLowerCase() === 'pending') {
+      return currentKaiserStatus || 'T2038 Requested';
+    }
     if (isKaiserAuthReceivedIntake && raw.toLowerCase() === 'pending') return 'Authorized';
     return raw;
   })();
@@ -7264,17 +7071,30 @@ function ApplicationDetailPageContent() {
     try {
       const reviewerName = user?.displayName || user?.email || 'Admin';
       const reviewerUid = user?.uid || null;
-      const updatedForms = (application.forms || []).map((form) =>
-        form.name === formName
-          ? {
-              ...form,
-              acknowledged: checked,
-              acknowledgedBy: checked ? reviewerName : null,
-              acknowledgedByUid: checked ? reviewerUid : null,
-              acknowledgedDate: checked ? new Date().toISOString() : null,
-            }
-          : form
-      );
+      let didUpdateExisting = false;
+      const updatedForms = (application.forms || []).map((form) => {
+        if (form.name !== formName) return form;
+        didUpdateExisting = true;
+        return {
+          ...form,
+          acknowledged: checked,
+          acknowledgedBy: checked ? reviewerName : null,
+          acknowledgedByUid: checked ? reviewerUid : null,
+          acknowledgedDate: checked ? new Date().toISOString() : null,
+        };
+      });
+
+      if (!didUpdateExisting) {
+        const existingStatus = String(formStatusMap.get(formName)?.status || '').trim();
+        updatedForms.push({
+          name: formName,
+          status: existingStatus || 'Completed',
+          acknowledged: checked,
+          acknowledgedBy: checked ? reviewerName : null,
+          acknowledgedByUid: checked ? reviewerUid : null,
+          acknowledgedDate: checked ? new Date().toISOString() : null,
+        } as FormStatusType);
+      }
 
       const pendingDocReviewCount = updatedForms.filter((form: any) => {
         const isCompleted = form?.status === 'Completed';
@@ -7308,7 +7128,7 @@ function ApplicationDetailPageContent() {
   const handleRejectFormRedo = async (
     formName: string,
     sendEmail: boolean,
-    options?: { scope?: 'form' | 'file'; targetFileKey?: string }
+    options?: { scope?: 'form' | 'file'; targetFileKey?: string; recipientType?: 'applicant' | 'primary' }
   ) => {
     if (!docRef || !application) return;
     const reason = String(rejectReasonByForm[formName] || '').trim();
@@ -7321,12 +7141,20 @@ function ApplicationDetailPageContent() {
       return;
     }
 
-    const recipientEmail = String((application as any)?.referrerEmail || '').trim();
+    const recipientType = options?.recipientType === 'primary' ? 'primary' : 'applicant';
+    const recipientEmail = String(
+      recipientType === 'primary'
+        ? (application as any)?.bestContactEmail || ''
+        : (application as any)?.referrerEmail || ''
+    ).trim();
     if (sendEmail && !recipientEmail) {
       toast({
         variant: 'destructive',
         title: 'Email not available',
-        description: 'Referrer/member email is not available for this application.',
+        description:
+          recipientType === 'primary'
+            ? 'Primary contact email is not available for this application.'
+            : 'Applicant/referrer email is not available for this application.',
       });
       return;
     }
@@ -7483,6 +7311,7 @@ function ApplicationDetailPageContent() {
           emailed: Boolean(sentAtIso),
           emailTo: sentAtIso ? recipientEmail : null,
           emailSentAt: sentAtIso,
+          emailRecipientType: sentAtIso ? recipientType : null,
           scope: rejectScope,
           targetFileKey: targetFileKey || null,
           targetFileLabel: targetFileLabel || null,
@@ -7550,6 +7379,7 @@ function ApplicationDetailPageContent() {
           revisionRequestedBy: reviewerName,
           revisionRequestedByUid: reviewerUid,
           revisionEmailTo: sentAtIso ? recipientEmail : null,
+          revisionEmailRecipientType: sentAtIso ? recipientType : null,
           revisionEmailSentAt: sentAtIso,
           revisionHistory: [historyEntry, ...existingHistory].slice(0, 10),
         };
@@ -7615,11 +7445,12 @@ function ApplicationDetailPageContent() {
       setRejectReasonByForm((prev) => ({ ...prev, [formName]: '' }));
       setRejectScopeByForm((prev) => ({ ...prev, [formName]: 'form' }));
       setRejectFileByForm((prev) => ({ ...prev, [formName]: '' }));
+      setRejectRecipientByForm((prev) => ({ ...prev, [formName]: 'applicant' }));
       setRejectDialogForm(null);
       toast({
         title: sendEmail ? 'Rejection saved and email sent' : 'Rejection saved',
         description: sendEmail
-          ? `${formName} set to pending and email sent to ${recipientEmail}.`
+          ? `${formName} set to pending and email sent to ${recipientEmail} (${recipientType === 'primary' ? 'Primary contact' : 'Applicant/referrer'}).`
           : rejectScope === 'file'
             ? 'Selected file rejected. Remaining files were kept and applicant can upload replacements.'
             : `${formName} set to pending. Applicant can now redo the form.`,
@@ -7644,6 +7475,7 @@ function ApplicationDetailPageContent() {
   ];
   
     const consolidatedMedicalDocuments = [
+      { id: 'waivers-check', name: 'Waivers & Authorizations' },
       { id: 'lic-602a-check', name: "LIC 602A - Physician's Report" },
       { id: 'med-list-check', name: 'Medicine List' },
       { id: 'facesheet-check', name: 'SNF Facesheet' },
@@ -8078,9 +7910,15 @@ function ApplicationDetailPageContent() {
     setIsUpdatingKaiserAuthorizationMode(true);
     try {
       const isAuthorized = mode === 'authorization_received';
+      const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+      const currentCaspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
       const updateData = {
         kaiserAuthorizationMode: mode,
         kaiserAuthReceivedViaIls: isAuthorized,
+        ...(isAuthorized
+          ? { caspioCalAIMStatus: 'Authorized' }
+          : { caspioCalAIMStatus: currentCaspioCalAIMStatus || currentKaiserStatus || 'T2038 Requested' }),
+        ...(!isAuthorized && !currentKaiserStatus ? { kaiserStatus: 'T2038 Requested' } : {}),
         lastUpdated: serverTimestamp(),
       };
       await setDoc(docRef, updateData, { merge: true });
@@ -9202,6 +9040,32 @@ function ApplicationDetailPageContent() {
         case 'online-form':
              if (req.id === 'waivers') {
                 const waiverShowReset = getComponentStatus('Waivers & Authorizations') === 'Completed';
+                const waiverUploadedEntries = (
+                  Array.isArray((formInfo as any)?.uploadedFiles) && (formInfo as any).uploadedFiles.length > 0
+                    ? (formInfo as any).uploadedFiles
+                    : ((formInfo as any)?.fileName || (formInfo as any)?.filePath || (formInfo as any)?.downloadURL
+                        ? [
+                            {
+                              fileName: (formInfo as any)?.fileName || 'Uploaded waiver document',
+                              filePath: (formInfo as any)?.filePath || '',
+                              downloadURL: (formInfo as any)?.downloadURL || '',
+                            },
+                          ]
+                        : [])
+                )
+                  .map((entry: any, index: number) => {
+                    const fileName = String(entry?.fileName || '').trim() || `Uploaded file ${index + 1}`;
+                    const filePath = String(entry?.filePath || '').trim();
+                    const directUrl = String(entry?.downloadURL || '').trim();
+                    return {
+                      key: `${fileName}-${filePath || directUrl || index}`,
+                      fileName,
+                      filePath,
+                      url: getEffectiveDownloadUrl(directUrl, filePath),
+                    };
+                  })
+                  .filter((entry: any) => Boolean(entry.fileName));
+                const hasWaiverUpload = waiverUploadedEntries.length > 0;
                 return (
                     <div className="space-y-3">
                         <div className="space-y-2 rounded-md border p-3">
@@ -9256,6 +9120,75 @@ function ApplicationDetailPageContent() {
                             </AlertDialog>
                           ) : null}
                         </div>
+                        {isUploading && <Progress value={currentProgress} className="h-1 w-full" />}
+                        {hasWaiverUpload ? (
+                          <div className="space-y-2 rounded-md border p-3">
+                            <div className="text-xs font-medium text-muted-foreground">
+                              Uploaded waiver document{waiverUploadedEntries.length === 1 ? '' : 's'} ({waiverUploadedEntries.length})
+                            </div>
+                            <div className="space-y-1">
+                              {waiverUploadedEntries.map((entry: any) =>
+                                entry.url ? (
+                                  <a
+                                    key={entry.key}
+                                    href={entry.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block truncate text-green-800 font-medium hover:underline"
+                                    title={entry.fileName}
+                                  >
+                                    {entry.fileName}
+                                  </a>
+                                ) : (
+                                  <span key={entry.key} className="block truncate text-amber-800 font-medium" title={entry.fileName}>
+                                    {entry.fileName}
+                                  </span>
+                                )
+                              )}
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full text-red-700 border-red-200 hover:bg-red-50"
+                              onClick={() => void handleFileRemove(formInfo as any)}
+                            >
+                              Remove uploaded waiver file(s)
+                            </Button>
+                          </div>
+                        ) : null}
+                        <Label
+                          htmlFor="waivers-upload"
+                          className={cn(
+                            'flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                            isUploading && 'opacity-50 pointer-events-none'
+                          )}
+                        >
+                          {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                          <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload Waiver File(s)'}</span>
+                        </Label>
+                        <Input
+                          id="waivers-upload"
+                          type="file"
+                          className="sr-only"
+                          onChange={(event) => void handleFileUpload(event, 'Waivers & Authorizations')}
+                          disabled={isUploading}
+                          multiple
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            setIntakeRequirementTitle('Waivers & Authorizations');
+                            setIntakeImportOpen(true);
+                            setIntakeSelectedFileKey('');
+                            setIntakeSearch('');
+                            void loadMemberStandaloneIntakes();
+                          }}
+                          disabled={isUploading || !firestore}
+                        >
+                          Import from Standalone Uploads
+                        </Button>
                     </div>
                 );
             }
@@ -9828,6 +9761,12 @@ function ApplicationDetailPageContent() {
   const isConsolidatedUploading = uploading['consolidated-medical-upload'];
   const consolidatedProgress = uploadProgress['consolidated-medical-upload'];
   const isAnyConsolidatedChecked = Object.values(consolidatedUploadChecks).some(v => v);
+  const consolidatedReviewFormInfo = formStatusMap.get('Consolidated Medical Documents') as FormStatusType | undefined;
+  const canReviewConsolidatedUpload = consolidatedMedicalDocuments.some((doc) => {
+    const status = String(formStatusMap.get(doc.name)?.status || '').trim().toLowerCase();
+    return status === 'completed';
+  });
+  const isConsolidatedUploadReviewed = Boolean(consolidatedReviewFormInfo?.acknowledged);
   const adminPrimaryCardsCount =
     displayedPathwayRequirements.length + (consolidatedMedicalDocuments.length > 0 ? 1 : 0);
   const showAdminPlaceholderCard = adminPrimaryCardsCount % 2 === 1;
@@ -10162,15 +10101,13 @@ function ApplicationDetailPageContent() {
                 </AlertDescription>
             </Alert>
         )}
-        {isKaiserPlan && kaiserReferralSubmitted && (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertTitle>Kaiser referral form already submitted</AlertTitle>
+        {isKaiserPlan && kaiserStep5Required && kaiserReferralSubmitted && (
+          <Alert className="border-green-200 bg-green-50 text-green-900">
+            <CheckCircle2 className="h-4 w-4" />
+            <AlertTitle>Kaiser referral form sent successfully</AlertTitle>
             <AlertDescription>
-              Submitted {kaiserReferralSubmittedAtLabel ? `on ${kaiserReferralSubmittedAtLabel}` : 'previously'}.
-              {kaiserStep5Required && kaiserStep5AcknowledgedAtLabel
-                ? ` Step 5 acknowledged at ${kaiserStep5AcknowledgedAtLabel}.`
-                : ''}
+              Sent {kaiserReferralSubmittedAtLabel ? `on ${kaiserReferralSubmittedAtLabel}` : 'previously'}.
+              {kaiserStep5AcknowledgedAtLabel ? ` Step 5 acknowledged at ${kaiserStep5AcknowledgedAtLabel}.` : ''}
               Additional sends are blocked unless override is explicitly enabled.
             </AlertDescription>
           </Alert>
@@ -10361,6 +10298,27 @@ function ApplicationDetailPageContent() {
                         {currentKaiserStatus
                           ? `Kaiser Status: ${currentKaiserStatus}`
                           : 'Kaiser Status: Pending selection'}
+                      </span>
+                    </div>
+                  ) : null}
+                  {isKaiserPlan ? (
+                    <div
+                      className={cn(
+                        'flex items-center gap-2 text-base font-semibold',
+                        isKaiserAuthReceivedIntake || kaiserReferralSubmitted ? 'text-green-700' : 'text-amber-700'
+                      )}
+                    >
+                      {isKaiserAuthReceivedIntake || kaiserReferralSubmitted ? (
+                        <CheckCircle2 className="h-5 w-5" />
+                      ) : (
+                        <XCircle className="h-5 w-5" />
+                      )}
+                      <span>
+                        {isKaiserAuthReceivedIntake
+                          ? 'Kaiser Referral Form: Not required (authorization already received)'
+                          : kaiserReferralSubmitted
+                            ? `Kaiser Referral Form: Sent${kaiserReferralSubmittedAtLabel ? ` (${kaiserReferralSubmittedAtLabel})` : ''}`
+                            : 'Kaiser Referral Form: Pending send'}
                       </span>
                     </div>
                   ) : null}
@@ -10867,7 +10825,7 @@ function ApplicationDetailPageContent() {
                                         <DialogHeader>
                                           <DialogTitle>Reject {req.title}</DialogTitle>
                                           <DialogDescription>
-                                            Add a reason for rejection. You can reject the card only, or reject and email the member/applicant to redo this form.
+                                            Add a reason for rejection. You can reject the card only, or reject and email the applicant/referrer or primary contact to redo this form.
                                           </DialogDescription>
                                         </DialogHeader>
                                         <div className="space-y-3">
@@ -10960,13 +10918,39 @@ function ApplicationDetailPageContent() {
                                             ) : null;
                                           })()}
                                           {(() => {
+                                            const selectedRecipient = rejectRecipientByForm[req.title] || 'applicant';
                                             const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
                                             const previewReason = String(rejectReasonByForm[req.title] || '').trim() || '[Enter description above]';
                                             const previewSubject = `Action needed: Please redo ${req.title}`;
                                             const previewBody = `Please redo the "${req.title}" form.\n\nReason: ${previewReason}\n\nLog in to the application portal and update this form so we can continue processing.\n\nLogin: ${applicantPortalLoginUrl}`;
                                             return (
                                               <div className="rounded-md border bg-white p-3 text-xs space-y-2">
-                                                <div className="font-medium text-foreground">Email preview (Reject + Email applicant)</div>
+                                                <div className="space-y-1">
+                                                  <span className="font-medium">Email recipient</span>
+                                                  <div className="flex flex-wrap gap-2">
+                                                    <Button
+                                                      type="button"
+                                                      size="sm"
+                                                      variant={selectedRecipient === 'applicant' ? 'default' : 'outline'}
+                                                      onClick={() =>
+                                                        setRejectRecipientByForm((prev) => ({ ...prev, [req.title]: 'applicant' }))
+                                                      }
+                                                    >
+                                                      Applicant / Referrer
+                                                    </Button>
+                                                    <Button
+                                                      type="button"
+                                                      size="sm"
+                                                      variant={selectedRecipient === 'primary' ? 'default' : 'outline'}
+                                                      onClick={() =>
+                                                        setRejectRecipientByForm((prev) => ({ ...prev, [req.title]: 'primary' }))
+                                                      }
+                                                    >
+                                                      Primary Contact
+                                                    </Button>
+                                                  </div>
+                                                </div>
+                                                <div className="font-medium text-foreground">Email preview (Reject + Email recipient)</div>
                                                 <div>
                                                   <span className="font-medium">Subject:</span> {previewSubject}
                                                 </div>
@@ -10989,7 +10973,15 @@ function ApplicationDetailPageContent() {
                                           <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
                                             <div>
                                               <span className="font-medium">Sending to:</span>{' '}
-                                              {String((application as any)?.referrerEmail || '').trim() || 'No email on file'}{' '}
+                                              {(() => {
+                                                const selectedRecipient = rejectRecipientByForm[req.title] || 'applicant';
+                                                const email =
+                                                  selectedRecipient === 'primary'
+                                                    ? String((application as any)?.bestContactEmail || '').trim()
+                                                    : String((application as any)?.referrerEmail || '').trim();
+                                                const label = selectedRecipient === 'primary' ? 'Primary contact' : 'Applicant/referrer';
+                                                return `${email || 'No email on file'} (${label})`;
+                                              })()}{' '}
                                               <span className="text-muted-foreground">(BCC disabled)</span>
                                             </div>
                                             {formInfo && (
@@ -11040,6 +11032,7 @@ function ApplicationDetailPageContent() {
                                                 handleRejectFormRedo(req.title, false, {
                                                   scope: rejectScopeByForm[req.title] || 'form',
                                                   targetFileKey: rejectFileByForm[req.title] || '',
+                                                  recipientType: rejectRecipientByForm[req.title] || 'applicant',
                                                 })
                                               }
                                             >
@@ -11054,11 +11047,12 @@ function ApplicationDetailPageContent() {
                                                 handleRejectFormRedo(req.title, true, {
                                                   scope: rejectScopeByForm[req.title] || 'form',
                                                   targetFileKey: rejectFileByForm[req.title] || '',
+                                                  recipientType: rejectRecipientByForm[req.title] || 'applicant',
                                                 })
                                               }
                                             >
                                               {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                                              Reject + Email applicant
+                                              Reject + Email recipient
                                             </Button>
                                           </div>
                                         </div>
@@ -11156,6 +11150,19 @@ function ApplicationDetailPageContent() {
                   <CardHeader className="pb-4">
                       <div className="flex justify-between items-start gap-4">
                           <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-muted-foreground"/>Consolidated Medical Documents (Optional)</CardTitle>
+                          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1">
+                            <Label htmlFor="consolidated-medical-reviewed" className="text-xs font-medium">
+                              Mark reviewed
+                            </Label>
+                            <Checkbox
+                              id="consolidated-medical-reviewed"
+                              checked={isConsolidatedUploadReviewed}
+                              onCheckedChange={(checked) => {
+                                void handleFormReviewed('Consolidated Medical Documents', Boolean(checked));
+                              }}
+                              disabled={!canReviewConsolidatedUpload}
+                            />
+                          </div>
                       </div>
                       <CardDescription>For convenience, you can upload multiple medical forms at once. Select the documents you are uploading below.</CardDescription>
                   </CardHeader>

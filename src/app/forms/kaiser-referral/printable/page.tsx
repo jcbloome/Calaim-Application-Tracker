@@ -133,9 +133,7 @@ function KaiserReferralPrintableContent() {
   const [alft22Choice, setAlft22Choice] = useState<'A' | 'B' | 'C' | ''>(
     formPrefill.alft22Choice === 'A' || formPrefill.alft22Choice === 'B' || formPrefill.alft22Choice === 'C'
       ? (formPrefill.alft22Choice as 'A' | 'B' | 'C')
-      : (String(formPrefill.currentLocationName || '').trim() || String(formPrefill.currentLocationAddress || '').trim())
-        ? 'C'
-        : ''
+      : ''
   );
   const [section1AlfUsage, setSection1AlfUsage] = useState<'yes' | 'no' | ''>(() => {
     const raw = String(searchParams.get('section1AlfUsage') || '').trim().toLowerCase();

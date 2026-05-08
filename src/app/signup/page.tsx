@@ -92,7 +92,28 @@ function SignUpPageContent() {
     }
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const normalizedEmail = email.trim().toLowerCase();
+      const laneRes = await fetch('/api/auth/email-lane', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      const laneData = (await laneRes.json().catch(() => ({}))) as any;
+      if (!laneRes.ok) {
+        throw new Error(String(laneData?.error || 'Could not validate email role lane.'));
+      }
+      if (!Boolean(laneData?.isUserLaneAllowed)) {
+        const reservedLane = String(laneData?.reservedLane || '').toLowerCase();
+        if (reservedLane === 'sw') {
+          throw new Error('This email is reserved for Social Worker login. Please use a separate user email.');
+        }
+        if (reservedLane === 'admin') {
+          throw new Error('This email is reserved for Admin login. Please use a separate user email.');
+        }
+        throw new Error('This email is reserved for another portal role. Please use a separate user email.');
+      }
+
+      const userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
       const newUser = userCredential.user;
       
       const displayName = `${firstName} ${lastName}`.trim();
@@ -128,6 +149,8 @@ function SignUpPageContent() {
         errorMessage = 'This email is already in use. Please try logging in instead.';
       } else if (authError.code === 'auth/weak-password') {
         errorMessage = 'The password is too weak. Please use at least 6 characters.';
+      } else if ((err as any) instanceof Error && (err as any).message) {
+        errorMessage = String((err as any).message);
       }
       setError(errorMessage);
     } finally {

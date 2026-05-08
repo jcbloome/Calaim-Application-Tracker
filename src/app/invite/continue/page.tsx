@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, useUser } from '@/firebase';
@@ -27,11 +27,43 @@ function ContinueInvitePageContent() {
   const [memberDob, setMemberDob] = useState('');
   const [isLinking, setIsLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [laneError, setLaneError] = useState<string | null>(null);
 
   const canSubmit = useMemo(
-    () => Boolean(applicationIdInput.trim() && memberLastName.trim() && memberDob.trim() && user),
-    [applicationIdInput, memberLastName, memberDob, user]
+    () => Boolean(applicationIdInput.trim() && memberLastName.trim() && memberDob.trim() && user && !laneError),
+    [applicationIdInput, memberLastName, memberDob, user, laneError]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!auth?.currentUser) {
+        if (!cancelled) setLaneError(null);
+        return;
+      }
+      try {
+        const tokenResult = await auth.currentUser.getIdTokenResult();
+        const claims = (tokenResult?.claims || {}) as Record<string, any>;
+        if (!cancelled) {
+          if (Boolean(claims.socialWorker)) {
+            setLaneError('This account is assigned to Social Worker login. Use a dedicated user email to continue invite applications.');
+            return;
+          }
+          if (Boolean(claims.admin) || Boolean(claims.superAdmin)) {
+            setLaneError('This account is assigned to Admin login. Use a dedicated user email to continue invite applications.');
+            return;
+          }
+          setLaneError(null);
+        }
+      } catch {
+        if (!cancelled) setLaneError(null);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth?.currentUser, user?.uid]);
 
   const onLink = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -122,6 +154,12 @@ function ContinueInvitePageContent() {
 
             {!isUserLoading && user && (
               <form onSubmit={onLink} className="space-y-4">
+                {laneError && (
+                  <Alert variant="destructive">
+                    <AlertTitle>Portal role mismatch</AlertTitle>
+                    <AlertDescription>{laneError}</AlertDescription>
+                  </Alert>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="invite-application-id">Application ID</Label>
                   <Input

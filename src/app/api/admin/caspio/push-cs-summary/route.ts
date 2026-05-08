@@ -54,6 +54,11 @@ const MONTHLY_INCOME_FIELD = 'Monthly_Income';
 const MCO_AND_TIER_FIELD = 'MCO_and_Tier';
 const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
 const KAISER_STATUS_FIELD = 'Kaiser_Status';
+const KAISER_STAFF_ASSIGNMENT_FIELD_CANDIDATES = [
+  'Kaiser_Staff_Assignment',
+  'Kaiser_Staff_Assigned',
+  'Kaiser_Staff',
+];
 const PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES = [
   'Pre_Assessment_Care_Needs_Notes',
   'Pre_Assessment_Notes',
@@ -320,13 +325,29 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
   }
   if (normalizedTarget === 'ispfacilityname' || normalizedTarget === 'isplocationname') {
     const ispFacilityNameValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'currentLocationName',
       'ispFacilityName',
       'ISP_Facility_Name',
       'ispLocationName',
       'ISPLocationName',
       'ispFacility',
+      'rcfeName',
+      'RCFE_Name',
     ]);
     if (hasValue(ispFacilityNameValue)) return ispFacilityNameValue;
+  }
+  if (normalizedTarget === 'ispcurrentlocation') {
+    const currentLocationNameValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'currentLocationName',
+      'ispFacilityName',
+      'ISP_Facility_Name',
+      'ispLocationName',
+      'ISPLocationName',
+      'ispFacility',
+      'rcfeName',
+      'RCFE_Name',
+    ]);
+    if (hasValue(currentLocationNameValue)) return currentLocationNameValue;
   }
   for (const [key, value] of Object.entries(applicationData)) {
     if (normalizeFieldName(key) === normalizedTarget && value !== undefined && value !== null && value !== '') {
@@ -717,7 +738,7 @@ export async function POST(request: NextRequest) {
     );
     const assignedStaffName = clean(applicationData?.assignedStaffName);
     const assignedStaffId = clean(applicationData?.assignedStaffId);
-    const requestedCalAIMStatus = clean(applicationData?.caspioCalAIMStatus || applicationData?.CalAIM_Status);
+    const requestedCalAIMStatusRaw = clean(applicationData?.caspioCalAIMStatus || applicationData?.CalAIM_Status);
     const requestedKaiserStatus = clean(applicationData?.kaiserStatus || applicationData?.Kaiser_Status);
     const requestedSocialWorkerHold = clean(
       applicationData?.holdForSocialWorkerStatus ||
@@ -744,6 +765,14 @@ export async function POST(request: NextRequest) {
       applicationData?.healthPlan || applicationData?.CalAIM_MCO || applicationData?.calaimMco
     ).toLowerCase();
     const isKaiserApplication = normalizedHealthPlan === 'kaiser' || normalizedHealthPlan.includes('kaiser');
+    const requestedCalAIMStatus = (() => {
+      if (/^authorized$/i.test(requestedCalAIMStatusRaw)) return 'Authorized';
+      if (/^pending$/i.test(requestedCalAIMStatusRaw)) return 'Pending';
+      // In Kaiser auth-request flow, UI can display/store T2038 Requested while
+      // CalAIM_Status in Caspio must remain Pending/Authorized.
+      if (isKaiserApplication && /^t2038\s*requested$/i.test(requestedCalAIMStatusRaw)) return 'Pending';
+      return requestedCalAIMStatusRaw;
+    })();
     if (!firstName || !lastName) {
       return NextResponse.json(
         { success: false, message: 'Member first and last name are required.' },
@@ -932,8 +961,6 @@ export async function POST(request: NextRequest) {
         memberData[clientIdField] = generatedClientId2;
       }
     }
-    // Do not auto-write Kaiser assignment during push; some Caspio environments
-    // reject this field and return InternalError. Staff can manage assignment directly in Caspio.
     memberData[CALAIM_STATUS_FIELD] = requestedCalAIMStatus;
     if (isKaiserApplication && requestedKaiserStatus) {
       memberData[KAISER_STATUS_FIELD] = requestedKaiserStatus;
@@ -946,6 +973,26 @@ export async function POST(request: NextRequest) {
     memberFieldNames.forEach((name) => {
       fieldNameByNormalized.set(normalizeFieldName(name), name);
     });
+    const requestedKaiserStaffAssigned = clean(
+      applicationData?.kaiserStaffAssigned ||
+      applicationData?.Kaiser_Staff_Assignment ||
+      assignedStaffName ||
+      assignedStaffId
+    );
+    if (isKaiserApplication && requestedKaiserStaffAssigned) {
+      const kaiserStaffFieldName =
+        KAISER_STAFF_ASSIGNMENT_FIELD_CANDIDATES.find((name) =>
+          fieldNameByNormalized.has(normalizeFieldName(name))
+        ) ||
+        memberFieldNames.find((name) => {
+          const normalized = normalizeFieldName(name);
+          return normalized.includes('kaiser') && normalized.includes('staff') && normalized.includes('assign');
+        }) ||
+        '';
+      if (kaiserStaffFieldName) {
+        memberData[kaiserStaffFieldName] = requestedKaiserStaffAssigned;
+      }
+    }
     const mappedMedicalField = Object.keys(memberData).find((fieldName) => looksLikeMedicalNumberField(fieldName)) || '';
     const mediCalFieldName =
       clean(mappedMedicalField) ||

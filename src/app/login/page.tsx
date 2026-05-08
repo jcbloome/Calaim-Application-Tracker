@@ -100,6 +100,7 @@ function LoginPageContent() {
         safeLocalStorageRemove('calaim_session_type');
         // best-effort: clear SW server session cookie (if present)
         fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
+        fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
         await auth.signOut().catch(() => null);
         return;
       }
@@ -146,6 +147,8 @@ function LoginPageContent() {
         localStorage.removeItem('calaim_session_type');
         localStorage.setItem('calaim_session_type', 'user');
         localStorage.removeItem('calaim_admin_context');
+        await fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
+        await fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
       } catch {
         // ignore
       }
@@ -168,35 +171,25 @@ function LoginPageContent() {
         emailVerified: userCredential.user.emailVerified
       });
 
-      // If this account has admin access, immediately establish admin session context
-      // (cookie + custom claims) and switch session type to prevent portal isolation issues.
+      // Enforce lane separation: this portal is for end-users only.
+      const tokenResult = await userCredential.user.getIdTokenResult();
+      const claims = (tokenResult?.claims || {}) as Record<string, any>;
+      if (Boolean(claims.socialWorker)) {
+        await auth.signOut().catch(() => null);
+        setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
+        return;
+      }
+      if (Boolean(claims.admin) || Boolean(claims.superAdmin)) {
+        await auth.signOut().catch(() => null);
+        setError('This email is assigned to Admin login. Please sign in at /admin/login.');
+        return;
+      }
+
+      // Keep /login in the user lane; do not bootstrap admin sessions here.
       try {
-        const idToken = await userCredential.user.getIdToken();
-        const sessionResponse = await fetch('/api/auth/admin-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken }),
-        });
-        if (sessionResponse.ok) {
-          // Force refresh and verify admin claim before redirecting to admin.
-          await userCredential.user.getIdToken(true);
-          const tokenResult = await userCredential.user.getIdTokenResult();
-          if (Boolean((tokenResult?.claims as any)?.admin)) {
-            try {
-              localStorage.removeItem('calaim_session_type');
-              localStorage.setItem('calaim_session_type', 'admin');
-              localStorage.removeItem('calaim_admin_context');
-            } catch {
-              // ignore
-            }
-            enhancedToast.success('Admin access detected', 'Redirecting to the admin portal…');
-            router.replace('/admin');
-            setIsLoading(false);
-            return;
-          }
-        }
+        // no-op block kept for existing try/catch shape
       } catch {
-        // If the user isn't an admin, admin-session will fail. Ignore and continue as a normal user.
+        // no-op
       }
 
       // Track login + online portal session.

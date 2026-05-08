@@ -58,6 +58,7 @@ function SWLoginPageContent() {
       safeLocalStorageRemove('calaim_session_type');
       clearStoredSwLoginDay();
       fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
+      fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
       auth.signOut().catch(() => null);
     }
   }, [authLoading, currentUser]);
@@ -128,6 +129,8 @@ function SWLoginPageContent() {
         localStorage.removeItem('calaim_session_type');
         localStorage.setItem('calaim_session_type', 'sw');
         localStorage.removeItem('calaim_admin_context');
+        await fetch('/api/auth/admin-session', { method: 'DELETE' }).catch(() => null);
+        await fetch('/api/auth/sw-session', { method: 'DELETE' }).catch(() => null);
       } catch {
         // ignore
       }
@@ -334,7 +337,7 @@ function SWLoginPageContent() {
             <div className="mt-6 space-y-3">
               <div className="text-center">
                 <Link 
-                  href="/reset-password" 
+                  href="/sw-reset-password" 
                   className="text-sm text-primary hover:underline flex items-center justify-center gap-1"
                 >
                   <Lock className="h-4 w-4" />

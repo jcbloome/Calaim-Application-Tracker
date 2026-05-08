@@ -1749,7 +1749,6 @@ export default function CreateApplicationPage() {
         { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
         { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Primary Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
-        { name: 'Alternative Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
         { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
@@ -2031,7 +2030,7 @@ export default function CreateApplicationPage() {
     }
   };
 
-  // Phone number formatting function
+  // Contact phone formatting function (xxx-xxx-xxxx)
   const formatPhoneNumber = (value: string) => {
     // Remove all non-numeric characters
     const phoneNumber = value.replace(/\D/g, '');
@@ -2039,30 +2038,27 @@ export default function CreateApplicationPage() {
     // Limit to 10 digits
     const limitedPhoneNumber = phoneNumber.substring(0, 10);
     
-    // Format as xxx.xxx.xxxx
-    if (limitedPhoneNumber.length >= 6) {
-      return `${limitedPhoneNumber.substring(0, 3)}.${limitedPhoneNumber.substring(3, 6)}.${limitedPhoneNumber.substring(6)}`;
-    } else if (limitedPhoneNumber.length >= 3) {
-      return `${limitedPhoneNumber.substring(0, 3)}.${limitedPhoneNumber.substring(3)}`;
-    } else {
-      return limitedPhoneNumber;
+    // Format as xxx-xxx-xxxx
+    if (limitedPhoneNumber.length <= 3) return limitedPhoneNumber;
+    if (limitedPhoneNumber.length <= 6) {
+      return `${limitedPhoneNumber.substring(0, 3)}-${limitedPhoneNumber.substring(3)}`;
     }
+    return `${limitedPhoneNumber.substring(0, 3)}-${limitedPhoneNumber.substring(3, 6)}-${limitedPhoneNumber.substring(6)}`;
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formattedPhone = formatPhoneNumber(e.target.value);
-    setMemberData({ ...memberData, contactPhone: formattedPhone });
+    const formattedPhone = formatPhoneNumber(e.currentTarget.value || '');
+    setMemberData((prev) => ({ ...prev, contactPhone: formattedPhone }));
   };
 
   const formatMemberPhoneWithDashes = (value: string) => {
     const phoneNumber = value.replace(/\D/g, '');
     const limitedPhoneNumber = phoneNumber.substring(0, 10);
-    if (limitedPhoneNumber.length >= 6) {
-      return `${limitedPhoneNumber.substring(0, 3)}-${limitedPhoneNumber.substring(3, 6)}-${limitedPhoneNumber.substring(6)}`;
-    } else if (limitedPhoneNumber.length >= 3) {
+    if (limitedPhoneNumber.length <= 3) return limitedPhoneNumber;
+    if (limitedPhoneNumber.length <= 6) {
       return `${limitedPhoneNumber.substring(0, 3)}-${limitedPhoneNumber.substring(3)}`;
     }
-    return limitedPhoneNumber;
+    return `${limitedPhoneNumber.substring(0, 3)}-${limitedPhoneNumber.substring(3, 6)}-${limitedPhoneNumber.substring(6)}`;
   };
 
   const parseServiceRequestPdfAndApply = async (fileOverride?: File | null) => {
@@ -2562,7 +2558,6 @@ export default function CreateApplicationPage() {
         { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
         { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Primary Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
-        { name: 'Alternative Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
         { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
@@ -3797,10 +3792,17 @@ export default function CreateApplicationPage() {
                 <Label htmlFor="contactPhone">Contact Phone {intakeType !== 'kaiser_auth_received_via_ils' ? '*' : ''}</Label>
                 <Input
                   id="contactPhone"
-                  type="tel"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  maxLength={12}
+                  placeholder="xxx-xxx-xxxx"
                   value={memberData.contactPhone || ''}
                   onChange={handlePhoneChange}
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tip: You can type numbers with or without dashes (for example, 6613541234 or 661-354-1234).
+                </p>
               </div>
               <div>
                 <Label htmlFor="contactRelationship">Relationship to Member</Label>
