@@ -2158,8 +2158,13 @@ export default function CreateApplicationPage() {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Vision parsing failed');
+          const errorData = await response.json().catch(() => ({} as any));
+          const errorMessage = String(errorData?.error || 'Vision parsing failed').trim();
+          const errorDetails = String(errorData?.details || '').trim();
+          const combinedMessage = errorDetails
+            ? `${errorMessage} ${errorDetails}`
+            : errorMessage;
+          throw new Error(combinedMessage);
         }
 
         const visionResult = await response.json();
