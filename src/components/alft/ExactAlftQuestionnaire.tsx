@@ -604,7 +604,7 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
         id: 'p13_commentary_section',
         label: 'Commentary section',
         type: 'textarea',
-        rows: 12,
+        rows: 18,
       },
       { id: 'p14_additional_details', label: 'Additional details / RN commentary', type: 'textarea', rows: 4 },
       { id: 'p14_print_name', label: 'Print name', type: 'text' },
@@ -679,7 +679,9 @@ export function ExactAlftQuestionnaire({
                       value={String(value)}
                       placeholder={q.placeholder}
                       onChange={(e) => onChange(q.id, e.target.value)}
-                      className="min-h-[72px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className={`w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${
+                        q.id === 'p13_commentary_section' ? 'min-h-[280px]' : 'min-h-[72px]'
+                      }`}
                       rows={q.rows ?? 3}
                     />
                   ) : null}

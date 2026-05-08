@@ -6,7 +6,7 @@ import { useAuth, useFirestore } from '@/firebase';
 import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
-import { ExactAlftQuestionnaire, EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
+import { EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -453,6 +453,20 @@ export default function SwKaiserAlftPage() {
     }
   }, [auth]);
 
+  // ── Answer helpers (dummy-preview identical editor behavior) ─────────────────
+
+  const setSingleAnswer = (id: string, value: string) => {
+    setAnswers((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const toggleMultiAnswer = (id: string, value: string) => {
+    setAnswers((prev) => {
+      const current = Array.isArray(prev[id]) ? (prev[id] as string[]) : [];
+      const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+      return { ...prev, [id]: next };
+    });
+  };
+
   // ── Save draft ────────────────────────────────────────────────────────────────
 
   const saveDraft = useCallback(() => {
@@ -733,8 +747,6 @@ export default function SwKaiserAlftPage() {
 
   return (
     <div className="alft-sw-tool mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
-      <SwAlftInstructionBox />
-
       {/* ── Toolbar ── */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-white p-3 print:hidden">
         <div className="min-w-0">
@@ -776,53 +788,82 @@ export default function SwKaiserAlftPage() {
               Print / PDF
             </Button>
           )}
-          {/* SW signature before submit */}
-          <div className="flex items-center gap-1.5 border rounded-md px-2 bg-white">
-            <span className="text-[10px] text-zinc-500 whitespace-nowrap">Expected visit:</span>
-            <input
-              type="date"
-              value={expectedVisitDate}
-              onChange={(e) => setExpectedVisitDate(e.target.value)}
-              className="h-7 w-36 bg-transparent text-xs focus:outline-none border-b border-zinc-400"
-              title="Expected visit date (required for RN Visit Assigner reminders)"
-            />
-          </div>
-          <div className="flex items-center gap-1.5 border rounded-md px-2 bg-white">
-            <span className="text-[10px] text-zinc-500 whitespace-nowrap">Sign:</span>
-            <input
-              type="text"
-              value={swSignature}
-              onChange={(e) => setSwSignature(e.target.value)}
-              placeholder="Type your full name…"
-              className="h-7 w-40 bg-transparent text-xs focus:outline-none border-b border-zinc-400 placeholder:text-zinc-400"
-              title="Type your full name as your MSW signature"
-            />
-          </div>
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={submitting || !swSignature.trim()}
-            className="bg-green-600 hover:bg-green-700 text-white"
-          >
-            {submitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
-            {submitting ? 'Submitting…' : 'Sign & Submit'}
-          </Button>
         </div>
       </div>
 
-      {/* ── Edit mode: exact shared editor (mirrors admin portal) ── */}
+      {/* ── Edit mode: compact dummy-preview identical editor ── */}
       {mode === 'edit' && (
         <div className="mb-4 space-y-3 rounded-md border border-zinc-200 bg-white p-3 print:hidden">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold">ALFT Form — {selectedMember.memberName}</div>
-              <div className="text-xs text-zinc-500">Same question layout as admin ALFT editor. Use Preview to check formatting before submitting.</div>
-            </div>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {PAGE_LAYOUT.map((layout) => {
+              const source = SOURCE.find((p) => p.id === layout.sourceId);
+              const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
+              return (
+                <details key={`editor-${layout.number}`} className="rounded border border-zinc-200 p-2">
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-700">
+                    Page {layout.number}: {layout.title}
+                  </summary>
+                  <div className="mt-2 grid grid-cols-1 gap-2 xl:grid-cols-2">
+                    {questions.map((q) => (
+                      <div
+                        key={`editor-field-${q.id}`}
+                        className={`rounded border border-zinc-100 bg-zinc-50 p-2 ${isLongText(q) ? 'xl:col-span-2' : ''}`}
+                      >
+                        <div className="mb-1 text-[11px] font-medium leading-tight text-zinc-800">{formatLabel(q.label)}</div>
+
+                        {q.type === 'text' ? (
+                          <input
+                            value={String(answers[q.id] || '')}
+                            onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                            className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs"
+                          />
+                        ) : null}
+
+                        {q.type === 'textarea' ? (
+                          <textarea
+                            value={String(answers[q.id] || '')}
+                            onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                            rows={isLargeCommentary(q) ? 12 : Math.min(Math.max(q.rows || 3, 3), 6)}
+                            className={`w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs ${isLargeCommentary(q) ? 'min-h-[220px]' : ''}`}
+                          />
+                        ) : null}
+
+                        {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
+                          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
+                            {q.options.map((opt) => (
+                              <label key={`editor-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[11px]">
+                                <input
+                                  type="radio"
+                                  name={`edit-${q.id}`}
+                                  checked={String(answers[q.id] || '') === opt.value}
+                                  onChange={() => setSingleAnswer(q.id, opt.value)}
+                                />
+                                <span>{opt.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {q.type === 'checkboxGroup' && q.options?.length ? (
+                          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
+                            {q.options.map((opt) => {
+                              const selected = Array.isArray(answers[q.id]) ? (answers[q.id] as string[]).includes(opt.value) : false;
+                              return (
+                                <label key={`editor-check-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[11px]">
+                                  <input type="checkbox" checked={selected} onChange={() => toggleMultiAnswer(q.id, opt.value)} />
+                                  <span>{opt.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
           </div>
-          <ExactAlftQuestionnaire
-            answers={answers as Record<string, string | string[]>}
-            onChange={(id, value) => setAnswers((prev) => ({ ...prev, [id]: value }))}
-          />
         </div>
       )}
 
@@ -921,6 +962,52 @@ export default function SwKaiserAlftPage() {
             </section>
           );
         })}
+      </div>
+
+      {/* ── Dedicated E-sign + submit section ─────────────────────────────────── */}
+      <div className="mt-4 rounded-md border bg-white p-4 print:hidden">
+        <div className="mb-3">
+          <div className="text-sm font-semibold">E-signature & Submit</div>
+          <div className="text-xs text-zinc-500">
+            Type your full name as your electronic signature, then submit to send this ALFT to the next review step.
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-zinc-700">Expected visit date</label>
+            <input
+              type="date"
+              value={expectedVisitDate}
+              onChange={(e) => setExpectedVisitDate(e.target.value)}
+              className="h-9 w-full rounded border border-zinc-300 bg-white px-2 text-sm"
+              title="Expected visit date (required for RN Visit Assigner reminders)"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-zinc-700">E-signature (full name)</label>
+            <input
+              type="text"
+              value={swSignature}
+              onChange={(e) => setSwSignature(e.target.value)}
+              placeholder="Type your full legal name…"
+              className="h-9 w-full rounded border border-zinc-300 bg-white px-2 text-sm placeholder:text-zinc-400"
+              title="Type your full name as your MSW signature"
+            />
+          </div>
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="text-xs text-zinc-500">
+            Next step: ALFT manager review queue.
+          </div>
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting || !swSignature.trim()}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            {submitting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
+            {submitting ? 'Submitting…' : 'Submit to Next Step'}
+          </Button>
+        </div>
       </div>
 
       {/* ── Print/PDF styles ── */}
