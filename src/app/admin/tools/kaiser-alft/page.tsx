@@ -29,6 +29,9 @@ export default function KaiserAlftHubPage() {
             <Button asChild size="sm" variant="outline">
               <Link href="/admin/tools/kaiser-alft/queues">Open Assignment + Intake</Link>
             </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/admin/tools/kaiser-alft/instructions">Open ALFT Instructions</Link>
+            </Button>
           </div>
         </CardContent>
       </Card>

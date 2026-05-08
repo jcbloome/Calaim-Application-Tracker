@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useAuth, useFirestore } from '@/firebase';
 import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
-import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
+import { ExactAlftQuestionnaire, EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -167,15 +168,7 @@ const splitName = (member: KaiserMember) => {
 };
 
 function buildDefaultAnswers(): Record<string, AnswerValue> {
-  const out: Record<string, AnswerValue> = {};
-  SOURCE.forEach((page) => {
-    page.questions.forEach((q) => {
-      if (q.type === 'checkboxGroup') out[q.id] = [];
-      else if (q.type === 'radio' || q.type === 'select') out[q.id] = q.options?.[0]?.value || '';
-      else out[q.id] = '';
-    });
-  });
-  return out;
+  return createInitialExactAlftAnswers() as Record<string, AnswerValue>;
 }
 
 function preFillFromMember(
@@ -305,8 +298,11 @@ function SwAlftInstructionBox() {
           <li>Complete all ALFT sections before submitting. Do not leave required clinical sections blank.</li>
           <li>For level-of-care scoring, evaluate the member on their worst day, not their best day, because needs fluctuate.</li>
           <li>In the ALFT commentary section, include only pertinent health-care information that supports tier-level decisions.</li>
+          <li>
+            Commentary must accurately reflect observed conditions and supervision needs (for example: dementia with constant
+            supervision/redirecting needs, or need for awake overnight staff).
+          </li>
           <li>Avoid non-clinical commentary (for example, "member seems happy") unless it directly affects care needs or safety.</li>
-          <li>Do not escalate minor infractions alone unless they create a clear member safety risk.</li>
         </ul>
       </AlertDescription>
     </Alert>
@@ -456,15 +452,6 @@ export default function SwKaiserAlftPage() {
       // best effort
     }
   }, [auth]);
-
-  // ── Answer helpers ────────────────────────────────────────────────────────────
-
-  const setSingle = (id: string, value: string) => setAnswers((p) => ({ ...p, [id]: value }));
-  const toggleMulti = (id: string, value: string) =>
-    setAnswers((p) => {
-      const cur = Array.isArray(p[id]) ? (p[id] as string[]) : [];
-      return { ...p, [id]: cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value] };
-    });
 
   // ── Save draft ────────────────────────────────────────────────────────────────
 
@@ -694,36 +681,47 @@ export default function SwKaiserAlftPage() {
           {filteredMembers.map((m) => {
             const hasDraft = Boolean(loadDraftLocally(m.id));
             return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => {
-                  selectMember(m);
-                  void markMemberViewed(m.id);
-                }}
-                className="flex w-full items-center gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/50 active:bg-muted"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">
-                  {m.memberName.charAt(0).toUpperCase()}
+              <div key={m.id} className="space-y-1">
+                <div className="flex justify-end">
+                  <Link
+                    href="/sw-portal/alft-instructions"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-medium text-blue-700 hover:underline"
+                  >
+                    ALFT guidance for this application
+                  </Link>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{m.memberName}</span>
-                    {hasDraft && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-700 border-amber-300">
-                        Draft saved
-                      </Badge>
-                    )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    selectMember(m);
+                    void markMemberViewed(m.id);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/50 active:bg-muted"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">
+                    {m.memberName.charAt(0).toUpperCase()}
                   </div>
-                  <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-muted-foreground">
-                    {m.memberMrn && <span>MRN: {m.memberMrn}</span>}
-                    {m.ispCurrentLocation && <span>{m.ispCurrentLocation}</span>}
-                    {m.kaiserStatus && <span>Status: {m.kaiserStatus}</span>}
-                    {m.expectedVisitDate && <span>Expected visit: {m.expectedVisitDate}</span>}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{m.memberName}</span>
+                      {hasDraft && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-700 border-amber-300">
+                          Draft saved
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-muted-foreground">
+                      {m.memberMrn && <span>MRN: {m.memberMrn}</span>}
+                      {m.ispCurrentLocation && <span>{m.ispCurrentLocation}</span>}
+                      {m.kaiserStatus && <span>Status: {m.kaiserStatus}</span>}
+                      {m.expectedVisitDate && <span>Expected visit: {m.expectedVisitDate}</span>}
+                    </div>
                   </div>
-                </div>
-                <ChevronDown className="-rotate-90 h-4 w-4 shrink-0 text-muted-foreground" />
-              </button>
+                  <ChevronDown className="-rotate-90 h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              </div>
             );
           })}
         </div>
@@ -812,86 +810,19 @@ export default function SwKaiserAlftPage() {
         </div>
       </div>
 
-      {/* ── Edit mode: collapsible per-page editor ── */}
+      {/* ── Edit mode: exact shared editor (mirrors admin portal) ── */}
       {mode === 'edit' && (
         <div className="mb-4 space-y-3 rounded-md border border-zinc-200 bg-white p-3 print:hidden">
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">ALFT Form — {selectedMember.memberName}</div>
-              <div className="text-xs text-zinc-500">Fill in each section. Use Preview to check formatting before submitting.</div>
+              <div className="text-xs text-zinc-500">Same question layout as admin ALFT editor. Use Preview to check formatting before submitting.</div>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {PAGE_LAYOUT.map((layout) => {
-              const source = SOURCE.find((p) => p.id === layout.sourceId);
-              const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
-              return (
-                <details key={`editor-${layout.number}`} className="rounded border border-zinc-200 p-2" open={layout.number === 1}>
-                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-700 select-none">
-                    Page {layout.number}: {layout.title}
-                  </summary>
-                  <div className="mt-2 grid grid-cols-1 gap-2 xl:grid-cols-2">
-                    {questions.map((q) => (
-                      <div
-                        key={`ef-${q.id}`}
-                        className={`rounded border border-zinc-100 bg-zinc-50 p-2 ${isLongText(q) ? 'xl:col-span-2' : ''}`}
-                      >
-                        <div className="mb-1 text-[11px] font-medium leading-tight text-zinc-800">{formatLabel(q.label)}</div>
-
-                        {q.type === 'text' && (
-                          <input
-                            value={String(answers[q.id] || '')}
-                            onChange={(e) => setSingle(q.id, e.target.value)}
-                            className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs"
-                          />
-                        )}
-
-                        {q.type === 'textarea' && (
-                          <textarea
-                            value={String(answers[q.id] || '')}
-                            onChange={(e) => setSingle(q.id, e.target.value)}
-                            rows={isLargeCommentary(q) ? 10 : Math.min(Math.max(q.rows || 3, 3), 6)}
-                            className={`w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs ${isLargeCommentary(q) ? 'min-h-[180px]' : ''}`}
-                          />
-                        )}
-
-                        {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
-                          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
-                            {q.options.map((opt) => (
-                              <label key={opt.value} className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name={`sw-alft-${q.id}`}
-                                  checked={String(answers[q.id] || '') === opt.value}
-                                  onChange={() => setSingle(q.id, opt.value)}
-                                />
-                                {opt.label}
-                              </label>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {q.type === 'checkboxGroup' && q.options?.length ? (
-                          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
-                            {q.options.map((opt) => {
-                              const checked = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
-                              return (
-                                <label key={opt.value} className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer">
-                                  <input type="checkbox" checked={checked} onChange={() => toggleMulti(q.id, opt.value)} />
-                                  {opt.label}
-                                </label>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              );
-            })}
-          </div>
+          <ExactAlftQuestionnaire
+            answers={answers as Record<string, string | string[]>}
+            onChange={(id, value) => setAnswers((prev) => ({ ...prev, [id]: value }))}
+          />
         </div>
       )}
 

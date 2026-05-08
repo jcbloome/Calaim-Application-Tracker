@@ -3,10 +3,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/firebase';
+import { useAuth, useFirestore } from '@/firebase';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { computeSwVisitStatusFlags } from '@/lib/sw-visit-status';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -100,9 +101,10 @@ const formatDate = (iso: string) =>
 
 export default function SWHomePage() {
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isSocialWorker, isLoading: swLoading } = useSocialWorker();
+  const { user, socialWorkerData, isSocialWorker, isLoading: swLoading } = useSocialWorker();
 
   const swEmail = useMemo(
     () => String((user as any)?.email || auth?.currentUser?.email || '').trim().toLowerCase(),
@@ -125,6 +127,8 @@ export default function SWHomePage() {
   const [drafts, setDrafts] = useState<DraftVisit[]>([]);
   const [expandedRcfes, setExpandedRcfes] = useState<Set<string>>(new Set());
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [alftAssignedCount, setAlftAssignedCount] = useState(0);
+  const [alftLoading, setAlftLoading] = useState(false);
 
   // ── Data loading ─────────────────────────────────────────────────────────────
 
@@ -207,6 +211,36 @@ export default function SWHomePage() {
     if (swLoading || !isSocialWorker || hasLoadedOnce) return;
     void loadAll({ silent: true });
   }, [hasLoadedOnce, isSocialWorker, loadAll, swLoading]);
+
+  useEffect(() => {
+    const loadAlftAssignments = async () => {
+      if (!firestore || swLoading || !isSocialWorker || !swEmail) return;
+      setAlftLoading(true);
+      try {
+        const swId = String((socialWorkerData as any)?.sw_id || (socialWorkerData as any)?.SW_ID || '').trim().toLowerCase();
+        const snaps = await Promise.all([
+          getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwEmail', '==', swEmail))),
+          swId
+            ? getDocs(query(collection(firestore, 'alft_assignments'), where('assignedSwId', '==', swId)))
+            : Promise.resolve(null as any),
+        ]);
+        const docs = [...(snaps[0]?.docs || []), ...(snaps[1]?.docs || [])];
+        const uniq = new Set<string>();
+        docs.forEach((d: any) => {
+          const row = d.data() as any;
+          const status = String(row?.status || '').trim().toLowerCase();
+          if (status === 'completed') return;
+          uniq.add(String(row?.memberId || d.id || '').trim());
+        });
+        setAlftAssignedCount(uniq.size);
+      } catch {
+        setAlftAssignedCount(0);
+      } finally {
+        setAlftLoading(false);
+      }
+    };
+    void loadAlftAssignments();
+  }, [firestore, isSocialWorker, socialWorkerData, swEmail, swLoading]);
 
   // ── Derived state ─────────────────────────────────────────────────────────────
 
@@ -296,6 +330,25 @@ export default function SWHomePage() {
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           <span className="ml-1.5 hidden sm:inline">Refresh</span>
         </Button>
+      </div>
+
+      <div className="mb-6 rounded-xl border bg-card p-4 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-sm font-semibold">ALFT SW Portal</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Access ALFT assessments for your specifically assigned members.
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-xs">
+              {alftLoading ? 'Loading…' : `${alftAssignedCount} assigned`}
+            </Badge>
+            <Button asChild size="sm" variant="outline" className="h-9">
+              <Link href="/sw-portal/alft-upload">Open ALFT queue</Link>
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* ── Progress bar ── */}

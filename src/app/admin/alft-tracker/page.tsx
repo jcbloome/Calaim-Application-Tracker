@@ -1829,6 +1829,9 @@ export default function AdminAlftTrackerPage() {
                           toLabel(row.verificationSignoff?.verifiedByName) ||
                           toLabel(row.verificationSignoff?.verifiedByEmail) ||
                           'Unknown user';
+                        const swInviteSent = Boolean(row.workflowSteps?.swInviteSent) || Boolean(row.workflowStepsAt?.swInviteSentAt);
+                        const swInviteSentAtMs = toMs(row.workflowStepsAt?.swInviteSentAt);
+                        const swInviteSentAtLabel = swInviteSentAtMs ? fmtTimeline(swInviteSentAtMs) : '';
                         const orderedSteps = assignmentWorkflowSteps(row);
                         const doneCount = orderedSteps.filter((s) => s.done).length;
                         const stageBlock = assignmentStageBlock(row);
@@ -1933,14 +1936,27 @@ export default function AdminAlftTrackerPage() {
                                 !isVerified ||
                                 (!row.assignedSwId && !row.assignedSwName)
                               }
-                              onClick={() => void startWorkflowFromIntake(row)}
+                              onClick={() => {
+                                if (swInviteSent) {
+                                  const proceed = window.confirm(
+                                    `SW email was already sent${swInviteSentAtLabel ? ` at ${swInviteSentAtLabel}` : ''}. Re-send now?`
+                                  );
+                                  if (!proceed) return;
+                                }
+                                void startWorkflowFromIntake(row);
+                              }}
                             >
                               <span className={isVerified ? 'text-blue-700' : 'text-slate-400'}>{isVerified ? '•' : '○'}</span>{' '}
-                              4) {Boolean(row.workflowSteps?.swInviteSent) || Boolean(row.workflowStepsAt?.swInviteSentAt) ? 'Re-send SW email' : 'Send SW email'} with timestamp (enabled after Step 2)
+                              4) {swInviteSent ? 'Re-send SW email' : 'Send SW email'} with timestamp (enabled after Step 2)
                               {startingWorkflowFor === (row.memberId || row.id) ? (
                                 <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
                               ) : null}
                             </button>
+                            <div className="rounded border bg-white px-2 py-1 text-xs text-muted-foreground">
+                              {swInviteSent
+                                ? `SW email already sent${swInviteSentAtLabel ? ` at ${swInviteSentAtLabel}` : ''}. Click Step 4 if you want to re-send.`
+                                : 'SW email not sent yet.'}
+                            </div>
                             <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
                               <span className="text-blue-700">•</span> 5) Social worker completes/submits ALFT with signature (timestamp captured).
                             </div>

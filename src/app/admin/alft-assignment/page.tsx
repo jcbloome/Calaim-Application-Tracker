@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
@@ -53,6 +53,7 @@ type KaiserMember = {
   ispContactEmail: string;
   ispContactConfirmDate: string;
   socialWorkerAssigned: string;
+  socialWorkerEmail: string;
   sourceRecord?: Record<string, unknown>;
 };
 
@@ -169,16 +170,33 @@ export default function AdminAlftAssignmentPage() {
   const [assigning, setAssigning] = useState<string | null>(null); // memberId being saved
   const [resetting, setResetting] = useState<string | null>(null);
   const [prefillSourceMode, setPrefillSourceMode] = useState<'cs_summary_app' | 'caspio_selected_fields'>('caspio_selected_fields');
-  const swHydrationDoneRef = useRef(false);
+  const [swDirectoryById, setSwDirectoryById] = useState<Record<string, { name: string; email: string }>>({});
 
   // ── Load Kaiser members (RN Visit Needed) ─────────────────────────────────────
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/kaiser-members', { cache: 'no-store' });
-      const data = await res.json().catch(() => ({} as any));
-      if (!res.ok || !data?.success) throw new Error(data?.error || `HTTP ${res.status}`);
+      const [membersRes, staffRes] = await Promise.all([
+        fetch('/api/kaiser-members', { cache: 'no-store' }),
+        fetch('/api/caspio-staff', { cache: 'no-store' }).catch(() => null),
+      ]);
+      const data = await membersRes.json().catch(() => ({} as any));
+      if (!membersRes.ok || !data?.success) throw new Error(data?.error || `HTTP ${membersRes.status}`);
+
+      const swById: Record<string, { name: string; email: string }> = {};
+      if (staffRes?.ok) {
+        const staffPayload = await staffRes.json().catch(() => ({} as any));
+        const staffRows = Array.isArray(staffPayload?.staff) ? staffPayload.staff : [];
+        staffRows.forEach((row: any) => {
+          const swId = String(row?.sw_id || '').trim().toLowerCase();
+          if (!swId) return;
+          const name = normalizeSwNameForUi(String(row?.name || row?.sw_name || '').trim());
+          const email = String(row?.email || '').trim().toLowerCase();
+          swById[swId] = { name, email };
+        });
+      }
+      setSwDirectoryById(swById);
 
       const next: KaiserMember[] = (Array.isArray(data?.members) ? data.members : [])
         .filter((m: any) => isRnVisitNeededStatus(m?.Kaiser_Status ?? m?.kaiserStatus))
@@ -220,7 +238,11 @@ export default function AdminAlftAssignmentPage() {
               m?.ISP_Confirm_Date ||
               ''
           ).trim(),
-          socialWorkerAssigned: String(m?.Social_Worker_Assigned || '').trim(),
+          socialWorkerAssigned:
+            swById[String(m?.SW_ID || m?.sw_id || '').trim().toLowerCase()]?.name ||
+            String(m?.Social_Worker_Assigned || '').trim(),
+          socialWorkerEmail:
+            swById[String(m?.SW_ID || m?.sw_id || '').trim().toLowerCase()]?.email || '',
           sourceRecord: m as Record<string, unknown>,
         }))
         .filter((m: KaiserMember) => Boolean(m.id))
@@ -251,13 +273,10 @@ export default function AdminAlftAssignmentPage() {
     return () => unsub();
   }, [firestore, isAdmin]);
 
-  // Hydrate Caspio SW fields into assignment docs automatically (no manual sync needed).
+  // Hydrate Caspio SW fields into assignment docs whenever Caspio data changes.
   useEffect(() => {
     if (!firestore || !isAdmin) return;
     if (members.length === 0) return;
-    if (swHydrationDoneRef.current) return;
-
-    swHydrationDoneRef.current = true;
     void (async () => {
       try {
         const adminEmail = String((user as any)?.email || auth?.currentUser?.email || '').trim().toLowerCase();
@@ -267,13 +286,17 @@ export default function AdminAlftAssignmentPage() {
         members.forEach((member) => {
           const swId = String(member.swId || '').trim().toLowerCase();
           const swName = normalizeSwNameForUi(String(member.socialWorkerAssigned || '').trim());
+          const swEmail = String(member.socialWorkerEmail || '').trim().toLowerCase();
           if (!swId && !swName) return;
 
           const existing = assignments[member.id];
           const existingSwId = String(existing?.assignedSwId || '').trim().toLowerCase();
-          const existingSwName = String(existing?.assignedSwName || '').trim().toLowerCase();
+          const existingSwName = normalizeSwNameForUi(String(existing?.assignedSwName || '').trim()).toLowerCase();
+          const existingSwEmail = String(existing?.assignedSwEmail || '').trim().toLowerCase();
           const alreadySynced =
-            existingSwId === swId && existingSwName === swName.toLowerCase();
+            existingSwId === swId &&
+            existingSwName === swName.toLowerCase() &&
+            existingSwEmail === swEmail;
           if (alreadySynced) return;
 
           const patch: Record<string, any> = {
@@ -291,7 +314,7 @@ export default function AdminAlftAssignmentPage() {
             ispCurrentAddressZip: member.ispCurrentAddressZip,
             ispFacilityName: member.ispFacilityName,
             assignedSwId: swId || null,
-            assignedSwEmail: '',
+            assignedSwEmail: swEmail || '',
             assignedSwName: swName || `SW ID ${member.swId}`,
             caspioSocialWorkerAssigned: member.socialWorkerAssigned,
             updatedAt: serverTimestamp(),
@@ -614,6 +637,9 @@ export default function AdminAlftAssignmentPage() {
                               Caspio SW: {normalizeSwNameForUi(m.socialWorkerAssigned || '') || 'Not set'}
                             </div>
                             <div className="text-[11px] text-muted-foreground">Caspio SW_ID: {m.swId || 'Not set'}</div>
+                            <div className="text-[11px] text-muted-foreground">
+                              Caspio SW Email: {m.socialWorkerEmail || swDirectoryById[String(m.swId || '').trim().toLowerCase()]?.email || 'Not set'}
+                            </div>
                             <Button
                               size="sm"
                               variant={assignment?.assignedSwId || assignment?.assignedSwName ? 'outline' : 'default'}

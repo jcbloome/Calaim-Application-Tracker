@@ -21,7 +21,7 @@ import {
   History,
   Home,
   LogOut,
-  UploadCloud,
+  FileText,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ export function SWTopNav({ className }: { className?: string }) {
 
   const moreActive = useMemo(
     () =>
-      ['/sw-portal/alft-upload', '/sw-portal/instructions'].some((h) => isActiveHref(pathname, h)),
+      ['/sw-portal/instructions'].some((h) => isActiveHref(pathname, h)),
     [pathname]
   );
 
@@ -223,6 +223,14 @@ export function SWTopNav({ className }: { className?: string }) {
         pathname={pathname}
       />
 
+      {/* ALFT Tool */}
+      <NavItem
+        href="/sw-portal/alft-upload"
+        icon={FileText}
+        label="ALFT Tool"
+        pathname={pathname}
+      />
+
       {/* More dropdown */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -243,11 +251,6 @@ export function SWTopNav({ className }: { className?: string }) {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-44">
-          <DropdownMenuItem asChild>
-            <Link href="/sw-portal/alft-upload" className="flex items-center gap-2">
-              <UploadCloud className="h-4 w-4" /> ALFT Upload
-            </Link>
-          </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link href="/sw-portal/instructions" className="flex items-center gap-2">
               <BookOpenText className="h-4 w-4" /> Instructions
