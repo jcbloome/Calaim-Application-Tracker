@@ -125,6 +125,7 @@ firebase apphosting:secrets:set RESEND_API_KEY
 firebase apphosting:secrets:set CRON_SECRET
 firebase apphosting:secrets:set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
 firebase apphosting:secrets:set GOOGLE_API_KEY
+firebase apphosting:secrets:set GEMINI_API_KEY
 ```
 
 If your Firebase CLI version does not support App Hosting secret commands yet, set the same values directly in the App Hosting backend secret configuration in Firebase Console.
