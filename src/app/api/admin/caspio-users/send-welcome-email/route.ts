@@ -54,6 +54,9 @@ const DEFAULT_WELCOME_SETTINGS: WelcomeSettings = {
   fromName: 'Connections CalAIM',
   fromEmail: 'noreply@carehomefinders.com',
 };
+const WELCOME_EMAIL_LOGO_URL =
+  'https://images.squarespace-cdn.com/content/v1/5513063be4b069b54e721157/e4e0f894-c7c1-4b7f-a715-6dab7fc055db/calaimlogosmall.jpg?format=2500w';
+const WELCOME_LEAD_LINE = 'Welcome Friend to the CalAIM Provider Portal!';
 const LEGACY_SUBJECTS = new Set([
   'Welcome to CalAIM Provider Portal - {{fullName}}',
   'Welcome to CalAIM Provider Portal',
@@ -116,6 +119,30 @@ const renderTemplate = (template: string, vars: Record<string, string>) => {
   return rendered;
 };
 
+const ensureWelcomeLeadLine = (bodyText: string) => {
+  const normalized = String(bodyText || '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return WELCOME_LEAD_LINE;
+  const lines = normalized.split('\n').map((line) => String(line || '').trim());
+  const firstNonEmptyIndex = lines.findIndex(Boolean);
+  if (firstNonEmptyIndex < 0) return WELCOME_LEAD_LINE;
+
+  const firstNonEmptyLine = lines[firstNonEmptyIndex];
+  const isExistingWelcomeLead = firstNonEmptyLine.toLowerCase() === WELCOME_LEAD_LINE.toLowerCase();
+  if (isExistingWelcomeLead) return normalized;
+
+  const legacyDuplicateLeads = new Set([
+    'welcome to connections calaim.',
+    'welcome to connections calaim portal!',
+    'welcome to connections calaim provider portal',
+  ]);
+  if (legacyDuplicateLeads.has(firstNonEmptyLine.toLowerCase())) {
+    lines.splice(firstNonEmptyIndex, 1);
+  }
+
+  const remaining = lines.join('\n').trim();
+  return remaining ? `${WELCOME_LEAD_LINE}\n\n${remaining}` : WELCOME_LEAD_LINE;
+};
+
 const htmlEscape = (value: string) =>
   String(value || '')
     .replace(/&/g, '&amp;')
@@ -140,11 +167,15 @@ const textToHtml = (bodyText: string, footerText: string) => {
   });
   return `
     <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.6; max-width: 640px;">
-      <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 18px; margin-bottom: 16px;">
-        <h2 style="margin: 0; color: #1d4ed8;">Welcome to Connections CalAIM Provider Portal</h2>
-      </div>
       ${withListsClosed}
       <hr style="margin: 20px 0; border: none; border-top: 1px solid #e5e7eb;" />
+      <div style="text-align: left; margin: 12px 0 10px;">
+        <img
+          src="${WELCOME_EMAIL_LOGO_URL}"
+          alt="Connections CalAIM"
+          style="display: block; width: 260px; max-width: 100%; height: auto; border: 0; background: transparent; margin: 0;"
+        />
+      </div>
       <p style="margin: 0; font-size: 12px; color: #64748b;">${htmlEscape(footerText)}</p>
     </div>
   `;
@@ -238,7 +269,7 @@ export async function POST(req: NextRequest) {
     };
 
     const subject = renderTemplate(settings.subjectTemplate, vars).trim() || 'Welcome to Connections CalAIM Provider Portal';
-    const textBody = renderTemplate(settings.bodyTemplate, vars).trim();
+    const textBody = ensureWelcomeLeadLine(renderTemplate(settings.bodyTemplate, vars).trim());
     const htmlBody = textToHtml(textBody, settings.footerText);
 
     const resendApiKey = String(process.env.RESEND_API_KEY || '').trim();
