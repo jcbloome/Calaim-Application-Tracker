@@ -2442,6 +2442,7 @@ function ApplicationDetailPageContent() {
   const [eligibilityPasteLoading, setEligibilityPasteLoading] = useState(false);
   const [isResettingEligibilityUploads, setIsResettingEligibilityUploads] = useState(false);
   const authorizedCalaimBackfillRef = useRef<string>('');
+  const healthNetMediCalBackfillRef = useRef<string>('');
   const [application, setApplication] = useState<Application | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [prePushNotesDraft, setPrePushNotesDraft] = useState('');
@@ -5964,6 +5965,42 @@ function ApplicationDetailPageContent() {
         setApplication((prev) => (prev ? ({ ...prev, ...updateData } as any) : prev));
       } catch (error) {
         console.warn('Failed to backfill Authorized CalAIM status for authorized Kaiser intake:', error);
+      }
+    })();
+  }, [application, applicationId, docRef]);
+
+  useEffect(() => {
+    if (!docRef || !application) return;
+    const planLower = String((application as any)?.healthPlan || '').trim().toLowerCase();
+    const isHealthNetPlanLocal =
+      planLower.includes('health net') ||
+      planLower.includes('healthnet') ||
+      planLower === 'hn';
+    if (!isHealthNetPlanLocal) return;
+
+    const appId = String((application as any)?.id || applicationId || '').trim();
+    const currentMrn = String((application as any)?.memberMrn || '').trim();
+    const memberMediCal = String(
+      (application as any)?.memberMediCalNum ||
+      (application as any)?.confirmMemberMediCalNum ||
+      ''
+    ).trim();
+    if (!appId || !memberMediCal || currentMrn) return;
+
+    const key = `${appId}:health-net-mrn:${memberMediCal}`;
+    if (healthNetMediCalBackfillRef.current === key) return;
+    healthNetMediCalBackfillRef.current = key;
+
+    void (async () => {
+      try {
+        const patch = {
+          memberMrn: memberMediCal,
+          lastUpdated: serverTimestamp(),
+        };
+        await setDoc(docRef, patch, { merge: true });
+        setApplication((prev) => (prev ? ({ ...prev, ...patch } as any) : prev));
+      } catch (error) {
+        console.warn('Failed to backfill Health Net MRN from Medi-Cal Number:', error);
       }
     })();
   }, [application, applicationId, docRef]);

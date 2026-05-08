@@ -765,6 +765,10 @@ export async function POST(request: NextRequest) {
       applicationData?.healthPlan || applicationData?.CalAIM_MCO || applicationData?.calaimMco
     ).toLowerCase();
     const isKaiserApplication = normalizedHealthPlan === 'kaiser' || normalizedHealthPlan.includes('kaiser');
+    const isHealthNetApplication =
+      normalizedHealthPlan.includes('health net') ||
+      normalizedHealthPlan.includes('healthnet') ||
+      normalizedHealthPlan === 'hn';
     const requestedCalAIMStatus = (() => {
       if (/^authorized$/i.test(requestedCalAIMStatusRaw)) return 'Authorized';
       if (/^pending$/i.test(requestedCalAIMStatusRaw)) return 'Pending';
@@ -868,8 +872,10 @@ export async function POST(request: NextRequest) {
     );
     const hintedMediCalNumber = clean(
       extractMediCalNumberFromApplication(applicationData as Record<string, any>) ||
+      (isHealthNetApplication ? hintedMrn : '') ||
       mappedMediCalEntry?.[1]
     );
+    const effectiveHintedMrn = clean(isHealthNetApplication ? hintedMrn || hintedMediCalNumber : hintedMrn);
     const applicationReference = clean(
       applicationData?.applicationId ||
       applicationData?.id ||
@@ -888,7 +894,7 @@ export async function POST(request: NextRequest) {
         if (existingRow) existingRowMatchSource = 'client_id2';
       }
     }
-    if (!existingRow && hintedMrn) {
+    if (!existingRow && effectiveHintedMrn) {
       const mrnFieldCandidates = [
         'MRN',
         'Member_MRN',
@@ -898,7 +904,7 @@ export async function POST(request: NextRequest) {
       ];
       for (const mrnField of mrnFieldCandidates) {
         if (existingRow) break;
-        const whereByMrn = buildEqualsClause(mrnField, hintedMrn);
+        const whereByMrn = buildEqualsClause(mrnField, effectiveHintedMrn);
         if (!whereByMrn) continue;
         existingRow = await trySearchMember(whereByMrn);
         if (existingRow) existingRowMatchSource = 'mrn';

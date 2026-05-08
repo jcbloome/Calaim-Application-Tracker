@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Brain, Database, FolderSync, ArrowRight, BarChart3 } from 'lucide-react';
+import { Brain, Database, FolderSync, ArrowRight, BarChart3, Users, Mail } from 'lucide-react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { Loader2 } from 'lucide-react';
@@ -51,6 +51,20 @@ const integrationTools = [
     icon: BarChart3,
     href: '/admin/statistics',
     color: 'text-emerald-600'
+  },
+  {
+    title: 'Caspio User Registration',
+    description: 'Review connect_tbl_userregistration cache and manually send onboarding welcome emails',
+    icon: Users,
+    href: '/admin/caspio-users-registration',
+    color: 'text-blue-600'
+  },
+  {
+    title: 'Welcoming User Screen',
+    description: 'caspio welcoming user email',
+    icon: Mail,
+    href: '/admin/system-configuration/welcoming-user-screen',
+    color: 'text-violet-600'
   }
 ];
 
