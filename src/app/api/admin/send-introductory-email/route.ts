@@ -106,12 +106,6 @@ function toHtmlBody(message: string): string {
         const loginMatch = item.match(/^Open your secure portal login:\s*(https?:\/\/\S+)/i);
         if (loginMatch) return renderPortalLinkAction('Portal Login', 'Open Portal', loginMatch[1]);
 
-        const signupMatch = item.match(/^Create your portal account \(if needed\):\s*(https?:\/\/\S+)/i);
-        if (signupMatch) return renderPortalLinkAction('Create Account', 'Create Account', signupMatch[1]);
-
-        const connectMatch = item.match(/^Connect application:\s*(https?:\/\/\S+)/i);
-        if (connectMatch) return renderPortalLinkAction('Connect Application', 'Connect App', connectMatch[1]);
-
         return `<li>${renderTextWithLinks(item)}</li>`;
       })
       .join('');
@@ -338,7 +332,7 @@ function buildDefaultDraft(params: {
     senderEmail,
   } = params;
   const greetingFirstName = getFirstNameOnly(contactName) || 'there';
-  const { loginUrl, signupUrl, inviteUrl } = buildPortalLinks({ applicationId, focusRequirementId, baseUrl });
+  const { loginUrl } = buildPortalLinks({ applicationId, focusRequirementId, baseUrl });
   const kaiserAuthorizationLine = hasKaiserAuthorizationAtIntake
     ? hasPriorIntroEmail
       ? `This is a reminder to sign in and continue the existing Kaiser-authorized CalAIM Assisted Living Transitions application for ${memberName}${memberMrn ? ` (MRN: ${memberMrn})` : ''}.`
@@ -362,7 +356,7 @@ function buildDefaultDraft(params: {
   return {
     subject: hasPriorIntroEmail
       ? `Reminder: ${memberName} CalAIM Assisted Living Transitions - Portal Action Needed`
-      : `To ${contactName || 'Primary Contact'}, Re: ${memberName} For Kaiser CalAIM Assisted Living Transitions Program - Next Steps`,
+      : `To ${contactName || 'Primary Contact'}, Re: ${memberName} CalAIM Assisted Living Transitions Program - Next Steps`,
     message: [
       `Hello ${greetingFirstName},`,
       '',
@@ -370,15 +364,11 @@ function buildDefaultDraft(params: {
       '',
       'Please continue in the Connect CalAIM portal:',
       `- Open your secure portal login: ${loginUrl}`,
-      `- Create your portal account (if needed): ${signupUrl}`,
       '',
       'Please use this same email address for your account so we can match it correctly.',
       ...missingDocumentsSection,
       '',
       'After signing in, open My Applications and select the member application.',
-      '',
-      "If you do not see the application, use this secure application link:",
-      `- Connect application: ${inviteUrl}`,
       '',
       'You may be asked to verify:',
       '- Application ID',
