@@ -36,6 +36,14 @@ const parseStoragePathFromDownloadUrl = (url: string): string => {
   }
 };
 
+const toFetchableUrl = (rawUrl: string, request: NextRequest): string => {
+  const input = String(rawUrl || '').trim();
+  if (!input) return '';
+  if (/^https?:\/\//i.test(input)) return input;
+  if (input.startsWith('/')) return `${request.nextUrl.origin}${input}`;
+  return '';
+};
+
 const extensionFromMime = (mime: string): string => {
   const normalized = String(mime || '').trim().toLowerCase();
   if (normalized.includes('pdf')) return '.pdf';
@@ -70,22 +78,6 @@ export async function POST(request: NextRequest) {
     const baseFileName = sanitizeName(String(entry?.fileName || '').trim(), documentName);
     const rawDownloadUrl = String(entry?.downloadURL || '').trim();
     const rawFilePath = String(entry?.filePath || '').trim();
-    const isAuthorizationRequestSheet = category.toLowerCase() === 'authorization request sheet';
-
-    if (isAuthorizationRequestSheet) {
-      const safeUrl = rawDownloadUrl || '';
-      const content = ['[InternetShortcut]', `URL=${safeUrl}`].join('\r\n');
-      const fileName = ensureExtension(baseFileName, 'text/plain').replace(/\.(txt|bin)$/i, '.url');
-      return new NextResponse(Buffer.from(content, 'utf-8'), {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-          'Content-Disposition': `attachment; filename="${fileName.replace(/"/g, '')}"`,
-          'Cache-Control': 'no-store',
-        },
-      });
-    }
-
     const bucket = getStorage().bucket();
     const candidatePaths = [rawFilePath, parseStoragePathFromDownloadUrl(rawDownloadUrl)].filter(Boolean);
     let fileBuffer: Buffer | null = null;
@@ -103,8 +95,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!fileBuffer && rawDownloadUrl) {
-      const response = await fetch(rawDownloadUrl);
+    const fetchableUrl = toFetchableUrl(rawDownloadUrl, request);
+    if (!fileBuffer && fetchableUrl) {
+      const response = await fetch(fetchableUrl);
       if (response.ok) {
         const arr = await response.arrayBuffer();
         fileBuffer = Buffer.from(arr);

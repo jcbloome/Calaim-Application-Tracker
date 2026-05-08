@@ -37,6 +37,14 @@ const parseStoragePathFromDownloadUrl = (url: string): string => {
   }
 };
 
+const toFetchableUrl = (rawUrl: string, request: NextRequest): string => {
+  const input = String(rawUrl || '').trim();
+  if (!input) return '';
+  if (/^https?:\/\//i.test(input)) return input;
+  if (input.startsWith('/')) return `${request.nextUrl.origin}${input}`;
+  return '';
+};
+
 const extensionFromMime = (mime: string): string => {
   const normalized = String(mime || '').trim().toLowerCase();
   if (normalized.includes('pdf')) return '.pdf';
@@ -87,38 +95,30 @@ export async function POST(request: NextRequest) {
       const fileName = sanitizeName(String(entry?.fileName || '').trim() || documentName, documentName);
       const downloadURL = String(entry?.downloadURL || '').trim();
       const filePath = String(entry?.filePath || '').trim();
-      const isAuthorizationRequestSheet = category.toLowerCase() === 'authorization request sheet';
-
       try {
         let buffer: Buffer | null = null;
         let mimeType = 'application/octet-stream';
+        const candidates = [filePath, parseStoragePathFromDownloadUrl(downloadURL)].filter(Boolean);
 
-        if (isAuthorizationRequestSheet) {
-          const content = ['[InternetShortcut]', `URL=${downloadURL}`].join('\r\n');
-          buffer = Buffer.from(content, 'utf-8');
-          mimeType = 'text/plain';
-        } else {
-          const candidates = [filePath, parseStoragePathFromDownloadUrl(downloadURL)].filter(Boolean);
-
-          for (const candidate of candidates) {
-            try {
-              const [bytes] = await bucket.file(candidate).download();
-              buffer = bytes;
-              const [meta] = await bucket.file(candidate).getMetadata().catch(() => [null as any]);
-              mimeType = String(meta?.contentType || mimeType);
-              break;
-            } catch {
-              // continue
-            }
+        for (const candidate of candidates) {
+          try {
+            const [bytes] = await bucket.file(candidate).download();
+            buffer = bytes;
+            const [meta] = await bucket.file(candidate).getMetadata().catch(() => [null as any]);
+            mimeType = String(meta?.contentType || mimeType);
+            break;
+          } catch {
+            // continue
           }
+        }
 
-          if (!buffer && downloadURL) {
-            const response = await fetch(downloadURL);
-            if (response.ok) {
-              const arr = await response.arrayBuffer();
-              buffer = Buffer.from(arr);
-              mimeType = String(response.headers.get('content-type') || mimeType);
-            }
+        const fetchableUrl = toFetchableUrl(downloadURL, request);
+        if (!buffer && fetchableUrl) {
+          const response = await fetch(fetchableUrl);
+          if (response.ok) {
+            const arr = await response.arrayBuffer();
+            buffer = Buffer.from(arr);
+            mimeType = String(response.headers.get('content-type') || mimeType);
           }
         }
 
@@ -128,9 +128,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        const baseName = isAuthorizationRequestSheet
-          ? (/\.[a-z0-9]{2,8}$/i.test(fileName) ? fileName : `${fileName}.url`)
-          : ensureExtension(fileName, mimeType);
+        const baseName = ensureExtension(fileName, mimeType);
         const zipName = `${category} - ${baseName}`;
         const key = zipName.toLowerCase();
         const dupCount = usedNames.get(key) || 0;

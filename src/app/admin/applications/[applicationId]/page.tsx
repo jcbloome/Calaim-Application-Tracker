@@ -6453,7 +6453,7 @@ function ApplicationDetailPageContent() {
         category: 'Authorization request sheet',
         documentName: 'Kaiser Referral Form (Pre-Filled)',
         fileName: 'Kaiser Authorization Request Sheet',
-        downloadURL: `/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`,
+        downloadURL: `/api/forms/kaiser-referral/template?${qaReferralQuery.toString()}`,
         filePath: '',
         uploadedAtIso: toIso(
           (application as any)?.kaiserReferralSubmission?.submittedAt ||
@@ -11449,6 +11449,12 @@ function ApplicationDetailPageContent() {
                       Generate Kaiser Referral Form (Pre-Filled)
                     </Link>
                   </Button>
+                  <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                    Assigned staff:{' '}
+                    <span className="font-medium text-foreground">
+                      {assignedStaffName || 'Unassigned'}
+                    </span>
+                  </div>
                   {kaiserStep5Required ? (
                     <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
                       {kaiserStep5Acknowledged ? (
@@ -11938,6 +11944,9 @@ function ApplicationDetailPageContent() {
                 <Button variant="outline" className="w-full justify-start gap-2">
                   <User className="h-4 w-4" />
                   Assigned staff
+                  <Badge variant={assignedStaffName ? 'default' : 'outline'} className="ml-auto text-[10px]">
+                    {assignedStaffName ? 'Assigned' : 'Unassigned'}
+                  </Badge>
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
