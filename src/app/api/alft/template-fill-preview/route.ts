@@ -1,0 +1,312 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { PDFCheckBox, PDFDocument, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, rgb } from 'pdf-lib';
+import { promises as fs } from 'fs';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+type Body = {
+  templateUrl?: string;
+  templatePath?: string;
+  answers?: Record<string, string | string[]>;
+};
+
+const clean = (v: unknown, max = 4000) => String(v ?? '').trim().slice(0, max);
+const cleanAscii = (v: unknown, max = 200) => clean(v, max).replace(/[^\x20-\x7E]/g, '?');
+
+const normalize = (v: string) => clean(v, 500).toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+const baseKey = (key: string) => key.replace(/^p\d+_/, '');
+
+const asString = (value: unknown) => clean(value, 3000);
+
+const asArray = (value: unknown) => (Array.isArray(value) ? value.map((v) => clean(v, 300)).filter(Boolean) : []);
+
+const buildKeyCandidates = (key: string) => {
+  const raw = clean(key, 200);
+  const base = baseKey(raw);
+  const noUnderscore = base.replace(/_/g, '');
+  return Array.from(
+    new Set(
+      [raw, base, noUnderscore, base.replace(/_/g, ' ')]
+        .map((v) => normalize(v))
+        .filter(Boolean)
+    )
+  );
+};
+
+const trySelectOptionValue = (options: string[], wanted: string) => {
+  const wantedNorm = normalize(wanted);
+  return options.find((opt) => normalize(opt) === wantedNorm || normalize(opt).includes(wantedNorm));
+};
+
+const isYesLike = (value: string) => /^(yes|y|true|1)$/i.test(clean(value, 40));
+
+async function renderOverlayPdf(templateBuffer: ArrayBuffer, answers: Record<string, string | string[]>) {
+  const pdfDoc = await PDFDocument.load(templateBuffer);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pages = pdfDoc.getPages();
+
+  const put = (pageIdx1: number, x: number, y: number, value: unknown, size = 8, isBold = false) => {
+    const page = pages[pageIdx1 - 1];
+    if (!page) return;
+    const text = clean(value, 500);
+    if (!text) return;
+    page.drawText(text, {
+      x,
+      y,
+      size,
+      font: isBold ? bold : font,
+      color: rgb(0.06, 0.09, 0.14),
+      maxWidth: 240,
+      lineHeight: size + 1,
+    });
+  };
+
+  const markYesNo = (pageIdx1: number, yesX: number, noX: number, y: number, value: unknown) => {
+    const page = pages[pageIdx1 - 1];
+    if (!page) return;
+    const yes = isYesLike(clean(value, 20));
+    page.drawText('X', { x: yes ? yesX : noX, y, size: 8, font: bold, color: rgb(0.06, 0.09, 0.14) });
+  };
+
+  // Page 1 (header + demographic)
+  put(1, 70, 745, answers.p1_agency || '');
+  put(1, 255, 745, answers.p1_assessment_date || '');
+  put(1, 475, 745, answers.p1_plan_id || '');
+  put(1, 70, 710, answers.p1_member_name || '');
+  put(1, 255, 710, answers.p1_assessor_name || '');
+  put(1, 475, 710, answers.p1_referral_date || '');
+  put(1, 70, 664, answers.p1_other_responder_relationship || '');
+  put(1, 475, 682, answers.p1_other_responder_name || '');
+  markYesNo(1, 86, 250, 682, answers.p1_other_responder || '');
+  put(1, 70, 628, answers.p1_first_name || '');
+  put(1, 255, 628, answers.p1_middle_name || '');
+  put(1, 70, 592, answers.p1_last_name || '');
+  put(1, 255, 592, answers.p1_mrn || '');
+  put(1, 70, 555, answers.p1_phone || '');
+  put(1, 255, 555, answers.p1_dob || '');
+  put(1, 70, 518, answers.p1_sex || '');
+  put(1, 70, 483, answers.p1_race_other || '');
+  put(1, 255, 483, answers.p1_ethnicity || '');
+  markYesNo(1, 86, 250, 445, answers.p1_ethnicity_hispanic || '');
+  put(1, 70, 410, answers.p1_ethnicity_other || '');
+  put(1, 255, 410, answers.p1_primary_language || '');
+
+  // Page 2 (addresses/site/risk section shown in user screenshots)
+  put(2, 70, 665, answers.p2_current_street || '');
+  put(2, 330, 665, answers.p2_current_city || '');
+  put(2, 70, 628, answers.p2_current_state || '');
+  put(2, 330, 628, answers.p2_current_zip || '');
+  put(2, 330, 592, answers.p2_current_type_other || '');
+  put(2, 70, 555, answers.p2_facility_name || '');
+  put(2, 330, 555, answers.p2_home_street || '');
+  put(2, 70, 518, answers.p2_home_city || '');
+  put(2, 330, 518, answers.p2_home_state || '');
+  put(2, 70, 481, answers.p2_home_zip || '');
+  put(2, 330, 481, answers.p2_mail_street || '');
+  put(2, 70, 444, answers.p2_mail_city || '');
+  put(2, 330, 444, answers.p2_mail_state || '');
+  put(2, 70, 407, answers.p2_mail_zip || '');
+  put(2, 70, 370, answers.p2_assessment_site_other || '');
+  put(2, 70, 296, answers.p2_alwp_agency || '');
+  put(2, 70, 260, answers.p2_previous_placement_explain || '');
+
+  markYesNo(2, 86, 251, 333, answers.p2_imminent_nursing_home_risk || '');
+  markYesNo(2, 330, 494, 333, answers.p2_alwp_waitlist || '');
+  markYesNo(2, 330, 494, 296, answers.p2_previous_unsuccessful_placements || '');
+  markYesNo(2, 86, 251, 223, answers.p2_primary_caregiver || '');
+
+  const overlaid = await pdfDoc.save();
+  return Buffer.from(overlaid);
+}
+
+async function resolveTemplateUrlFromRecentAlftSubmissions() {
+  try {
+    const adminModule = await import('@/firebase-admin');
+    const adminDb = adminModule.adminDb;
+    const snap = await adminDb.collection('standalone_upload_submissions').orderBy('createdAt', 'desc').limit(200).get();
+    for (const doc of snap.docs) {
+      const row = (doc.data() || {}) as Record<string, any>;
+      const docType = clean(row?.documentType, 160).toLowerCase();
+      const source = clean(row?.source, 120).toLowerCase();
+      const looksAlft = docType.includes('alft') || source.includes('alft');
+      if (!looksAlft) continue;
+
+      const explicit = clean(row?.officialPdfTemplateUrl, 2000);
+      if (explicit && /^https?:\/\//i.test(explicit)) return explicit;
+
+      const files = Array.isArray(row?.files) ? row.files : [];
+      const pdfFile = files.find((f: any) => {
+        const name = clean(f?.fileName, 220);
+        const url = clean(f?.downloadURL, 2200);
+        return Boolean(url) && (/\.pdf(\?|$)/i.test(name) || /\.pdf(\?|$)/i.test(url));
+      });
+      const fileUrl = clean(pdfFile?.downloadURL, 2200);
+      if (fileUrl && /^https?:\/\//i.test(fileUrl)) return fileUrl;
+    }
+  } catch {
+    // no-op
+  }
+  return '';
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = (await req.json().catch(() => ({}))) as Body;
+    const requestedTemplateUrl = clean(body?.templateUrl, 2000);
+    const requestedTemplatePath = clean(body?.templatePath, 2000);
+    const templateUrl = requestedTemplateUrl || (await resolveTemplateUrlFromRecentAlftSubmissions());
+    const answers = (body?.answers && typeof body.answers === 'object' ? body.answers : {}) as Record<string, string | string[]>;
+
+    if (!requestedTemplatePath && !templateUrl) {
+      return NextResponse.json(
+        { success: false, error: 'No ALFT template PDF could be resolved from recent ALFT submissions.' },
+        { status: 404 }
+      );
+    }
+    let templateBuffer: ArrayBuffer;
+    if (requestedTemplatePath) {
+      try {
+        const bytes = await fs.readFile(requestedTemplatePath);
+        templateBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      } catch (e: any) {
+        return NextResponse.json(
+          { success: false, error: `Could not read templatePath: ${e?.message || 'read failed'}` },
+          { status: 400 }
+        );
+      }
+    } else {
+      if (!/^https?:\/\//i.test(templateUrl)) {
+        return NextResponse.json({ success: false, error: 'templateUrl must be an http(s) URL' }, { status: 400 });
+      }
+      const templateRes = await fetch(templateUrl);
+      if (!templateRes.ok) {
+        return NextResponse.json(
+          { success: false, error: `Could not fetch template PDF (HTTP ${templateRes.status})` },
+          { status: 400 }
+        );
+      }
+      templateBuffer = await templateRes.arrayBuffer();
+    }
+
+    const originalPdfBytes = Buffer.from(templateBuffer);
+    const pdfDoc = await PDFDocument.load(templateBuffer);
+    let form: ReturnType<PDFDocument['getForm']>;
+    try {
+      form = pdfDoc.getForm();
+    } catch {
+      return new NextResponse(originalPdfBytes, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Cache-Control': 'no-store',
+          'x-alft-template-fill-mode': 'passthrough-no-form',
+        },
+      });
+    }
+    const fields = form.getFields();
+
+    const byNormalizedName = new Map<string, (typeof fields)[number]>();
+    fields.forEach((field) => {
+      try {
+        byNormalizedName.set(normalize(field.getName()), field);
+      } catch {
+        // ignore malformed field entries
+      }
+    });
+
+    Object.entries(answers).forEach(([key, rawValue]) => {
+      const candidates = buildKeyCandidates(key);
+      if (!candidates.length) return;
+      const field =
+        candidates
+          .map((c) => byNormalizedName.get(c))
+          .find(Boolean) ||
+        fields.find((f) => {
+          const n = normalize(f.getName());
+          return candidates.some((c) => n.includes(c));
+        });
+      if (!field) return;
+
+      const stringValue = asString(rawValue);
+      const arrayValue = asArray(rawValue);
+
+      try {
+        if (field instanceof PDFTextField) {
+          if (arrayValue.length) field.setText(arrayValue.join(', '));
+          else field.setText(stringValue);
+          return;
+        }
+
+        if (field instanceof PDFDropdown || field instanceof PDFOptionList) {
+          const wanted = arrayValue[0] || stringValue;
+          if (!wanted) return;
+          const selected = trySelectOptionValue(field.getOptions(), wanted);
+          if (selected) field.select(selected);
+          return;
+        }
+
+        if (field instanceof PDFRadioGroup) {
+          const wanted = arrayValue[0] || stringValue;
+          if (!wanted) return;
+          const selected = trySelectOptionValue(field.getOptions(), wanted);
+          if (selected) field.select(selected);
+          return;
+        }
+
+        if (field instanceof PDFCheckBox) {
+          const boolLike = /^(true|yes|y|1|checked)$/i.test(stringValue);
+          if (boolLike || arrayValue.length > 0 || stringValue.length > 0) field.check();
+          else field.uncheck();
+        }
+      } catch {
+        // Ignore individual field mapping failures for best-effort fill.
+      }
+    });
+
+    // Some legacy ALFT PDFs contain malformed widget dictionaries that can throw
+    // during appearance regeneration. We intentionally skip updateFieldAppearances
+    // and rely on existing field appearances for preview stability.
+
+    let out: Uint8Array;
+    try {
+      out = await pdfDoc.save();
+    } catch {
+      try {
+        const overlaid = await renderOverlayPdf(templateBuffer, answers);
+        return new NextResponse(overlaid, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Cache-Control': 'no-store',
+            'x-alft-template-fill-mode': 'overlay-fallback',
+          },
+        });
+      } catch (overlayErr: any) {
+        const overlayMsg = cleanAscii(overlayErr?.message || 'overlay-failed', 120);
+        return new NextResponse(originalPdfBytes, {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Cache-Control': 'no-store',
+            'x-alft-template-fill-mode': 'passthrough-save-error',
+            'x-alft-template-fill-overlay-error': overlayMsg,
+          },
+        });
+      }
+    }
+    return new NextResponse(Buffer.from(out), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Cache-Control': 'no-store',
+        'x-alft-template-fill-mode': 'filled',
+      },
+    });
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e?.message || 'Failed to fill ALFT template' }, { status: 500 });
+  }
+}
+

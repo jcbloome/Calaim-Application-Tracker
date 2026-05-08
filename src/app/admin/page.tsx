@@ -121,7 +121,13 @@ export default function AdminDashboardPage() {
           appUserId: null,
           appPath: docSnap.ref.path,
         })) as WithId<Application & FormValues>[];
-        const apps = [...userApps, ...adminApps];
+        const apps = [...userApps, ...adminApps].filter((app, index, arr) => {
+          const dedupeKey = String((app as any).appPath || `${(app as any).source || ''}:${(app as any).id || ''}:${(app as any).appUserId || ''}`);
+          return arr.findIndex((candidate) => {
+            const candidateKey = String((candidate as any).appPath || `${(candidate as any).source || ''}:${(candidate as any).id || ''}:${(candidate as any).appUserId || ''}`);
+            return candidateKey === dedupeKey;
+          }) === index;
+        });
         
         setAllApplications(apps);
 
@@ -819,8 +825,8 @@ export default function AdminDashboardPage() {
                       <td className="py-2 pr-3">
                         {isDocGroup ? (
                           <div className="space-y-1">
-                            {row.items.map((item) => (
-                              <div key={item.key} className="flex flex-wrap items-center gap-2">
+                            {row.items.map((item, idx) => (
+                              <div key={`${item.key}-${idx}`} className="flex flex-wrap items-center gap-2">
                                 <span>{item.itemName}</span>
                                 <Badge variant="outline" className="bg-red-50 border-red-200 text-red-800">
                                   Flagged

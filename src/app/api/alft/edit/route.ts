@@ -16,6 +16,7 @@ type Body = {
 
 const clean = (v: unknown, max = 5000) => String(v ?? '').trim().slice(0, max);
 const jsonChanged = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
+const AGENCY_NAME = 'Connections Care Home Consultants';
 
 const sanitizeExactAnswers = (value: unknown): Record<string, string | string[]> => {
   const out: Record<string, string | string[]> = {};
@@ -29,6 +30,7 @@ const sanitizeExactAnswers = (value: unknown): Record<string, string | string[]>
     }
     out[id] = clean(raw, 6000);
   });
+  out.p1_agency = AGENCY_NAME;
   return out;
 };
 

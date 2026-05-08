@@ -35,6 +35,9 @@ type Question = {
   options?: Array<{ value: string; label: string }>;
 };
 type SourcePage = { id: string; title: string; questions: Question[] };
+const AGENCY_NAME = 'Connections Care Home Consultants';
+const ALFT_TEMPLATE_PATH =
+  'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf';
 
 type KaiserMember = {
   id: string;
@@ -168,7 +171,9 @@ const splitName = (member: KaiserMember) => {
 };
 
 function buildDefaultAnswers(): Record<string, AnswerValue> {
-  return createInitialExactAlftAnswers() as Record<string, AnswerValue>;
+  const base = createInitialExactAlftAnswers() as Record<string, AnswerValue>;
+  base.p1_agency = AGENCY_NAME;
+  return base;
 }
 
 function preFillFromMember(
@@ -186,7 +191,7 @@ function preFillFromMember(
   next.p1_member_name = fullName;
   next.p1_assessor_name = String(member.assignedSwName || '').trim() || swName;
   next.p1_assessment_date = todayLocalKey();
-  next.p1_agency = 'Connections Care Home Consultants';
+  next.p1_agency = AGENCY_NAME;
   if (parsedName.first) next.p1_first_name = parsedName.first;
   if (parsedName.last) next.p1_last_name = parsedName.last;
   if (member.memberMrn) next.p1_mrn = member.memberMrn;
@@ -342,6 +347,10 @@ export default function SwKaiserAlftPage() {
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const [swSignature, setSwSignature] = useState(''); // typed signature before submit
   const [expectedVisitDate, setExpectedVisitDate] = useState('');
+  const [templatePdfUrl, setTemplatePdfUrl] = useState('');
+  const [templatePdfLoading, setTemplatePdfLoading] = useState(false);
+  const [templatePdfError, setTemplatePdfError] = useState('');
+  const [templatePdfMode, setTemplatePdfMode] = useState('');
 
   // ── Load assigned members from Firestore alft_assignments ─────────────────────
 
@@ -477,6 +486,52 @@ export default function SwKaiserAlftPage() {
     toast({ title: 'Draft saved', description: 'Progress saved locally on this device.' });
   }, [answers, selectedMember, toast]);
 
+  const generateTemplatePreview = useCallback(async () => {
+    if (mode !== 'preview' || !selectedMember) return;
+    setTemplatePdfLoading(true);
+    setTemplatePdfError('');
+    try {
+      const res = await fetch('/api/alft/template-fill-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({} as any));
+        throw new Error(String(err?.error || `Template preview failed (HTTP ${res.status})`));
+      }
+      setTemplatePdfMode(String(res.headers.get('x-alft-template-fill-mode') || '').trim());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setTemplatePdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+    } catch (e: any) {
+      setTemplatePdfError(String(e?.message || 'Could not generate template preview.'));
+      setTemplatePdfMode('');
+      setTemplatePdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    } finally {
+      setTemplatePdfLoading(false);
+    }
+  }, [answers, mode, selectedMember]);
+
+  useEffect(() => {
+    void generateTemplatePreview();
+  }, [generateTemplatePreview]);
+
+  useEffect(() => {
+    return () => {
+      setTemplatePdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    };
+  }, []);
+
   // ── Submit ────────────────────────────────────────────────────────────────────
 
   const handleSubmit = useCallback(async () => {
@@ -494,6 +549,7 @@ export default function SwKaiserAlftPage() {
       // Keep assessor aligned to assigned SW while storing typed signature separately.
       const finalAnswers = {
         ...answers,
+        p1_agency: AGENCY_NAME,
         p1_assessor_name:
           String(answers.p1_assessor_name || '').trim() ||
           String(selectedMember.assignedSwName || '').trim() ||
@@ -783,92 +839,50 @@ export default function SwKaiserAlftPage() {
           <Button variant="outline" size="sm" onClick={saveDraft}>
             Save Draft
           </Button>
-          {mode === 'preview' && (
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
+          {mode === 'preview' ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={templatePdfLoading || !templatePdfUrl}
+              onClick={() => {
+                if (templatePdfUrl) window.open(templatePdfUrl, '_blank', 'noopener,noreferrer');
+              }}
+            >
               Print / PDF
             </Button>
-          )}
+          ) : null}
         </div>
       </div>
 
-      {/* ── Edit mode: compact dummy-preview identical editor ── */}
-      {mode === 'edit' && (
-        <div className="mb-4 space-y-3 rounded-md border border-zinc-200 bg-white p-3 print:hidden">
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {PAGE_LAYOUT.map((layout) => {
-              const source = SOURCE.find((p) => p.id === layout.sourceId);
-              const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
-              return (
-                <details key={`editor-${layout.number}`} className="rounded border border-zinc-200 p-2">
-                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-700">
-                    Page {layout.number}: {layout.title}
-                  </summary>
-                  <div className="mt-2 grid grid-cols-1 gap-2 xl:grid-cols-2">
-                    {questions.map((q) => (
-                      <div
-                        key={`editor-field-${q.id}`}
-                        className={`rounded border border-zinc-100 bg-zinc-50 p-2 ${isLongText(q) ? 'xl:col-span-2' : ''}`}
-                      >
-                        <div className="mb-1 text-[11px] font-medium leading-tight text-zinc-800">{formatLabel(q.label)}</div>
-
-                        {q.type === 'text' ? (
-                          <input
-                            value={String(answers[q.id] || '')}
-                            onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                            className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs"
-                          />
-                        ) : null}
-
-                        {q.type === 'textarea' ? (
-                          <textarea
-                            value={String(answers[q.id] || '')}
-                            onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                            rows={isLargeCommentary(q) ? 12 : Math.min(Math.max(q.rows || 3, 3), 6)}
-                            className={`w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs ${isLargeCommentary(q) ? 'min-h-[220px]' : ''}`}
-                          />
-                        ) : null}
-
-                        {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
-                          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
-                            {q.options.map((opt) => (
-                              <label key={`editor-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[11px]">
-                                <input
-                                  type="radio"
-                                  name={`edit-${q.id}`}
-                                  checked={String(answers[q.id] || '') === opt.value}
-                                  onChange={() => setSingleAnswer(q.id, opt.value)}
-                                />
-                                <span>{opt.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        {q.type === 'checkboxGroup' && q.options?.length ? (
-                          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
-                            {q.options.map((opt) => {
-                              const selected = Array.isArray(answers[q.id]) ? (answers[q.id] as string[]).includes(opt.value) : false;
-                              return (
-                                <label key={`editor-check-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[11px]">
-                                  <input type="checkbox" checked={selected} onChange={() => toggleMultiAnswer(q.id, opt.value)} />
-                                  <span>{opt.label}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              );
-            })}
+      {mode === 'preview' ? (
+        <div className="mb-4 rounded-md border bg-white p-3 print:hidden">
+          <div className="mb-2 flex items-center gap-2 text-xs text-zinc-600">
+            <span>ALFT template preview (same form used through staff workflow).</span>
+            {templatePdfMode ? <Badge variant="outline">Mode: {templatePdfMode}</Badge> : null}
           </div>
+          {templatePdfError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{templatePdfError}</AlertDescription>
+            </Alert>
+          ) : null}
+          {templatePdfLoading ? (
+            <div className="flex h-[70vh] items-center justify-center text-sm text-zinc-500">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Generating template preview...
+            </div>
+          ) : null}
+          {!templatePdfLoading && templatePdfUrl ? (
+            <iframe
+              src={templatePdfUrl}
+              title="ALFT template preview"
+              className="h-[75vh] w-full rounded border"
+            />
+          ) : null}
         </div>
-      )}
+      ) : null}
 
-      {/* ── Preview mode: print-ready PDF layout ── */}
-      <div className={`space-y-4 print:space-y-0 ${mode === 'edit' ? 'hidden print:block' : ''}`}>
+      {/* ── Unified packet view: edit/preview in exact ALFT format ── */}
+      <div className={`space-y-4 print:space-y-0 ${mode === 'preview' ? 'hidden' : ''}`}>
         {PAGE_LAYOUT.map((layout) => {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
           const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
@@ -905,7 +919,50 @@ export default function SwKaiserAlftPage() {
                       ))}
                     <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongText(q) ? 'md:col-span-2 alft-col-span-2' : ''}`}>
                       <div className="font-semibold leading-tight">{formatLabel(q.label)}</div>
-                      {isOptionQ(q) && q.options?.length ? (
+                      {mode === 'edit' && q.type === 'text' ? (
+                        <input
+                          value={String(answers[q.id] || '')}
+                          onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                          className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
+                        />
+                      ) : null}
+                      {mode === 'edit' && q.type === 'textarea' ? (
+                        <textarea
+                          value={String(answers[q.id] || '')}
+                          onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                          rows={isLargeCommentary(q) ? 12 : Math.min(Math.max(q.rows || 3, 3), 6)}
+                          className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentary(q) ? 'min-h-[220px]' : ''}`}
+                        />
+                      ) : null}
+                      {mode === 'edit' && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
+                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                          {q.options.map((opt) => (
+                            <label key={`sw-edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                              <input
+                                type="radio"
+                                name={`sw-edit-${q.id}`}
+                                checked={String(answers[q.id] || '') === opt.value}
+                                onChange={() => setSingleAnswer(q.id, opt.value)}
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : null}
+                      {mode === 'edit' && q.type === 'checkboxGroup' && q.options?.length ? (
+                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                          {q.options.map((opt) => {
+                            const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
+                            return (
+                              <label key={`sw-edit-check-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                                <input type="checkbox" checked={selected} onChange={() => toggleMultiAnswer(q.id, opt.value)} />
+                                <span>{opt.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      {mode === 'preview' && isOptionQ(q) && q.options?.length ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
                           {q.options.map((opt) => {
                             const selected = q.type === 'checkboxGroup'
@@ -919,12 +976,12 @@ export default function SwKaiserAlftPage() {
                             );
                           })}
                         </div>
-                      ) : (
+                      ) : mode === 'preview' ? (
                         <div className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'} ${isLargeCommentary(q) ? 'large-commentary-box' : ''}`}>
                           {asText(answers[q.id]) || ' '}
                         </div>
-                      )}
-                      {q.type === 'select' && q.options?.length ? (
+                      ) : null}
+                      {mode === 'preview' && q.type === 'select' && q.options?.length ? (
                         <div className="mt-0.5 text-[9px] text-zinc-600">Selected: {optionLabel(q, String(answers[q.id] || ''))}</div>
                       ) : null}
                     </div>

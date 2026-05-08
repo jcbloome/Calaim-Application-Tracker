@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth, useUser } from '@/firebase';
@@ -18,6 +18,8 @@ type Question = { id: string; label: string; type: QuestionType; options?: Array
 type SourcePage = { id: string; title: string; questions: Question[] };
 
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
+const ALFT_TEMPLATE_PATH =
+  'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf';
 
 const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; title: string }> = [
   { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
@@ -83,6 +85,17 @@ const formatPromptLabel = (label: string) => {
   if (n) return `${n[1]}. ${n[2]}`;
   return label;
 };
+
+function Dot({ selected }: { selected: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-zinc-700 align-middle bg-white"
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${selected ? 'bg-zinc-800' : 'bg-transparent'}`} />
+    </span>
+  );
+}
 
 // ─── Read-only field renderer ──────────────────────────────────────────────────
 
@@ -214,6 +227,10 @@ export default function AlftViewPage() {
   const [intake, setIntake] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [templatePdfUrl, setTemplatePdfUrl] = useState('');
+  const [templatePdfLoading, setTemplatePdfLoading] = useState(false);
+  const [templatePdfError, setTemplatePdfError] = useState('');
+  const [templatePdfMode, setTemplatePdfMode] = useState('');
 
   useEffect(() => {
     if (isUserLoading || !user || !intakeId) return;
@@ -250,6 +267,52 @@ export default function AlftViewPage() {
     });
     return out;
   }, [intake]);
+
+  const generateTemplatePreview = useCallback(async () => {
+    if (!intake) return;
+    setTemplatePdfLoading(true);
+    setTemplatePdfError('');
+    try {
+      const res = await fetch('/api/alft/template-fill-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({} as any));
+        throw new Error(String(err?.error || `Template preview failed (HTTP ${res.status})`));
+      }
+      setTemplatePdfMode(String(res.headers.get('x-alft-template-fill-mode') || '').trim());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setTemplatePdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+    } catch (e: any) {
+      setTemplatePdfError(String(e?.message || 'Could not generate template preview.'));
+      setTemplatePdfMode('');
+      setTemplatePdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    } finally {
+      setTemplatePdfLoading(false);
+    }
+  }, [answers, intake]);
+
+  useEffect(() => {
+    void generateTemplatePreview();
+  }, [generateTemplatePreview]);
+
+  useEffect(() => {
+    return () => {
+      setTemplatePdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    };
+  }, []);
 
   if (isUserLoading || loading) {
     return (
@@ -307,7 +370,14 @@ export default function AlftViewPage() {
               </a>
             </Button>
           ))}
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={templatePdfLoading || !templatePdfUrl}
+            onClick={() => {
+              if (templatePdfUrl) window.open(templatePdfUrl, '_blank', 'noopener,noreferrer');
+            }}
+          >
             <Printer className="h-4 w-4 mr-1.5" /> Print / Save PDF
           </Button>
         </div>
@@ -318,54 +388,95 @@ export default function AlftViewPage() {
         <SignatureSummary intake={intake} />
       </div>
 
-      {/* ALFT form pages — read-only */}
-      {PAGE_LAYOUT.map((layout) => {
+      <div className="mb-4 rounded-md border bg-white p-3 print:hidden">
+        <div className="mb-2 flex items-center gap-2 text-xs text-zinc-600">
+          <span>ALFT template preview (same form used through staff workflow).</span>
+          {templatePdfMode ? <Badge variant="outline">Mode: {templatePdfMode}</Badge> : null}
+        </div>
+        {templatePdfError ? (
+          <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{templatePdfError}</div>
+        ) : null}
+        {templatePdfLoading ? (
+          <div className="flex h-[70vh] items-center justify-center text-sm text-zinc-500">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Generating template preview...
+          </div>
+        ) : null}
+        {!templatePdfLoading && templatePdfUrl ? (
+          <iframe
+            src={templatePdfUrl}
+            title="ALFT template preview"
+            className="h-[75vh] w-full rounded border"
+          />
+        ) : null}
+      </div>
+
+      {/* ALFT form pages — exact packet format (fallback when template unavailable) */}
+      {!templatePdfUrl ? PAGE_LAYOUT.map((layout) => {
         const source = SOURCE.find((s) => s.id === layout.sourceId);
         if (!source) return null;
-        const baseQuestions = source.questions.filter((q) => q.id.startsWith(layout.prefix) && !HIDE_IDS.has(q.id));
-        const rendered = getRenderedQuestionsForPage(layout.number, baseQuestions);
-        if (rendered.length === 0) return null;
+        const questions = source.questions.filter((q) => q.id.startsWith(layout.prefix));
+        const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter((q) => !HIDE_IDS.has(q.id));
 
         return (
-          <div
-            key={layout.number}
-            className="mb-6 print:mb-0 print:break-before-page rounded-lg border border-zinc-200 bg-white shadow-sm print:border-0 print:shadow-none"
-          >
-            {/* Page header */}
-            <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 print:bg-white">
-              <div>
-                <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Page {layout.number}</span>
-                <h2 className="text-sm font-semibold text-zinc-800">{layout.title}</h2>
+          <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5">
+            <div className="mb-2 border-b border-zinc-400 pb-1.5">
+              <div className="flex flex-col items-center gap-1">
+                <img
+                  src="/ils-logo.png"
+                  alt="Independent Living Systems"
+                  width={260}
+                  height={72}
+                  loading="eager"
+                  decoding="sync"
+                  className="alft-logo h-[36px] w-auto object-contain"
+                />
+                <div className="text-center text-[12px] font-semibold tracking-wide">ALF TRANSITION ASSESSMENT</div>
               </div>
-              <div className="text-right print:block hidden">
-                <p className="text-xs text-zinc-500">ALFT — {intake.memberName}</p>
-                <p className="text-xs text-zinc-400">MRN: {intake.medicalRecordNumber || '—'}</p>
+              <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-700">
+                <span>{intake.memberName} {intake.medicalRecordNumber ? `• MRN: ${intake.medicalRecordNumber}` : ''}</span>
+                <span>Page {layout.number} of {PAGE_LAYOUT.length}</span>
+              </div>
+              <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
+                {layout.title}
               </div>
             </div>
 
-            {/* Questions */}
-            <div className="divide-y divide-zinc-100">
-              {rendered.map((q) => {
-                const val = answers[q.id];
-                const isSection = q.label.toUpperCase() === q.label || q.label.startsWith('SECTION');
-                if (isSection) {
-                  return (
-                    <div key={q.id} className="bg-zinc-100 px-4 py-1.5">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-600">{q.label}</p>
-                    </div>
-                  );
-                }
-                return (
-                  <div key={q.id} className="grid grid-cols-[1fr_2fr] gap-x-4 px-4 py-2.5 print:grid-cols-[1fr_2fr]">
-                    <p className="text-xs font-medium text-zinc-500 leading-relaxed pt-0.5 pr-2">{formatPromptLabel(q.label)}</p>
-                    <ReadField q={q} value={val} />
+            <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
+              {renderedQuestions.map((q) => (
+                <div key={q.id} className="contents">
+                  <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${q.type === 'textarea' || q.label.toLowerCase().includes('notes') || q.label.toLowerCase().includes('summary') ? 'md:col-span-2 alft-col-span-2' : ''}`}>
+                    <div className="font-semibold leading-tight">{formatPromptLabel(q.label)}</div>
+                    {q.options?.length && (q.type === 'radio' || q.type === 'select' || q.type === 'checkboxGroup') ? (
+                      <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                        {q.options.map((opt) => {
+                          const selected =
+                            q.type === 'checkboxGroup'
+                              ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value)
+                              : String(answers[q.id] || '') === opt.value;
+                          return (
+                            <div key={`view-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                              <Dot selected={selected} />
+                              <span className={`${selected ? 'font-semibold text-zinc-900' : 'text-zinc-600'}`}>{opt.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${q.type === 'textarea' ? 'large-commentary-box' : 'border-b border-zinc-500'}`}>
+                        {asText(answers[q.id]) || ' '}
+                      </div>
+                    )}
+                    {q.type === 'select' && q.options?.length ? (
+                      <div className="mt-0.5 text-[9px] text-zinc-600">Selected: {optionLabel(q, String(answers[q.id] || ''))}</div>
+                    ) : null}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
-          </div>
+          </section>
         );
-      })}
+      }) : null}
 
       {/* Signature summary at end of print */}
       <div className="print:block hidden">
@@ -373,9 +484,35 @@ export default function AlftViewPage() {
       </div>
 
       {/* Print footer */}
-      <div className="print:block hidden mt-4 text-center text-xs text-zinc-400">
-        ALFT · {intake.memberName} · MRN {intake.medicalRecordNumber || '—'} · Printed {new Date().toLocaleString()}
-      </div>
+      {!templatePdfUrl ? (
+        <div className="print:block hidden mt-4 text-center text-xs text-zinc-400">
+          ALFT · {intake.memberName} · MRN {intake.medicalRecordNumber || '—'} · Printed {new Date().toLocaleString()}
+        </div>
+      ) : null}
+
+      <style jsx global>{`
+        .alft-view { color: #18181b; }
+        .alft-page {
+          min-height: 10.45in;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          font-family: Arial, Helvetica, sans-serif;
+          letter-spacing: 0.01em;
+        }
+        .alft-logo { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .alft-section-title {
+          background: #0f8bb5; border: 1px solid #0f8bb5; color: #ffffff;
+          padding: 2px 6px;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .question-block { background: #fff; }
+        .answer-line { min-height: 0.7rem; }
+        .large-commentary-box {
+          min-height: 240px;
+          border: 1px solid #71717a;
+          padding: 6px;
+          background: #fafafa;
+        }
+      `}</style>
     </div>
   );
 }

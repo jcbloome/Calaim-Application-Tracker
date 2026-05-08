@@ -46,6 +46,7 @@ type SubmitBody = {
 };
 
 const clean = (v: unknown, max = 300) => String(v ?? '').trim().slice(0, max);
+const AGENCY_NAME = 'Connections Care Home Consultants';
 const cleanDeep = (value: unknown): any => {
   if (typeof value === 'string') return clean(value, 4000);
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
@@ -129,6 +130,16 @@ export async function POST(request: NextRequest) {
     if (normalizedFiles.length === 0 && !isDigitalForm) {
       return NextResponse.json({ success: false, error: 'At least one uploaded ALFT file is required' }, { status: 400 });
     }
+    const sanitizedExactPacketAnswers = (() => {
+      const raw = cleanDeep(body?.alftForm?.exactPacketAnswers || null);
+      const out =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? ({ ...(raw as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
+      out.p1_agency = AGENCY_NAME;
+      return out;
+    })();
+
     const alftForm = {
       formVersion: clean(body?.alftForm?.formVersion, 40) || 'placeholder-v1',
       stage: clean(body?.alftForm?.stage, 40) || null,
@@ -140,7 +151,7 @@ export async function POST(request: NextRequest) {
       screening: cleanDeep(body?.alftForm?.screening || null),
       clinicalAssessment: cleanDeep(body?.alftForm?.clinicalAssessment || null),
       stage3Assessment: cleanDeep(body?.alftForm?.stage3Assessment || null),
-      exactPacketAnswers: cleanDeep(body?.alftForm?.exactPacketAnswers || null),
+      exactPacketAnswers: sanitizedExactPacketAnswers,
       facilityName: clean(body?.alftForm?.facilityName, 180) || null,
       priorityLevel: clean(body?.alftForm?.priorityLevel, 40) || 'Routine',
       transitionSummary: clean(body?.alftForm?.transitionSummary, 4000),

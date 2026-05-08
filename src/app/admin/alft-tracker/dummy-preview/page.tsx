@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { useFirestore } from '@/firebase';
+import { collection, getDocs, limit, query } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
+import { PdfPreviewLayout } from '@/components/pdf/PdfPreviewLayout';
 
 type QuestionType = 'text' | 'textarea' | 'radio' | 'select' | 'checkboxGroup';
 type AnswerValue = string | string[];
@@ -16,6 +20,9 @@ type Question = {
   options?: Array<{ value: string; label: string }>;
 };
 type SourcePage = { id: string; title: string; questions: Question[] };
+const AGENCY_NAME = 'Connections Care Home Consultants';
+const ALFT_TEMPLATE_PATH =
+  'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf';
 
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
 
@@ -118,38 +125,6 @@ function asText(value: AnswerValue | undefined): string {
   return String(value || '').trim();
 }
 
-const DUMMY_OVERRIDES: Record<string, AnswerValue> = {
-  p1_agency: 'Connections Care Home Consultants',
-  p1_assessment_date: '2026-03-04',
-  p1_plan_id: 'PLAN-ALFT-1022',
-  p1_member_name: 'Leo Lara',
-  p1_assessor_name: 'Assigned Social Worker Full Name',
-  p1_referral_date: '2026-03-01',
-  p1_first_name: 'Leo',
-  p1_middle_name: 'A',
-  p1_last_name: 'Lara',
-  p1_mrn: '000045678',
-  p1_phone: '(555) 555-1212',
-  p1_dob: '1950-07-21',
-  p1_sex: 'Male',
-  p2_current_street: '123 Main St',
-  p2_current_city: 'Los Angeles',
-  p2_current_state: 'CA',
-  p2_current_zip: '90012',
-  p2_facility_name: 'Example RCFE',
-  p13_medication_table:
-    'Amlodipine | 5mg | Daily | Y | Oral | Dr. Nguyen\nMetformin | 500mg | BID | Y | Oral | Dr. Nguyen\nVitamin D | 1000 IU | Daily | Y | Oral | Dr. Patel',
-  p13_commentary_section:
-    'Member medication response, adherence notes, side effects observed, transition risks, family concerns, and follow-up plan details are documented here for clinical handoff.',
-  p14_additional_details: 'Member appropriate for transition support plan. Family support available. Safety plan reviewed.',
-  p14_print_name: 'RN Example',
-  p14_date: '2026-03-04',
-  p14_license_number: 'RN-123456',
-  p14_signature_note: 'Dummy preview packet - training/output demo for ILS.',
-};
-
-const optionLabel = (q: Question, value: string) => q.options?.find((opt) => opt.value === value)?.label || value;
-
 const formatPromptLabel = (label: string) => {
   const qMatch = label.match(/^Q(\d+)\s*:?\s*(.+)$/i);
   if (qMatch) return `${qMatch[1]}. ${qMatch[2]}`;
@@ -159,17 +134,8 @@ const formatPromptLabel = (label: string) => {
 };
 
 function toDefaultValue(q: Question): AnswerValue {
-  if (q.type === 'checkboxGroup') return q.options?.slice(0, 1).map((opt) => opt.value) || [];
-  if (q.type === 'radio' || q.type === 'select') return q.options?.[0]?.value || '';
-  if (q.id.includes('date')) return '2026-03-04';
-  if (q.id.includes('name')) return 'Sample';
-  if (q.id.includes('phone')) return '(555) 555-1212';
-  if (q.id.includes('city')) return 'Los Angeles';
-  if (q.id.includes('state')) return 'CA';
-  if (q.id.includes('zip')) return '90000';
-  if (q.id.includes('mrn')) return '000045678';
-  if (q.type === 'textarea') return 'Documented for dummy packet preview.';
-  return 'N/A';
+  if (q.type === 'checkboxGroup') return [];
+  return '';
 }
 
 function isOptionQuestion(q: Question) {
@@ -195,31 +161,140 @@ function Dot({ selected }: { selected: boolean }) {
   );
 }
 
+type PathwayMember = {
+  id: string;
+  memberName: string;
+  memberFirstName: string;
+  memberLastName: string;
+  memberMrn: string;
+  birthDate: string;
+  memberSex: string;
+  memberPrimaryLanguage: string;
+  memberPhone: string;
+  ispCurrentAddressStreet: string;
+  ispCurrentAddressCity: string;
+  ispCurrentAddressState: string;
+  ispCurrentAddressZip: string;
+  homeAddressStreet: string;
+  homeAddressCity: string;
+  homeAddressState: string;
+  homeAddressZip: string;
+  ispFacilityName: string;
+  currentLocationType: string;
+  assessmentSite: string;
+  pathway: string;
+  source: string;
+};
+
+const hasCsSummaryOnApplication = (app: Record<string, any>): boolean => {
+  if (Boolean(app?.csSummaryComplete)) return true;
+  const forms = Array.isArray(app?.forms) ? app.forms : [];
+  return forms.some((form: any) => {
+    const name = String(form?.name || form?.type || '').toLowerCase();
+    return name.includes('cs summary') || name.includes('cs member summary');
+  });
+};
+
+const pickAppValue = (app: Record<string, any>, keys: string[]) => {
+  const sources = [app, app?.formData || {}, app?.csSummaryData || {}, app?.csSummary || {}];
+  for (const source of sources) {
+    for (const key of keys) {
+      const value = String(source?.[key] ?? '').trim();
+      if (value) return value;
+    }
+  }
+  return '';
+};
+
+const todayLocalKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const toYmdOrRaw = (value: string | undefined) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const usFmt = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (usFmt) return `${usFmt[3]}-${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}`;
+  const isoLike = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoLike) return `${isoLike[1]}-${isoLike[2].padStart(2, '0')}-${isoLike[3].padStart(2, '0')}`;
+  return raw;
+};
+
+const splitMemberName = (member: PathwayMember) => {
+  const first = String(member.memberFirstName || '').trim();
+  const last = String(member.memberLastName || '').trim();
+  if (first || last) return { first, last };
+  const full = String(member.memberName || '').trim();
+  if (full.includes(',')) {
+    const [ln, fn] = full.split(',', 2).map((s) => s.trim());
+    return { first: fn || '', last: ln || '' };
+  }
+  const parts = full.split(/\s+/).filter(Boolean);
+  return { first: parts[0] || '', last: parts.slice(1).join(' ') };
+};
+
+function applyMemberPrefill(base: Record<string, AnswerValue>, member: PathwayMember): Record<string, AnswerValue> {
+  const next = { ...base };
+  const parsedName = splitMemberName(member);
+  const fullName =
+    member.memberName ||
+    [parsedName.last, parsedName.first].filter(Boolean).join(', ') ||
+    `${parsedName.first} ${parsedName.last}`.trim();
+  next.p1_member_name = fullName;
+  next.p1_agency = AGENCY_NAME;
+  next.p1_assessment_date = todayLocalKey();
+  if (parsedName.first) next.p1_first_name = parsedName.first;
+  if (parsedName.last) next.p1_last_name = parsedName.last;
+  if (member.memberMrn) {
+    next.p1_mrn = member.memberMrn;
+    next.p1_plan_id = member.memberMrn;
+  }
+  if (member.birthDate) next.p1_dob = toYmdOrRaw(member.birthDate);
+  if (member.memberPhone) next.p1_phone = member.memberPhone;
+  if (member.memberSex) next.p1_sex = member.memberSex;
+  if (member.memberPrimaryLanguage) next.p1_primary_language = member.memberPrimaryLanguage;
+  if (member.ispFacilityName) next.p2_facility_name = member.ispFacilityName;
+  if (member.currentLocationType) next.p2_current_type = member.currentLocationType;
+  if (member.assessmentSite) next.p2_assessment_site = member.assessmentSite;
+  if (member.ispCurrentAddressStreet) next.p2_current_street = member.ispCurrentAddressStreet;
+  if (member.ispCurrentAddressCity) next.p2_current_city = member.ispCurrentAddressCity;
+  next.p2_current_state = String(member.ispCurrentAddressState || '').trim() || 'CA';
+  if (member.ispCurrentAddressZip) next.p2_current_zip = member.ispCurrentAddressZip;
+  if (member.homeAddressStreet) next.p2_home_street = member.homeAddressStreet;
+  if (member.homeAddressCity) next.p2_home_city = member.homeAddressCity;
+  next.p2_home_state = String(member.homeAddressState || '').trim() || 'CA';
+  if (member.homeAddressZip) next.p2_home_zip = member.homeAddressZip;
+  return next;
+}
+
 export default function AdminAlftDummyPreviewPage() {
   const searchParams = useSearchParams();
+  const firestore = useFirestore();
   const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
-  const autoPrint = String(searchParams.get('autoprint') || '') === '1';
   const logoSrc = '/ils-logo.png';
+  const captureRef = useRef<HTMLDivElement>(null);
 
   const initialAnswers = useMemo<Record<string, AnswerValue>>(() => {
     const next: Record<string, AnswerValue> = {};
     SOURCE.forEach((page) => {
       page.questions.forEach((q) => {
-        next[q.id] = DUMMY_OVERRIDES[q.id] ?? toDefaultValue(q);
+        next[q.id] = toDefaultValue(q);
       });
     });
+    next.p1_agency = AGENCY_NAME;
     return next;
   }, []);
 
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(initialAnswers);
-
-  useEffect(() => {
-    if (!isPdfView || !autoPrint) return;
-    const timer = setTimeout(() => {
-      window.print();
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [isPdfView, autoPrint]);
+  const [members, setMembers] = useState<PathwayMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState('');
+  const [pdfTemplateMode, setPdfTemplateMode] = useState('');
 
   const setSingleAnswer = (id: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -233,119 +308,187 @@ export default function AdminAlftDummyPreviewPage() {
     });
   };
 
-  return (
+  const loadApplicationMembers = useCallback(async () => {
+    if (!firestore) {
+      setMembers([]);
+      return;
+    }
+    setLoadingMembers(true);
+    try {
+      const snap = await getDocs(query(collection(firestore, 'applications'), limit(5000)));
+      const mapped: PathwayMember[] = snap.docs
+        .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as Record<string, any>) }))
+        .filter((app) => hasCsSummaryOnApplication(app))
+        .map((app: any) => {
+          const first = pickAppValue(app, ['memberFirstName', 'member_first_name', 'firstName']);
+          const last = pickAppValue(app, ['memberLastName', 'member_last_name', 'lastName']);
+          const combined = [first, last].filter(Boolean).join(' ').trim();
+          const fallbackName = pickAppValue(app, ['memberName', 'fullName', 'applicantName']);
+          return {
+            id: String(app?.id || '').trim(),
+            memberName: combined || fallbackName || 'Member',
+            memberFirstName: first,
+            memberLastName: last,
+            memberMrn: pickAppValue(app, ['memberMrn', 'MCP_CIN', 'member_mrn', 'mrn']),
+            birthDate: pickAppValue(app, ['memberDob', 'birthDate', 'dob']),
+            memberSex: pickAppValue(app, ['memberSex', 'sex', 'gender']),
+            memberPrimaryLanguage: pickAppValue(app, ['memberPrimaryLanguage', 'memberLanguage', 'primaryLanguage']),
+            memberPhone: pickAppValue(app, ['contactPhone', 'memberPhone', 'bestContactPhone', 'phone']),
+            ispCurrentAddressStreet: pickAppValue(app, ['currentAddress', 'currentLocationAddress', 'ispCurrentAddressStreet']),
+            ispCurrentAddressCity: pickAppValue(app, ['currentCity', 'currentLocationCity', 'ispCurrentAddressCity']),
+            ispCurrentAddressState: pickAppValue(app, ['currentState', 'currentLocationState', 'ispCurrentAddressState']),
+            ispCurrentAddressZip: pickAppValue(app, ['currentZip', 'currentLocationZip', 'ispCurrentAddressZip']),
+            homeAddressStreet: pickAppValue(app, ['customaryAddress', 'homeAddressStreet']),
+            homeAddressCity: pickAppValue(app, ['customaryCity', 'homeAddressCity']),
+            homeAddressState: pickAppValue(app, ['customaryState', 'homeAddressState']),
+            homeAddressZip: pickAppValue(app, ['customaryZip', 'homeAddressZip']),
+            ispFacilityName: pickAppValue(app, ['currentLocationName', 'ispFacilityName', 'rcfeName', 'facilityName']),
+            currentLocationType: pickAppValue(app, ['currentLocation', 'currentLocationType']),
+            assessmentSite: pickAppValue(app, ['assessmentSite']),
+            pathway: pickAppValue(app, ['pathway']),
+            source: 'applications',
+          };
+        })
+        .filter((m) => Boolean(m.id) && Boolean(m.memberName))
+        .sort((a, b) => a.memberName.localeCompare(b.memberName));
+      setMembers(mapped);
+    } catch {
+      setMembers([]);
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, [firestore]);
+
+  useEffect(() => {
+    if (isPdfView) return;
+    void loadApplicationMembers();
+  }, [isPdfView, loadApplicationMembers]);
+
+  const filteredMembers = useMemo(() => {
+    const q = memberSearch.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter((m) => {
+      return (
+        m.memberName.toLowerCase().includes(q) ||
+        m.memberMrn.toLowerCase().includes(q) ||
+        m.pathway.toLowerCase().includes(q)
+      );
+    });
+  }, [memberSearch, members]);
+
+  const headerMemberName = String(answers.p1_member_name || '').trim();
+  const headerMemberMrn = String(answers.p1_mrn || '').trim();
+
+  const pullSelectedMember = () => {
+    const selected = members.find((m) => m.id === selectedMemberId);
+    if (!selected) return;
+    setAnswers(applyMemberPrefill(initialAnswers, selected));
+  };
+
+  const generatePreviewPdf = useCallback(async () => {
+    setPdfLoading(true);
+    setPdfError('');
+    try {
+      const templateRes = await fetch('/api/alft/template-fill-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers }),
+      });
+      if (templateRes.ok) {
+        setPdfTemplateMode(String(templateRes.headers.get('x-alft-template-fill-mode') || '').trim());
+        const blob = await templateRes.blob();
+        const url = URL.createObjectURL(blob);
+        setPdfUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+        return;
+      }
+      const err = await templateRes.json().catch(() => ({} as any));
+      setPdfError(String(err?.error || 'Template-based PDF preview failed.'));
+      setPdfTemplateMode('');
+      setPdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    } catch (e: any) {
+      setPdfError(String(e?.message || 'Could not generate PDF preview.'));
+      setPdfTemplateMode('');
+      setPdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    } finally {
+      setPdfLoading(false);
+    }
+  }, [answers]);
+
+  useEffect(() => {
+    if (!isPdfView) return;
+    void generatePreviewPdf();
+  }, [answers, generatePreviewPdf, isPdfView]);
+
+  useEffect(() => {
+    return () => {
+      setPdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    };
+  }, []);
+
+  const viewerHref = '/admin/alft-tracker/dummy-preview?view=pdf';
+
+  const packetContent = (
     <div className="alft-dummy-preview mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
-      <div className="mb-4 flex items-center justify-end gap-2 rounded-md border border-zinc-300 bg-white p-3 print:hidden">
-        {!isPdfView ? (
-          <Button variant="outline" asChild>
-            <Link href="/admin/alft-tracker/dummy-preview?view=pdf">
-              View PDF layout
-            </Link>
-          </Button>
-        ) : (
-          <Button variant="outline" asChild>
-            <Link href="/admin/alft-tracker/dummy-preview">Back to editor</Link>
-          </Button>
-        )}
-        {!isPdfView ? (
-          <Button variant="outline" asChild>
-            <Link href="/admin/alft-tracker/dummy-preview?view=pdf&autoprint=1">Print / Save PDF</Link>
-          </Button>
-        ) : (
-          <Button onClick={() => window.print()} variant="outline">
-            Print / Save PDF
-          </Button>
-        )}
-      </div>
-
       {!isPdfView ? (
-        <div className="mb-4 space-y-3 rounded-md border border-zinc-300 bg-white p-3 print:hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="text-sm font-semibold">ALFT Dummy Editor (Admin)</div>
-            <div className="text-xs text-zinc-600">Update choices here. Preview below updates immediately and prints as full 14-page packet.</div>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={() => setAnswers(initialAnswers)} variant="outline">
-              Reset demo values
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {PAGE_LAYOUT.map((layout) => {
-            const source = SOURCE.find((p) => p.id === layout.sourceId);
-            const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
-            return (
-              <details key={`editor-${layout.number}`} className="rounded border border-zinc-200 p-2">
-                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-700">
-                  Page {layout.number}: {layout.title}
-                </summary>
-                <div className="mt-2 grid grid-cols-1 gap-2 xl:grid-cols-2">
-                  {questions.map((q) => (
-                    <div
-                      key={`editor-field-${q.id}`}
-                      className={`rounded border border-zinc-100 bg-zinc-50 p-2 ${isLongTextQuestion(q) ? 'xl:col-span-2' : ''}`}
-                    >
-                      <div className="mb-1 text-[11px] font-medium leading-tight text-zinc-800">{formatPromptLabel(q.label)}</div>
-
-                      {q.type === 'text' ? (
-                        <input
-                          value={String(answers[q.id] || '')}
-                          onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                          className="h-8 w-full rounded border border-zinc-300 bg-white px-2 text-xs"
-                        />
-                      ) : null}
-
-                      {q.type === 'textarea' ? (
-                        <textarea
-                          value={String(answers[q.id] || '')}
-                          onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                          rows={isLargeCommentaryQuestion(q) ? 12 : Math.min(Math.max(q.rows || 3, 3), 6)}
-                          className={`w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs ${isLargeCommentaryQuestion(q) ? 'min-h-[220px]' : ''}`}
-                        />
-                      ) : null}
-
-                      {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
-                        <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
-                          {q.options.map((opt) => (
-                            <label key={`editor-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[11px]">
-                              <input
-                                type="radio"
-                                name={`edit-${q.id}`}
-                                checked={String(answers[q.id] || '') === opt.value}
-                                onChange={() => setSingleAnswer(q.id, opt.value)}
-                              />
-                              <span>{opt.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {q.type === 'checkboxGroup' && q.options?.length ? (
-                        <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
-                          {q.options.map((opt) => {
-                            const selected = Array.isArray(answers[q.id]) ? (answers[q.id] as string[]).includes(opt.value) : false;
-                            return (
-                              <label key={`editor-check-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[11px]">
-                                <input type="checkbox" checked={selected} onChange={() => toggleMultiAnswer(q.id, opt.value)} />
-                                <span>{opt.label}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
-        </div>
+        <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
+          <Button variant="outline" asChild>
+            <Link href={viewerHref}>View PDF layout</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href={viewerHref}>Print / Save PDF</Link>
+          </Button>
         </div>
       ) : null}
 
-      <div className="space-y-4 print:space-y-0">
+      {!isPdfView ? (
+        <div className="mb-4 rounded-md border border-zinc-300 bg-white p-3 print:hidden">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-12">
+            <Input
+              value={memberSearch}
+              onChange={(e) => setMemberSearch(e.target.value)}
+              placeholder="Search application member"
+              className="md:col-span-3"
+            />
+            <select
+              value={selectedMemberId}
+              onChange={(e) => setSelectedMemberId(e.target.value)}
+              className="h-10 rounded border border-zinc-300 bg-white px-2 text-sm md:col-span-3"
+            >
+              <option value="">Select member to prefill</option>
+              {filteredMembers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.memberName}{m.memberMrn ? ` • MRN ${m.memberMrn}` : ''}
+                </option>
+              ))}
+            </select>
+            <Button onClick={pullSelectedMember} variant="outline" disabled={!selectedMemberId} className="w-full md:col-span-2">
+              Pull from application
+            </Button>
+            <div className="flex flex-wrap gap-2 md:col-span-4">
+              <Button onClick={() => void loadApplicationMembers()} variant="outline" disabled={loadingMembers} className="w-full sm:w-auto">
+                {loadingMembers ? 'Loading...' : 'Refresh members'}
+              </Button>
+              <Button onClick={() => setAnswers(initialAnswers)} variant="outline" className="w-full sm:w-auto">
+                Reset demo values
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="printable-package-section space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
           const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
@@ -373,7 +516,7 @@ export default function AdminAlftDummyPreviewPage() {
                   <div className="text-center text-[12px] font-semibold tracking-wide">ALF TRANSITION ASSESSMENT</div>
                 </div>
                 <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-700">
-                  <span>Dummy Packet (ILS - Leo Lara)</span>
+                  <span>{headerMemberName || 'Member'}{headerMemberMrn ? ` • MRN: ${headerMemberMrn}` : ''}</span>
                   <span>Page {layout.number} of {TOTAL_PAGES}</span>
                 </div>
                 <div className="alft-section-title mt-1.5 text-[11px] font-semibold uppercase tracking-wide">
@@ -393,26 +536,76 @@ export default function AdminAlftDummyPreviewPage() {
                           {divider.label}
                         </div>
                       ))}
-                  <div className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${isLongTextQuestion(q) ? 'md:col-span-2 alft-col-span-2' : ''}`}>
+                  <div
+                    className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${
+                      isLongTextQuestion(q) ? 'md:col-span-2 alft-col-span-2' : ''
+                    }`}
+                  >
                     <div className="font-semibold leading-tight">
                       {formatPromptLabel(q.label)}
                     </div>
-                    {isOptionQuestion(q) && q.options?.length ? (
+                    {!isPdfView && q.type === 'text' ? (
+                      <input
+                        value={String(answers[q.id] || '')}
+                        onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                        className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
+                      />
+                    ) : null}
+                    {!isPdfView && q.type === 'textarea' ? (
+                      <textarea
+                        value={String(answers[q.id] || '')}
+                        onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                        rows={isLargeCommentaryQuestion(q) ? 12 : Math.min(Math.max(q.rows || 3, 3), 6)}
+                        className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentaryQuestion(q) ? 'min-h-[220px]' : ''}`}
+                      />
+                    ) : null}
+                    {!isPdfView && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
                       <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                        {q.options.map((opt) => (
+                          <label key={`edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                            <input
+                              type="radio"
+                              name={`preview-edit-${q.id}`}
+                              checked={String(answers[q.id] || '') === opt.value}
+                              onChange={() => setSingleAnswer(q.id, opt.value)}
+                            />
+                            <span>{opt.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+                    {!isPdfView && q.type === 'checkboxGroup' && q.options?.length ? (
+                      <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                        {q.options.map((opt) => {
+                          const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
+                          return (
+                            <label key={`edit-check-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                              <input type="checkbox" checked={selected} onChange={() => toggleMultiAnswer(q.id, opt.value)} />
+                              <span>{opt.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    {isPdfView && isOptionQuestion(q) && q.options?.length ? (
+                      <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
                         {q.options.map((opt) => {
                           const selected =
                             q.type === 'checkboxGroup'
                               ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value)
                               : String(answers[q.id] || '') === opt.value;
                           return (
-                            <div key={`output-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                            <div
+                              key={`output-opt-${q.id}-${opt.value}`}
+                              className="inline-flex min-h-[14px] items-center gap-1.5 text-[9.5px] leading-tight"
+                            >
                               <Dot selected={selected} />
                               <span className={`${selected ? 'font-semibold text-zinc-900' : 'text-zinc-600'}`}>{opt.label}</span>
                             </div>
                           );
                         })}
                       </div>
-                    ) : (
+                    ) : isPdfView ? (
                       <div
                         className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${
                           isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'
@@ -422,9 +615,6 @@ export default function AdminAlftDummyPreviewPage() {
                       >
                         {String(answers[q.id] || '').trim() || ' '}
                       </div>
-                    )}
-                    {q.type === 'select' && q.options?.length ? (
-                      <div className="mt-0.5 text-[9px] text-zinc-600">Selected: {optionLabel(q, String(answers[q.id] || ''))}</div>
                     ) : null}
                   </div>
                   </div>
@@ -620,5 +810,31 @@ export default function AdminAlftDummyPreviewPage() {
         }
       `}</style>
     </div>
+  );
+
+  if (!isPdfView) {
+    return packetContent;
+  }
+
+  return (
+    <PdfPreviewLayout
+      isPdfView={isPdfView}
+      viewPdfHref={viewerHref}
+      backToEditorHref="/admin/alft-tracker/dummy-preview"
+      backButtonLabel="Back to editor"
+      showBackButtonInHtmlView={false}
+      printHref={viewerHref}
+      captureRef={captureRef}
+      captureContent={packetContent}
+      htmlContent={packetContent}
+      pdfUrl={pdfUrl}
+      pdfLoading={pdfLoading}
+      pdfError={pdfError}
+      previewTitle={`ALFT dummy PDF preview${pdfTemplateMode ? ` (${pdfTemplateMode})` : ''}`}
+      loadingText={pdfLoading ? 'Generating PDF preview…' : 'PDF preview not available yet.'}
+      wrapperClassName="mx-auto w-full max-w-6xl space-y-3 p-4"
+      htmlWrapperClassName="mx-auto w-full max-w-[8.5in] space-y-3 p-2"
+      captureWidthPx={1120}
+    />
   );
 }

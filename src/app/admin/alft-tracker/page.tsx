@@ -30,6 +30,9 @@ import {
   arrayUnion,
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+const AGENCY_NAME = 'Connections Care Home Consultants';
+const ALFT_TEMPLATE_PATH =
+  'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf';
 
 type StandaloneUpload = {
   id: string;
@@ -753,6 +756,10 @@ export default function AdminAlftTrackerPage() {
   const [editRequestedActions, setEditRequestedActions] = useState('');
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
+  const [editTemplatePdfUrl, setEditTemplatePdfUrl] = useState('');
+  const [editTemplatePdfLoading, setEditTemplatePdfLoading] = useState(false);
+  const [editTemplatePdfError, setEditTemplatePdfError] = useState('');
+  const [editTemplatePdfMode, setEditTemplatePdfMode] = useState('');
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
   const [startingWorkflowFor, setStartingWorkflowFor] = useState('');
   const [assignmentQueueIndex, setAssignmentQueueIndex] = useState(0);
@@ -1284,6 +1291,7 @@ export default function AdminAlftTrackerPage() {
     if (!String(merged.p13_commentary_section || '').trim() && String((merged as any).p14_post_med_table_commentary || '').trim()) {
       merged.p13_commentary_section = String((merged as any).p14_post_med_table_commentary || '');
     }
+    merged.p1_agency = AGENCY_NAME;
     setEditExactAnswers(merged);
     setEditTransitionSummary(String(row?.alftForm?.transitionSummary || ''));
     setEditRequestedActions(String(row?.alftForm?.requestedActions || ''));
@@ -1291,6 +1299,54 @@ export default function AdminAlftTrackerPage() {
     setEditAdditionalNotes(String(row?.alftForm?.additionalNotes || ''));
     setEditRow(row);
     setEditOpen(true);
+    setEditTemplatePdfError('');
+    setEditTemplatePdfMode('');
+  }, []);
+
+  const generateEditTemplatePreview = useCallback(async () => {
+    if (!editOpen || !editRow) return;
+    setEditTemplatePdfLoading(true);
+    setEditTemplatePdfError('');
+    try {
+      const res = await fetch('/api/alft/template-fill-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers: editExactAnswers }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({} as any));
+        throw new Error(String(err?.error || `Template preview failed (HTTP ${res.status})`));
+      }
+      setEditTemplatePdfMode(String(res.headers.get('x-alft-template-fill-mode') || '').trim());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setEditTemplatePdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+    } catch (e: any) {
+      setEditTemplatePdfError(String(e?.message || 'Could not generate template preview.'));
+      setEditTemplatePdfMode('');
+      setEditTemplatePdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    } finally {
+      setEditTemplatePdfLoading(false);
+    }
+  }, [editExactAnswers, editOpen, editRow]);
+
+  useEffect(() => {
+    void generateEditTemplatePreview();
+  }, [generateEditTemplatePreview]);
+
+  useEffect(() => {
+    return () => {
+      setEditTemplatePdfUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return '';
+      });
+    };
   }, []);
 
   const sendAssignmentNotification = async (targetUid: string, payload: Record<string, any>) => {
@@ -1494,7 +1550,7 @@ export default function AdminAlftTrackerPage() {
         body: JSON.stringify({
           idToken,
           intakeId: editRow.id,
-          exactPacketAnswers: editExactAnswers,
+          exactPacketAnswers: { ...editExactAnswers, p1_agency: AGENCY_NAME },
           transitionSummary: summary,
           requestedActions: actions,
           barriersAndRisks: String(editBarriersAndRisks || '').trim() || null,
@@ -2368,6 +2424,54 @@ export default function AdminAlftTrackerPage() {
               <div className="text-xs text-muted-foreground font-mono">{editRow?.medicalRecordNumber || '—'}</div>
             </div>
 
+            <div className="rounded-md border bg-white p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs text-zinc-600">
+                  <span>ALFT template preview (same form used through SW/staff workflow).</span>
+                  {editTemplatePdfMode ? <Badge variant="outline">Mode: {editTemplatePdfMode}</Badge> : null}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void generateEditTemplatePreview()}
+                    disabled={editTemplatePdfLoading}
+                  >
+                    {editTemplatePdfLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                    Refresh template preview
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!editTemplatePdfUrl}
+                    onClick={() => {
+                      if (editTemplatePdfUrl) window.open(editTemplatePdfUrl, '_blank', 'noopener,noreferrer');
+                    }}
+                  >
+                    Open PDF
+                  </Button>
+                </div>
+              </div>
+              {editTemplatePdfError ? (
+                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {editTemplatePdfError}
+                </div>
+              ) : null}
+              {editTemplatePdfLoading ? (
+                <div className="flex h-[55vh] items-center justify-center text-sm text-zinc-500">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating template preview...
+                </div>
+              ) : null}
+              {!editTemplatePdfLoading && editTemplatePdfUrl ? (
+                <iframe
+                  src={editTemplatePdfUrl}
+                  title="Edit ALFT template preview"
+                  className="h-[62vh] w-full rounded border"
+                />
+              ) : null}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="edit-transition-summary">Transition summary</Label>
               <textarea
@@ -2416,7 +2520,18 @@ export default function AdminAlftTrackerPage() {
             />
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSaving}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditOpen(false);
+                setEditTemplatePdfUrl((prev) => {
+                  if (prev) URL.revokeObjectURL(prev);
+                  return '';
+                });
+                setEditTemplatePdfMode('');
+              }}
+              disabled={editSaving}
+            >
               Cancel
             </Button>
             <Button onClick={() => void saveEdit()} disabled={editSaving}>
