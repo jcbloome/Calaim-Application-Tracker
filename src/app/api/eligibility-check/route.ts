@@ -3,6 +3,39 @@ import { z } from 'zod';
 import * as admin from 'firebase-admin';
 import { sendEligibilityCheckConfirmationEmail } from '@/app/actions/send-email';
 
+type ReviewNotificationRecipient = {
+  enabled?: boolean;
+  eligibility?: boolean;
+  uid?: string;
+  name?: string;
+  email?: string;
+};
+
+type ReviewNotificationsSettings = {
+  enabled?: boolean;
+  recipients?: Record<string, ReviewNotificationRecipient>;
+};
+
+type StaffNotificationPayload = {
+  title: string;
+  message: string;
+  type: 'eligibility_check';
+  priority: 'Priority';
+  status: 'Open';
+  isRead: boolean;
+  timestamp: admin.firestore.FieldValue;
+  source: 'portal';
+  actionUrl: string;
+  eligibilityCheckId: string;
+  memberName: string;
+  memberMrn: string | null;
+  memberDob: string | null;
+  mcpName: string | null;
+  pathway: string;
+  healthPlan: 'Kaiser' | 'Health Net';
+  county: string | null;
+};
+
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -46,13 +79,36 @@ const KAISER_CONTRACTED_COUNTIES = [
 const HEALTH_NET_SUPPORTED_COUNTIES = ['Los Angeles', 'Sacramento'] as const;
 const KAISER_CONTRACTED_COUNTIES_TEXT =
   'Alameda, Amador, Contra Costa, El Dorado, Fresno, Imperial, Kern, Kings, Los Angeles, Madera, Marin, Mariposa, Napa, Orange, Placer, Riverside, Sacramento, San Bernardino, San Diego, San Francisco, San Joaquin, San Mateo, Santa Clara, Santa Cruz, Solano, Sonoma, Stanislaus, Sutter, Tulare, Ventura, Yolo, and Yuba';
+const MM_DD_YYYY_REGEX = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/;
+const normalizeDobInput = (value: unknown): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return `${isoMatch[2]}/${isoMatch[3]}/${isoMatch[1]}`;
+
+  const separatedMatch = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (separatedMatch) {
+    const mm = separatedMatch[1].padStart(2, '0');
+    const dd = separatedMatch[2].padStart(2, '0');
+    return `${mm}/${dd}/${separatedMatch[3]}`;
+  }
+
+  return raw;
+};
 
 // Validation schema for eligibility check submission
 const eligibilityCheckSchema = z.object({
   // Member Information
   memberFirstName: z.string().min(2, 'Member first name must be at least 2 characters'),
   memberLastName: z.string().min(2, 'Member last name must be at least 2 characters'),
-  memberBirthday: z.string().min(1, 'Member birthday is required'),
+  memberBirthday: z.preprocess(
+    normalizeDobInput,
+    z
+      .string()
+      .min(1, 'Member birthday is required')
+      .regex(MM_DD_YYYY_REGEX, 'Member birthday must be in MM/DD/YYYY format')
+  ),
   memberMrn: z.string().min(1, 'Medical Record Number (MRN) is required'),
   healthPlan: z.enum(['Kaiser', 'Health Net']),
   pathway: z.string().optional(),
@@ -171,8 +227,8 @@ export async function POST(request: NextRequest) {
     // Notify staff recipients (Electron + My Notifications) using review notification settings.
     try {
       const settingsSnap = await firestore.collection('system_settings').doc('review_notifications').get();
-      const settings = settingsSnap.exists ? settingsSnap.data() : null;
-      const globalEnabled = (settings as any)?.enabled === undefined ? true : Boolean((settings as any)?.enabled);
+      const settings = (settingsSnap.exists ? settingsSnap.data() : null) as ReviewNotificationsSettings | null;
+      const globalEnabled = settings?.enabled === undefined ? true : Boolean(settings.enabled);
       if (!globalEnabled) {
         return NextResponse.json({
           success: true,
@@ -181,9 +237,9 @@ export async function POST(request: NextRequest) {
           estimatedResponse: '1 business day'
         });
       }
-      const recipients = ((settings as any)?.recipients || {}) as Record<string, any>;
+      const recipients = settings?.recipients || {};
       const recipientUids: string[] = [];
-      const recipientMetaByUid = new Map<string, any>();
+      const recipientMetaByUid = new Map<string, ReviewNotificationRecipient>();
 
       Object.entries(recipients).forEach(([key, raw]) => {
         const r = raw || {};
@@ -201,7 +257,7 @@ export async function POST(request: NextRequest) {
         const memberCounty = String(data.county || '').trim() || '—';
         const mcpName = String(data.healthPlan || '').trim() || '—';
         const pathway = String(data.pathway || '').trim() || 'Eligibility Check';
-        const basePayload: Record<string, any> = {
+        const basePayload: StaffNotificationPayload = {
           title: 'Eligibility Check',
           message:
             `${memberName || 'Member'} — ${data.healthPlan} • ${memberCounty}\n` +
@@ -248,7 +304,7 @@ export async function POST(request: NextRequest) {
       estimatedResponse: '1 business day'
     });
     
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Error processing eligibility check:', error);
     
     return NextResponse.json(

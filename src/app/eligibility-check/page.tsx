@@ -23,7 +23,6 @@ import {
   Shield,
   Mail,
   User,
-  Calendar,
   FileText,
   Building,
   ExternalLink,
@@ -84,11 +83,39 @@ const KAISER_CONTRACTED_COUNTIES_TEXT =
   'Alameda, Amador, Contra Costa, El Dorado, Fresno, Imperial, Kern, Kings, Los Angeles, Madera, Marin, Mariposa, Napa, Orange, Placer, Riverside, Sacramento, San Bernardino, San Diego, San Francisco, San Joaquin, San Mateo, Santa Clara, Santa Cruz, Solano, Sonoma, Stanislaus, Sutter, Tulare, Ventura, Yolo, and Yuba';
 
 // Form validation schema
+const MM_DD_YYYY_REGEX = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/;
+const normalizeDobInput = (value: string): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return `${isoMatch[2]}/${isoMatch[3]}/${isoMatch[1]}`;
+
+  const separatedMatch = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (separatedMatch) {
+    const mm = separatedMatch[1].padStart(2, '0');
+    const dd = separatedMatch[2].padStart(2, '0');
+    return `${mm}/${dd}/${separatedMatch[3]}`;
+  }
+
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  const mm = digits.slice(0, 2);
+  const dd = digits.slice(2, 4);
+  const yyyy = digits.slice(4, 8);
+  if (digits.length <= 2) return mm;
+  if (digits.length <= 4) return `${mm}/${dd}`;
+  return `${mm}/${dd}/${yyyy}`;
+};
+
 const eligibilityCheckSchema = z.object({
   // Member Information
   memberFirstName: z.string().min(2, 'Member first name must be at least 2 characters'),
   memberLastName: z.string().min(2, 'Member last name must be at least 2 characters'),
-  memberBirthday: z.string().min(1, 'Member birthday is required'),
+  memberBirthday: z
+    .string()
+    .min(1, 'Member birthday is required')
+    .transform(normalizeDobInput)
+    .refine((value) => MM_DD_YYYY_REGEX.test(value), 'Use DOB format MM/DD/YYYY (example: 01/31/1950)'),
   memberMrn: z.string().min(1, 'Medical Record Number (MRN) is required'),
   healthPlan: z.enum(['Kaiser', 'Health Net'], {
     required_error: 'Please select a health plan'
@@ -149,7 +176,6 @@ export default function EligibilityCheckPage() {
   });
 
   const { register, handleSubmit, formState: { errors }, setValue, watch } = form;
-  const watchedHealthPlan = watch('healthPlan');
 
   // Check if county is supported for selected health plan
   const isCountySupported = (county: string, healthPlan: string): boolean => {
@@ -193,11 +219,12 @@ export default function EligibilityCheckPage() {
         throw new Error(result.message || 'Submission failed');
       }
       
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Please try again or contact support.';
       console.error('Eligibility check submission error:', error);
       toast({
         title: "Submission Failed",
-        description: error.message || "Please try again or contact support.",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -217,8 +244,8 @@ export default function EligibilityCheckPage() {
             <span className="block">for Health Net and Kaiser Members</span>
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            We're happy to help verify if a member is eligible for CalAIM Community Supports services.
-            Simply provide the member's information below and we'll check their eligibility status.
+            We&apos;re happy to help verify if a member is eligible for CalAIM Community Supports services.
+            Simply provide the member&apos;s information below and we&apos;ll check their eligibility status.
           </p>
           <p className="text-sm text-gray-600 max-w-3xl mx-auto mt-3">
             Please note: while Connections is active for CalAIM with Health Net and Kaiser in various counties,
@@ -340,7 +367,7 @@ export default function EligibilityCheckPage() {
                     <Home className="h-4 w-4" />
                     SNF Residents:
                   </p>
-                  <p>SNF residents with any income might not show any SOC since the SNF receives most of the member's income.</p>
+                  <p>SNF residents with any income might not show any SOC since the SNF receives most of the member&apos;s income.</p>
                 </div>
                 
                 {/* BenefitsCal Link */}
@@ -371,7 +398,7 @@ export default function EligibilityCheckPage() {
               Eligibility Check Request
             </CardTitle>
             <CardDescription>
-              Please provide the member's information and your contact details below.
+              Please provide the member&apos;s information and your contact details below.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -429,10 +456,19 @@ export default function EligibilityCheckPage() {
                     <Label htmlFor="memberBirthday">Date of Birth *</Label>
                     <Input
                       id="memberBirthday"
-                      type="date"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="00/00/0000"
+                      maxLength={10}
                       {...register('memberBirthday')}
+                      onInput={(event) => {
+                        const input = event.currentTarget;
+                        const normalized = normalizeDobInput(input.value);
+                        if (input.value !== normalized) input.value = normalized;
+                      }}
                       className={errors.memberBirthday ? 'border-red-500' : ''}
                     />
+                    <p className="text-sm text-gray-600 mt-1">Format: MM/DD/YYYY</p>
                     {errors.memberBirthday && (
                       <p className="text-red-500 text-sm mt-1">{errors.memberBirthday.message}</p>
                     )}
@@ -681,7 +717,7 @@ export default function EligibilityCheckPage() {
                     )}
                     
                     <p className="text-sm text-gray-600 mt-1">
-                      Please specify your relationship to the member for whom you're requesting the eligibility check.
+                      Please specify your relationship to the member for whom you&apos;re requesting the eligibility check.
                     </p>
                   </div>
                 </div>

@@ -17,9 +17,8 @@ import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, Sparkles, Calendar, User, FileText, UserCheck, ExternalLink, CheckCircle2, Loader2, Mail, Bell } from 'lucide-react';
+import { AlertTriangle, Sparkles, FileText, ExternalLink, CheckCircle2, Mail, Bell } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
-import { ApplicationCardSkeleton, ApplicationTableSkeleton } from '@/components/ApplicationCardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { type WithId } from '@/firebase';
@@ -249,6 +248,7 @@ const getProcessStatusFromApp = (
   }
   return '';
 };
+void getProcessStatusFromApp;
 
 const getAdminProcessingStatus = (app: WithId<Application & FormValues>) =>
   String((app as any)?.adminProcessingStatus || '').trim();
@@ -295,12 +295,12 @@ const formatDate = (date: any) => {
             try {
                 const parsedDate = parse(date, 'MM/dd/yyyy', new Date());
                 return format(parsedDate, 'PPP');
-            } catch (e) { return date; }
+            } catch { return date; }
         }
         try {
             const parsedDate = new Date(date);
             if (!isNaN(parsedDate.getTime())) return format(parsedDate, 'PPP');
-        } catch (e) { /* Fallthrough */ }
+        } catch { /* Fallthrough */ }
     }
     if (date && typeof date.toDate === 'function') {
         return format(date.toDate(), 'PPP');
@@ -625,7 +625,7 @@ export const AdminApplicationsTable = ({
   onSelectionChange,
   selected,
   showInlineTracker = false,
-  onRefreshRequested,
+  onRefreshRequested: _onRefreshRequested,
 }: {
   applications: WithId<Application & FormValues>[];
   isLoading: boolean;
@@ -731,13 +731,25 @@ export const AdminApplicationsTable = ({
       });
     }
   };
+  void handleConfirmCsSummary;
+  void handleSendReminder;
     
     const sortedApplications = useMemo(() => {
         if (!applications) return [];
         return [...applications].sort((a, b) => {
-            const dateA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
-            const dateB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
-            return dateB - dateA;
+            const toMillis = (value: any): number => {
+              if (!value) return 0;
+              if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
+              if (typeof value?.toDate === 'function') return value.toDate().getTime();
+              const parsed = new Date(String(value)).getTime();
+              return Number.isFinite(parsed) ? parsed : 0;
+            };
+            const createdA = toMillis((a as any).submissionDate || (a as any).createdAt);
+            const createdB = toMillis((b as any).submissionDate || (b as any).createdAt);
+            if (createdA !== createdB) return createdB - createdA;
+            const updatedA = toMillis((a as any).lastUpdated);
+            const updatedB = toMillis((b as any).lastUpdated);
+            return updatedB - updatedA;
         });
     }, [applications]);
 
@@ -818,6 +830,7 @@ export const AdminApplicationsTable = ({
               const csSummaryIsNew = isNewCsSummary(app);
               const adminProcessingStatus = getAdminProcessingStatus(app);
               const adminProcessingReason = getAdminProcessingReason(app);
+              void adminProcessingReason;
               const staffLabel = getAssignedStaffLabel(app);
               const isAuthReceivedIntake = Boolean(
                 (app as any)?.kaiserAuthReceivedViaIls ||
@@ -896,8 +909,8 @@ export const AdminApplicationsTable = ({
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 break-words">
-                      {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy')}` : 'Created: N/A'}
-                      {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yyyy')}`}
+                      {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy h:mm a')}` : 'Created: N/A'}
+                      {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yyyy h:mm a')}`}
                       • By: {referrerName || (sanitizeUserId(app.userId) ? `user-ID: ...${sanitizeUserId(app.userId).substring(sanitizeUserId(app.userId).length - 4)}` : 'Unknown')}
                       {` • Staff: ${staffLabel}`}
                     </div>
@@ -1125,8 +1138,8 @@ export const AdminApplicationsTable = ({
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground break-words">
-                      {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yy')}` : 'Created: N/A'}
-                      {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yy')}`}
+                      {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy h:mm a')}` : 'Created: N/A'}
+                      {lastUpdatedDate && ` • Updated: ${format(lastUpdatedDate, 'MM/dd/yyyy h:mm a')}`}
                       • By: {referrerName || (sanitizeUserId(app.userId) ? `user-ID: ...${sanitizeUserId(app.userId).substring(sanitizeUserId(app.userId).length - 4)}` : 'Unknown')}
                       {` • Staff: ${staffLabel}`}
                     </div>

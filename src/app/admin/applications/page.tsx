@@ -2,14 +2,14 @@
 'use client';
 
 import React, { useMemo, useState, useEffect, useCallback, Suspense } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, doc, writeBatch, getDocs, collectionGroup, Timestamp } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
 import { Button } from '@/components/ui/button';
-import { Filter, Trash2, Database, AlertTriangle, Plus, FolderArchive } from 'lucide-react';
+import { Trash2, Database, AlertTriangle, Plus, FolderArchive } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -269,7 +269,7 @@ function AdminApplicationsPageContent() {
           )
         );
 
-        let canonicalId = linkedCanonicalIds[0] || app.id;
+        const canonicalId = linkedCanonicalIds[0] || app.id;
         const existingCanonical = byId.get(canonicalId);
         if (!existingCanonical) {
           byId.set(canonicalId, app);
@@ -370,7 +370,14 @@ function AdminApplicationsPageContent() {
       const memberMatch =
         !memberFilter ||
         `${app.memberFirstName} ${app.memberLastName}`.toLowerCase().includes(query) ||
+        String((app as any)?.memberName || '').toLowerCase().includes(query) ||
+        String((app as any)?.applicationName || '').toLowerCase().includes(query) ||
         String((app as any)?.memberMrn || '').toLowerCase().includes(query) ||
+        String((app as any)?.memberMediCalNum || '').toLowerCase().includes(query) ||
+        String((app as any)?.healthPlan || '').toLowerCase().includes(query) ||
+        String((app as any)?.CalAIM_MCO || '').toLowerCase().includes(query) ||
+        String((app as any)?.CalAIM_MCP || '').toLowerCase().includes(query) ||
+        String((app as any)?.mcpName || '').toLowerCase().includes(query) ||
         String((app as any)?.Authorization_Number_T038 || '').toLowerCase().includes(query) ||
         String((app as any)?.Diagnostic_Code || '').toLowerCase().includes(query) ||
         String((app as any)?.id || '').toLowerCase().includes(query);
@@ -572,38 +579,38 @@ function AdminApplicationsPageContent() {
             <h1 className="text-3xl font-bold">All Applications</h1>
             <p className="text-muted-foreground">Browse and manage all applications submitted to the platform.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="outline">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            <Button asChild variant="outline" className="whitespace-nowrap">
               <Link href="/admin/applications?internalStatus=On%20Hold">
                 <FolderArchive className="mr-2 h-4 w-4" />
                 On Hold Applications
               </Link>
             </Button>
-            <Button asChild variant="outline">
+            <Button asChild variant="outline" className="whitespace-nowrap">
               <Link href="/admin/applications/intake-processing">
                 <Database className="mr-2 h-4 w-4" />
                 Intake Processing
               </Link>
             </Button>
-            <Button asChild>
+            <Button asChild className="whitespace-nowrap">
               <Link href="/admin/applications/create">
                 <Plus className="mr-2 h-4 w-4" />
                 Create Application
               </Link>
             </Button>
            {selected.length > 0 && isSuperAdmin && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button 
                   onClick={handleRemoveDuplicates}
                   variant="outline"
-                  className="text-orange-600 hover:text-orange-700 border-orange-200 hover:border-orange-300"
+                  className="whitespace-nowrap text-orange-600 hover:text-orange-700 border-orange-200 hover:border-orange-300"
                 >
                   <AlertTriangle className="mr-2 h-4 w-4" />
                   Remove Bob Jones Duplicates
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                      <Button variant="destructive">
+                      <Button variant="destructive" className="whitespace-nowrap">
                           <Trash2 className="mr-2 h-4 w-4" /> Delete ({selected.length})
                       </Button>
                   </AlertDialogTrigger>
@@ -635,15 +642,15 @@ function AdminApplicationsPageContent() {
                         <CardDescription>Refine the list of applications using the filters below.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="flex flex-col sm:flex-row gap-4 mb-4 p-4 border rounded-lg bg-muted/50">
-                        <div className="flex-1 min-w-[150px]">
+                      <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border bg-muted/50 p-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+                        <div className="md:col-span-2 xl:col-span-2 2xl:col-span-2">
                           <Input
-                            placeholder="Search name, MRN, auth #, diagnostic code, app ID..."
+                            placeholder="Search application/member name, MCP/plan, MRN, auth #, app ID..."
                             value={memberFilter}
                             onChange={(e) => setMemberFilter(e.target.value)}
                           />
                         </div>
-                        <div className="flex-1 min-w-[150px]">
+                        <div>
                           <Select value={healthPlanFilter} onValueChange={setHealthPlanFilter}>
                             <SelectTrigger><SelectValue placeholder="Filter by Health Plan" /></SelectTrigger>
                             <SelectContent>
@@ -654,7 +661,7 @@ function AdminApplicationsPageContent() {
                             </SelectContent>
                           </Select>
                         </div>
-                         <div className="flex-1 min-w-[150px]">
+                         <div>
                           <Select value={pathwayFilter} onValueChange={setPathwayFilter}>
                             <SelectTrigger><SelectValue placeholder="Filter by Pathway" /></SelectTrigger>
                             <SelectContent>
@@ -664,7 +671,7 @@ function AdminApplicationsPageContent() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="flex-1 min-w-[150px]">
+                        <div>
                           <Select value={statusFilter} onValueChange={setStatusFilter}>
                             <SelectTrigger><SelectValue placeholder="Filter by Status" /></SelectTrigger>
                             <SelectContent>
@@ -677,7 +684,7 @@ function AdminApplicationsPageContent() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="flex-1 min-w-[180px]">
+                        <div>
                           <Select value={internalStatusFilter} onValueChange={setInternalStatusFilter}>
                             <SelectTrigger><SelectValue placeholder="Filter by Internal Status" /></SelectTrigger>
                             <SelectContent>
@@ -691,7 +698,7 @@ function AdminApplicationsPageContent() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="flex-1 min-w-[180px]">
+                        <div>
                           <Select value={staffFilter} onValueChange={setStaffFilter}>
                             <SelectTrigger><SelectValue placeholder="Filter by Staff" /></SelectTrigger>
                             <SelectContent>
@@ -704,7 +711,7 @@ function AdminApplicationsPageContent() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="flex-1 min-w-[200px]">
+                        <div>
                           <Select value={intakeFilter} onValueChange={(value) => setIntakeFilter(value as IntakeFilterValue)}>
                             <SelectTrigger><SelectValue placeholder="Filter by Intake Type" /></SelectTrigger>
                             <SelectContent>
@@ -717,7 +724,7 @@ function AdminApplicationsPageContent() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <Button variant="ghost" onClick={clearFilters}>Clear</Button>
+                        <Button variant="ghost" onClick={clearFilters} className="whitespace-nowrap">Clear</Button>
                       </div>
                       {error && <p className="text-destructive">Error loading applications: A permission error occurred while fetching data.</p>}
                       <AdminApplicationsTable 
