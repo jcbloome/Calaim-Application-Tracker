@@ -337,7 +337,7 @@ function buildDefaultDraft(params: {
   const kaiserAuthorizationLine = hasKaiserAuthorizationAtIntake
     ? hasPriorIntroEmail
       ? `This is a reminder to sign in and continue the existing Kaiser-authorized CalAIM Assisted Living Transitions application for ${memberName}${memberMrn ? ` (MRN: ${memberMrn})` : ''}.`
-      : `We have received Kaiser authorization for ${memberName} for the California Advancing and Innovating Medi-Cal (CalAIM) program for Assisted Living Transitions${memberMrn ? ` (MRN: ${memberMrn})` : ''}. We need the required documents below to move forward.`
+      : `We work with Kaiser (through a sub-contract with Independent Living Systems) as a Community Support Provider for the California Advancing and Innovating Medi-Cal (CalAIM) Program. We received an authorization for ${memberName} for Assisted Living Transitions${memberMrn ? ` (MRN: ${memberMrn})` : ''}. We need the required documents below to move forward.`
     : hasPriorIntroEmail
       ? `This is a reminder to continue the CalAIM application for ${memberName}.`
       : `We started a CalAIM application for ${memberName} and we are ready for next steps.`;
