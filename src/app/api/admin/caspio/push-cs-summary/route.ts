@@ -54,6 +54,7 @@ const MONTHLY_INCOME_FIELD = 'Monthly_Income';
 const MCO_AND_TIER_FIELD = 'MCO_and_Tier';
 const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
 const KAISER_STATUS_FIELD = 'Kaiser_Status';
+const UNKNOWN_CONTACT_PLACEHOLDER = 'Unknown';
 const KAISER_STAFF_ASSIGNMENT_FIELD_CANDIDATES = [
   'Kaiser_Staff_Assignment',
   'Kaiser_Staff_Assigned',
@@ -296,6 +297,52 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
   if (direct !== undefined && direct !== null && direct !== '') return direct;
   const normalizedTarget = normalizeFieldName(csField);
   if (!normalizedTarget || !applicationData || typeof applicationData !== 'object') return '';
+  if (
+    normalizedTarget === 'membermrn' ||
+    normalizedTarget === 'mrn' ||
+    normalizedTarget === 'medicalrecordnumber' ||
+    normalizedTarget === 'medicalrecordnumbermrn' ||
+    normalizedTarget === 'kaisermrn' ||
+    normalizedTarget === 'mcpcin'
+  ) {
+    const mrnValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'memberMrn',
+      'medicalRecordNumber',
+      'mrn',
+      'Member_MRN',
+      'MRN',
+      'MCP_CIN',
+    ]);
+    if (hasValue(mrnValue)) return mrnValue;
+  }
+  if (
+    normalizedTarget === 'sex' ||
+    normalizedTarget === 'gender' ||
+    normalizedTarget === 'membersex'
+  ) {
+    const sexValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'sex',
+      'gender',
+      'memberSex',
+      'memberGender',
+    ]);
+    if (hasValue(sexValue)) return sexValue;
+  }
+  if (
+    normalizedTarget === 'membercounty' ||
+    normalizedTarget === 'county'
+  ) {
+    const countyValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
+      'memberCounty',
+      'currentCounty',
+      'customaryCounty',
+      'county',
+      'member_county',
+      'Member_County',
+      'Current_County',
+    ]);
+    if (hasValue(countyValue)) return countyValue;
+  }
   if (MEDI_CAL_CS_FIELD_ALIASES.has(normalizedTarget)) {
     const mediCalValue = extractMediCalNumberFromApplication(applicationData as Record<string, any>);
     if (mediCalValue) return mediCalValue;
@@ -716,11 +763,14 @@ async function syncPrePushNoteToClientNotes(params: {
     const suffix = params.applicationReference
       ? ` [Admin push: ${params.applicationReference}]`
       : ' [Admin push]';
-    const payload: Record<string, any> = {
+    const basePayload: Record<string, any> = {
       Client_ID2: /^\d+$/.test(clientId2) ? Number(clientId2) : clientId2,
       User_ID: resolvedUserId,
       Comments: `${prePushNotes}${suffix}`,
       Time_Stamp: new Date().toISOString(),
+    };
+    const payload: Record<string, any> = {
+      ...basePayload,
       Follow_Up_Status: '🟢Open',
     };
     if (hasValue(params.assignedStaffId)) payload.Follow_Up_Assignment = params.assignedStaffId;
@@ -730,17 +780,31 @@ async function syncPrePushNoteToClientNotes(params: {
     }
 
     const insertUrl = `${params.baseUrl}/tables/connect_tbl_clientnotes/records`;
-    const insertResponse = await fetch(insertUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${params.token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!insertResponse.ok) {
+    const postNote = async (notePayload: Record<string, any>) => {
+      const insertResponse = await fetch(insertUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${params.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(notePayload),
+      });
+      if (insertResponse.ok) return { ok: true as const, errorText: '' };
       const errorText = await insertResponse.text().catch(() => '');
-      throw new Error(`Caspio note insert failed: ${insertResponse.status} ${errorText}`);
+      return { ok: false as const, errorText: `Caspio note insert failed: ${insertResponse.status} ${errorText}` };
+    };
+    const firstAttempt = await postNote(payload);
+    if (!firstAttempt.ok) {
+      // Some client-notes environments do not expose optional assignment/status columns.
+      const fallbackAttempt = await postNote(basePayload);
+      if (!fallbackAttempt.ok) {
+        const secondFallbackPayload = { ...basePayload };
+        delete secondFallbackPayload.Time_Stamp;
+        const secondFallback = await postNote(secondFallbackPayload);
+        if (!secondFallback.ok) {
+          throw new Error([firstAttempt.errorText, fallbackAttempt.errorText, secondFallback.errorText].filter(Boolean).join(' | '));
+        }
+      }
     }
 
     return { success: true, skipped: false, reason: 'inserted' as const };
@@ -765,6 +829,8 @@ export async function POST(request: NextRequest) {
       ? canonicalizeApplicationData(rawApplicationData as Record<string, any>)
       : null;
     const providedMapping = (body?.mapping || null) as Record<string, string> | null;
+    const notesOnly = Boolean(body?.notesOnly);
+    const skeletonPush = Boolean(body?.skeletonPush);
     const sharedMappingPayload = await getSharedLockedMapping();
     const fallbackMapping = sharedMappingPayload?.lockedMappings || null;
     const requestedMappingDraftMeta = (() => {
@@ -793,12 +859,12 @@ export async function POST(request: NextRequest) {
 
     const firstName = clean(applicationData.memberFirstName);
     const lastName = clean(applicationData.memberLastName);
-    const primaryContactFirstName = clean(
+    const primaryContactFirstNameDefault = clean(
       applicationData?.bestContactFirstName ||
       applicationData?.referrerFirstName ||
       firstName
     );
-    const primaryContactLastName = clean(
+    const primaryContactLastNameDefault = clean(
       applicationData?.bestContactLastName ||
       applicationData?.referrerLastName ||
       lastName
@@ -856,6 +922,25 @@ export async function POST(request: NextRequest) {
       if (isKaiserApplication && /^t2038\s*requested$/i.test(requestedCalAIMStatusRaw)) return 'Pending';
       return requestedCalAIMStatusRaw;
     })();
+    const explicitBestContactFirstName = clean(
+      (rawApplicationData as Record<string, any> | null)?.bestContactFirstName ||
+      (rawApplicationData as Record<string, any> | null)?.contactFirstName
+    );
+    const explicitBestContactLastName = clean(
+      (rawApplicationData as Record<string, any> | null)?.bestContactLastName ||
+      (rawApplicationData as Record<string, any> | null)?.contactLastName
+    );
+    const isSkeletonLikePush = skeletonPush || (isKaiserApplication && isDraftLikeForPush);
+    const primaryContactFirstName = clean(
+      isSkeletonLikePush
+        ? (explicitBestContactFirstName || UNKNOWN_CONTACT_PLACEHOLDER)
+        : primaryContactFirstNameDefault
+    );
+    const primaryContactLastName = clean(
+      isSkeletonLikePush
+        ? (explicitBestContactLastName || UNKNOWN_CONTACT_PLACEHOLDER)
+        : primaryContactLastNameDefault
+    );
     if (!firstName || !lastName) {
       return NextResponse.json(
         { success: false, message: 'Member first and last name are required.' },
@@ -897,7 +982,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           code: 'missing-pre-push-notes',
-          message: 'Pre-push notes are required before pushing draft applications to Caspio.',
+            message: 'Notes are required before pushing draft applications to Caspio.',
         },
         { status: 400 }
       );
@@ -960,6 +1045,58 @@ export async function POST(request: NextRequest) {
       applicationData?.id ||
       body?.applicationId
     );
+    if (notesOnly) {
+      if (!hintedClientId2) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'missing-client-id2',
+            message: 'Client_ID2 is required to push notes separately.',
+          },
+          { status: 400 }
+        );
+      }
+      if (!preAssessmentNotes) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'missing-pre-push-notes',
+            message: 'Notes are required before sending notes to Caspio.',
+          },
+          { status: 400 }
+        );
+      }
+      const noteSync = await syncPrePushNoteToClientNotes({
+        baseUrl,
+        token,
+        clientId2: hintedClientId2,
+        preAssessmentNotes,
+        firstName,
+        lastName,
+        assignedStaffId,
+        assignedStaffName,
+        applicationReference,
+      });
+      if (!noteSync.success) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'note-sync-failed',
+            message: 'Failed to sync notes to Caspio client notes.',
+            noteSync,
+            clientId2: hintedClientId2,
+          },
+          { status: 502 }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        message: 'Notes synced to Caspio client notes.',
+        clientId2: hintedClientId2,
+        noteSync,
+        mappingDraftMeta: resolvedMappingDraftMeta,
+      });
+    }
 
     let existingRow: Record<string, any> | null = null;
     let existingRowMatchSource: 'client_id2' | 'mrn' | 'medi_cal' | 'name' | null = null;

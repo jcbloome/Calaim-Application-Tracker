@@ -35,9 +35,14 @@ export function PrintableField({
 
   const displayValue = value === null || value === undefined ? '' : String(value).trim();
   const normalizedValue = displayValue.toLowerCase();
+  const normalizedValueTokens = normalizedValue
+    .split(/[;,|]/)
+    .map((token) => token.trim())
+    .filter(Boolean);
   const optionIsSelected = (option: string, index: number) => {
     const normalizedOption = option.toLowerCase();
     if (normalizedValue === normalizedOption) return true;
+    if (normalizedValueTokens.includes(normalizedOption)) return true;
     if (normalizedValue === 'true' && index === 0) return true;
     return false;
   };

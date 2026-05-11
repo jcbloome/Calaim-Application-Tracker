@@ -855,6 +855,7 @@ function PushToCaspioDialog({
     const [isOpen, setIsOpen] = useState(false);
     const [isSendingToCaspio, setIsSendingToCaspio] = useState(false);
     const [isResettingCaspio, setIsResettingCaspio] = useState(false);
+    const [isPushingNotesOnly, setIsPushingNotesOnly] = useState(false);
     const [isClearingClientId2, setIsClearingClientId2] = useState(false);
     const [clientId2ClearedLocally, setClientId2ClearedLocally] = useState(false);
     const [caspioMappingPreview, setCaspioMappingPreview] = useState<Record<string, string> | null>(null);
@@ -1004,6 +1005,13 @@ function PushToCaspioDialog({
     ).trim();
     const existingClientId2Raw = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
     const existingClientId2 = clientId2ClearedLocally ? '' : existingClientId2Raw;
+    const notesPushClientId2 = String(
+      existingClientId2 ||
+      (application as any)?.clientId2 ||
+      (application as any)?.client_ID2 ||
+      (application as any)?.caspioClientId2 ||
+      ''
+    ).trim();
     const hasExistingClientId2 = Boolean(existingClientId2);
     const clientIdConflictWarning =
       'This application already has Client_ID2. Delete the existing record in Caspio Clients Table and CalAIM Members tables before pushing again.';
@@ -1086,12 +1094,12 @@ function PushToCaspioDialog({
       {
         key: 'csSummaryComplete',
         label: 'CS Summary complete',
-        required: isKaiserHealthPlan && !skeletonPushEnabled,
+        required: isKaiserHealthPlan && !skeletonPushEnabled && !isDraftLikeForPush,
         ready: csSummaryComplete,
       },
       {
         key: 'prePushNotes',
-        label: 'Pre-push notes',
+        label: 'Notes',
         required: isDraftLikeForPush,
         ready: Boolean(prePushNotes),
       },
@@ -1258,11 +1266,41 @@ function PushToCaspioDialog({
             });
             return;
         }
+        const recordNotesPush = async (params: { mode: 'member-push' | 'notes-only'; clientId2?: string; noteSyncReason?: string }) => {
+            if (!docRef) return;
+            const pushedByName = String(user?.displayName || user?.email || 'Admin').trim();
+            const pushedByEmail = String(user?.email || '').trim();
+            const pushedByUid = String(user?.uid || '').trim();
+            const normalizedNotes = String(prePushNotes || '').trim();
+            if (!normalizedNotes) return;
+            await setDoc(
+              docRef,
+              {
+                caspioNotesLastPushedAt: serverTimestamp(),
+                caspioNotesLastPushedByName: pushedByName || null,
+                caspioNotesLastPushedByEmail: pushedByEmail || null,
+                caspioNotesLastPushedByUid: pushedByUid || null,
+                caspioNotesLastPushedClientId2: String(params.clientId2 || '').trim() || null,
+                caspioNotesPushHistory: arrayUnion({
+                  pushedAtIso: new Date().toISOString(),
+                  mode: params.mode,
+                  clientId2: String(params.clientId2 || '').trim() || null,
+                  noteSyncReason: String(params.noteSyncReason || '').trim() || null,
+                  pushedByName: pushedByName || null,
+                  pushedByEmail: pushedByEmail || null,
+                  pushedByUid: pushedByUid || null,
+                  notes: normalizedNotes,
+                }),
+                lastUpdated: serverTimestamp(),
+              },
+              { merge: true }
+            ).catch(() => undefined);
+        };
         if (isDraftLikeForPush && !prePushNotes) {
             toast({
                 variant: 'destructive',
-                title: 'Pre-push notes required',
-                description: 'Add pre-push notes in Quick Actions before pushing this draft to Caspio.',
+                title: 'Notes required',
+                description: 'Add notes in Quick Actions before pushing this draft to Caspio.',
             });
             return;
         }
@@ -1331,6 +1369,34 @@ function PushToCaspioDialog({
                     description: [data.message || 'Successfully published to Caspio.', mappingDraftMessage].filter(Boolean).join(' '),
                     className: 'bg-green-100 text-green-900 border-green-200',
                 });
+                const noteSync = (data?.noteSync || null) as Record<string, any> | null;
+                const noteSyncReason = String(noteSync?.reason || '').trim();
+                if (noteSync && noteSyncReason !== 'no-pre-push-notes') {
+                    if (noteSync?.success && !noteSync?.skipped) {
+                        await recordNotesPush({
+                          mode: 'member-push',
+                          clientId2: String(data?.clientId2 || '').trim(),
+                          noteSyncReason,
+                        });
+                        toast({
+                            title: 'Notes synced',
+                            description: 'Notes were also added to Caspio client notes.',
+                            className: 'bg-green-100 text-green-900 border-green-200',
+                        });
+                    } else if (noteSyncReason === 'missing-client-id2') {
+                        toast({
+                            variant: 'destructive',
+                            title: 'Notes sync skipped',
+                            description: 'Member push succeeded, but notes could not be added to Caspio client notes because Client_ID2 was missing.',
+                        });
+                    } else if (noteSyncReason === 'insert-failed') {
+                        toast({
+                            variant: 'destructive',
+                            title: 'Notes sync failed',
+                            description: 'Member push succeeded, but adding notes to Caspio client notes failed. Please retry push/manage after checking Caspio notes table access.',
+                        });
+                    }
+                }
 
                 if (docRef) {
                     const effectiveMapping = (mappingOverride || caspioMappingPreview || {}) as Record<string, string>;
@@ -1516,6 +1582,87 @@ function PushToCaspioDialog({
             });
         }
     };
+    const pushPrePushNotesOnly = async () => {
+        const resolvedClientId2 = notesPushClientId2;
+        if (!resolvedClientId2) {
+          toast({
+            variant: 'destructive',
+            title: 'Client_ID2 required',
+            description: 'Create/push the Caspio member record first so notes can be sent separately.',
+          });
+          return;
+        }
+        if (!prePushNotes) {
+          toast({
+            variant: 'destructive',
+            title: 'Notes required',
+            description: 'Add notes before sending notes-only update to Caspio.',
+          });
+          return;
+        }
+        setIsPushingNotesOnly(true);
+        try {
+          const response = await fetch('/api/admin/caspio/push-cs-summary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              notesOnly: true,
+              applicationData: {
+                ...application,
+                clientId2: resolvedClientId2,
+                client_ID2: resolvedClientId2,
+                caspioClientId2: resolvedClientId2,
+              },
+            }),
+          });
+          const result = await response.json().catch(() => ({} as any));
+          if (!response.ok || !result?.success) {
+            const syncError = String(result?.noteSync?.error || '').trim();
+            const details = syncError || String(result?.message || '').trim();
+            throw new Error(details || 'Failed to push notes to Caspio.');
+          }
+          if (docRef) {
+            const pushedByName = String(user?.displayName || user?.email || 'Admin').trim();
+            const pushedByEmail = String(user?.email || '').trim();
+            const pushedByUid = String(user?.uid || '').trim();
+            await setDoc(
+              docRef,
+              {
+                caspioNotesLastPushedAt: serverTimestamp(),
+                caspioNotesLastPushedByName: pushedByName || null,
+                caspioNotesLastPushedByEmail: pushedByEmail || null,
+                caspioNotesLastPushedByUid: pushedByUid || null,
+                caspioNotesLastPushedClientId2: resolvedClientId2,
+                caspioNotesPushHistory: arrayUnion({
+                  pushedAtIso: new Date().toISOString(),
+                  mode: 'notes-only',
+                  clientId2: resolvedClientId2,
+                  noteSyncReason: String(result?.noteSync?.reason || 'inserted').trim() || null,
+                  pushedByName: pushedByName || null,
+                  pushedByEmail: pushedByEmail || null,
+                  pushedByUid: pushedByUid || null,
+                  notes: String(prePushNotes || '').trim(),
+                }),
+                lastUpdated: serverTimestamp(),
+              },
+              { merge: true }
+            );
+          }
+          toast({
+            title: 'Notes pushed to Caspio',
+            description: 'Notes were added to Caspio client notes for this member.',
+            className: 'bg-green-100 text-green-900 border-green-200',
+          });
+        } catch (error: any) {
+          toast({
+            variant: 'destructive',
+            title: 'Notes push failed',
+            description: String(error?.message || 'Could not push notes to Caspio.'),
+          });
+        } finally {
+          setIsPushingNotesOnly(false);
+        }
+    };
     const clearStaleClientId2 = async () => {
         if (!docRef) return;
         setIsClearingClientId2(true);
@@ -1551,7 +1698,7 @@ function PushToCaspioDialog({
     return (
         <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
             <AlertDialogTrigger asChild>
-                <Button variant={buttonVariant} className={buttonClassName} disabled={isSendingToCaspio || isResettingCaspio}>
+                <Button variant={buttonVariant} className={buttonClassName} disabled={isSendingToCaspio || isResettingCaspio || isPushingNotesOnly}>
                     {isSendingToCaspio || isResettingCaspio ? (
                         <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1601,8 +1748,16 @@ function PushToCaspioDialog({
                     <Alert variant="destructive">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle>Mapping saved time is missing</AlertTitle>
-                        <AlertDescription>
-                            This looks like an older locked mapping without timestamp metadata. Re-save the draft and lock mappings again in the CS Summary → Caspio mapping screen before pushing.
+                        <AlertDescription className="space-y-2">
+                            <div>
+                                This looks like an older locked mapping without timestamp metadata. Go to
+                                <strong> Admin {'>'} Caspio Test</strong>, update mappings, click
+                                <strong> Save Draft</strong>, then <strong>Mapping Lock Actions {'>'} Lock Mappings</strong>
+                                before pushing.
+                            </div>
+                            <Button asChild size="sm" variant="outline">
+                                <Link href="/admin/caspio-test">Update New Mappings</Link>
+                            </Button>
                         </AlertDescription>
                     </Alert>
                 ) : null}
@@ -1675,7 +1830,7 @@ function PushToCaspioDialog({
                     ) : null}
                     {allowDraftCaspioPush ? (
                         <div className="text-xs text-muted-foreground">
-                            Draft push mode is enabled for this intake. Authorization fields are optional so you can publish early and manage Kaiser status while details are still being completed.
+                            Draft push mode is enabled for this intake. Authorization fields and CS Summary completion are optional so you can publish early and manage Kaiser status while details are still being completed.
                         </div>
                     ) : null}
                     {isKaiserHealthPlan ? (
@@ -1688,7 +1843,7 @@ function PushToCaspioDialog({
                     </div>
                     {isDraftLikeForPush ? (
                         <div className="text-xs text-muted-foreground">
-                            Draft push requires pre-push notes so care needs/context are included with the Caspio update.
+                            Draft push requires notes so care needs/context are included with the Caspio update.
                         </div>
                     ) : null}
                 </div>
@@ -1756,6 +1911,19 @@ function PushToCaspioDialog({
                 )}
 
                 <AlertDialogFooter>
+                    {notesPushClientId2 ? (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                void pushPrePushNotesOnly();
+                            }}
+                            disabled={isPushingNotesOnly || isResettingCaspio || isSendingToCaspio || !prePushNotes}
+                        >
+                            {isPushingNotesOnly ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Push notes
+                        </Button>
+                    ) : null}
                     {isAlreadySent && (
                         <>
                             <Button
@@ -1764,7 +1932,7 @@ function PushToCaspioDialog({
                                 onClick={() => {
                                     void resetCaspioPush();
                                 }}
-                                disabled={isResettingCaspio || isSendingToCaspio}
+                                disabled={isResettingCaspio || isSendingToCaspio || isPushingNotesOnly}
                             >
                                 {isResettingCaspio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                                 Reset push status
@@ -1776,6 +1944,7 @@ function PushToCaspioDialog({
                                     void resetAndPushToCaspio();
                                 }}
                                 disabled={
+                                  isPushingNotesOnly ||
                                   isResettingCaspio ||
                                   isSendingToCaspio ||
                                   !hasAssignedStaff ||
@@ -1808,6 +1977,7 @@ function PushToCaspioDialog({
                             })();
                         }}
                         disabled={
+                          isPushingNotesOnly ||
                           isSendingToCaspio ||
                           (hasExistingClientId2 && !isAlreadySent) ||
                           !hasAssignedStaff ||
@@ -6885,6 +7055,14 @@ function ApplicationDetailPageContent() {
           <DialogDescription>All member files in this application, including eligibility, authorization, and ISP uploads.</DialogDescription>
         </DialogHeader>
         <div className="flex items-center justify-end gap-2">
+          {signedWaiversPrintableHref ? (
+            <Button type="button" variant="outline" size="sm" asChild>
+              <Link href={signedWaiversPrintableHref} target="_blank" rel="noopener noreferrer">
+                <Printer className="mr-2 h-4 w-4" />
+                Signed Waivers Printable
+              </Link>
+            </Button>
+          ) : null}
           {isDownloadingAllMemberFiles ? (
             <Button
               type="button"
@@ -7025,6 +7203,48 @@ function ApplicationDetailPageContent() {
           : new Date(value);
     return Number.isNaN(parsed.getTime()) ? '' : format(parsed, 'PPP p');
   };
+  const signedWaiversPrintableHref = (() => {
+    const waiverForm = (formStatusMap.get('Waivers & Authorizations') || formStatusMap.get('Waivers')) as any;
+    const waiverStatus = String(waiverForm?.status || '').trim().toLowerCase();
+    if (waiverStatus !== 'completed') return '';
+    const signerDateRaw = waiverForm?.dateCompleted;
+    const signerDate =
+      typeof signerDateRaw?.toDate === 'function'
+        ? signerDateRaw.toDate()
+        : signerDateRaw instanceof Date
+          ? signerDateRaw
+          : signerDateRaw
+            ? new Date(signerDateRaw)
+            : null;
+    const signatureDate = signerDate && !Number.isNaN(signerDate.getTime())
+      ? signerDate.toLocaleDateString()
+      : '';
+    const incomeSourceValue = Array.isArray(waiverForm?.incomeSource)
+      ? waiverForm.incomeSource.map((item: unknown) => String(item || '').trim()).filter(Boolean).join(';')
+      : String(waiverForm?.incomeSource || '').trim();
+    const params = new URLSearchParams({
+      memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
+      memberMrn: String((application as any)?.memberMrn || '').trim(),
+      applicationId: String((application as any)?.id || applicationId || '').trim(),
+      signerType: String(waiverForm?.signerType || '').trim(),
+      signerName: String(waiverForm?.signerName || '').trim(),
+      signerRelationship: String(waiverForm?.signerRelationship || '').trim(),
+      signatureDate,
+      monthlyIncome: String(waiverForm?.monthlyIncome || (application as any)?.monthlyIncome || '').trim(),
+      incomeSource: incomeSourceValue,
+      focChoice: String(waiverForm?.choice || '').trim(),
+      ackHipaa: Boolean(waiverForm?.ackHipaa) ? '1' : '0',
+      ackLiability: Boolean(waiverForm?.ackLiability) ? '1' : '0',
+      ackFoc: Boolean(waiverForm?.ackFoc) ? '1' : '0',
+      ackRoomAndBoard: Boolean(
+        waiverForm?.ackRoomAndBoard ??
+        waiverForm?.ackSocDetermination ??
+        (application as any)?.ackRoomAndBoard ??
+        (application as any)?.ackSocDetermination
+      ) ? '1' : '0',
+    });
+    return `/forms/waivers/printable?${params.toString()}`;
+  })();
   const kaiserReferralSubmission = (application as any)?.kaiserReferralSubmission || null;
   const kaiserReferralStep5 = (application as any)?.kaiserReferralStep5 || null;
   const kaiserAuthorizationMode = String((application as any)?.kaiserAuthorizationMode || '').trim().toLowerCase();
@@ -8005,10 +8225,10 @@ function ApplicationDetailPageContent() {
       setPrePushNotesAutosaveState('saved');
       if (!options?.silent) {
         toast({
-          title: 'Pre-push notes saved',
+          title: 'Notes saved',
           description: normalized
-            ? 'These notes will be included on Caspio push when a mapped notes field is available.'
-            : 'Pre-push notes cleared.',
+            ? 'These notes are sent during Caspio push (mapped member notes field when available, plus client notes log).'
+            : 'Notes cleared.',
           className: 'bg-green-100 text-green-900 border-green-200',
         });
       }
@@ -8017,7 +8237,7 @@ function ApplicationDetailPageContent() {
       toast({
         variant: 'destructive',
         title: 'Save failed',
-        description: String(error?.message || 'Could not save pre-push notes.'),
+        description: String(error?.message || 'Could not save notes.'),
       });
     } finally {
       setIsSavingPrePushNotes(false);
@@ -9197,10 +9417,17 @@ function ApplicationDetailPageContent() {
                                 </div>
                             ))}
                         </div>
-                        <div className={cn('grid gap-2', waiverShowReset ? 'sm:grid-cols-2' : '')}>
+                        <div className={cn('grid gap-2', waiverShowReset || signedWaiversPrintableHref ? 'sm:grid-cols-2 lg:grid-cols-3' : '')}>
                           <Button asChild variant="secondary" className="w-full">
                             <Link href={viewHref}>View/Edit Waivers</Link>
                           </Button>
+                          {signedWaiversPrintableHref ? (
+                            <Button asChild variant="outline" className="w-full">
+                              <Link href={signedWaiversPrintableHref} target="_blank" rel="noopener noreferrer">
+                                Signed Waivers Printable
+                              </Link>
+                            </Button>
+                          ) : null}
                           {waiverShowReset ? (
                             <AlertDialog open={waiverResetOpen} onOpenChange={setWaiverResetOpen}>
                               <AlertDialogTrigger asChild>
@@ -12121,7 +12348,7 @@ function ApplicationDetailPageContent() {
             {showPrePushNotesSection ? (
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
                 <Label htmlFor="quick-actions-pre-push-notes" className="text-xs font-medium text-muted-foreground">
-                  Pre-Push Notes
+                  Notes
                 </Label>
                 <Textarea
                   id="quick-actions-pre-push-notes"
@@ -12132,7 +12359,7 @@ function ApplicationDetailPageContent() {
                 />
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] text-muted-foreground">
-                    Saved to draft and sent on Caspio push when notes mapping exists.
+                    Saved to draft and sent on Caspio push (member notes field when mapped + Caspio client notes log).
                   </p>
                   <div className="text-[11px] text-muted-foreground flex items-center gap-2">
                     {isSavingPrePushNotes || prePushNotesAutosaveState === 'saving' ? (

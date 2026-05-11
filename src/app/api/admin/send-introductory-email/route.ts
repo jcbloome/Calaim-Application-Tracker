@@ -205,6 +205,7 @@ function getMissingRequestedDocuments(appData: Record<string, unknown>): string[
   const internalExclusions = new Set([
     'eligibility screenshot',
     'eligibility check',
+    'primary contact screenshot',
     'room and board/tier level agreement',
     'room and board/tier level commitment',
     'room and board commitment',

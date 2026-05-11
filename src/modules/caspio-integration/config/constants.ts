@@ -112,7 +112,7 @@ export const CASPIO_CONFIG = {
   VALIDATION: {
     MEMBER_ID_PATTERN: /^[A-Z]{2}-\d{5}$/,
     EMAIL_PATTERN: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-    PHONE_PATTERN: /^\(\d{3}\) \d{3}-\d{4}$/,
+    PHONE_PATTERN: /^\d{3}-\d{3}-\d{4}$/,
     MAX_NOTE_LENGTH: 5000,
     REQUIRED_MEMBER_FIELDS: ['firstName', 'lastName', 'id'],
     REQUIRED_NOTE_FIELDS: ['memberId', 'noteText', 'staffMember']

@@ -9,14 +9,50 @@ interface PrintableWaiversFormProps {
   memberMrn?: string;
   applicationId?: string;
   showPrintButton?: boolean;
+  signerType?: string;
+  signerName?: string;
+  signerRelationship?: string;
+  signatureDate?: string;
+  monthlyIncome?: string;
+  incomeSource?: string;
+  ackHipaa?: boolean;
+  ackLiability?: boolean;
+  ackFoc?: boolean;
+  ackRoomAndBoard?: boolean;
+  focChoice?: string;
 }
 
 export function PrintableWaiversForm({ 
   memberName = '',
   memberMrn = '',
   applicationId,
-  showPrintButton = true 
+  showPrintButton = true,
+  signerType = '',
+  signerName = '',
+  signerRelationship = '',
+  signatureDate = '',
+  monthlyIncome = '',
+  incomeSource = '',
+  ackHipaa = false,
+  ackLiability = false,
+  ackFoc = false,
+  ackRoomAndBoard = false,
+  focChoice = '',
 }: PrintableWaiversFormProps) {
+  const normalizedSignerType = String(signerType || '').trim().toLowerCase();
+  const signerTypePrintableValue =
+    normalizedSignerType === 'representative'
+      ? 'Authorized Representative (POA)'
+      : normalizedSignerType === 'member'
+        ? 'Member'
+        : '';
+  const focChoicePrintableValue =
+    String(focChoice || '').trim().toLowerCase() === 'decline'
+      ? 'I choose to decline Community Supports services for community transition'
+      : String(focChoice || '').trim().toLowerCase() === 'accept'
+        ? 'I choose to accept Community Supports services for community transition'
+        : '';
+
   return (
     <PrintableFormLayout
       title="Waivers & Authorizations"
@@ -119,6 +155,7 @@ export function PrintableWaiversForm({
 
           <PrintableField
             label="I have read and understood the HIPAA Authorization section"
+            value={ackHipaa}
             type="checkbox"
             options={['Yes, I understand and agree']}
             width="full"
@@ -184,6 +221,7 @@ export function PrintableWaiversForm({
 
           <PrintableField
             label="I have read and understood the Waiver and Release of Liability section"
+            value={ackLiability}
             type="checkbox"
             options={['Yes, I understand and agree']}
             width="full"
@@ -214,6 +252,7 @@ export function PrintableWaiversForm({
 
           <PrintableField
             label="I have read and understood the Freedom of Choice Waiver section"
+            value={ackFoc}
             type="checkbox"
             options={['Yes, I understand']}
             width="full"
@@ -223,6 +262,7 @@ export function PrintableWaiversForm({
             <h4 className="font-semibold mb-3">My Choice:</h4>
             <PrintableField
               label=""
+              value={focChoicePrintableValue}
               type="radio"
               options={[
                 'I choose to accept Community Supports services for community transition',
@@ -269,11 +309,13 @@ export function PrintableWaiversForm({
           </p>
           <PrintableField
             label="What is the member's monthly income?"
+            value={monthlyIncome}
             required
             width="full"
           />
           <PrintableField
             label="Where is source of member's monthly income?"
+            value={incomeSource}
             type="checkbox"
             options={['SSI', 'SSA', 'SSD', 'Other']}
             required
@@ -281,6 +323,7 @@ export function PrintableWaiversForm({
           />
           <PrintableField
             label="I have read and understood the Room and Board Commitment and Medi-Cal SOC Determination sections"
+            value={ackRoomAndBoard}
             type="checkbox"
             options={['Yes, I understand and agree']}
             width="full"
@@ -302,32 +345,32 @@ export function PrintableWaiversForm({
 
         <PrintableField
           label="I am the:"
+          value={signerTypePrintableValue}
           type="radio"
           options={['Member', 'Authorized Representative (POA)']}
           width="full"
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 print:gap-8 mt-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-              Signature (Full Name) *
-            </label>
-            <div className="h-16 border-b-2 border-gray-300 print:border-black"></div>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-              Date *
-            </label>
-            <div className="h-16 border-b-2 border-gray-300 print:border-black"></div>
-          </div>
+          <PrintableField
+            label="Signature (Full Name)"
+            value={signerName}
+            required
+            width="full"
+          />
+          <PrintableField
+            label="Date"
+            value={signatureDate}
+            required
+            width="full"
+          />
         </div>
-
-        <div className="mt-6">
-          <label className="block text-sm font-medium text-gray-700 print:text-black mb-2">
-            If authorized representative, what is relationship to member? (if not A/R please put N/A)
-          </label>
-          <div className="h-12 border-b-2 border-gray-300 print:border-black"></div>
+        <div className="mt-2">
+          <PrintableField
+            label="If authorized representative, what is relationship to member? (if not A/R please put N/A)"
+            value={signerRelationship}
+            width="full"
+          />
         </div>
       </div>
     </PrintableFormLayout>

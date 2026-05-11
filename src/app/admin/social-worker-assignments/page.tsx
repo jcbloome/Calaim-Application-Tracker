@@ -742,6 +742,12 @@ export default function SocialWorkerAssignmentsPage() {
       .join(' ');
 
   const normalizeBedsInput = (value: unknown) => String(value || '').replace(/[^\d]/g, '');
+  const normalizePhoneDashed = (value: unknown) => {
+    const digits = String(value || '').replace(/[^\d]/g, '').slice(0, 10);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+  };
 
   const hasRcfeDraftChanges = useCallback((row: RCFEDirectoryRow) => {
     const draft = getRcfeDraft(row);
@@ -2193,11 +2199,11 @@ export default function SocialWorkerAssignmentsPage() {
                                     };
                                     return {
                                       ...prev,
-                                      [row.key]: { ...base, RCFE_Administrator_Phone: e.target.value },
+                                      [row.key]: { ...base, RCFE_Administrator_Phone: normalizePhoneDashed(e.target.value) },
                                     };
                                   })
                                 }
-                                placeholder="(xxx) xxx-xxxx"
+                                placeholder="xxx-xxx-xxxx"
                               />
                             </TableCell>
                             <TableCell>

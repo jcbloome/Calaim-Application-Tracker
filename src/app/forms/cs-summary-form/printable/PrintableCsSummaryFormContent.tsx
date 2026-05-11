@@ -72,7 +72,7 @@ export function PrintableCsSummaryFormContent() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                     <Field label="Submitting User First Name" />
                     <Field label="Submitting User Last Name" />
-                    <Field label="Submitting User Phone" description="(xxx) xxx-xxxx" />
+                    <Field label="Submitting User Phone" description="xxx-xxx-xxxx" />
                     <Field label="Submitting User Email" />
                     <Field label="Submitting User Relationship to Member (e.g., Son, POA, Self, etc.)" />
                     <Field label="Agency (e.g., Bob's Referral Agency, Hospital Name, etc.)" description="If not applicable, leave blank."/>
@@ -87,7 +87,7 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="Last Name" />
                     <Field label="Relationship to Member" />
                     <Field label="Preferred Language" />
-                    <Field label="Phone" description="(xxx) xxx-xxxx" />
+                    <Field label="Phone" description="xxx-xxx-xxxx" />
                     <Field label="Email" description='If no email, enter "N/A".' />
                     </div>
                 </div>
@@ -99,7 +99,7 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="Last Name" />
                     <Field label="Relationship to Member" />
                     <Field label="Preferred Language" />
-                    <Field label="Phone" description="(xxx) xxx-xxxx" />
+                    <Field label="Phone" description="xxx-xxx-xxxx" />
                     <Field label="Email" description='If no email, enter "N/A".'/>
                     </div>
                 </div>
@@ -123,7 +123,7 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="First Name" />
                     <Field label="Last Name" />
                     <Field label="Relationship to Member" />
-                    <Field label="Phone" description="(xxx) xxx-xxxx" />
+                    <Field label="Phone" description="xxx-xxx-xxxx" />
                     <Field label="Email" description='If no email, enter "N/A".'/>
                     </div>
                 </div>
@@ -250,7 +250,7 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="ISP Contact First Name" />
                     <Field label="ISP Contact Last Name" />
                     <Field label="ISP Contact Relationship to Member" />
-                    <Field label="ISP Contact Phone" description="(xxx) xxx-xxxx"/>
+                    <Field label="ISP Contact Phone" description="xxx-xxx-xxxx"/>
                     <Field label="ISP Contact Email" className="sm:col-span-2" description='If no email, enter "N/A".'/>
                     </div>
                     
@@ -312,7 +312,7 @@ export function PrintableCsSummaryFormContent() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="Administrator Name" />
-                    <Field label="Administrator Phone" description="(xxx) xxx-xxxx" />
+                    <Field label="Administrator Phone" description="xxx-xxx-xxxx" />
                     <Field label="Administrator Email" className="sm:col-span-2" description='If no email, enter "N/A".'/>
                 </div>
                 </div>

@@ -11,9 +11,9 @@ const formatPhoneNumber = (value: string) => {
   const phoneNumberLength = phoneNumber.length;
   if (phoneNumberLength < 4) return phoneNumber;
   if (phoneNumberLength < 7) {
-    return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3)}`;
+    return `${phoneNumber.slice(0, 3)}-${phoneNumber.slice(3)}`;
   }
-  return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6, 10)}`;
+  return `${phoneNumber.slice(0, 3)}-${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6, 10)}`;
 };
 
 const PhoneInput = React.forwardRef<HTMLInputElement, React.ComponentProps<'input'>>((
@@ -32,9 +32,13 @@ const PhoneInput = React.forwardRef<HTMLInputElement, React.ComponentProps<'inpu
   return (
     <Input
       type="tel"
+      inputMode="numeric"
+      autoComplete="tel"
+      maxLength={12}
+      placeholder="xxx-xxx-xxxx"
       className={cn(className)}
       onChange={handleInputChange}
-      value={value ?? ''}
+      value={formatPhoneNumber(String(value ?? ''))}
       ref={ref}
       {...props}
     />

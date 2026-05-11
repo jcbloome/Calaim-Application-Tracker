@@ -3,10 +3,18 @@ import { z } from 'zod';
 
 const requiredString = z.string().min(1, { message: ' ' });
 const optionalString = z.string().optional().nullable();
-const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+const phoneRegex = /^\d{3}-\d{3}-\d{4}$/;
+const normalizePhone = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '').slice(0, 10);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+};
 
-const requiredPhone = z.string().regex(phoneRegex, { message: ' ' });
-const optionalPhone = z.string().optional().nullable().transform(val => val ?? '').refine(val => val === '' || !val || phoneRegex.test(val), {
+const requiredPhone = z.string().transform((val) => normalizePhone(val)).refine((val) => phoneRegex.test(val), { message: ' ' });
+const optionalPhone = z.string().optional().nullable().transform(val => normalizePhone(val ?? '')).refine(val => val === '' || !val || phoneRegex.test(val), {
   message: " ",
 });
 
