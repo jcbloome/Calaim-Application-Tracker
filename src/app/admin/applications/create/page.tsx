@@ -1039,6 +1039,24 @@ const normalizeMemberPatch = (patch: Record<string, unknown>) => {
   return normalized;
 };
 
+const withAutoCountyFromCity = (patch: Record<string, string>) => {
+  const next = { ...patch };
+  const existingCounty = String(next.memberCustomaryCounty || '').trim();
+  if (existingCounty) return next;
+
+  const parsedAddress = parseAddressParts(next.memberCustomaryAddress || '');
+  const resolvedCity = String(next.memberCustomaryCity || '').trim() || parsedAddress.city || '';
+  const resolvedZip = String(next.memberCustomaryZip || '').trim() || parsedAddress.zip || '';
+  const inferredCounty =
+    inferCountyFromCityZip({ city: resolvedCity, zip: resolvedZip }) || String(parsedAddress.county || '').trim();
+
+  if (!inferredCounty) return next;
+  if (!String(next.memberCustomaryCity || '').trim() && resolvedCity) next.memberCustomaryCity = resolvedCity;
+  if (!String(next.memberCustomaryZip || '').trim() && resolvedZip) next.memberCustomaryZip = resolvedZip;
+  next.memberCustomaryCounty = inferredCounty;
+  return next;
+};
+
 const extractSingleAuthContactPreview = (patch: Record<string, string>) => ({
   memberPhone: String(patch.memberPhone || '').trim(),
   cellPhone: String(patch.contactPhone || '').trim(),
@@ -1604,9 +1622,13 @@ export default function CreateApplicationPage() {
           const memberAddress = getSpreadsheetValue(raw, ['Member Address', 'Address', 'ISP_Current_Address']);
           const parsedAddress = parseAddressParts(memberAddress);
           const memberCity =
-            getSpreadsheetValue(raw, ['City', 'Member City', 'Member_City']) || parsedAddress.city || '';
+            getSpreadsheetValue(raw, ['City', 'Member City', 'Member_City', 'Member Customary City', 'customaryCity']) ||
+            parsedAddress.city ||
+            '';
           const memberZip =
-            getSpreadsheetValue(raw, ['ZIP', 'Zip', 'Zip Code', 'Member Zip', 'Member_Zip']) || parsedAddress.zip || '';
+            getSpreadsheetValue(raw, ['ZIP', 'Zip', 'Zip Code', 'Member Zip', 'Member_Zip', 'Member Customary ZIP', 'customaryZip']) ||
+            parsedAddress.zip ||
+            '';
           const memberCountyRaw = getSpreadsheetValue(raw, ['County', 'Member County', 'RCFE County', 'Member_County']);
           const memberCounty = memberCountyRaw || inferCountyFromCityZip({ city: memberCity, zip: memberZip });
           const memberDob = toSpreadsheetDate(
@@ -1748,7 +1770,6 @@ export default function CreateApplicationPage() {
         { name: 'CS Member Summary', status: 'Pending', type: 'online-form', href: '/admin/forms/edit' },
         { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
         { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
-        { name: 'Primary Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
         { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },
@@ -2185,7 +2206,7 @@ export default function CreateApplicationPage() {
         }
 
         const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
-        const sanitizedPatch = { ...normalizedPatch, contactEmail: '' };
+        const sanitizedPatch = withAutoCountyFromCity({ ...normalizedPatch, contactEmail: '' });
         const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
         setSingleAuthContactPreview(contactPreview);
         setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
@@ -2217,7 +2238,7 @@ export default function CreateApplicationPage() {
       }
 
       const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
-      const sanitizedPatch = { ...normalizedPatch, contactEmail: '' };
+      const sanitizedPatch = withAutoCountyFromCity({ ...normalizedPatch, contactEmail: '' });
       const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
       setSingleAuthContactPreview(contactPreview);
       setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
@@ -2329,7 +2350,9 @@ export default function CreateApplicationPage() {
             continue;
           }
           const parsed = extractServiceRequestFields({ text, fileName: file.name });
-          const normalizedPatch = normalizeMemberPatch((parsed?.updates || {}) as Record<string, unknown>);
+          const normalizedPatch = withAutoCountyFromCity(
+            normalizeMemberPatch((parsed?.updates || {}) as Record<string, unknown>)
+          );
           const parsedName = sanitizeParsedName({
             firstName: toNameCase(normalizedPatch.memberFirstName || ''),
             lastName: toNameCase(normalizedPatch.memberLastName || ''),
@@ -2563,7 +2586,6 @@ export default function CreateApplicationPage() {
         { name: 'CS Member Summary', status: 'Pending', type: 'online-form', href: '/admin/forms/edit' },
         { name: 'Waivers & Authorizations', status: 'Pending', type: 'online-form', href: '/admin/forms/waivers' },
         { name: 'Eligibility Screenshot', status: 'Pending', type: 'Upload', href: '#' },
-        { name: 'Primary Contact Screenshot', status: 'Pending', type: 'Upload', href: '#' },
         { name: 'Proof of Income', status: 'Pending', type: 'Upload', href: '#' },
         { name: "LIC 602A - Physician's Report", status: 'Pending', type: 'Upload', href: 'https://www.cdss.ca.gov/cdssweb/entres/forms/english/lic602a.pdf' },
         { name: 'Medicine List', status: 'Pending', type: 'Upload', href: '#' },

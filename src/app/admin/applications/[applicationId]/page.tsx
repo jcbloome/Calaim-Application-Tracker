@@ -553,7 +553,7 @@ const getPathwayRequirements = (
      {
       id: 'eligibility-screenshot',
       title: 'Eligibility Screenshot',
-      description: 'Upload one or more screenshots from the provider portal showing member eligibility.',
+      description: 'Upload both required screenshots from the provider portal: member page and benefits coverage.',
       type: 'Upload',
       icon: LinkIcon,
       links: [
@@ -563,14 +563,6 @@ const getPathwayRequirements = (
         { name: 'Kaiser North Portal', url: 'https://healthy.kaiserpermanente.org/northern-california/community-providers/eligibility' },
       ],
       href: '#'
-    },
-    {
-      id: 'primary-contact-screenshot',
-      title: 'Primary Contact Screenshot',
-      description: 'Upload screenshot(s) from Kaiser website/documents showing the primary contact details used for outreach.',
-      type: 'Upload',
-      icon: UploadCloud,
-      href: '#',
     },
   ];
 
