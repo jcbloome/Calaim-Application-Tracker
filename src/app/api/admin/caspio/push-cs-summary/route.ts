@@ -1154,6 +1154,7 @@ export async function POST(request: NextRequest) {
         delete mappedFields[fieldName];
       }
     });
+    const explicitlyMappedFieldNames = new Set(Object.keys(mappedFields));
     const mappedClientIdField = Object.keys(mappedFields).find((field) => looksLikeClientId2(field));
     const inferredClientIdFieldFromMap =
       Object.values(mapping || {}).find((field) => looksLikeClientId2(String(field || ''))) || '';
@@ -1237,7 +1238,11 @@ export async function POST(request: NextRequest) {
     if (mediCalFieldName) {
       Object.keys(memberData).forEach((key) => {
         if (key === mediCalFieldName) return;
-        if (looksLikeMedicalNumberField(key)) delete memberData[key];
+        // Keep any fields the admin explicitly mapped (e.g., MCP_CIN for MRN).
+        // Only dedupe non-mapped fallback aliases to avoid dropping intended columns.
+        if (looksLikeMedicalNumberField(key) && !explicitlyMappedFieldNames.has(key)) {
+          delete memberData[key];
+        }
       });
     }
     if (preAssessmentNotes) {

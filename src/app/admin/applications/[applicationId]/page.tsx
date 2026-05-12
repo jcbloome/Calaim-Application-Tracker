@@ -6415,8 +6415,11 @@ function ApplicationDetailPageContent() {
     (application as any)?.Member_Last_Name ||
     ''
   ).trim();
-  const memberNameDisplay =
-    `${memberFirstNameDisplay} ${memberLastNameDisplay}`.trim() ||
+  const memberNameDisplay = (
+    memberLastNameDisplay && memberFirstNameDisplay
+      ? `${memberLastNameDisplay}, ${memberFirstNameDisplay}`
+      : memberLastNameDisplay || memberFirstNameDisplay
+  ) ||
     String((application as any)?.memberName || '').trim() ||
     '—';
   const memberMrnDisplay =
@@ -6474,11 +6477,11 @@ function ApplicationDetailPageContent() {
       const mm = mmDdYyyyMatch[1].padStart(2, '0');
       const dd = mmDdYyyyMatch[2].padStart(2, '0');
       const yyyy = mmDdYyyyMatch[3];
-      return `${mm}-${dd}-${yyyy}`;
+      return `${mm}/${dd}/${yyyy}`;
     }
 
     const parsedDob = new Date(rawDob);
-    return Number.isNaN(parsedDob.getTime()) ? rawDob : format(parsedDob, 'MM-dd-yyyy');
+    return Number.isNaN(parsedDob.getTime()) ? rawDob : format(parsedDob, 'MM/dd/yyyy');
   })();
   const calaimTrackingStatus = String((application as any)?.calaimTrackingStatus || '').trim();
   const isCalaimEligible = calaimTrackingStatus === 'CalAIM Eligible';
@@ -11627,7 +11630,8 @@ function ApplicationDetailPageContent() {
               Keep this page focused. Open tools only when needed.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="flex flex-col gap-2">
+            <div className="order-[900]">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
@@ -11645,6 +11649,8 @@ function ApplicationDetailPageContent() {
                 <ActivityLog embedded applicationIdFilter={String(application.id || '')} />
               </DialogContent>
             </Dialog>
+            </div>
+            <div className="order-[910]">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
@@ -11745,6 +11751,7 @@ function ApplicationDetailPageContent() {
                 </div>
               </DialogContent>
             </Dialog>
+            </div>
             <MemberFilesDialog triggerLabel="See Files" />
             {isKaiserPlan ? (() => {
               const qaMemberAddress = [
@@ -11820,6 +11827,7 @@ function ApplicationDetailPageContent() {
                 </div>
               );
             })() : null}
+            <div className="order-[-60]">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
@@ -12181,7 +12189,9 @@ function ApplicationDetailPageContent() {
                 </div>
               </DialogContent>
             </Dialog>
+            </div>
 
+            <div className="order-[10]">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full h-auto justify-start gap-2 py-2 whitespace-normal">
@@ -12297,7 +12307,9 @@ function ApplicationDetailPageContent() {
                 </div>
               </DialogContent>
             </Dialog>
+            </div>
 
+            <div className="order-[-50]">
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
@@ -12339,12 +12351,27 @@ function ApplicationDetailPageContent() {
                 </div>
               </DialogContent>
             </Dialog>
+            </div>
 
+            <div className="order-[-40]">
             <PushToCaspioDialog
               application={application}
               buttonVariant="outline"
               buttonClassName="w-full justify-start gap-2"
             />
+            </div>
+            <div className="order-[-30]">
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-2 -mt-1"
+              onClick={() => void confirmCaspioPushAndRetrieveClientId2()}
+              disabled={isConfirmingCaspioPush}
+            >
+              {isConfirmingCaspioPush ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+              Test if pushed + retrieve Client_ID2
+            </Button>
+            </div>
+            <div className="order-[-20]">
             {showPrePushNotesSection ? (
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
                 <Label htmlFor="quick-actions-pre-push-notes" className="text-xs font-medium text-muted-foreground">
@@ -12378,20 +12405,14 @@ function ApplicationDetailPageContent() {
                 </div>
               </div>
             ) : null}
+            </div>
+            <div className="order-[-10]">
             <IntroductoryEmailDialog
               application={application}
               buttonVariant="outline"
               buttonClassName="w-full justify-start gap-2"
             />
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-2 -mt-1"
-              onClick={() => void confirmCaspioPushAndRetrieveClientId2()}
-              disabled={isConfirmingCaspioPush}
-            >
-              {isConfirmingCaspioPush ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-              Test if pushed + retrieve Client_ID2
-            </Button>
+            </div>
 
             <Dialog>
               <DialogTrigger asChild>

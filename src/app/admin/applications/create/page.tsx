@@ -2498,6 +2498,7 @@ export default function CreateApplicationPage() {
         ...(isKaiserAuthReceived
           ? {
               memberMrn: memberData.memberMrn || '',
+              confirmMemberMrn: memberData.memberMrn || '',
               memberMediCalNum: memberData.memberMediCalNum || '',
               confirmMemberMediCalNum: memberData.confirmMemberMediCalNum || memberData.memberMediCalNum || '',
               memberDob: memberData.memberDob || '',
@@ -2693,9 +2694,9 @@ export default function CreateApplicationPage() {
 
       if (!options?.suppressSuccessToast) {
         toast({
-          title: "Application Created",
+          title: isKaiserAuthReceived ? "Created" : "Application Created",
           description: isKaiserAuthReceived
-            ? `Kaiser auth-received intake created for ${memberData.memberFirstName} ${memberData.memberLastName}.`
+            ? `Kaiser skeleton application created for ${memberData.memberFirstName} ${memberData.memberLastName}. Redirecting to Application Pathway...`
             : `Application created for ${memberData.memberFirstName} ${memberData.memberLastName}. Redirecting to CS Summary form.`,
           action: isKaiserAuthReceived ? (
             <ToastAction altText="Go to this application" onClick={() => router.push(`/admin/applications/${applicationId}`)}>
@@ -2707,7 +2708,7 @@ export default function CreateApplicationPage() {
       const memberName = `${memberData.memberFirstName || ''} ${memberData.memberLastName || ''}`.trim() || 'Member';
       setLastCreatedSkeleton({ applicationId, memberName, clientId2: '' });
       setIntroEmailDraft(null);
-      const shouldSkipNavigate = options?.skipNavigate ?? isKaiserAuthReceived;
+      const shouldSkipNavigate = options?.skipNavigate ?? false;
       if (!shouldSkipNavigate) {
         if (isKaiserAuthReceived) {
           router.push(`/admin/applications/${applicationId}`);
