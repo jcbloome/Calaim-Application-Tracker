@@ -107,6 +107,17 @@ const InteractiveCheckbox = ({
 );
 
 const lineValue = (value?: string) => String(value || '').trim();
+const sanitizeFileComponent = (value?: string) =>
+  lineValue(value)
+    .replace(/[^\w\s.-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const buildKaiserReferralFileName = (memberName?: string) => {
+  const safeMemberName = sanitizeFileComponent(memberName) || 'Member';
+  return `${safeMemberName} - Kaiser Authorization Request.pdf`;
+};
+
 const normalizeMemberName = (value?: string) => {
   const raw = lineValue(value);
   if (!raw) return '';
@@ -519,7 +530,7 @@ export function PrintableKaiserReferralForm({
           customSubject: subjectLine,
           customMessage: previewMessage,
           pdfBase64,
-          fileName: `kaiser_referral_${(memberName || 'member').replace(/[^a-z0-9]+/gi, '_').toLowerCase()}.pdf`,
+          fileName: buildKaiserReferralFileName(memberName || 'Member'),
           overrideResubmit,
           overrideReason: overrideResubmit ? overrideReason.trim() : '',
         }),

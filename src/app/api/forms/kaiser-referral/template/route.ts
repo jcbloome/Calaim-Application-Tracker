@@ -38,6 +38,19 @@ function normalizeAddress(value: string) {
   return clean(value).replace(/\s+/g, ' ');
 }
 
+function sanitizeFileComponent(value: string) {
+  return clean(value)
+    .replace(/[^\w\s.-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildKaiserReferralFileName(memberNameRaw: string) {
+  const memberName = sanitizeFileComponent(memberNameRaw) || 'Member';
+  const label = 'Kaiser Authorization Request';
+  return `${memberName} - ${label}.pdf`;
+}
+
 type TextFieldLike = { setText: (value: string) => void };
 type CheckFieldLike = { check: () => void; uncheck: () => void };
 type RadioFieldLike = { getOptions: () => string[]; select: (value: string) => void };
@@ -320,7 +333,7 @@ export async function GET(req: NextRequest) {
       pdfBytes = await pdfDoc.save();
     }
 
-    const filename = '#5 (2026) Kaiser Auth Sheet ORIGINAL (2).pdf';
+    const filename = buildKaiserReferralFileName(prefill.memberName);
     return new NextResponse(pdfBytes, {
       status: 200,
       headers: {
