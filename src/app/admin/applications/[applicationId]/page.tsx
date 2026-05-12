@@ -5616,6 +5616,7 @@ function ApplicationDetailPageContent() {
     fileName: string;
     filePath: string | null;
     downloadURL: string | null;
+    assetType?: 'screenshot' | 'pdf_packet';
     uploadedAtIso: string;
     uploadedByUid: string | null;
     uploadedByName: string | null;
@@ -5668,6 +5669,7 @@ function ApplicationDetailPageContent() {
         fileName: String(r?.fileName || '').trim() || 'Uploaded file',
         filePath: String(r?.filePath || '').trim() || null,
         downloadURL: String(r?.downloadURL || '').trim() || null,
+        assetType: String(r?.assetType || '').trim() === 'pdf_packet' ? 'pdf_packet' : 'screenshot',
         uploadedAtIso: String(r?.uploadedAtIso || '').trim(),
         uploadedByUid: String(r?.uploadedByUid || '').trim() || null,
         uploadedByName: String(r?.uploadedByName || '').trim() || null,
@@ -5881,6 +5883,8 @@ function ApplicationDetailPageContent() {
     setUploadProgress((prev) => ({ ...prev, [requirementTitle]: 0 }));
     try {
       const existing = getEligibilityScreenshotUploads();
+      const existingPacketPdfs = existing.filter((entry) => entry.assetType === 'pdf_packet');
+      const existingScreenshots = existing.filter((entry) => entry.assetType !== 'pdf_packet');
       const nowIso = new Date().toISOString();
       const uploadedByUid = String(user?.uid || '').trim() || null;
       const uploadedByName = String(user?.displayName || user?.email || '').trim() || null;
@@ -5894,17 +5898,91 @@ function ApplicationDetailPageContent() {
           fileName: uploadResult.fileName,
           filePath: uploadResult.path,
           downloadURL: uploadResult.downloadURL,
+          assetType: 'screenshot',
           uploadedAtIso: nowIso,
           uploadedByUid,
           uploadedByName,
         });
       }
 
-      const next = [...existing, ...results];
+      const next: EligibilityScreenshotUpload[] = [...existingScreenshots, ...results];
+
+      // Keep only one generated packet PDF (latest) and regenerate it from the uploaded screenshot batch.
+      for (const priorPdf of existingPacketPdfs) {
+        const priorPath = String(priorPdf.filePath || '').trim();
+        if (!priorPath || !storage) continue;
+        await deleteObject(ref(storage, priorPath)).catch(() => undefined);
+      }
+      const eligibilityPacketFile = await (async () => {
+        try {
+          const { PDFDocument } = await import('pdf-lib');
+          const pdfDoc = await PDFDocument.create();
+
+          for (const imageFile of files) {
+            const mime = String(imageFile.type || '').toLowerCase();
+            const bytes = new Uint8Array(await imageFile.arrayBuffer());
+            let embedded: any = null;
+
+            if (mime.includes('png')) {
+              embedded = await pdfDoc.embedPng(bytes);
+            } else if (mime.includes('jpeg') || mime.includes('jpg')) {
+              embedded = await pdfDoc.embedJpg(bytes);
+            } else {
+              // Fallback unsupported image formats to PNG via canvas.
+              const bitmap = await createImageBitmap(imageFile);
+              const canvas = document.createElement('canvas');
+              canvas.width = bitmap.width;
+              canvas.height = bitmap.height;
+              const context = canvas.getContext('2d');
+              if (!context) {
+                bitmap.close();
+                continue;
+              }
+              context.drawImage(bitmap, 0, 0);
+              bitmap.close();
+              const convertedBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+              if (!convertedBlob) continue;
+              const convertedBytes = new Uint8Array(await convertedBlob.arrayBuffer());
+              embedded = await pdfDoc.embedPng(convertedBytes);
+            }
+
+            if (!embedded) continue;
+            const page = pdfDoc.addPage([embedded.width, embedded.height]);
+            page.drawImage(embedded, { x: 0, y: 0, width: embedded.width, height: embedded.height });
+          }
+
+          if (pdfDoc.getPageCount() === 0) return null;
+          const pdfBytes = await pdfDoc.save();
+          const memberName = `${String(application?.memberFirstName || '').trim()} ${String(application?.memberLastName || '').trim()}`
+            .trim()
+            .replace(/[^\w\s.-]/g, '')
+            .replace(/\s+/g, ' ');
+          const pdfNameBase = memberName ? `${memberName} - Eligibility Screenshots` : 'Eligibility Screenshots';
+          return new File([pdfBytes], `${pdfNameBase}.pdf`, { type: 'application/pdf' });
+        } catch (packetError) {
+          console.warn('Failed to generate eligibility screenshot packet PDF:', packetError);
+          return null;
+        }
+      })();
+
+      if (eligibilityPacketFile) {
+        const packetUpload = await doUpload([eligibilityPacketFile], requirementTitle);
+        next.push({
+          id: `elig-pdf-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          fileName: packetUpload.fileName,
+          filePath: packetUpload.path,
+          downloadURL: packetUpload.downloadURL,
+          assetType: 'pdf_packet',
+          uploadedAtIso: nowIso,
+          uploadedByUid,
+          uploadedByName,
+        });
+      }
+
       await upsertEligibilityScreenshotUploads(next);
       toast({
         title: 'Upload Successful',
-        description: `${results.length} eligibility screenshot${results.length === 1 ? '' : 's'} uploaded.`,
+        description: `${results.length} eligibility screenshot${results.length === 1 ? '' : 's'} uploaded${eligibilityPacketFile ? ' and packet PDF created' : ''}.`,
       });
     } catch (e) {
       console.error('Eligibility screenshot upload failed:', e);
@@ -6578,6 +6656,7 @@ function ApplicationDetailPageContent() {
       : [];
     const eligibilityEntries = rawEligibility
       .map((upload, idx) => {
+        const assetType = String(upload?.assetType || '').trim() === 'pdf_packet' ? 'pdf_packet' : 'screenshot';
         const fileName = String(upload?.fileName || '').trim() || `Eligibility Screenshot ${idx + 1}`;
         const downloadURL = String(upload?.downloadURL || upload?.url || upload?.uploadUrl || '').trim();
         const filePath = String(upload?.filePath || upload?.storagePath || upload?.path || '').trim();
@@ -6585,7 +6664,7 @@ function ApplicationDetailPageContent() {
         return {
           id: `elig-file-${idx}-${fileName}`,
           category: 'Eligibility check',
-          documentName: 'Eligibility Screenshot',
+          documentName: assetType === 'pdf_packet' ? 'Eligibility Screenshot Packet PDF' : 'Eligibility Screenshot',
           fileName,
           downloadURL,
           filePath,
