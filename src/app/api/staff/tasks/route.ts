@@ -340,6 +340,73 @@ export async function GET(request: NextRequest) {
         return qs ? `/admin/client-notes?${qs}` : '/admin/client-notes';
       };
 
+      const parseOwnerUidFromActionUrl = (value: any): string => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        try {
+          const parsed = new URL(raw, 'http://localhost');
+          return String(parsed.searchParams.get('userId') || '').trim();
+        } catch {
+          return '';
+        }
+      };
+      const normalizeName = (value: any) =>
+        String(value || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+      const assignmentKey = (applicationId: string, ownerUid: string) => `${applicationId}::${ownerUid}`;
+      const assignmentCache = new Map<string, { assignedStaffId: string; assignedStaffName: string }>();
+      const loadCurrentAssignment = async (applicationId: string, ownerUid?: string) => {
+        const appId = String(applicationId || '').trim();
+        const owner = String(ownerUid || '').trim();
+        if (!appId) return { assignedStaffId: '', assignedStaffName: '' };
+        const cacheKey = assignmentKey(appId, owner);
+        if (assignmentCache.has(cacheKey)) {
+          return assignmentCache.get(cacheKey)!;
+        }
+
+        const extractAssignment = (data: Record<string, any> | undefined | null) => ({
+          assignedStaffId: String(data?.assignedStaffId || '').trim(),
+          assignedStaffName: String(data?.assignedStaffName || '').trim(),
+        });
+        const empty = { assignedStaffId: '', assignedStaffName: '' };
+
+        try {
+          if (owner) {
+            const ownerSnap = await adminDb.doc(`users/${owner}/applications/${appId}`).get();
+            if (ownerSnap.exists) {
+              const resolved = extractAssignment(ownerSnap.data() as any);
+              assignmentCache.set(cacheKey, resolved);
+              return resolved;
+            }
+          }
+
+          const rootSnap = await adminDb.collection('applications').doc(appId).get();
+          if (rootSnap.exists) {
+            const resolved = extractAssignment(rootSnap.data() as any);
+            assignmentCache.set(cacheKey, resolved);
+            return resolved;
+          }
+
+          const groupSnap = await adminDb
+            .collectionGroup('applications')
+            .where(FieldPath.documentId(), '==', appId)
+            .limit(1)
+            .get();
+          if (!groupSnap.empty) {
+            const resolved = extractAssignment(groupSnap.docs[0].data() as any);
+            assignmentCache.set(cacheKey, resolved);
+            return resolved;
+          }
+        } catch {
+          // Best effort only; if lookup fails we keep the existing task behavior.
+        }
+
+        assignmentCache.set(cacheKey, empty);
+        return empty;
+      };
+
       try {
         const staffDocs = await fetchAllDocs(
           adminDb
@@ -348,9 +415,54 @@ export async function GET(request: NextRequest) {
             .orderBy(FieldPath.documentId()),
           { pageSize: 500, maxItems: 20000 }
         );
+
+        // Preload current assignment for assignment notifications so stale tasks can be suppressed.
+        const assignmentTargets = Array.from(
+          new Map(
+            staffDocs
+              .map((docSnap) => {
+                const data = docSnap.data() as any;
+                const type = String(data?.type || '').trim().toLowerCase();
+                if (type !== 'assignment') return null;
+                const appId = String(data?.applicationId || '').trim();
+                if (!appId) return null;
+                const ownerUid = parseOwnerUidFromActionUrl((data as any)?.actionUrl);
+                return [assignmentKey(appId, ownerUid), { appId, ownerUid }] as const;
+              })
+              .filter(Boolean) as Array<readonly [string, { appId: string; ownerUid: string }]>
+          ).values()
+        );
+        await Promise.all(assignmentTargets.map((target) => loadCurrentAssignment(target.appId, target.ownerUid)));
+
         staffDocs.forEach((docSnap) => {
           const data = docSnap.data();
           const notificationType = String((data as any)?.type || '').trim().toLowerCase();
+          const applicationId = String((data as any)?.applicationId || '').trim();
+          const ownerUid = parseOwnerUidFromActionUrl((data as any)?.actionUrl);
+          const isAssignmentNotification = notificationType === 'assignment';
+
+          if (isAssignmentNotification && applicationId) {
+            const current = assignmentCache.get(assignmentKey(applicationId, ownerUid)) || {
+              assignedStaffId: '',
+              assignedStaffName: '',
+            };
+            const assignedId = String(current.assignedStaffId || '').trim();
+            const assignedNameNorm = normalizeName(current.assignedStaffName);
+            const matchesViewerByName =
+              assignedNameNorm &&
+              (assignedNameNorm === normalizeName(staffName) ||
+                (staffFirstNameLower && assignedNameNorm === normalizeName(staffFirstNameLower)));
+
+            // Only hide when we can confidently prove reassignment to someone else.
+            // If assignment fields are missing/unknown, keep the task visible.
+            const hasKnownAssignment = Boolean(assignedId || assignedNameNorm);
+            const reassignedAway =
+              (assignedId && assignedId !== userId) ||
+              (!assignedId && assignedNameNorm && !matchesViewerByName);
+
+            if (hasKnownAssignment && reassignedAway) return;
+          }
+
           const isKaiserProcessReminder =
             notificationType === 'kaiser_process_inactivity' &&
             Boolean((data as any)?.requiresStaffAction) &&
