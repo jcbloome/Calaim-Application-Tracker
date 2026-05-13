@@ -240,6 +240,8 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
 
     const getCapacityStatus = (hasLegalRepValue: Application['hasLegalRep']) => {
         switch(hasLegalRepValue) {
+            case 'unknown':
+                return 'Unknown';
             case 'notApplicable':
             case 'same_as_primary':
             case 'different':
@@ -248,7 +250,7 @@ function ReviewPageComponent({ isAdminView = false }: { isAdminView?: boolean })
             case 'no_has_rep': 
                 return 'No, member lacks capacity';
             default: 
-                return 'Yes, member has capacity';
+                return 'Unknown';
         }
     }
 

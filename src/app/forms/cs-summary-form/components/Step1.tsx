@@ -32,6 +32,36 @@ const MEMBER_LANGUAGE_OPTIONS = [
 const MEMBER_LANGUAGE_OTHER_VALUE = '__other__';
 const STAFF_DRAFT_AGENCY_NAME = 'Connections Care Home Consultants';
 
+function formatDateInput(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function getAgeFromFormattedDob(dob: string): number | null {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dob)) return null;
+  const [month, day, year] = dob.split('/').map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+  const birthDate = new Date(year, month - 1, day);
+  const isValidDate =
+    !isNaN(birthDate.getTime()) &&
+    birthDate.getFullYear() === year &&
+    birthDate.getMonth() === month - 1 &&
+    birthDate.getDate() === day;
+  if (!isValidDate) return null;
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDelta = today.getMonth() - birthDate.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+
+  return age >= 0 ? age : null;
+}
+
 export default function Step1({
   isAdminView,
   onCheckMrnUnique,
@@ -94,21 +124,20 @@ export default function Step1({
     String(repEmail || '').trim() === String(bestContactEmail || '').trim();
 
   useEffect(() => {
-    if (memberDob && /^\d{2}\/\d{2}\/\d{4}$/.test(memberDob)) {
-      const [month, day, year] = memberDob.split('/').map(Number);
-      const birthDate = new Date(year, month - 1, day);
+    const parsedAge = getAgeFromFormattedDob(String(memberDob || ''));
+    const currentAge = getValues('memberAge');
 
-      if (!isNaN(birthDate.getTime())) {
-        const today = new Date();
-        let age = today.getFullYear() - birthDate.getFullYear();
-        const m = today.getMonth() - birthDate.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-            age--;
-        }
-        setValue('memberAge', age);
+    if (parsedAge === null) {
+      if (currentAge !== undefined) {
+        setValue('memberAge', undefined, { shouldDirty: true });
       }
+      return;
     }
-  }, [memberDob, setValue]);
+
+    if (currentAge !== parsedAge) {
+      setValue('memberAge', parsedAge, { shouldDirty: true });
+    }
+  }, [memberDob, getValues, setValue]);
 
   useEffect(() => {
     const normalizedPlan = String(healthPlan || '').trim().toLowerCase();
@@ -290,6 +319,7 @@ export default function Step1({
             <FormLabel>Does member have a legal representative? <span className="text-destructive">*</span></FormLabel>
             <FormControl>
               <RadioGroup onValueChange={field.onChange} value={field.value ?? ''} className="flex flex-col space-y-2">
+                <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="unknown" /></FormControl><FormLabel className="font-normal">Unknown at this time</FormLabel></FormItem>
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="notApplicable" /></FormControl><FormLabel className="font-normal">No, member has capacity and does not need legal representative</FormLabel></FormItem>
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="same_as_primary" /></FormControl><FormLabel className="font-normal">Yes, same as primary contact</FormLabel></FormItem>
                 <FormItem className="flex items-center space-x-3 space-y-0"><FormControl><RadioGroupItem value="different" /></FormControl><FormLabel className="font-normal">Yes, not same as primary contact (fill out below fields)</FormLabel></FormItem>
@@ -470,7 +500,16 @@ export default function Step1({
                 <FormItem>
                   <FormLabel>Date of Birth <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} value={field.value ?? ''} placeholder="MM/DD/YYYY" />
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      placeholder="MM/DD/YYYY"
+                      inputMode="numeric"
+                      maxLength={10}
+                      onChange={(event) => {
+                        field.onChange(formatDateInput(event.target.value));
+                      }}
+                    />
                   </FormControl>
                   <FormDescription>Use MM/DD/YYYY format (example: 01/31/1940).</FormDescription>
                   <FormMessage />

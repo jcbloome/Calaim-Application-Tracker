@@ -322,6 +322,8 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
     
     const getCapacityStatus = (hasLegalRepValue: Application['hasLegalRep']) => {
         switch(hasLegalRepValue) {
+            case 'unknown':
+                return 'Unknown';
             case 'notApplicable':
             case 'same_as_primary':
             case 'different':
@@ -330,7 +332,7 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
             case 'no_has_rep': 
                 return 'No, member lacks capacity';
             default: 
-                return 'Yes, member has capacity';
+                return 'Unknown';
         }
     }
 
