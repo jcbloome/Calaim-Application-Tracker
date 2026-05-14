@@ -175,6 +175,23 @@ export default function ProgramGrowthPage() {
     });
   }, [members, selectedYear]);
 
+  const authorizedPlanTotals = useMemo(() => {
+    let healthNetAuthorized = 0;
+    let kaiserAuthorized = 0;
+
+    members.forEach((member) => {
+      if (!isAuthorizedStatus(member)) return;
+      if (isHealthNetPlan(member.memberHealthPlan)) healthNetAuthorized++;
+      if (isKaiserPlan(member.memberHealthPlan)) kaiserAuthorized++;
+    });
+
+    return {
+      healthNetAuthorized,
+      kaiserAuthorized,
+      totalAuthorized: healthNetAuthorized + kaiserAuthorized,
+    };
+  }, [members]);
+
   const totals = useMemo(() => {
     return monthlyRows.reduce(
       (acc, row) => {
@@ -261,6 +278,33 @@ export default function ProgramGrowthPage() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-t-4 border-t-emerald-600">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Authorized Health Net Members</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-emerald-700">{authorizedPlanTotals.healthNetAuthorized}</div>
+            <CardDescription>CalAIM_Status = Authorized</CardDescription>
+          </CardContent>
+        </Card>
+        <Card className="border-t-4 border-t-blue-600">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Authorized Kaiser Members</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-700">{authorizedPlanTotals.kaiserAuthorized}</div>
+            <CardDescription>CalAIM_Status = Authorized</CardDescription>
+          </CardContent>
+        </Card>
+        <Card className="border-t-4 border-t-slate-500">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Authorized Total (HN + Kaiser)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-slate-700">{authorizedPlanTotals.totalAuthorized}</div>
+            <CardDescription>Current authorized census</CardDescription>
+          </CardContent>
+        </Card>
         <Card className="border-t-4 border-t-blue-500">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Kaiser New Authorized</CardTitle>
