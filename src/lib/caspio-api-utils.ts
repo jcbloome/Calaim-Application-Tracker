@@ -379,6 +379,8 @@ export function transformCaspioMember(member: CaspioMember): any {
     // Authorization fields (needed to suspend SW visits when auth ends; especially Kaiser T2038).
     Authorization_Start_Date_T2038: (normalizedMember as any)?.Authorization_Start_Date_T2038 || '',
     Authorization_End_Date_T2038: (normalizedMember as any)?.Authorization_End_Date_T2038 || '',
+    Next_Auth_Start_T2038: (normalizedMember as any)?.Next_Auth_Start_T2038 || '',
+    Next_Auth_End_T2038: (normalizedMember as any)?.Next_Auth_End_T2038 || '',
     Authorization_Start_Date_H2022: (normalizedMember as any)?.Authorization_Start_Date_H2022 || '',
     Authorization_End_Date_H2022: (normalizedMember as any)?.Authorization_End_Date_H2022 || '',
     // Normalize hold so downstream UIs can be consistent even if Caspio values vary.

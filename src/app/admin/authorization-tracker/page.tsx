@@ -53,6 +53,8 @@ interface AuthorizationMember {
   // T2038 Authorization (ConnectionsILOS)
   authStartDateT2038?: string;
   authEndDateT2038?: string;
+  nextAuthStartDateT2038?: string;
+  nextAuthEndDateT2038?: string;
   authExtRequestDateT2038?: string;
   
   // H2022 Authorization (RCFE)
@@ -115,6 +117,75 @@ const getDaysRemaining = (endDate?: string): number | undefined => {
   } catch (error) {
     return undefined;
   }
+};
+
+const parseIsoDateSafe = (value?: string): Date | null => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  try {
+    const parsed = parseISO(raw);
+    if (!isNaN(parsed.getTime())) return parsed;
+  } catch {
+    // Fall through to native Date parse.
+  }
+  const fallback = new Date(raw);
+  return isNaN(fallback.getTime()) ? null : fallback;
+};
+
+const resolveEffectiveT2038Window = (params: {
+  authStartDateT2038?: string;
+  authEndDateT2038?: string;
+  nextAuthStartDateT2038?: string;
+  nextAuthEndDateT2038?: string;
+}) => {
+  const windows = [
+    {
+      start: String(params.authStartDateT2038 || '').trim(),
+      end: String(params.authEndDateT2038 || '').trim(),
+      startDate: parseIsoDateSafe(params.authStartDateT2038),
+      endDate: parseIsoDateSafe(params.authEndDateT2038),
+    },
+    {
+      start: String(params.nextAuthStartDateT2038 || '').trim(),
+      end: String(params.nextAuthEndDateT2038 || '').trim(),
+      startDate: parseIsoDateSafe(params.nextAuthStartDateT2038),
+      endDate: parseIsoDateSafe(params.nextAuthEndDateT2038),
+    },
+  ].filter((window) => Boolean(window.endDate));
+
+  if (!windows.length) return { start: '', end: '' };
+
+  const today = new Date();
+  const activeWindows = windows
+    .filter((window) => {
+      if (!window.endDate) return false;
+      if (window.endDate < today) return false;
+      if (!window.startDate) return true;
+      return window.startDate <= today;
+    })
+    .sort((a, b) => (b.endDate!.getTime() - a.endDate!.getTime()));
+  if (activeWindows.length > 0) {
+    return {
+      start: activeWindows[0].start,
+      end: activeWindows[0].end,
+    };
+  }
+
+  const upcomingWindows = windows
+    .filter((window) => Boolean(window.startDate) && window.startDate! > today)
+    .sort((a, b) => a.startDate!.getTime() - b.startDate!.getTime());
+  if (upcomingWindows.length > 0) {
+    return {
+      start: upcomingWindows[0].start,
+      end: upcomingWindows[0].end,
+    };
+  }
+
+  const mostRecentWindow = windows.sort((a, b) => (b.endDate!.getTime() - a.endDate!.getTime()))[0];
+  return {
+    start: mostRecentWindow.start,
+    end: mostRecentWindow.end,
+  };
 };
 
 const getHealthPlanBadgeClass = (plan?: string) => {
@@ -351,6 +422,8 @@ export default function AuthorizationTracker() {
         // Using exact Caspio field names you provided
         authStartDateT2038: member.authStartDateT2038,
         authEndDateT2038: member.authEndDateT2038,
+        nextAuthStartDateT2038: member.nextAuthStartDateT2038,
+        nextAuthEndDateT2038: member.nextAuthEndDateT2038,
         authStartDateH2022: member.authStartDateH2022,
         authEndDateH2022: member.authEndDateH2022,
         authExtRequestDateT2038: member.authExtRequestDateT2038,
@@ -358,9 +431,18 @@ export default function AuthorizationTracker() {
       }));
       
       const processedMembers: AuthorizationMember[] = membersData.map((member: any) => {
-        const t2038Status = getAuthStatus(member.authEndDateT2038);
+        const effectiveT2038 = resolveEffectiveT2038Window({
+          authStartDateT2038: member.authStartDateT2038,
+          authEndDateT2038: member.authEndDateT2038,
+          nextAuthStartDateT2038: member.nextAuthStartDateT2038,
+          nextAuthEndDateT2038: member.nextAuthEndDateT2038,
+        });
+        const effectiveT2038EndDate = effectiveT2038.end || member.authEndDateT2038;
+        const effectiveT2038StartDate = effectiveT2038.start || member.authStartDateT2038;
+
+        const t2038Status = getAuthStatus(effectiveT2038EndDate);
         const h2022Status = getAuthStatus(member.authEndDateH2022);
-        const t2038DaysRemaining = getDaysRemaining(member.authEndDateT2038);
+        const t2038DaysRemaining = getDaysRemaining(effectiveT2038EndDate);
         const h2022DaysRemaining = getDaysRemaining(member.authEndDateH2022);
         const h2022EndingWithin30Days = isEndDateWithinDays(member.authEndDateH2022, 30);
         const hasCompleteH2022Dates = hasDateValue(member.authStartDateH2022) && hasDateValue(member.authEndDateH2022);
@@ -373,10 +455,10 @@ export default function AuthorizationTracker() {
         const hasRcfePlacement = Boolean(String(member.rcfeName || '').trim());
         const kaiserCritical =
           isKaiserPlan(member.healthPlan) &&
-          (isEndDateWithinDays(member.authEndDateH2022, 30) || isEndDateWithinDays(member.authEndDateT2038, 30));
+          (isEndDateWithinDays(member.authEndDateH2022, 30) || isEndDateWithinDays(effectiveT2038EndDate, 30));
         const healthNetCritical =
           isHealthNetPlan(member.healthPlan) &&
-          (isEndDateWithinDays(member.authEndDateH2022, 14) || isEndDateWithinDays(member.authEndDateT2038, 14));
+          (isEndDateWithinDays(member.authEndDateH2022, 14) || isEndDateWithinDays(effectiveT2038EndDate, 14));
         const criticalRenewal = authorized && !hasRcfePlacement && (kaiserCritical || healthNetCritical);
         
         const needsAttention =
@@ -389,6 +471,8 @@ export default function AuthorizationTracker() {
         
         return {
           ...member,
+          authStartDateT2038: effectiveT2038StartDate,
+          authEndDateT2038: effectiveT2038EndDate,
           t2038Status,
           h2022Status,
           t2038DaysRemaining,

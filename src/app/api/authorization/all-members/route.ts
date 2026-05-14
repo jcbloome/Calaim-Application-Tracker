@@ -41,6 +41,8 @@ export async function GET(req: NextRequest) {
       Boolean(
         rawMember.Authorization_Start_Date_T2038 ||
           rawMember.Authorization_End_Date_T2038 ||
+          rawMember.Next_Auth_Start_T2038 ||
+          rawMember.Next_Auth_End_T2038 ||
           rawMember.Authorization_Start_Date_H2022 ||
           rawMember.Authorization_End_Date_H2022 ||
           rawMember.Authorization_End_Date_H222 ||
@@ -115,6 +117,8 @@ export async function GET(req: NextRequest) {
         // Authorization fields (from raw Caspio data)
         authStartDateT2038: rawMember.Authorization_Start_Date_T2038 || '',
         authEndDateT2038: rawMember.Authorization_End_Date_T2038 || '',
+        nextAuthStartDateT2038: rawMember.Next_Auth_Start_T2038 || '',
+        nextAuthEndDateT2038: rawMember.Next_Auth_End_T2038 || '',
         authStartDateH2022: pickFirstNonEmpty(
           rawMember.Next_Auth_Start_H2022,
           rawMember.Authorization_Start_Date_H2022

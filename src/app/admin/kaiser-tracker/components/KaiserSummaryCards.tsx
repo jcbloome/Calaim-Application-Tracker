@@ -560,10 +560,24 @@ export function KaiserSummaryCards({
     );
   };
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const hasUnexpiredT2038Authorization = (value: unknown) => {
-    const date = toValidDate(value);
-    if (!date) return false;
-    return startOfDay(date) >= startOfDay(new Date());
+  const isActiveAuthWindow = (startValue: unknown, endValue: unknown) => {
+    const endDate = toValidDate(endValue);
+    if (!endDate) return false;
+    const today = startOfDay(new Date());
+    const endDay = startOfDay(endDate);
+    const startDate = toValidDate(startValue);
+    if (startDate) {
+      const startDay = startOfDay(startDate);
+      return startDay <= today && endDay >= today;
+    }
+    return endDay >= today;
+  };
+  const hasActiveT2038Authorization = (member: KaiserMember) => {
+    const currentStart = (member as any)?.Authorization_Start_Date_T2038;
+    const currentEnd = (member as any)?.Authorization_End_Date_T2038;
+    const nextStart = (member as any)?.Next_Auth_Start_T2038;
+    const nextEnd = (member as any)?.Next_Auth_End_T2038;
+    return isActiveAuthWindow(currentStart, currentEnd) || isActiveAuthWindow(nextStart, nextEnd);
   };
   const isCalaimH2022 = (value: unknown) => normalize(String(value || '')) === 'h2022';
   const isFinalAtRcfeSummaryStatus = (status: string) => {
@@ -602,7 +616,7 @@ export function KaiserSummaryCards({
   );
   const biweeklyRcfeFollowUpMembers = members.filter((m) => {
     if (!isBiweeklyRcfeFollowupStatus(getEffectiveKaiserStatus(m))) return false;
-    if (!hasUnexpiredT2038Authorization((m as any)?.Authorization_End_Date_T2038)) return false;
+    if (!hasActiveT2038Authorization(m)) return false;
     const rcfeEmail = String((m as any)?.RCFE_Admin_Email || '').trim();
     return Boolean(rcfeEmail);
   });

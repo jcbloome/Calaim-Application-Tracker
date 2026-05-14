@@ -84,13 +84,39 @@ const toDateOrNull = (value: unknown): Date | null => {
   return parsed;
 };
 
-const isUnexpiredT2038 = (value: unknown) => {
-  const parsed = toDateOrNull(value);
-  if (!parsed) return false;
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endDay = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+const isActiveAuthWindow = (startValue: unknown, endValue: unknown) => {
+  const endDate = toDateOrNull(endValue);
+  if (!endDate) return false;
+  const today = startOfDay(new Date());
+  const endDay = startOfDay(endDate);
+  const startDate = toDateOrNull(startValue);
+  if (startDate) {
+    const startDay = startOfDay(startDate);
+    return startDay <= today && endDay >= today;
+  }
   return endDay >= today;
+};
+
+const getActiveT2038EndDate = (member: Record<string, unknown>) => {
+  const windows = [
+    {
+      start: String(member?.Authorization_Start_Date_T2038 || member?.Authorization_Start_T2038 || '').trim(),
+      end: String(member?.Authorization_End_Date_T2038 || member?.Authorization_End_T2038 || '').trim(),
+    },
+    {
+      start: String(member?.Next_Auth_Start_T2038 || '').trim(),
+      end: String(member?.Next_Auth_End_T2038 || '').trim(),
+    },
+  ]
+    .filter((window) => isActiveAuthWindow(window.start, window.end))
+    .map((window) => ({ ...window, endDate: toDateOrNull(window.end) }))
+    .filter((window) => Boolean(window.endDate)) as Array<{ start: string; end: string; endDate: Date }>;
+
+  if (!windows.length) return '';
+  windows.sort((a, b) => a.endDate.getTime() - b.endDate.getTime());
+  return windows[0].end;
 };
 
 const renderTemplate = (template: string, data: Record<string, string>) => {
@@ -394,8 +420,8 @@ export async function GET(request: NextRequest) {
     for (const member of allMembers) {
       const status = String(member?.Kaiser_Status || member?.Kaiser_ID_Status || '').trim();
       if (!isBiweeklyFollowupStatus(status)) continue;
-      const authEnd = String(member?.Authorization_End_Date_T2038 || member?.Authorization_End_T2038 || '').trim();
-      if (!isUnexpiredT2038(authEnd)) continue;
+      const authEnd = getActiveT2038EndDate(member as Record<string, unknown>);
+      if (!authEnd) continue;
       const rcfeName = String(member?.RCFE_Name || '').trim();
       const rcfeAdminEmail = String(
         member?.RCFE_Admin_Email || member?.RCFE_Administrator_Email || member?.RCFE_AdminEmail || ''

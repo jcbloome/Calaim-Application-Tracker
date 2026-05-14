@@ -69,6 +69,8 @@ const MEMBERS_SELECT_FIELDS: string[] = [
   // Authorization tracking (used to suspend SW visits after auth ends for Kaiser).
   'Authorization_Start_Date_T2038',
   'Authorization_End_Date_T2038',
+  'Next_Auth_Start_T2038',
+  'Next_Auth_End_T2038',
   'Authorization_Start_Date_H2022',
   'Authorization_End_Date_H2022',
   'Need_More_Contact_Info_ILS',
