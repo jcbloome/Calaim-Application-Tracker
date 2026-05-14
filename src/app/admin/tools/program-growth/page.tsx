@@ -39,6 +39,7 @@ type MonthlyGrowthRow = {
   totalNewAuthorized: number;
   kaiserAuthEnding: number;
   kaiserNetGrowth: number;
+  monthOverMonthGrowthPct: number | null;
 };
 
 const normalize = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -163,14 +164,34 @@ export default function ProgramGrowthPage() {
       const kaiserNewAuthorized = monthlyKaiserGains.get(key) || 0;
       const healthNetNewAuthorized = monthlyHealthNetGains.get(key) || 0;
       const kaiserAuthEnding = monthlyKaiserEndings.get(key) || 0;
+      const totalNewAuthorized = kaiserNewAuthorized + healthNetNewAuthorized;
+
+      const prevMonthDate = new Date(year, monthIndex - 1, 1);
+      const prevMonthKey = toYearMonthKey(prevMonthDate);
+      const prevTotalNewAuthorized =
+        (monthlyKaiserGains.get(prevMonthKey) || 0) + (monthlyHealthNetGains.get(prevMonthKey) || 0);
+
+      let monthOverMonthGrowthPct: number | null = null;
+      if (monthIndex > 0) {
+        if (prevTotalNewAuthorized > 0) {
+          monthOverMonthGrowthPct =
+            ((totalNewAuthorized - prevTotalNewAuthorized) / prevTotalNewAuthorized) * 100;
+        } else if (totalNewAuthorized > 0) {
+          monthOverMonthGrowthPct = 100;
+        } else {
+          monthOverMonthGrowthPct = 0;
+        }
+      }
+
       return {
         monthIndex,
         monthLabel: format(date, 'MMM'),
         kaiserNewAuthorized,
         healthNetNewAuthorized,
-        totalNewAuthorized: kaiserNewAuthorized + healthNetNewAuthorized,
+        totalNewAuthorized,
         kaiserAuthEnding,
         kaiserNetGrowth: kaiserNewAuthorized - kaiserAuthEnding,
+        monthOverMonthGrowthPct,
       };
     });
   }, [members, selectedYear]);
@@ -371,6 +392,7 @@ export default function ProgramGrowthPage() {
                   <TableHead className="text-right">Kaiser New</TableHead>
                   <TableHead className="text-right">Health Net New</TableHead>
                   <TableHead className="text-right">Total New</TableHead>
+                  <TableHead className="text-right">MoM Growth %</TableHead>
                   <TableHead className="text-right">Kaiser Auth Ending</TableHead>
                   <TableHead className="text-right">Kaiser Net</TableHead>
                 </TableRow>
@@ -382,6 +404,21 @@ export default function ProgramGrowthPage() {
                     <TableCell className="text-right">{row.kaiserNewAuthorized}</TableCell>
                     <TableCell className="text-right">{row.healthNetNewAuthorized}</TableCell>
                     <TableCell className="text-right">{row.totalNewAuthorized}</TableCell>
+                    <TableCell
+                      className={`text-right font-medium ${
+                        row.monthOverMonthGrowthPct === null
+                          ? 'text-muted-foreground'
+                          : row.monthOverMonthGrowthPct < 0
+                            ? 'text-red-600'
+                            : row.monthOverMonthGrowthPct > 0
+                              ? 'text-green-700'
+                              : ''
+                      }`}
+                    >
+                      {row.monthOverMonthGrowthPct === null
+                        ? '—'
+                        : `${row.monthOverMonthGrowthPct > 0 ? '+' : ''}${row.monthOverMonthGrowthPct.toFixed(1)}%`}
+                    </TableCell>
                     <TableCell className="text-right">{row.kaiserAuthEnding}</TableCell>
                     <TableCell
                       className={`text-right font-semibold ${
@@ -397,6 +434,7 @@ export default function ProgramGrowthPage() {
                   <TableCell className="text-right">{totals.kaiserNewAuthorized}</TableCell>
                   <TableCell className="text-right">{totals.healthNetNewAuthorized}</TableCell>
                   <TableCell className="text-right">{totals.totalNewAuthorized}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">—</TableCell>
                   <TableCell className="text-right">{totals.kaiserAuthEnding}</TableCell>
                   <TableCell
                     className={`text-right ${
