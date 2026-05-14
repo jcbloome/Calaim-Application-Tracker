@@ -965,7 +965,9 @@ function CsSummaryFormComponent() {
               <div className="mb-4">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                       <div>
-                          <h1 className="text-2xl font-bold">CS Member Summary</h1>
+                          <h1 className="text-2xl font-bold">
+                            {isStaffDraftFlow ? 'Skeleton Application - CS Member Summary' : 'CS Member Summary'}
+                          </h1>
                           <div className="mt-1 text-xs text-muted-foreground flex flex-wrap items-center gap-2">
                             {isAutoSaving ? (
                               <span className="inline-flex items-center gap-1">
@@ -991,7 +993,7 @@ function CsSummaryFormComponent() {
                         </p>
                         {isStaffDraftFlow ? (
                           <p className="mt-1 text-blue-800">
-                            Admin draft mode: you can move between steps and save with partial information. Complete missing details before final submission/Caspio push.
+                            Skeleton application mode: not all required fields are filled out yet. You can save partial information now and complete required fields before final submission/Caspio push.
                           </p>
                         ) : null}
                       </div>

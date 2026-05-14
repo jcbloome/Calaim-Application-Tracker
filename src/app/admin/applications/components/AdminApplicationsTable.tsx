@@ -839,6 +839,11 @@ export const AdminApplicationsTable = ({
                 String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
                 String((app as any)?.status || '').trim() === 'Authorization Received (Doc Collection)'
               );
+              const isSkeletonApplication = Boolean(
+                (app as any)?.createdByAdmin ||
+                String((app as any)?.status || '').trim().toLowerCase() === 'draft' ||
+                String((app as any)?.id || '').startsWith('admin_app_')
+              );
               const isGroupSelected = Boolean(
                 selected && group.appIds.length > 0 && group.appIds.every((id) => selected.includes(id))
               );
@@ -907,6 +912,11 @@ export const AdminApplicationsTable = ({
                       {isAuthReceivedIntake && (
                         <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200">
                           Auth Received
+                        </Badge>
+                      )}
+                      {isSkeletonApplication && (
+                        <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300">
+                          Skeleton - required fields pending
                         </Badge>
                       )}
                     </div>
@@ -1084,6 +1094,11 @@ export const AdminApplicationsTable = ({
               String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
               String((app as any)?.status || '').trim() === 'Authorization Received (Doc Collection)'
             );
+            const isSkeletonApplication = Boolean(
+              (app as any)?.createdByAdmin ||
+              String((app as any)?.status || '').trim().toLowerCase() === 'draft' ||
+              String((app as any)?.id || '').startsWith('admin_app_')
+            );
             const isGroupSelected = Boolean(
               selected && group.appIds.length > 0 && group.appIds.every((id) => selected.includes(id))
             );
@@ -1136,6 +1151,11 @@ export const AdminApplicationsTable = ({
                       {isAuthReceivedIntake && (
                         <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200 text-xs">
                           Auth Received
+                        </Badge>
+                      )}
+                      {isSkeletonApplication && (
+                        <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 text-xs">
+                          Skeleton - required fields pending
                         </Badge>
                       )}
                     </div>
