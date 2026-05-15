@@ -90,7 +90,7 @@ async function fetchRcfeAddressByName(params: { accessToken: string; baseUrl: st
   const { accessToken, baseUrl } = params;
   const tableName = 'CalAIM_tbl_New_RCFE_Registration';
   const pageSize = 200;
-  const maxPages = 25;
+  const maxPages = 250;
   const selectFields = ['RCFE_Name', 'RCFE_Street', 'RCFE_City', 'RCFE_State', 'RCFE_Zip', 'RCFE_County'].join(',');
 
   const map = new Map<string, { address: string; city?: string; county?: string }>();

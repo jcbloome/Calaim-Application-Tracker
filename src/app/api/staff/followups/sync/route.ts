@@ -131,17 +131,29 @@ export async function POST(request: NextRequest) {
       for (let i = 0; i < clientIds.length; i += chunkSize) {
         const chunk = clientIds.slice(i, i + chunkSize);
         const where = chunk.map((id) => `Client_ID2='${escapeQuotes(id)}'`).join(' OR ');
-        const url = `${credentials.baseUrl}/integrations/rest/v3/tables/connect_tbl_clients/records?q.where=${encodeURIComponent(where)}&q.pageSize=1000&q.pageNumber=1`;
-        const resp = await fetch(url, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!resp.ok) continue;
-        const data = await resp.json().catch(() => null);
-        const rows = data?.Result || [];
+        const pageSize = 500;
+        const maxPages = 250;
+        const rows: any[] = [];
+        for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+          const url =
+            `${credentials.baseUrl}/integrations/rest/v3/tables/connect_tbl_clients/records` +
+            `?q.where=${encodeURIComponent(where)}` +
+            `&q.pageSize=${pageSize}` +
+            `&q.pageNumber=${pageNumber}`;
+          const resp = await fetch(url, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (!resp.ok) break;
+          const data = await resp.json().catch(() => null);
+          const pageRows = Array.isArray(data?.Result) ? data.Result : [];
+          if (!pageRows.length) break;
+          rows.push(...pageRows);
+          if (pageRows.length < pageSize) break;
+        }
         rows.forEach((c: any) => {
           const cid = normalizeString(c.Client_ID2);
           if (!cid) return;

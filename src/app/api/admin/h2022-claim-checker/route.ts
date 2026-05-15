@@ -283,7 +283,7 @@ async function fetchH2022Claims(whereClause?: string) {
   ];
 
   const pageSize = 300;
-  const maxPages = 30;
+  const maxPages = 250;
   const rows: Record<string, unknown>[] = [];
   let includeSelect = true;
   let includeWhere = Boolean(whereClause && whereClause.trim());

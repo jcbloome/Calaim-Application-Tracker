@@ -158,42 +158,46 @@ export async function GET(request: NextRequest) {
     const accessToken = await getCaspioToken(credentials);
     console.log('✅ Got Caspio OAuth token');
 
-    // Fetch ILS members from CalAIM_tbl_Members table
-    // ILS members are those with ILS_View = 'Yes' or similar criteria
-    const membersUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=ILS_View='Yes'&q.limit=1000`;
-    
-    const membersResponse = await fetch(membersUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    // Fetch ILS members from CalAIM_tbl_Members table with full pagination.
+    const pageSize = 500;
+    const maxPages = 250;
+    const membersRows: any[] = [];
+    for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+      const membersUrl =
+        `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records` +
+        `?q.where=${encodeURIComponent("ILS_View='Yes'")}` +
+        `&q.pageSize=${pageSize}` +
+        `&q.pageNumber=${pageNumber}`;
 
-    if (!membersResponse.ok) {
-      console.error('❌ Failed to fetch ILS members:', membersResponse.status);
-      const errorText = await membersResponse.text();
-      console.error('Error details:', errorText);
-      return NextResponse.json(
-        { success: false, error: 'Failed to fetch ILS members from Caspio' },
-        { status: 500 }
-      );
+      const membersResponse = await fetch(membersUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!membersResponse.ok) {
+        console.error('❌ Failed to fetch ILS members page:', membersResponse.status, 'page=', pageNumber);
+        const errorText = await membersResponse.text().catch(() => '');
+        console.error('Error details:', errorText);
+        return NextResponse.json(
+          { success: false, error: `Failed to fetch ILS members from Caspio (page ${pageNumber})` },
+          { status: 500 }
+        );
+      }
+
+      const membersData = await membersResponse.json();
+      const pageRows = Array.isArray(membersData?.Result) ? membersData.Result : [];
+      membersRows.push(...pageRows);
+      if (pageRows.length < pageSize) break;
     }
 
-    const membersData = await membersResponse.json();
-    console.log(`📊 Raw Caspio response: ${membersData.Result?.length || 0} records`);
-
-    if (!membersData.Result || !Array.isArray(membersData.Result)) {
-      console.error('❌ Invalid response format from Caspio');
-      return NextResponse.json(
-        { success: false, error: 'Invalid response format from Caspio' },
-        { status: 500 }
-      );
-    }
+    console.log(`📊 Raw Caspio response: ${membersRows.length} records`);
 
 
     // Map Caspio fields to ILS member format using correct field names
-    const ilsMembers = membersData.Result.map((member: any) => ({
+    const ilsMembers = membersRows.map((member: any) => ({
       memberFirstName: member.Senior_First || '',
       memberLastName: member.Senior_Last || '',
       memberFullName: `${member.Senior_First || ''} ${member.Senior_Last || ''}`.trim(),

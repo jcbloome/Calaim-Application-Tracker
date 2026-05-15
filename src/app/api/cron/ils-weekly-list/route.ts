@@ -94,20 +94,34 @@ export async function GET(request: NextRequest) {
 
     const credentials = getCaspioCredentialsFromEnv();
     const accessToken = await getCaspioToken(credentials);
-    const membersUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records?q.where=CalAIM_MCO='Kaiser'&q.limit=5000`;
-    const membersResponse = await fetch(membersUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!membersResponse.ok) {
-      const errorText = await membersResponse.text().catch(() => '');
-      return NextResponse.json({ success: false, error: `Failed to fetch ILS members: ${errorText}` }, { status: 500 });
+    const rows: any[] = [];
+    const pageSize = 500;
+    const maxPages = 250;
+    for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+      const membersUrl =
+        `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Members/records` +
+        `?q.where=${encodeURIComponent("CalAIM_MCO='Kaiser'")}` +
+        `&q.pageSize=${pageSize}` +
+        `&q.pageNumber=${pageNumber}`;
+      const membersResponse = await fetch(membersUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!membersResponse.ok) {
+        const errorText = await membersResponse.text().catch(() => '');
+        return NextResponse.json(
+          { success: false, error: `Failed to fetch ILS members (page ${pageNumber}): ${errorText}` },
+          { status: 500 }
+        );
+      }
+      const membersData = await membersResponse.json();
+      const pageRows = Array.isArray(membersData?.Result) ? membersData.Result : [];
+      rows.push(...pageRows);
+      if (pageRows.length < pageSize) break;
     }
-    const membersData = await membersResponse.json();
-    const rows = Array.isArray(membersData?.Result) ? membersData.Result : [];
     type QueueRow = { id: string; name: string; mrn: string; status: string; requestedDate: string };
     const queueRows = (membersInQueue: any[], requestedDateFor: (m: any) => string): QueueRow[] =>
       membersInQueue

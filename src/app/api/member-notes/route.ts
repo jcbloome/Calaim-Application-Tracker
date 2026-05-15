@@ -80,7 +80,7 @@ async function fetchAllRowsForMemberFromCaspio<T extends Record<string, any>>(pa
     orderBy,
     idField,
     pageSize = 1000,
-    maxPages = 20,
+    maxPages = 250,
   } = params;
 
   const allRows: T[] = [];
@@ -791,18 +791,29 @@ async function getStaffUserIdLookup(): Promise<StaffUserIdLookup> {
 
     for (const table of possibleTables) {
       try {
-        const url = `${baseUrl}/tables/${table}/records?q.pageSize=500&q.pageNumber=1`;
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-        });
-        if (!response.ok) continue;
-        const data = await response.json().catch(() => ({}));
-        const rows = Array.isArray(data?.Result) ? data.Result : [];
+        const rows: Record<string, any>[] = [];
+        const pageSize = 500;
+        const maxPages = 250;
+        for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+          const url = `${baseUrl}/tables/${table}/records?q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            cache: 'no-store',
+          });
+          if (!response.ok) {
+            if (pageNumber === 1) break;
+            break;
+          }
+          const data = await response.json().catch(() => ({}));
+          const pageRows = Array.isArray(data?.Result) ? data.Result : [];
+          if (!pageRows.length) break;
+          rows.push(...pageRows);
+          if (pageRows.length < pageSize) break;
+        }
         if (!rows.length) continue;
 
         const byNormalizedName: Record<string, Set<string>> = {};

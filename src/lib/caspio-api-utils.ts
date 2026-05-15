@@ -183,7 +183,8 @@ export async function fetchCaspioRecords(
 ): Promise<any[]> {
   let allRecords: any[] = [];
   let pageNumber = 1;
-  const maxPages = 10; // Safety limit per partition
+  const maxPagesRaw = Number(process.env.CASPIO_MAX_PAGES_PER_QUERY || 250);
+  const maxPages = Number.isFinite(maxPagesRaw) && maxPagesRaw > 0 ? Math.floor(maxPagesRaw) : 250;
   
   console.log(`   🔄 Using pagination for: ${whereClause}`);
   
@@ -223,6 +224,13 @@ export async function fetchCaspioRecords(
     }
     
     pageNumber++;
+  }
+
+  if (pageNumber > maxPages) {
+    console.warn(
+      `⚠️ Reached pagination ceiling for ${tableName} (${maxPages} pages) while reading: ${whereClause}. ` +
+        'Dataset may be truncated; increase CASPIO_MAX_PAGES_PER_QUERY if needed.'
+    );
   }
   
   console.log(`   📊 Total records for partition: ${allRecords.length}`);
@@ -288,6 +296,24 @@ export async function fetchAllCaspioRecords(
     );
     console.log(`   Unknown ${options.partitionField}: ${unknownRecords.length} records`);
     allRecords = allRecords.concat(unknownRecords);
+
+    // Also capture partition values not explicitly listed (prevents missing new/renamed values).
+    const knownValuesClause = options.partitionValues
+      .map((value) => `${options.partitionField}='${String(value).replace(/'/g, "''")}'`)
+      .join(' OR ');
+    if (knownValuesClause) {
+      console.log(`📋 Fetching records with uncategorized ${options.partitionField} values...`);
+      const otherWhereClause = `(${options.partitionField} IS NOT NULL AND ${options.partitionField}<>'' AND NOT (${knownValuesClause}))`;
+      const otherRecords = await fetchCaspioRecords(
+        credentials,
+        accessToken,
+        options.table,
+        otherWhereClause,
+        options.limit
+      );
+      console.log(`   Other ${options.partitionField}: ${otherRecords.length} records`);
+      allRecords = allRecords.concat(otherRecords);
+    }
     
   } else {
     // STRATEGY 2: Single query (fallback, will hit 1000 limit)
@@ -428,22 +454,35 @@ export async function fetchCaspioSocialWorkers(
     'SW_table_id',
     'Rate'
   ].join(',');
-  const socialWorkerUrl = `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Social_Worker/records?q.select=${encodeURIComponent(socialWorkerSelect)}`;
-
-  const swResponse = await fetch(socialWorkerUrl, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!swResponse.ok) {
-    throw new Error(`Failed to fetch social workers: ${swResponse.status} ${swResponse.statusText}`);
+  const pageSize = 500;
+  const maxPagesRaw = Number(process.env.CASPIO_MAX_PAGES_PER_QUERY || 250);
+  const maxPages = Number.isFinite(maxPagesRaw) && maxPagesRaw > 0 ? Math.floor(maxPagesRaw) : 250;
+  const allSocialWorkers: any[] = [];
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const socialWorkerUrl =
+      `${credentials.baseUrl}/integrations/rest/v3/tables/CalAIM_tbl_Social_Worker/records` +
+      `?q.select=${encodeURIComponent(socialWorkerSelect)}` +
+      `&q.pageSize=${pageSize}` +
+      `&q.pageNumber=${pageNumber}`;
+    const swResponse = await fetch(socialWorkerUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!swResponse.ok) {
+      if (pageNumber === 1) {
+        throw new Error(`Failed to fetch social workers: ${swResponse.status} ${swResponse.statusText}`);
+      }
+      break;
+    }
+    const swData = await swResponse.json();
+    const rows = Array.isArray(swData?.Result) ? swData.Result : [];
+    if (!rows.length) break;
+    allSocialWorkers.push(...rows);
+    if (rows.length < pageSize) break;
   }
-
-  const swData = await swResponse.json();
-  const allSocialWorkers = swData.Result || [];
 
   const transformedStaffRaw: CaspioSocialWorker[] = allSocialWorkers
     .map((sw: any) => {

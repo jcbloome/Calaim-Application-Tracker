@@ -59,7 +59,7 @@ async function fetchRcfeRegistryBedMaps() {
   const byName: Record<string, RcfeRegistryRow> = {};
 
   const pageSize = 1000;
-  const maxPages = 20;
+  const maxPages = 250;
   let includeRegistrationTimestamp = true;
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
     const selectFields = includeRegistrationTimestamp

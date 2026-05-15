@@ -290,7 +290,7 @@ async function fetchFromCaspioAndSave(
     let allNotes: any[] = [];
     let pageNumber = 1;
     const pageSize = 100;
-    const maxPages = 50;
+    const maxPages = 250;
     let pageRecords: any[] = [];
 
     console.log('📊 Fetching client notes...');

@@ -75,22 +75,8 @@ export class CaspioNotesService {
       whereClause += ` AND Created_Date >= '${timestamp}'`;
     }
 
-    const url = `${CASPIO_CONFIG.BASE_URL}/tables/${CASPIO_CONFIG.TABLES.MEMBER_NOTES}/records?q.where=${encodeURIComponent(whereClause)}&q.orderBy=Created_Date DESC`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch regular notes: HTTP ${response.status}`);
-    }
-
-    const data: CaspioApiResponse<any> = await response.json();
-    return data.Result.map(note => this.transformCaspioNote(note, false));
+    const rows = await this.fetchPaginatedNotesRows(CASPIO_CONFIG.TABLES.MEMBER_NOTES, whereClause, token);
+    return rows.map(note => this.transformCaspioNote(note, false));
   }
 
   /**
@@ -105,24 +91,14 @@ export class CaspioNotesService {
       whereClause += ` AND Created_Date >= '${timestamp}'`;
     }
 
-    const url = `${CASPIO_CONFIG.BASE_URL}/tables/${CASPIO_CONFIG.TABLES.ILS_NOTES}/records?q.where=${encodeURIComponent(whereClause)}&q.orderBy=Created_Date DESC`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      // ILS notes table might not exist or be accessible, don't throw error
-      console.warn(`⚠️ Could not fetch ILS notes: HTTP ${response.status}`);
+    try {
+      const rows = await this.fetchPaginatedNotesRows(CASPIO_CONFIG.TABLES.ILS_NOTES, whereClause, token);
+      return rows.map(note => this.transformCaspioNote(note, true));
+    } catch (error: any) {
+      // ILS notes table might not exist or be accessible, don't throw error.
+      console.warn(`⚠️ Could not fetch ILS notes: ${error?.message || 'unknown error'}`);
       return [];
     }
-
-    const data: CaspioApiResponse<any> = await response.json();
-    return data.Result.map(note => this.transformCaspioNote(note, true));
   }
 
   /**
@@ -234,23 +210,8 @@ export class CaspioNotesService {
    */
   private async searchNotesInTable(tableName: string, whereClause: string, token: string, isILS: boolean): Promise<CaspioNote[]> {
     try {
-      const url = `${CASPIO_CONFIG.BASE_URL}/tables/${tableName}/records?q.where=${encodeURIComponent(whereClause)}&q.orderBy=Created_Date DESC`;
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        console.warn(`⚠️ Could not search ${tableName}: HTTP ${response.status}`);
-        return [];
-      }
-
-      const data: CaspioApiResponse<any> = await response.json();
-      return data.Result.map(note => this.transformCaspioNote(note, isILS));
+      const rows = await this.fetchPaginatedNotesRows(tableName, whereClause, token);
+      return rows.map(note => this.transformCaspioNote(note, isILS));
     } catch (error) {
       console.warn(`⚠️ Error searching ${tableName}:`, error);
       return [];
@@ -258,6 +219,36 @@ export class CaspioNotesService {
   }
 
   // ==================== UTILITY METHODS ====================
+
+  private async fetchPaginatedNotesRows(tableName: string, whereClause: string, token: string): Promise<any[]> {
+    const allRows: any[] = [];
+    const pageSize = 500;
+    const maxPages = 250;
+    for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+      const url =
+        `${CASPIO_CONFIG.BASE_URL}/tables/${tableName}/records` +
+        `?q.where=${encodeURIComponent(whereClause)}` +
+        `&q.orderBy=Created_Date DESC` +
+        `&q.pageSize=${pageSize}` +
+        `&q.pageNumber=${pageNumber}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ${tableName}: HTTP ${response.status}`);
+      }
+      const data: CaspioApiResponse<any> = await response.json();
+      const rows = Array.isArray(data?.Result) ? data.Result : [];
+      if (!rows.length) break;
+      allRows.push(...rows);
+      if (rows.length < pageSize) break;
+    }
+    return allRows;
+  }
 
   /**
    * Transform Caspio note data to our interface

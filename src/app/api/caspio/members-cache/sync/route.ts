@@ -524,7 +524,7 @@ async function fetchRcfeAdminContactMap(params: { accessToken: string; baseUrl: 
     : `${baseUrl.replace(/\/$/, '')}/integrations/rest/v3`;
 
   const pageSize = 250;
-  const maxPages = 20;
+  const maxPages = 250;
   const selectFields = ['RCFE_Registered_ID', 'RCFE_Name', 'RCFE_Administrator', 'RCFE_Administrator_Phone'].join(',');
 
   const byRegisteredId = new Map<string, { name: string; phone: string }>();

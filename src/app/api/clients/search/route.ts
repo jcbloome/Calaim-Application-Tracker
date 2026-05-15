@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     let allClients: any[] = [];
     let pageNumber = 1;
     const pageSize = 100;
-    const maxPages = 50;
+    const maxPages = 250;
     let pageRecords: any[] = [];
 
     console.log('📊 Searching clients...');

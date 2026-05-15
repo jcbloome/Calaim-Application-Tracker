@@ -32,26 +32,34 @@ export async function POST(req: NextRequest) {
     const accessToken = await getCaspioToken(credentials);
     const encodedTable = encodeURIComponent('CalAIM_Kaiser_Status');
 
-    const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${encodedTable}/records?q.select=${encodeURIComponent(
-      'Kaiser_ID_Status,Status,Sort_Order'
-    )}&q.pageSize=1000&q.pageNumber=1`;
+    const resultRows: any[] = [];
+    const pageSize = 500;
+    const maxPages = 250;
+    for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+      const url = `${credentials.baseUrl}/integrations/rest/v3/tables/${encodedTable}/records?q.select=${encodeURIComponent(
+        'Kaiser_ID_Status,Status,Sort_Order'
+      )}&q.pageSize=${pageSize}&q.pageNumber=${pageNumber}`;
 
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
-      cache: 'no-store',
-    });
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+        cache: 'no-store',
+      });
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      return NextResponse.json(
-        { success: false, error: `Caspio status fetch failed (${res.status}) ${text}` },
-        { status: 502 }
-      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return NextResponse.json(
+          { success: false, error: `Caspio status fetch failed (${res.status}) ${text}` },
+          { status: 502 }
+        );
+      }
+
+      const data = (await res.json().catch(() => ({}))) as any;
+      const pageRows = Array.isArray(data?.Result) ? data.Result : [];
+      if (!pageRows.length) break;
+      resultRows.push(...pageRows);
+      if (pageRows.length < pageSize) break;
     }
-
-    const data = (await res.json().catch(() => ({}))) as any;
-    const resultRows = Array.isArray(data?.Result) ? data.Result : [];
 
     const rows = resultRows
       .map((row: any) => {

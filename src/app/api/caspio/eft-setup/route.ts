@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
 
     const tableName = 'Cal_AIM_EFT_Setup';
     const pageSize = 200;
-    const maxPages = 25;
+    const maxPages = 250;
     const rows: any[] = [];
 
     for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {

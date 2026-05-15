@@ -20,7 +20,7 @@ const fetchPagedRows = async (
   accessToken: string,
   whereClause: string,
   pageSize = 500,
-  maxPages = 50
+  maxPages = 250
 ): Promise<CaspioFollowUpRow[]> => {
   const rows: CaspioFollowUpRow[] = [];
   for (let page = 1; page <= maxPages; page += 1) {

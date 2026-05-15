@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
         let allRecords: any[] = [];
         let pageNumber = 1;
         const pageSize = 100; // Smaller pages for faster response
-        const maxPages = 10; // Up to 1,000 records
+        const maxPages = 250; // Allow full dataset growth without truncation
         let pageRecords: any[] = [];
 
         console.log('🔍 Trying staff table:', tableName);
