@@ -408,19 +408,20 @@ export default function ILSReportEditorPage() {
     }
   };
 
-  // Load Kaiser members for ILS report from Firebase cache.
+  // Load Kaiser members for ILS report from live Caspio only.
   const loadMembers = async (opts?: { silent?: boolean }) => {
     const silent = Boolean(opts?.silent);
     setIsLoading(true);
     try {
-      // Always read from the shared cache used by Kaiser Tracker / scheduled pulls.
-      const response = await fetch('/api/kaiser-members');
-      
+      // Strict live source: do not fall back to cache.
+      const response = await fetch('/api/kaiser-members?source=caspio&refresh=1', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({} as any));
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(data?.error || `HTTP ${response.status}: ${response.statusText}`);
       }
-      
-      const data = await response.json();
+      if (!data?.success) {
+        throw new Error(data?.error || 'Live Caspio response was unsuccessful');
+      }
       
       if (data.success && data.members) {
         const processedMembers = (Array.isArray(data.members) ? data.members : []).map((member: any) => {
@@ -522,7 +523,7 @@ export default function ILSReportEditorPage() {
         if (!silent) {
           toast({
             title: 'Members Loaded',
-            description: `Loaded ${filtered.length} member(s) from Kaiser cache`,
+            description: `Loaded ${filtered.length} member(s) with latest Kaiser statuses`,
             className: 'bg-green-100 text-green-900 border-green-200',
           });
         }
@@ -533,7 +534,7 @@ export default function ILSReportEditorPage() {
         toast({
           variant: 'destructive',
           title: 'Load Failed',
-          description: 'Could not load Kaiser members for ILS report',
+          description: error?.message || 'Could not load Kaiser members from live Caspio',
         });
       }
     } finally {
