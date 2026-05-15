@@ -900,7 +900,8 @@ export default function ILSReportEditorPage() {
 
     const finalRcfeMissingDates = eligibleMembers.filter((m) => {
       if (!isFinalMemberAtRcfe(getEffectiveKaiserStatus(m) || m.Kaiser_Status)) return false;
-      return !toYmd((m as any).Authorization_Start_Date_H2022) || !toYmd((m as any).Authorization_End_Date_H2022);
+      // "Final at RCFE without H2022 dates" is driven by missing H2022 END date.
+      return !toYmd((m as any).Authorization_End_Date_H2022);
     });
     const finalRcfeMissingRows = finalRcfeMissingDates
       .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)))
@@ -1398,7 +1399,6 @@ export default function ILSReportEditorPage() {
                     label: 'T2038 Received, Unreachable',
                     rows: queues.t2038ReceivedUnreachable,
                     editable: true,
-                    showIlsConnected: false,
                   },
                   {
                     key: 'tierAppeals' as const,
@@ -1406,7 +1406,6 @@ export default function ILSReportEditorPage() {
                     label: 'Tier Level Appeals',
                     rows: queues.tierAppeals,
                     editable: false,
-                    showIlsConnected: false,
                   },
                   {
                     key: 'rbPendingIlsContract' as const,
@@ -1414,7 +1413,6 @@ export default function ILSReportEditorPage() {
                     label: 'R & B Sent Pending ILS Contract / Final at RCFE',
                     rows: queues.rbPendingIlsContract,
                     editable: false,
-                    showIlsConnected: true,
                   },
                 ] as const
               ).map((q) => {
@@ -1427,7 +1425,7 @@ export default function ILSReportEditorPage() {
                   <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>Member / MRN / Birth Date</span>
                     <span className="hidden sm:inline font-medium">
-                      {q.showIlsConnected ? 'Confirmed • Request Date' : 'Request Date'}
+                      {q.queueKey === 'rb_sent_pending_ils_contract' ? 'H2022 Requested Date' : 'Request Date'}
                     </span>
                   </div>
                   <div className="space-y-1 text-sm">

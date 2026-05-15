@@ -14,7 +14,6 @@ type QueueRow = {
   memberName: string;
   memberMrn: string;
   birthDate?: string;
-  ilsConnected?: boolean;
   rcfeName?: string;
   rcfeAdminName?: string;
   rcfeAdminEmail?: string;
@@ -58,6 +57,7 @@ type WorkingMember = {
   Kaiser_Tier_Level_Requested?: string;
   Kaiser_Tier_Level_Requested_Date?: string;
   Kaiser_Tier_Level_Received_Date?: string;
+  Kaiser_Next_Step_Date?: string;
   Kaiser_H2022_Requested?: string;
   Kaiser_H2022_Received?: string;
   RCFE_Name?: string;
@@ -120,11 +120,6 @@ const normalizeStatus = (value: unknown) =>
     .toLowerCase()
     .replace(/\s+/g, ' ');
 
-const isIlsConnected = (value: unknown): boolean => {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  return normalized === 'yes' || normalized === 'y' || normalized === 'true' || normalized === '1';
-};
-
 const isFinalMemberAtRcfe = (value: unknown): boolean => {
   const normalized = normalizeStatus(value).replace(/[^a-z0-9]+/g, ' ').trim();
   return normalized === 'final member at rcfe' || normalized === 'final at rcfe';
@@ -141,13 +136,18 @@ const isRbPendingOrFinalAtRcfeStatus = (value: unknown): boolean => {
 };
 
 const getEffectiveKaiserStatus = (member: any): string => {
+  const rawStatus = String(member?.Kaiser_Status || '').trim();
+  if (hasMeaningfulValue(rawStatus)) {
+    // Real Caspio Kaiser_Status always wins over derived fallback flags.
+    return rawStatus;
+  }
   const hasAuthEmail = hasMeaningfulValue(member?.T2038_Auth_Email_Kaiser);
   const hasOfficialAuth =
     hasMeaningfulValue(member?.Kaiser_T2038_Received_Date) ||
     hasMeaningfulValue(member?.Kaiser_T038_Received) ||
     hasMeaningfulValue(member?.Kaiser_T2038_Received);
   if (hasAuthEmail && !hasOfficialAuth) return 'T2038_Auth_Email_Kaiser';
-  return String(member?.Kaiser_Status || '');
+  return rawStatus;
 };
 
 const queueIncludes = (
@@ -160,7 +160,9 @@ const queueIncludes = (
     | 'tier_level_appeals'
     | 'rb_sent_pending_ils_contract'
 ) => {
-  const status = normalizeStatus(member.Kaiser_Status);
+  const currentStatus = getEffectiveKaiserStatus(member) || member.Kaiser_Status;
+  const status = normalizeStatus(currentStatus);
+  const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
   if (key === 't2038_auth_only_email') {
     const hasAuthEmail = hasMeaningfulValue((member as any)?.T2038_Auth_Email_Kaiser);
     const hasOfficialAuth =
@@ -178,10 +180,12 @@ const queueIncludes = (
           (member as any).Kaiser_T038_Received
       )
     );
-    return requested && !received;
+    // Prefer live Kaiser_Status as source of truth.
+    if (compactStatus === 't2038 requested') return true;
+    // Fallback only when status is empty/unknown.
+    return !hasMeaningfulValue(currentStatus) && requested && !received;
   }
   if (key === 't2038_received_unreachable') {
-    const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
     return compactStatus === 't2038 received unreachable';
   }
   if (key === 'tier_level_requested') {
@@ -194,13 +198,19 @@ const queueIncludes = (
           (member as any).Tier_Received_Date
       )
     );
-    return requested && !received;
+    // Show only members still pending with ILS (requested exists, received not set),
+    // but exclude statuses that belong in other queues.
+    const excludedByStatus =
+      isFinalMemberAtRcfe(currentStatus) ||
+      isRbPendingOrFinalAtRcfeStatus(currentStatus) ||
+      compactStatus === 'tier level appeals' ||
+      compactStatus === 'tier level appeal';
+    if (compactStatus === 'tier level requested') return true;
+    return !hasMeaningfulValue(currentStatus) && requested && !received && !excludedByStatus;
   }
   if (key === 'tier_level_appeals') {
-    const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
     return compactStatus === 'tier level appeals' || compactStatus === 'tier level appeal';
   }
-  const compactStatus = status.replace(/[^a-z0-9]+/g, ' ').trim();
   const rbPendingByStatus =
     status === 'r&b sent pending ils contract' ||
     status === 'r & b sent pending ils contract' ||
@@ -229,7 +239,8 @@ const queueRequestedDate = (
         (member as any).Kaiser_T038_Received
     );
   if (key === 'tier_level_requested') return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
-  if (key === 'tier_level_appeals') return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date);
+  if (key === 'tier_level_appeals')
+    return toYmd(member.Kaiser_Tier_Level_Requested || member.Kaiser_Tier_Level_Requested_Date || member.Kaiser_Next_Step_Date);
   if (key === 't2038_auth_only_email') return toYmd(member.Kaiser_T2038_Requested_Date);
   return toYmd(member.Kaiser_H2022_Requested);
 };
@@ -239,7 +250,6 @@ const toQueueRow = (member: WorkingMember, requestedDate: string): QueueRow => (
   memberName: String(member.memberName || '').trim(),
   memberMrn: String(member.memberMrn || '').trim(),
   birthDate: toYmd(member.birthDate),
-  ilsConnected: isIlsConnected((member as any).ILS_Connected),
   rcfeName: String(member.RCFE_Name || '').trim(),
   rcfeAdminName: String(member.RCFE_Admin_Name || '').trim(),
   rcfeAdminEmail: String(member.RCFE_Admin_Email || '').trim(),
@@ -299,14 +309,14 @@ const buildPayload = (members: WorkingMember[], reportDate: string, reportTitle:
         Boolean(toYmd((m as any).Authorization_Start_Date_H2022)) &&
         Boolean(toYmd((m as any).Authorization_End_Date_H2022))
     )
-    .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)));
+    .map((m) => toQueueRow(m, toYmd((m as any).Kaiser_H2022_Requested)));
   const finalAtRcfeWithoutDates = h2022AuthEligible
     .filter(
       (m) =>
         isFinalMemberAtRcfe(getEffectiveKaiserStatus(m) || m.Kaiser_Status) &&
-        (!toYmd((m as any).Authorization_Start_Date_H2022) || !toYmd((m as any).Authorization_End_Date_H2022))
+        !toYmd((m as any).Authorization_End_Date_H2022)
     )
-    .map((m) => toQueueRow(m, toYmd((m as any).Authorization_End_Date_H2022)));
+    .map((m) => toQueueRow(m, toYmd((m as any).Kaiser_H2022_Requested)));
   const finalRcfeMissingDates = finalAtRcfeWithoutDates;
 
   const totalMembers = new Set<string>([
@@ -341,14 +351,14 @@ const buildPayload = (members: WorkingMember[], reportDate: string, reportTitle:
 function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
   const cards = useMemo(() => {
     return [
-      { label: 'T2038 Auth Only Email (no received auth)', rows: payload.queues.t2038AuthOnly, key: 't2038' as const, showIlsConnected: false },
-      { label: 'T2038 Requested', rows: payload.queues.t2038Requested, key: 't2038req' as const, showIlsConnected: false },
-      { label: 'T2038 Received, Unreachable', rows: payload.queues.t2038ReceivedUnreachable || [], key: 't2038Unreachable' as const, showIlsConnected: false },
-      { label: 'Tier Level Requested', rows: payload.queues.tierRequested, key: 'tier' as const, showIlsConnected: false },
-      { label: 'Tier Level Appeals', rows: payload.queues.tierAppeals, key: 'tierAppeals' as const, showIlsConnected: false },
-      { label: 'R & B Sent Pending ILS Contract', rows: payload.queues.rbPendingIlsContract, key: 'rb' as const, showIlsConnected: true },
-      { label: 'Final- At RCFE With H2022 Dates', rows: payload.h2022AuthDates?.finalAtRcfeWithDates || [], key: 'finalRcfeWithDates' as const, showIlsConnected: true },
-      { label: 'Final- At RCFE Without H2022 Dates', rows: payload.h2022AuthDates?.finalAtRcfeWithoutDates || [], key: 'finalRcfeWithoutDates' as const, showIlsConnected: true },
+      { label: 'T2038 Auth Only Email (no received auth)', rows: payload.queues.t2038AuthOnly, key: 't2038' as const, requestedDateLabel: 'Request Date' },
+      { label: 'T2038 Requested', rows: payload.queues.t2038Requested, key: 't2038req' as const, requestedDateLabel: 'Request Date' },
+      { label: 'T2038 Received, Unreachable', rows: payload.queues.t2038ReceivedUnreachable || [], key: 't2038Unreachable' as const, requestedDateLabel: 'Request Date' },
+      { label: 'Tier Level Requested', rows: payload.queues.tierRequested, key: 'tier' as const, requestedDateLabel: 'Request Date' },
+      { label: 'Tier Level Appeals', rows: payload.queues.tierAppeals, key: 'tierAppeals' as const, requestedDateLabel: 'Request Date' },
+      { label: 'R & B Sent Pending ILS Contract', rows: payload.queues.rbPendingIlsContract, key: 'rb' as const, requestedDateLabel: 'H2022 Requested Date' },
+      { label: 'Final- At RCFE With H2022 Dates', rows: payload.h2022AuthDates?.finalAtRcfeWithDates || [], key: 'finalRcfeWithDates' as const, requestedDateLabel: 'H2022 Requested Date' },
+      { label: 'Final- At RCFE Without H2022 Dates', rows: payload.h2022AuthDates?.finalAtRcfeWithoutDates || [], key: 'finalRcfeWithoutDates' as const, requestedDateLabel: 'H2022 Requested Date' },
     ];
   }, [payload]);
 
@@ -384,13 +394,12 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
                 <tr>
                   <th className="border bg-slate-100 p-1 text-left">Member</th>
                   <th className="border bg-slate-100 p-1 text-left">MRN / Birth Date</th>
-                  {card.showIlsConnected ? <th className="border bg-slate-100 p-1 text-left">ILS Connected</th> : null}
-                  <th className="border bg-slate-100 p-1 text-left">Request Date</th>
+                  <th className="border bg-slate-100 p-1 text-left">{card.requestedDateLabel}</th>
                 </tr>
               </thead>
               <tbody>
                 {card.rows.length === 0 ? (
-                  <tr><td colSpan={card.showIlsConnected ? 4 : 3} className="border p-2 text-muted-foreground">None</td></tr>
+                  <tr><td colSpan={3} className="border p-2 text-muted-foreground">None</td></tr>
                 ) : (
                   card.rows.map((row) => (
                     <tr key={`${card.key}-${row.id}`}>
@@ -408,13 +417,6 @@ function IlsReportPrintableDocument({ payload }: { payload: ReportPayload }) {
                         {row.memberMrn || '-'}
                         <div className="text-[10px] text-muted-foreground">Birth Date: {formatYmd(row.birthDate)}</div>
                       </td>
-                      {card.showIlsConnected ? (
-                        <td className="border p-1 align-top">
-                          <span className={row.ilsConnected ? 'ils-conn-yes' : 'ils-conn-no'}>
-                            {row.ilsConnected ? '● Yes' : '● No'}
-                          </span>
-                        </td>
-                      ) : null}
                       <td className="border p-1 align-top">{formatYmd(row.requestedDate)}</td>
                     </tr>
                   ))
@@ -453,7 +455,7 @@ export default function IlsReportPrintablePage() {
       setIsLoading(true);
       setError('');
       try {
-        const response = await fetch('/api/kaiser-members');
+        const response = await fetch('/api/kaiser-members?source=caspio&refresh=1', { cache: 'no-store' });
         const data = await response.json().catch(() => ({} as any));
         if (!response.ok || !data?.success || !Array.isArray(data?.members)) {
           throw new Error(data?.error || `Failed to load report data (HTTP ${response.status})`);
@@ -491,6 +493,7 @@ export default function IlsReportPrintablePage() {
                 member.Tier_Level_Received_Date ||
                 member.Tier_Received_Date
             ),
+            Kaiser_Next_Step_Date: toYmd(member.Kaiser_Next_Step_Date),
             Kaiser_H2022_Requested: toYmd(member.Kaiser_H2022_Requested),
             Kaiser_H2022_Received: toYmd(member.Kaiser_H2022_Received),
             RCFE_Name: String(member.RCFE_Name || '').trim(),
@@ -624,16 +627,6 @@ export default function IlsReportPrintablePage() {
         htmlWrapperClassName="mx-auto w-full max-w-[1100px] space-y-4 p-4"
         captureWidthPx={1120}
       />
-      <style jsx global>{`
-        .ils-conn-yes {
-          color: #15803d;
-          font-weight: 600;
-        }
-        .ils-conn-no {
-          color: #dc2626;
-          font-weight: 600;
-        }
-      `}</style>
     </div>
   );
 }
