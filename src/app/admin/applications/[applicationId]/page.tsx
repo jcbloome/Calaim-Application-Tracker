@@ -3619,7 +3619,11 @@ function ApplicationDetailPageContent() {
   ];
 
   const planLower = String((application as any)?.healthPlan || '').toLowerCase();
-  const isKaiserPlan = planLower.includes('kaiser');
+  const hasKaiserAuthorizationSignals =
+    Boolean(String((application as any)?.kaiserAuthorizationMode || '').trim()) ||
+    Boolean((application as any)?.kaiserAuthReceivedViaIls) ||
+    String((application as any)?.status || '').trim().toLowerCase() === 'authorization received (doc collection)';
+  const isKaiserPlan = planLower.includes('kaiser') || hasKaiserAuthorizationSignals;
   const isHealthNetPlan =
     planLower.includes('health net') ||
     planLower.includes('healthnet') ||
@@ -3635,6 +3639,7 @@ function ApplicationDetailPageContent() {
     Boolean((application as any)?.createdByAdmin);
   const showPrePushNotesSection = isDraftLikeApplication && (isKaiserPlan || isHealthNetPlan);
   const showDraftKaiserStatusSection = isDraftLikeApplication && isKaiserPlan;
+  const showKaiserAuthorizationTypeCard = isKaiserPlan || isDraftLikeApplication;
   const swPortalInviteSentAtLabel = (() => {
     const ms = toMillisSafe((application as any)?.swPortalInviteSentAt);
     if (!ms) return '';
@@ -8319,18 +8324,21 @@ function ApplicationDetailPageContent() {
   };
 
   const updateKaiserAuthorizationMode = async (mode: 'authorization_received' | 'authorization_needed') => {
-    if (!docRef || !application || !isKaiserPlan) return;
+    if (!docRef || !application) return;
     setIsUpdatingKaiserAuthorizationMode(true);
     try {
       const isAuthorized = mode === 'authorization_received';
       const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
       const currentCaspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
+      const normalizedCurrentCaspio = currentCaspioCalAIMStatus.toLowerCase();
       const updateData = {
+        healthPlan: 'Kaiser',
         kaiserAuthorizationMode: mode,
         kaiserAuthReceivedViaIls: isAuthorized,
         ...(isAuthorized
           ? { caspioCalAIMStatus: 'Authorized' }
-          : { caspioCalAIMStatus: currentCaspioCalAIMStatus || currentKaiserStatus || 'T2038 Requested' }),
+          : { caspioCalAIMStatus: normalizedCurrentCaspio === 'authorized' || normalizedCurrentCaspio === 'pending' ? currentCaspioCalAIMStatus : 'Pending' }),
+        ...(isAuthorized && !currentKaiserStatus ? { kaiserStatus: 'T2038 Received, Need First Contact' } : {}),
         ...(!isAuthorized && !currentKaiserStatus ? { kaiserStatus: 'T2038 Requested' } : {}),
         lastUpdated: serverTimestamp(),
       };
@@ -10610,7 +10618,7 @@ function ApplicationDetailPageContent() {
               </div>
             ) : null}
 
-            {isKaiserPlan ? (
+            {showKaiserAuthorizationTypeCard ? (
               <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3">
                 <div className="text-sm font-medium text-blue-900">Kaiser Authorization Type (controls referral requirement)</div>
                 <div className="mt-2 flex flex-col gap-2 text-sm">
@@ -10926,7 +10934,7 @@ function ApplicationDetailPageContent() {
                                 void updateCaspioCalAIMStatus(value);
                               }
                             }}
-                            disabled
+                            disabled={isUpdatingCaspioStatus}
                           >
                             <SelectTrigger className="h-9">
                               <SelectValue placeholder="Synced from Caspio" />
@@ -10937,7 +10945,7 @@ function ApplicationDetailPageContent() {
                             </SelectContent>
                           </Select>
                           <p className="text-xs text-muted-foreground">
-                            Synced from Caspio.
+                            Select Authorized or Pending before Caspio push.
                           </p>
                         </div>
                         {isKaiserPlan ? (

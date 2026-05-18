@@ -873,6 +873,7 @@ export async function POST(request: NextRequest) {
     const assignedStaffId = clean(applicationData?.assignedStaffId);
     const requestedCalAIMStatusRaw = clean(applicationData?.caspioCalAIMStatus || applicationData?.CalAIM_Status);
     const requestedKaiserStatus = clean(applicationData?.kaiserStatus || applicationData?.Kaiser_Status);
+    const kaiserAuthorizationMode = clean(applicationData?.kaiserAuthorizationMode).toLowerCase();
     const requestedSocialWorkerHold = clean(
       applicationData?.holdForSocialWorkerStatus ||
       applicationData?.Hold_For_Social_Worker_Visit ||
@@ -909,12 +910,22 @@ export async function POST(request: NextRequest) {
     const normalizedHealthPlan = clean(
       applicationData?.healthPlan || applicationData?.CalAIM_MCO || applicationData?.calaimMco
     ).toLowerCase();
-    const isKaiserApplication = normalizedHealthPlan === 'kaiser' || normalizedHealthPlan.includes('kaiser');
+    const isKaiserApplication =
+      normalizedHealthPlan === 'kaiser' ||
+      normalizedHealthPlan.includes('kaiser') ||
+      kaiserAuthorizationMode === 'authorization_received' ||
+      kaiserAuthorizationMode === 'authorization_needed' ||
+      Boolean(applicationData?.kaiserAuthReceivedViaIls) ||
+      Boolean(requestedKaiserStatus);
     const isHealthNetApplication =
       normalizedHealthPlan.includes('health net') ||
       normalizedHealthPlan.includes('healthnet') ||
       normalizedHealthPlan === 'hn';
     const requestedCalAIMStatus = (() => {
+      if (!requestedCalAIMStatusRaw && isKaiserApplication) {
+        if (kaiserAuthorizationMode === 'authorization_received') return 'Authorized';
+        return 'Pending';
+      }
       if (/^authorized$/i.test(requestedCalAIMStatusRaw)) return 'Authorized';
       if (/^pending$/i.test(requestedCalAIMStatusRaw)) return 'Pending';
       // In Kaiser auth-request flow, UI can display/store T2038 Requested while
