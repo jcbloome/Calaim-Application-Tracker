@@ -1214,6 +1214,9 @@ export async function POST(request: NextRequest) {
       assignedStaffId
     );
     if (isKaiserApplication && requestedKaiserStaffAssigned) {
+      const exactKaiserStaffAssignmentField = fieldNameByNormalized.get(
+        normalizeFieldName('Kaiser_Staff_Assignment')
+      );
       const kaiserStaffFieldName =
         KAISER_STAFF_ASSIGNMENT_FIELD_CANDIDATES.find((name) =>
           fieldNameByNormalized.has(normalizeFieldName(name))
@@ -1223,6 +1226,9 @@ export async function POST(request: NextRequest) {
           return normalized.includes('kaiser') && normalized.includes('staff') && normalized.includes('assign');
         }) ||
         '';
+      if (exactKaiserStaffAssignmentField) {
+        memberData[exactKaiserStaffAssignmentField] = requestedKaiserStaffAssigned;
+      }
       if (kaiserStaffFieldName) {
         memberData[kaiserStaffFieldName] = requestedKaiserStaffAssigned;
       }
