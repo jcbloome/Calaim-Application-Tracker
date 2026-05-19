@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { PrintableKaiserReferralForm } from '@/components/forms/PrintableKaiserReferralForm';
 import { Button } from '@/components/ui/button';
+import { useUser } from '@/firebase/provider';
 
 const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
@@ -41,8 +42,10 @@ function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser So
 
 function KaiserReferralPrintableContent() {
   const searchParams = useSearchParams();
+  const { user } = useUser();
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [hasReviewedPdfPreview, setHasReviewedPdfPreview] = useState(false);
+  const loggedInUserEmail = String(user?.email || '').trim().toLowerCase();
 
   const formPrefill = useMemo(
     () => ({
@@ -368,6 +371,8 @@ function KaiserReferralPrintableContent() {
         {...printablePropsWithOverrides}
         onMemberContactAddressChange={setMemberOverrides}
         onCaregiverChange={setCaregiverOverrides}
+        buildTemplatePdfUrl={buildTemplateUrl}
+        loggedInUserEmail={loggedInUserEmail}
         showPrintButton={false}
         hasReviewedPdfPreview={hasReviewedPdfPreview}
         onOpenPdfPreview={handleViewPdf}

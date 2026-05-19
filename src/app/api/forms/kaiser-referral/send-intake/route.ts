@@ -21,6 +21,8 @@ type SendPayload = {
   fileName?: string;
   overrideResubmit?: boolean;
   overrideReason?: string;
+  testSend?: boolean;
+  testRecipientEmail?: string;
 };
 
 const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
@@ -163,17 +165,20 @@ export async function POST(request: NextRequest) {
     const region = String(body?.region || '').trim();
     const pdfBase64 = String(body?.pdfBase64 || '').trim();
     const fileName = String(body?.fileName || 'kaiser_referral.pdf').trim();
+    const testSend = Boolean(body?.testSend);
+    const baseCcRecipients = getKaiserReferralCcRecipients();
 
     if (!to || !pdfBase64) {
       await logKaiserReferralEmail({
         status: 'failure',
         from: KAISER_REFERRAL_FROM,
         to,
-        cc: ccRecipients,
+        cc: baseCcRecipients,
         subject: 'Kaiser referral send failed (invalid payload)',
         errorMessage: 'Missing required email payload.',
         metadata: {
           route: '/api/forms/kaiser-referral/send-intake',
+          testSend,
         },
       });
       return NextResponse.json({ success: false, error: 'Missing required email payload.' }, { status: 400 });
@@ -185,11 +190,12 @@ export async function POST(request: NextRequest) {
         status: 'failure',
         from: KAISER_REFERRAL_FROM,
         to,
-        cc: ccRecipients,
+        cc: baseCcRecipients,
         subject: 'Kaiser referral send failed (missing RESEND_API_KEY)',
         errorMessage: 'RESEND_API_KEY is not configured.',
         metadata: {
           route: '/api/forms/kaiser-referral/send-intake',
+          testSend,
         },
       });
       return NextResponse.json({ success: false, error: 'RESEND_API_KEY is not configured.' }, { status: 500 });
@@ -203,6 +209,7 @@ export async function POST(request: NextRequest) {
     const referrerName = String(body?.referrerName || '').trim();
     const referrerEmail = String(body?.referrerEmail || '').trim();
     const ccRecipients = getKaiserReferralCcRecipientsWithSubmitter(referrerEmail);
+    const testRecipientEmail = String(body?.testRecipientEmail || '').trim().toLowerCase();
     const appId = String(body?.applicationId || '').trim();
     const userId = String(body?.userId || '').trim();
     const overrideResubmit = Boolean(body?.overrideResubmit);
@@ -212,6 +219,8 @@ export async function POST(request: NextRequest) {
     const referralContext = String(body?.referralContext || '').trim();
     const metadata = {
       region,
+      testSend,
+      testRecipientEmail: testRecipientEmail || null,
       applicationId: appId || null,
       userId: userId || null,
       taskId: taskId || null,
@@ -226,6 +235,71 @@ export async function POST(request: NextRequest) {
       overrideResubmit,
       overrideReason: overrideReason || null,
     };
+
+    const subject =
+      String(body?.customSubject || '').trim() ||
+      `CS Referral for Member Name: ${memberName} and MRN: ${memberMrn || 'N/A'}`;
+    const customMessage = String(body?.customMessage || '').trim();
+    const resolvedAttachmentName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+
+    if (testSend) {
+      const testTo = testRecipientEmail || String(referrerEmail || '').trim().toLowerCase();
+      if (!testTo || !testTo.includes('@')) {
+        return NextResponse.json(
+          { success: false, error: 'Referrer email is required for test send.' },
+          { status: 400 }
+        );
+      }
+      const testSubject = `[TEST PREVIEW] ${subject}`;
+      const testHtml = `
+      <div style="font-family: Arial, sans-serif; font-size: 14px; color: #111827;">
+        <p>Hello ${referrerName || 'Staff'},</p>
+        <p>This is a pre-send test copy of the Kaiser referral email and attachment for formatting review.</p>
+        <p>${(customMessage || 'Please find attached the reviewed Kaiser Community Supports referral PDF.').replace(/\n/g, '<br/>')}</p>
+        <p>
+          <strong>Member:</strong> ${memberName}<br/>
+          <strong>MRN:</strong> ${memberMrn || 'N/A'}<br/>
+          <strong>County:</strong> ${memberCounty || 'N/A'}<br/>
+          <strong>Application ID:</strong> ${appId || 'N/A'}<br/>
+          <strong>Referrer:</strong> ${referrerName || 'N/A'}
+        </p>
+        <p>This was sent only to staff for verification and has not been sent to Kaiser intake.</p>
+      </div>
+    `;
+      const { data: testData, error: testError } = await resend.emails.send({
+        from: fromAddress,
+        to: [testTo],
+        cc: [],
+        subject: testSubject,
+        html: testHtml,
+        attachments: [{ filename: resolvedAttachmentName, content: pdfBase64 }],
+      });
+      if (testError) {
+        await logKaiserReferralEmail({
+          status: 'failure',
+          from: fromAddress,
+          to: testTo,
+          cc: [],
+          subject: testSubject,
+          errorMessage: String(testError.message || 'Test email send failed.'),
+          metadata,
+        });
+        return NextResponse.json(
+          { success: false, error: String(testError.message || 'Test email send failed.') },
+          { status: 500 }
+        );
+      }
+      await logKaiserReferralEmail({
+        status: 'success',
+        from: fromAddress,
+        to: testTo,
+        cc: [],
+        subject: testSubject,
+        providerMessageId: String(testData?.id || ''),
+        metadata,
+      });
+      return NextResponse.json({ success: true, testSent: true, testRecipientEmail: testTo });
+    }
 
     let resolvedApp: { ref: FirebaseFirestore.DocumentReference; data: Record<string, any> } | null = null;
     if (appId) {
@@ -269,8 +343,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const subject = String(body?.customSubject || '').trim() || `CS Referral for Member Name: ${memberName} and MRN: ${memberMrn || 'N/A'}`;
-    const customMessage = String(body?.customMessage || '').trim();
     const html = `
       <div style="font-family: Arial, sans-serif; font-size: 14px; color: #111827;">
         <p>Hello ${region},</p>
@@ -294,7 +366,7 @@ export async function POST(request: NextRequest) {
       html,
       attachments: [
         {
-          filename: fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`,
+          filename: resolvedAttachmentName,
           content: pdfBase64,
         },
       ],

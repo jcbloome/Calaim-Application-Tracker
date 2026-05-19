@@ -57,6 +57,8 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
   requiredSection1AlfUsage?: 'yes' | 'no' | '';
   onCaregiverChange?: (value: { caregiverName: string; caregiverContact: string }) => void;
   onMemberContactAddressChange?: (value: { memberPhone: string; memberAddress: string }) => void;
+  buildTemplatePdfUrl?: (download?: boolean) => string;
+  loggedInUserEmail?: string;
 }
 
 const Checkbox = ({ checked, editable = true }: { checked?: boolean; editable?: boolean }) => {
@@ -321,6 +323,8 @@ export function PrintableKaiserReferralForm({
   requiredSection1AlfUsage = '',
   onCaregiverChange,
   onMemberContactAddressChange,
+  buildTemplatePdfUrl,
+  loggedInUserEmail = '',
   ...prefill
 }: PrintableKaiserReferralFormProps) {
   const packetRef = React.useRef<HTMLDivElement>(null);
@@ -370,6 +374,9 @@ export function PrintableKaiserReferralForm({
     return '';
   });
   const [isSendingToKaiser, setIsSendingToKaiser] = React.useState(false);
+  const [isSendingTestEmail, setIsSendingTestEmail] = React.useState(false);
+  const [hasSentTestEmail, setHasSentTestEmail] = React.useState(false);
+  const [lastTestEmailSentTo, setLastTestEmailSentTo] = React.useState('');
   const [isStep3Confirmed, setIsStep3Confirmed] = React.useState(false);
   const [emailPreviewOpen, setEmailPreviewOpen] = React.useState(false);
   const [duplicateSubmissionMessage, setDuplicateSubmissionMessage] = React.useState('');
@@ -419,6 +426,7 @@ export function PrintableKaiserReferralForm({
   const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
   const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && hasReviewedPdfPreview && !isSendingToKaiser;
   const canOpenEmailTemplate = requiresKaiserReferralSendFlow && canOpenSendDialog && isStep3Confirmed;
+  const testRecipientEmail = lineValue(loggedInUserEmail || referrerEmail).toLowerCase();
   const step5AcknowledgedAtLabel = React.useMemo(() => {
     const raw = String(step5AcknowledgedAtIso || '').trim();
     if (!raw) return '';
@@ -517,17 +525,81 @@ export function PrintableKaiserReferralForm({
       return;
     }
     setIsPdfConfirmedForSend(true);
+    setHasSentTestEmail(false);
+    setLastTestEmailSentTo('');
     setEmailPreviewOpen(true);
   };
 
-  const handleSendToKaiserIntake = async () => {
+  const buildAttachmentBlob = async () => {
+    const templatePdfUrl = buildTemplatePdfUrl?.(true);
+    if (templatePdfUrl) {
+      const pdfResponse = await fetch(templatePdfUrl, { cache: 'no-store' });
+      if (!pdfResponse.ok) {
+        throw new Error(`Failed to build template PDF (HTTP ${pdfResponse.status})`);
+      }
+      return pdfResponse.blob();
+    }
     if (!packetRef.current) {
-      window.alert('Form preview is not ready yet. Please wait a moment and try again.');
+      throw new Error('Form preview is not ready yet. Please wait a moment and try again.');
+    }
+    return buildPacketPdfBlob();
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!testRecipientEmail || !testRecipientEmail.includes('@')) {
+      window.alert('Referrer email is required to send a pre-send test email.');
+      return;
+    }
+    setIsSendingTestEmail(true);
+    try {
+      const pdfBlob = await buildAttachmentBlob();
+      const pdfBase64 = await blobToBase64(pdfBlob);
+      const response = await fetch('/api/forms/kaiser-referral/send-intake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: kaiserIntakeEmail,
+          region: kaiserRegion || 'Kaiser South',
+          applicationId: String(applicationId || ''),
+          userId: String(userId || ''),
+          memberName: memberName || 'Member',
+          memberMrn: formValues.memberMrn || '',
+          memberCounty: memberCounty || '',
+          referrerName: referrerName || '',
+          referrerEmail: referrerEmail || '',
+          taskId: String(taskId || ''),
+          memberClientId: String(memberClientId || ''),
+          referralContext: String(referralContext || ''),
+          customSubject: subjectLine,
+          customMessage: previewMessage,
+          pdfBase64,
+          fileName: buildKaiserReferralFileName(memberName || 'Member'),
+          testSend: true,
+          testRecipientEmail,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        throw new Error(String(result?.error || 'Failed to send test email.'));
+      }
+      setHasSentTestEmail(true);
+      setLastTestEmailSentTo(testRecipientEmail);
+      window.alert(`Test email sent to ${testRecipientEmail}.`);
+    } catch (error: any) {
+      window.alert(`Test send failed: ${String(error?.message || error)}`);
+    } finally {
+      setIsSendingTestEmail(false);
+    }
+  };
+
+  const handleSendToKaiserIntake = async () => {
+    if (!hasSentTestEmail) {
+      window.alert('Please send a test email first so staff can verify formatting before final send.');
       return;
     }
     setIsSendingToKaiser(true);
     try {
-      const pdfBlob = await buildPacketPdfBlob();
+      const pdfBlob = await buildAttachmentBlob();
       const pdfBase64 = await blobToBase64(pdfBlob);
 
       const response = await fetch('/api/forms/kaiser-referral/send-intake', {
@@ -638,6 +710,20 @@ export function PrintableKaiserReferralForm({
               <div className="text-xs text-muted-foreground">CC</div>
               <div>{ccRecipients.join(', ')}</div>
             </div>
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <div className="font-semibold">Required before final send</div>
+              <div className="mt-1">
+                Send a test email to the current referrer email first so staff can verify email text and PDF formatting.
+              </div>
+              <div className="mt-1">
+                Test recipient: <span className="font-semibold">{testRecipientEmail || 'Missing referrer email'}</span>
+              </div>
+              {hasSentTestEmail ? (
+                <div className="mt-1 text-emerald-700">
+                  Test email sent successfully to {lastTestEmailSentTo || testRecipientEmail}.
+                </div>
+              ) : null}
+            </div>
             <div>
               <div className="text-xs text-muted-foreground">Email description (editable)</div>
               <Textarea
@@ -659,8 +745,22 @@ export function PrintableKaiserReferralForm({
               Cancel
             </Button>
             <Button
+              variant="outline"
+              onClick={() => void handleSendTestEmail()}
+              disabled={isSendingToKaiser || isSendingTestEmail || !testRecipientEmail || !testRecipientEmail.includes('@')}
+            >
+              {isSendingTestEmail ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Send Test Email to Staff
+            </Button>
+            <Button
               onClick={() => void handleSendToKaiserIntake()}
-              disabled={isSendingToKaiser || !isPdfConfirmedForSend || (overrideResubmit && !overrideReason.trim())}
+              disabled={
+                isSendingToKaiser ||
+                isSendingTestEmail ||
+                !isPdfConfirmedForSend ||
+                !hasSentTestEmail ||
+                (overrideResubmit && !overrideReason.trim())
+              }
             >
               {isSendingToKaiser ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {overrideResubmit ? 'Resend to Kaiser Intake (Override)' : 'Send to Kaiser Intake'}
@@ -746,7 +846,7 @@ export function PrintableKaiserReferralForm({
                     onClick={handleOpenEmailPreview}
                     variant="outline"
                     className="w-full sm:w-auto"
-                    disabled={!canOpenEmailTemplate}
+                    disabled={isSendingToKaiser || isSendingTestEmail}
                   >
                     {isSendingToKaiser ? (
                       <>
