@@ -28,7 +28,7 @@ type SendPayload = {
 const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
 const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
-const KAISER_REFERRAL_FROM = 'alberto@carehomefinders.com';
+const KAISER_REFERRAL_FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
 
 function getKaiserReferralCcRecipients() {
   return Array.from(

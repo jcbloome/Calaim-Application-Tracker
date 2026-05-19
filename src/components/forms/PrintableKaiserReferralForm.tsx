@@ -111,6 +111,13 @@ const InteractiveCheckbox = ({
 );
 
 const lineValue = (value?: string) => String(value || '').trim();
+const formatPhoneDashed = (value?: string) => {
+  const raw = lineValue(value);
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 10) return raw;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+};
 const sanitizeFileComponent = (value?: string) =>
   lineValue(value)
     .replace(/[^\w\s.-]/g, '')
@@ -331,7 +338,7 @@ export function PrintableKaiserReferralForm({
   const [formValues, setFormValues] = React.useState(() => ({
     memberName: normalizeMemberName(prefill.memberName),
     memberDob: toMmDdYyyy(prefill.memberDob),
-    memberPhone: lineValue(prefill.memberPhone),
+    memberPhone: formatPhoneDashed(prefill.memberPhone),
     memberAddress: lineValue(prefill.memberAddress),
     memberMrn: lineValue(prefill.memberMrn || prefill.memberMediCal),
     caregiverName: lineValue(prefill.caregiverName),
@@ -1132,7 +1139,18 @@ export function PrintableKaiserReferralForm({
                 <div className="mt-1 min-h-[28px] border border-black px-1">
                   <input
                     value={formValues.memberPhone}
-                    onChange={(event) => setFormValues((prev) => ({ ...prev, memberPhone: event.target.value }))}
+                    onChange={(event) =>
+                      setFormValues((prev) => ({
+                        ...prev,
+                        memberPhone: formatPhoneDashed(event.target.value),
+                      }))
+                    }
+                    onBlur={(event) =>
+                      setFormValues((prev) => ({
+                        ...prev,
+                        memberPhone: formatPhoneDashed(event.target.value),
+                      }))
+                    }
                     required
                     className="h-[24px] w-full border border-transparent bg-transparent focus:border-black focus:outline-none"
                   />
