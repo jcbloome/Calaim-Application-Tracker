@@ -841,8 +841,8 @@ export const AdminApplicationsTable = ({
               );
               const isSkeletonApplication = Boolean(
                 (app as any)?.createdByAdmin ||
-                String((app as any)?.status || '').trim().toLowerCase() === 'draft' ||
-                String((app as any)?.id || '').startsWith('admin_app_')
+                Boolean((app as any)?.allowDraftCaspioPush) ||
+                String((app as any)?.status || '').trim().toLowerCase() === 'draft'
               );
               const isGroupSelected = Boolean(
                 selected && group.appIds.length > 0 && group.appIds.every((id) => selected.includes(id))
@@ -1096,8 +1096,8 @@ export const AdminApplicationsTable = ({
             );
             const isSkeletonApplication = Boolean(
               (app as any)?.createdByAdmin ||
-              String((app as any)?.status || '').trim().toLowerCase() === 'draft' ||
-              String((app as any)?.id || '').startsWith('admin_app_')
+              Boolean((app as any)?.allowDraftCaspioPush) ||
+              String((app as any)?.status || '').trim().toLowerCase() === 'draft'
             );
             const isGroupSelected = Boolean(
               selected && group.appIds.length > 0 && group.appIds.every((id) => selected.includes(id))
