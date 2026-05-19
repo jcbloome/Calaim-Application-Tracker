@@ -255,6 +255,10 @@ export async function POST(request: NextRequest) {
       <div style="font-family: Arial, sans-serif; font-size: 14px; color: #111827;">
         <p>Hello ${referrerName || 'Staff'},</p>
         <p>This is a pre-send test copy of the Kaiser referral email and attachment for formatting review.</p>
+        <p>
+          <strong>Kaiser intake destination:</strong> ${to}<br/>
+          <span style="color:#4b5563;">Copy this email address if you want to forward this request manually after review.</span>
+        </p>
         <p>${(customMessage || 'Please find attached the reviewed Kaiser Community Supports referral PDF.').replace(/\n/g, '<br/>')}</p>
         <p>
           <strong>Member:</strong> ${memberName}<br/>
