@@ -250,6 +250,16 @@ const getProcessStatusFromApp = (
 };
 void getProcessStatusFromApp;
 
+const getT2038FlagLabel = (app: WithId<Application & FormValues>) => {
+  const kaiserStatus = String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || '')
+    .trim()
+    .toLowerCase();
+  if (!kaiserStatus) return '';
+  if (kaiserStatus.includes('t2038 received')) return 'T2038 Received';
+  if (kaiserStatus.includes('t2038 requested')) return 'T2038 Requested';
+  return '';
+};
+
 const getAdminProcessingStatus = (app: WithId<Application & FormValues>) =>
   String((app as any)?.adminProcessingStatus || '').trim();
 
@@ -844,6 +854,7 @@ export const AdminApplicationsTable = ({
                 Boolean((app as any)?.allowDraftCaspioPush) ||
                 String((app as any)?.status || '').trim().toLowerCase() === 'draft'
               );
+              const t2038FlagLabel = getT2038FlagLabel(app);
               const isGroupSelected = Boolean(
                 selected && group.appIds.length > 0 && group.appIds.every((id) => selected.includes(id))
               );
@@ -912,6 +923,18 @@ export const AdminApplicationsTable = ({
                       {isAuthReceivedIntake && (
                         <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200">
                           Auth Received
+                        </Badge>
+                      )}
+                      {t2038FlagLabel && (
+                        <Badge
+                          variant="outline"
+                          className={
+                            t2038FlagLabel === 'T2038 Received'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                              : 'bg-amber-100 text-amber-900 border-amber-300'
+                          }
+                        >
+                          {t2038FlagLabel}
                         </Badge>
                       )}
                       {isSkeletonApplication && (
@@ -1099,6 +1122,7 @@ export const AdminApplicationsTable = ({
               Boolean((app as any)?.allowDraftCaspioPush) ||
               String((app as any)?.status || '').trim().toLowerCase() === 'draft'
             );
+            const t2038FlagLabel = getT2038FlagLabel(app);
             const isGroupSelected = Boolean(
               selected && group.appIds.length > 0 && group.appIds.every((id) => selected.includes(id))
             );
@@ -1151,6 +1175,19 @@ export const AdminApplicationsTable = ({
                       {isAuthReceivedIntake && (
                         <Badge variant="outline" className="bg-cyan-100 text-cyan-800 border-cyan-200 text-xs">
                           Auth Received
+                        </Badge>
+                      )}
+                      {t2038FlagLabel && (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'text-xs',
+                            t2038FlagLabel === 'T2038 Received'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                              : 'bg-amber-100 text-amber-900 border-amber-300'
+                          )}
+                        >
+                          {t2038FlagLabel}
                         </Badge>
                       )}
                       {isSkeletonApplication && (

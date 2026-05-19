@@ -414,6 +414,10 @@ function AdminApplicationsPageContent() {
 
   const handleDelete = async () => {
     if (!firestore || selected.length === 0) return;
+    const confirmDelete = window.confirm(
+      `Confirm delete of ${selected.length} application(s)? This cannot be undone.`
+    );
+    if (!confirmDelete) return;
     
     const batch = writeBatch(firestore);
     let deletedCount = 0;
