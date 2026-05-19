@@ -2778,6 +2778,7 @@ function ApplicationDetailPageContent() {
   const [ispUploadProgress, setIspUploadProgress] = useState(0);
   const [waiverResetOpen, setWaiverResetOpen] = useState(false);
   const [waiverResetting, setWaiverResetting] = useState(false);
+  const [isConvertingSkeleton, setIsConvertingSkeleton] = useState(false);
   const [memberNotifications, setMemberNotifications] = useState<Array<{
     id: string;
     title: string;
@@ -2900,6 +2901,38 @@ function ApplicationDetailPageContent() {
     } finally {
       setWaiverResetting(false);
       setWaiverResetOpen(false);
+    }
+  };
+
+  const convertSkeletonToNormalApplication = async () => {
+    if (!docRef || !application) return;
+    setIsConvertingSkeleton(true);
+    try {
+      const currentStatus = String((application as any)?.status || '').trim().toLowerCase();
+      const patch: Record<string, any> = {
+        createdByAdmin: false,
+        allowDraftCaspioPush: false,
+        lastUpdated: serverTimestamp(),
+      };
+      if (currentStatus === 'draft') {
+        patch.status = 'In Progress';
+      }
+      await setDoc(docRef, patch, { merge: true });
+      setApplication((prev: any) => (prev ? ({ ...prev, ...patch } as any) : prev));
+      toast({
+        title: 'Converted to normal application',
+        description: 'Skeleton mode was turned off for this application.',
+        className: 'bg-green-100 text-green-900 border-green-200',
+      });
+    } catch (error) {
+      console.error('Failed to convert skeleton application:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Could not convert application',
+        description: 'Please try again.',
+      });
+    } finally {
+      setIsConvertingSkeleton(false);
     }
   };
 
@@ -5424,9 +5457,14 @@ function ApplicationDetailPageContent() {
     }
 
     if (componentKey === 'Waivers & Authorizations' || componentKey === 'Waivers') {
+      const hasCompletedAlias = matchingForms.some(
+        (form: any) => String(form?.status || '').trim().toLowerCase() === 'completed'
+      );
       const hasActiveRedo = matchingForms.some((form: any) => {
         const status = String(form?.status || '').trim().toLowerCase();
-        if (status === 'pending' || status === 'requires revision' || status === 'rejected') return true;
+        if (status === 'pending' || status === 'requires revision' || status === 'rejected') {
+          return !hasCompletedAlias;
+        }
         return Boolean(String(form?.revisionRequestedAt || '').trim() || String(form?.revisionRequestedReason || '').trim());
       });
       if (hasActiveRedo) return 'Pending';
@@ -5435,7 +5473,13 @@ function ApplicationDetailPageContent() {
         matchingForms.find((form: any) => String(form?.status || '').trim().toLowerCase() === 'completed') ||
         matchingForms[0] ||
         null;
-      return completedCandidate && isWaiverFormActuallyComplete(completedCandidate, application) ? 'Completed' : 'Pending';
+      if (!completedCandidate) return 'Pending';
+      const ackOnlyComplete =
+        Boolean((completedCandidate as any)?.ackHipaa) &&
+        Boolean((completedCandidate as any)?.ackLiability) &&
+        Boolean((completedCandidate as any)?.ackFoc) &&
+        Boolean((completedCandidate as any)?.ackRoomAndBoard ?? (completedCandidate as any)?.ackSocDetermination);
+      return isWaiverFormActuallyComplete(completedCandidate, application) || ackOnlyComplete ? 'Completed' : 'Pending';
     }
 
     const statuses = matchingForms.map((f) => String(f?.status || '').trim().toLowerCase());
@@ -6497,6 +6541,27 @@ function ApplicationDetailPageContent() {
   ) ||
     String((application as any)?.memberName || '').trim() ||
     '—';
+  const memberHeadingName = (() => {
+    const normalizeNameForHeading = (value: unknown) =>
+      String(value || '')
+        .trim()
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const first = normalizeNameForHeading((application as any)?.memberFirstName || '');
+    const last = normalizeNameForHeading((application as any)?.memberLastName || '');
+    if (first && last) return `${first} ${last}`;
+    if (first) return first;
+    if (last) return last;
+    const fallback = normalizeNameForHeading((application as any)?.memberName || '');
+    if (fallback.includes(',')) {
+      const [lastRaw, firstRaw] = fallback.split(',', 2);
+      const firstFromComma = normalizeNameForHeading(firstRaw || '');
+      const lastFromComma = normalizeNameForHeading(lastRaw || '');
+      return `${firstFromComma} ${lastFromComma}`.trim() || 'Member';
+    }
+    return fallback || 'Member';
+  })();
   const memberMrnDisplay =
     String(
       (application as any)?.memberMrn ||
@@ -7400,10 +7465,7 @@ function ApplicationDetailPageContent() {
   const waiverAlertExists = pendingFormAlerts.some(
     (form) => getCanonicalFormName(form.name) === 'Waivers & Authorizations'
   );
-  const waiverNeedsCompletion = (() => {
-    const waiver = (formStatusMap.get('Waivers & Authorizations') || formStatusMap.get('Waivers')) as any;
-    return !waiver || waiver.status !== 'Completed';
-  })();
+  const waiverNeedsCompletion = getComponentStatus('Waivers & Authorizations') !== 'Completed';
   const pendingFormAlertsWithWaivers = waiverAlertExists || !waiverNeedsCompletion
     ? pendingFormAlerts
     : [
@@ -7415,6 +7477,8 @@ function ApplicationDetailPageContent() {
           dateCompleted: null,
         } as any,
       ];
+  const canConvertSkeletonToNormal =
+    getComponentStatus('CS Member Summary') === 'Completed' || getComponentStatus('CS Summary') === 'Completed';
 
   const getReviewerMeta = (reqTitle: string, formInfo?: any) => {
     const isSummary = reqTitle === 'CS Member Summary' || reqTitle === 'CS Summary';
@@ -10633,7 +10697,7 @@ function ApplicationDetailPageContent() {
               Application Pathway
             </div>
             <CardTitle className="text-2xl sm:text-3xl font-bold text-primary flex items-center gap-2">
-                {isDraftLikeApplication ? 'Skeleton Application' : 'Application'} for {application.memberFirstName} {application.memberLastName}
+                Application Pathway for {memberHeadingName}
                 {(application as any)?.calaimTrackingStatus === 'CalAIM Eligible' && (
                     <CheckCircle2 className="h-6 w-6 text-green-600" />
                 )}
@@ -10645,7 +10709,28 @@ function ApplicationDetailPageContent() {
             </CardTitle>
             {isDraftLikeApplication ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                This is a skeleton application. Not all required fields are filled out yet.
+                <div>Skeleton application mode is on. You can convert to a normal application once CS Summary is complete.</div>
+                {canConvertSkeletonToNormal ? (
+                  <div className="mt-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+                      onClick={() => void convertSkeletonToNormalApplication()}
+                      disabled={isConvertingSkeleton}
+                    >
+                      {isConvertingSkeleton ? (
+                        <>
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          Converting...
+                        </>
+                      ) : (
+                        'Convert to normal application'
+                      )}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
