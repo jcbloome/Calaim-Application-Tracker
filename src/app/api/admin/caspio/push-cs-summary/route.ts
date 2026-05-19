@@ -56,6 +56,8 @@ const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
 const KAISER_STATUS_FIELD = 'Kaiser_Status';
 const UNKNOWN_CONTACT_PLACEHOLDER = 'Unknown';
 const KAISER_STAFF_ASSIGNMENT_FIELD_CANDIDATES = [
+  'Kaiser_User_Assignment',
+  'Kaiser_User_Assigned',
   'Kaiser_Staff_Assignment',
   'Kaiser_Staff_Assigned',
   'Kaiser_Staff',
@@ -1209,13 +1211,18 @@ export async function POST(request: NextRequest) {
     });
     const requestedKaiserStaffAssigned = clean(
       applicationData?.kaiserStaffAssigned ||
+      applicationData?.kaiserStaffAssignment ||
       applicationData?.Kaiser_Staff_Assignment ||
+      applicationData?.assignedStaff ||
       assignedStaffName ||
       assignedStaffId
     );
-    if (isKaiserApplication && requestedKaiserStaffAssigned) {
+    if (requestedKaiserStaffAssigned) {
       const exactKaiserStaffAssignmentField = fieldNameByNormalized.get(
         normalizeFieldName('Kaiser_Staff_Assignment')
+      );
+      const exactKaiserUserAssignmentField = fieldNameByNormalized.get(
+        normalizeFieldName('Kaiser_User_Assignment')
       );
       const kaiserStaffFieldName =
         KAISER_STAFF_ASSIGNMENT_FIELD_CANDIDATES.find((name) =>
@@ -1228,6 +1235,9 @@ export async function POST(request: NextRequest) {
         '';
       if (exactKaiserStaffAssignmentField) {
         memberData[exactKaiserStaffAssignmentField] = requestedKaiserStaffAssigned;
+      }
+      if (exactKaiserUserAssignmentField) {
+        memberData[exactKaiserUserAssignmentField] = requestedKaiserStaffAssigned;
       }
       if (kaiserStaffFieldName) {
         memberData[kaiserStaffFieldName] = requestedKaiserStaffAssigned;

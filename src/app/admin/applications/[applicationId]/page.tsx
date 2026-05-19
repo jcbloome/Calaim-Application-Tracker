@@ -7879,6 +7879,71 @@ function ApplicationDetailPageContent() {
       { id: 'foc', label: 'Freedom of Choice', completed: Boolean(waiverFormStatus?.ackFoc) },
       { id: 'rb', label: 'Room & Board Commitment', completed: Boolean((waiverFormStatus as any)?.ackRoomAndBoard) }
   ];
+
+  const updateWaiverChecklistTask = async (
+    taskId: 'hipaa' | 'liability' | 'foc' | 'rb',
+    checked: boolean
+  ) => {
+    if (!docRef || !application) return;
+    try {
+      const existingForms = Array.isArray((application as any)?.forms) ? ([...(application as any).forms] as any[]) : [];
+      const waiverIndex = existingForms.findIndex((form: any) => {
+        const name = String(form?.name || '').trim();
+        return name === 'Waivers & Authorizations' || name === 'Waivers' || isWaiverFormName(name);
+      });
+      const currentWaiverForm =
+        waiverIndex >= 0
+          ? { ...(existingForms[waiverIndex] || {}) }
+          : ({
+              name: 'Waivers & Authorizations',
+              type: 'online-form',
+              href: '/admin/forms/waivers',
+              status: 'Pending',
+            } as any);
+
+      const nextWaiverForm = { ...currentWaiverForm } as any;
+      if (taskId === 'hipaa') nextWaiverForm.ackHipaa = checked;
+      if (taskId === 'liability') nextWaiverForm.ackLiability = checked;
+      if (taskId === 'foc') nextWaiverForm.ackFoc = checked;
+      if (taskId === 'rb') {
+        nextWaiverForm.ackRoomAndBoard = checked;
+        nextWaiverForm.ackSocDetermination = checked;
+      }
+
+      const nextAckHipaa = Boolean(nextWaiverForm.ackHipaa);
+      const nextAckLiability = Boolean(nextWaiverForm.ackLiability);
+      const nextAckFoc = Boolean(nextWaiverForm.ackFoc);
+      const nextAckRoomAndBoard = Boolean(nextWaiverForm.ackRoomAndBoard);
+      const nextAllChecked = nextAckHipaa && nextAckLiability && nextAckFoc && nextAckRoomAndBoard;
+
+      nextWaiverForm.status = nextAllChecked ? 'Completed' : 'Pending';
+      nextWaiverForm.dateCompleted = nextAllChecked ? Timestamp.now() : null;
+      nextWaiverForm.lastUpdated = Timestamp.now();
+
+      if (waiverIndex >= 0) existingForms[waiverIndex] = nextWaiverForm;
+      else existingForms.push(nextWaiverForm);
+
+      const patch = {
+        forms: existingForms,
+        ackHipaa: nextAckHipaa,
+        ackLiability: nextAckLiability,
+        ackFoc: nextAckFoc,
+        ackRoomAndBoard: nextAckRoomAndBoard,
+        ackSocDetermination: nextAckRoomAndBoard,
+        lastUpdated: serverTimestamp(),
+      } as any;
+
+      await setDoc(docRef, patch, { merge: true });
+      setApplication((prev: any) => (prev ? ({ ...prev, ...patch, forms: existingForms } as any) : prev));
+    } catch (error) {
+      console.error('Failed to update waiver checklist task:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Could not update waiver checklist',
+        description: 'Please try again.',
+      });
+    }
+  };
   
     const consolidatedMedicalDocuments = [
       { id: 'waivers-check', name: 'Waivers & Authorizations' },
@@ -9487,13 +9552,26 @@ function ApplicationDetailPageContent() {
                   })
                   .filter((entry: any) => Boolean(entry.fileName));
                 const hasWaiverUpload = waiverUploadedEntries.length > 0;
+                // Staff can mark waiver checklist based on uploaded waiver files even when
+                // in-app signed printable metadata is not present.
+                const canStaffMarkWaiverChecklist = hasWaiverUpload;
                 return (
                     <div className="space-y-3">
                         <div className="space-y-2 rounded-md border p-3">
                             {waiverSubTasks.map(task => (
                                 <div key={task.id} className="flex items-center space-x-2">
-                                    <Checkbox id={`waiver-${task.id}`} checked={task.completed} disabled />
-                                    <label htmlFor={`waiver-${task.id}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                    <Checkbox
+                                      id={`waiver-${task.id}`}
+                                      checked={task.completed}
+                                      disabled={!canStaffMarkWaiverChecklist}
+                                      onCheckedChange={(next) =>
+                                        void updateWaiverChecklistTask(
+                                          task.id as 'hipaa' | 'liability' | 'foc' | 'rb',
+                                          next === true
+                                        )
+                                      }
+                                    />
+                                    <label htmlFor={`waiver-${task.id}`} className="text-sm font-medium leading-none">
                                         {task.label}
                                     </label>
                                 </div>

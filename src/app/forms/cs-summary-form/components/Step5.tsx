@@ -345,7 +345,10 @@ export default function Step5({
 
           <div className="p-4 border rounded-md space-y-4">
             <h3 className="font-medium">Preferred Facility Details</h3>
-            <p className="text-sm text-muted-foreground">If a facility has not been chosen, you can leave these fields blank. If "Yes" is selected above, all fields are required.</p>
+            <p className="text-sm text-muted-foreground">
+              If a facility has not been chosen, you can leave these fields blank. If "Yes" is selected above, facility/admin
+              details are required except administrator phone and email, which can be completed later.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField control={control} name="rcfeName" render={({ field }) => (
                 <FormItem><FormLabel>Facility Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
@@ -372,13 +375,18 @@ export default function Step5({
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField control={control} name="rcfeAdminPhone" render={({ field }) => (
-                <FormItem><FormLabel>Administrator Phone {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem>
+                  <FormLabel>Administrator Phone</FormLabel>
+                  <FormControl><PhoneInput {...field} /></FormControl>
+                  <FormDescription>Optional. Add later if currently unknown.</FormDescription>
+                  <FormMessage />
+                </FormItem>
               )} />
               <FormField control={control} name="rcfeAdminEmail" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Administrator Email {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel>
+                  <FormLabel>Administrator Email</FormLabel>
                   <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} /></FormControl>
-                  <FormDescription>If no email, enter "N/A".</FormDescription>
+                  <FormDescription>Optional. If no email is available, enter "N/A" or leave blank.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )} />
