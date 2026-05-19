@@ -10707,6 +10707,9 @@ function ApplicationDetailPageContent() {
                     </span>
                 )}
             </CardTitle>
+            <CardDescription className="text-sm">
+              MRN: {memberMrnDisplay} | Birthdate: {memberDobDisplay}
+            </CardDescription>
             {isDraftLikeApplication ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                 <div>Skeleton application mode is on. You can convert to a normal application once CS Summary is complete.</div>

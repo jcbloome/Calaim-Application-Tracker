@@ -14,17 +14,55 @@ const normalizeFieldName = (fieldName: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 const hasValue = (value: unknown) => clean(value).length > 0;
-const looksLikeMedicalNumberField = (fieldName: string) => {
+const normalizeKaiserStatusForPush = (status: string) => {
+  const trimmed = clean(status);
+  if (!trimmed) return '';
+  // Guard common typo variant seen in saved statuses.
+  return trimmed.replace(/\bT20238\b/gi, 'T2038');
+};
+const isNotRequestedDocCollectionStatus = (status: string) => {
+  const normalized = normalizeFieldName(status);
+  if (!normalized) return false;
+  const hasT2038Token = normalized.includes('t2038') || normalized.includes('t20238');
+  return hasT2038Token && normalized.includes('notrequested') && normalized.includes('doccollection');
+};
+const looksLikeSexField = (fieldName: string) => {
   const normalized = normalizeFieldName(fieldName);
+  return normalized === 'sex' || normalized === 'gender' || normalized === 'membersex' || normalized === 'membergender';
+};
+const toCaspioSexValue = (value: unknown): 'F' | 'M' | '' => {
+  const raw = clean(value).toLowerCase();
+  if (!raw) return '';
+  if (raw === 'f' || raw === 'female' || raw === 'woman' || raw === 'girl') return 'F';
+  if (raw === 'm' || raw === 'male' || raw === 'man' || raw === 'boy') return 'M';
+  return '';
+};
+const looksLikeMrnField = (fieldName: string) => {
+  const normalized = normalizeFieldName(fieldName);
+  return (
+    normalized === 'mrn' ||
+    normalized.includes('membermrn') ||
+    normalized.includes('kaisermrn') ||
+    normalized.includes('medicalrecordnumber')
+  );
+};
+const looksLikeMediCalField = (fieldName: string) => {
+  const normalized = normalizeFieldName(fieldName);
+  if (looksLikeMrnField(fieldName)) return false;
   return (
     normalized.includes('medicalnumber') ||
     normalized.includes('medicalnum') ||
-    normalized.includes('medical') ||
+    normalized.includes('medcalnumber') ||
+    normalized.includes('medcalnum') ||
+    normalized === 'medicalnumber' ||
     normalized.includes('medic') ||
     normalized.includes('mcpcin') ||
     normalized === 'cin' ||
     normalized.includes('cinnumber')
   );
+};
+const looksLikeMedicalNumberField = (fieldName: string) => {
+  return looksLikeMediCalField(fieldName) || looksLikeMrnField(fieldName);
 };
 const looksLikePkField = (fieldName: string) => /^pk_id$/i.test(clean(fieldName));
 const looksLikeNumericId = (value: unknown) => /^-?\d+(?:\.\d+)?$/.test(clean(value));
@@ -304,8 +342,7 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
     normalizedTarget === 'mrn' ||
     normalizedTarget === 'medicalrecordnumber' ||
     normalizedTarget === 'medicalrecordnumbermrn' ||
-    normalizedTarget === 'kaisermrn' ||
-    normalizedTarget === 'mcpcin'
+    normalizedTarget === 'kaisermrn'
   ) {
     const mrnValue = pickFirstNonEmpty(applicationData as Record<string, any>, [
       'memberMrn',
@@ -313,7 +350,8 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
       'mrn',
       'Member_MRN',
       'MRN',
-      'MCP_CIN',
+      'Medical_Record_Number',
+      'Medical_Record_Number_MRN',
     ]);
     if (hasValue(mrnValue)) return mrnValue;
   }
@@ -328,7 +366,8 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
       'memberSex',
       'memberGender',
     ]);
-    if (hasValue(sexValue)) return sexValue;
+    const normalizedSex = toCaspioSexValue(sexValue);
+    if (normalizedSex) return normalizedSex;
   }
   if (
     normalizedTarget === 'membercounty' ||
@@ -532,9 +571,14 @@ const buildMemberDataFromMapping = (
   Object.entries(mapping).forEach(([csField, caspioField]) => {
     if (!caspioField) return;
     const value = getApplicationValueByCsField(applicationData, csField);
-    if (value !== undefined && value !== null && value !== '') {
-      memberData[caspioField] = value;
+    if (value === undefined || value === null || value === '') return;
+    if (looksLikeSexField(caspioField)) {
+      const normalizedSex = toCaspioSexValue(value);
+      if (!normalizedSex) return;
+      memberData[caspioField] = normalizedSex;
+      return;
     }
+    memberData[caspioField] = value;
   });
 
   return memberData;
@@ -874,8 +918,19 @@ export async function POST(request: NextRequest) {
     const assignedStaffName = clean(applicationData?.assignedStaffName);
     const assignedStaffId = clean(applicationData?.assignedStaffId);
     const requestedCalAIMStatusRaw = clean(applicationData?.caspioCalAIMStatus || applicationData?.CalAIM_Status);
-    const requestedKaiserStatus = clean(applicationData?.kaiserStatus || applicationData?.Kaiser_Status);
+    const requestedKaiserStatusRaw = normalizeKaiserStatusForPush(
+      clean(applicationData?.kaiserStatus || applicationData?.Kaiser_Status)
+    );
     const kaiserAuthorizationMode = clean(applicationData?.kaiserAuthorizationMode).toLowerCase();
+    const isAlreadySent = Boolean(applicationData?.caspioSent);
+    const isAuthReceivedMode =
+      kaiserAuthorizationMode === 'authorization_received' || Boolean(applicationData?.kaiserAuthReceivedViaIls);
+    const requestedKaiserStatus =
+      !isAlreadySent && isAuthReceivedMode
+        ? 'T2038 Received, Doc Collection'
+        : isAuthReceivedMode && isNotRequestedDocCollectionStatus(requestedKaiserStatusRaw)
+          ? 'T2038 Received, Doc Collection'
+          : requestedKaiserStatusRaw;
     const requestedSocialWorkerHold = clean(
       applicationData?.holdForSocialWorkerStatus ||
       applicationData?.Hold_For_Social_Worker_Visit ||
@@ -1036,23 +1091,31 @@ export async function POST(request: NextRequest) {
         applicationData?.Client_ID2 ||
         applicationData?.caspioClientId2
     );
-    const isAlreadySent = Boolean(applicationData?.caspioSent);
     const hintedMrn = clean(
       applicationData?.memberMrn ||
         applicationData?.medicalRecordNumber ||
         applicationData?.mrn ||
-        applicationData?.Member_MRN
+        applicationData?.Member_MRN ||
+        applicationData?.Medical_Record_Number ||
+        applicationData?.Medical_Record_Number_MRN
     );
     const mappedFields = buildMemberDataFromMapping(applicationData, mapping);
+    const mappedMrnEntry = Object.entries(mappedFields).find(
+      ([fieldName, value]) => looksLikeMrnField(fieldName) && hasValue(value)
+    );
     const mappedMediCalEntry = Object.entries(mappedFields).find(
-      ([fieldName, value]) => looksLikeMedicalNumberField(fieldName) && hasValue(value)
+      ([fieldName, value]) => looksLikeMediCalField(fieldName) && hasValue(value)
     );
     const hintedMediCalNumber = clean(
       extractMediCalNumberFromApplication(applicationData as Record<string, any>) ||
       (isHealthNetApplication ? hintedMrn : '') ||
       mappedMediCalEntry?.[1]
     );
-    const effectiveHintedMrn = clean(isHealthNetApplication ? hintedMrn || hintedMediCalNumber : hintedMrn);
+    const effectiveHintedMrn = clean(
+      isHealthNetApplication
+        ? hintedMrn || clean(mappedMrnEntry?.[1]) || hintedMediCalNumber
+        : hintedMrn || clean(mappedMrnEntry?.[1])
+    );
     const applicationReference = clean(
       applicationData?.applicationId ||
       applicationData?.id ||
@@ -1252,7 +1315,7 @@ export async function POST(request: NextRequest) {
         memberData[lastEligibilityCheckField] = resolvedLastEligibilityCheckDate;
       }
     }
-    const mappedMedicalField = Object.keys(memberData).find((fieldName) => looksLikeMedicalNumberField(fieldName)) || '';
+    const mappedMedicalField = Object.keys(memberData).find((fieldName) => looksLikeMediCalField(fieldName)) || '';
     const mediCalFieldName =
       clean(mappedMedicalField) ||
       MEDICAL_NUMBER_FIELD_CANDIDATES.find((name) => fieldNameByNormalized.has(normalizeFieldName(name))) ||
@@ -1267,7 +1330,7 @@ export async function POST(request: NextRequest) {
         if (key === mediCalFieldName) return;
         // Keep any fields the admin explicitly mapped (e.g., MCP_CIN for MRN).
         // Only dedupe non-mapped fallback aliases to avoid dropping intended columns.
-        if (looksLikeMedicalNumberField(key) && !explicitlyMappedFieldNames.has(key)) {
+        if (looksLikeMediCalField(key) && !explicitlyMappedFieldNames.has(key)) {
           delete memberData[key];
         }
       });
@@ -1451,7 +1514,7 @@ export async function POST(request: NextRequest) {
         const duplicateFieldCandidates = Array.from(
           new Set([
             duplicateBlankField,
-            ...(looksLikeMedicalNumberField(duplicateBlankField) ? MEDICAL_NUMBER_FIELD_CANDIDATES : []),
+            ...(looksLikeMediCalField(duplicateBlankField) ? MEDICAL_NUMBER_FIELD_CANDIDATES : []),
             clean(mappedMediCalEntry?.[0] || ''),
           ].filter(Boolean))
         );
@@ -1502,7 +1565,7 @@ export async function POST(request: NextRequest) {
             });
           }
         }
-        if (!recoveredPk && looksLikeMedicalNumberField(duplicateBlankField) && hintedMediCalNumber) {
+        if (!recoveredPk && looksLikeMediCalField(duplicateBlankField) && hintedMediCalNumber) {
           const forceMediCalCreateData: Record<string, any> = { ...memberData };
           forceMediCalCreateData[duplicateBlankField] = hintedMediCalNumber;
           if (mediCalFieldName && duplicateBlankField !== mediCalFieldName) {

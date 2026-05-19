@@ -1266,6 +1266,10 @@ function PathwayPageContent() {
   const healthPlanWithRegion = kaiserRegion
     ? `${application.healthPlan} (${kaiserRegion})`
     : application.healthPlan;
+  const memberMrnDisplay = String(application.memberMrn || application.medicalRecordNumber || '').trim() || '—';
+  const memberBirthdateDisplay = formatBirthDate(
+    application.memberDob || (application as any)?.memberDOB || (application as any)?.dob || (application as any)?.Date_of_Birth
+  );
   const kaiserReferralSubmission = (application as any)?.kaiserReferralSubmission || null;
   const kaiserReferralSubmitted = Boolean(
     kaiserReferralSubmission?.submitted ||
@@ -2034,6 +2038,9 @@ function PathwayPageContent() {
                 <CardTitle className="text-2xl sm:text-3xl font-bold text-primary">
                     Application for {application.memberFirstName} {application.memberLastName}
                 </CardTitle>
+                <CardDescription className="text-sm">
+                  MRN: {memberMrnDisplay} | Birthdate: {memberBirthdateDisplay}
+                </CardDescription>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <CardDescription>
                     Submitted by {application.referrerName || user?.displayName} | {application.pathway} ({healthPlanWithRegion})
