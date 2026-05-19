@@ -55,6 +55,8 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
   initialStep5AcknowledgedAtIso?: string;
   requiredAlft22Choice?: 'A' | 'B' | 'C' | '';
   requiredSection1AlfUsage?: 'yes' | 'no' | '';
+  onCaregiverChange?: (value: { caregiverName: string; caregiverContact: string }) => void;
+  onMemberContactAddressChange?: (value: { memberPhone: string; memberAddress: string }) => void;
 }
 
 const Checkbox = ({ checked, editable = true }: { checked?: boolean; editable?: boolean }) => {
@@ -137,20 +139,20 @@ const toMmDdYyyy = (value?: string) => {
   if (mdy) {
     const mm = String(Number(mdy[1])).padStart(2, '0');
     const dd = String(Number(mdy[2])).padStart(2, '0');
-    return `${mm}-${dd}-${mdy[3]}`;
+    return `${mm}/${dd}/${mdy[3]}`;
   }
   const ymd = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:T.*)?$/);
   if (ymd) {
     const mm = String(Number(ymd[2])).padStart(2, '0');
     const dd = String(Number(ymd[3])).padStart(2, '0');
-    return `${mm}-${dd}-${ymd[1]}`;
+    return `${mm}/${dd}/${ymd[1]}`;
   }
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return raw;
   const mm = String(parsed.getMonth() + 1).padStart(2, '0');
   const dd = String(parsed.getDate()).padStart(2, '0');
   const yyyy = String(parsed.getFullYear());
-  return `${mm}-${dd}-${yyyy}`;
+  return `${mm}/${dd}/${yyyy}`;
 };
 const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
 const DEFAULT_REFERRER_ORG = 'Connections Care Home Consultants, LLC';
@@ -317,6 +319,8 @@ export function PrintableKaiserReferralForm({
   initialStep5AcknowledgedAtIso = '',
   requiredAlft22Choice = '',
   requiredSection1AlfUsage = '',
+  onCaregiverChange,
+  onMemberContactAddressChange,
   ...prefill
 }: PrintableKaiserReferralFormProps) {
   const packetRef = React.useRef<HTMLDivElement>(null);
@@ -329,14 +333,13 @@ export function PrintableKaiserReferralForm({
     caregiverName: lineValue(prefill.caregiverName),
     caregiverContact: lineValue(prefill.caregiverContact),
     referralDate: toMmDdYyyy(prefill.referralDate),
-    // Do not source Referrer Name from CS Summary prefill.
-    referrerName: DEFAULT_REFERRER_NAME,
-    referrerOrganization: DEFAULT_REFERRER_ORG,
-    referrerNpi: DEFAULT_REFERRER_NPI,
-    referrerAddress: DEFAULT_REFERRER_ADDRESS,
-    referrerEmail: DEFAULT_REFERRER_EMAIL,
-    referrerPhone: DEFAULT_REFERRER_PHONE,
-    referrerRelationship: DEFAULT_REFERRER_RELATIONSHIP,
+    referrerName: lineValue(prefill.referrerName) || DEFAULT_REFERRER_NAME,
+    referrerOrganization: lineValue(prefill.referrerOrganization) || DEFAULT_REFERRER_ORG,
+    referrerNpi: lineValue(prefill.referrerNpi) || DEFAULT_REFERRER_NPI,
+    referrerAddress: lineValue(prefill.referrerAddress) || DEFAULT_REFERRER_ADDRESS,
+    referrerEmail: lineValue(prefill.referrerEmail) || DEFAULT_REFERRER_EMAIL,
+    referrerPhone: lineValue(prefill.referrerPhone) || DEFAULT_REFERRER_PHONE,
+    referrerRelationship: lineValue(prefill.referrerRelationship) || DEFAULT_REFERRER_RELATIONSHIP,
     currentLocationName: lineValue(prefill.currentLocationName),
     currentLocationAddress: lineValue(prefill.currentLocationAddress || prefill.memberAddress),
   }));
@@ -435,6 +438,22 @@ export function PrintableKaiserReferralForm({
       alfTransitions: true,
     }));
   }, [requiredSection1AlfUsage]);
+
+  React.useEffect(() => {
+    if (!onCaregiverChange) return;
+    onCaregiverChange({
+      caregiverName: lineValue(formValues.caregiverName),
+      caregiverContact: lineValue(formValues.caregiverContact),
+    });
+  }, [formValues.caregiverName, formValues.caregiverContact, onCaregiverChange]);
+
+  React.useEffect(() => {
+    if (!onMemberContactAddressChange) return;
+    onMemberContactAddressChange({
+      memberPhone: lineValue(formValues.memberPhone),
+      memberAddress: lineValue(formValues.memberAddress),
+    });
+  }, [formValues.memberPhone, formValues.memberAddress, onMemberContactAddressChange]);
 
   const buildPacketPdfBlob = async () => {
     if (!packetRef.current) {

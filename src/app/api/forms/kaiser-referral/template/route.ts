@@ -7,6 +7,13 @@ export const dynamic = 'force-dynamic';
 
 const DEFAULT_TEMPLATE_PATH =
   'C:\\Users\\Jason.Jason-PC\\AppData\\Roaming\\Cursor\\User\\workspaceStorage\\2871420c389bbb745bfd4b95a2ccaf63\\pdfs\\00490bac-ad5b-4f06-8cba-374155b8db87\\#5 (2026) Kaiser Auth Sheet ORIGINAL (2).pdf';
+const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
+const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
+const DEFAULT_REFERRER_NPI = '1508537325';
+const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';
+const DEFAULT_REFERRER_EMAIL = 'deydry@carehomefinders.com';
+const DEFAULT_REFERRER_PHONE = '800-330-5993';
+const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 
 function getTemplatePath() {
   return String(process.env.KAISER_REFERRAL_TEMPLATE_PATH || DEFAULT_TEMPLATE_PATH).trim();
@@ -21,6 +28,8 @@ function asDisplayDate(value: string) {
   if (!v) return '';
   const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
+  const isoWithTime = v.match(/^(\d{4})-(\d{2})-(\d{2})T.*$/);
+  if (isoWithTime) return `${isoWithTime[2]}/${isoWithTime[3]}/${isoWithTime[1]}`;
   return v;
 }
 
@@ -105,13 +114,13 @@ export async function GET(req: NextRequest) {
 
     const prefill = {
       referralDate: asDisplayDate(params.get('referralDate')),
-      referrerName: clean(params.get('referrerName')),
-      referrerEmail: clean(params.get('referrerEmail')).toLowerCase(),
-      referrerPhone: normalizePhone(params.get('referrerPhone')),
-      referrerOrganization: clean(params.get('referrerOrganization')),
-      referrerNpi: clean(params.get('referrerNpi')),
-      referrerAddress: normalizeAddress(params.get('referrerAddress')),
-      referrerRelationship: clean(params.get('referrerRelationship')) || 'Community Support (CalAim)',
+      referrerName: clean(params.get('referrerName')) || DEFAULT_REFERRER_NAME,
+      referrerEmail: (clean(params.get('referrerEmail')) || DEFAULT_REFERRER_EMAIL).toLowerCase(),
+      referrerPhone: normalizePhone(clean(params.get('referrerPhone')) || DEFAULT_REFERRER_PHONE),
+      referrerOrganization: clean(params.get('referrerOrganization')) || DEFAULT_REFERRER_ORGANIZATION,
+      referrerNpi: clean(params.get('referrerNpi')) || DEFAULT_REFERRER_NPI,
+      referrerAddress: normalizeAddress(clean(params.get('referrerAddress')) || DEFAULT_REFERRER_ADDRESS),
+      referrerRelationship: clean(params.get('referrerRelationship')) || DEFAULT_REFERRER_RELATIONSHIP,
       memberName: clean(params.get('memberName')),
       memberDob: asDisplayDate(params.get('memberDob')),
       memberPhone: normalizePhone(params.get('memberPhone')),

@@ -8,6 +8,13 @@ import { Button } from '@/components/ui/button';
 
 const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
+const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
+const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
+const DEFAULT_REFERRER_NPI = '1508537325';
+const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 92262';
+const DEFAULT_REFERRER_EMAIL = 'deydry@carehomefinders.com';
+const DEFAULT_REFERRER_PHONE = '800-330-5993';
+const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 
 function normalizeCountyName(value: unknown): string {
   return String(value || '')
@@ -51,13 +58,13 @@ function KaiserReferralPrintableContent() {
       caregiverName: searchParams.get('caregiverName') || '',
       caregiverContact: searchParams.get('caregiverContact') || '',
       referralDate: searchParams.get('referralDate') || '',
-      referrerName: searchParams.get('referrerName') || '',
-      referrerOrganization: searchParams.get('referrerOrganization') || '',
-      referrerNpi: searchParams.get('referrerNpi') || '',
-      referrerAddress: searchParams.get('referrerAddress') || '',
-      referrerEmail: searchParams.get('referrerEmail') || '',
-      referrerPhone: searchParams.get('referrerPhone') || '',
-      referrerRelationship: searchParams.get('referrerRelationship') || '',
+      referrerName: searchParams.get('referrerName') || DEFAULT_REFERRER_NAME,
+      referrerOrganization: searchParams.get('referrerOrganization') || DEFAULT_REFERRER_ORGANIZATION,
+      referrerNpi: searchParams.get('referrerNpi') || DEFAULT_REFERRER_NPI,
+      referrerAddress: searchParams.get('referrerAddress') || DEFAULT_REFERRER_ADDRESS,
+      referrerEmail: searchParams.get('referrerEmail') || DEFAULT_REFERRER_EMAIL,
+      referrerPhone: searchParams.get('referrerPhone') || DEFAULT_REFERRER_PHONE,
+      referrerRelationship: searchParams.get('referrerRelationship') || DEFAULT_REFERRER_RELATIONSHIP,
       currentLocationName: searchParams.get('currentLocationName') || '',
       currentLocationAddress: searchParams.get('currentLocationAddress') || '',
       healthPlan: searchParams.get('healthPlan') || '',
@@ -123,8 +130,32 @@ function KaiserReferralPrintableContent() {
       referralContext: formPrefill.referralContext,
     };
   }, [formPrefill]);
+  const [caregiverOverrides, setCaregiverOverrides] = useState<{ caregiverName: string; caregiverContact: string }>(
+    () => ({
+      caregiverName: formPrefill.caregiverName,
+      caregiverContact: formPrefill.caregiverContact,
+    })
+  );
+  const [memberOverrides, setMemberOverrides] = useState<{ memberPhone: string; memberAddress: string }>(() => ({
+    memberPhone: formPrefill.memberPhone,
+    memberAddress: formPrefill.memberAddress,
+  }));
 
-  const kaiserRegion = useMemo(() => getKaiserRegionFromCounty(printableProps.memberCounty), [printableProps.memberCounty]);
+  const printablePropsWithOverrides = useMemo(
+    () => ({
+      ...printableProps,
+      memberPhone: memberOverrides.memberPhone,
+      memberAddress: memberOverrides.memberAddress,
+      caregiverName: caregiverOverrides.caregiverName,
+      caregiverContact: caregiverOverrides.caregiverContact,
+    }),
+    [printableProps, memberOverrides, caregiverOverrides]
+  );
+
+  const kaiserRegion = useMemo(
+    () => getKaiserRegionFromCounty(printablePropsWithOverrides.memberCounty),
+    [printablePropsWithOverrides.memberCounty]
+  );
   const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
 
   const [alft21Choice, setAlft21Choice] = useState<'A' | 'B'>(
@@ -153,7 +184,7 @@ function KaiserReferralPrintableContent() {
     (download = false) => {
       const params = new URLSearchParams();
       if (download) params.set('download', '1');
-      for (const [key, value] of Object.entries(printableProps)) {
+      for (const [key, value] of Object.entries(printablePropsWithOverrides)) {
         const text = String(value || '').trim();
         if (!text) continue;
         params.set(key, text);
@@ -168,7 +199,7 @@ function KaiserReferralPrintableContent() {
       const query = params.toString();
       return `/api/forms/kaiser-referral/template${query ? `?${query}` : ''}`;
     },
-    [alft21Choice, alft22Choice, section1AlfUsage, printableProps]
+    [alft21Choice, alft22Choice, section1AlfUsage, printablePropsWithOverrides]
   );
 
   const openExternalPdfUrl = useCallback((url: string) => {
@@ -334,7 +365,9 @@ function KaiserReferralPrintableContent() {
         </div>
       </div>
       <PrintableKaiserReferralForm
-        {...printableProps}
+        {...printablePropsWithOverrides}
+        onMemberContactAddressChange={setMemberOverrides}
+        onCaregiverChange={setCaregiverOverrides}
         showPrintButton={false}
         hasReviewedPdfPreview={hasReviewedPdfPreview}
         onOpenPdfPreview={handleViewPdf}
