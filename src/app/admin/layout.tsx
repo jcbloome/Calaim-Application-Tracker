@@ -872,16 +872,15 @@ function AdminHeader() {
 
         // Non-CS standalone intakes are tracked separately from application "docs needing acknowledgement".
         // ALFT gets its own toggle + count.
+        const rowLabel = isAlft ? (docType || 'ALFT') : (docType || 'Standalone upload');
         if (isAlft) {
           alftCount += 1;
           alftLatestMs = Math.max(alftLatestMs, ms);
-          const label = docType || 'ALFT';
-          alftNotes.push({ message: `${memberName} — ${label}`, timestampMs: ms, url, author });
+          alftNotes.push({ message: `${memberName} — ${rowLabel}`, timestampMs: ms, url, author });
         } else {
           standaloneCount += 1;
           standaloneLatestMs = Math.max(standaloneLatestMs, ms);
-          const label = docType || 'Standalone upload';
-          standaloneNotes.push({ message: `${memberName} — ${label}`, timestampMs: ms, url, author });
+          standaloneNotes.push({ message: `${memberName} — ${rowLabel}`, timestampMs: ms, url, author });
         }
 
         const key = `standalone-${String(u?.id || '')}`;
@@ -896,7 +895,7 @@ function AdminHeader() {
         };
         current.count += 1;
         current.latestMs = Math.max(current.latestMs, ms);
-        if (label) current.labels.add(label);
+        if (rowLabel) current.labels.add(rowLabel);
         docsByApp.set(key, current);
       });
 

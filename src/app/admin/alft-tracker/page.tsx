@@ -528,6 +528,13 @@ const assignmentSourceBlock = (row: AlftAssignmentQueueRow) => {
 };
 
 const asAnswer = (value: unknown) => String(value ?? '').trim();
+const toTitleCaseCity = (value: unknown) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  return raw
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (_, c: string) => c.toUpperCase());
+};
 
 const REQUIRED_PREFILL_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'p1_plan_id', label: 'Plan ID' },
@@ -595,7 +602,7 @@ const getRequiredValueFromAssignmentRow = (row: AlftAssignmentQueueRow, key: str
     case 'p2_current_street':
       return toLabel(row.ispCurrentAddressStreet);
     case 'p2_current_city':
-      return toLabel(row.ispCurrentAddressCity);
+      return toTitleCaseCity(toLabel(row.ispCurrentAddressCity));
     case 'p2_current_state':
       return toLabel(row.ispCurrentAddressState);
     case 'p2_current_zip':
@@ -607,7 +614,7 @@ const getRequiredValueFromAssignmentRow = (row: AlftAssignmentQueueRow, key: str
     case 'p2_home_street':
       return toLabel(row.homeAddressStreet);
     case 'p2_home_city':
-      return toLabel(row.homeAddressCity);
+      return toTitleCaseCity(toLabel(row.homeAddressCity));
     case 'p2_home_state':
       return toLabel(row.homeAddressState);
     case 'p2_home_zip':
@@ -900,13 +907,13 @@ export default function AdminAlftTrackerPage() {
               memberPhone: toLabel(r.memberPhone) || null,
               alftPlanId: toLabel(r.alftPlanId) || null,
               ispCurrentAddressStreet: toLabel(r.ispCurrentAddressStreet) || null,
-              ispCurrentAddressCity: toLabel(r.ispCurrentAddressCity) || null,
+              ispCurrentAddressCity: toTitleCaseCity(toLabel(r.ispCurrentAddressCity)) || null,
               ispCurrentAddressState: toLabel(r.ispCurrentAddressState) || null,
               ispCurrentAddressZip: toLabel(r.ispCurrentAddressZip) || null,
               currentLocationType: toLabel(r.currentLocationType) || null,
               assessmentSite: toLabel(r.assessmentSite) || null,
               homeAddressStreet: toLabel(r.homeAddressStreet) || null,
-              homeAddressCity: toLabel(r.homeAddressCity) || null,
+              homeAddressCity: toTitleCaseCity(toLabel(r.homeAddressCity)) || null,
               homeAddressState: toLabel(r.homeAddressState) || null,
               homeAddressZip: toLabel(r.homeAddressZip) || null,
               ispFacilityName: toLabel(r.ispFacilityName) || null,
@@ -1173,6 +1180,7 @@ export default function AdminAlftTrackerPage() {
           }
         }
         const pick = (key: string, fallback = '') => String(resolved?.[key] || '').trim() || fallback;
+        const pickCity = (key: string, fallback = '') => toTitleCaseCity(pick(key, fallback));
         const res = await fetch('/api/alft/workflow/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1189,13 +1197,13 @@ export default function AdminAlftTrackerPage() {
               memberPrimaryLanguage: pick('p1_primary_language', row.memberPrimaryLanguage || ''),
               memberPhone: pick('p1_phone', row.memberPhone || ''),
               ispCurrentAddressStreet: pick('p2_current_street', row.ispCurrentAddressStreet || ''),
-              ispCurrentAddressCity: pick('p2_current_city', row.ispCurrentAddressCity || ''),
+              ispCurrentAddressCity: pickCity('p2_current_city', row.ispCurrentAddressCity || ''),
               ispCurrentAddressState: pick('p2_current_state', row.ispCurrentAddressState || ''),
               ispCurrentAddressZip: pick('p2_current_zip', row.ispCurrentAddressZip || ''),
               currentLocationType: pick('p2_current_type', row.currentLocationType || ''),
               assessmentSite: pick('p2_assessment_site', row.assessmentSite || ''),
               homeAddressStreet: pick('p2_home_street', row.homeAddressStreet || ''),
-              homeAddressCity: pick('p2_home_city', row.homeAddressCity || ''),
+              homeAddressCity: pickCity('p2_home_city', row.homeAddressCity || ''),
               homeAddressState: pick('p2_home_state', row.homeAddressState || ''),
               homeAddressZip: pick('p2_home_zip', row.homeAddressZip || ''),
               ispFacilityName: pick('p2_facility_name', row.ispFacilityName || ''),
@@ -1888,6 +1896,21 @@ export default function AdminAlftTrackerPage() {
                         const swInviteSent = Boolean(row.workflowSteps?.swInviteSent) || Boolean(row.workflowStepsAt?.swInviteSentAt);
                         const swInviteSentAtMs = toMs(row.workflowStepsAt?.swInviteSentAt);
                         const swInviteSentAtLabel = swInviteSentAtMs ? fmtTimeline(swInviteSentAtMs) : '';
+                        const rowWorkflowKey = row.memberId || row.id;
+                        const isSendingWorkflowEmail = startingWorkflowFor === rowWorkflowKey;
+                        const canSendWorkflowEmail =
+                          !isSendingWorkflowEmail &&
+                          isVerified &&
+                          Boolean(row.assignedSwId || row.assignedSwName);
+                        const handleSendOrResendSwEmail = () => {
+                          if (swInviteSent) {
+                            const proceed = window.confirm(
+                              `SW email was already sent${swInviteSentAtLabel ? ` at ${swInviteSentAtLabel}` : ''}. Re-send now?`
+                            );
+                            if (!proceed) return;
+                          }
+                          void startWorkflowFromIntake(row);
+                        };
                         const orderedSteps = assignmentWorkflowSteps(row);
                         const doneCount = orderedSteps.filter((s) => s.done).length;
                         const stageBlock = assignmentStageBlock(row);
@@ -1987,24 +2010,12 @@ export default function AdminAlftTrackerPage() {
                             <button
                               type="button"
                               className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm hover:bg-slate-50 disabled:opacity-60"
-                              disabled={
-                                startingWorkflowFor === (row.memberId || row.id) ||
-                                !isVerified ||
-                                (!row.assignedSwId && !row.assignedSwName)
-                              }
-                              onClick={() => {
-                                if (swInviteSent) {
-                                  const proceed = window.confirm(
-                                    `SW email was already sent${swInviteSentAtLabel ? ` at ${swInviteSentAtLabel}` : ''}. Re-send now?`
-                                  );
-                                  if (!proceed) return;
-                                }
-                                void startWorkflowFromIntake(row);
-                              }}
+                              disabled={!canSendWorkflowEmail}
+                              onClick={handleSendOrResendSwEmail}
                             >
                               <span className={isVerified ? 'text-blue-700' : 'text-slate-400'}>{isVerified ? '•' : '○'}</span>{' '}
                               4) {swInviteSent ? 'Re-send SW email' : 'Send SW email'} with timestamp (enabled after Step 2)
-                              {startingWorkflowFor === (row.memberId || row.id) ? (
+                              {isSendingWorkflowEmail ? (
                                 <Loader2 className="inline h-3 w-3 animate-spin ml-1" />
                               ) : null}
                             </button>
@@ -2012,6 +2023,27 @@ export default function AdminAlftTrackerPage() {
                               {swInviteSent
                                 ? `SW email already sent${swInviteSentAtLabel ? ` at ${swInviteSentAtLabel}` : ''}. Click Step 4 if you want to re-send.`
                                 : 'SW email not sent yet.'}
+                              {swInviteSent ? (
+                                <div className="mt-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7"
+                                    disabled={!canSendWorkflowEmail}
+                                    onClick={handleSendOrResendSwEmail}
+                                  >
+                                    {isSendingWorkflowEmail ? (
+                                      <>
+                                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                        Re-sending...
+                                      </>
+                                    ) : (
+                                      'Re-send SW Email'
+                                    )}
+                                  </Button>
+                                </div>
+                              ) : null}
                             </div>
                             <div className="w-full rounded border bg-white px-2 py-1.5 text-left text-sm text-muted-foreground">
                               <span className="text-blue-700">•</span> 5) Social worker completes/submits ALFT with signature (timestamp captured).
