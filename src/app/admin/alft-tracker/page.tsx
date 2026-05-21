@@ -6,16 +6,17 @@ import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth, useFirestore, useStorage } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, UploadCloud, ExternalLink, RefreshCw, UserCheck, CheckCircle2, Send, Download } from 'lucide-react';
-import { ExactAlftQuestionnaire, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
+import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download } from 'lucide-react';
+import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
+import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import {
   addDoc,
   collection,
@@ -31,8 +32,8 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 const AGENCY_NAME = 'Connections Care Home Consultants';
-const ALFT_TEMPLATE_PATH =
-  'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf';
+const DEFAULT_PRE_REVIEW_MANAGER_NAME = 'John';
+const DEFAULT_PRE_REVIEW_MANAGER_EMAIL = 'john@carehomefinders.com';
 
 type StandaloneUpload = {
   id: string;
@@ -245,6 +246,21 @@ const toMs = (value: any): number => {
   }
 };
 
+const todayLocalKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const toYmdOrRaw = (value: string | undefined | null) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const usFmt = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (usFmt) return `${usFmt[3]}-${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}`;
+  const isoLike = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoLike) return `${isoLike[1]}-${isoLike[2].padStart(2, '0')}-${isoLike[3].padStart(2, '0')}`;
+  return raw;
+};
+
 const fmtTimeline = (ms: number) => {
   if (!ms) return '';
   try {
@@ -323,9 +339,12 @@ type StageKey =
 const computeStage = (r: StandaloneUpload): StageKey => {
   const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
   const managerStatus = toLabel((r as any)?.alftManagerReview?.status).toLowerCase();
-  if (workflowStatus.includes('returned_to_sw_for_revision')) return 'returned_to_sw';
-  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) return 'manager_review';
+  const mswSigned = toMs((r as any)?.alftSignature?.mswSignedAt) > 0;
+  const rnSigned = toMs((r as any)?.alftSignature?.rnSignedAt) > 0;
+  if (workflowStatus.includes('returned_to_sw_for_revision') || managerStatus.includes('rejected')) return 'returned_to_sw';
   if (workflowStatus.includes('completed_sent_to_jocelyn') || toLabel(r.status).toLowerCase() !== 'pending') return 'completed';
+  if (mswSigned && !rnSigned && !workflowStatus.includes('awaiting_rn')) return 'manager_review';
+  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) return 'manager_review';
   if (managerStatus === 'approved') return 'ready_to_send';
   if (workflowStatus.includes('awaiting_kaiser_manager_final_review') || managerStatus === 'pending') return 'manager_review';
   if (toMs((r as any)?.alftSignature?.requestedAt) > 0) return 'sent_for_signature';
@@ -386,21 +405,30 @@ const stageBlockClass = (stage: StageKey) => {
   }
 };
 
+const trackerCurrentStatusLabel = (r: StandaloneUpload, stage: StageKey) => {
+  const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
+  if (stage === 'returned_to_sw') return 'Sent back to social worker';
+  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) return 'SW submitted + signed';
+  return toLabel((r as any)?.workflowStatus) || toLabel(r.status) || 'pending';
+};
+
 const nextFlowForRow = (r: StandaloneUpload) => {
   const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
   const signatureStatus = toLabel((r as any)?.alftSignature?.status).toLowerCase();
+  const mswSigned = toMs((r as any)?.alftSignature?.mswSignedAt) > 0;
+  const rnSigned = toMs((r as any)?.alftSignature?.rnSignedAt) > 0;
   const managerName = toLabel(
     (r as any)?.workflowRouting?.nextRecipientName ||
       (r as any)?.assignedManager?.name ||
       (r as any)?.workflowRouting?.finalReviewOwnerName ||
       (r as any)?.alftManagerReview?.reviewedByName
-  ) || 'ALFT Manager';
+  ) || DEFAULT_PRE_REVIEW_MANAGER_NAME;
   const managerEmail = toLabel(
     (r as any)?.workflowRouting?.nextRecipientEmail ||
       (r as any)?.assignedManager?.email ||
       (r as any)?.workflowRouting?.finalReviewOwnerEmail ||
       (r as any)?.alftManagerReview?.reviewedByEmail
-  );
+  ) || DEFAULT_PRE_REVIEW_MANAGER_EMAIL;
   const swName = toLabel(r.uploaderName) || 'Social Worker';
   const swEmail = toLabel(r.uploaderEmail);
   const rnName = toLabel(r.alftRnName) || 'Assigned RN';
@@ -418,6 +446,9 @@ const nextFlowForRow = (r: StandaloneUpload) => {
     signatureStatus.includes('awaiting_rn')
   ) {
     return { label: 'RN review/signature', name: rnName, email: rnEmail, color: 'border-violet-300 bg-violet-50 text-violet-900' };
+  }
+  if (mswSigned && !rnSigned) {
+    return { label: 'Manager pre-review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
   }
   if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
     return { label: 'Final manager review', name: managerName, email: managerEmail, color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900' };
@@ -447,73 +478,103 @@ const prefillSourceFlowClass = (r: StandaloneUpload) => {
   return 'border-slate-300 bg-slate-50 text-slate-800';
 };
 
-const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
+const assignmentWorkflowSignals = (row: AlftAssignmentQueueRow) => {
   const status = String(row?.status || '').toLowerCase();
   const workflowStatus = String(row?.workflowStatus || '').toLowerCase();
-  if (workflowStatus.includes('sw_invited') || status === 'sw_form_in_progress') {
-    return 'Next: SW logs into portal, completes prepopulated ALFT, and submits with signature.';
+  const swInviteSent =
+    workflowStatus.includes('sw_invited') ||
+    status === 'sw_form_in_progress' ||
+    Boolean(row?.workflowSteps?.swInviteSent) ||
+    Boolean(toMs(row?.workflowStepsAt?.swInviteSentAt));
+  const swSubmitted =
+    workflowStatus.includes('awaiting_manager_review_pre_rn') ||
+    workflowStatus.includes('returned_to_sw_for_revision') ||
+    workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
+    workflowStatus.includes('awaiting_rn_final_signature') ||
+    workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
+    workflowStatus.includes('completed_sent_to_jocelyn') ||
+    Boolean(row?.workflowSteps?.swSubmittedSigned) ||
+    Boolean(toMs(row?.workflowStepsAt?.swSubmittedAt));
+  const returnedToSw = workflowStatus.includes('returned_to_sw_for_revision');
+  const rnStep =
+    workflowStatus.includes('awaiting_rn') ||
+    workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
+    workflowStatus.includes('awaiting_rn_final_signature');
+  const finalManager = workflowStatus.includes('awaiting_kaiser_manager_final_review');
+  const complete = workflowStatus.includes('completed_sent_to_jocelyn') || status === 'completed';
+  return { status, workflowStatus, swInviteSent, swSubmitted, returnedToSw, rnStep, finalManager, complete };
+};
+
+const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
+  const { workflowStatus, swInviteSent, swSubmitted, returnedToSw, rnStep, finalManager, complete } =
+    assignmentWorkflowSignals(row);
+  if (complete) {
+    return 'Next: Workflow complete. Send/confirm completed ALFT PDF to Jocelyn.';
   }
-  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) {
-    return 'Next: John (ALTA manager) does first review and either rejects for SW changes or approves to send to RN.';
-  }
-  if (workflowStatus.includes('returned_to_sw_for_revision')) {
+  if (returnedToSw) {
     return 'Next: SW applies requested changes, signs again, and routes back to John for re-check.';
   }
-  if (workflowStatus.includes('awaiting_rn_revision_and_signatures') || workflowStatus.includes('awaiting_rn_final_signature')) {
+  if (rnStep) {
     return 'Next: RN reviews, edits as needed, and signs; then packet routes to Deydry/Jason for final review.';
   }
-  if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
+  if (finalManager) {
     return 'Next: Deydry/Jason final review, then send completed ALFT PDF to Jocelyn.';
+  }
+  if (swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
+    return 'Next: John (ALTA manager) does first review and either rejects for SW changes or approves to send to RN.';
+  }
+  if (swInviteSent) {
+    return 'Next: SW logs into portal, completes prepopulated ALFT, and submits with signature.';
   }
   return 'Next: Preview prefilled pages, then send workflow notice to SW.';
 };
 
 const assignmentStageBlock = (row: AlftAssignmentQueueRow) => {
-  const status = String(row?.status || '').toLowerCase();
-  const workflowStatus = String(row?.workflowStatus || '').toLowerCase();
-  if (workflowStatus.includes('completed_sent_to_jocelyn') || status === 'completed') {
+  const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager, complete } =
+    assignmentWorkflowSignals(row);
+  if (complete) {
     return { label: 'Completed', color: 'border-green-300 bg-green-50 text-green-900' };
   }
-  if (workflowStatus.includes('returned_to_sw_for_revision')) {
+  if (returnedToSw) {
     return { label: 'Returned to SW', color: 'border-red-300 bg-red-50 text-red-900' };
   }
-  if (workflowStatus.includes('awaiting_rn_revision_and_signatures') || workflowStatus.includes('awaiting_rn_final_signature')) {
+  if (rnStep) {
     return { label: 'RN review/signature', color: 'border-violet-300 bg-violet-50 text-violet-900' };
   }
-  if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
+  if (finalManager) {
     return { label: 'Final manager review', color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900' };
   }
-  if (workflowStatus.includes('awaiting_manager_review_pre_rn')) {
+  if (swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
     return { label: 'Manager pre-review', color: 'border-sky-300 bg-sky-50 text-sky-900' };
   }
-  if (workflowStatus.includes('sw_invited') || status === 'sw_form_in_progress') {
+  if (workflowStatus.includes('sw_invited')) {
     return { label: 'SW invited/submitting', color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
   }
   return { label: 'Prefill ready', color: 'border-slate-300 bg-slate-50 text-slate-900' };
 };
 
 const assignmentNextRecipientBlock = (row: AlftAssignmentQueueRow) => {
-  const workflowStatus = String(row?.workflowStatus || '').toLowerCase();
+  const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager } = assignmentWorkflowSignals(row);
   const swName = toLabel(row.assignedSwName) || 'Social Worker';
   const swEmail = toLabel(row.assignedSwEmail);
   const managerName = toLabel(
     (row as any)?.alftManagerName ||
     (row as any)?.assignedManagerName ||
     (row as any)?.assignedByName
-  ) || 'Deydry';
+  ) || DEFAULT_PRE_REVIEW_MANAGER_NAME;
   const managerEmail = toLabel(
     (row as any)?.alftManagerEmail ||
     (row as any)?.assignedManagerEmail ||
     (row as any)?.assignedByEmail
-  ) || 'deydry@carehomefinders.com';
+  ) || DEFAULT_PRE_REVIEW_MANAGER_EMAIL;
 
-  if (workflowStatus.includes('returned_to_sw_for_revision')) {
+  if (returnedToSw) {
     return { label: 'SW revision needed', name: swName, email: swEmail, color: 'border-red-300 bg-red-50 text-red-900' };
   }
-  if (workflowStatus.includes('awaiting_rn_revision_and_signatures') || workflowStatus.includes('awaiting_rn_final_signature')) {
+  if (rnStep) {
     return { label: 'RN review/signature', name: 'Leslie (RN)', email: 'rn@carehomefinders.com', color: 'border-violet-300 bg-violet-50 text-violet-900' };
   }
-  if (workflowStatus.includes('awaiting_kaiser_manager_final_review') || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
+  if (finalManager || swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
     return { label: 'Manager review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
   }
   return { label: 'SW complete + submit', name: swName, email: swEmail, color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
@@ -635,27 +696,14 @@ const getRequiredValueFromResolvedOrAssignment = (
 };
 
 const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
-  const workflow = String(row.workflowStatus || '').toLowerCase();
-  const status = String(row.status || '').toLowerCase();
-  const hasInvite = workflow.includes('sw_invited') || status === 'sw_form_in_progress';
-  const swSubmitted =
-    workflow.includes('awaiting_manager_review_pre_rn') ||
-    workflow.includes('returned_to_sw_for_revision') ||
-    workflow.includes('awaiting_rn_revision_and_signatures') ||
-    workflow.includes('awaiting_rn_final_signature') ||
-    workflow.includes('awaiting_kaiser_manager_final_review') ||
-    workflow.includes('completed_sent_to_jocelyn');
-  const returnedToSw = workflow.includes('returned_to_sw_for_revision');
-  const rnStep = workflow.includes('awaiting_rn') || workflow.includes('awaiting_rn_revision_and_signatures') || workflow.includes('awaiting_rn_final_signature');
-  const finalManager = workflow.includes('awaiting_kaiser_manager_final_review');
-  const complete = workflow.includes('completed_sent_to_jocelyn') || status === 'completed';
+  const { swInviteSent, swSubmitted, returnedToSw, rnStep, finalManager, complete } = assignmentWorkflowSignals(row);
 
   return [
-    { step: 1, chip: 'Verify Prefill', label: 'Staff verifies required ALFT prefill fields', done: hasInvite || swSubmitted, current: !hasInvite },
-    { step: 2, chip: 'Verify Checkbox', label: 'Staff verification checkbox sign-off with timestamp', done: hasInvite || swSubmitted, current: false },
-    { step: 3, chip: 'SW Email Preview', label: 'Preview SW email content (no manager queue link)', done: hasInvite || swSubmitted, current: false },
-    { step: 4, chip: 'SW Email Sent', label: 'Send SW email notice with timestamp', done: hasInvite, current: hasInvite && !swSubmitted },
-    { step: 5, chip: 'SW Signed', label: 'SW completes and signs ALFT packet', done: swSubmitted, current: hasInvite && !swSubmitted },
+    { step: 1, chip: 'Verify Prefill', label: 'Staff verifies required ALFT prefill fields', done: swInviteSent || swSubmitted, current: !swInviteSent },
+    { step: 2, chip: 'Verify Checkbox', label: 'Staff verification checkbox sign-off with timestamp', done: swInviteSent || swSubmitted, current: false },
+    { step: 3, chip: 'SW Email Preview', label: 'Preview SW email content (no manager queue link)', done: swInviteSent || swSubmitted, current: false },
+    { step: 4, chip: 'SW Email Sent', label: 'Send SW email notice with timestamp', done: swInviteSent, current: swInviteSent && !swSubmitted },
+    { step: 5, chip: 'SW Signed', label: 'SW completes and signs ALFT packet', done: swSubmitted, current: swInviteSent && !swSubmitted },
     { step: 6, chip: 'John First Review', label: 'John approves or rejects with needed changes', done: swSubmitted, current: swSubmitted && !returnedToSw && !rnStep },
     { step: 7, chip: 'Return + Re-check', label: 'If rejected, SW updates and John re-checks before RN', done: returnedToSw || rnStep || finalManager || complete, current: returnedToSw },
     { step: 8, chip: 'RN Review + Sign', label: 'RN reviews, edits as needed, and signs', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
@@ -678,28 +726,55 @@ const stepDotClass = (step: { done: boolean; current: boolean }) => {
 const workflowChecklistFor = (r: StandaloneUpload) => {
   const workflowStatus = String((r as any)?.workflowStatus || '').toLowerCase();
   const managerStatus = String((r as any)?.alftManagerReview?.status || '').toLowerCase();
+  const currentlyReturnedToSw = workflowStatus.includes('returned_to_sw_for_revision');
+  const wasReturnedToSw = currentlyReturnedToSw || managerStatus.includes('rejected');
+  const swSubmittedSigned =
+    workflowStatus.includes('awaiting_manager_review_pre_rn') ||
+    workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
+    workflowStatus.includes('awaiting_rn_final_signature') ||
+    workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
+    workflowStatus.includes('manager_review_complete_ready_to_send') ||
+    workflowStatus.includes('completed_sent_to_jocelyn') ||
+    Boolean((r as any)?.alftSignature?.mswSignedAt);
+  const sentToLeslie =
+    workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
+    workflowStatus.includes('awaiting_rn_final_signature') ||
+    workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
+    workflowStatus.includes('manager_review_complete_ready_to_send') ||
+    workflowStatus.includes('completed_sent_to_jocelyn') ||
+    Boolean((r as any)?.alftSignature?.requestedAt);
+  const rnSigned = Boolean((r as any)?.alftSignature?.rnSignedAt);
+  const sentToJocelyn = workflowStatus.includes('completed_sent_to_jocelyn');
+
   const steps = [
     {
       label: '1) SW invited + form started',
       done: workflowStatus.includes('sw_invited') || workflowStatus.includes('awaiting_manager_review_pre_rn') || Boolean(toMs(r.createdAt)),
     },
     {
-      label: '2) SW submitted + signed',
-      done: workflowStatus.includes('awaiting_manager_review_pre_rn') || Boolean((r as any)?.alftSignature?.mswSignedAt),
+      label: '2) Sent back to social worker',
+      done: wasReturnedToSw,
+      current: currentlyReturnedToSw,
     },
     {
-      label: '3) Manager review (with return loop)',
-      done: workflowStatus.includes('returned_to_sw_for_revision') || workflowStatus.includes('manager_review_pre_rn_complete_ready_for_rn'),
+      label: wasReturnedToSw ? '3) SW resubmitted + signed' : '3) SW submitted + signed',
+      done: swSubmittedSigned,
     },
     {
-      label: '4) RN review + signature',
-      done: Boolean((r as any)?.alftSignature?.rnSignedAt),
+      label: '4) Sent to Leslie + RN review/signature',
+      done: sentToLeslie && rnSigned,
+      current: sentToLeslie && !rnSigned,
     },
     {
-      label: '5) Manager final + PDF ready',
+      label: '5) Manager final approval + sent to Jocelyn',
       done:
         managerStatus === 'approved' &&
-        Boolean((r as any)?.alftSignature?.packetPdfStoragePath || (r as any)?.alftSignature?.signaturePagePdfStoragePath),
+        Boolean((r as any)?.alftSignature?.packetPdfStoragePath || (r as any)?.alftSignature?.signaturePagePdfStoragePath) &&
+        sentToJocelyn,
+      current:
+        managerStatus === 'approved' &&
+        Boolean((r as any)?.alftSignature?.packetPdfStoragePath || (r as any)?.alftSignature?.signaturePagePdfStoragePath) &&
+        !sentToJocelyn,
     },
   ];
   return steps;
@@ -763,11 +838,9 @@ export default function AdminAlftTrackerPage() {
   const [editRequestedActions, setEditRequestedActions] = useState('');
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
-  const [editTemplatePdfUrl, setEditTemplatePdfUrl] = useState('');
-  const [editTemplatePdfLoading, setEditTemplatePdfLoading] = useState(false);
-  const [editTemplatePdfError, setEditTemplatePdfError] = useState('');
-  const [editTemplatePdfMode, setEditTemplatePdfMode] = useState('');
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
+  const [isKaiserStaff, setIsKaiserStaff] = useState(false);
+  const [isRnStaff, setIsRnStaff] = useState(false);
   const [startingWorkflowFor, setStartingWorkflowFor] = useState('');
   const [assignmentQueueIndex, setAssignmentQueueIndex] = useState(0);
   const [verifyingMemberId, setVerifyingMemberId] = useState('');
@@ -783,7 +856,7 @@ export default function AdminAlftTrackerPage() {
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      if (!isAdmin) return;
+      if (!isAdmin && !isKaiserStaff && !isRnStaff) return;
       try {
         const res = await fetch('/api/caspio-staff', { cache: 'no-store' });
         const payload = (await res.json().catch(() => ({}))) as any;
@@ -804,7 +877,7 @@ export default function AdminAlftTrackerPage() {
     return () => {
       cancelled = true;
     };
-  }, [isAdmin]);
+  }, [isAdmin, isKaiserStaff, isRnStaff]);
 
   useEffect(() => {
     const memberQuery = String(searchParams?.get('member') || '').trim();
@@ -817,21 +890,27 @@ export default function AdminAlftTrackerPage() {
     const run = async () => {
       if (!firestore || !user?.uid) {
         setIsKaiserAssignmentManager(false);
+        setIsKaiserStaff(false);
+        setIsRnStaff(false);
         return;
       }
       try {
         const meSnap = await getDoc(doc(firestore, 'users', user.uid));
         const me = meSnap.exists() ? (meSnap.data() as any) : null;
         setIsKaiserAssignmentManager(Boolean(me?.isKaiserAssignmentManager));
+        setIsKaiserStaff(Boolean(me?.isKaiserStaff));
+        setIsRnStaff(Boolean(me?.isRnStaff));
       } catch {
         setIsKaiserAssignmentManager(false);
+        setIsKaiserStaff(false);
+        setIsRnStaff(false);
       }
     };
     void run();
   }, [firestore, user?.uid]);
 
   useEffect(() => {
-    if (!firestore || !isAdmin) return;
+    if (!firestore || (!isAdmin && !isKaiserStaff && !isRnStaff)) return;
     const qy = query(collection(firestore, 'standalone_upload_submissions'), where('status', '==', 'pending'));
     const unsub = onSnapshot(
       qy,
@@ -881,10 +960,10 @@ export default function AdminAlftTrackerPage() {
       () => setRows([])
     );
     return () => unsub();
-  }, [firestore, isAdmin]);
+  }, [firestore, isAdmin, isKaiserStaff, isRnStaff]);
 
   useEffect(() => {
-    if (!firestore || !isAdmin) return;
+    if (!firestore || (!isAdmin && !isKaiserStaff && !isRnStaff)) return;
     const unsub = onSnapshot(
       collection(firestore, 'alft_assignments'),
       (snap) => {
@@ -938,12 +1017,12 @@ export default function AdminAlftTrackerPage() {
       () => setAssignmentRows([])
     );
     return () => unsub();
-  }, [firestore, isAdmin]);
+  }, [firestore, isAdmin, isKaiserStaff, isRnStaff]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!firestore || !isAdmin) return;
+      if (!firestore || (!isAdmin && !isKaiserStaff && !isRnStaff)) return;
       setStaffLoading(true);
       try {
         const [adminRolesSnap, superAdminRolesSnap, usersSnap] = await Promise.all([
@@ -976,7 +1055,7 @@ export default function AdminAlftTrackerPage() {
     return () => {
       cancelled = true;
     };
-  }, [firestore, isAdmin]);
+  }, [firestore, isAdmin, isKaiserStaff, isRnStaff]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -1010,6 +1089,29 @@ export default function AdminAlftTrackerPage() {
         return { ...row, assignedSwEmail: email };
       }),
     [assignmentRows, swEmailById]
+  );
+
+  const assignmentLookup = useMemo(() => {
+    const byMrn = new Map<string, AlftAssignmentQueueRow>();
+    const byName = new Map<string, AlftAssignmentQueueRow>();
+    assignmentRowsWithResolvedSwEmail.forEach((row) => {
+      const mrnKey = toLabel(row.memberMrn).toLowerCase();
+      const nameKey = toLabel(row.memberName).toLowerCase();
+      if (mrnKey && !byMrn.has(mrnKey)) byMrn.set(mrnKey, row);
+      if (nameKey && !byName.has(nameKey)) byName.set(nameKey, row);
+    });
+    return { byMrn, byName };
+  }, [assignmentRowsWithResolvedSwEmail]);
+
+  const findAssignmentForUpload = useCallback(
+    (row: StandaloneUpload) => {
+      const mrnKey = toLabel(row.medicalRecordNumber).toLowerCase();
+      if (mrnKey && assignmentLookup.byMrn.has(mrnKey)) return assignmentLookup.byMrn.get(mrnKey) || null;
+      const nameKey = toLabel(row.memberName).toLowerCase();
+      if (nameKey && assignmentLookup.byName.has(nameKey)) return assignmentLookup.byName.get(nameKey) || null;
+      return null;
+    },
+    [assignmentLookup]
   );
 
   const filteredAssignments = useMemo(() => {
@@ -1075,22 +1177,22 @@ export default function AdminAlftTrackerPage() {
   }, []);
 
   // Returns true for any user allowed to kick a form back to the SW for revision:
-  // admins, Kaiser managers (isKaiserAssignmentManager), and the assigned RN for the intake.
+  // admins, Kaiser staff/managers, and the assigned RN for the intake.
   const canKickBackToSw = useCallback(
     (row: StandaloneUpload) => {
-      if (isSuperAdmin || isAdmin || isKaiserAssignmentManager) return true;
+      if (isSuperAdmin || isAdmin || isKaiserAssignmentManager || isKaiserStaff) return true;
       const uid = String(user?.uid || '').trim();
       const email = String(user?.email || '').toLowerCase();
       const rnUid = String((row as any)?.alftRnUid || '').trim();
       const rnEmail = String((row as any)?.alftRnEmail || '').toLowerCase();
       return (uid && uid === rnUid) || (email && email === rnEmail);
     },
-    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, user?.uid, user?.email]
+    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, isKaiserStaff, user?.uid, user?.email]
   );
 
   const canRunManagerWorkflow = useMemo(
-    () => Boolean(isSuperAdmin || isAdmin || isKaiserAssignmentManager),
-    [isSuperAdmin, isAdmin, isKaiserAssignmentManager]
+    () => Boolean(isSuperAdmin || isAdmin || isKaiserAssignmentManager || isKaiserStaff),
+    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, isKaiserStaff]
   );
 
   // Step gate requested by workflow owner:
@@ -1101,10 +1203,19 @@ export default function AdminAlftTrackerPage() {
       const sigRequested = Boolean((row as any)?.alftSignature?.requestedAt);
       if (sigRequested) return false;
       const workflowStatus = String((row as any)?.workflowStatus || '').toLowerCase();
+      const hasAlftFormContent =
+        Boolean((row as any)?.alftForm?.transitionSummary) ||
+        Boolean((row as any)?.alftForm?.requestedActions) ||
+        (typeof (row as any)?.alftForm?.exactPacketAnswers === 'object' &&
+          Object.keys(((row as any)?.alftForm?.exactPacketAnswers || {}) as Record<string, unknown>).length > 0);
+      if (workflowStatus.includes('completed_sent_to_jocelyn') || workflowStatus.includes('awaiting_kaiser_manager_final_review')) {
+        return false;
+      }
       return (
         workflowStatus.includes('awaiting_manager_review_pre_rn') ||
         workflowStatus.includes('returned_to_sw_for_revision') ||
-        workflowStatus.includes('manager_review_pre_rn_complete_ready_for_rn')
+        workflowStatus.includes('manager_review_pre_rn_complete_ready_for_rn') ||
+        hasAlftFormContent
       );
     },
     [canRunManagerWorkflow]
@@ -1114,8 +1225,8 @@ export default function AdminAlftTrackerPage() {
     (row: StandaloneUpload) => {
       const uid = String(user?.uid || '').trim();
       if (!uid) return false;
-      // Admins and Kaiser assignment managers (Leslie, Deydry, etc.) can always edit
-      if (isAdmin || isKaiserAssignmentManager) return true;
+      // Admins and Kaiser staff/managers can always edit
+      if (isAdmin || isKaiserAssignmentManager || isKaiserStaff) return true;
       const collab = (row as any)?.alftCollaboration || {};
       if (Boolean(collab?.allowAllPartiesEdit)) {
         const editableUids = Array.isArray(collab?.editableUids) ? collab.editableUids.map((x: any) => String(x || '').trim()) : [];
@@ -1128,7 +1239,7 @@ export default function AdminAlftTrackerPage() {
       if (userEmail && [rnEmail, staffEmail, uploaderEmail].includes(userEmail)) return true;
       return [row.uploaderUid, row.alftRnUid, row.alftStaffUid].map((v) => String(v || '').trim()).includes(uid);
     },
-    [isAdmin, isKaiserAssignmentManager, user?.uid, user?.email]
+    [isAdmin, isKaiserAssignmentManager, isKaiserStaff, user?.uid, user?.email]
   );
 
   const startWorkflowFromIntake = useCallback(
@@ -1299,6 +1410,32 @@ export default function AdminAlftTrackerPage() {
     if (!String(merged.p13_commentary_section || '').trim() && String((merged as any).p14_post_med_table_commentary || '').trim()) {
       merged.p13_commentary_section = String((merged as any).p14_post_med_table_commentary || '');
     }
+    const assignmentRow = findAssignmentForUpload(row);
+    const staffName = String((user as any)?.displayName || user?.email || '').trim();
+    const applyIfBlank = (key: string, value: unknown) => {
+      const nextValue = String(value ?? '').trim();
+      if (!nextValue) return;
+      const current = String(merged[key] ?? '').trim();
+      if (!current) merged[key] = nextValue;
+    };
+    applyIfBlank('p1_assessment_date', todayLocalKey());
+    applyIfBlank('p1_agency', AGENCY_NAME);
+    applyIfBlank('p1_member_name', row.memberName);
+    applyIfBlank('p1_mrn', row.medicalRecordNumber || '');
+    applyIfBlank('p1_plan_id', row.medicalRecordNumber || '');
+    applyIfBlank('p1_assessor_name', assignmentRow?.assignedSwName || row.uploaderName || staffName);
+    applyIfBlank('p2_facility_name', row?.alftForm?.facilityName || '');
+    if (assignmentRow) {
+      REQUIRED_PREFILL_FIELDS.forEach(({ key }) => {
+        const fromAssignment = getRequiredValueFromAssignmentRow(assignmentRow, key);
+        applyIfBlank(key, key === 'p1_dob' ? toYmdOrRaw(fromAssignment) : fromAssignment);
+      });
+      applyIfBlank('p1_plan_id', assignmentRow.alftPlanId || assignmentRow.memberMrn || '');
+      const purpose = String(assignmentRow.prefillPurpose || '').trim();
+      if (!String(merged.p1_purpose || '').trim() && (purpose === 'initial' || purpose === 'change_condition' || purpose === 'review')) {
+        merged.p1_purpose = purpose;
+      }
+    }
     merged.p1_agency = AGENCY_NAME;
     setEditExactAnswers(merged);
     setEditTransitionSummary(String(row?.alftForm?.transitionSummary || ''));
@@ -1307,55 +1444,7 @@ export default function AdminAlftTrackerPage() {
     setEditAdditionalNotes(String(row?.alftForm?.additionalNotes || ''));
     setEditRow(row);
     setEditOpen(true);
-    setEditTemplatePdfError('');
-    setEditTemplatePdfMode('');
-  }, []);
-
-  const generateEditTemplatePreview = useCallback(async () => {
-    if (!editOpen || !editRow) return;
-    setEditTemplatePdfLoading(true);
-    setEditTemplatePdfError('');
-    try {
-      const res = await fetch('/api/alft/template-fill-preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers: editExactAnswers }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({} as any));
-        throw new Error(String(err?.error || `Template preview failed (HTTP ${res.status})`));
-      }
-      setEditTemplatePdfMode(String(res.headers.get('x-alft-template-fill-mode') || '').trim());
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      setEditTemplatePdfUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return url;
-      });
-    } catch (e: any) {
-      setEditTemplatePdfError(String(e?.message || 'Could not generate template preview.'));
-      setEditTemplatePdfMode('');
-      setEditTemplatePdfUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return '';
-      });
-    } finally {
-      setEditTemplatePdfLoading(false);
-    }
-  }, [editExactAnswers, editOpen, editRow]);
-
-  useEffect(() => {
-    void generateEditTemplatePreview();
-  }, [generateEditTemplatePreview]);
-
-  useEffect(() => {
-    return () => {
-      setEditTemplatePdfUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return '';
-      });
-    };
-  }, []);
+  }, [findAssignmentForUpload, user]);
 
   const sendAssignmentNotification = async (targetUid: string, payload: Record<string, any>) => {
     if (!firestore) return;
@@ -1539,16 +1628,13 @@ export default function AdminAlftTrackerPage() {
       toast({ title: 'Not signed in', description: 'Please sign in again to save ALFT edits.', variant: 'destructive' });
       return;
     }
-    const summary = String(editTransitionSummary || '').trim();
-    const actions = String(editRequestedActions || '').trim();
-    if (!summary || !actions) {
-      toast({
-        title: 'Missing required fields',
-        description: 'Transition summary and requested actions are required.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    const summary =
+      String(editTransitionSummary || '').trim() ||
+      String((editExactAnswers as any)?.p13_commentary_section || '').trim() ||
+      'ALFT form updated by Kaiser staff.';
+    const actions =
+      String(editRequestedActions || '').trim() ||
+      'Review digital ALFT form. RN (Leslie) to add comments and sign. Manager (Deydry/Jason) to review and send to Jocelyn.';
     try {
       setEditSaving(true);
       const idToken = await auth.currentUser.getIdToken();
@@ -1571,10 +1657,8 @@ export default function AdminAlftTrackerPage() {
       }
       toast({
         title: 'ALFT form updated',
-        description: 'Changes saved. This intake stays editable for SW, staff, RN, and admin users.',
+        description: 'Changes saved. You can now approve or reject from this same page.',
       });
-      setEditOpen(false);
-      setEditRow(null);
     } catch (e: any) {
       toast({ title: 'Could not save ALFT form', description: e?.message || 'Save failed.', variant: 'destructive' });
     } finally {
@@ -1764,29 +1848,60 @@ export default function AdminAlftTrackerPage() {
     );
   }
 
-  if (!isAdmin) {
+  if (!isAdmin && !isKaiserStaff && !isRnStaff) {
     return (
       <div className="container mx-auto p-6">
         <Card>
           <CardHeader>
-            <CardTitle>Admin access required</CardTitle>
-            <CardDescription>Please sign in as an admin to continue.</CardDescription>
+            <CardTitle>Kaiser staff access required</CardTitle>
+            <CardDescription>Please sign in as Kaiser staff, RN staff, or admin to continue.</CardDescription>
           </CardHeader>
         </Card>
       </div>
     );
   }
 
+  const canApproveToRnFromEdit = Boolean(editRow && canSendToRnAfterPreReview(editRow));
+  const canRejectToSwFromEdit = Boolean(editRow && canKickBackToSw(editRow));
+  const canRunFinalReviewFromEdit = Boolean(
+    editRow &&
+      canRunManagerWorkflow &&
+      Boolean(editRow?.alftSignature?.packetPdfStoragePath || editRow?.alftSignature?.signaturePagePdfStoragePath) &&
+      String((editRow as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
+  );
+  const canSendCompletedFromEdit = Boolean(
+    editRow &&
+      canRunManagerWorkflow &&
+      Boolean(editRow?.alftSignature?.packetPdfStoragePath || editRow?.alftSignature?.signaturePagePdfStoragePath) &&
+      String((editRow as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
+  );
+  const approveToRnDisabledReason = !editRow
+    ? 'No ALFT loaded'
+    : sigRequestingId === String(editRow?.id || '')
+      ? 'Approval already in progress'
+      : !canRunManagerWorkflow
+        ? 'Kaiser manager/staff access required'
+        : Boolean(editRow?.alftSignature?.requestedAt)
+          ? 'Already sent to Leslie for RN signature'
+          : !canApproveToRnFromEdit
+            ? 'SW ALFT content is required before sending to Leslie'
+            : 'Manager approval: route to Leslie (RN) and request signatures';
+
   return (
     <div className="container mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold">ALFT Workflow Intake</h1>
+          <h1 className="text-2xl font-bold">ALFT Tracker</h1>
           <p className="text-muted-foreground">
             Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, Kaiser manager does final review, then completed packet is sent to Jocelyn.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/admin/standalone-uploads?filter=alft">
+              Back to ALFT Queue
+            </Link>
+          </Button>
           <Badge variant={filtered.length > 0 ? 'secondary' : 'outline'}>{filtered.length} pending</Badge>
           <Button variant="outline" onClick={() => setSearch('')} disabled={!search}>
             <RefreshCw className="h-4 w-4 mr-2" />
@@ -1833,7 +1948,7 @@ export default function AdminAlftTrackerPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">ALFT intake queue</CardTitle>
+          <CardTitle className="text-base">ALFT Tracker</CardTitle>
           <CardDescription>All items shown here are pending ALFT uploads (from `standalone_upload_submissions`).</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -2071,343 +2186,101 @@ export default function AdminAlftTrackerPage() {
               ) : null}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead>MRN</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Flow / Next</TableHead>
-                  <TableHead>SW uploader</TableHead>
-                  <TableHead>RN</TableHead>
-                  <TableHead>Files</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((r) => {
-                  const focused = focusId && r.id === focusId;
-                  const stage = computeStage(r);
-                  const nextFlow = nextFlowForRow(r);
-                  const latestRevision = (r.alftRevisions || []).slice(-1)[0];
-                  const recentEdits = (r.alftEditHistory || [])
-                    .slice()
-                    .sort((a: any, b: any) => toEditHistoryMs(b) - toEditHistoryMs(a))
-                    .slice(0, 3);
-                  const sw = r.uploaderName || r.uploaderEmail || 'Social Worker';
-                  return (
-                    <TableRow key={r.id} className={focused ? 'bg-amber-50' : ''}>
-                      <TableCell className="min-w-[220px]">
-                        <div className="font-medium truncate">{r.memberName || '—'}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {r.healthPlan || '—'} • Uploaded {r.alftUploadDate || (toMs(r.createdAt) ? new Date(toMs(r.createdAt)).toLocaleDateString() : '—')}
+            <div className="space-y-3">
+              {filtered.map((r) => {
+                const focused = focusId && r.id === focusId;
+                const stage = computeStage(r);
+                const checklist = workflowChecklistFor(r);
+                const explicitCurrentChecklistIdx = checklist.findIndex((step: any) => Boolean((step as any)?.current));
+                const currentChecklistIdx =
+                  explicitCurrentChecklistIdx >= 0 ? explicitCurrentChecklistIdx : checklist.findIndex((step) => !step.done);
+                const statusLabel = trackerCurrentStatusLabel(r, stage);
+                const workflowStatusLower = String((r as any)?.workflowStatus || '').toLowerCase();
+                const managerActionRequired =
+                  workflowStatusLower.includes('awaiting_manager_review_pre_rn') ||
+                  workflowStatusLower.includes('awaiting_kaiser_manager_final_review');
+                const managerActionLabel = workflowStatusLower.includes('awaiting_kaiser_manager_final_review')
+                  ? 'Action required: Kaiser manager final approval'
+                  : 'Action required: Kaiser manager review';
+                return (
+                  <div
+                    key={r.id}
+                    className={cn('rounded-md border bg-white p-3 space-y-3', focused ? 'border-amber-300 bg-amber-50/30' : '')}
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <div className="font-semibold truncate">{r.memberName || '—'}</div>
+                        <div className="text-xs text-muted-foreground break-words">
+                          MRN: {r.medicalRecordNumber || '—'} • {r.healthPlan || '—'} • Uploaded {r.alftUploadDate || (toMs(r.createdAt) ? new Date(toMs(r.createdAt)).toLocaleDateString() : '—')}
+                          {r.uploaderName ? ` • By: ${r.uploaderName}` : ''}
                         </div>
-                      </TableCell>
-                      <TableCell className="font-mono">{r.medicalRecordNumber || '—'}</TableCell>
-                      <TableCell className="min-w-[220px]">
-                        <div className="space-y-2">
-                          <div>{stageBadge(stage)}</div>
-                          <div className="rounded border bg-muted/20 p-2 text-[11px]">
-                            {workflowChecklistFor(r).map((step) => (
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className={stageBlockClass(stage)}>
+                            {statusLabel}
+                          </Badge>
+                          {managerActionRequired ? (
+                            <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300">
+                              {managerActionLabel}
+                            </Badge>
+                          ) : null}
+                          {r.alftRnName ? (
+                            <Badge variant="outline" className="bg-violet-100 text-violet-800 border-violet-200">
+                              RN: {r.alftRnName}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="inline-flex items-center gap-2">
+                        <Button
+                          variant="link"
+                          className="text-sm font-medium text-primary hover:underline p-0 h-auto"
+                          onClick={() => openEdit(r)}
+                          disabled={!canEditAlftRow(r)}
+                          title={!canEditAlftRow(r) ? 'No edit permission for this intake' : 'Edit ALFT form'}
+                        >
+                          Edit ALFT Form
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium">Current status</div>
+                        <div className="rounded border bg-muted/20 p-2 text-[11px] space-y-1">
+                          {checklist.map((step, idx) => {
+                            const isCurrent =
+                              explicitCurrentChecklistIdx >= 0 ? idx === explicitCurrentChecklistIdx : idx === currentChecklistIdx && !step.done;
+                            return (
                               <div key={step.label} className="flex items-center gap-1.5">
-                                <span className={step.done ? 'text-green-700' : 'text-muted-foreground'}>{step.done ? '✓' : '○'}</span>
-                                <span className={step.done ? 'text-foreground' : 'text-muted-foreground'}>{step.label}</span>
+                                <span
+                                  className={cn(
+                                    'inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px] font-semibold',
+                                    step.done
+                                      ? 'border-green-600 bg-green-600 text-white'
+                                      : isCurrent
+                                        ? 'border-amber-500 bg-amber-500 text-white'
+                                        : 'border-slate-300 bg-white text-slate-400'
+                                  )}
+                                >
+                                  {step.done || isCurrent ? '✓' : ''}
+                                </span>
+                                <span className={step.done ? 'text-foreground' : isCurrent ? 'text-amber-700' : 'text-muted-foreground'}>
+                                  {step.label}
+                                </span>
                               </div>
-                            ))}
-                          </div>
-                          <div className="space-y-1 text-[11px] text-muted-foreground">
-                            <div className="flex flex-wrap gap-1">
-                              <Badge variant="outline" className="text-[10px]">
-                                Manager step2 email: {toMs((r as any)?.workflowEmailStatus?.managerStep2EmailSentAt) > 0 ? 'sent' : 'pending'}
-                              </Badge>
-                              <Badge variant="outline" className="text-[10px]">
-                                Manager step4 email: {toMs((r as any)?.workflowEmailStatus?.managerStep4EmailSentAt) > 0 ? 'sent' : 'pending'}
-                              </Badge>
-                              <Badge variant="outline" className="text-[10px]">
-                                Final PDF email: {toMs((r as any)?.alftCompletionEmail?.sentAt) > 0 ? 'sent' : 'pending'}
-                              </Badge>
-                            </div>
-                            {timelineFor(r)
-                              .slice(-6)
-                              .map((t) => (
-                                <div key={t.key} className="flex items-start gap-2">
-                                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
-                                  <div className="min-w-0">
-                                    <div className="truncate">
-                                      <span className="font-medium text-foreground/80">{t.label}</span>
-                                      {t.by ? <span className="text-muted-foreground"> — {t.by}</span> : null}
-                                    </div>
-                                    <div className="text-muted-foreground">{fmtTimeline(t.ms) || '—'}</div>
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
+                            );
+                          })}
                         </div>
-                      </TableCell>
-                      <TableCell className="min-w-[280px]">
-                        <div className="space-y-2">
-                          <div className={`rounded-md border p-2 text-xs ${stageBlockClass(stage)}`}>
-                            <div className="font-semibold">Current stage</div>
-                            <div className="mt-0.5">{toLabel((r as any)?.workflowStatus) || toLabel(r.status) || 'pending'}</div>
-                          </div>
-                          <div className={`rounded-md border p-2 text-xs ${nextFlow.color}`}>
-                            <div className="font-semibold">Next in line: {nextFlow.label}</div>
-                            <div className="mt-0.5 truncate">{nextFlow.name || 'Unassigned'}</div>
-                            {nextFlow.email ? <div className="truncate opacity-90">{nextFlow.email}</div> : null}
-                          </div>
-                          <div className={`rounded-md border p-2 text-xs ${prefillSourceFlowClass(r)}`}>
-                            <div className="font-semibold">{prefillSourceFlowLabel(r)}</div>
-                            <div className="mt-0.5 truncate">
-                              {toLabel((r as any)?.prefillSourceMode) || 'unknown'}
-                            </div>
-                          </div>
-                          <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-                            <div className="font-semibold">Final ALFT manager</div>
-                            <div className="truncate">
-                              {toLabel((r as any)?.assignedManager?.name || (r as any)?.workflowRouting?.finalReviewOwnerName) || 'Unassigned'}
-                            </div>
-                            <div className="truncate opacity-90">
-                              {toLabel((r as any)?.assignedManager?.email || (r as any)?.workflowRouting?.finalReviewOwnerEmail) || 'manager email pending'}
-                            </div>
-                          </div>
+                        <div className="text-xs text-muted-foreground">
+                          SW: {r.uploaderName || r.uploaderEmail || 'Social Worker'} {r.uploaderEmail ? `(${r.uploaderEmail})` : ''} • RN: {r.alftRnName || '—'}
                         </div>
-                      </TableCell>
-                      <TableCell className="min-w-[180px]">
-                        <div className="truncate">{sw}</div>
-                        {r.uploaderEmail ? <div className="text-xs text-muted-foreground truncate">{r.uploaderEmail}</div> : null}
-                      </TableCell>
-                      <TableCell className="min-w-[180px]">
-                        <div className="truncate">{r.alftRnName || '—'}</div>
-                        {r.alftRnEmail ? <div className="text-xs text-muted-foreground truncate">{r.alftRnEmail}</div> : null}
-                      </TableCell>
-                      <TableCell className="min-w-[260px]">
-                        <div className="space-y-1">
-                          {r.alftForm?.transitionSummary ? (
-                            <div className="rounded border bg-muted/30 p-2 text-[11px]">
-                              <div className="font-semibold">SW placeholder form</div>
-                              <div className="truncate">
-                                {r.alftForm?.facilityName ? `${r.alftForm.facilityName} • ` : ''}
-                                {r.alftForm?.priorityLevel || 'Routine'}
-                              </div>
-                              <div className="line-clamp-2 text-muted-foreground">{r.alftForm.transitionSummary}</div>
-                            </div>
-                          ) : null}
-                          {(r.files || []).slice(0, 2).map((f) => (
-                            <a
-                              key={f.downloadURL}
-                              className="underline text-blue-600 block truncate"
-                              href={f.downloadURL}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {f.fileName || 'Download'}
-                            </a>
-                          ))}
-                          {(r.files || []).slice(0, 2).map((f) => (
-                            <div key={`${f.downloadURL}-ts`} className="text-[11px] text-muted-foreground truncate">
-                              Uploaded: {toLabel(f.uploadedAtIso) ? fmtTimeline(toMs(f.uploadedAtIso)) || toLabel(f.uploadedAtIso) : '—'}
-                            </div>
-                          ))}
-                          {(r.files || []).length > 2 ? (
-                            <div className="text-xs text-muted-foreground">+{(r.files || []).length - 2} more</div>
-                          ) : null}
-                          {latestRevision?.downloadURL ? (
-                            <div className="pt-1">
-                              <div className="text-xs font-semibold">Latest revision</div>
-                              <a
-                                className="underline text-blue-700 block truncate"
-                                href={latestRevision.downloadURL}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                {latestRevision.fileName || 'Download revision'}
-                              </a>
-                              <div className="text-[11px] text-muted-foreground truncate">
-                                {toLabel(latestRevision.uploadedByName || latestRevision.uploadedByEmail) || '—'}
-                              </div>
-                            </div>
-                          ) : null}
-                          {recentEdits.length > 0 ? (
-                            <div className="pt-1">
-                              <div className="text-xs font-semibold">Edit history</div>
-                              <div className="space-y-1">
-                                {recentEdits.map((h: any, idx: number) => {
-                                  const who = toLabel(h?.editedByName || h?.editedByEmail) || 'User';
-                                  const when = fmtTimeline(toEditHistoryMs(h)) || toLabel(h?.editedAtIso) || '—';
-                                  const fieldList = Array.isArray(h?.changedFields) ? h.changedFields : [];
-                                  const exactCount = Number(h?.changedExactQuestionCount || 0);
-                                  return (
-                                    <div key={`${who}-${when}-${idx}`} className="rounded border bg-muted/20 px-2 py-1 text-[11px]">
-                                      <div className="truncate">
-                                        <span className="font-medium">{who}</span>
-                                        <span className="text-muted-foreground"> • {when}</span>
-                                      </div>
-                                      <div className="text-muted-foreground truncate">
-                                        {fieldList.length > 0 ? fieldList.join(', ') : 'no field changes'}
-                                        {exactCount > 0 ? ` • exact questions: ${exactCount}` : ''}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right whitespace-nowrap">
-                        <div className="flex flex-col gap-2 items-end">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            {/* View button — visible to all parties (admin, Kaiser manager, RN, SW uploader) */}
-                            <Button size="sm" variant="outline" asChild title="View full ALFT form (read-only, printable)">
-                              <Link href={`/admin/alft-view/${encodeURIComponent(r.id)}`} target="_blank">
-                                <ExternalLink className="h-4 w-4 mr-2" />
-                                View ALFT
-                              </Link>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openEdit(r)}
-                              disabled={!canEditAlftRow(r)}
-                              title={!canEditAlftRow(r) ? 'No edit permission for this intake' : 'Edit ALFT form'}
-                            >
-                              Edit ALFT form
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => openAssign(r, 'rn')} disabled={staffLoading}>
-                              <UserCheck className="h-4 w-4 mr-2" />
-                              Assign RN
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => void markRnDownloaded(r)}
-                              disabled={!r.alftRnUid}
-                              title={!r.alftRnUid ? 'Assign RN first' : 'Mark RN downloaded'}
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              RN downloaded
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => openRevision(r)} disabled={!r.alftRnUid}>
-                              <UploadCloud className="h-4 w-4 mr-2" />
-                              RN re-upload
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => markSentForSignature(r)}
-                              disabled={
-                                !canSendToRnAfterPreReview(r) ||
-                                Boolean(sigRequestingId && sigRequestingId === r.id)
-                              }
-                              title={
-                                Boolean((r as any)?.alftSignature?.requestedAt)
-                                  ? 'Signatures already requested'
-                                  : !canRunManagerWorkflow
-                                    ? 'Kaiser manager or admin pre-review is required'
-                                    : 'Kaiser manager pre-review complete: send to Leslie (RN) + SW signatures'
-                              }
-                            >
-                              <Send className="h-4 w-4 mr-2" />
-                              {sigRequestingId === r.id ? 'Requesting…' : 'Manager pre-review → Send to Leslie (RN)'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openRejectToSw(r)}
-                              disabled={rejectingId === r.id || !canKickBackToSw(r)}
-                              title={
-                                !canKickBackToSw(r)
-                                  ? 'Kaiser manager or assigned RN access required'
-                                  : 'Return to social worker for revision and require new SW signature'
-                              }
-                            >
-                              {rejectingId === r.id ? 'Returning…' : 'Return to SW for revision'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => void markManagerFinalReview(r)}
-                              disabled={
-                                managerReviewingId === r.id ||
-                                !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath) ||
-                                !canRunManagerWorkflow ||
-                                String((r as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
-                              }
-                              title={
-                                !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath)
-                                  ? 'Complete signatures first'
-                                  : !canRunManagerWorkflow
-                                    ? 'Kaiser manager or admin access required'
-                                    : String((r as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
-                                      ? 'Final review already completed'
-                                      : 'Complete final Kaiser manager review'
-                              }
-                            >
-                              <CheckCircle2 className="h-4 w-4 mr-2" />
-                              {managerReviewingId === r.id ? 'Reviewing…' : 'Kaiser manager final review'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openSendConfirm(r)}
-                              disabled={
-                                sendingCompletedId === r.id ||
-                                !canRunManagerWorkflow ||
-                                !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath) ||
-                                String((r as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
-                              }
-                              title={
-                                !canRunManagerWorkflow
-                                  ? 'Kaiser manager or admin access required'
-                                  : !Boolean(r?.alftSignature?.packetPdfStoragePath || r?.alftSignature?.signaturePagePdfStoragePath)
-                                  ? 'Complete signatures first'
-                                  : String((r as any)?.alftManagerReview?.status || '').toLowerCase() !== 'approved'
-                                    ? 'Kaiser manager final review is required first'
-                                    : 'Send completed form + attachments via email'
-                              }
-                            >
-                              <Send className="h-4 w-4 mr-2" />
-                              {sendingCompletedId === r.id ? 'Sending…' : 'Preview + email completed PDF'}
-                            </Button>
-                            <Button size="sm" onClick={() => void markCompleted(r)}>
-                              <CheckCircle2 className="h-4 w-4 mr-2" />
-                              Complete
-                            </Button>
-                          </div>
-                          {r?.alftSignature?.requestId ? (
-                            <div className="flex flex-wrap justify-end gap-2">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => void downloadSignaturePdf(String(r.alftSignature?.requestId), 'signature')}
-                                disabled={!r?.alftSignature?.signaturePagePdfStoragePath}
-                              >
-                                <Download className="h-4 w-4 mr-2" />
-                                Signature page
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => void downloadSignaturePdf(String(r.alftSignature?.requestId), 'packet')}
-                                disabled={!r?.alftSignature?.packetPdfStoragePath}
-                              >
-                                <Download className="h-4 w-4 mr-2" />
-                                Full packet
-                              </Button>
-                            </div>
-                          ) : null}
-                          <Button asChild size="sm" variant="secondary">
-                            <Link href={`/admin/standalone-uploads?focus=${encodeURIComponent(r.id)}&filter=alft`}>
-                              Open in intake <ExternalLink className="h-4 w-4 ml-2" />
-                            </Link>
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -2456,92 +2329,7 @@ export default function AdminAlftTrackerPage() {
               <div className="text-xs text-muted-foreground font-mono">{editRow?.medicalRecordNumber || '—'}</div>
             </div>
 
-            <div className="rounded-md border bg-white p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-xs text-zinc-600">
-                  <span>ALFT template preview (same form used through SW/staff workflow).</span>
-                  {editTemplatePdfMode ? <Badge variant="outline">Mode: {editTemplatePdfMode}</Badge> : null}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void generateEditTemplatePreview()}
-                    disabled={editTemplatePdfLoading}
-                  >
-                    {editTemplatePdfLoading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                    Refresh template preview
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!editTemplatePdfUrl}
-                    onClick={() => {
-                      if (editTemplatePdfUrl) window.open(editTemplatePdfUrl, '_blank', 'noopener,noreferrer');
-                    }}
-                  >
-                    Open PDF
-                  </Button>
-                </div>
-              </div>
-              {editTemplatePdfError ? (
-                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {editTemplatePdfError}
-                </div>
-              ) : null}
-              {editTemplatePdfLoading ? (
-                <div className="flex h-[55vh] items-center justify-center text-sm text-zinc-500">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generating template preview...
-                </div>
-              ) : null}
-              {!editTemplatePdfLoading && editTemplatePdfUrl ? (
-                <iframe
-                  src={editTemplatePdfUrl}
-                  title="Edit ALFT template preview"
-                  className="h-[62vh] w-full rounded border"
-                />
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-transition-summary">Transition summary</Label>
-              <textarea
-                id="edit-transition-summary"
-                value={editTransitionSummary}
-                onChange={(e) => setEditTransitionSummary(e.target.value)}
-                className="min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-requested-actions">Requested actions</Label>
-              <textarea
-                id="edit-requested-actions"
-                value={editRequestedActions}
-                onChange={(e) => setEditRequestedActions(e.target.value)}
-                className="min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-barriers">Barriers / risks</Label>
-              <textarea
-                id="edit-barriers"
-                value={editBarriersAndRisks}
-                onChange={(e) => setEditBarriersAndRisks(e.target.value)}
-                className="min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-notes">Additional notes</Label>
-              <textarea
-                id="edit-notes"
-                value={editAdditionalNotes}
-                onChange={(e) => setEditAdditionalNotes(e.target.value)}
-                className="min-h-[70px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-            </div>
-
-            <ExactAlftQuestionnaire
+            <SwStyleAlftEditor
               answers={editExactAnswers}
               onChange={(id, value) =>
                 setEditExactAnswers((prev) => ({
@@ -2549,18 +2337,49 @@ export default function AdminAlftTrackerPage() {
                   [id]: value,
                 }))
               }
+              memberName={editRow?.memberName || ''}
+              memberMrn={editRow?.medicalRecordNumber || ''}
             />
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
+            <div className="mr-auto flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => editRow && markSentForSignature(editRow)}
+                disabled={!canApproveToRnFromEdit || sigRequestingId === String(editRow?.id || '')}
+                title={approveToRnDisabledReason}
+              >
+                {sigRequestingId === String(editRow?.id || '') ? 'Approving…' : 'Approve → Send to Leslie'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => editRow && openRejectToSw(editRow)}
+                disabled={!canRejectToSwFromEdit || rejectingId === String(editRow?.id || '')}
+                title="Reject and return to social worker with required commentary"
+              >
+                Reject → Send back to SW
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => editRow && void markManagerFinalReview(editRow)}
+                disabled={!canRunFinalReviewFromEdit || managerReviewingId === String(editRow?.id || '')}
+                title="Final manager approval after RN updates/signature"
+              >
+                {managerReviewingId === String(editRow?.id || '') ? 'Final approving…' : 'Final manager approval'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => editRow && openSendConfirm(editRow)}
+                disabled={!canSendCompletedFromEdit || sendingCompletedId === String(editRow?.id || '')}
+                title="Send approved packet to Jocelyn"
+              >
+                Send to Jocelyn
+              </Button>
+            </div>
             <Button
               variant="outline"
               onClick={() => {
                 setEditOpen(false);
-                setEditTemplatePdfUrl((prev) => {
-                  if (prev) URL.revokeObjectURL(prev);
-                  return '';
-                });
-                setEditTemplatePdfMode('');
               }}
               disabled={editSaving}
             >
@@ -2712,13 +2531,16 @@ export default function AdminAlftTrackerPage() {
           <DialogHeader>
             <DialogTitle>Return ALFT to SW for revision</DialogTitle>
             <DialogDescription>
-              This sends the ALFT back to the social worker, invalidates the current signature request, and requires a new SW signature.
+              This sends the ALFT back to the social worker, invalidates the current signature request, and requires a new SW signature. The SW is notified to log into the SW portal, update the form, and resubmit for manager review.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="rounded-md border p-3">
               <div className="text-sm font-medium">{rejectRow?.memberName || '—'}</div>
               <div className="text-xs text-muted-foreground font-mono">{rejectRow?.medicalRecordNumber || '—'}</div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                Social worker: {toLabel(rejectRow?.uploaderName) || '—'} {toLabel(rejectRow?.uploaderEmail) ? `(${toLabel(rejectRow?.uploaderEmail)})` : ''}
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="alft-reject-reason">Revision reason</Label>
@@ -2727,7 +2549,7 @@ export default function AdminAlftTrackerPage() {
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
                 className="min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                placeholder="Describe what needs to be corrected before requesting signatures again."
+                placeholder="Required commentary: describe what changes must be made before SW resubmits."
               />
             </div>
           </div>

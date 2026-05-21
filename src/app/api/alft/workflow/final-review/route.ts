@@ -43,10 +43,11 @@ export async function POST(req: NextRequest) {
     const meSnap = await adminDb.collection('users').doc(uid).get().catch(() => null);
     const me = meSnap?.exists ? (meSnap.data() as any) : null;
     const isKaiserAssignmentManager = Boolean(me?.isKaiserAssignmentManager);
-    const canReview = isAdmin || isKaiserAssignmentManager;
+    const isKaiserStaff = Boolean(me?.isKaiserStaff);
+    const canReview = isAdmin || isKaiserAssignmentManager || isKaiserStaff;
     if (!canReview) {
       return NextResponse.json(
-        { success: false, error: 'Kaiser manager (or admin) access is required for final ALFT review.' },
+        { success: false, error: 'Kaiser staff/manager (or admin) access is required for final ALFT review.' },
         { status: 403 }
       );
     }

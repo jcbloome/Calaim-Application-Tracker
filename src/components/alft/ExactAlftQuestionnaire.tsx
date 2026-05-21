@@ -680,7 +680,7 @@ export function ExactAlftQuestionnaire({
                       placeholder={q.placeholder}
                       onChange={(e) => onChange(q.id, e.target.value)}
                       className={`w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${
-                        q.id === 'p13_commentary_section' ? 'min-h-[280px]' : 'min-h-[72px]'
+                        q.id === 'p13_commentary_section' ? 'min-h-[420px]' : 'min-h-[72px]'
                       }`}
                       rows={q.rows ?? 3}
                     />

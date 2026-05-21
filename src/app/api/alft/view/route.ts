@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
       if (!canView) {
         const userData = userDoc?.exists ? (userDoc.data() as any) : null;
-        if (Boolean(userData?.isKaiserAssignmentManager)) canView = true;
+        if (Boolean(userData?.isKaiserAssignmentManager) || Boolean(userData?.isKaiserStaff)) canView = true;
       }
     }
 

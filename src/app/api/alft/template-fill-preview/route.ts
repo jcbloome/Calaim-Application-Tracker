@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PDFCheckBox, PDFDocument, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, rgb } from 'pdf-lib';
 import { promises as fs } from 'fs';
+import path from 'path';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,7 @@ export const dynamic = 'force-dynamic';
 type Body = {
   templateUrl?: string;
   templatePath?: string;
+  preferLocalTemplate?: boolean;
   answers?: Record<string, string | string[]>;
 };
 
@@ -152,30 +154,130 @@ async function resolveTemplateUrlFromRecentAlftSubmissions() {
   return '';
 }
 
+async function resolveTemplatePathFromLocalWorkspace(): Promise<string> {
+  const explicitEnvPath = clean(process.env.ALFT_TEMPLATE_PATH, 2000);
+  if (explicitEnvPath) {
+    try {
+      await fs.access(explicitEnvPath);
+      return explicitEnvPath;
+    } catch {
+      // Continue to discovery fallbacks.
+    }
+  }
+
+  const knownLegacyPath = clean(
+    'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf',
+    2000
+  );
+  if (knownLegacyPath) {
+    try {
+      await fs.access(knownLegacyPath);
+      return knownLegacyPath;
+    } catch {
+      // Continue to discovery fallbacks.
+    }
+  }
+
+  const appData = clean(process.env.APPDATA, 1000);
+  if (!appData) return '';
+  const workspaceStorageRoot = path.join(appData, 'Cursor', 'User', 'workspaceStorage');
+
+  let workspaceDirs: string[] = [];
+  try {
+    const entries = await fs.readdir(workspaceStorageRoot, { withFileTypes: true });
+    workspaceDirs = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch {
+    return '';
+  }
+
+  let newestPath = '';
+  let newestMs = 0;
+
+  for (const wsDir of workspaceDirs) {
+    const pdfsRoot = path.join(workspaceStorageRoot, wsDir, 'pdfs');
+    let pdfBuckets: string[] = [];
+    try {
+      const entries = await fs.readdir(pdfsRoot, { withFileTypes: true });
+      pdfBuckets = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    } catch {
+      continue;
+    }
+
+    for (const bucket of pdfBuckets) {
+      const bucketPath = path.join(pdfsRoot, bucket);
+      let files: string[] = [];
+      try {
+        const entries = await fs.readdir(bucketPath, { withFileTypes: true });
+        files = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+      } catch {
+        continue;
+      }
+
+      for (const fileName of files) {
+        const lower = fileName.toLowerCase();
+        if (!lower.endsWith('.pdf')) continue;
+        if (!lower.includes('alft')) continue;
+        const filePath = path.join(bucketPath, fileName);
+        try {
+          const stat = await fs.stat(filePath);
+          const mtime = Number(stat.mtimeMs || 0);
+          if (mtime > newestMs) {
+            newestMs = mtime;
+            newestPath = filePath;
+          }
+        } catch {
+          // Ignore individual stat failures.
+        }
+      }
+    }
+  }
+
+  return newestPath;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as Body;
     const requestedTemplateUrl = clean(body?.templateUrl, 2000);
     const requestedTemplatePath = clean(body?.templatePath, 2000);
-    const templateUrl = requestedTemplateUrl || (await resolveTemplateUrlFromRecentAlftSubmissions());
+    const preferLocalTemplate = Boolean(body?.preferLocalTemplate);
+    let templateUrl = '';
+    let discoveredTemplatePath = '';
+    if (preferLocalTemplate) {
+      discoveredTemplatePath = requestedTemplatePath || (await resolveTemplatePathFromLocalWorkspace());
+      templateUrl = requestedTemplateUrl || (!discoveredTemplatePath ? await resolveTemplateUrlFromRecentAlftSubmissions() : '');
+    } else {
+      templateUrl = requestedTemplateUrl || (await resolveTemplateUrlFromRecentAlftSubmissions());
+      discoveredTemplatePath = requestedTemplatePath || (!templateUrl ? await resolveTemplatePathFromLocalWorkspace() : '');
+    }
     const answers = (body?.answers && typeof body.answers === 'object' ? body.answers : {}) as Record<string, string | string[]>;
 
-    if (!requestedTemplatePath && !templateUrl) {
+    if (!discoveredTemplatePath && !templateUrl) {
       return NextResponse.json(
         { success: false, error: 'No ALFT template PDF could be resolved from recent ALFT submissions.' },
         { status: 404 }
       );
     }
     let templateBuffer: ArrayBuffer;
-    if (requestedTemplatePath) {
+    if (discoveredTemplatePath) {
       try {
-        const bytes = await fs.readFile(requestedTemplatePath);
+        const bytes = await fs.readFile(discoveredTemplatePath);
         templateBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
       } catch (e: any) {
-        return NextResponse.json(
-          { success: false, error: `Could not read templatePath: ${e?.message || 'read failed'}` },
-          { status: 400 }
-        );
+        if (!templateUrl) {
+          return NextResponse.json(
+            { success: false, error: `Could not read templatePath: ${e?.message || 'read failed'}` },
+            { status: 400 }
+          );
+        }
+        const templateRes = await fetch(templateUrl);
+        if (!templateRes.ok) {
+          return NextResponse.json(
+            { success: false, error: `Could not read templatePath and could not fetch templateUrl (HTTP ${templateRes.status})` },
+            { status: 400 }
+          );
+        }
+        templateBuffer = await templateRes.arrayBuffer();
       }
     } else {
       if (!/^https?:\/\//i.test(templateUrl)) {

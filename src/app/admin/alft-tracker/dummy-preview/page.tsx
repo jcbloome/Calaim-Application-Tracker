@@ -756,7 +756,7 @@ export default function AdminAlftDummyPreviewPage() {
           font-size: 11px;
         }
         .large-commentary-box {
-          min-height: 240px;
+          min-height: 420px;
           border: 1px solid #71717a;
           padding: 6px;
           background: #fafafa;

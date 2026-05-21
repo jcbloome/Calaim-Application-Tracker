@@ -930,8 +930,8 @@ export default function SwKaiserAlftPage() {
                         <textarea
                           value={String(answers[q.id] || '')}
                           onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                          rows={isLargeCommentary(q) ? 12 : Math.min(Math.max(q.rows || 3, 3), 6)}
-                          className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentary(q) ? 'min-h-[220px]' : ''}`}
+                          rows={isLargeCommentary(q) ? 20 : Math.min(Math.max(q.rows || 3, 3), 6)}
+                          className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentary(q) ? 'min-h-[420px]' : ''}`}
                         />
                       ) : null}
                       {mode === 'edit' && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
@@ -1092,7 +1092,7 @@ export default function SwKaiserAlftPage() {
         .question-block { background: #fff; }
         .answer-line { min-height: 0.7rem; }
         .section-notes-answer { min-height: 54px; border: none; font-size: 11px; line-height: 1.35; padding-top: 4px; }
-        .large-commentary-box { min-height: 240px; border: 1px solid #71717a; padding: 6px; background: #fafafa; }
+        .large-commentary-box { min-height: 420px; border: 1px solid #71717a; padding: 6px; background: #fafafa; }
         .signature-block { border: 1px solid #d4d4d8; padding: 8px; background: #fff; }
         .signature-section, .signature-block { break-inside: avoid; page-break-inside: avoid; }
         .signature-title { font-size: 11px; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; }

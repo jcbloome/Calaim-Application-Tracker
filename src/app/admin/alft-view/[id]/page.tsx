@@ -18,8 +18,7 @@ type Question = { id: string; label: string; type: QuestionType; options?: Array
 type SourcePage = { id: string; title: string; questions: Question[] };
 
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
-const ALFT_TEMPLATE_PATH =
-  'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf';
+const DEFAULT_ALFT_MANAGER_EMAIL = 'jason@carehomefinders.com';
 
 const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; title: string }> = [
   { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
@@ -46,7 +45,7 @@ const MOVED_TEXT_FIELDS: Array<{ questionId: string; targetPage: number; afterQu
 ];
 
 const MOVED_TEXT_FIELD_IDS = new Set(MOVED_TEXT_FIELDS.map((m) => m.questionId));
-const HIDE_IDS = new Set(['p14_additional_details', 'p14_print_name', 'p14_date', 'p14_license_number', 'p14_role', 'p14_signature_note']);
+const HIDE_IDS = new Set<string>();
 
 const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
   page.questions.forEach((q) => { acc[q.id] = q; });
@@ -78,6 +77,28 @@ function getRenderedQuestionsForPage(layoutNumber: number, baseQuestions: Questi
 
 const asText = (v: AnswerValue | undefined): string => Array.isArray(v) ? v.join(', ') : String(v ?? '').trim();
 const optionLabel = (q: Question, value: string) => q.options?.find((o) => o.value === value)?.label || value;
+const resolveTemplateUrlFromIntake = (intake: any): string => {
+  const fromOfficial = String(intake?.officialPdfTemplateUrl || '').trim();
+  if (/^https?:\/\//i.test(fromOfficial)) return fromOfficial;
+
+  const files = Array.isArray(intake?.files) ? intake.files : [];
+  for (const f of files) {
+    const url = String(f?.downloadURL || '').trim();
+    const name = String(f?.fileName || '').trim();
+    if (!url) continue;
+    if (/\.pdf(\?|$)/i.test(url) || /\.pdf(\?|$)/i.test(name)) return url;
+  }
+
+  const revisions = Array.isArray(intake?.alftRevisions) ? intake.alftRevisions : [];
+  for (let i = revisions.length - 1; i >= 0; i -= 1) {
+    const url = String(revisions[i]?.downloadURL || '').trim();
+    const name = String(revisions[i]?.fileName || '').trim();
+    if (!url) continue;
+    if (/\.pdf(\?|$)/i.test(url) || /\.pdf(\?|$)/i.test(name)) return url;
+  }
+
+  return '';
+};
 const formatPromptLabel = (label: string) => {
   const m = label.match(/^Q(\d+)\s*:?\s*(.+)$/i);
   if (m) return `${m[1]}. ${m[2]}`;
@@ -170,7 +191,7 @@ function SignatureSummary({ intake }: { intake: any }) {
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 space-y-3 print:break-before-page">
       <h3 className="font-semibold text-zinc-800 text-sm flex items-center gap-1.5">
-        <CheckCircle2 className="h-4 w-4 text-green-600" /> Signature & Review Status
+        <CheckCircle2 className="h-4 w-4 text-green-600" /> Signature & John Approval Status
       </h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         <div className="space-y-1">
@@ -182,7 +203,7 @@ function SignatureSummary({ intake }: { intake: any }) {
           <p className="font-medium">{sig?.rnSignedAt ? fmtTs(sig.rnSignedAt) : <span className="text-zinc-400">Pending</span>}</p>
         </div>
         <div className="space-y-1">
-          <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Kaiser Manager Review</p>
+          <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide">John Manager Review</p>
           <p className="font-medium">
             {mr?.status === 'approved'
               ? <span className="text-green-700">Approved — {fmtTs(mr.reviewedAt)}</span>
@@ -231,6 +252,13 @@ export default function AlftViewPage() {
   const [templatePdfLoading, setTemplatePdfLoading] = useState(false);
   const [templatePdfError, setTemplatePdfError] = useState('');
   const [templatePdfMode, setTemplatePdfMode] = useState('');
+  const managerEmail = useMemo(() => {
+    return (
+      String(intake?.workflowRouting?.finalReviewOwnerEmail || '').trim() ||
+      String(intake?.assignedManager?.email || '').trim() ||
+      DEFAULT_ALFT_MANAGER_EMAIL
+    );
+  }, [intake]);
 
   useEffect(() => {
     if (isUserLoading || !user || !intakeId) return;
@@ -276,7 +304,7 @@ export default function AlftViewPage() {
       const res = await fetch('/api/alft/template-fill-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers }),
+        body: JSON.stringify({ templateUrl: resolveTemplateUrlFromIntake(intake), answers }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({} as any));
@@ -360,9 +388,15 @@ export default function AlftViewPage() {
           <div>
             <p className="font-semibold text-sm">{intake.memberName || 'ALFT Form'}</p>
             <p className="text-xs text-muted-foreground">MRN: {intake.medicalRecordNumber || '—'} · SW: {intake.uploaderName || '—'} · RN: {intake.alftRnName || '—'}</p>
+            <p className="text-xs text-muted-foreground">ALFT manager: {managerEmail}</p>
           </div>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/admin/alft-tracker?focus=${encodeURIComponent(String(intake.id || ''))}`}>
+              <FileText className="h-3.5 w-3.5 mr-1" /> Edit ALFT Form
+            </Link>
+          </Button>
           {(intake.files ?? []).map((f: any, i: number) => (
             <Button key={i} variant="outline" size="sm" asChild>
               <a href={f.downloadURL} target="_blank" rel="noopener noreferrer">
@@ -507,7 +541,7 @@ export default function AlftViewPage() {
         .question-block { background: #fff; }
         .answer-line { min-height: 0.7rem; }
         .large-commentary-box {
-          min-height: 240px;
+          min-height: 420px;
           border: 1px solid #71717a;
           padding: 6px;
           background: #fafafa;

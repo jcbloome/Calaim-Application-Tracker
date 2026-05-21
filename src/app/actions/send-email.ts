@@ -234,6 +234,16 @@ interface AlftManagerWorkflowStagePayload {
     triggeredBy?: string;
 }
 
+interface AlftReturnToSwPayload {
+    to: string;
+    socialWorkerName?: string;
+    memberName: string;
+    mrn?: string;
+    reason: string;
+    actionUrl?: string;
+    returnedBy?: string;
+}
+
 interface RoomBoardTierAgreementInvitePayload {
     to: string;
     recipientName: string;
@@ -890,6 +900,64 @@ export const sendAlftManagerWorkflowStageEmail = async (payload: AlftManagerWork
         template: 'alft_manager_workflow_stage',
         source: 'sendAlftManagerWorkflowStageEmail',
         metadata: { memberName, stageLabel },
+    });
+};
+
+export const sendAlftReturnToSwEmail = async (payload: AlftReturnToSwPayload) => {
+    const resend = getResendClient();
+    if (!resend) throw new Error('Resend API key is not configured.');
+
+    const to = String(payload.to || '').trim();
+    if (!to) throw new Error('Email recipient is required.');
+
+    const baseUrl = resolveAppBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
+    const actionUrlRaw = String(payload.actionUrl || '/sw-portal/alft-upload').trim();
+    const actionUrl = actionUrlRaw.startsWith('http')
+      ? actionUrlRaw
+      : `${baseUrl}${actionUrlRaw.startsWith('/') ? '' : '/'}${actionUrlRaw}`;
+
+    const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
+    const memberName = String(payload.memberName || '').trim() || 'Member';
+    const mrn = String(payload.mrn || '').trim();
+    const reason = String(payload.reason || '').trim() || 'Manager requested revisions before approval.';
+    const returnedBy = String(payload.returnedBy || '').trim() || 'Manager';
+
+    const html = `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
+        <div style="background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%); border: 1px solid #bfdbfe; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
+          <p style="margin: 0; color: #1d4ed8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ALFT Workflow</p>
+          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">ALFT update requested</h2>
+        </div>
+        <div style="border: 1px solid #bfdbfe; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
+          <p style="margin: 0 0 10px;">Hi ${socialWorkerName},</p>
+          <p style="margin: 0 0 14px;">
+            Please make a few updates to the ALFT form for <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''}, then resubmit.
+          </p>
+          <p style="margin: 0 0 14px; color: #334155;">
+            <strong>Requested updates:</strong> ${reason}
+          </p>
+          <p style="margin: 0 0 14px; color: #334155;">
+            Requested by: <strong>${returnedBy}</strong>
+          </p>
+          <p style="margin: 0 0 14px;">
+            <a href="${actionUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
+              Open SW Portal ALFT Form
+            </a>
+          </p>
+          <p style="margin: 0; color: #64748b; font-size: 12px;">${actionUrl}</p>
+        </div>
+      </div>
+    `;
+
+    return await sendViaResendWithLog({
+        resend,
+        from: 'CalAIM Tracker <noreply@carehomefinders.com>',
+        to: [to],
+        subject: `ALFT update requested: ${memberName}`,
+        html,
+        template: 'alft_return_to_sw',
+        source: 'sendAlftReturnToSwEmail',
+        metadata: { memberName, mrn },
     });
 };
 

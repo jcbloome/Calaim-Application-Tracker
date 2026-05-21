@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { sendAlftReturnToSwEmail } from '@/app/actions/send-email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -55,16 +56,17 @@ export async function POST(req: NextRequest) {
 
     const me = meSnap?.exists ? (meSnap.data() as any) : null;
     const isKaiserAssignmentManager = Boolean(me?.isKaiserAssignmentManager);
+    const isKaiserStaff = Boolean(me?.isKaiserStaff);
 
     // The assigned RN (Leslie) may also kick back for revisions.
     const rnUid = clean((intake as any)?.alftRnUid, 128);
     const rnEmail = clean((intake as any)?.alftRnEmail, 220).toLowerCase();
     const isAssignedRn = (uid && uid === rnUid) || (email && email === rnEmail);
 
-    const canReview = isAdmin || isKaiserAssignmentManager || isAssignedRn;
+    const canReview = isAdmin || isKaiserAssignmentManager || isKaiserStaff || isAssignedRn;
     if (!canReview) {
       return NextResponse.json(
-        { success: false, error: 'Kaiser manager, assigned RN, or admin access is required to return an ALFT to the SW.' },
+        { success: false, error: 'Kaiser staff/manager, assigned RN, or admin access is required to return an ALFT to the SW.' },
         { status: 403 }
       );
     }
@@ -135,6 +137,7 @@ export async function POST(req: NextRequest) {
     const memberName = clean((intake as any)?.memberName, 160) || 'Member';
     const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
 
+    const uploaderEmail = clean((intake as any)?.uploaderEmail, 220).toLowerCase();
     if (uploaderUid) {
       await adminDb.collection('staff_notifications').add({
         userId: uploaderUid,
@@ -155,6 +158,24 @@ export async function POST(req: NextRequest) {
         actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
         standaloneUploadId: intakeId,
       });
+    }
+
+    let swEmailSent = false;
+    if (uploaderEmail) {
+      try {
+        await sendAlftReturnToSwEmail({
+          to: uploaderEmail,
+          socialWorkerName: uploaderName,
+          memberName,
+          mrn: mrn || undefined,
+          reason,
+          actionUrl: '/sw-portal/alft-upload',
+          returnedBy: name,
+        });
+        swEmailSent = true;
+      } catch (emailErr: any) {
+        console.warn('[alft/workflow/reject-to-sw] failed to email SW', emailErr?.message || emailErr);
+      }
     }
 
     try {
@@ -185,7 +206,7 @@ export async function POST(req: NextRequest) {
       // best-effort only
     }
 
-    return NextResponse.json({ success: true, intakeId });
+    return NextResponse.json({ success: true, intakeId, swEmailSent });
   } catch (e: any) {
     console.error('[alft/workflow/reject-to-sw] error', e);
     return NextResponse.json({ success: false, error: e?.message || 'Failed to reject ALFT to SW' }, { status: 500 });
