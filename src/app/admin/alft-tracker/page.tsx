@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download, Printer } from 'lucide-react';
+import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import {
@@ -1905,7 +1905,7 @@ export default function AdminAlftTrackerPage() {
       // If sessionStorage fails, proceed without answers key (will fall back to saved intake data).
     }
     const params = new URLSearchParams();
-    params.set('view', 'html-print');
+    params.set('view', 'pdf');
     params.set('embed', '1');
     params.set('intakeId', editRow.id);
     params.set('answersKey', answersKey);
@@ -2528,18 +2528,6 @@ export default function AdminAlftTrackerPage() {
                 <div className="mb-2 flex items-center justify-between">
                   <div className="text-sm font-medium">Printable preview</div>
                   <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const frame = document.getElementById('alft-edit-print-preview-frame') as HTMLIFrameElement | null;
-                        frame?.contentWindow?.focus();
-                        frame?.contentWindow?.print();
-                      }}
-                    >
-                      <Printer className="mr-2 h-3.5 w-3.5" />
-                      Print dialog
-                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"

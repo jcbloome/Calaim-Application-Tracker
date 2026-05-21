@@ -39,19 +39,28 @@ export function SwStyleAlftEditor({
   onChange,
   memberName,
   memberMrn,
+  readOnly = false,
+  sectionClassName = '',
 }: {
   answers: AnswerMap;
   onChange: (id: string, value: AnswerValue) => void;
   memberName?: string;
   memberMrn?: string;
+  readOnly?: boolean;
+  sectionClassName?: string;
 }) {
+  const onSafeChange = (id: string, value: AnswerValue) => {
+    if (readOnly) return;
+    onChange(id, value);
+  };
+
   return (
     <div className="space-y-4">
       {PAGE_LAYOUT.map((layout) => {
         const source = SOURCE.find((p) => p.id === layout.sourceId);
         const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));
         return (
-          <section key={layout.number} className="rounded border border-zinc-300 bg-white p-4">
+          <section key={layout.number} className={`rounded border border-zinc-300 bg-white p-4 ${sectionClassName}`.trim()}>
             <div className="mb-2 border-b border-zinc-300 pb-1.5">
               <div className="flex flex-col items-center gap-1">
                 <img src="/ils-logo.png" alt="Independent Living Systems" className="h-[36px] w-auto object-contain" loading="eager" />
@@ -72,7 +81,9 @@ export function SwStyleAlftEditor({
                   {q.type === 'text' ? (
                     <input
                       value={String(answers[q.id] || '')}
-                      onChange={(e) => onChange(q.id, e.target.value)}
+                      onChange={(e) => onSafeChange(q.id, e.target.value)}
+                      readOnly={readOnly}
+                      disabled={readOnly}
                       className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
                     />
                   ) : null}
@@ -80,7 +91,9 @@ export function SwStyleAlftEditor({
                   {q.type === 'textarea' ? (
                     <textarea
                       value={String(answers[q.id] || '')}
-                      onChange={(e) => onChange(q.id, e.target.value)}
+                      onChange={(e) => onSafeChange(q.id, e.target.value)}
+                      readOnly={readOnly}
+                      disabled={readOnly}
                       rows={q.id === 'p13_commentary_section' ? 20 : Math.min(Math.max(q.rows || 3, 3), 6)}
                       className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${
                         q.id === 'p13_commentary_section' ? 'min-h-[420px]' : ''
@@ -89,37 +102,58 @@ export function SwStyleAlftEditor({
                   ) : null}
 
                   {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
-                    <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
-                      {q.options.map((opt) => (
-                        <label key={`${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
-                          <input
-                            type="radio"
-                            name={`alft-edit-${q.id}`}
-                            checked={String(answers[q.id] || '') === opt.value}
-                            onChange={() => onChange(q.id, opt.value)}
-                          />
-                          <span>{opt.label}</span>
-                        </label>
-                      ))}
+                    <div className="alft-option-group mt-1">
+                      {q.options.map((opt) => {
+                        const checked = String(answers[q.id] || '') === opt.value;
+                        if (readOnly) {
+                          return (
+                            <div key={`${q.id}-${opt.value}`} className="alft-option-row">
+                              <span aria-hidden className={`alft-marker alft-marker--radio ${checked ? 'is-checked' : ''}`} />
+                              <span className="alft-option-label">{opt.label}</span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <label key={`${q.id}-${opt.value}`} className="alft-option-row alft-option-row--interactive">
+                            <input
+                              type="radio"
+                              name={`alft-edit-${q.id}`}
+                              checked={checked}
+                              onChange={() => onSafeChange(q.id, opt.value)}
+                              className="alft-option-input"
+                            />
+                            <span className="alft-option-label">{opt.label}</span>
+                          </label>
+                        );
+                      })}
                     </div>
                   ) : null}
 
                   {q.type === 'checkboxGroup' && q.options?.length ? (
-                    <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="alft-option-group mt-1">
                       {q.options.map((opt) => {
                         const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
+                        if (readOnly) {
+                          return (
+                            <div key={`${q.id}-${opt.value}`} className="alft-option-row">
+                              <span aria-hidden className={`alft-marker alft-marker--checkbox ${selected ? 'is-checked' : ''}`} />
+                              <span className="alft-option-label">{opt.label}</span>
+                            </div>
+                          );
+                        }
                         return (
-                          <label key={`${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                          <label key={`${q.id}-${opt.value}`} className="alft-option-row alft-option-row--interactive">
                             <input
                               type="checkbox"
                               checked={selected}
+                              className="alft-option-input"
                               onChange={() => {
                                 const current = Array.isArray(answers[q.id]) ? (answers[q.id] as string[]) : [];
                                 const next = current.includes(opt.value) ? current.filter((v) => v !== opt.value) : [...current, opt.value];
-                                onChange(q.id, next);
+                                onSafeChange(q.id, next);
                               }}
                             />
-                            <span>{opt.label}</span>
+                            <span className="alft-option-label">{opt.label}</span>
                           </label>
                         );
                       })}
@@ -145,19 +179,17 @@ export function SwStyleAlftEditor({
                       <label className="mt-1 block text-[9px] text-zinc-600">Print Name</label>
                       <input
                         value={String(answers.p14_print_name || '')}
-                        onChange={(e) => onChange('p14_print_name', e.target.value)}
+                        onChange={(e) => onSafeChange('p14_print_name', e.target.value)}
+                        readOnly={readOnly}
+                        disabled={readOnly}
                         className="mt-0.5 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
                       />
                       <label className="mt-1 block text-[9px] text-zinc-600">Date</label>
                       <input
                         value={String(answers.p14_date || '')}
-                        onChange={(e) => onChange('p14_date', e.target.value)}
-                        className="mt-0.5 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
-                      />
-                      <label className="mt-1 block text-[9px] text-zinc-600">Signature Note</label>
-                      <input
-                        value={String(answers.p14_signature_note || '')}
-                        onChange={(e) => onChange('p14_signature_note', e.target.value)}
+                        onChange={(e) => onSafeChange('p14_date', e.target.value)}
+                        readOnly={readOnly}
+                        disabled={readOnly}
                         className="mt-0.5 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
                       />
                     </div>
@@ -167,25 +199,18 @@ export function SwStyleAlftEditor({
                       <label className="mt-1 block text-[9px] text-zinc-600">License Number</label>
                       <input
                         value={String(answers.p14_license_number || '')}
-                        onChange={(e) => onChange('p14_license_number', e.target.value)}
+                        onChange={(e) => onSafeChange('p14_license_number', e.target.value)}
+                        readOnly={readOnly}
+                        disabled={readOnly}
                         className="mt-0.5 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
                       />
-                      <label className="mt-1 block text-[9px] text-zinc-600">Role</label>
-                      <select
-                        value={String(answers.p14_role || '')}
-                        onChange={(e) => onChange('p14_role', e.target.value)}
+                      <label className="mt-1 block text-[9px] text-zinc-600">Print Name</label>
+                      <input
+                        value={String(answers.p14_rn_print_name || '')}
+                        onChange={(e) => onSafeChange('p14_rn_print_name', e.target.value)}
+                        readOnly={readOnly}
+                        disabled={readOnly}
                         className="mt-0.5 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
-                      >
-                        <option value="">Select...</option>
-                        <option value="msw">MSW</option>
-                        <option value="rn">RN</option>
-                      </select>
-                      <label className="mt-1 block text-[9px] text-zinc-600">Additional Details</label>
-                      <textarea
-                        value={String(answers.p14_additional_details || '')}
-                        onChange={(e) => onChange('p14_additional_details', e.target.value)}
-                        rows={3}
-                        className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px]"
                       />
                     </div>
                   </div>
@@ -195,6 +220,82 @@ export function SwStyleAlftEditor({
           </section>
         );
       })}
+
+      <style jsx global>{`
+        .alft-option-group {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          column-gap: 12px;
+          row-gap: 4px;
+          align-items: start;
+        }
+        @media (min-width: 1280px) {
+          .alft-option-group {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+        .alft-option-row {
+          display: grid;
+          grid-template-columns: 14px 1fr;
+          column-gap: 6px;
+          align-items: start;
+          font-size: 9.5px;
+          line-height: 14px;
+          min-height: 14px;
+        }
+        .alft-option-row--interactive {
+          cursor: pointer;
+        }
+        .alft-option-label {
+          display: block;
+          line-height: 14px;
+          color: #18181b;
+          word-break: break-word;
+        }
+        .alft-option-input {
+          width: 12px;
+          height: 12px;
+          margin: 1px 0 0 0;
+          padding: 0;
+          accent-color: #18181b;
+        }
+        .alft-marker {
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          margin-top: 1px;
+          border: 1px solid #3f3f46;
+          background: #ffffff;
+          box-sizing: border-box;
+          position: relative;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        .alft-marker--radio {
+          border-radius: 50%;
+        }
+        .alft-marker--checkbox {
+          border-radius: 2px;
+        }
+        .alft-marker.is-checked::after {
+          content: '';
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: #18181b;
+        }
+        .alft-marker--radio.is-checked::after {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+        }
+        .alft-marker--checkbox.is-checked::after {
+          width: 6px;
+          height: 6px;
+          border-radius: 1px;
+        }
+      `}</style>
     </div>
   );
 }

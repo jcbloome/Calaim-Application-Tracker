@@ -8,6 +8,7 @@ import { collection, doc, getDoc, getDocs, limit, query } from 'firebase/firesto
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
+import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import { PdfPreviewLayout } from '@/components/pdf/PdfPreviewLayout';
 
 type QuestionType = 'text' | 'textarea' | 'radio' | 'select' | 'checkboxGroup';
@@ -267,10 +268,7 @@ function applyMemberPrefill(base: Record<string, AnswerValue>, member: PathwayMe
 export default function AdminAlftDummyPreviewPage() {
   const searchParams = useSearchParams();
   const firestore = useFirestore();
-  const viewParam = String(searchParams.get('view') || '').toLowerCase();
-  const isPdfView = viewParam === 'pdf';
-  const isHtmlPrintView = viewParam === 'html-print';
-  const isEmbedded = String(searchParams.get('embed') || '') === '1';
+  const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
   const intakeId = String(searchParams.get('intakeId') || '').trim();
   const answersKey = String(searchParams.get('answersKey') || '').trim();
   const logoSrc = '/ils-logo.png';
@@ -475,12 +473,11 @@ export default function AdminAlftDummyPreviewPage() {
       const pdfBytes = await generatePdfFromHtmlSections(sections, {
         stampPageNumbers: false, // each page already has its own page-number footer
         options: {
-          scale: 2,
+          scale: 3,
           marginIn: 0.35,
           treatEachSectionAsSinglePage: true,
-          imageFormat: 'jpeg',
-          jpegQuality: 0.95,
-          fitSafetyScale: 0.998,
+          imageFormat: 'png',
+          fitSafetyScale: 0.999,
         },
       });
 
@@ -508,17 +505,6 @@ export default function AdminAlftDummyPreviewPage() {
     void generatePreviewPdf();
   }, [answersReady, generatePreviewPdf, isPdfView]);
 
-  // When opened directly in a new tab for HTML printing, auto-trigger the browser print dialog.
-  useEffect(() => {
-    if (!isHtmlPrintView) return;
-    if (!answersReady) return;
-    if (isEmbedded) return; // embedded iframe — let the parent trigger print manually
-    const t = window.setTimeout(() => {
-      window.print();
-    }, 800);
-    return () => window.clearTimeout(t);
-  }, [isHtmlPrintView, isEmbedded, answersReady]);
-
   useEffect(() => {
     return () => {
       setPdfUrl((prev) => {
@@ -542,19 +528,12 @@ export default function AdminAlftDummyPreviewPage() {
     return query ? `/admin/alft-tracker/dummy-preview?${query}` : '/admin/alft-tracker/dummy-preview';
   }, [intakeId]);
 
-  // Both PDF-blob mode and HTML-print mode render the form in read-only (filled) style.
-  const isReadOnlyView = isPdfView || isHtmlPrintView;
+  const isReadOnlyView = isPdfView;
+  const useEditorPrintableLayout = true;
 
   const packetContent = (
     <div className="alft-dummy-preview mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
-      {isHtmlPrintView ? (
-        <div className="mb-2 flex items-center justify-between gap-2 rounded-md border bg-white p-3 print:hidden">
-          <div className="text-sm text-muted-foreground">Review the form below, then save as PDF.</div>
-          <Button variant="default" onClick={() => window.print()}>
-            Print / Save as PDF
-          </Button>
-        </div>
-      ) : !isPdfView ? (
+      {!isPdfView ? (
         <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
           <Button variant="outline" asChild>
             <Link href={viewerHref}>View PDF layout</Link>
@@ -606,6 +585,18 @@ export default function AdminAlftDummyPreviewPage() {
         </div>
       ) : null}
 
+      {useEditorPrintableLayout ? (
+        <div className="printable-package-section space-y-4 print:space-y-0">
+          <SwStyleAlftEditor
+            answers={answers}
+            onChange={() => {}}
+            memberName={headerMemberName}
+            memberMrn={headerMemberMrn}
+            readOnly
+            sectionClassName="alft-page"
+          />
+        </div>
+      ) : (
       <div className="printable-package-section space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
@@ -790,6 +781,7 @@ export default function AdminAlftDummyPreviewPage() {
           );
         })}
       </div>
+      )}
 
       <style jsx global>{`
         body {
@@ -931,12 +923,6 @@ export default function AdminAlftDummyPreviewPage() {
   );
 
   if (!isPdfView) {
-    return packetContent;
-  }
-
-  // html-print mode: render the read-only form directly (no blob generation).
-  // The browser's native print engine handles PDF output via window.print().
-  if (isHtmlPrintView) {
     return packetContent;
   }
 
