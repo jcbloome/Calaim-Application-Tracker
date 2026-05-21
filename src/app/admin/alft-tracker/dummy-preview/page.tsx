@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useFirestore } from '@/firebase';
-import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EXACT_ALFT_PAGES } from '@/components/alft/ExactAlftQuestionnaire';
@@ -21,8 +21,6 @@ type Question = {
 };
 type SourcePage = { id: string; title: string; questions: Question[] };
 const AGENCY_NAME = 'Connections Care Home Consultants';
-const ALFT_TEMPLATE_PATH =
-  'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf';
 
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
 
@@ -58,12 +56,10 @@ const MOVED_TEXT_FIELDS: Array<{
 
 const MOVED_TEXT_FIELD_IDS = new Set(MOVED_TEXT_FIELDS.map((item) => item.questionId));
 const HIDE_FROM_PDF_QUESTION_IDS = new Set([
-  'p14_additional_details',
   'p14_print_name',
   'p14_date',
   'p14_license_number',
-  'p14_role',
-  'p14_signature_note',
+  'p14_rn_print_name',
 ]);
 
 const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: string }>> = {
@@ -272,6 +268,8 @@ export default function AdminAlftDummyPreviewPage() {
   const searchParams = useSearchParams();
   const firestore = useFirestore();
   const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
+  const intakeId = String(searchParams.get('intakeId') || '').trim();
+  const answersKey = String(searchParams.get('answersKey') || '').trim();
   const logoSrc = '/ils-logo.png';
   const captureRef = useRef<HTMLDivElement>(null);
 
@@ -295,6 +293,7 @@ export default function AdminAlftDummyPreviewPage() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState('');
   const [pdfTemplateMode, setPdfTemplateMode] = useState('');
+  const [answersReady, setAnswersReady] = useState<boolean>(!answersKey);
 
   const setSingleAnswer = (id: string, value: string) => {
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -361,8 +360,76 @@ export default function AdminAlftDummyPreviewPage() {
 
   useEffect(() => {
     if (isPdfView) return;
+    if (intakeId) return;
     void loadApplicationMembers();
-  }, [isPdfView, loadApplicationMembers]);
+  }, [isPdfView, intakeId, loadApplicationMembers]);
+
+  useEffect(() => {
+    if (!answersKey) {
+      setAnswersReady(true);
+      return;
+    }
+    try {
+      const raw = window.sessionStorage.getItem(answersKey);
+      if (!raw) {
+        setAnswersReady(true);
+        return;
+      }
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const merged: Record<string, AnswerValue> = { ...initialAnswers };
+      Object.entries(parsed).forEach(([k, v]) => {
+        if (Array.isArray(v)) merged[k] = v.map((x) => String(x || ''));
+        else merged[k] = String(v ?? '');
+      });
+      merged.p1_agency = String(merged.p1_agency || AGENCY_NAME);
+      setAnswers(merged);
+    } catch {
+      // fallback to saved-intake answers
+    } finally {
+      setAnswersReady(true);
+    }
+  }, [answersKey, initialAnswers]);
+
+  useEffect(() => {
+    if (!firestore || !intakeId) return;
+    if (answersKey) return;
+    let cancelled = false;
+    const loadFromIntake = async () => {
+      try {
+        const snap = await getDoc(doc(firestore, 'standalone_upload_submissions', intakeId));
+        if (!snap.exists() || cancelled) return;
+        const row = snap.data() as any;
+        const merged: Record<string, AnswerValue> = { ...initialAnswers };
+        const raw = row?.alftForm?.exactPacketAnswers;
+        if (raw && typeof raw === 'object') {
+          Object.entries(raw as Record<string, unknown>).forEach(([k, v]) => {
+            if (Array.isArray(v)) merged[k] = v.map((x) => String(x || ''));
+            else merged[k] = String(v ?? '');
+          });
+        }
+        if (!String(merged.p1_member_name || '').trim()) {
+          merged.p1_member_name = String(row?.memberName || '').trim();
+        }
+        if (!String(merged.p1_mrn || '').trim()) {
+          merged.p1_mrn = String(row?.medicalRecordNumber || '').trim();
+        }
+        if (!String(merged.p1_plan_id || '').trim()) {
+          merged.p1_plan_id = String(row?.medicalRecordNumber || '').trim();
+        }
+        if (!String(merged.p1_assessor_name || '').trim()) {
+          merged.p1_assessor_name = String(row?.uploaderName || row?.uploaderEmail || '').trim();
+        }
+        merged.p1_agency = AGENCY_NAME;
+        if (!cancelled) setAnswers(merged);
+      } catch {
+        // best effort prefill only
+      }
+    };
+    void loadFromIntake();
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, intakeId, answersKey, initialAnswers]);
 
   const filteredMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
@@ -388,32 +455,41 @@ export default function AdminAlftDummyPreviewPage() {
   const generatePreviewPdf = useCallback(async () => {
     setPdfLoading(true);
     setPdfError('');
+    setPdfTemplateMode('');
     try {
-      const templateRes = await fetch('/api/alft/template-fill-preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers }),
+      // Allow React to commit the hidden capture div before we read the DOM.
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => setTimeout(resolve, 400));
       });
-      if (templateRes.ok) {
-        setPdfTemplateMode(String(templateRes.headers.get('x-alft-template-fill-mode') || '').trim());
-        const blob = await templateRes.blob();
-        const url = URL.createObjectURL(blob);
-        setPdfUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return url;
-        });
-        return;
-      }
-      const err = await templateRes.json().catch(() => ({} as any));
-      setPdfError(String(err?.error || 'Template-based PDF preview failed.'));
-      setPdfTemplateMode('');
+
+      const container = captureRef.current;
+      if (!container) throw new Error('Capture container not ready — please try again.');
+
+      const sections = Array.from(container.querySelectorAll('.alft-page')) as HTMLElement[];
+      if (!sections.length) throw new Error('No ALFT pages found in capture container.');
+
+      const { generatePdfFromHtmlSections } = await import('@/lib/pdf/generatePdfFromHtmlSections');
+      const pdfBytes = await generatePdfFromHtmlSections(sections, {
+        stampPageNumbers: false, // each page already has its own page-number footer
+        options: {
+          scale: 2,
+          marginIn: 0.35,
+          treatEachSectionAsSinglePage: true,
+          imageFormat: 'jpeg',
+          jpegQuality: 0.95,
+          fitSafetyScale: 0.998,
+        },
+      });
+
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
       setPdfUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
-        return '';
+        return url;
       });
+      setPdfTemplateMode('html-render');
     } catch (e: any) {
       setPdfError(String(e?.message || 'Could not generate PDF preview.'));
-      setPdfTemplateMode('');
       setPdfUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return '';
@@ -421,12 +497,13 @@ export default function AdminAlftDummyPreviewPage() {
     } finally {
       setPdfLoading(false);
     }
-  }, [answers]);
+  }, []);
 
   useEffect(() => {
     if (!isPdfView) return;
+    if (!answersReady) return;
     void generatePreviewPdf();
-  }, [answers, generatePreviewPdf, isPdfView]);
+  }, [answersReady, generatePreviewPdf, isPdfView]);
 
   useEffect(() => {
     return () => {
@@ -437,7 +514,19 @@ export default function AdminAlftDummyPreviewPage() {
     };
   }, []);
 
-  const viewerHref = '/admin/alft-tracker/dummy-preview?view=pdf';
+  const viewerHref = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('view', 'pdf');
+    if (intakeId) params.set('intakeId', intakeId);
+    if (answersKey) params.set('answersKey', answersKey);
+    return `/admin/alft-tracker/dummy-preview?${params.toString()}`;
+  }, [intakeId, answersKey]);
+  const editorHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (intakeId) params.set('intakeId', intakeId);
+    const query = params.toString();
+    return query ? `/admin/alft-tracker/dummy-preview?${query}` : '/admin/alft-tracker/dummy-preview';
+  }, [intakeId]);
 
   const packetContent = (
     <div className="alft-dummy-preview mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
@@ -452,7 +541,7 @@ export default function AdminAlftDummyPreviewPage() {
         </div>
       ) : null}
 
-      {!isPdfView ? (
+      {!isPdfView && !intakeId ? (
         <div className="mb-4 rounded-md border border-zinc-300 bg-white p-3 print:hidden">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-12">
             <Input
@@ -487,6 +576,11 @@ export default function AdminAlftDummyPreviewPage() {
           </div>
         </div>
       ) : null}
+      {!isPdfView && intakeId ? (
+        <div className="mb-4 rounded-md border border-zinc-300 bg-white p-3 text-sm text-zinc-700 print:hidden">
+          Using saved ALFT intake answers for printable preview.
+        </div>
+      ) : null}
 
       <div className="printable-package-section space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {
@@ -495,7 +589,7 @@ export default function AdminAlftDummyPreviewPage() {
           const renderedQuestions = getRenderedQuestionsForPage(layout.number, questions).filter(
             (q) => !HIDE_FROM_PDF_QUESTION_IDS.has(q.id)
           );
-          const rnName = asText(answers.p14_print_name);
+          const rnName = asText(answers.p14_rn_print_name);
           const rnDate = asText(answers.p14_date);
           const rnLicense = asText(answers.p14_license_number);
           const mswName = asText(answers.p1_assessor_name);
@@ -820,7 +914,7 @@ export default function AdminAlftDummyPreviewPage() {
     <PdfPreviewLayout
       isPdfView={isPdfView}
       viewPdfHref={viewerHref}
-      backToEditorHref="/admin/alft-tracker/dummy-preview"
+      backToEditorHref={editorHref}
       backButtonLabel="Back to editor"
       showBackButtonInHtmlView={false}
       printHref={viewerHref}

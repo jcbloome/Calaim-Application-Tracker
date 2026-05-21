@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download } from 'lucide-react';
+import { Loader2, UploadCloud, ExternalLink, RefreshCw, CheckCircle2, Send, Download, Printer } from 'lucide-react';
 import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import {
@@ -116,6 +116,15 @@ type StandaloneUpload = {
     changedExactQuestionIds?: string[];
     changedExactQuestionCount?: number;
     note?: string | null;
+  }>;
+  alftStatusNotes?: Array<{
+    message?: string | null;
+    createdAt?: any;
+    createdAtIso?: string | null;
+    createdByUid?: string | null;
+    createdByName?: string | null;
+    createdByEmail?: string | null;
+    createdByRole?: string | null;
   }>;
   workflowEmailStatus?: {
     managerStep2Recipients?: number;
@@ -838,6 +847,7 @@ export default function AdminAlftTrackerPage() {
   const [editRequestedActions, setEditRequestedActions] = useState('');
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
+  const [editPrintPreviewHref, setEditPrintPreviewHref] = useState('');
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
   const [isKaiserStaff, setIsKaiserStaff] = useState(false);
   const [isRnStaff, setIsRnStaff] = useState(false);
@@ -847,11 +857,20 @@ export default function AdminAlftTrackerPage() {
   const [swEmailPreviewOpen, setSwEmailPreviewOpen] = useState(false);
   const [swEmailPreviewRow, setSwEmailPreviewRow] = useState<AlftAssignmentQueueRow | null>(null);
   const [swEmailById, setSwEmailById] = useState<Record<string, string>>({});
+  const [statusNoteByRowId, setStatusNoteByRowId] = useState<Record<string, string>>({});
+  const [statusNoteSavingId, setStatusNoteSavingId] = useState('');
+  const editRouteId = String(searchParams?.get('edit') || '').trim();
+  const isEditRoute = Boolean(editRouteId);
 
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
     if (focus) setFocusId(focus);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (editOpen) return;
+    setEditPrintPreviewHref('');
+  }, [editOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -951,6 +970,7 @@ export default function AdminAlftTrackerPage() {
 
             alftRevisions: Array.isArray(r.alftRevisions) ? r.alftRevisions : [],
             alftEditHistory: Array.isArray((r as any)?.alftEditHistory) ? (r as any).alftEditHistory : [],
+            alftStatusNotes: Array.isArray((r as any)?.alftStatusNotes) ? (r as any).alftStatusNotes : [],
             workflowEmailStatus: (r as any)?.workflowEmailStatus || null,
             alftCompletionEmail: (r as any)?.alftCompletionEmail || null,
           }))
@@ -1193,6 +1213,10 @@ export default function AdminAlftTrackerPage() {
   const canRunManagerWorkflow = useMemo(
     () => Boolean(isSuperAdmin || isAdmin || isKaiserAssignmentManager || isKaiserStaff),
     [isSuperAdmin, isAdmin, isKaiserAssignmentManager, isKaiserStaff]
+  );
+  const canAddStatusNote = useMemo(
+    () => Boolean(canRunManagerWorkflow || isRnStaff),
+    [canRunManagerWorkflow, isRnStaff]
   );
 
   // Step gate requested by workflow owner:
@@ -1445,6 +1469,14 @@ export default function AdminAlftTrackerPage() {
     setEditRow(row);
     setEditOpen(true);
   }, [findAssignmentForUpload, user]);
+
+  useEffect(() => {
+    if (!editRouteId) return;
+    const target = rows.find((r) => r.id === editRouteId);
+    if (!target) return;
+    if (editRow?.id === target.id && editOpen) return;
+    openEdit(target);
+  }, [editRouteId, rows, editRow?.id, editOpen, openEdit]);
 
   const sendAssignmentNotification = async (targetUid: string, payload: Record<string, any>) => {
     if (!firestore) return;
@@ -1800,6 +1832,87 @@ export default function AdminAlftTrackerPage() {
     }
   };
 
+  const addStatusNote = async (row: StandaloneUpload) => {
+    if (!firestore || !user?.uid || !row?.id) return;
+    const message = String(statusNoteByRowId[row.id] || '').trim();
+    if (!message) {
+      toast({
+        title: 'Note required',
+        description: 'Enter a note before adding to the status log.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (statusNoteSavingId) return;
+    const createdAtIso = new Date().toISOString();
+    const actorEmail = toLabel(user.email).toLowerCase() || null;
+    const actorName = toLabel((user as any)?.displayName) || actorEmail || user.uid;
+    const actorRole = isRnStaff ? 'rn' : canRunManagerWorkflow ? 'manager' : 'staff';
+    setStatusNoteSavingId(row.id);
+    try {
+      await updateDoc(doc(firestore, 'standalone_upload_submissions', row.id), {
+        alftStatusNotes: arrayUnion({
+          message,
+          createdAt: new Date(createdAtIso),
+          createdAtIso,
+          createdByUid: user.uid,
+          createdByName: actorName,
+          createdByEmail: actorEmail,
+          createdByRole: actorRole,
+        } as any),
+        updatedAt: serverTimestamp(),
+      } as any);
+      setStatusNoteByRowId((prev) => ({ ...prev, [row.id]: '' }));
+      toast({ title: 'Status note added', description: 'Current status log updated.' });
+    } catch (e: any) {
+      toast({
+        title: 'Could not add status note',
+        description: e?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setStatusNoteSavingId('');
+    }
+  };
+
+  const resolveTemplateUrlFromUpload = (row: StandaloneUpload | null) => {
+    if (!row) return '';
+    const files = Array.isArray((row as any)?.files) ? (row as any).files : [];
+    for (const file of files) {
+      const url = String((file as any)?.downloadURL || '').trim();
+      const name = String((file as any)?.fileName || '').trim();
+      if (!url) continue;
+      if (/\.pdf(\?|$)/i.test(url) || /\.pdf(\?|$)/i.test(name)) return url;
+    }
+    const revisions = Array.isArray((row as any)?.alftRevisions) ? (row as any).alftRevisions : [];
+    for (let i = revisions.length - 1; i >= 0; i -= 1) {
+      const url = String((revisions[i] as any)?.downloadURL || '').trim();
+      const name = String((revisions[i] as any)?.fileName || '').trim();
+      if (!url) continue;
+      if (/\.pdf(\?|$)/i.test(url) || /\.pdf(\?|$)/i.test(name)) return url;
+    }
+    return '';
+  };
+
+  const printCurrentEditPdf = () => {
+    if (!editRow?.id) return;
+    // Store current answers in sessionStorage so dummy-preview can read them.
+    const answersKey = `alft-print-${editRow.id}-${Date.now()}`;
+    try {
+      const payload = { ...editExactAnswers, p1_agency: AGENCY_NAME };
+      window.sessionStorage.setItem(answersKey, JSON.stringify(payload));
+    } catch {
+      // If sessionStorage fails, proceed without answers key (will fall back to saved intake data).
+    }
+    const params = new URLSearchParams();
+    params.set('view', 'pdf');
+    params.set('embed', '1');
+    params.set('intakeId', editRow.id);
+    params.set('answersKey', answersKey);
+    const href = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
+    setEditPrintPreviewHref(href);
+  };
+
   const downloadSignaturePdf = async (requestId: string, kind: 'signature' | 'packet') => {
     if (!auth?.currentUser) return;
     try {
@@ -1875,6 +1988,7 @@ export default function AdminAlftTrackerPage() {
       Boolean(editRow?.alftSignature?.packetPdfStoragePath || editRow?.alftSignature?.signaturePagePdfStoragePath) &&
       String((editRow as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
   );
+  const editRowLive = editRow?.id ? (rows.find((r) => r.id === editRow.id) || editRow) : editRow;
   const approveToRnDisabledReason = !editRow
     ? 'No ALFT loaded'
     : sigRequestingId === String(editRow?.id || '')
@@ -1924,6 +2038,7 @@ export default function AdminAlftTrackerPage() {
         </div>
       </div>
 
+      {!isEditRoute ? (
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Flow Color Legend</CardTitle>
@@ -1945,7 +2060,9 @@ export default function AdminAlftTrackerPage() {
           </div>
         </CardContent>
       </Card>
+      ) : null}
 
+      {!isEditRoute ? (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">ALFT Tracker</CardTitle>
@@ -2195,6 +2312,16 @@ export default function AdminAlftTrackerPage() {
                 const currentChecklistIdx =
                   explicitCurrentChecklistIdx >= 0 ? explicitCurrentChecklistIdx : checklist.findIndex((step) => !step.done);
                 const statusLabel = trackerCurrentStatusLabel(r, stage);
+                const statusNotes = (Array.isArray(r.alftStatusNotes) ? r.alftStatusNotes : [])
+                  .slice()
+                  .sort((a, b) => {
+                    const aMs = Math.max(toMs((a as any)?.createdAt), toMs((a as any)?.createdAtIso));
+                    const bMs = Math.max(toMs((b as any)?.createdAt), toMs((b as any)?.createdAtIso));
+                    return bMs - aMs;
+                  })
+                  .slice(0, 8);
+                const statusNoteDraft = String(statusNoteByRowId[r.id] || '');
+                const isSavingStatusNote = statusNoteSavingId === r.id;
                 const workflowStatusLower = String((r as any)?.workflowStatus || '').toLowerCase();
                 const managerActionRequired =
                   workflowStatusLower.includes('awaiting_manager_review_pre_rn') ||
@@ -2232,13 +2359,15 @@ export default function AdminAlftTrackerPage() {
                       </div>
                       <div className="inline-flex items-center gap-2">
                         <Button
+                          asChild
                           variant="link"
                           className="text-sm font-medium text-primary hover:underline p-0 h-auto"
-                          onClick={() => openEdit(r)}
                           disabled={!canEditAlftRow(r)}
                           title={!canEditAlftRow(r) ? 'No edit permission for this intake' : 'Edit ALFT form'}
                         >
-                          Edit ALFT Form
+                          <Link href={`/admin/alft-tracker?edit=${encodeURIComponent(String(r.id || ''))}`}>
+                            Edit ALFT Form
+                          </Link>
                         </Button>
                       </div>
                     </div>
@@ -2271,6 +2400,63 @@ export default function AdminAlftTrackerPage() {
                             );
                           })}
                         </div>
+                        <div className="rounded border bg-background p-2 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-[11px] font-medium">Status note log</div>
+                            <div className="text-[10px] text-muted-foreground">{statusNotes.length} recent</div>
+                          </div>
+                          {statusNotes.length === 0 ? (
+                            <div className="text-[11px] text-muted-foreground">
+                              No notes yet. Add updates like rejected reason or RN readability edits.
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {statusNotes.map((note, idx) => {
+                                const noteWhenMs = Math.max(toMs((note as any)?.createdAt), toMs((note as any)?.createdAtIso));
+                                const noteWhen = noteWhenMs ? fmtTimeline(noteWhenMs) : 'Unknown time';
+                                const noteBy =
+                                  toLabel((note as any)?.createdByName) ||
+                                  toLabel((note as any)?.createdByEmail) ||
+                                  'Unknown';
+                                const noteRole = toLabel((note as any)?.createdByRole).toUpperCase();
+                                return (
+                                  <div key={`${r.id}-status-note-${idx}`} className="rounded border bg-muted/20 px-2 py-1.5 text-[11px]">
+                                    <div className="text-foreground">{toLabel((note as any)?.message) || '—'}</div>
+                                    <div className="mt-0.5 text-[10px] text-muted-foreground">
+                                      {noteWhen} • {noteBy}{noteRole ? ` (${noteRole})` : ''}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {canAddStatusNote ? (
+                            <div className="space-y-1.5">
+                              <textarea
+                                value={statusNoteDraft}
+                                onChange={(e) =>
+                                  setStatusNoteByRowId((prev) => ({
+                                    ...prev,
+                                    [r.id]: e.target.value,
+                                  }))
+                                }
+                                className="min-h-[64px] w-full rounded border border-input bg-background px-2 py-1.5 text-[11px]"
+                                placeholder="Add status note for this member (e.g., rejected ALFT: missing medication details)..."
+                              />
+                              <div className="flex justify-end">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => void addStatusNote(r)}
+                                  disabled={!statusNoteDraft.trim() || isSavingStatusNote}
+                                >
+                                  {isSavingStatusNote ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                  Add note
+                                </Button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           SW: {r.uploaderName || r.uploaderEmail || 'Social Worker'} {r.uploaderEmail ? `(${r.uploaderEmail})` : ''} • RN: {r.alftRnName || '—'}
                         </div>
@@ -2284,6 +2470,7 @@ export default function AdminAlftTrackerPage() {
           )}
         </CardContent>
       </Card>
+      ) : null}
 
       <Dialog open={swEmailPreviewOpen} onOpenChange={setSwEmailPreviewOpen}>
         <DialogContent className="max-w-2xl">
@@ -2315,19 +2502,129 @@ export default function AdminAlftTrackerPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit ALFT form</DialogTitle>
-            <DialogDescription>
+      {editOpen ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Edit ALFT form</CardTitle>
+            <CardDescription>
               Collaborative edit mode. This form remains editable by social worker, staff, RN, and admin users.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
             <div className="rounded-md border p-3">
               <div className="text-sm font-medium">{editRow?.memberName || '—'}</div>
               <div className="text-xs text-muted-foreground font-mono">{editRow?.medicalRecordNumber || '—'}</div>
+              {editRow?.id ? (
+                <div className="mt-2">
+                  <Button size="sm" variant="outline" onClick={() => printCurrentEditPdf()}>
+                    <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                    View/Print current ALFT
+                  </Button>
+                </div>
+              ) : null}
             </div>
+            {editPrintPreviewHref ? (
+              <div className="rounded-md border p-2">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-sm font-medium">Printable preview</div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const frame = document.getElementById('alft-edit-print-preview-frame') as HTMLIFrameElement | null;
+                        frame?.contentWindow?.focus();
+                        frame?.contentWindow?.print();
+                      }}
+                    >
+                      <Printer className="mr-2 h-3.5 w-3.5" />
+                      Print dialog
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setEditPrintPreviewHref('')}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </div>
+                <iframe
+                  id="alft-edit-print-preview-frame"
+                  src={editPrintPreviewHref}
+                  title="ALFT printable preview"
+                  className="h-[80vh] w-full rounded border"
+                />
+              </div>
+            ) : null}
+            {editRowLive ? (
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-medium">Status note log</div>
+                  <div className="text-xs text-muted-foreground">
+                    {Array.isArray(editRowLive.alftStatusNotes) ? editRowLive.alftStatusNotes.length : 0} total
+                  </div>
+                </div>
+                {Array.isArray(editRowLive.alftStatusNotes) && editRowLive.alftStatusNotes.length > 0 ? (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {editRowLive.alftStatusNotes
+                      .slice()
+                      .sort((a, b) => {
+                        const aMs = Math.max(toMs((a as any)?.createdAt), toMs((a as any)?.createdAtIso));
+                        const bMs = Math.max(toMs((b as any)?.createdAt), toMs((b as any)?.createdAtIso));
+                        return bMs - aMs;
+                      })
+                      .map((note, idx) => {
+                        const noteWhenMs = Math.max(toMs((note as any)?.createdAt), toMs((note as any)?.createdAtIso));
+                        const noteWhen = noteWhenMs ? fmtTimeline(noteWhenMs) : 'Unknown time';
+                        const noteBy =
+                          toLabel((note as any)?.createdByName) ||
+                          toLabel((note as any)?.createdByEmail) ||
+                          'Unknown';
+                        const noteRole = toLabel((note as any)?.createdByRole).toUpperCase();
+                        return (
+                          <div key={`edit-status-note-${idx}`} className="rounded border bg-muted/20 px-2 py-1.5 text-xs">
+                            <div className="text-foreground">{toLabel((note as any)?.message) || '—'}</div>
+                            <div className="mt-0.5 text-[10px] text-muted-foreground">
+                              {noteWhen} • {noteBy}{noteRole ? ` (${noteRole})` : ''}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">
+                    No notes yet.
+                  </div>
+                )}
+                {canAddStatusNote ? (
+                  <div className="space-y-1.5">
+                    <textarea
+                      value={String(statusNoteByRowId[editRowLive.id] || '')}
+                      onChange={(e) =>
+                        setStatusNoteByRowId((prev) => ({
+                          ...prev,
+                          [editRowLive.id]: e.target.value,
+                        }))
+                      }
+                      className="min-h-[72px] w-full rounded border border-input bg-background px-3 py-2 text-sm"
+                      placeholder="Add status note (e.g., rejected ALFT: missing details)..."
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void addStatusNote(editRowLive)}
+                        disabled={!String(statusNoteByRowId[editRowLive.id] || '').trim() || statusNoteSavingId === editRowLive.id}
+                      >
+                        {statusNoteSavingId === editRowLive.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                        Add note
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <SwStyleAlftEditor
               answers={editExactAnswers}
@@ -2340,9 +2637,7 @@ export default function AdminAlftTrackerPage() {
               memberName={editRow?.memberName || ''}
               memberMrn={editRow?.medicalRecordNumber || ''}
             />
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <div className="mr-auto flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 onClick={() => editRow && markSentForSignature(editRow)}
@@ -2375,23 +2670,27 @@ export default function AdminAlftTrackerPage() {
               >
                 Send to Jocelyn
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (isEditRoute) {
+                    window.location.assign('/admin/alft-tracker');
+                    return;
+                  }
+                  setEditOpen(false);
+                }}
+                disabled={editSaving}
+              >
+                Close editor
+              </Button>
+              <Button onClick={() => void saveEdit()} disabled={editSaving}>
+                {editSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save ALFT form
+              </Button>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setEditOpen(false);
-              }}
-              disabled={editSaving}
-            >
-              Cancel
-            </Button>
-            <Button onClick={() => void saveEdit()} disabled={editSaving}>
-              {editSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Save ALFT form
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
         <DialogContent className="max-w-lg">
