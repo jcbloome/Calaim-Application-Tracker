@@ -133,23 +133,24 @@ export function SwStyleAlftEditor({
                     <div className="alft-option-group mt-1">
                       {q.options.map((opt) => {
                         const checked = String(answers[q.id] || '') === opt.value;
-                        if (readOnly) {
-                          return (
-                            <div key={`${q.id}-${opt.value}`} className="alft-option-row">
-                              <RadioMarker checked={checked} />
-                              <span className="alft-option-label">{opt.label}</span>
-                            </div>
-                          );
-                        }
+                        const onSelect = () => onSafeChange(q.id, opt.value);
                         return (
-                          <label key={`${q.id}-${opt.value}`} className="alft-option-row alft-option-row--interactive">
-                            <input
-                              type="radio"
-                              name={`alft-edit-${q.id}`}
-                              checked={checked}
-                              onChange={() => onSafeChange(q.id, opt.value)}
-                              className="alft-option-input"
-                            />
+                          <label
+                            key={`${q.id}-${opt.value}`}
+                            className={`alft-option-row ${readOnly ? '' : 'alft-option-row--interactive'}`}
+                            onClick={readOnly ? undefined : onSelect}
+                          >
+                            {!readOnly ? (
+                              <input
+                                type="radio"
+                                name={`alft-edit-${q.id}`}
+                                checked={checked}
+                                onChange={onSelect}
+                                className="alft-hidden-input"
+                                aria-label={opt.label}
+                              />
+                            ) : null}
+                            <RadioMarker checked={checked} />
                             <span className="alft-option-label">{opt.label}</span>
                           </label>
                         );
@@ -161,26 +162,27 @@ export function SwStyleAlftEditor({
                     <div className="alft-option-group mt-1">
                       {q.options.map((opt) => {
                         const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
-                        if (readOnly) {
-                          return (
-                            <div key={`${q.id}-${opt.value}`} className="alft-option-row">
-                              <CheckMarker checked={selected} />
-                              <span className="alft-option-label">{opt.label}</span>
-                            </div>
-                          );
-                        }
+                        const onToggle = () => {
+                          const current = Array.isArray(answers[q.id]) ? (answers[q.id] as string[]) : [];
+                          const next = current.includes(opt.value) ? current.filter((v) => v !== opt.value) : [...current, opt.value];
+                          onSafeChange(q.id, next);
+                        };
                         return (
-                          <label key={`${q.id}-${opt.value}`} className="alft-option-row alft-option-row--interactive">
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              className="alft-option-input"
-                              onChange={() => {
-                                const current = Array.isArray(answers[q.id]) ? (answers[q.id] as string[]) : [];
-                                const next = current.includes(opt.value) ? current.filter((v) => v !== opt.value) : [...current, opt.value];
-                                onSafeChange(q.id, next);
-                              }}
-                            />
+                          <label
+                            key={`${q.id}-${opt.value}`}
+                            className={`alft-option-row ${readOnly ? '' : 'alft-option-row--interactive'}`}
+                            onClick={readOnly ? undefined : onToggle}
+                          >
+                            {!readOnly ? (
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={onToggle}
+                                className="alft-hidden-input"
+                                aria-label={opt.label}
+                              />
+                            ) : null}
+                            <CheckMarker checked={selected} />
                             <span className="alft-option-label">{opt.label}</span>
                           </label>
                         );
@@ -277,13 +279,16 @@ export function SwStyleAlftEditor({
           word-break: normal;
           white-space: normal;
         }
-        .alft-option-input {
-          width: 12px;
-          height: 12px;
-          margin: 0;
+        .alft-hidden-input {
+          position: absolute;
+          width: 1px;
+          height: 1px;
           padding: 0;
-          accent-color: #18181b;
-          flex: 0 0 12px;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0 0 0 0);
+          white-space: nowrap;
+          border: 0;
         }
       `}</style>
     </div>
