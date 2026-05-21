@@ -2,7 +2,7 @@
 
 import React, { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/hooks/use-admin';
 import { useSocialWorker } from '@/hooks/use-social-worker';
@@ -2147,7 +2147,6 @@ function AdminHeader() {
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, isAdmin } = useAdmin();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const auth = useAuth();
   const firestore = useFirestore();
@@ -2166,10 +2165,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const isLoginPage = pathname === '/admin/login';
   const isDesktopNotificationWindow = pathname === '/admin/desktop-notification-window';
   const isDesktopChatWindow = pathname === '/admin/desktop-chat-window';
-  const alftPreviewView = String(searchParams?.get('view') || '').trim().toLowerCase();
+  const runtimeSearchParams =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const alftPreviewView = String(runtimeSearchParams.get('view') || '').trim().toLowerCase();
   const isEmbeddedAlftPdfPreview =
     pathname === '/admin/alft-tracker/dummy-preview' &&
-    (String(searchParams?.get('embed') || '').trim() === '1' || alftPreviewView === 'print');
+    (String(runtimeSearchParams.get('embed') || '').trim() === '1' || alftPreviewView === 'print');
 
   // Debug logging for admin layout
   useEffect(() => {
