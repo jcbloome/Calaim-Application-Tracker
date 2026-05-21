@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { sendAlftManagerWorkflowStageEmail } from '@/app/actions/send-email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,7 @@ type Body = {
 };
 
 const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
+const DEFAULT_FINAL_MANAGER_EMAILS = ['jason@carehomefinders.com', 'deydry@carehomefinders.com'];
 
 export async function POST(req: NextRequest) {
   try {
@@ -89,11 +91,25 @@ export async function POST(req: NextRequest) {
         .catch(() => null);
       const memberName = clean((intake as any)?.memberName, 160) || 'Member';
       const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
+      const managerRecipients = [
+        ...(managerUsersSnap?.docs || []).map((d: any) => ({
+          uid: clean(d.id, 128),
+          email: clean((d.data() as any)?.email, 220).toLowerCase(),
+          name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Kaiser Manager',
+        })),
+        ...DEFAULT_FINAL_MANAGER_EMAILS.map((managerEmail) => ({
+          uid: '',
+          email: clean(managerEmail, 220).toLowerCase(),
+          name: managerEmail.includes('jason@') ? 'Jason' : managerEmail.includes('deydry@') ? 'Deydry' : 'Kaiser Manager',
+        })),
+      ].filter((r: any, idx: number, arr: any[]) => arr.findIndex((x: any) => x.email === r.email) === idx);
       await Promise.all(
-        (managerUsersSnap?.docs || []).map((d: any) =>
+        managerRecipients
+          .filter((r: any) => Boolean(r.uid))
+          .map((r: any) =>
           adminDb.collection('staff_notifications').add({
-            userId: clean(d.id, 128),
-            recipientName: clean((d.data() as any)?.displayName, 160) || 'Kaiser Manager',
+            userId: r.uid,
+            recipientName: r.name || 'Kaiser Manager',
             title: 'ALFT ready for final manager review',
             message: `${memberName} • MRN ${mrn || '—'}\nRN marked this ALFT ready for final manager review.`,
             memberName,
@@ -111,6 +127,22 @@ export async function POST(req: NextRequest) {
             standaloneUploadId: intakeId,
           })
         )
+      );
+      await Promise.all(
+        managerRecipients
+          .filter((r: any) => Boolean(r.email))
+          .map((r: any) =>
+            sendAlftManagerWorkflowStageEmail({
+              to: r.email,
+              managerName: r.name,
+              memberName,
+              mrn: mrn || undefined,
+              stageLabel: 'RN review complete — final manager action required',
+              nextAction: 'Open ALFT Tracker, confirm final manager review, and send completed packet to Jocelyn.',
+              actionUrl: `/admin/alft-tracker?managerActions=1&focus=${encodeURIComponent(intakeId)}`,
+              triggeredBy: name,
+            }).catch(() => null)
+          )
       );
     } catch {
       // best-effort only

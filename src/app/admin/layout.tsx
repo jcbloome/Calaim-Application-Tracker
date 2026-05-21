@@ -1452,11 +1452,11 @@ function AdminHeader() {
     if (kaiserManagerDocActionCount > 0) {
       items.push({
         key: 'kaiser-manager-docs',
-        label: `Kaiser Mgr Docs(${kaiserManagerDocActionCount})`,
-        href: '/admin/applications?review=docs&plan=kaiser',
+        label: `Kaiser Mgr Actions(${kaiserManagerDocActionCount})`,
+        href: '/admin/alft-tracker?managerActions=1',
         dot: 'bg-red-600',
         isNew: true,
-        title: 'Document actions pending for Kaiser managers (Jason / Deydry)',
+        title: 'Open ALFT tracker actions for Kaiser managers (Jason / Deydry)',
       });
     }
 

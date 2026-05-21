@@ -866,6 +866,7 @@ export default function AdminAlftTrackerPage() {
   const [statusNoteSavingId, setStatusNoteSavingId] = useState('');
   const editRouteId = String(searchParams?.get('edit') || '').trim();
   const isEditRoute = Boolean(editRouteId);
+  const managerActionsOnly = String(searchParams?.get('managerActions') || '').trim() === '1';
 
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
@@ -1082,8 +1083,17 @@ export default function AdminAlftTrackerPage() {
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
+    const isManagerActionStatus = (row: StandaloneUpload) => {
+      const workflowStatus = String((row as any)?.workflowStatus || '').toLowerCase();
+      return (
+        workflowStatus.includes('awaiting_manager_review_pre_rn') ||
+        workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
+        workflowStatus.includes('manager_review_complete_ready_to_send')
+      );
+    };
     return rows
       .filter((r) => {
+        if (managerActionsOnly && !isManagerActionStatus(r)) return false;
         if (!s) return true;
         return matchesAllTokens(s, [
           r.id,
@@ -1100,7 +1110,7 @@ export default function AdminAlftTrackerPage() {
         const bMs = Math.max(toMs(b.updatedAt), toMs(b.createdAt));
         return bMs - aMs;
       });
-  }, [rows, search]);
+  }, [rows, search, managerActionsOnly]);
 
   const assignmentRowsWithResolvedSwEmail = useMemo(
     () =>
@@ -2122,6 +2132,11 @@ export default function AdminAlftTrackerPage() {
           />
         </div>
       </div>
+      {managerActionsOnly ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Showing only Kaiser Manager Actions. Review highlighted members, complete final manager review, and send completed packet to Jocelyn.
+        </div>
+      ) : null}
 
       {!isEditRoute ? (
       <Card>
