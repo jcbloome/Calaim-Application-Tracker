@@ -99,7 +99,7 @@ export function CursorStyleNotification({
   return (
     <div
       className={cn(
-        "fixed top-4 right-4 z-50 max-w-[calc(100vw-2rem)] transition-all duration-300 ease-out",
+        "fixed top-4 right-4 z-40 max-w-[calc(100vw-2rem)] transition-all duration-300 ease-out print:hidden",
         isCompact ? "w-80" : "w-96",
         isVisible && !isExiting ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"
       )}

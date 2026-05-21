@@ -622,7 +622,7 @@ export default function WindowsNotification({
     return (
       <Card
         className={cn(
-          'fixed bottom-4 right-4 z-50 cursor-pointer shadow-lg border bg-white text-slate-900 border-l-4',
+          'fixed bottom-4 right-4 z-40 cursor-pointer shadow-lg border bg-white text-slate-900 border-l-4 print:hidden',
           borderClass,
           getAnimationClasses()
         )}
@@ -664,7 +664,7 @@ export default function WindowsNotification({
   return (
     <Card 
       className={cn(
-        'fixed bottom-4 right-4 z-50 w-[420px] cursor-pointer shadow-lg border bg-white text-slate-900 border-l-4',
+        'fixed bottom-4 right-4 z-40 w-[420px] cursor-pointer shadow-lg border bg-white text-slate-900 border-l-4 print:hidden',
         borderClass,
         getAnimationClasses()
       )}
@@ -962,7 +962,7 @@ export function WindowsNotificationContainer() {
   const { notifications } = useWindowsNotifications();
 
   return (
-    <div className="fixed top-0 right-0 z-50 pointer-events-none">
+    <div className="fixed top-0 right-0 z-40 pointer-events-none print:hidden">
       <div className="space-y-2 p-4">
         {notifications.map((notification) => (
           <div key={notification.id} className="pointer-events-auto">
