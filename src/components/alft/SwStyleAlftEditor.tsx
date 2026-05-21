@@ -54,6 +54,34 @@ export function SwStyleAlftEditor({
     onChange(id, value);
   };
 
+  const RadioMarker = ({ checked }: { checked: boolean }) => (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      style={{ flex: '0 0 12px', display: 'block' }}
+    >
+      <circle cx="6" cy="6" r="5.5" fill="#ffffff" stroke="#3f3f46" strokeWidth="1" />
+      {checked ? <circle cx="6" cy="6" r="3" fill="#18181b" /> : null}
+    </svg>
+  );
+
+  const CheckMarker = ({ checked }: { checked: boolean }) => (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      style={{ flex: '0 0 12px', display: 'block' }}
+    >
+      <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" fill="#ffffff" stroke="#3f3f46" strokeWidth="1" />
+      {checked ? <rect x="3" y="3" width="6" height="6" rx="1" fill="#18181b" /> : null}
+    </svg>
+  );
+
   return (
     <div className="space-y-4">
       {PAGE_LAYOUT.map((layout) => {
@@ -108,7 +136,7 @@ export function SwStyleAlftEditor({
                         if (readOnly) {
                           return (
                             <div key={`${q.id}-${opt.value}`} className="alft-option-row">
-                              <span aria-hidden className={`alft-marker alft-marker--radio ${checked ? 'is-checked' : ''}`} />
+                              <RadioMarker checked={checked} />
                               <span className="alft-option-label">{opt.label}</span>
                             </div>
                           );
@@ -136,7 +164,7 @@ export function SwStyleAlftEditor({
                         if (readOnly) {
                           return (
                             <div key={`${q.id}-${opt.value}`} className="alft-option-row">
-                              <span aria-hidden className={`alft-marker alft-marker--checkbox ${selected ? 'is-checked' : ''}`} />
+                              <CheckMarker checked={selected} />
                               <span className="alft-option-label">{opt.label}</span>
                             </div>
                           );
@@ -223,77 +251,39 @@ export function SwStyleAlftEditor({
 
       <style jsx global>{`
         .alft-option-group {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          column-gap: 12px;
-          row-gap: 4px;
-          align-items: start;
-        }
-        @media (min-width: 1280px) {
-          .alft-option-group {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
+          display: flex;
+          flex-wrap: wrap;
+          column-gap: 14px;
+          row-gap: 3px;
+          align-items: flex-start;
         }
         .alft-option-row {
-          display: grid;
-          grid-template-columns: 14px 1fr;
-          column-gap: 6px;
-          align-items: start;
+          display: inline-flex;
+          align-items: flex-start;
+          gap: 5px;
           font-size: 9.5px;
-          line-height: 14px;
+          line-height: 12px;
           min-height: 14px;
+          padding-top: 1px;
+          flex: 0 0 auto;
         }
         .alft-option-row--interactive {
           cursor: pointer;
         }
         .alft-option-label {
-          display: block;
-          line-height: 14px;
+          display: inline-block;
+          line-height: 12px;
           color: #18181b;
-          word-break: break-word;
+          word-break: normal;
+          white-space: normal;
         }
         .alft-option-input {
           width: 12px;
           height: 12px;
-          margin: 1px 0 0 0;
+          margin: 0;
           padding: 0;
           accent-color: #18181b;
-        }
-        .alft-marker {
-          display: inline-block;
-          width: 12px;
-          height: 12px;
-          margin-top: 1px;
-          border: 1px solid #3f3f46;
-          background: #ffffff;
-          box-sizing: border-box;
-          position: relative;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        .alft-marker--radio {
-          border-radius: 50%;
-        }
-        .alft-marker--checkbox {
-          border-radius: 2px;
-        }
-        .alft-marker.is-checked::after {
-          content: '';
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          background: #18181b;
-        }
-        .alft-marker--radio.is-checked::after {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-        }
-        .alft-marker--checkbox.is-checked::after {
-          width: 6px;
-          height: 6px;
-          border-radius: 1px;
+          flex: 0 0 12px;
         }
       `}</style>
     </div>
