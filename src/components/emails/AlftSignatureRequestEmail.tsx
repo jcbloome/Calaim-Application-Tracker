@@ -19,6 +19,7 @@ type Props = {
   mrn?: string;
   reviewedDateLabel?: string;
   signUrl: string;
+  logoUrl?: string;
 };
 
 export default function AlftSignatureRequestEmail({
@@ -28,8 +29,18 @@ export default function AlftSignatureRequestEmail({
   mrn,
   reviewedDateLabel,
   signUrl,
+  logoUrl,
 }: Props) {
-  const previewText = `Signature requested (${recipientRoleLabel}): ${memberName}`;
+  const isRn = String(recipientRoleLabel || '').toUpperCase() === 'RN';
+  const previewText = isRn
+    ? `Ready for RN review: ${memberName}`
+    : `Signature requested (${recipientRoleLabel}): ${memberName}`;
+  const headingText = isRn ? 'ALFT ready for RN review' : 'ALFT signature requested';
+  const introText = isRn
+    ? `Hello ${recipientName || 'there'} — the ALFT is ready for your RN review and updates in the CalAIM Tracker.`
+    : `Hello ${recipientName || 'there'} — please sign the ALFT signature page in the CalAIM Tracker.`;
+  const signerLabel = isRn ? 'Reviewer' : 'Signer';
+  const buttonText = isRn ? 'Open ALFT for review' : 'Review & sign';
   return (
     <Html>
       <Head />
@@ -38,19 +49,17 @@ export default function AlftSignatureRequestEmail({
         <Container style={container}>
           <Section style={header}>
             <Img
-              src="https://carehomefinders.com/calaimlogopdf.png"
+              src={logoUrl || 'https://connectcalaim.com/ils-logo.png'}
               width="120"
               height="40"
               alt="CalAIM Logo"
               style={logo}
             />
-            <Heading style={h1}>ALFT signature requested</Heading>
+            <Heading style={h1}>{headingText}</Heading>
           </Section>
 
           <Section style={content}>
-            <Text style={paragraph}>
-              Hello <strong>{recipientName || 'there'}</strong> — please sign the ALFT signature page in the CalAIM Tracker.
-            </Text>
+            <Text style={paragraph}>{introText}</Text>
 
             <Section style={card}>
               <Heading style={h2}>Member</Heading>
@@ -71,14 +80,14 @@ export default function AlftSignatureRequestEmail({
                 </div>
               ) : null}
               <div style={row}>
-                <Text style={label}>Signer</Text>
+                <Text style={label}>{signerLabel}</Text>
                 <Text style={value}>{recipientRoleLabel}</Text>
               </div>
             </Section>
 
             <Section style={buttonContainer}>
               <Button href={signUrl} style={button}>
-                Review & sign
+                {buttonText}
               </Button>
             </Section>
 

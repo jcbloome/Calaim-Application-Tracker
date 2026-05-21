@@ -980,15 +980,17 @@ export const sendAlftSignatureRequestEmail = async (payload: AlftSignatureReques
             mrn: String(payload.mrn || '').trim() || undefined,
             reviewedDateLabel: String(payload.reviewedDateLabel || '').trim() || undefined,
             signUrl,
+            logoUrl: `${baseUrl}/ils-logo.png`,
         })
     );
 
     const memberName = String(payload.memberName || '').trim() || 'Member';
+    const isRn = String(payload.recipientRoleLabel || '').toUpperCase() === 'RN';
     return await sendViaResendWithLog({
         resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
-        subject: `Signature requested (${payload.recipientRoleLabel}) — ${memberName}`,
+        subject: isRn ? `Ready for RN review — ${memberName}` : `Signature requested (${payload.recipientRoleLabel}) — ${memberName}`,
         html: emailHtml,
         template: 'alft_signature_request',
         source: 'sendAlftSignatureRequestEmail',

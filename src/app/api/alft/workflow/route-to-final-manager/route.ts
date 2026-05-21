@@ -1,0 +1,125 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+type Body = {
+  idToken?: string;
+  intakeId?: string;
+};
+
+const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = (await req.json().catch(() => ({}))) as Body;
+    const idToken = clean(body?.idToken, 12000);
+    const intakeId = clean(body?.intakeId, 220);
+    if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
+    if (!intakeId) return NextResponse.json({ success: false, error: 'Missing intakeId' }, { status: 400 });
+
+    const adminModule = await import('@/firebase-admin');
+    const admin = adminModule.default;
+    const adminDb = adminModule.adminDb;
+    const adminAuth = adminModule.adminAuth;
+
+    const decoded = await adminAuth.verifyIdToken(idToken);
+    const uid = clean(decoded?.uid, 128);
+    const email = clean((decoded as any)?.email, 220).toLowerCase();
+    const name = clean((decoded as any)?.name, 160) || email || 'Staff';
+    if (!uid) return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 401 });
+
+    let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
+    if (!isAdmin && isHardcodedAdminEmail(email)) isAdmin = true;
+    if (!isAdmin) {
+      const [adminRole, superAdminRole] = await Promise.all([
+        adminDb.collection('roles_admin').doc(uid).get(),
+        adminDb.collection('roles_super_admin').doc(uid).get(),
+      ]);
+      isAdmin = adminRole.exists || superAdminRole.exists;
+    }
+
+    const meSnap = await adminDb.collection('users').doc(uid).get().catch(() => null);
+    const me = meSnap?.exists ? (meSnap.data() as any) : null;
+    const isKaiserAssignmentManager = Boolean(me?.isKaiserAssignmentManager);
+    const isKaiserStaff = Boolean(me?.isKaiserStaff);
+    const isRnStaff = Boolean(me?.isRnStaff);
+    const canRoute = isAdmin || isKaiserAssignmentManager || isKaiserStaff || isRnStaff;
+    if (!canRoute) {
+      return NextResponse.json(
+        { success: false, error: 'RN/Kaiser staff or admin access is required to route ALFT back to final manager review.' },
+        { status: 403 }
+      );
+    }
+
+    const intakeRef = adminDb.collection('standalone_upload_submissions').doc(intakeId);
+    const intakeSnap = await intakeRef.get();
+    if (!intakeSnap.exists) return NextResponse.json({ success: false, error: 'ALFT intake not found' }, { status: 404 });
+    const intake = intakeSnap.data() || {};
+    const toolCode = clean((intake as any)?.toolCode, 50).toUpperCase();
+    const docType = clean((intake as any)?.documentType, 120).toLowerCase();
+    const isAlft = toolCode === 'ALFT' || docType.includes('alft');
+    if (!isAlft) return NextResponse.json({ success: false, error: 'This intake is not an ALFT upload' }, { status: 400 });
+
+    await intakeRef.set(
+      {
+        alftManagerReview: {
+          status: 'pending',
+          required: true,
+          routedAt: admin.firestore.FieldValue.serverTimestamp(),
+          routedByUid: uid,
+          routedByEmail: email || null,
+          routedByName: name || null,
+        },
+        workflowStatus: 'awaiting_kaiser_manager_final_review',
+        workflowStage: 'awaiting_manager_final_review',
+        workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    try {
+      const managerUsersSnap = await adminDb
+        .collection('users')
+        .where('isKaiserAssignmentManager', '==', true)
+        .limit(50)
+        .get()
+        .catch(() => null);
+      const memberName = clean((intake as any)?.memberName, 160) || 'Member';
+      const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
+      await Promise.all(
+        (managerUsersSnap?.docs || []).map((d: any) =>
+          adminDb.collection('staff_notifications').add({
+            userId: clean(d.id, 128),
+            recipientName: clean((d.data() as any)?.displayName, 160) || 'Kaiser Manager',
+            title: 'ALFT ready for final manager review',
+            message: `${memberName} • MRN ${mrn || '—'}\nRN marked this ALFT ready for final manager review.`,
+            memberName,
+            type: 'alft_ready_for_final_manager_review',
+            priority: 'Priority',
+            status: 'Open',
+            isRead: false,
+            source: 'system',
+            createdBy: uid,
+            createdByName: name,
+            senderName: name,
+            senderId: uid,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+            standaloneUploadId: intakeId,
+          })
+        )
+      );
+    } catch {
+      // best-effort only
+    }
+
+    return NextResponse.json({ success: true, intakeId });
+  } catch (e: any) {
+    console.error('[alft/workflow/route-to-final-manager] error', e);
+    return NextResponse.json({ success: false, error: e?.message || 'Failed to route ALFT to final manager review' }, { status: 500 });
+  }
+}
+

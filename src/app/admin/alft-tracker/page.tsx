@@ -823,6 +823,7 @@ export default function AdminAlftTrackerPage() {
   const [revProgress, setRevProgress] = useState(0);
 
   const [sigRequestingId, setSigRequestingId] = useState('');
+  const [routingToFinalManagerId, setRoutingToFinalManagerId] = useState('');
   const [sendingCompletedId, setSendingCompletedId] = useState('');
   const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
   const [sendConfirmChecked, setSendConfirmChecked] = useState(false);
@@ -1752,6 +1753,36 @@ export default function AdminAlftTrackerPage() {
     }
   };
 
+  const routeToCsManagerFinalReview = async (row: StandaloneUpload) => {
+    if (!auth?.currentUser) return;
+    if (!row?.id || routingToFinalManagerId) return;
+    setRoutingToFinalManagerId(row.id);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch('/api/alft/workflow/route-to-final-manager', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken, intakeId: row.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !data?.success) {
+        throw new Error(String(data?.error || `Route failed (HTTP ${res.status})`));
+      }
+      toast({
+        title: 'Routed to CS manager',
+        description: 'This ALFT is now awaiting CS manager final review.',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Could not route to CS manager',
+        description: e?.message || 'Route failed.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRoutingToFinalManagerId('');
+    }
+  };
+
   const requestSignatures = async (row: StandaloneUpload) => {
     if (!auth?.currentUser) {
       toast({ title: 'Not signed in', description: 'Please sign in again.', variant: 'destructive' });
@@ -2021,6 +2052,12 @@ export default function AdminAlftTrackerPage() {
       canRunManagerWorkflow &&
       Boolean(editRow?.alftSignature?.packetPdfStoragePath || editRow?.alftSignature?.signaturePagePdfStoragePath) &&
       String((editRow as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
+  );
+  const canRouteToCsManagerFromEdit = Boolean(
+    editRow &&
+      (isRnStaff || canRunManagerWorkflow) &&
+      !String((editRow as any)?.workflowStatus || '').toLowerCase().includes('completed_sent_to_jocelyn') &&
+      !String((editRow as any)?.workflowStatus || '').toLowerCase().includes('manager_review_complete_ready_to_send')
   );
   const editRowLive = editRow?.id ? (rows.find((r) => r.id === editRow.id) || editRow) : editRow;
   const editAssignmentRow = editRow ? findAssignmentForUpload(editRow) : null;
@@ -2703,6 +2740,14 @@ export default function AdminAlftTrackerPage() {
                 title={approveToRnDisabledReason}
               >
                 {sigRequestingId === String(editRow?.id || '') ? 'Approving…' : 'Approve → Send to Leslie'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => editRow && void routeToCsManagerFinalReview(editRow)}
+                disabled={!canRouteToCsManagerFromEdit || routingToFinalManagerId === String(editRow?.id || '')}
+                title="After RN review/edits, route back to CS manager for final review"
+              >
+                {routingToFinalManagerId === String(editRow?.id || '') ? 'Routing…' : 'Send to CS Manager for Final Review'}
               </Button>
               <Button
                 variant="outline"
