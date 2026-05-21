@@ -257,7 +257,6 @@ export function SwStyleAlftEditor({
           grid-template-columns: repeat(2, minmax(0, 1fr));
           column-gap: 12px;
           row-gap: 4px;
-          align-items: center;
         }
         @media (min-width: 768px) {
           .alft-option-group {
@@ -265,30 +264,27 @@ export function SwStyleAlftEditor({
           }
         }
         .alft-option-row {
-          display: flex;
-          align-items: center;
-          gap: 6px;
+          display: block;
           font-size: 9.5px;
-          line-height: 13px;
-          min-height: 15px;
+          line-height: 14px;
+          text-indent: -18px;
+          padding-left: 18px;
           min-width: 0;
         }
         .alft-option-row--interactive {
           cursor: pointer;
         }
         .alft-option-label {
-          flex: 1 1 auto;
-          line-height: 13px;
           color: #18181b;
           word-break: normal;
           white-space: normal;
-          min-width: 0;
         }
         .alft-marker-svg {
-          display: block;
-          flex: 0 0 13px;
+          display: inline-block;
           width: 13px;
           height: 13px;
+          vertical-align: -3px;
+          margin-right: 5px;
         }
         .alft-hidden-input {
           position: absolute;
