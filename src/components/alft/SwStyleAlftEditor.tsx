@@ -56,29 +56,29 @@ export function SwStyleAlftEditor({
 
   const RadioMarker = ({ checked }: { checked: boolean }) => (
     <svg
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
+      width="13"
+      height="13"
+      viewBox="0 0 13 13"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
-      style={{ flex: '0 0 12px', display: 'block' }}
+      className="alft-marker-svg"
     >
-      <circle cx="6" cy="6" r="5.5" fill="#ffffff" stroke="#3f3f46" strokeWidth="1" />
-      {checked ? <circle cx="6" cy="6" r="3" fill="#18181b" /> : null}
+      <circle cx="6.5" cy="6.5" r="6" fill="#ffffff" stroke="#3f3f46" strokeWidth="1" />
+      {checked ? <circle cx="6.5" cy="6.5" r="3.25" fill="#18181b" /> : null}
     </svg>
   );
 
   const CheckMarker = ({ checked }: { checked: boolean }) => (
     <svg
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
+      width="13"
+      height="13"
+      viewBox="0 0 13 13"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
-      style={{ flex: '0 0 12px', display: 'block' }}
+      className="alft-marker-svg"
     >
-      <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" fill="#ffffff" stroke="#3f3f46" strokeWidth="1" />
-      {checked ? <rect x="3" y="3" width="6" height="6" rx="1" fill="#18181b" /> : null}
+      <rect x="0.5" y="0.5" width="12" height="12" rx="1.5" fill="#ffffff" stroke="#3f3f46" strokeWidth="1" />
+      {checked ? <rect x="3.25" y="3.25" width="6.5" height="6.5" rx="1" fill="#18181b" /> : null}
     </svg>
   );
 
@@ -253,31 +253,42 @@ export function SwStyleAlftEditor({
 
       <style jsx global>{`
         .alft-option-group {
-          display: flex;
-          flex-wrap: wrap;
-          column-gap: 14px;
-          row-gap: 3px;
-          align-items: flex-start;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          column-gap: 12px;
+          row-gap: 4px;
+          align-items: center;
+        }
+        @media (min-width: 768px) {
+          .alft-option-group {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
         }
         .alft-option-row {
-          display: inline-flex;
-          align-items: flex-start;
-          gap: 5px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
           font-size: 9.5px;
-          line-height: 12px;
-          min-height: 14px;
-          padding-top: 1px;
-          flex: 0 0 auto;
+          line-height: 13px;
+          min-height: 15px;
+          min-width: 0;
         }
         .alft-option-row--interactive {
           cursor: pointer;
         }
         .alft-option-label {
-          display: inline-block;
-          line-height: 12px;
+          flex: 1 1 auto;
+          line-height: 13px;
           color: #18181b;
           word-break: normal;
           white-space: normal;
+          min-width: 0;
+        }
+        .alft-marker-svg {
+          display: block;
+          flex: 0 0 13px;
+          width: 13px;
+          height: 13px;
         }
         .alft-hidden-input {
           position: absolute;
