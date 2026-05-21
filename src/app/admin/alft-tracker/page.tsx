@@ -34,6 +34,10 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 const AGENCY_NAME = 'Connections Care Home Consultants';
 const DEFAULT_PRE_REVIEW_MANAGER_NAME = 'John';
 const DEFAULT_PRE_REVIEW_MANAGER_EMAIL = 'john@carehomefinders.com';
+// Temporary test override requested by team:
+// route "Approve → Send to Leslie" RN email to Jason for workflow testing.
+const TEST_RN_OVERRIDE_EMAIL = 'jason@carehomefinders.com';
+const TEST_RN_OVERRIDE_NAME = 'Jason';
 
 type StandaloneUpload = {
   id: string;
@@ -801,6 +805,7 @@ export default function AdminAlftTrackerPage() {
   const [assignmentRows, setAssignmentRows] = useState<AlftAssignmentQueueRow[]>([]);
   const [search, setSearch] = useState('');
   const [focusId, setFocusId] = useState('');
+  const [expandedMemberId, setExpandedMemberId] = useState('');
 
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);
@@ -863,7 +868,10 @@ export default function AdminAlftTrackerPage() {
 
   useEffect(() => {
     const focus = String(searchParams?.get('focus') || '').trim();
-    if (focus) setFocusId(focus);
+    if (focus) {
+      setFocusId(focus);
+      setExpandedMemberId(focus);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -1261,14 +1269,15 @@ export default function AdminAlftTrackerPage() {
   );
 
   const startWorkflowFromIntake = useCallback(
-    async (row: AlftAssignmentQueueRow) => {
+    async (row: AlftAssignmentQueueRow, opts?: { skipVerificationCheck?: boolean }) => {
       if (!auth?.currentUser) {
         toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
         return;
       }
       const memberId = String(row.memberId || row.id || '').trim();
       if (!memberId) return;
-      if (!Boolean((row.verificationSignoff as any)?.verified)) {
+      const skipVerificationCheck = Boolean(opts?.skipVerificationCheck);
+      if (!skipVerificationCheck && !Boolean((row.verificationSignoff as any)?.verified)) {
         toast({
           title: 'Step 1 required',
           description: 'Open the verification tool and check the verification checkbox before sending SW notice.',
@@ -1760,7 +1769,13 @@ export default function AdminAlftTrackerPage() {
       const res = await fetch('/api/alft/signatures/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, intakeId: row.id, forceDefaultRn: true }),
+        body: JSON.stringify({
+          idToken,
+          intakeId: row.id,
+          forceDefaultRn: true,
+          overrideRnEmail: TEST_RN_OVERRIDE_EMAIL,
+          overrideRnName: TEST_RN_OVERRIDE_NAME,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
       if (!res.ok || !data?.success) {
@@ -1780,13 +1795,34 @@ export default function AdminAlftTrackerPage() {
       setSigDialogOpen(true);
       toast({
         title: 'Signature request sent',
-        description: `Pre-review complete. Next: Leslie updates/signs, then Deydry final review. RN email: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.msw?.emailSent ? 'sent' : 'not sent'}`,
+        description: `Pre-review complete. Next: ${String(data?.rnRecipient?.name || 'RN')} updates/signs, then Deydry final review. RN email to ${String(data?.rnRecipient?.email || TEST_RN_OVERRIDE_EMAIL)}: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.testMode ? 'skipped (test mode)' : data?.msw?.emailSent ? 'sent' : 'not sent'}`,
       });
     } catch (e: any) {
       toast({ title: 'Could not request signatures', description: e?.message || 'Request failed.', variant: 'destructive' });
     } finally {
       setSigRequestingId('');
     }
+  };
+
+  const resendSwNoticeFromEdit = async (row: StandaloneUpload) => {
+    const assignmentRow = findAssignmentForUpload(row);
+    if (!assignmentRow) {
+      toast({
+        title: 'SW assignment not found',
+        description: 'This intake is missing an ALFT assignment row, so SW email cannot be resent from this view.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const proceed = window.confirm('Re-send ALFT workflow email to the assigned social worker now?');
+    if (!proceed) return;
+    await startWorkflowFromIntake(assignmentRow, { skipVerificationCheck: true });
+  };
+
+  const resendLeslieFromEdit = (row: StandaloneUpload) => {
+    const proceed = window.confirm('Re-send the RN/Leslie workflow email now?');
+    if (!proceed) return;
+    void requestSignatures(row);
   };
 
   const openRejectToSw = (row: StandaloneUpload) => {
@@ -1906,8 +1942,9 @@ export default function AdminAlftTrackerPage() {
     params.set('view', 'print');
     params.set('intakeId', editRow.id);
     params.set('answersKey', answersKey);
+    params.set('returnTo', `/admin/alft-tracker?edit=${encodeURIComponent(editRow.id)}`);
     const href = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
-    window.open(href, '_blank', 'noopener,noreferrer');
+    window.location.assign(href);
   };
 
   const downloadSignaturePdf = async (requestId: string, kind: 'signature' | 'packet') => {
@@ -1986,6 +2023,20 @@ export default function AdminAlftTrackerPage() {
       String((editRow as any)?.alftManagerReview?.status || '').toLowerCase() === 'approved'
   );
   const editRowLive = editRow?.id ? (rows.find((r) => r.id === editRow.id) || editRow) : editRow;
+  const editAssignmentRow = editRow ? findAssignmentForUpload(editRow) : null;
+  const editAssignmentMemberKey = String(editAssignmentRow?.memberId || editAssignmentRow?.id || '').trim();
+  const isResendingSwFromEdit = Boolean(editAssignmentMemberKey) && startingWorkflowFor === editAssignmentMemberKey;
+  const editStage = editRowLive ? computeStage(editRowLive) : 'not_started';
+  const editStageLabel = editRowLive ? trackerCurrentStatusLabel(editRowLive, editStage) : 'Not started';
+  const editChecklist = editRowLive ? workflowChecklistFor(editRowLive) : [];
+  const editExplicitCurrentIdx = editChecklist.findIndex((step: any) => Boolean((step as any)?.current));
+  const editCurrentIdx = editExplicitCurrentIdx >= 0 ? editExplicitCurrentIdx : editChecklist.findIndex((step) => !step.done);
+  const editCurrentStepLabel =
+    editChecklist[(editCurrentIdx >= 0 ? editCurrentIdx : Math.max(editChecklist.length - 1, 0))]?.label || 'Awaiting workflow start';
+  const workflowMemberContext = String(editRow?.memberName || searchParams?.get('member') || '').trim();
+  const backToWorkflowHref = workflowMemberContext
+    ? `/admin/alft-assignment?member=${encodeURIComponent(workflowMemberContext)}`
+    : '/admin/alft-assignment';
   const approveToRnDisabledReason = !editRow
     ? 'No ALFT loaded'
     : sigRequestingId === String(editRow?.id || '')
@@ -2009,8 +2060,8 @@ export default function AdminAlftTrackerPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" asChild>
-            <Link href="/admin/standalone-uploads?filter=alft">
-              Back to ALFT Queue
+            <Link href={backToWorkflowHref}>
+              Back to ALFT Workflow
             </Link>
           </Button>
           <Badge variant={filtered.length > 0 ? 'secondary' : 'outline'}>{filtered.length} pending</Badge>
@@ -2326,6 +2377,10 @@ export default function AdminAlftTrackerPage() {
                 const managerActionLabel = workflowStatusLower.includes('awaiting_kaiser_manager_final_review')
                   ? 'Action required: Kaiser manager final approval'
                   : 'Action required: Kaiser manager review';
+                const currentStepLabel =
+                  checklist[(currentChecklistIdx >= 0 ? currentChecklistIdx : Math.max(checklist.length - 1, 0))]?.label ||
+                  'Awaiting workflow start';
+                const isExpanded = expandedMemberId === r.id;
                 return (
                   <div
                     key={r.id}
@@ -2353,8 +2408,18 @@ export default function AdminAlftTrackerPage() {
                             </Badge>
                           ) : null}
                         </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Current step: <span className="font-medium text-foreground">{currentStepLabel}</span>
+                        </div>
                       </div>
                       <div className="inline-flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setExpandedMemberId((prev) => (prev === r.id ? '' : r.id))}
+                        >
+                          {isExpanded ? 'Hide details' : 'Open details'}
+                        </Button>
                         <Button
                           asChild
                           variant="link"
@@ -2369,6 +2434,7 @@ export default function AdminAlftTrackerPage() {
                       </div>
                     </div>
 
+                    {isExpanded ? (
                     <div className="grid grid-cols-1 gap-3">
                       <div className="space-y-2">
                         <div className="text-xs font-medium">Current status</div>
@@ -2460,6 +2526,7 @@ export default function AdminAlftTrackerPage() {
                       </div>
 
                     </div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -2511,11 +2578,39 @@ export default function AdminAlftTrackerPage() {
             <div className="rounded-md border p-3">
               <div className="text-sm font-medium">{editRow?.memberName || '—'}</div>
               <div className="text-xs text-muted-foreground font-mono">{editRow?.medicalRecordNumber || '—'}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className={stageBlockClass(editStage)}>
+                  {editStageLabel}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  Current step: <span className="font-medium text-foreground">{editCurrentStepLabel}</span>
+                </span>
+              </div>
               {editRow?.id ? (
-                <div className="mt-2">
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                   <Button size="sm" variant="outline" onClick={() => printCurrentEditPdf()}>
                     <ExternalLink className="mr-2 h-3.5 w-3.5" />
                     View/Print current ALFT
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => editRow && void resendSwNoticeFromEdit(editRow)}
+                    disabled={!editRow || isResendingSwFromEdit}
+                    title="Resend workflow email to social worker"
+                  >
+                    {isResendingSwFromEdit ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                    Resend to Social Worker
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => editRow && resendLeslieFromEdit(editRow)}
+                    disabled={!editRow || sigRequestingId === String(editRow?.id || '')}
+                    title="Resend workflow/signature email to Leslie (or test RN override)"
+                  >
+                    {sigRequestingId === String(editRow?.id || '') ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                    Resend to Leslie
                   </Button>
                 </div>
               ) : null}

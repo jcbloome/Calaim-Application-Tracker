@@ -10,6 +10,8 @@ type Body = {
   idToken?: string;
   intakeId?: string;
   forceDefaultRn?: boolean;
+  overrideRnEmail?: string;
+  overrideRnName?: string;
 };
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
@@ -38,6 +40,9 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as Body;
     const forceDefaultRn = Boolean(body?.forceDefaultRn);
+    const overrideRnEmail = clean(body?.overrideRnEmail, 200).toLowerCase();
+    const overrideRnName = clean(body?.overrideRnName, 160);
+    const isRnOverrideTestMode = Boolean(overrideRnEmail);
     const idToken = clean(body?.idToken, 8000);
     const intakeId = clean(body?.intakeId, 200);
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
@@ -91,7 +96,14 @@ export async function POST(req: NextRequest) {
       'returned_to_sw_for_revision',
       'manager_review_pre_rn_complete_ready_for_rn',
     ];
-    const canAdvanceToRn = allowedPreReviewStatuses.some((x) => workflowStatus.includes(x));
+    const hasAlftFormContent =
+      Boolean((intake as any)?.alftForm?.transitionSummary) ||
+      Boolean((intake as any)?.alftForm?.requestedActions) ||
+      (typeof (intake as any)?.alftForm?.exactPacketAnswers === 'object' &&
+        Object.keys(((intake as any)?.alftForm?.exactPacketAnswers || {}) as Record<string, unknown>).length > 0);
+    // Keep API gate aligned with tracker UI gate so users do not see false rejections
+    // after the form has already been started/edited in manager workflow.
+    const canAdvanceToRn = allowedPreReviewStatuses.some((x) => workflowStatus.includes(x)) || hasAlftFormContent;
     if (!canAdvanceToRn) {
       return NextResponse.json(
         {
@@ -111,6 +123,11 @@ export async function POST(req: NextRequest) {
       ? DEFAULT_RN_EMAIL
       : clean((intake as any)?.alftRnEmail, 200).toLowerCase();
     let rnName = forceDefaultRn ? DEFAULT_RN_NAME : clean((intake as any)?.alftRnName, 160);
+    if (overrideRnEmail) {
+      rnEmail = overrideRnEmail;
+      rnName = overrideRnName || rnName || DEFAULT_RN_NAME;
+      rnUid = '';
+    }
     if (!forceDefaultRn && (!rnUid || !rnEmail)) {
       try {
         const rnStaffSnap = await adminDb
@@ -292,7 +309,9 @@ export async function POST(req: NextRequest) {
       // best-effort only
     }
 
-    const adminSignUrl = `/admin/alft-sign/${encodeURIComponent(rnToken)}`;
+    const adminSignUrl = isRnOverrideTestMode
+      ? `/admin/alft-tracker?edit=${encodeURIComponent(intakeId)}`
+      : `/admin/alft-sign/${encodeURIComponent(rnToken)}`;
     const swSignUrl = `/sw-portal/alft-sign/${encodeURIComponent(mswToken)}`;
 
     // Notify RN now; signing order is enforced on the signature page (MSW first, RN final).
@@ -334,21 +353,28 @@ export async function POST(req: NextRequest) {
       signUrl: adminSignUrl,
     }).catch(() => null);
 
-    const mswEmailResult = await sendAlftSignatureRequestEmail({
-      to: mswEmail,
-      recipientName: mswName,
-      recipientRoleLabel: 'MSW',
-      memberName,
-      mrn: mrn || undefined,
-      reviewedDateLabel: reviewedDateLabel || undefined,
-      signUrl: swSignUrl,
-    }).catch(() => null);
+    const mswEmailResult = isRnOverrideTestMode
+      ? null
+      : await sendAlftSignatureRequestEmail({
+          to: mswEmail,
+          recipientName: mswName,
+          recipientRoleLabel: 'MSW',
+          memberName,
+          mrn: mrn || undefined,
+          reviewedDateLabel: reviewedDateLabel || undefined,
+          signUrl: swSignUrl,
+        }).catch(() => null);
 
     return NextResponse.json({
       success: true,
       requestId,
       rn: { emailSent: Boolean(rnEmailResult), signUrl: adminSignUrl },
       msw: { emailSent: Boolean(mswEmailResult), signUrl: swSignUrl },
+      rnRecipient: {
+        email: rnEmail,
+        name: rnName,
+      },
+      testMode: isRnOverrideTestMode,
     });
   } catch (e: any) {
     console.error('[alft/signatures/request] error', e);

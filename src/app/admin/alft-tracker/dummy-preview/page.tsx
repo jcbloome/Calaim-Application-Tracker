@@ -273,8 +273,14 @@ export default function AdminAlftDummyPreviewPage() {
   const isPrintView = viewParam === 'print';
   const intakeId = String(searchParams.get('intakeId') || '').trim();
   const answersKey = String(searchParams.get('answersKey') || '').trim();
+  const returnToParam = String(searchParams.get('returnTo') || '').trim();
+  const returnToHref = returnToParam.startsWith('/admin/') ? returnToParam : '/admin/alft-tracker';
   const logoSrc = '/ils-logo.png';
   const captureRef = useRef<HTMLDivElement>(null);
+  const handleReturnToEdit = useCallback(() => {
+    // Print view now opens in the same tab as editor.
+    window.location.assign(returnToHref);
+  }, [returnToHref]);
 
   const initialAnswers = useMemo<Record<string, AnswerValue>>(() => {
     const next: Record<string, AnswerValue> = {};
@@ -549,9 +555,14 @@ export default function AdminAlftDummyPreviewPage() {
               Use your browser&apos;s print dialog to save as PDF or send to a printer.
             </div>
           </div>
-          <Button onClick={() => window.print()} size="lg">
-            Print / Save as PDF
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleReturnToEdit}>
+              Back to Edit ALFT
+            </Button>
+            <Button onClick={() => window.print()} size="lg">
+              Print / Save as PDF
+            </Button>
+          </div>
         </div>
       ) : !isPdfView ? (
         <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">

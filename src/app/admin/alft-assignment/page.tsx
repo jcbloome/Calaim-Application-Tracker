@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/hooks/use-admin';
 import { useAuth, useFirestore } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -160,6 +160,7 @@ export default function AdminAlftAssignmentPage() {
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(false);
@@ -171,6 +172,11 @@ export default function AdminAlftAssignmentPage() {
   const [resetting, setResetting] = useState<string | null>(null);
   const [prefillSourceMode, setPrefillSourceMode] = useState<'cs_summary_app' | 'caspio_selected_fields'>('caspio_selected_fields');
   const [swDirectoryById, setSwDirectoryById] = useState<Record<string, { name: string; email: string }>>({});
+
+  useEffect(() => {
+    const memberQuery = String(searchParams?.get('member') || '').trim();
+    if (memberQuery) setSearch(memberQuery);
+  }, [searchParams]);
 
   // ── Load Kaiser members (RN Visit Needed) ─────────────────────────────────────
 
