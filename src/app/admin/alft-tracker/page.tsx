@@ -1893,9 +1893,14 @@ export default function AdminAlftTrackerPage() {
     const answersKey = `alft-print-${editRow.id}-${Date.now()}`;
     try {
       const payload = { ...editExactAnswers, p1_agency: AGENCY_NAME };
-      window.sessionStorage.setItem(answersKey, JSON.stringify(payload));
+      const serialized = JSON.stringify(payload);
+      // New tab printable view cannot read sessionStorage from this tab,
+      // so we store in localStorage for cross-tab handoff.
+      window.localStorage.setItem(answersKey, serialized);
+      // Keep sessionStorage too for backward compatibility with same-tab flows.
+      window.sessionStorage.setItem(answersKey, serialized);
     } catch {
-      // If sessionStorage fails, dummy-preview falls back to saved intake data.
+      // If browser storage fails, dummy-preview falls back to saved intake data.
     }
     const params = new URLSearchParams();
     params.set('view', 'print');

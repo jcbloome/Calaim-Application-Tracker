@@ -373,7 +373,9 @@ export default function AdminAlftDummyPreviewPage() {
       return;
     }
     try {
-      const raw = window.sessionStorage.getItem(answersKey);
+      // For new-tab print flow, read from localStorage first (cross-tab),
+      // then fall back to sessionStorage for same-tab preview flows.
+      const raw = window.localStorage.getItem(answersKey) || window.sessionStorage.getItem(answersKey);
       if (!raw) {
         setAnswersReady(true);
         return;
@@ -386,6 +388,9 @@ export default function AdminAlftDummyPreviewPage() {
       });
       merged.p1_agency = String(merged.p1_agency || AGENCY_NAME);
       setAnswers(merged);
+      // One-time transfer; avoid stale storage buildup.
+      window.localStorage.removeItem(answersKey);
+      window.sessionStorage.removeItem(answersKey);
     } catch {
       // fallback to saved-intake answers
     } finally {
@@ -395,7 +400,7 @@ export default function AdminAlftDummyPreviewPage() {
 
   useEffect(() => {
     if (!firestore || !intakeId) return;
-    if (answersKey) return;
+    if (answersKey && !answersReady) return;
     let cancelled = false;
     const loadFromIntake = async () => {
       try {
@@ -432,7 +437,7 @@ export default function AdminAlftDummyPreviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [firestore, intakeId, answersKey, initialAnswers]);
+  }, [firestore, intakeId, answersKey, answersReady, initialAnswers]);
 
   const filteredMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
@@ -531,7 +536,8 @@ export default function AdminAlftDummyPreviewPage() {
   }, [intakeId]);
 
   const isReadOnlyView = isPdfView || isPrintView;
-  const useEditorPrintableLayout = true;
+  // Keep print view on the original ALFT printable renderer (two-column PDF-style layout).
+  const useEditorPrintableLayout = !isPrintView;
 
   const packetContent = (
     <div className="alft-dummy-preview mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
@@ -888,7 +894,7 @@ export default function AdminAlftDummyPreviewPage() {
         @media print {
           @page {
             size: letter;
-            margin: 0.5in;
+            margin: 0.25in;
           }
           body * {
             visibility: hidden !important;
@@ -916,10 +922,28 @@ export default function AdminAlftDummyPreviewPage() {
           .alft-page {
             min-height: auto !important;
             box-shadow: none !important;
-            padding: 0.25in 0.2in 0.15in !important;
+            padding: 0.12in 0.12in 0.08in !important;
             border-color: #a1a1aa !important;
-            page-break-after: always;
-            break-after: page;
+            overflow: visible !important;
+            page-break-before: always;
+            break-before: page;
+            page-break-inside: avoid;
+            break-inside: avoid-page;
+          }
+          .question-block {
+            padding-top: 2px !important;
+            padding-bottom: 2px !important;
+          }
+          .alft-question-grid {
+            row-gap: 2px !important;
+            column-gap: 3px !important;
+          }
+          .answer-line {
+            min-height: 0.6rem !important;
+          }
+          .alft-page:first-child {
+            page-break-before: auto;
+            break-before: auto;
           }
           .alft-page:last-child {
             page-break-after: auto;
