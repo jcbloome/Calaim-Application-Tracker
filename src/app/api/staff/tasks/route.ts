@@ -1069,6 +1069,9 @@ export async function GET(request: NextRequest) {
               const isRnStage =
                 workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
                 workflowStatus.includes('awaiting_rn_final_signature');
+              const isFinalManagerStage =
+                workflowStatus.includes('awaiting_kaiser_manager_final_review') ||
+                workflowStatus.includes('manager_review_complete_ready_to_send');
               const rnUid = String(data?.alftRnUid || '').trim();
               const rnEmail = String(data?.alftRnEmail || '').trim().toLowerCase();
               const isAssignedRn = (rnUid && rnUid === userId) || (rnEmail && staffEmail && rnEmail === staffEmail);
@@ -1086,18 +1089,25 @@ export async function GET(request: NextRequest) {
               const pathway = String(data.pathway || '').trim() || '—';
               const dueDate = formatIso(data.createdAt || data.updatedAt || new Date());
               const alftRnTask = Boolean(alft && isRnStage && reviewPrefs.allowAlftRnReviewer);
+              const alftManagerDocsTask = Boolean(alft && isFinalManagerStage && reviewPrefs.allowAlft);
               reviewTasks.push({
-                id: `${alftRnTask ? 'review-alft-rn' : alft ? 'review-alft' : 'review-standalone'}-${docSnap.id}`,
-                title: alftRnTask ? 'ALFT RN Review/Signature' : alft ? 'ALFT Upload Intake' : 'Standalone Upload Intake',
+                id: `${alftRnTask ? 'review-alft-rn' : alftManagerDocsTask ? 'review-alft-manager-docs' : alft ? 'review-alft' : 'review-standalone'}-${docSnap.id}`,
+                title: alftRnTask
+                  ? 'ALFT RN Review/Signature'
+                  : alftManagerDocsTask
+                    ? 'ALFT Kaiser Manager Documents'
+                    : alft
+                      ? 'ALFT Upload Intake'
+                      : 'Standalone Upload Intake',
                 description:
-                  `${docType}\n` +
+                  `${alftManagerDocsTask ? 'Final manager review documents are ready.' : docType}\n` +
                   `MRN: ${memberMrn} • DOB: ${memberDob} • County: ${memberCounty}\n` +
                   `MCP: ${mcpName} • Pathway: ${pathway}`,
                 memberName,
                 memberClientId: String(data.medicalRecordNumber || data.kaiserMrn || data.mediCalNumber || '').trim(),
                 healthPlan: String(data.healthPlan || '').trim(),
                 taskType: 'review',
-                reviewKind: alftRnTask ? 'alft_rn' : alft ? 'alft' : 'standalone',
+                reviewKind: alftRnTask ? 'alft_rn' : alftManagerDocsTask ? 'alft_manager_documents' : alft ? 'alft' : 'standalone',
                 priority: 'High',
                 status: 'pending',
                 dueDate,

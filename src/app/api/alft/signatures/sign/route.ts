@@ -17,6 +17,7 @@ type Body = {
 
 const clean = (v: unknown, max = 8000) => String(v ?? '').trim().slice(0, max);
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
+const DEFAULT_FINAL_MANAGER_EMAILS = ['jason@carehomefinders.com', 'deydry@carehomefinders.com'];
 
 const parsePngDataUrl = (dataUrl: string): Buffer | null => {
   const raw = String(dataUrl || '').trim();
@@ -487,6 +488,10 @@ export async function POST(req: NextRequest) {
               email: clean((d.data() as any)?.email, 220).toLowerCase(),
               name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Super Admin',
             }))),
+            ...DEFAULT_FINAL_MANAGER_EMAILS.map((managerEmail) => ({
+              email: clean(managerEmail, 220).toLowerCase(),
+              name: managerEmail.includes('jason@') ? 'Jason' : managerEmail.includes('deydry@') ? 'Deydry' : 'Kaiser Manager',
+            })),
           ]
             .filter((m: any) => Boolean(m.email))
             .filter((m: any, idx: number, arr: any[]) => arr.findIndex((x: any) => x.email === m.email) === idx);
