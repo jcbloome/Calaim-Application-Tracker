@@ -267,7 +267,10 @@ function applyMemberPrefill(base: Record<string, AnswerValue>, member: PathwayMe
 export default function AdminAlftDummyPreviewPage() {
   const searchParams = useSearchParams();
   const firestore = useFirestore();
-  const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
+  const viewParam = String(searchParams.get('view') || '').toLowerCase();
+  const isPdfView = viewParam === 'pdf';
+  const isHtmlPrintView = viewParam === 'html-print';
+  const isEmbedded = String(searchParams.get('embed') || '') === '1';
   const intakeId = String(searchParams.get('intakeId') || '').trim();
   const answersKey = String(searchParams.get('answersKey') || '').trim();
   const logoSrc = '/ils-logo.png';
@@ -505,6 +508,17 @@ export default function AdminAlftDummyPreviewPage() {
     void generatePreviewPdf();
   }, [answersReady, generatePreviewPdf, isPdfView]);
 
+  // When opened directly in a new tab for HTML printing, auto-trigger the browser print dialog.
+  useEffect(() => {
+    if (!isHtmlPrintView) return;
+    if (!answersReady) return;
+    if (isEmbedded) return; // embedded iframe — let the parent trigger print manually
+    const t = window.setTimeout(() => {
+      window.print();
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [isHtmlPrintView, isEmbedded, answersReady]);
+
   useEffect(() => {
     return () => {
       setPdfUrl((prev) => {
@@ -528,9 +542,19 @@ export default function AdminAlftDummyPreviewPage() {
     return query ? `/admin/alft-tracker/dummy-preview?${query}` : '/admin/alft-tracker/dummy-preview';
   }, [intakeId]);
 
+  // Both PDF-blob mode and HTML-print mode render the form in read-only (filled) style.
+  const isReadOnlyView = isPdfView || isHtmlPrintView;
+
   const packetContent = (
     <div className="alft-dummy-preview mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
-      {!isPdfView ? (
+      {isHtmlPrintView ? (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-md border bg-white p-3 print:hidden">
+          <div className="text-sm text-muted-foreground">Review the form below, then save as PDF.</div>
+          <Button variant="default" onClick={() => window.print()}>
+            Print / Save as PDF
+          </Button>
+        </div>
+      ) : !isPdfView ? (
         <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
           <Button variant="outline" asChild>
             <Link href={viewerHref}>View PDF layout</Link>
@@ -638,14 +662,14 @@ export default function AdminAlftDummyPreviewPage() {
                     <div className="font-semibold leading-tight">
                       {formatPromptLabel(q.label)}
                     </div>
-                    {!isPdfView && q.type === 'text' ? (
+                    {!isReadOnlyView && q.type === 'text' ? (
                       <input
                         value={String(answers[q.id] || '')}
                         onChange={(e) => setSingleAnswer(q.id, e.target.value)}
                         className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
                       />
                     ) : null}
-                    {!isPdfView && q.type === 'textarea' ? (
+                    {!isReadOnlyView && q.type === 'textarea' ? (
                       <textarea
                         value={String(answers[q.id] || '')}
                         onChange={(e) => setSingleAnswer(q.id, e.target.value)}
@@ -653,7 +677,7 @@ export default function AdminAlftDummyPreviewPage() {
                         className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentaryQuestion(q) ? 'min-h-[220px]' : ''}`}
                       />
                     ) : null}
-                    {!isPdfView && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
+                    {!isReadOnlyView && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
                       <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
                         {q.options.map((opt) => (
                           <label key={`edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
@@ -668,7 +692,7 @@ export default function AdminAlftDummyPreviewPage() {
                         ))}
                       </div>
                     ) : null}
-                    {!isPdfView && q.type === 'checkboxGroup' && q.options?.length ? (
+                    {!isReadOnlyView && q.type === 'checkboxGroup' && q.options?.length ? (
                       <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
                         {q.options.map((opt) => {
                           const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
@@ -681,7 +705,7 @@ export default function AdminAlftDummyPreviewPage() {
                         })}
                       </div>
                     ) : null}
-                    {isPdfView && isOptionQuestion(q) && q.options?.length ? (
+                    {isReadOnlyView && isOptionQuestion(q) && q.options?.length ? (
                       <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
                         {q.options.map((opt) => {
                           const selected =
@@ -699,7 +723,7 @@ export default function AdminAlftDummyPreviewPage() {
                           );
                         })}
                       </div>
-                    ) : isPdfView ? (
+                    ) : isReadOnlyView ? (
                       <div
                         className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${
                           isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'
@@ -907,6 +931,12 @@ export default function AdminAlftDummyPreviewPage() {
   );
 
   if (!isPdfView) {
+    return packetContent;
+  }
+
+  // html-print mode: render the read-only form directly (no blob generation).
+  // The browser's native print engine handles PDF output via window.print().
+  if (isHtmlPrintView) {
     return packetContent;
   }
 

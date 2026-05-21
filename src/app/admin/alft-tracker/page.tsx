@@ -1905,7 +1905,7 @@ export default function AdminAlftTrackerPage() {
       // If sessionStorage fails, proceed without answers key (will fall back to saved intake data).
     }
     const params = new URLSearchParams();
-    params.set('view', 'pdf');
+    params.set('view', 'html-print');
     params.set('embed', '1');
     params.set('intakeId', editRow.id);
     params.set('answersKey', answersKey);
