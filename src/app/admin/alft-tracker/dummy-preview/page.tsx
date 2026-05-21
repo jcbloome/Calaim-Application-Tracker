@@ -268,7 +268,9 @@ function applyMemberPrefill(base: Record<string, AnswerValue>, member: PathwayMe
 export default function AdminAlftDummyPreviewPage() {
   const searchParams = useSearchParams();
   const firestore = useFirestore();
-  const isPdfView = String(searchParams.get('view') || '').toLowerCase() === 'pdf';
+  const viewParam = String(searchParams.get('view') || '').toLowerCase();
+  const isPdfView = viewParam === 'pdf';
+  const isPrintView = viewParam === 'print';
   const intakeId = String(searchParams.get('intakeId') || '').trim();
   const answersKey = String(searchParams.get('answersKey') || '').trim();
   const logoSrc = '/ils-logo.png';
@@ -528,12 +530,24 @@ export default function AdminAlftDummyPreviewPage() {
     return query ? `/admin/alft-tracker/dummy-preview?${query}` : '/admin/alft-tracker/dummy-preview';
   }, [intakeId]);
 
-  const isReadOnlyView = isPdfView;
+  const isReadOnlyView = isPdfView || isPrintView;
   const useEditorPrintableLayout = true;
 
   const packetContent = (
     <div className="alft-dummy-preview mx-auto max-w-[8.5in] px-2 py-4 print:max-w-none print:px-0 print:py-0">
-      {!isPdfView ? (
+      {isPrintView ? (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-md border bg-white p-3 print:hidden">
+          <div className="text-sm text-zinc-700">
+            <div className="font-semibold">ALFT printable preview</div>
+            <div className="text-xs text-zinc-500">
+              Use your browser&apos;s print dialog to save as PDF or send to a printer.
+            </div>
+          </div>
+          <Button onClick={() => window.print()} size="lg">
+            Print / Save as PDF
+          </Button>
+        </div>
+      ) : !isPdfView ? (
         <div className="mb-2 flex items-center justify-end gap-2 rounded-md border bg-white p-3 print:hidden">
           <Button variant="outline" asChild>
             <Link href={viewerHref}>View PDF layout</Link>
@@ -544,7 +558,7 @@ export default function AdminAlftDummyPreviewPage() {
         </div>
       ) : null}
 
-      {!isPdfView && !intakeId ? (
+      {!isReadOnlyView && !intakeId ? (
         <div className="mb-4 rounded-md border border-zinc-300 bg-white p-3 print:hidden">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-12">
             <Input
@@ -579,7 +593,7 @@ export default function AdminAlftDummyPreviewPage() {
           </div>
         </div>
       ) : null}
-      {!isPdfView && intakeId ? (
+      {!isReadOnlyView && intakeId ? (
         <div className="mb-4 rounded-md border border-zinc-300 bg-white p-3 text-sm text-zinc-700 print:hidden">
           Using saved ALFT intake answers for printable preview.
         </div>

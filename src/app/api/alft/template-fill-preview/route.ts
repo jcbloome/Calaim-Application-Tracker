@@ -10,6 +10,7 @@ type Body = {
   templateUrl?: string;
   templatePath?: string;
   preferLocalTemplate?: boolean;
+  forceOverlay?: boolean;
   answers?: Record<string, string | string[]>;
 };
 
@@ -50,7 +51,15 @@ async function renderOverlayPdf(templateBuffer: ArrayBuffer, answers: Record<str
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const pages = pdfDoc.getPages();
 
-  const put = (pageIdx1: number, x: number, y: number, value: unknown, size = 8, isBold = false) => {
+  const put = (
+    pageIdx1: number,
+    x: number,
+    y: number,
+    value: unknown,
+    size = 8,
+    isBold = false,
+    maxWidth = 220
+  ) => {
     const page = pages[pageIdx1 - 1];
     if (!page) return;
     const text = clean(value, 500);
@@ -61,7 +70,7 @@ async function renderOverlayPdf(templateBuffer: ArrayBuffer, answers: Record<str
       size,
       font: isBold ? bold : font,
       color: rgb(0.06, 0.09, 0.14),
-      maxWidth: 240,
+      maxWidth,
       lineHeight: size + 1,
     });
   };
@@ -97,21 +106,27 @@ async function renderOverlayPdf(templateBuffer: ArrayBuffer, answers: Record<str
   put(1, 255, 410, answers.p1_primary_language || '');
 
   // Page 2 (addresses/site/risk section shown in user screenshots)
-  put(2, 70, 665, answers.p2_current_street || '');
-  put(2, 330, 665, answers.p2_current_city || '');
-  put(2, 70, 628, answers.p2_current_state || '');
-  put(2, 330, 628, answers.p2_current_zip || '');
-  put(2, 330, 592, answers.p2_current_type_other || '');
-  put(2, 70, 555, answers.p2_facility_name || '');
-  put(2, 330, 555, answers.p2_home_street || '');
-  put(2, 70, 518, answers.p2_home_city || '');
-  put(2, 330, 518, answers.p2_home_state || '');
-  put(2, 70, 481, answers.p2_home_zip || '');
-  put(2, 330, 481, answers.p2_mail_street || '');
-  put(2, 70, 444, answers.p2_mail_city || '');
-  put(2, 330, 444, answers.p2_mail_state || '');
-  put(2, 70, 407, answers.p2_mail_zip || '');
-  put(2, 70, 370, answers.p2_assessment_site_other || '');
+  put(2, 70, 665, answers.p2_current_street || '', 8, false, 360);
+  put(2, 360, 665, answers.p2_current_city || '', 8, false, 140);
+  put(2, 70, 628, answers.p2_current_state || '', 8, false, 130);
+  put(2, 360, 628, answers.p2_current_zip || '', 8, false, 120);
+  put(2, 660, 592, answers.p2_current_type_other || '', 8, false, 130);
+  put(2, 200, 555, answers.p2_facility_name || '', 8, false, 300);
+
+  // Section 4: Home Address
+  put(2, 200, 518, answers.p2_home_street || '', 8, false, 500);
+  put(2, 200, 481, answers.p2_home_city || '', 8, false, 140);
+  put(2, 430, 481, answers.p2_home_state || '', 8, false, 140);
+  put(2, 610, 481, answers.p2_home_zip || '', 8, false, 120);
+
+  // Section 5: Mailing Address
+  put(2, 200, 444, answers.p2_mail_street || '', 8, false, 500);
+  put(2, 200, 407, answers.p2_mail_city || '', 8, false, 140);
+  put(2, 430, 407, answers.p2_mail_state || '', 8, false, 140);
+  put(2, 610, 407, answers.p2_mail_zip || '', 8, false, 120);
+
+  // Section 6: Assessment site (other)
+  put(2, 660, 333, answers.p2_assessment_site_other || '', 8, false, 130);
   put(2, 70, 296, answers.p2_alwp_agency || '');
   put(2, 70, 260, answers.p2_previous_placement_explain || '');
 
@@ -294,6 +309,17 @@ export async function POST(req: NextRequest) {
     }
 
     const originalPdfBytes = Buffer.from(templateBuffer);
+    if (Boolean(body?.forceOverlay)) {
+      const forced = await renderOverlayPdf(templateBuffer, answers);
+      return new NextResponse(forced, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Cache-Control': 'no-store',
+          'x-alft-template-fill-mode': 'overlay-forced',
+        },
+      });
+    }
     const pdfDoc = await PDFDocument.load(templateBuffer);
     let form: ReturnType<PDFDocument['getForm']>;
     try {
@@ -319,7 +345,109 @@ export async function POST(req: NextRequest) {
       }
     });
 
+    const explicitAlftFieldMap: Record<string, string> = {
+      p1_agency: 'Text Field 3',
+      p1_assessment_date: 'Date Field 1',
+      p1_plan_id: 'Text Field 4',
+      p1_member_name: 'Text Field 5',
+      p1_assessor_name: 'Text Field 6',
+      p1_referral_date: 'Date Field 2',
+      p1_other_responder_name: 'Text Field 1',
+      p1_other_responder_relationship: 'Text Field 2',
+      p1_first_name: 'Text Field 8',
+      p1_middle_name: 'Text Field 9',
+      p1_last_name: 'Text Field 10',
+      p1_mrn: 'Text Field 11',
+      p1_phone: 'Text Field 162',
+      p1_dob: 'Date Field 3',
+      p1_sex: 'Text Field 12',
+      p1_race_other: 'Text Field 13',
+      p1_ethnicity: 'Text Field 14',
+      p1_ethnicity_other: 'Text Field 15',
+      p1_primary_language: 'Text Field 16',
+      p2_current_street: 'Text Field 17',
+      p2_current_city: 'Text Field 19',
+      p2_current_state: 'Text Field 20',
+      p2_current_zip: 'Text Field 132',
+      p2_current_type_other: 'Text Field 21',
+      p2_facility_name: 'Text Field 22',
+      p2_home_street: 'Text Field 23',
+      p2_home_city: 'Text Field 24',
+      p2_home_state: 'Text Field 25',
+      p2_home_zip: 'Text Field 133',
+      p2_mail_street: 'Text Field 26',
+      p2_mail_city: 'Text Field 28',
+      p2_mail_state: 'Text Field 27',
+      p2_mail_zip: 'Text Field 134',
+      p2_assessment_site_other: 'Text Field 29',
+      p2_alwp_agency: 'Text Field 31',
+      p2_previous_placement_explain: 'Text Field 30',
+    };
+    const explicitlyHandledKeys = new Set<string>();
+
+    Object.entries(explicitAlftFieldMap).forEach(([key, fieldName]) => {
+      const rawValue = answers[key];
+      const stringValue = asString(rawValue);
+      if (!stringValue) return;
+      const field = fields.find((f) => {
+        try {
+          return f.getName() === fieldName;
+        } catch {
+          return false;
+        }
+      });
+      if (!field) return;
+      try {
+        if (field instanceof PDFTextField) {
+          field.setText(stringValue);
+          explicitlyHandledKeys.add(key);
+        }
+      } catch {
+        // ignore explicit mapping failures and continue with generic mapping
+      }
+    });
+
+    const explicitAlftCheckboxMap: Record<string, Record<string, string>> = {
+      p1_purpose: {
+        initial: 'Checkbox 1',
+        change_condition: 'Checkbox 2',
+        review: 'Checkbox 3',
+      },
+      p1_other_responder: {
+        no: 'Checkbox 4',
+        yes: 'Checkbox 5',
+      },
+      p1_ethnicity_hispanic: {
+        yes: 'Checkbox 12',
+        no: 'Checkbox 13',
+      },
+    };
+    Object.entries(explicitAlftCheckboxMap).forEach(([key, optionMap]) => {
+      const raw = clean(answers[key], 80).toLowerCase();
+      if (!raw) return;
+      const selectedFieldName = optionMap[raw];
+      if (!selectedFieldName) return;
+      Object.values(optionMap).forEach((fieldName) => {
+        const field = fields.find((f) => {
+          try {
+            return f.getName() === fieldName;
+          } catch {
+            return false;
+          }
+        });
+        if (!(field instanceof PDFCheckBox)) return;
+        try {
+          if (fieldName === selectedFieldName) field.check();
+          else field.uncheck();
+        } catch {
+          // ignore checkbox mapping failures
+        }
+      });
+      explicitlyHandledKeys.add(key);
+    });
+
     Object.entries(answers).forEach(([key, rawValue]) => {
+      if (explicitlyHandledKeys.has(key)) return;
       const candidates = buildKeyCandidates(key);
       if (!candidates.length) return;
       const field =
@@ -377,26 +505,31 @@ export async function POST(req: NextRequest) {
       out = await pdfDoc.save();
     } catch {
       try {
-        const overlaid = await renderOverlayPdf(templateBuffer, answers);
-        return new NextResponse(overlaid, {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/pdf',
-            'Cache-Control': 'no-store',
-            'x-alft-template-fill-mode': 'overlay-fallback',
-          },
-        });
-      } catch (overlayErr: any) {
-        const overlayMsg = cleanAscii(overlayErr?.message || 'overlay-failed', 120);
-        return new NextResponse(originalPdfBytes, {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/pdf',
-            'Cache-Control': 'no-store',
-            'x-alft-template-fill-mode': 'passthrough-save-error',
-            'x-alft-template-fill-overlay-error': overlayMsg,
-          },
-        });
+        // Some malformed legacy PDFs save more reliably with object streams disabled.
+        out = await pdfDoc.save({ useObjectStreams: false });
+      } catch {
+        try {
+          const overlaid = await renderOverlayPdf(templateBuffer, answers);
+          return new NextResponse(overlaid, {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Cache-Control': 'no-store',
+              'x-alft-template-fill-mode': 'overlay-fallback',
+            },
+          });
+        } catch (overlayErr: any) {
+          const overlayMsg = cleanAscii(overlayErr?.message || 'overlay-failed', 120);
+          return new NextResponse(originalPdfBytes, {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Cache-Control': 'no-store',
+              'x-alft-template-fill-mode': 'passthrough-save-error',
+              'x-alft-template-fill-overlay-error': overlayMsg,
+            },
+          });
+        }
       }
     }
     return new NextResponse(Buffer.from(out), {

@@ -606,20 +606,10 @@ export const EXACT_ALFT_PAGES: ExactPage[] = [
         type: 'textarea',
         rows: 18,
       },
-      { id: 'p14_additional_details', label: 'Additional details / RN commentary', type: 'textarea', rows: 4 },
-      { id: 'p14_print_name', label: 'Print name', type: 'text' },
+      { id: 'p14_print_name', label: 'MSW print name', type: 'text' },
       { id: 'p14_date', label: 'Date', type: 'text' },
       { id: 'p14_license_number', label: 'License number', type: 'text' },
-      {
-        id: 'p14_role',
-        label: 'MSW / RN (select one)',
-        type: 'radio',
-        options: [
-          { value: 'msw', label: 'MSW' },
-          { value: 'rn', label: 'RN' },
-        ],
-      },
-      { id: 'p14_signature_note', label: 'Signature note / confirmation', type: 'text' },
+      { id: 'p14_rn_print_name', label: 'RN print name', type: 'text' },
     ],
   },
 ];

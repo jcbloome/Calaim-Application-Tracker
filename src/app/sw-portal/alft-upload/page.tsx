@@ -14,10 +14,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
-  Eye,
   FileText,
   Loader2,
-  Pencil,
   RefreshCw,
   Send,
   User,
@@ -113,8 +111,7 @@ const MOVED_TEXT_FIELDS: Array<{
 
 const MOVED_TEXT_FIELD_IDS = new Set(MOVED_TEXT_FIELDS.map((i) => i.questionId));
 const HIDE_FROM_PDF_QUESTION_IDS = new Set([
-  'p14_additional_details', 'p14_print_name', 'p14_date',
-  'p14_license_number', 'p14_role', 'p14_signature_note',
+  'p14_print_name', 'p14_date', 'p14_license_number', 'p14_rn_print_name',
 ]);
 
 const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: string }>> = {
@@ -653,7 +650,7 @@ export default function SwKaiserAlftPage() {
     );
   }, [memberSearch, members]);
 
-  const rnName = asText(answers.p14_print_name);
+  const rnName = asText(answers.p14_rn_print_name);
   const rnDate = asText(answers.p14_date);
   const rnLicense = asText(answers.p14_license_number);
   const mswName = asText(answers.p1_assessor_name);
@@ -690,9 +687,6 @@ export default function SwKaiserAlftPage() {
         <div className="flex flex-wrap justify-center gap-3">
           <Button onClick={() => { setSelectedMember(null); setSubmitted(false); }}>
             Start Another
-          </Button>
-          <Button variant="outline" onClick={() => { setMode('preview'); setSubmitted(false); }}>
-            View Form
           </Button>
         </div>
       </div>
@@ -822,67 +816,14 @@ export default function SwKaiserAlftPage() {
           <Button variant="outline" size="sm" onClick={() => setSelectedMember(null)}>
             ← Back
           </Button>
-          <Button
-            variant={mode === 'edit' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setMode('edit')}
-          >
-            <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
-          </Button>
-          <Button
-            variant={mode === 'preview' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setMode('preview')}
-          >
-            <Eye className="mr-1.5 h-3.5 w-3.5" /> Preview
-          </Button>
           <Button variant="outline" size="sm" onClick={saveDraft}>
             Save Draft
           </Button>
-          {mode === 'preview' ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={templatePdfLoading || !templatePdfUrl}
-              onClick={() => {
-                if (templatePdfUrl) window.open(templatePdfUrl, '_blank', 'noopener,noreferrer');
-              }}
-            >
-              Print / PDF
-            </Button>
-          ) : null}
         </div>
       </div>
 
-      {mode === 'preview' ? (
-        <div className="mb-4 rounded-md border bg-white p-3 print:hidden">
-          <div className="mb-2 flex items-center gap-2 text-xs text-zinc-600">
-            <span>ALFT template preview (same form used through staff workflow).</span>
-            {templatePdfMode ? <Badge variant="outline">Mode: {templatePdfMode}</Badge> : null}
-          </div>
-          {templatePdfError ? (
-            <Alert variant="destructive">
-              <AlertDescription>{templatePdfError}</AlertDescription>
-            </Alert>
-          ) : null}
-          {templatePdfLoading ? (
-            <div className="flex h-[70vh] items-center justify-center text-sm text-zinc-500">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Generating template preview...
-            </div>
-          ) : null}
-          {!templatePdfLoading && templatePdfUrl ? (
-            <iframe
-              src={templatePdfUrl}
-              title="ALFT template preview"
-              className="h-[75vh] w-full rounded border"
-            />
-          ) : null}
-        </div>
-      ) : null}
-
       {/* ── Unified packet view: edit/preview in exact ALFT format ── */}
-      <div className={`space-y-4 print:space-y-0 ${mode === 'preview' ? 'hidden' : ''}`}>
+      <div className="space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {
           const source = SOURCE.find((p) => p.id === layout.sourceId);
           const questions = (source?.questions || []).filter((q) => q.id.startsWith(layout.prefix));

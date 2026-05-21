@@ -2,7 +2,7 @@
 
 import React, { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/hooks/use-admin';
 import { useSocialWorker } from '@/hooks/use-social-worker';
@@ -2147,6 +2147,7 @@ function AdminHeader() {
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, isAdmin } = useAdmin();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const auth = useAuth();
   const firestore = useFirestore();
@@ -2165,6 +2166,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const isLoginPage = pathname === '/admin/login';
   const isDesktopNotificationWindow = pathname === '/admin/desktop-notification-window';
   const isDesktopChatWindow = pathname === '/admin/desktop-chat-window';
+  const alftPreviewView = String(searchParams?.get('view') || '').trim().toLowerCase();
+  const isEmbeddedAlftPdfPreview =
+    pathname === '/admin/alft-tracker/dummy-preview' &&
+    (String(searchParams?.get('embed') || '').trim() === '1' || alftPreviewView === 'print');
 
   // Debug logging for admin layout
   useEffect(() => {
@@ -2557,12 +2562,16 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <RealTimeNotifications />
         <CaspioUsageAlert />
         <DesktopPresenceBeacon />
-        <div className="flex flex-col min-h-screen">
-          <AdminHeader />
-          <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden">
-            {children}
-          </main>
-        </div>
+        {isEmbeddedAlftPdfPreview ? (
+          <div className="min-h-screen bg-slate-50/50">{children}</div>
+        ) : (
+          <div className="flex flex-col min-h-screen">
+            <AdminHeader />
+            <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden">
+              {children}
+            </main>
+          </div>
+        )}
       </>
     </AuthGuard>
   );

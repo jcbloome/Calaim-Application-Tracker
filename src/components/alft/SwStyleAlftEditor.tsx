@@ -54,34 +54,6 @@ export function SwStyleAlftEditor({
     onChange(id, value);
   };
 
-  const RadioMarker = ({ checked }: { checked: boolean }) => (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 13 13"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden
-      className="alft-marker-svg"
-    >
-      <circle cx="6.5" cy="6.5" r="6" fill="#ffffff" stroke="#3f3f46" strokeWidth="1" />
-      {checked ? <circle cx="6.5" cy="6.5" r="3.25" fill="#18181b" /> : null}
-    </svg>
-  );
-
-  const CheckMarker = ({ checked }: { checked: boolean }) => (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 13 13"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden
-      className="alft-marker-svg"
-    >
-      <rect x="0.5" y="0.5" width="12" height="12" rx="1.5" fill="#ffffff" stroke="#3f3f46" strokeWidth="1" />
-      {checked ? <rect x="3.25" y="3.25" width="6.5" height="6.5" rx="1" fill="#18181b" /> : null}
-    </svg>
-  );
-
   return (
     <div className="space-y-4">
       {PAGE_LAYOUT.map((layout) => {
@@ -130,28 +102,24 @@ export function SwStyleAlftEditor({
                   ) : null}
 
                   {(q.type === 'radio' || q.type === 'select') && q.options?.length ? (
-                    <div className="alft-option-group mt-1">
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                       {q.options.map((opt) => {
                         const checked = String(answers[q.id] || '') === opt.value;
-                        const onSelect = () => onSafeChange(q.id, opt.value);
                         return (
                           <label
                             key={`${q.id}-${opt.value}`}
-                            className={`alft-option-row ${readOnly ? '' : 'alft-option-row--interactive'}`}
-                            onClick={readOnly ? undefined : onSelect}
+                            className="inline-flex items-center gap-1 text-[10px] leading-tight"
                           >
-                            {!readOnly ? (
-                              <input
-                                type="radio"
-                                name={`alft-edit-${q.id}`}
-                                checked={checked}
-                                onChange={onSelect}
-                                className="alft-hidden-input"
-                                aria-label={opt.label}
-                              />
-                            ) : null}
-                            <RadioMarker checked={checked} />
-                            <span className="alft-option-label">{opt.label}</span>
+                            <input
+                              type="radio"
+                              name={`alft-edit-${q.id}`}
+                              checked={checked}
+                              onChange={() => onSafeChange(q.id, opt.value)}
+                              disabled={readOnly}
+                              className="h-3 w-3 accent-zinc-700"
+                              aria-label={opt.label}
+                            />
+                            <span>{opt.label}</span>
                           </label>
                         );
                       })}
@@ -159,7 +127,7 @@ export function SwStyleAlftEditor({
                   ) : null}
 
                   {q.type === 'checkboxGroup' && q.options?.length ? (
-                    <div className="alft-option-group mt-1">
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                       {q.options.map((opt) => {
                         const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
                         const onToggle = () => {
@@ -170,20 +138,17 @@ export function SwStyleAlftEditor({
                         return (
                           <label
                             key={`${q.id}-${opt.value}`}
-                            className={`alft-option-row ${readOnly ? '' : 'alft-option-row--interactive'}`}
-                            onClick={readOnly ? undefined : onToggle}
+                            className="inline-flex items-center gap-1 text-[10px] leading-tight"
                           >
-                            {!readOnly ? (
-                              <input
-                                type="checkbox"
-                                checked={selected}
-                                onChange={onToggle}
-                                className="alft-hidden-input"
-                                aria-label={opt.label}
-                              />
-                            ) : null}
-                            <CheckMarker checked={selected} />
-                            <span className="alft-option-label">{opt.label}</span>
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={onToggle}
+                              disabled={readOnly}
+                              className="h-3 w-3 accent-zinc-700"
+                              aria-label={opt.label}
+                            />
+                            <span>{opt.label}</span>
                           </label>
                         );
                       })}
@@ -251,55 +216,6 @@ export function SwStyleAlftEditor({
         );
       })}
 
-      <style jsx global>{`
-        .alft-option-group {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          column-gap: 12px;
-          row-gap: 4px;
-        }
-        @media (min-width: 768px) {
-          .alft-option-group {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-        }
-        .alft-option-row {
-          display: grid;
-          grid-template-columns: 14px minmax(0, 1fr);
-          column-gap: 5px;
-          align-items: start;
-          font-size: 9.5px;
-          line-height: 13px;
-          min-width: 0;
-        }
-        .alft-option-row--interactive {
-          cursor: pointer;
-        }
-        .alft-option-label {
-          line-height: 13px;
-          color: #18181b;
-          word-break: normal;
-          white-space: normal;
-          padding-top: 0;
-        }
-        .alft-marker-svg {
-          display: block;
-          width: 13px;
-          height: 13px;
-          margin-top: 0;
-        }
-        .alft-hidden-input {
-          position: absolute;
-          width: 1px;
-          height: 1px;
-          padding: 0;
-          margin: -1px;
-          overflow: hidden;
-          clip: rect(0 0 0 0);
-          white-space: nowrap;
-          border: 0;
-        }
-      `}</style>
     </div>
   );
 }

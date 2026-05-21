@@ -847,7 +847,6 @@ export default function AdminAlftTrackerPage() {
   const [editRequestedActions, setEditRequestedActions] = useState('');
   const [editBarriersAndRisks, setEditBarriersAndRisks] = useState('');
   const [editAdditionalNotes, setEditAdditionalNotes] = useState('');
-  const [editPrintPreviewHref, setEditPrintPreviewHref] = useState('');
   const [isKaiserAssignmentManager, setIsKaiserAssignmentManager] = useState(false);
   const [isKaiserStaff, setIsKaiserStaff] = useState(false);
   const [isRnStaff, setIsRnStaff] = useState(false);
@@ -866,11 +865,6 @@ export default function AdminAlftTrackerPage() {
     const focus = String(searchParams?.get('focus') || '').trim();
     if (focus) setFocusId(focus);
   }, [searchParams]);
-
-  useEffect(() => {
-    if (editOpen) return;
-    setEditPrintPreviewHref('');
-  }, [editOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1896,21 +1890,19 @@ export default function AdminAlftTrackerPage() {
 
   const printCurrentEditPdf = () => {
     if (!editRow?.id) return;
-    // Store current answers in sessionStorage so dummy-preview can read them.
     const answersKey = `alft-print-${editRow.id}-${Date.now()}`;
     try {
       const payload = { ...editExactAnswers, p1_agency: AGENCY_NAME };
       window.sessionStorage.setItem(answersKey, JSON.stringify(payload));
     } catch {
-      // If sessionStorage fails, proceed without answers key (will fall back to saved intake data).
+      // If sessionStorage fails, dummy-preview falls back to saved intake data.
     }
     const params = new URLSearchParams();
-    params.set('view', 'pdf');
-    params.set('embed', '1');
+    params.set('view', 'print');
     params.set('intakeId', editRow.id);
     params.set('answersKey', answersKey);
     const href = `/admin/alft-tracker/dummy-preview?${params.toString()}`;
-    setEditPrintPreviewHref(href);
+    window.open(href, '_blank', 'noopener,noreferrer');
   };
 
   const downloadSignaturePdf = async (requestId: string, kind: 'signature' | 'packet') => {
@@ -2523,28 +2515,6 @@ export default function AdminAlftTrackerPage() {
                 </div>
               ) : null}
             </div>
-            {editPrintPreviewHref ? (
-              <div className="rounded-md border p-2">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="text-sm font-medium">Printable preview</div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setEditPrintPreviewHref('')}
-                    >
-                      Close
-                    </Button>
-                  </div>
-                </div>
-                <iframe
-                  id="alft-edit-print-preview-frame"
-                  src={editPrintPreviewHref}
-                  title="ALFT printable preview"
-                  className="h-[80vh] w-full rounded border"
-                />
-              </div>
-            ) : null}
             {editRowLive ? (
               <div className="rounded-md border p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
