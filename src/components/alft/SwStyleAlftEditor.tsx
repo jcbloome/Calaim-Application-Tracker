@@ -264,27 +264,29 @@ export function SwStyleAlftEditor({
           }
         }
         .alft-option-row {
-          display: block;
+          display: grid;
+          grid-template-columns: 14px minmax(0, 1fr);
+          column-gap: 5px;
+          align-items: start;
           font-size: 9.5px;
-          line-height: 14px;
-          text-indent: -18px;
-          padding-left: 18px;
+          line-height: 13px;
           min-width: 0;
         }
         .alft-option-row--interactive {
           cursor: pointer;
         }
         .alft-option-label {
+          line-height: 13px;
           color: #18181b;
           word-break: normal;
           white-space: normal;
+          padding-top: 0;
         }
         .alft-marker-svg {
-          display: inline-block;
+          display: block;
           width: 13px;
           height: 13px;
-          vertical-align: -3px;
-          margin-right: 5px;
+          margin-top: 0;
         }
         .alft-hidden-input {
           position: absolute;
