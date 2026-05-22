@@ -506,7 +506,7 @@ export async function POST(req: NextRequest) {
                   mrn: mrn || undefined,
                   stageLabel: 'Step 4/5 RN signed, final manager review required',
                   nextAction: 'Complete final manager review and release completed PDF packet.',
-                  actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+                  actionUrl: `/admin/alft-tracker?edit=${encodeURIComponent(intakeId)}`,
                   triggeredBy: clean((decoded as any)?.name, 160) || email || 'RN',
                 })
                   .then(() => true)

@@ -14,15 +14,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertTriangle,
-  CheckCircle2,
   ClipboardList,
   Loader2,
   RefreshCw,
-  UserCheck,
 } from 'lucide-react';
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   serverTimestamp,
   setDoc,
@@ -49,6 +48,7 @@ type KaiserMember = {
   kaiserStatus: string;
   alftAssigned: string;
   ispCurrentLocation: string;
+  ispContactName: string;
   ispContactPhone: string;
   ispContactEmail: string;
   ispContactConfirmDate: string;
@@ -76,6 +76,12 @@ type AlftAssignment = {
   assignedAt: any;
   assignedByEmail: string;
   assignedByName: string;
+  prefillVerification?: {
+    manualSyncAt?: any;
+    manualSyncByUid?: string | null;
+    manualSyncByEmail?: string | null;
+    manualSyncByName?: string | null;
+  } | null;
 };
 
 const normalizeSwNameForUi = (name: string) =>
@@ -108,15 +114,6 @@ const parseFlexibleDate = (value: string): Date | null => {
   return Number.isNaN(dt.getTime()) ? null : dt;
 };
 
-const isWithinPastDays = (value: string, days: number): boolean => {
-  const dt = parseFlexibleDate(value);
-  if (!dt) return false;
-  const today = new Date();
-  const a = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const b = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
-  return Math.floor((a - b) / 86400000) <= days;
-};
-
 const formatDobLabel = (value: string): string => {
   const dt = parseFlexibleDate(value);
   if (!dt) return '';
@@ -124,6 +121,19 @@ const formatDobLabel = (value: string): string => {
     return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   } catch {
     return '';
+  }
+};
+
+const toMs = (value: any): number => {
+  if (!value) return 0;
+  try {
+    if (typeof value?.toMillis === 'function') return value.toMillis();
+    if (typeof value?.toDate === 'function') return value.toDate().getTime();
+    const dt = new Date(value);
+    const ms = dt.getTime();
+    return Number.isNaN(ms) ? 0 : ms;
+  } catch {
+    return 0;
   }
 };
 
@@ -149,8 +159,26 @@ const isRnVisitNeededStatus = (value: unknown): boolean => {
     normalized === 'rn visit needed' ||
     normalized.includes('rn visit needed') ||
     normalized.includes('rn visit req') ||
-    normalized.includes('rn needed')
+    normalized.includes('rn needed') ||
+    normalized.includes('visit needed')
   );
+};
+
+const resolveKaiserStatusValue = (row: Record<string, unknown>): string => {
+  const direct = [
+    row?.Kaiser_Status,
+    row?.kaiserStatus,
+    row?.Kaiser_ID_Status,
+    row?.kaiser_id_status,
+    row?.KaiserStatus,
+  ]
+    .map((v) => String(v || '').trim())
+    .find(Boolean);
+  if (direct) return direct;
+
+  const keyMatch = Object.keys(row || {}).find((k) => k.toLowerCase().includes('kaiser') && k.toLowerCase().includes('status'));
+  if (keyMatch) return String((row as any)?.[keyMatch] || '').trim();
+  return '';
 };
 
 // ── Page ───────────────────────────────────────────────────────────────────────
@@ -168,8 +196,8 @@ export default function AdminAlftAssignmentPage() {
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [assignments, setAssignments] = useState<Record<string, AlftAssignment>>({});
   const [search, setSearch] = useState('');
-  const [assigning, setAssigning] = useState<string | null>(null); // memberId being saved
   const [resetting, setResetting] = useState<string | null>(null);
+  const [pushingToTrackerId, setPushingToTrackerId] = useState<string | null>(null);
   const [prefillSourceMode, setPrefillSourceMode] = useState<'cs_summary_app' | 'caspio_selected_fields'>('caspio_selected_fields');
   const [swDirectoryById, setSwDirectoryById] = useState<Record<string, { name: string; email: string }>>({});
 
@@ -184,7 +212,7 @@ export default function AdminAlftAssignmentPage() {
     setLoading(true);
     try {
       const [membersRes, staffRes] = await Promise.all([
-        fetch('/api/kaiser-members', { cache: 'no-store' }),
+        fetch('/api/kaiser-members?refresh=1&source=caspio', { cache: 'no-store' }),
         fetch('/api/caspio-staff', { cache: 'no-store' }).catch(() => null),
       ]);
       const data = await membersRes.json().catch(() => ({} as any));
@@ -205,10 +233,10 @@ export default function AdminAlftAssignmentPage() {
       setSwDirectoryById(swById);
 
       const next: KaiserMember[] = (Array.isArray(data?.members) ? data.members : [])
-        .filter((m: any) => isRnVisitNeededStatus(m?.Kaiser_Status ?? m?.kaiserStatus))
+        .filter((m: any) => isRnVisitNeededStatus(resolveKaiserStatusValue(m as Record<string, unknown>)))
         .map((m: any) => ({
-          id: String(m?.Client_ID2 || m?.id || '').trim(),
-          memberName: String(m?.memberName || '').trim() || 'Member',
+          id: String(m?.Client_ID2 || m?.client_ID2 || m?.id || m?.ID || `${m?.Senior_Last_First_ID || m?.memberName || ''}-${m?.MCP_CIN || m?.memberMrn || ''}`).trim(),
+          memberName: String(m?.memberName || m?.Senior_Last_First_ID || '').trim() || 'Member',
           memberFirstName: String(m?.memberFirstName || '').trim(),
           memberLastName: String(m?.memberLastName || '').trim(),
           memberMrn: String(m?.memberMrn || m?.MCP_CIN || '').trim(),
@@ -232,9 +260,12 @@ export default function AdminAlftAssignmentPage() {
             m?.ispCurrentAddressZip || m?.ISP_Current_Zip || m?.Member_Zip || m?.Zip || ''
           ).trim(),
           ispFacilityName: String(m?.ispFacilityName || m?.RCFE_Name || m?.Facility_Name || '').trim(),
-          kaiserStatus: String(m?.Kaiser_Status || '').trim(),
+          kaiserStatus: resolveKaiserStatusValue(m as Record<string, unknown>),
           alftAssigned: String(m?.ALFT_Assigned || '').trim(),
           ispCurrentLocation: String(m?.ISP_Current_Location || '').trim(),
+          ispContactName: String(
+            m?.ISP_Contact_Name || m?.ispContactName || m?.RCFE_Admin_Name || m?.Contact_Name || ''
+          ).trim(),
           ispContactPhone: String(m?.ISP_Contact_Phone || '').trim(),
           ispContactEmail: String(m?.ISP_Contact_Email || '').trim(),
           ispContactConfirmDate: String(
@@ -263,6 +294,12 @@ export default function AdminAlftAssignmentPage() {
       setLoading(false);
     }
   }, [toast]);
+
+  useEffect(() => {
+    if (adminLoading || !isAdmin) return;
+    if (hasLoadedOnce || loading) return;
+    void loadMembers();
+  }, [adminLoading, isAdmin, hasLoadedOnce, loading, loadMembers]);
 
   // ── Live-listen to alft_assignments ──────────────────────────────────────────
 
@@ -319,6 +356,11 @@ export default function AdminAlftAssignmentPage() {
             ispCurrentAddressState: member.ispCurrentAddressState,
             ispCurrentAddressZip: member.ispCurrentAddressZip,
             ispFacilityName: member.ispFacilityName,
+            ispCurrentLocation: member.ispCurrentLocation,
+            ispContactName: member.ispContactName,
+            ispContactPhone: member.ispContactPhone,
+            ispContactEmail: member.ispContactEmail,
+            ispContactConfirmDate: member.ispContactConfirmDate,
             assignedSwId: swId || null,
             assignedSwEmail: swEmail || '',
             assignedSwName: swName || `SW ID ${member.swId}`,
@@ -341,76 +383,6 @@ export default function AdminAlftAssignmentPage() {
       }
     })();
   }, [assignments, auth?.currentUser?.email, firestore, isAdmin, members, user]);
-
-  // ── Assign SW to member ───────────────────────────────────────────────────────
-
-  const assignSw = useCallback(
-    async (member: KaiserMember) => {
-      if (!firestore || !auth?.currentUser) return;
-      const swId = String(member.swId || '').trim().toLowerCase();
-      const swName = normalizeSwNameForUi(String(member.socialWorkerAssigned || '').trim());
-      if (!swId && !swName) {
-        toast({
-          title: 'Missing Caspio SW assignment',
-          description: 'This member is missing both SW_ID and Social_Worker_Assigned in Caspio.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      setAssigning(member.id);
-      try {
-        const idToken = await auth.currentUser.getIdToken();
-        const res = await fetch('/api/alft/workflow/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            idToken,
-            member: {
-              id: member.id,
-              memberName: member.memberName,
-              memberFirstName: member.memberFirstName,
-              memberLastName: member.memberLastName,
-              memberMrn: member.memberMrn,
-              birthDate: member.birthDate,
-              memberSex: member.memberSex,
-              memberPrimaryLanguage: member.memberPrimaryLanguage,
-              memberPhone: member.memberPhone,
-              ispCurrentAddressStreet: member.ispCurrentAddressStreet,
-              ispCurrentAddressCity: member.ispCurrentAddressCity,
-              ispCurrentAddressState: member.ispCurrentAddressState,
-              ispCurrentAddressZip: member.ispCurrentAddressZip,
-              ispFacilityName: member.ispFacilityName,
-              kaiserStatus: member.kaiserStatus,
-              ispCurrentLocation: member.ispCurrentLocation,
-              ispContactPhone: member.ispContactPhone,
-              ispContactEmail: member.ispContactEmail,
-              ispContactConfirmDate: member.ispContactConfirmDate,
-              swId,
-              socialWorkerAssigned: swName,
-              prefillSourceMode,
-              caspioSourceRecord: (member.sourceRecord || {}) as Record<string, unknown>,
-            },
-          }),
-        });
-        const data = (await res.json().catch(() => ({}))) as any;
-        if (!res.ok || !data?.success) {
-          throw new Error(String(data?.error || `Failed to start workflow (HTTP ${res.status})`));
-        }
-
-        toast({
-          title: 'ALFT workflow started',
-          description: `SW invite ${data?.sw?.emailSent ? 'email sent' : 'queued'} and workflow tracking started.`,
-        });
-        router.push(`/admin/alft-tracker?member=${encodeURIComponent(member.memberName)}`);
-      } catch (e: any) {
-        toast({ title: 'Assignment failed', description: e?.message || 'Try again.', variant: 'destructive' });
-      } finally {
-        setAssigning(null);
-      }
-    },
-    [auth, firestore, prefillSourceMode, router, toast, user]
-  );
 
   const resetWorkflowStatus = useCallback(
     async (member: KaiserMember) => {
@@ -438,6 +410,106 @@ export default function AdminAlftAssignmentPage() {
       }
     },
     [firestore, toast]
+  );
+
+  const pushToAlftTracker = useCallback(
+    async (member: KaiserMember, assignment?: AlftAssignment) => {
+      if (!firestore) return;
+      const memberId = String(member.id || '').trim();
+      if (!memberId) return;
+      setPushingToTrackerId(memberId);
+      try {
+        const trackerRef = doc(firestore, 'standalone_upload_submissions', memberId);
+        const existingSnap = await getDoc(trackerRef);
+        const existing = existingSnap.exists() ? (existingSnap.data() as Record<string, any>) : null;
+        const existingStatus = String(existing?.status || '').toLowerCase();
+        const existingWorkflowStatus = String(existing?.workflowStatus || '').toLowerCase();
+        const restoringRemoved =
+          existingStatus === 'removed' || existingWorkflowStatus.includes('removed_from_tracker');
+
+        if (!existing) {
+          await setDoc(
+            trackerRef,
+            {
+              status: 'pending',
+              toolCode: 'ALFT',
+              documentType: 'ALFT Tool',
+              files: [],
+              memberId,
+              memberName: String(member.memberName || '').trim() || 'Member',
+              memberFirstName: String(member.memberFirstName || '').trim() || null,
+              memberLastName: String(member.memberLastName || '').trim() || null,
+              healthPlan: 'Kaiser',
+              medicalRecordNumber: String(member.memberMrn || '').trim() || null,
+              uploaderEmail: String(user?.email || '').trim().toLowerCase() || null,
+              uploaderName: String((user as any)?.displayName || user?.email || 'Admin').trim(),
+              prefillSourceMode,
+              prefillSourceLabel: prefillSourceMode === 'cs_summary_app' ? 'App CS Summary' : 'Caspio selected fields',
+              workflowStatus: '',
+              workflowStage: 'tracker_member_added',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } else if (restoringRemoved) {
+          await setDoc(
+            trackerRef,
+            {
+              status: 'pending',
+              workflowStatus: '',
+              workflowStage: 'tracker_member_readded',
+              removedFromTrackerAt: null,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } else {
+          await setDoc(
+            trackerRef,
+            {
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+
+        await setDoc(
+          doc(firestore, 'alft_assignments', memberId),
+          {
+            memberId,
+            memberName: member.memberName,
+            memberFirstName: member.memberFirstName || '',
+            memberLastName: member.memberLastName || '',
+            memberMrn: member.memberMrn || '',
+            assignedSwId: assignment?.assignedSwId || null,
+            assignedSwName: assignment?.assignedSwName || '',
+            assignedSwEmail: assignment?.assignedSwEmail || '',
+            status: String(assignment?.status || 'assigned'),
+            trackerPushedAt: serverTimestamp(),
+            trackerPushedByEmail: String(user?.email || '').trim().toLowerCase() || null,
+            trackerPushedByName: String((user as any)?.displayName || user?.email || 'Admin').trim(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        toast({
+          title: 'Pushed to ALFT Tracker',
+          description: `${member.memberName || 'Member'} is now available on the ALFT Tracker page.`,
+        });
+        router.push(`/admin/alft-tracker?focus=${encodeURIComponent(memberId)}`);
+      } catch (e: any) {
+        toast({
+          title: 'Could not push to ALFT Tracker',
+          description: e?.message || 'Please retry.',
+          variant: 'destructive',
+        });
+      } finally {
+        setPushingToTrackerId(null);
+      }
+    },
+    [firestore, prefillSourceMode, router, toast, user]
   );
 
   // ── Derived ───────────────────────────────────────────────────────────────────
@@ -494,11 +566,11 @@ export default function AdminAlftAssignmentPage() {
                 ALFT Assignment Queue
               </CardTitle>
               <CardDescription>
-                Select Kaiser members from Caspio and start the ALFT workflow with their Caspio-assigned social worker.
+                All Caspio members with Kaiser status "RN Visit Needed" are shown here. Use the step buttons per member: verify first, then push to ALFT Tracker to start workflow.
               </CardDescription>
             </div>
             <Button variant="outline" asChild>
-              <Link href="/admin/alft-tracker">Open ALFT Workflow Intake →</Link>
+              <Link href="/admin/alft-tracker">ALFT Tracker</Link>
             </Button>
           </div>
         </CardHeader>
@@ -515,6 +587,9 @@ export default function AdminAlftAssignmentPage() {
             <Button variant="outline" size="sm" onClick={() => void loadMembers()} disabled={loading}>
               {loading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
               Load Caspio Members
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setSearch('')} disabled={!search}>
+              Clear search
             </Button>
             <div className="flex items-center gap-2 rounded-md border px-2 py-1">
               <span className="text-xs text-muted-foreground whitespace-nowrap">Prefill mode</span>
@@ -554,36 +629,14 @@ export default function AdminAlftAssignmentPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead className="w-52">Member</TableHead>
-                    <TableHead>ISP Info</TableHead>
-                    <TableHead className="w-56">Caspio SW Assignment</TableHead>
-                    <TableHead className="w-36">Status</TableHead>
+                    <TableHead>Member Workflow</TableHead>
+                    <TableHead className="w-28">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map((m) => {
                     const assignment = assignments[m.id];
-                    const fresh = isWithinPastDays(m.ispContactConfirmDate, 3);
                     const statusMeta = STATUS_LABELS[assignment?.status || ''] || null;
-                    const currentSwId = String(assignment?.assignedSwId || '').trim().toLowerCase();
-                    const sourceSwId = String(m.swId || '').trim().toLowerCase();
-                    const sourceSwName = normalizeSwNameForUi(String(m.socialWorkerAssigned || '').trim());
-                    const isAlreadySynced = Boolean(
-                      (sourceSwId && currentSwId && sourceSwId === currentSwId) ||
-                      (!sourceSwId &&
-                        sourceSwName &&
-                        String(assignment?.assignedSwName || '').trim().toLowerCase() === sourceSwName.toLowerCase())
-                    );
-                    const workflowStarted = [
-                      'sw_form_in_progress',
-                      'awaiting_manager_review',
-                      'returned_to_sw_for_changes',
-                      'awaiting_rn_final_review',
-                      'rn_finalized_ready_for_ils',
-                      'in_progress',
-                      'submitted',
-                      'completed',
-                    ].includes(String(assignment?.status || '').trim().toLowerCase());
                     const status = String(assignment?.status || '').trim().toLowerCase();
                     const stepIndex =
                       status === 'sw_invited_pending_submission' || status === 'sw_form_in_progress'
@@ -596,11 +649,23 @@ export default function AdminAlftAssignmentPage() {
                               ? 4
                               : 0;
                     const dobLabel = formatDobLabel(m.birthDate);
+                    const swAssignedName = normalizeSwNameForUi(m.socialWorkerAssigned || '') || 'Not set';
+                    const swAssignedEmail = m.socialWorkerEmail || swDirectoryById[String(m.swId || '').trim().toLowerCase()]?.email || 'Not set';
+                    const step2SyncAtMs = toMs((assignment as any)?.prefillVerification?.manualSyncAt);
+                    const step2Done = step2SyncAtMs > 0;
+                    const isPushingToTracker = pushingToTrackerId === m.id;
+                    const ispInfoLine = [
+                      m.ispCurrentLocation ? `Location: ${m.ispCurrentLocation}` : '',
+                      m.ispContactPhone ? `Phone: ${m.ispContactPhone}` : '',
+                      m.ispContactEmail ? `Email: ${m.ispContactEmail}` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' • ');
 
                     return (
                       <TableRow key={m.id} className={assignment?.status === 'submitted' ? 'bg-green-50/50' : ''}>
-                        {/* Member info */}
-                        <TableCell>
+                        {/* Member + workflow info (consolidated) */}
+                        <TableCell className="py-2 align-top">
                           <div className="font-medium text-sm">{m.memberName}</div>
                           {m.memberMrn && <div className="text-xs text-muted-foreground font-mono">MRN: {m.memberMrn}</div>}
                           {dobLabel && (
@@ -608,120 +673,88 @@ export default function AdminAlftAssignmentPage() {
                               DOB: {dobLabel}
                             </div>
                           )}
-                        </TableCell>
-
-                        {/* ISP contact */}
-                        <TableCell className="min-w-[260px]">
-                          <div className="space-y-0.5 text-xs">
-                            {m.ispCurrentLocation && (
-                              <div className="font-medium text-sm truncate max-w-[240px]">{m.ispCurrentLocation}</div>
-                            )}
-                            {m.ispContactPhone && <div className="text-muted-foreground">📞 {m.ispContactPhone}</div>}
-                            {m.ispContactEmail && <div className="text-muted-foreground truncate max-w-[240px]">✉ {m.ispContactEmail}</div>}
-                            {m.ispContactConfirmDate ? (
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] ${
-                                  fresh
-                                    ? 'text-green-700 border-green-300 bg-green-50'
-                                    : 'text-red-700 border-red-300 bg-red-50'
-                                }`}
-                              >
-                                Contact confirmed: {m.ispContactConfirmDate}
-                                {fresh ? ' ✓' : ' — outdated'}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[10px] text-muted-foreground">No contact confirm date</Badge>
-                            )}
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            SW assigned: {swAssignedName} • ID: {m.swId || 'Not set'} • Email: {swAssignedEmail}
                           </div>
-                        </TableCell>
-
-                        {/* SW assignment picker */}
-                        <TableCell>
-                          <div className="space-y-2">
-                            <div className="text-[11px] text-muted-foreground">
-                              Caspio SW: {normalizeSwNameForUi(m.socialWorkerAssigned || '') || 'Not set'}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">Caspio SW_ID: {m.swId || 'Not set'}</div>
-                            <div className="text-[11px] text-muted-foreground">
-                              Caspio SW Email: {m.socialWorkerEmail || swDirectoryById[String(m.swId || '').trim().toLowerCase()]?.email || 'Not set'}
-                            </div>
-                            <Button
-                              size="sm"
-                              variant={assignment?.assignedSwId || assignment?.assignedSwName ? 'outline' : 'default'}
-                              className="h-7 text-xs w-full"
-                              disabled={
-                                assigning === m.id ||
-                                (!sourceSwId && !sourceSwName) ||
-                                workflowStarted
-                              }
-                              onClick={() => void assignSw(m)}
-                            >
-                              {assigning === m.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                              ) : (
-                                <UserCheck className="h-3 w-3 mr-1" />
-                              )}
-                              {!sourceSwId && !sourceSwName
-                                ? 'Missing Caspio SW'
-                                : workflowStarted
-                                  ? 'Workflow started'
-                                  : 'Start ALFT workflow'}
-                            </Button>
-                            {assignment?.assignedSwName && (
-                              <div className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                <CheckCircle2 className="h-3 w-3 text-green-500" />
-                                {assignment.assignedSwName}
+                          <div className="text-[10px] text-muted-foreground">
+                            ISP info: {ispInfoLine || 'Not set'}
+                          </div>
+                          {(() => {
+                            const verificationMemberParams = new URLSearchParams({
+                              memberId: String(m.id || '').trim(),
+                              member: String(m.memberName || '').trim(),
+                              mrn: String(m.memberMrn || '').trim(),
+                            });
+                            const verificationHref = `/admin/alft-verification?${verificationMemberParams.toString()}`;
+                            const verified = Boolean((assignment as any)?.verificationSignoff?.verified);
+                            return (
+                              <div className="mt-1.5 space-y-1">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-[10px] w-full justify-start border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                                  onClick={() => router.push(verificationHref)}
+                                >
+                                  {verified ? 'Step 1: Open Pre-fill ALFT Tool (verified)' : 'Step 1: Open Pre-fill ALFT Tool'}
+                                </Button>
+                                <div className="text-[10px] text-muted-foreground leading-tight">
+                                  Step 2: In verification page, use Manual Sync to pull Caspio prefill into ALFT tool.
+                                </div>
+                                <div className={`text-[10px] ${step2Done ? 'text-green-700' : 'text-amber-700'}`}>
+                                  {step2Done
+                                    ? `Step 2 done: ${new Date(step2SyncAtMs).toLocaleString()}`
+                                    : 'Step 2 pending: Manual Sync not completed yet'}
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant={step2Done ? 'default' : 'outline'}
+                                  className={`h-6 text-[10px] w-full justify-start ${step2Done ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}`}
+                                  disabled={!step2Done || isPushingToTracker}
+                                  onClick={() => void pushToAlftTracker(m, assignment)}
+                                >
+                                  {isPushingToTracker ? 'Step 3: Pushing…' : 'Step 3: Push to ALFT Tracker'}
+                                </Button>
+                                <div className="text-[10px] text-muted-foreground leading-tight">
+                                  Step 4 is on ALFT Tracker: click Start Workflow for this member.
+                                </div>
                               </div>
-                            )}
-                          </div>
-                        </TableCell>
-
-                        {/* Status */}
-                        <TableCell>
+                            );
+                          })()}
                           {statusMeta ? (
-                            <div className="space-y-1">
+                            <div className="mt-1.5 space-y-1">
                               <Badge variant="outline" className={`text-[11px] ${statusMeta.color}`}>
                                 {statusMeta.label}
                               </Badge>
                               <div className="text-[10px] text-muted-foreground">
-                                Step {stepIndex}/4: {stepIndex === 0 ? 'Not started' : stepIndex === 1 ? 'SW invite + form' : stepIndex === 2 ? 'Manager review' : stepIndex === 3 ? 'RN review' : 'Ready for ILS'}
+                                Current status: Step {stepIndex}/4 {stepIndex === 0 ? 'Not started' : stepIndex === 1 ? 'SW invite + form' : stepIndex === 2 ? 'Manager review' : stepIndex === 3 ? 'RN review' : 'Ready for ILS'}
                               </div>
                               <div className="text-[10px] text-muted-foreground">
                                 SW invite email: {Boolean((assignment as any)?.workflowSteps?.swInviteSent) ? 'sent' : 'pending/unknown'}
                               </div>
-                              <div className="text-[10px] text-muted-foreground">SW portal: `/sw-portal/alft-upload`</div>
-                              <div className="text-[10px] text-muted-foreground">Manager view: `/admin/alft-tracker`</div>
-                              {assignment?.assignedAt?.toDate && (
+                              {assignment?.assignedAt?.toDate ? (
                                 <div className="text-[10px] text-muted-foreground">
-                                  {assignment.assignedAt.toDate().toLocaleDateString()}
+                                  Assigned: {assignment.assignedAt.toDate().toLocaleDateString()}
                                 </div>
-                              )}
-                              <div className="flex gap-2 pt-1">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 px-2 text-[10px]"
-                                  onClick={() => router.push(`/admin/alft-tracker?member=${encodeURIComponent(m.memberName)}`)}
-                                >
-                                  Open workflow
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 px-2 text-[10px]"
-                                  disabled={resetting === m.id}
-                                  onClick={() => void resetWorkflowStatus(m)}
-                                >
-                                  {resetting === m.id ? 'Resetting…' : 'Reset'}
-                                </Button>
-                              </div>
+                              ) : null}
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">Unassigned</span>
+                            <div className="mt-1.5 text-[10px] text-muted-foreground">Current status: Unassigned</div>
                           )}
+                        </TableCell>
+
+                        {/* Actions */}
+                        <TableCell className="py-2 align-top">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[10px]"
+                            disabled={resetting === m.id}
+                            onClick={() => void resetWorkflowStatus(m)}
+                          >
+                            {resetting === m.id ? 'Resetting…' : 'Reset'}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );

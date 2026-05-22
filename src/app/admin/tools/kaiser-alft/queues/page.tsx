@@ -21,10 +21,10 @@ const QUEUE_TOOLS: Array<{
     icon: ClipboardList,
   },
   {
-    title: 'ALFT Workflow Intake',
+    title: 'ALFT Tracker Page',
     description: 'Track workflow status, manager review loops, RN sign-off, and final PDF/email handoff.',
     href: '/admin/alft-tracker',
-    cta: 'Open Workflow Intake',
+    cta: 'Open ALFT Tracker Page',
     icon: UploadCloud,
   },
 ];
@@ -38,7 +38,7 @@ export default function KaiserAlftQueueToolsPage() {
             <CardTitle>ALFT Assignment + Intake</CardTitle>
             <Badge variant="outline">Tools / Kaiser / ALFT</Badge>
           </div>
-          <CardDescription>Queue datapage for starting assignments and managing ALFT workflow intake.</CardDescription>
+          <CardDescription>Queue datapage for starting assignments and managing the ALFT Tracker Page.</CardDescription>
         </CardHeader>
         <CardContent>
           <Button asChild variant="outline" size="sm">

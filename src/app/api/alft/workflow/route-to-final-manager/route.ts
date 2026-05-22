@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 type Body = {
   idToken?: string;
   intakeId?: string;
+  overrideRecipientEmail?: string;
 };
 
 const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as Body;
     const idToken = clean(body?.idToken, 12000);
     const intakeId = clean(body?.intakeId, 220);
+    const overrideRecipientEmail = clean(body?.overrideRecipientEmail, 220).toLowerCase();
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
     if (!intakeId) return NextResponse.json({ success: false, error: 'Missing intakeId' }, { status: 400 });
 
@@ -91,7 +93,15 @@ export async function POST(req: NextRequest) {
         .catch(() => null);
       const memberName = clean((intake as any)?.memberName, 160) || 'Member';
       const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
-      const managerRecipients = [
+      const managerRecipients = overrideRecipientEmail
+        ? [
+            {
+              uid: '',
+              email: overrideRecipientEmail,
+              name: 'Dummy Recipient',
+            },
+          ]
+        : [
         ...(managerUsersSnap?.docs || []).map((d: any) => ({
           uid: clean(d.id, 128),
           email: clean((d.data() as any)?.email, 220).toLowerCase(),
@@ -139,7 +149,7 @@ export async function POST(req: NextRequest) {
               mrn: mrn || undefined,
               stageLabel: 'RN review complete — final manager action required',
               nextAction: 'Open ALFT Tracker, confirm final manager review, and send completed packet to Jocelyn.',
-              actionUrl: `/admin/alft-tracker?managerActions=1&focus=${encodeURIComponent(intakeId)}`,
+              actionUrl: `/admin/alft-tracker?edit=${encodeURIComponent(intakeId)}`,
               triggeredBy: name,
             }).catch(() => null)
           )

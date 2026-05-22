@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 type Body = {
   idToken?: string;
+  overrideRecipientEmail?: string;
   member?: {
     id?: string;
     memberName?: string;
@@ -34,6 +35,7 @@ type Body = {
     ispContactPhone?: string;
     ispContactEmail?: string;
     ispContactConfirmDate?: string;
+    ispContactName?: string;
     swId?: string;
     socialWorkerAssigned?: string;
     prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
@@ -196,6 +198,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as Body;
     const idToken = clean(body?.idToken, 12000);
+    const overrideRecipientEmail = clean(body?.overrideRecipientEmail, 220).toLowerCase();
     const member = body?.member || {};
     const memberId = clean(member?.id, 200);
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
@@ -280,10 +283,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const recipientEmail = overrideRecipientEmail || swEmail;
+
     // Try to resolve SW user by email or SW_ID for in-app notifications.
     let swUid = '';
     try {
-      if (swEmail) {
+      if (!overrideRecipientEmail && swEmail) {
         const byEmail = await adminDb.collection('users').where('email', '==', swEmail).limit(1).get();
         if (!byEmail.empty) swUid = clean(byEmail.docs[0]?.id, 128);
       }
@@ -322,6 +327,11 @@ export async function POST(req: NextRequest) {
       memberPrimaryLanguage: clean(member?.memberPrimaryLanguage, 120),
       memberPhone: clean(member?.memberPhone, 80) || clean(member?.ispContactPhone, 80),
       ispFacilityName: clean(member?.ispFacilityName, 240) || clean(member?.ispCurrentLocation, 240),
+      ispCurrentLocation: clean(member?.ispCurrentLocation, 240) || clean(member?.ispFacilityName, 240),
+      ispContactName: clean(member?.ispContactName, 180),
+      ispContactPhone: clean(member?.ispContactPhone, 80) || clean(member?.memberPhone, 80),
+      ispContactEmail: clean(member?.ispContactEmail, 200),
+      ispContactConfirmDate: clean(member?.ispContactConfirmDate, 120),
       ispCurrentAddressStreet: clean(member?.ispCurrentAddressStreet, 240),
       ispCurrentAddressCity: clean(member?.ispCurrentAddressCity, 120),
       ispCurrentAddressState: clean(member?.ispCurrentAddressState, 50),
@@ -422,6 +432,110 @@ export async function POST(req: NextRequest) {
       180
     );
     const resolvedMemberMrn = clean(resolved.memberMrn || memberMrn, 80);
+    const caspioSource = ((liveMappedSource || caspioSourceRecord || {}) as Record<string, unknown>) || {};
+    const caspioContactFirst = pickFirst(caspioSource as any, ['ISP_Contact_First']);
+    const caspioContactLast = pickFirst(caspioSource as any, ['ISP_Contact_Last']);
+    const caspioContactName = [
+      clean(caspioContactFirst, 120),
+      clean(caspioContactLast, 120),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    const ispContactName = clean(
+      caspioContactName ||
+        pickFirst(caspioSource as any, ['ISP_Contact_Name', 'RCFE_Admin_Name', 'Contact_Name']) ||
+        (resolved as any).ispContactName ||
+        member?.ispContactName,
+      180
+    );
+    const ispLocation = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_Location', 'ISP_Current_Location', 'RCFE_Name', 'Facility_Name']) ||
+        (resolved as any).ispCurrentLocation ||
+        member?.ispCurrentLocation ||
+        (resolved as any).ispFacilityName ||
+        member?.ispFacilityName,
+      240
+    );
+    const facilityType = clean(
+      pickFirst(caspioSource as any, ['ISP_Location_Type', 'Current_Location_Type', 'Location_Type']) ||
+        (resolved as any).currentLocationType ||
+        member?.currentLocationType,
+      120
+    );
+    const facilityName = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_Location', 'ISP_Current_Location', 'RCFE_Name', 'Facility_Name']) ||
+        (resolved as any).ispFacilityName ||
+        member?.ispFacilityName ||
+        member?.ispCurrentLocation,
+      240
+    );
+    const caspioStreet = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_Address', 'ISP_Current_Address', 'Member_Address', 'Address']),
+      240
+    );
+    const caspioCity = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_City', 'ISP_Current_City', 'Member_City', 'City']),
+      120
+    );
+    const caspioState = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_State', 'ISP_Current_State', 'Member_State', 'State']),
+      50
+    );
+    const caspioZip = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_Zip', 'ISP_Current_Zip', 'Member_Zip', 'Zip']),
+      30
+    );
+    const caspioAddress = clean(
+      [caspioStreet, caspioCity, caspioState, caspioZip].filter(Boolean).join(', '),
+      400
+    );
+    const ispAddress = clean(
+      caspioAddress ||
+        [
+          resolved.ispCurrentAddressStreet,
+          resolved.ispCurrentAddressCity,
+          resolved.ispCurrentAddressState,
+          resolved.ispCurrentAddressZip,
+        ]
+          .map((x) => clean(x, 120))
+          .filter(Boolean)
+          .join(', '),
+      400
+    );
+    const ispContactPhone = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_Phone', 'Member_Phone']) ||
+        (resolved as any).ispContactPhone ||
+        member?.ispContactPhone ||
+        (resolved as any).memberPhone ||
+        member?.memberPhone,
+      80
+    );
+    const ispContactEmail = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_Email', 'Member_Email']) ||
+        (resolved as any).ispContactEmail ||
+        member?.ispContactEmail,
+      220
+    ).toLowerCase();
+    const ispContactConfirmDate = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_Confirm_Field', 'ISP_Contact_Confirm_Date', 'ISP_Contact_Confirm', 'ISP_Confirm_Date']) ||
+        (resolved as any).ispContactConfirmDate ||
+        member?.ispContactConfirmDate,
+      120
+    );
+    const hasContactMethod = Boolean(ispContactPhone || ispContactEmail);
+    const hasFacilityTypeOrName = Boolean(facilityType || facilityName || ispLocation);
+    const missingIspFields = [
+      !ispAddress ? 'ISP address' : '',
+      !hasFacilityTypeOrName ? 'Facility type or facility name' : '',
+      !hasContactMethod ? 'ISP contact phone or email' : '',
+    ].filter(Boolean);
+    if (missingIspFields.length > 0) {
+      return NextResponse.json(
+        { success: false, error: `Missing required ISP contact fields: ${missingIspFields.join(', ')}` },
+        { status: 409 }
+      );
+    }
 
     const assignmentDoc: Record<string, any> = {
       memberId,
@@ -434,10 +548,10 @@ export async function POST(req: NextRequest) {
       memberSex: clean(resolved.memberSex, 80),
       memberPrimaryLanguage: clean(resolved.memberPrimaryLanguage, 120),
       memberPhone: clean(resolved.memberPhone, 80),
-      ispCurrentAddressStreet: clean(resolved.ispCurrentAddressStreet, 240),
-      ispCurrentAddressCity: clean(resolved.ispCurrentAddressCity, 120),
-      ispCurrentAddressState: clean(resolved.ispCurrentAddressState, 50) || 'CA',
-      ispCurrentAddressZip: clean(resolved.ispCurrentAddressZip, 30),
+      ispCurrentAddressStreet: caspioStreet || clean(resolved.ispCurrentAddressStreet, 240),
+      ispCurrentAddressCity: caspioCity || clean(resolved.ispCurrentAddressCity, 120),
+      ispCurrentAddressState: caspioState || clean(resolved.ispCurrentAddressState, 50) || 'CA',
+      ispCurrentAddressZip: caspioZip || clean(resolved.ispCurrentAddressZip, 30),
       currentLocationType: clean((resolved as any).currentLocationType, 80),
       assessmentSite: clean((resolved as any).assessmentSite, 80),
       homeAddressStreet: clean((resolved as any).homeAddressStreet, 240),
@@ -445,11 +559,13 @@ export async function POST(req: NextRequest) {
       homeAddressState: clean((resolved as any).homeAddressState, 50) || 'CA',
       homeAddressZip: clean((resolved as any).homeAddressZip, 30),
       ispFacilityName: clean(resolved.ispFacilityName, 240),
+      ispCurrentLocation: ispLocation,
+      currentLocationType: facilityType,
+      ispContactName,
+      ispContactPhone,
+      ispContactEmail,
+      ispContactConfirmDate,
       kaiserStatus: clean(member?.kaiserStatus, 120),
-      ispCurrentLocation: clean(member?.ispCurrentLocation, 240),
-      ispContactPhone: clean(member?.ispContactPhone, 80),
-      ispContactEmail: clean(member?.ispContactEmail, 200),
-      ispContactConfirmDate: clean(member?.ispContactConfirmDate, 80),
       prefillSourceMode,
       prefillSourceLabel:
         prefillSourceMode === 'cs_summary_app'
@@ -473,7 +589,7 @@ export async function POST(req: NextRequest) {
       workflowStatus: 'sw_invited_pending_submission',
       workflowStage: 'sw_invited_to_portal',
       workflowSteps: {
-        swInviteSent: Boolean(swEmail),
+        swInviteSent: Boolean(recipientEmail),
         swSubmittedSigned: false,
         managerReview: 'pending',
         rnReviewSignature: 'pending',
@@ -550,7 +666,7 @@ export async function POST(req: NextRequest) {
           name: clean((docSnap.data() as any)?.displayName, 160) || clean((docSnap.data() as any)?.email, 220) || 'Manager',
         }))
         .filter((m: any) => Boolean(m.email));
-      if (managerEmails.length > 0) {
+      if (!overrideRecipientEmail && managerEmails.length > 0) {
         await Promise.all(
           managerEmails.map((manager: any) =>
             sendAlftManagerWorkflowStageEmail({
@@ -571,15 +687,23 @@ export async function POST(req: NextRequest) {
     }
 
     let swEmailSent = false;
-    if (swEmail) {
+    if (recipientEmail) {
       try {
         await sendAlftWorkflowStartEmail({
-          to: swEmail,
-          socialWorkerName: swName || swEmail,
+          to: recipientEmail,
+          socialWorkerName: swName || recipientEmail,
           memberName: resolvedMemberName,
           mrn: resolvedMemberMrn || undefined,
           portalUrl: '/sw-portal/alft-upload',
           assignedBy: displayName,
+          ispContactName,
+          ispAddress,
+          facilityName,
+          facilityType,
+          ispLocation,
+          ispContactPhone,
+          ispContactEmail,
+          ispLastVerified: ispContactConfirmDate,
         });
         swEmailSent = true;
       } catch {
@@ -595,7 +719,7 @@ export async function POST(req: NextRequest) {
       sw: {
         swId: swId || null,
         swName: swName || null,
-        swEmail: swEmail || null,
+        swEmail: recipientEmail || null,
         swUid: swUid || null,
         emailSent: swEmailSent,
       },

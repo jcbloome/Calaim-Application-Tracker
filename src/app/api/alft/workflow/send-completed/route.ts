@@ -10,9 +10,10 @@ const JOCELYN_EMAIL = 'jocelyn@ilshealth.com';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json().catch(() => ({}))) as { idToken?: string; intakeId?: string };
+    const body = (await req.json().catch(() => ({}))) as { idToken?: string; intakeId?: string; overrideRecipientEmail?: string };
     const idToken = clean(body?.idToken, 8000);
     const intakeId = clean(body?.intakeId, 200);
+    const overrideRecipientEmail = clean(body?.overrideRecipientEmail, 220).toLowerCase();
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
     if (!intakeId) return NextResponse.json({ success: false, error: 'Missing intakeId' }, { status: 400 });
 
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const to = JOCELYN_EMAIL;
+    const to = overrideRecipientEmail || JOCELYN_EMAIL;
     const requestId = clean((intake as any)?.alftSignature?.requestId, 200);
     let signaturePageUrl = '';
     let packetUrl = '';

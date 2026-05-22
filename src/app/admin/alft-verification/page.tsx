@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw } from 'lucide-react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 type AssignmentRecord = {
   memberId?: string;
@@ -66,11 +66,16 @@ export default function AlftVerificationPage() {
   const memberId = asText(searchParams?.get('memberId'));
   const memberNameFromQuery = asText(searchParams?.get('member'));
   const memberMrnFromQuery = asText(searchParams?.get('mrn'));
+  const returnTo = asText(searchParams?.get('returnTo'));
+  const safeReturnTo = returnTo.startsWith('/admin/') ? returnTo : '';
   const workflowQuery = new URLSearchParams({
     ...(memberNameFromQuery ? { member: memberNameFromQuery } : {}),
     ...(memberId ? { memberId } : {}),
   }).toString();
-  const workflowUrl = `/admin/alft-tracker${workflowQuery ? `?${workflowQuery}` : ''}`;
+  const trackerUrl = safeReturnTo || `/admin/alft-tracker${workflowQuery ? `?${workflowQuery}` : ''}`;
+  const queueUrl = memberNameFromQuery
+    ? `/admin/alft-assignment?member=${encodeURIComponent(memberNameFromQuery)}`
+    : '/admin/alft-assignment';
 
   const [assignment, setAssignment] = useState<AssignmentRecord | null>(null);
   const [initialLoading, setInitialLoading] = useState(false);
@@ -124,9 +129,26 @@ export default function AlftVerificationPage() {
       if (!res.ok || !data?.ok) {
         throw new Error(String(data?.error || `Manual sync failed (HTTP ${res.status})`));
       }
+      if (firestore) {
+        const actorEmail = asText(auth.currentUser?.email).toLowerCase();
+        const actorName = asText(auth.currentUser?.displayName) || actorEmail || 'Admin';
+        await setDoc(
+          doc(firestore, 'alft_assignments', memberId),
+          {
+            prefillVerification: {
+              manualSyncAt: serverTimestamp(),
+              manualSyncByUid: auth.currentUser?.uid || null,
+              manualSyncByEmail: actorEmail || null,
+              manualSyncByName: actorName || null,
+            },
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
       setResolved((data?.resolved || {}) as Record<string, string>);
       setLastManualSyncAt(Date.now());
-      toast({ title: 'Manual sync complete', description: 'Verification fields refreshed from Caspio.' });
+      toast({ title: 'Step 2 complete', description: 'Pre-fill fields refreshed from Caspio and saved to assignment record.' });
     } catch (e: any) {
       toast({
         title: 'Manual sync failed',
@@ -195,20 +217,25 @@ export default function AlftVerificationPage() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <CardTitle>ALFT Verification Tool</CardTitle>
+              <CardTitle>Pre-fill ALFT Tool</CardTitle>
               <CardDescription>
-                Manual-sync verification page for ALFT prefill. Data refresh runs only when you click sync.
+                Pull Caspio values into ALFT prefill fields, then push back to ALFT Tracker to continue workflow.
               </CardDescription>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" asChild>
-                <Link href={workflowUrl}>
-                  Back to workflow page
+                <Link href={queueUrl}>
+                  Back to Assignment Queue
                 </Link>
               </Button>
-              <Button onClick={() => void runManualSync()} disabled={!memberId || manualSyncing}>
+              <Button variant="outline" asChild>
+                <Link href={trackerUrl}>
+                  ALFT Tracker
+                </Link>
+              </Button>
+              <Button className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => void runManualSync()} disabled={!memberId || manualSyncing}>
                 {manualSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                Manual Sync
+                Step 2: Manual Sync (Pull Caspio Prefill)
               </Button>
             </div>
           </div>
