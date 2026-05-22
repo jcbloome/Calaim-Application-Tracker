@@ -100,6 +100,10 @@ import {
 } from '@/lib/notification-utils';
 import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 
+// Temporary operational pause:
+// Suspend webhook-driven Caspio note assignments from Action Items counters.
+const SUSPEND_WEBHOOK_NOTE_ACTION_ITEMS = true;
+
 const adminNavLinks = [
   {
     label: 'Operations',
@@ -453,7 +457,9 @@ function AdminHeader() {
       const interoffice = Boolean(data?.isGeneral) || type.includes('interoffice');
       const priority = normalizePriorityLabel(String(data?.priority || ''));
       const isPriority = priority === 'Priority' || priority === 'Urgent' || isPriorityOrUrgent(priority);
-      const caspioAssigned = source === 'caspio' || type.includes('note_assignment');
+      const caspioAssigned =
+        !SUSPEND_WEBHOOK_NOTE_ACTION_ITEMS &&
+        (source === 'caspio' || type.includes('note_assignment'));
       return interoffice || caspioAssigned || isPriority;
     };
     const qy = query(
@@ -484,6 +490,8 @@ function AdminHeader() {
           const source = String(data?.source || '').trim().toLowerCase();
           const plan = String(data?.healthPlan || '').trim().toLowerCase();
           const isKaiserOrHealthNet = plan.includes('kaiser') || plan.includes('health net') || plan.includes('healthnet');
+          const webhookDrivenNote = source === 'caspio' || type.includes('note_assignment');
+          if (SUSPEND_WEBHOOK_NOTE_ACTION_ITEMS && webhookDrivenNote) return;
           const isAssignmentAlert =
             type.includes('assignment') ||
             (Boolean(data?.requiresStaffAction) && source === 'application-pathway' && isKaiserOrHealthNet);

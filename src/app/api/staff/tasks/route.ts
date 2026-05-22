@@ -7,6 +7,9 @@ const H2022_VISIT_ALERT_WINDOW_DAYS = 30;
 const FIRST_CONTACT_STATUS_TOKENS = new Set(['t2038 received need first contact', 't2038 received needs first contact']);
 const RN_VISIT_SET_WEEKLY_STATUS = 'rn visit set with weekly reminder to look for assessment tool from rn';
 const ISP_SUBMITTED_STATUS = 'isp submitted';
+// Temporary operational pause:
+// Suspend webhook-driven Caspio note assignments from Action Items / Daily Tasks.
+const SUSPEND_WEBHOOK_NOTE_TASKS = true;
 
 export async function GET(request: NextRequest) {
   try {
@@ -437,6 +440,9 @@ export async function GET(request: NextRequest) {
         staffDocs.forEach((docSnap) => {
           const data = docSnap.data();
           const notificationType = String((data as any)?.type || '').trim().toLowerCase();
+          const notificationSource = String((data as any)?.source || '').trim().toLowerCase();
+          const webhookDrivenNote = notificationSource === 'caspio' || notificationType.includes('note_assignment');
+          if (SUSPEND_WEBHOOK_NOTE_TASKS && webhookDrivenNote) return;
           const applicationId = String((data as any)?.applicationId || '').trim();
           const ownerUid = parseOwnerUidFromActionUrl((data as any)?.actionUrl);
           const isAssignmentNotification = notificationType === 'assignment';
