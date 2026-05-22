@@ -103,40 +103,6 @@ const normalizeSwNameForUi = (name: string) =>
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const parseFlexibleDate = (value: string): Date | null => {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-  const isoLike = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoLike) return new Date(Number(isoLike[1]), Number(isoLike[2]) - 1, Number(isoLike[3]));
-  const usLike = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (usLike) return new Date(Number(usLike[3]), Number(usLike[1]) - 1, Number(usLike[2]));
-  const dt = new Date(raw);
-  return Number.isNaN(dt.getTime()) ? null : dt;
-};
-
-const formatDobLabel = (value: string): string => {
-  const dt = parseFlexibleDate(value);
-  if (!dt) return '';
-  try {
-    return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch {
-    return '';
-  }
-};
-
-const toMs = (value: any): number => {
-  if (!value) return 0;
-  try {
-    if (typeof value?.toMillis === 'function') return value.toMillis();
-    if (typeof value?.toDate === 'function') return value.toDate().getTime();
-    const dt = new Date(value);
-    const ms = dt.getTime();
-    return Number.isNaN(ms) ? 0 : ms;
-  } catch {
-    return 0;
-  }
-};
-
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   assigned: { label: 'Assigned', color: 'bg-blue-100 text-blue-800 border-blue-200' },
   sw_form_in_progress: { label: 'SW filling ALFT form', color: 'bg-blue-100 text-blue-800 border-blue-200' },
@@ -199,7 +165,6 @@ export default function AdminAlftAssignmentPage() {
   const [resetting, setResetting] = useState<string | null>(null);
   const [pushingToTrackerId, setPushingToTrackerId] = useState<string | null>(null);
   const [prefillSourceMode, setPrefillSourceMode] = useState<'cs_summary_app' | 'caspio_selected_fields'>('caspio_selected_fields');
-  const [swDirectoryById, setSwDirectoryById] = useState<Record<string, { name: string; email: string }>>({});
 
   useEffect(() => {
     const memberQuery = String(searchParams?.get('member') || '').trim();
@@ -230,8 +195,6 @@ export default function AdminAlftAssignmentPage() {
           swById[swId] = { name, email };
         });
       }
-      setSwDirectoryById(swById);
-
       const next: KaiserMember[] = (Array.isArray(data?.members) ? data.members : [])
         .filter((m: any) => isRnVisitNeededStatus(resolveKaiserStatusValue(m as Record<string, unknown>)))
         .map((m: any) => ({
@@ -566,11 +529,11 @@ export default function AdminAlftAssignmentPage() {
                 ALFT Assignment Queue
               </CardTitle>
               <CardDescription>
-                All Caspio members with Kaiser status "RN Visit Needed" are shown here. Use the step buttons per member: verify first, then push to ALFT Tracker to start workflow.
+                All Caspio members with Kaiser status "RN Visit Needed" are shown here. Push members individually to ALFT Tracker, then run the full workflow there.
               </CardDescription>
             </div>
             <Button variant="outline" asChild>
-              <Link href="/admin/alft-tracker">ALFT Tracker</Link>
+              <Link href="/admin/alft-tracker">Go to ALFT Tracker Page</Link>
             </Button>
           </div>
         </CardHeader>
@@ -629,7 +592,7 @@ export default function AdminAlftAssignmentPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead>Member Workflow</TableHead>
+                    <TableHead>Member</TableHead>
                     <TableHead className="w-28">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -637,110 +600,38 @@ export default function AdminAlftAssignmentPage() {
                   {filtered.map((m) => {
                     const assignment = assignments[m.id];
                     const statusMeta = STATUS_LABELS[assignment?.status || ''] || null;
-                    const status = String(assignment?.status || '').trim().toLowerCase();
-                    const stepIndex =
-                      status === 'sw_invited_pending_submission' || status === 'sw_form_in_progress'
-                        ? 1
-                        : status === 'awaiting_manager_review' || status === 'returned_to_sw_for_changes'
-                          ? 2
-                          : status === 'awaiting_rn_final_review'
-                            ? 3
-                            : status === 'rn_finalized_ready_for_ils' || status === 'submitted' || status === 'completed'
-                              ? 4
-                              : 0;
-                    const dobLabel = formatDobLabel(m.birthDate);
+                    const pushedToTracker = Boolean((assignment as any)?.trackerPushedAt);
                     const swAssignedName = normalizeSwNameForUi(m.socialWorkerAssigned || '') || 'Not set';
-                    const swAssignedEmail = m.socialWorkerEmail || swDirectoryById[String(m.swId || '').trim().toLowerCase()]?.email || 'Not set';
-                    const step2SyncAtMs = toMs((assignment as any)?.prefillVerification?.manualSyncAt);
-                    const step2Done = step2SyncAtMs > 0;
                     const isPushingToTracker = pushingToTrackerId === m.id;
-                    const ispInfoLine = [
-                      m.ispCurrentLocation ? `Location: ${m.ispCurrentLocation}` : '',
-                      m.ispContactPhone ? `Phone: ${m.ispContactPhone}` : '',
-                      m.ispContactEmail ? `Email: ${m.ispContactEmail}` : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' • ');
 
                     return (
                       <TableRow key={m.id} className={assignment?.status === 'submitted' ? 'bg-green-50/50' : ''}>
-                        {/* Member + workflow info (consolidated) */}
                         <TableCell className="py-2 align-top">
                           <div className="font-medium text-sm">{m.memberName}</div>
-                          {m.memberMrn && <div className="text-xs text-muted-foreground font-mono">MRN: {m.memberMrn}</div>}
-                          {dobLabel && (
-                            <div className="text-xs text-muted-foreground">
-                              DOB: {dobLabel}
+                          <div className="mt-1 text-[11px] text-muted-foreground">SW assigned: {swAssignedName}</div>
+                          <div className="text-[11px] text-muted-foreground">Pushed to tracker: {pushedToTracker ? 'Yes' : 'No'}</div>
+                          <div className="mt-1.5 space-y-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[10px]"
+                              disabled={isPushingToTracker}
+                              onClick={() => void pushToAlftTracker(m, assignment)}
+                            >
+                              {isPushingToTracker ? 'Pushing…' : 'Push to ALFT Tracker'}
+                            </Button>
+                            <div className="text-[10px] text-muted-foreground leading-tight">
+                              After push, open ALFT Tracker to start and manage the full workflow for this member.
                             </div>
-                          )}
-                          <div className="mt-1 text-[10px] text-muted-foreground">
-                            SW assigned: {swAssignedName} • ID: {m.swId || 'Not set'} • Email: {swAssignedEmail}
                           </div>
-                          <div className="text-[10px] text-muted-foreground">
-                            ISP info: {ispInfoLine || 'Not set'}
+                          <div className="mt-1.5 text-[11px] text-muted-foreground">
+                            Current status: {statusMeta ? statusMeta.label : 'Unassigned'}
                           </div>
-                          {(() => {
-                            const verificationMemberParams = new URLSearchParams({
-                              memberId: String(m.id || '').trim(),
-                              member: String(m.memberName || '').trim(),
-                              mrn: String(m.memberMrn || '').trim(),
-                            });
-                            const verificationHref = `/admin/alft-verification?${verificationMemberParams.toString()}`;
-                            const verified = Boolean((assignment as any)?.verificationSignoff?.verified);
-                            return (
-                              <div className="mt-1.5 space-y-1">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 text-[10px] w-full justify-start border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
-                                  onClick={() => router.push(verificationHref)}
-                                >
-                                  {verified ? 'Step 1: Open Pre-fill ALFT Tool (verified)' : 'Step 1: Open Pre-fill ALFT Tool'}
-                                </Button>
-                                <div className="text-[10px] text-muted-foreground leading-tight">
-                                  Step 2: In verification page, use Manual Sync to pull Caspio prefill into ALFT tool.
-                                </div>
-                                <div className={`text-[10px] ${step2Done ? 'text-green-700' : 'text-amber-700'}`}>
-                                  {step2Done
-                                    ? `Step 2 done: ${new Date(step2SyncAtMs).toLocaleString()}`
-                                    : 'Step 2 pending: Manual Sync not completed yet'}
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant={step2Done ? 'default' : 'outline'}
-                                  className={`h-6 text-[10px] w-full justify-start ${step2Done ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}`}
-                                  disabled={!step2Done || isPushingToTracker}
-                                  onClick={() => void pushToAlftTracker(m, assignment)}
-                                >
-                                  {isPushingToTracker ? 'Step 3: Pushing…' : 'Step 3: Push to ALFT Tracker'}
-                                </Button>
-                                <div className="text-[10px] text-muted-foreground leading-tight">
-                                  Step 4 is on ALFT Tracker: click Start Workflow for this member.
-                                </div>
-                              </div>
-                            );
-                          })()}
-                          {statusMeta ? (
-                            <div className="mt-1.5 space-y-1">
-                              <Badge variant="outline" className={`text-[11px] ${statusMeta.color}`}>
-                                {statusMeta.label}
-                              </Badge>
-                              <div className="text-[10px] text-muted-foreground">
-                                Current status: Step {stepIndex}/4 {stepIndex === 0 ? 'Not started' : stepIndex === 1 ? 'SW invite + form' : stepIndex === 2 ? 'Manager review' : stepIndex === 3 ? 'RN review' : 'Ready for ILS'}
-                              </div>
-                              <div className="text-[10px] text-muted-foreground">
-                                SW invite email: {Boolean((assignment as any)?.workflowSteps?.swInviteSent) ? 'sent' : 'pending/unknown'}
-                              </div>
-                              {assignment?.assignedAt?.toDate ? (
-                                <div className="text-[10px] text-muted-foreground">
-                                  Assigned: {assignment.assignedAt.toDate().toLocaleDateString()}
-                                </div>
-                              ) : null}
+                          {assignment?.assignedAt?.toDate ? (
+                            <div className="text-[11px] text-muted-foreground">
+                              Assigned: {assignment.assignedAt.toDate().toLocaleDateString()}
                             </div>
-                          ) : (
-                            <div className="mt-1.5 text-[10px] text-muted-foreground">Current status: Unassigned</div>
-                          )}
+                          ) : null}
                         </TableCell>
 
                         {/* Actions */}

@@ -573,7 +573,7 @@ const assignmentStageBlock = (row: AlftAssignmentQueueRow) => {
 };
 
 const assignmentNextRecipientBlock = (row: AlftAssignmentQueueRow) => {
-  const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager } = assignmentWorkflowSignals(row);
+  const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager, complete } = assignmentWorkflowSignals(row);
   const swName = toLabel(row.assignedSwName) || 'Social Worker';
   const swEmail = toLabel(row.assignedSwEmail);
   const managerName = toLabel(
@@ -590,13 +590,19 @@ const assignmentNextRecipientBlock = (row: AlftAssignmentQueueRow) => {
   if (returnedToSw) {
     return { label: 'SW revision needed', name: swName, email: swEmail, color: 'border-red-300 bg-red-50 text-red-900' };
   }
+  if (complete) {
+    return { label: 'Completed', name: 'Workflow complete', email: '', color: 'border-slate-300 bg-slate-50 text-slate-900' };
+  }
   if (rnStep) {
     return { label: 'RN review/signature', name: 'Leslie (RN)', email: 'rn@carehomefinders.com', color: 'border-violet-300 bg-violet-50 text-violet-900' };
   }
   if (finalManager || swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
     return { label: 'Manager review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
   }
-  return { label: 'SW complete + submit', name: swName, email: swEmail, color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
+  if (workflowStatus.includes('sw_invited') || workflowStatus.includes('sw_form')) {
+    return { label: 'SW invited/submitting', name: swName, email: swEmail, color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
+  }
+  return { label: 'Start workflow', name: swName, email: swEmail, color: 'border-blue-300 bg-blue-50 text-blue-900' };
 };
 
 const assignmentSourceBlock = (row: AlftAssignmentQueueRow) => {
@@ -731,9 +737,9 @@ const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
 };
 
 const stepChipClass = (step: { done: boolean; current: boolean }) => {
-  if (step.done) return 'border-emerald-300 bg-emerald-50 text-emerald-800';
-  if (step.current) return 'border-blue-300 bg-blue-50 text-blue-800';
-  return 'border-slate-200 bg-slate-50 text-slate-500';
+  if (step.done) return 'border-slate-300 bg-white text-green-700';
+  if (step.current) return 'border-slate-300 bg-white text-slate-900';
+  return 'border-slate-200 bg-white text-slate-500';
 };
 
 const stepDotClass = (step: { done: boolean; current: boolean }) => {
@@ -2256,8 +2262,6 @@ export default function AdminAlftTrackerPage() {
       : editChecklist[(editCurrentIdx >= 0 ? editCurrentIdx : Math.max(editChecklist.length - 1, 0))]?.atLabel || '';
   const editAssignmentSignals = editAssignmentRow ? assignmentWorkflowSignals(editAssignmentRow) : null;
   const editAssignmentStage = editAssignmentRow ? assignmentStageBlock(editAssignmentRow) : null;
-  const editAssignmentNext = editAssignmentRow ? assignmentNextRecipientBlock(editAssignmentRow) : null;
-  const editAssignmentSource = editAssignmentRow ? assignmentSourceBlock(editAssignmentRow) : null;
   const editAssignmentSteps = editAssignmentRow ? assignmentWorkflowSteps(editAssignmentRow) : [];
   const editAssignmentDoneCount = editAssignmentSteps.filter((step) => step.done).length;
   const editVerificationDone = Boolean((editAssignmentRow as any)?.verificationSignoff?.verified);
@@ -2362,7 +2366,9 @@ export default function AdminAlftTrackerPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">ALFT Tracker</CardTitle>
-          <CardDescription>Basic member info is shown here. Use Start Workflow and Open details per member.</CardDescription>
+          <CardDescription>
+            Step 4 begins here after Queue push: open each member workflow, then use Open details for progress and status checks.
+          </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {filtered.length === 0 ? (
@@ -2384,6 +2390,7 @@ export default function AdminAlftTrackerPage() {
                     const focused = focusId && r.id === focusId;
                     const stage = computeStage(r);
                     const assignmentForRow = findAssignmentForUpload(r);
+                    const socialWorkerName = toLabel(assignmentForRow?.assignedSwName) || 'Not assigned';
                     const assignmentWorkflowKey = String(assignmentForRow?.memberId || assignmentForRow?.id || '').trim();
                     const assignmentSignals = assignmentForRow ? assignmentWorkflowSignals(assignmentForRow) : null;
                     const workflowAlreadyStarted = Boolean(
@@ -2410,6 +2417,9 @@ export default function AdminAlftTrackerPage() {
                       <TableRow key={`row-${r.id}`} className={cn(focused ? 'bg-amber-50/30' : '')}>
                         <TableCell>
                           <div className="font-semibold truncate">{r.memberName || '—'}</div>
+                          <div className="text-xs text-muted-foreground break-words">
+                            Social worker: {socialWorkerName}
+                          </div>
                           <div className="text-xs text-muted-foreground break-words">
                             MRN: {r.medicalRecordNumber || '—'} • {r.healthPlan || '—'}
                           </div>
@@ -2471,7 +2481,7 @@ export default function AdminAlftTrackerPage() {
                               }}
                               title={workflowAlreadyStarted ? 'Open workflow page for this member' : 'Step 4: open workflow page for this member'}
                             >
-                              {workflowAlreadyStarted ? 'Go to Workflow Page' : 'Step 4: Start Workflow'}
+                              {workflowAlreadyStarted ? 'Open Workflow Page' : 'Step 4: Start Workflow'}
                             </Button>
                             <Button
                               size="sm"
@@ -2636,24 +2646,11 @@ export default function AdminAlftTrackerPage() {
                     Progress: {editAssignmentDoneCount}/{editAssignmentSteps.length} steps completed
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                  <div className={cn('rounded border p-2 text-xs', editAssignmentStage?.color || 'border-slate-300 bg-slate-50')}>
-                    <div className="font-medium">Current stage</div>
-                    <div>{editAssignmentStage?.label || 'Not started'}</div>
-                    <div className="text-[10px] opacity-80">{toLabel(editAssignmentRow.workflowStatus) || 'No workflow status yet'}</div>
-                  </div>
-                  <div className={cn('rounded border p-2 text-xs', editAssignmentNext?.color || 'border-slate-300 bg-slate-50')}>
-                    <div className="font-medium">Next in line: {editAssignmentNext?.label || 'Unassigned'}</div>
-                    <div>{editAssignmentNext?.name || '—'}</div>
-                    <div className="text-[10px] opacity-80">{editAssignmentNext?.email || 'No email'}</div>
-                  </div>
-                  <div className={cn('rounded border p-2 text-xs', editAssignmentSource?.color || 'border-slate-300 bg-slate-50')}>
-                    <div className="font-medium">Member info source</div>
-                    <div>{editAssignmentSource?.label || 'Not captured'}</div>
-                    <div className="text-[10px] opacity-80">{toLabel(editAssignmentRow.prefillSourceMode) || '—'}</div>
-                  </div>
+                <div className="text-xs text-muted-foreground">
+                  Current status:{' '}
+                  <span className="font-medium text-foreground">{editAssignmentStage?.label || 'Not started'}</span>
                 </div>
-                <div className="text-xs">{editWorkflowSummary}</div>
+                <div className="rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs text-blue-900">{editWorkflowSummary}</div>
                 <div className="flex flex-wrap gap-1">
                   {editAssignmentSteps.map((step) => (
                     <Badge key={`edit-assign-chip-${step.step}`} variant="outline" className={cn('text-[10px]', stepChipClass(step))}>
@@ -2664,7 +2661,7 @@ export default function AdminAlftTrackerPage() {
                 <div className="rounded border p-2 text-xs space-y-2">
                   <div className="font-medium">Ordered steps (click to run)</div>
                   <Button size="sm" variant="outline" className="w-full justify-start text-[11px]" asChild>
-                    <Link href={step1VerificationHref}>1) Open verification tool data page (manual sync)</Link>
+                    <Link href={step1VerificationHref}>1) Open verification tool (manual sync + prefill review)</Link>
                   </Button>
                   <label className="flex items-start gap-2 rounded border p-2">
                     <Checkbox
@@ -2696,7 +2693,7 @@ export default function AdminAlftTrackerPage() {
                     3) Preview SW email + Send/Re-send with timestamp
                   </Button>
                   <div className="rounded border bg-muted/20 p-2">
-                    <Label htmlFor="alft-dummy-send-email-step3" className="text-[11px]">Dummy send email (optional for Step 3 send/re-send)</Label>
+                    <Label htmlFor="alft-dummy-send-email-step3" className="text-[11px]">Step 3 test email override (optional)</Label>
                     <Input
                       id="alft-dummy-send-email-step3"
                       value={dummySendSwEmail}
@@ -2705,7 +2702,7 @@ export default function AdminAlftTrackerPage() {
                       className="mt-1 h-8 text-xs"
                     />
                     <div className="mt-1 text-[10px] text-muted-foreground">
-                      If set, Step 3 send/re-send goes to this test email.
+                      If set, Step 3 SW send/re-send goes to this test email.
                     </div>
                   </div>
                   {editAssignmentSignals?.swInviteSent ? (
@@ -2809,7 +2806,7 @@ export default function AdminAlftTrackerPage() {
             </div>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               <div className="rounded border bg-muted/20 p-2">
-                <Label htmlFor="alft-dummy-send-rn" className="text-[11px]">Dummy email for RN send (Approve → Send to Leslie)</Label>
+                <Label htmlFor="alft-dummy-send-rn" className="text-[11px]">RN stage test email (Approve → Send to Leslie)</Label>
                 <Input
                   id="alft-dummy-send-rn"
                   value={dummySendRnEmail}
@@ -2819,7 +2816,7 @@ export default function AdminAlftTrackerPage() {
                 />
               </div>
               <div className="rounded border bg-muted/20 p-2">
-                <Label htmlFor="alft-dummy-send-manager" className="text-[11px]">Dummy email for CS manager send</Label>
+                <Label htmlFor="alft-dummy-send-manager" className="text-[11px]">CS Manager stage test email (Send to CS Manager for Final Review)</Label>
                 <Input
                   id="alft-dummy-send-manager"
                   value={dummySendManagerEmail}
@@ -2829,7 +2826,7 @@ export default function AdminAlftTrackerPage() {
                 />
               </div>
               <div className="rounded border bg-muted/20 p-2">
-                <Label htmlFor="alft-dummy-send-completed" className="text-[11px]">Dummy email for Send to Jocelyn</Label>
+                <Label htmlFor="alft-dummy-send-completed" className="text-[11px]">Completed packet test email (Send to Jocelyn)</Label>
                 <Input
                   id="alft-dummy-send-completed"
                   value={dummySendCompletedEmail}
