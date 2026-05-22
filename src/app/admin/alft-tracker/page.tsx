@@ -925,7 +925,10 @@ export default function AdminAlftTrackerPage() {
   const [startingWorkflowFor, setStartingWorkflowFor] = useState('');
   const [verifyingMemberId, setVerifyingMemberId] = useState('');
   const [pullingIspForMemberId, setPullingIspForMemberId] = useState('');
-  const [dummySendEmail, setDummySendEmail] = useState('');
+  const [dummySendSwEmail, setDummySendSwEmail] = useState('');
+  const [dummySendRnEmail, setDummySendRnEmail] = useState('');
+  const [dummySendManagerEmail, setDummySendManagerEmail] = useState('');
+  const [dummySendCompletedEmail, setDummySendCompletedEmail] = useState('');
   const [swEmailPreviewOpen, setSwEmailPreviewOpen] = useState(false);
   const [swEmailPreviewRow, setSwEmailPreviewRow] = useState<AlftAssignmentQueueRow | null>(null);
   const [swEmailById, setSwEmailById] = useState<Record<string, string>>({});
@@ -1383,7 +1386,7 @@ export default function AdminAlftTrackerPage() {
       setStartingWorkflowFor(row.memberId || row.id);
       try {
         const idToken = await auth.currentUser.getIdToken();
-        const dummyEmail = String(dummySendEmail || '').trim().toLowerCase();
+        const dummyEmail = String(dummySendSwEmail || '').trim().toLowerCase();
         const rowPrefillPurpose = String(row.prefillPurpose || '').trim();
         const prefillPurpose =
           rowPrefillPurpose === 'initial' || rowPrefillPurpose === 'change_condition' || rowPrefillPurpose === 'review'
@@ -1475,7 +1478,7 @@ export default function AdminAlftTrackerPage() {
         setStartingWorkflowFor('');
       }
     },
-    [auth?.currentUser, dummySendEmail, toast]
+    [auth?.currentUser, dummySendSwEmail, toast]
   );
 
   const setVerificationForMember = useCallback(
@@ -1892,7 +1895,7 @@ export default function AdminAlftTrackerPage() {
         body: JSON.stringify({
           idToken,
           intakeId: row.id,
-          overrideRecipientEmail: String(dummySendEmail || '').trim().toLowerCase() || undefined,
+          overrideRecipientEmail: String(dummySendCompletedEmail || '').trim().toLowerCase() || undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -1947,7 +1950,7 @@ export default function AdminAlftTrackerPage() {
         body: JSON.stringify({
           idToken,
           intakeId: row.id,
-          overrideRecipientEmail: String(dummySendEmail || '').trim().toLowerCase() || undefined,
+          overrideRecipientEmail: String(dummySendManagerEmail || '').trim().toLowerCase() || undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -1990,8 +1993,8 @@ export default function AdminAlftTrackerPage() {
           idToken,
           intakeId: row.id,
           forceDefaultRn: true,
-          overrideRnEmail: String(dummySendEmail || '').trim().toLowerCase() || undefined,
-          overrideRnName: String(dummySendEmail || '').trim() ? 'Dummy Recipient' : undefined,
+          overrideRnEmail: String(dummySendRnEmail || '').trim().toLowerCase() || undefined,
+          overrideRnName: String(dummySendRnEmail || '').trim() ? 'Dummy Recipient' : undefined,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as any;
@@ -2627,19 +2630,6 @@ export default function AdminAlftTrackerPage() {
           <CardContent className="space-y-3">
             {editAssignmentRow && canRunManagerWorkflow ? (
               <div className="rounded-md border p-3 space-y-3">
-                <div className="rounded border bg-muted/20 p-2">
-                  <Label htmlFor="alft-dummy-send-email" className="text-xs">Dummy send email (optional for test sends)</Label>
-                  <Input
-                    id="alft-dummy-send-email"
-                    value={dummySendEmail}
-                    onChange={(e) => setDummySendEmail(e.target.value)}
-                    placeholder="name@example.com"
-                    className="mt-1 h-8 text-xs"
-                  />
-                  <div className="mt-1 text-[10px] text-muted-foreground">
-                    When set, send actions route emails to this address for testing.
-                  </div>
-                </div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-medium">Pre-submission ALFT workflow queue</div>
                   <div className="text-xs text-muted-foreground">
@@ -2705,6 +2695,19 @@ export default function AdminAlftTrackerPage() {
                   >
                     3) Preview SW email + Send/Re-send with timestamp
                   </Button>
+                  <div className="rounded border bg-muted/20 p-2">
+                    <Label htmlFor="alft-dummy-send-email-step3" className="text-[11px]">Dummy send email (optional for Step 3 send/re-send)</Label>
+                    <Input
+                      id="alft-dummy-send-email-step3"
+                      value={dummySendSwEmail}
+                      onChange={(e) => setDummySendSwEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      className="mt-1 h-8 text-xs"
+                    />
+                    <div className="mt-1 text-[10px] text-muted-foreground">
+                      If set, Step 3 send/re-send goes to this test email.
+                    </div>
+                  </div>
                   {editAssignmentSignals?.swInviteSent ? (
                     <div className="text-[10px] text-muted-foreground">SW email already sent. Step 3 lets you preview and re-send if needed.</div>
                   ) : (
@@ -2803,6 +2806,38 @@ export default function AdminAlftTrackerPage() {
                 {editSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                 Save ALFT form
               </Button>
+            </div>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+              <div className="rounded border bg-muted/20 p-2">
+                <Label htmlFor="alft-dummy-send-rn" className="text-[11px]">Dummy email for RN send (Approve → Send to Leslie)</Label>
+                <Input
+                  id="alft-dummy-send-rn"
+                  value={dummySendRnEmail}
+                  onChange={(e) => setDummySendRnEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  className="mt-1 h-8 text-xs"
+                />
+              </div>
+              <div className="rounded border bg-muted/20 p-2">
+                <Label htmlFor="alft-dummy-send-manager" className="text-[11px]">Dummy email for CS manager send</Label>
+                <Input
+                  id="alft-dummy-send-manager"
+                  value={dummySendManagerEmail}
+                  onChange={(e) => setDummySendManagerEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  className="mt-1 h-8 text-xs"
+                />
+              </div>
+              <div className="rounded border bg-muted/20 p-2">
+                <Label htmlFor="alft-dummy-send-completed" className="text-[11px]">Dummy email for Send to Jocelyn</Label>
+                <Input
+                  id="alft-dummy-send-completed"
+                  value={dummySendCompletedEmail}
+                  onChange={(e) => setDummySendCompletedEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  className="mt-1 h-8 text-xs"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
