@@ -19,6 +19,7 @@ import { useGlobalNotifications } from './NotificationProvider';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   ELECTRON_POPUPS_MOTHBALLED,
+  INTEROFFICE_NOTES_MOTHBALLED,
   getPriorityRank,
   isNotificationClosedLike,
   isNotificationSoftDeleted,
@@ -768,6 +769,17 @@ export function RealTimeNotifications() {
         }
 
         flushTimeoutRef.current = setTimeout(() => {
+          if (INTEROFFICE_NOTES_MOTHBALLED) {
+            if (summaryNotificationIdRef.current) {
+              removeNotification(summaryNotificationIdRef.current);
+              summaryNotificationIdRef.current = null;
+            }
+            pendingNotesRef.current = new Map();
+            desktopPriorityPillRef.current = [];
+            clearDesktopIndicators();
+            return;
+          }
+
           const sortedPending = Array.from(pendingNotesRef.current.values()).sort((a, b) => {
             const rankDiff = getPriorityRank(b.priority) - getPriorityRank(a.priority);
             if (rankDiff !== 0) return rankDiff;

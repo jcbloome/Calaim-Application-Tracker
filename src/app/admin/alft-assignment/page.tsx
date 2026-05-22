@@ -357,6 +357,9 @@ export default function AdminAlftAssignmentPage() {
           {
             status: 'assigned',
             workflowStage: 'sw_not_started',
+            trackerPushedAt: null,
+            trackerPushedByEmail: null,
+            trackerPushedByName: null,
             workflowResetAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           },
@@ -593,7 +596,6 @@ export default function AdminAlftAssignmentPage() {
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead>Member</TableHead>
-                    <TableHead className="w-28">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -601,24 +603,57 @@ export default function AdminAlftAssignmentPage() {
                     const assignment = assignments[m.id];
                     const statusMeta = STATUS_LABELS[assignment?.status || ''] || null;
                     const pushedToTracker = Boolean((assignment as any)?.trackerPushedAt);
+                    const pushedAtDate = (assignment as any)?.trackerPushedAt?.toDate?.() as Date | undefined;
                     const swAssignedName = normalizeSwNameForUi(m.socialWorkerAssigned || '') || 'Not set';
                     const isPushingToTracker = pushingToTrackerId === m.id;
+                    const disablePush = pushedToTracker || isPushingToTracker;
 
                     return (
                       <TableRow key={m.id} className={assignment?.status === 'submitted' ? 'bg-green-50/50' : ''}>
                         <TableCell className="py-2 align-top">
                           <div className="font-medium text-sm">{m.memberName}</div>
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            Kaiser Status: {m.kaiserStatus || 'Unknown'}
+                          </div>
                           <div className="mt-1 text-[11px] text-muted-foreground">SW assigned: {swAssignedName}</div>
-                          <div className="text-[11px] text-muted-foreground">Pushed to tracker: {pushedToTracker ? 'Yes' : 'No'}</div>
+                          {pushedToTracker ? (
+                            <div className="mt-1 text-[11px] text-emerald-700">
+                              <span className="font-semibold" aria-label="Already pushed to tracker">✓</span>{' '}
+                              Pushed to tracker: {pushedAtDate ? pushedAtDate.toLocaleDateString() : 'Yes'}
+                            </div>
+                          ) : null}
+                          {pushedToTracker ? (
+                            <div className="mt-1 text-[11px]">
+                              <Link
+                                href={`/admin/alft-tracker?focus=${encodeURIComponent(m.id)}`}
+                                className="text-blue-600 hover:text-blue-700 underline"
+                              >
+                                Open member in ALFT Tracker
+                              </Link>
+                            </div>
+                          ) : null}
                           <div className="mt-1.5 space-y-1">
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="h-6 px-2 text-[10px]"
-                              disabled={isPushingToTracker}
+                              className={`h-6 px-2 text-[10px] ${
+                                disablePush
+                                  ? 'bg-slate-300 hover:bg-slate-300 text-slate-600'
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+                              }`}
+                              disabled={disablePush}
                               onClick={() => void pushToAlftTracker(m, assignment)}
                             >
-                              {isPushingToTracker ? 'Pushing…' : 'Push to ALFT Tracker'}
+                              {isPushingToTracker ? 'Pushing…' : pushedToTracker ? 'Already Pushed' : 'Push to ALFT Tracker'}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[10px]"
+                              disabled={resetting === m.id}
+                              onClick={() => void resetWorkflowStatus(m)}
+                            >
+                              {resetting === m.id ? 'Resetting…' : 'Reset'}
                             </Button>
                             <div className="text-[10px] text-muted-foreground leading-tight">
                               After push, open ALFT Tracker to start and manage the full workflow for this member.
@@ -634,19 +669,6 @@ export default function AdminAlftAssignmentPage() {
                           ) : null}
                         </TableCell>
 
-                        {/* Actions */}
-                        <TableCell className="py-2 align-top">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-[10px]"
-                            disabled={resetting === m.id}
-                            onClick={() => void resetWorkflowStatus(m)}
-                          >
-                            {resetting === m.id ? 'Resetting…' : 'Reset'}
-                          </Button>
-                        </TableCell>
                       </TableRow>
                     );
                   })}
