@@ -931,7 +931,8 @@ export default function AdminAlftTrackerPage() {
   const [startingWorkflowFor, setStartingWorkflowFor] = useState('');
   const [verifyingMemberId, setVerifyingMemberId] = useState('');
   const [pullingIspForMemberId, setPullingIspForMemberId] = useState('');
-  const [dummySendSwEmail, setDummySendSwEmail] = useState('');
+  const [swEmailPreviewUseTestOverride, setSwEmailPreviewUseTestOverride] = useState(false);
+  const [swEmailPreviewTestEmail, setSwEmailPreviewTestEmail] = useState('');
   const [dummySendRnEmail, setDummySendRnEmail] = useState('');
   const [dummySendManagerEmail, setDummySendManagerEmail] = useState('');
   const [dummySendCompletedEmail, setDummySendCompletedEmail] = useState('');
@@ -1373,7 +1374,7 @@ export default function AdminAlftTrackerPage() {
   );
 
   const startWorkflowFromIntake = useCallback(
-    async (row: AlftAssignmentQueueRow, opts?: { skipVerificationCheck?: boolean }) => {
+    async (row: AlftAssignmentQueueRow, opts?: { skipVerificationCheck?: boolean; overrideRecipientEmail?: string }) => {
       if (!auth?.currentUser) {
         toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
         return;
@@ -1392,7 +1393,7 @@ export default function AdminAlftTrackerPage() {
       setStartingWorkflowFor(row.memberId || row.id);
       try {
         const idToken = await auth.currentUser.getIdToken();
-        const dummyEmail = String(dummySendSwEmail || '').trim().toLowerCase();
+        const dummyEmail = String(opts?.overrideRecipientEmail || '').trim().toLowerCase();
         const rowPrefillPurpose = String(row.prefillPurpose || '').trim();
         const prefillPurpose =
           rowPrefillPurpose === 'initial' || rowPrefillPurpose === 'change_condition' || rowPrefillPurpose === 'review'
@@ -1484,7 +1485,7 @@ export default function AdminAlftTrackerPage() {
         setStartingWorkflowFor('');
       }
     },
-    [auth?.currentUser, dummySendSwEmail, toast]
+    [auth?.currentUser, toast]
   );
 
   const setVerificationForMember = useCallback(
@@ -2554,7 +2555,16 @@ export default function AdminAlftTrackerPage() {
       </Card>
       ) : null}
 
-      <Dialog open={swEmailPreviewOpen} onOpenChange={setSwEmailPreviewOpen}>
+      <Dialog
+        open={swEmailPreviewOpen}
+        onOpenChange={(open) => {
+          setSwEmailPreviewOpen(open);
+          if (!open) {
+            setSwEmailPreviewUseTestOverride(false);
+            setSwEmailPreviewTestEmail('');
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Social Worker email preview</DialogTitle>
@@ -2595,6 +2605,35 @@ export default function AdminAlftTrackerPage() {
                 {swEmailPreview?.body || '—'}
               </pre>
             </div>
+            <div className="rounded border bg-muted/20 p-2 space-y-2">
+              <div className="font-medium text-xs">Test override</div>
+              <div className="flex items-center gap-2 text-xs">
+                <Label htmlFor="sw-email-test-override-mode">Use test override:</Label>
+                <select
+                  id="sw-email-test-override-mode"
+                  value={swEmailPreviewUseTestOverride ? 'yes' : 'no'}
+                  onChange={(e) => setSwEmailPreviewUseTestOverride(e.target.value === 'yes')}
+                  className="h-8 rounded border bg-background px-2"
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
+                </select>
+              </div>
+              {swEmailPreviewUseTestOverride ? (
+                <div>
+                  <Label htmlFor="sw-email-test-override-address" className="text-[11px]">
+                    Test email
+                  </Label>
+                  <Input
+                    id="sw-email-test-override-address"
+                    value={swEmailPreviewTestEmail}
+                    onChange={(e) => setSwEmailPreviewTestEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="mt-1 h-8 text-xs"
+                  />
+                </div>
+              ) : null}
+            </div>
           </div>
           <DialogFooter>
             {swEmailPreviewRow ? (
@@ -2612,8 +2651,16 @@ export default function AdminAlftTrackerPage() {
               <Button
                 variant={swEmailPreview?.canSend ? 'default' : 'outline'}
                 className={swEmailPreview?.canSend ? 'bg-indigo-600 text-white hover:bg-indigo-700' : ''}
-                disabled={!swEmailPreview?.canSend || isResendingSwFromEdit}
-                onClick={() => void startWorkflowFromIntake(swEmailPreviewRow)}
+                disabled={
+                  !swEmailPreview?.canSend ||
+                  isResendingSwFromEdit ||
+                  (swEmailPreviewUseTestOverride && !String(swEmailPreviewTestEmail || '').trim())
+                }
+                onClick={() =>
+                  void startWorkflowFromIntake(swEmailPreviewRow, {
+                    overrideRecipientEmail: swEmailPreviewUseTestOverride ? swEmailPreviewTestEmail : undefined,
+                  })
+                }
               >
                 {isResendingSwFromEdit
                   ? 'Sending...'
@@ -2687,24 +2734,13 @@ export default function AdminAlftTrackerPage() {
                     disabled={!editVerificationDone}
                     onClick={() => {
                       setSwEmailPreviewRow(editAssignmentRow);
+                      setSwEmailPreviewUseTestOverride(false);
+                      setSwEmailPreviewTestEmail('');
                       setSwEmailPreviewOpen(true);
                     }}
                   >
                     3) Preview SW email + Send/Re-send with timestamp
                   </Button>
-                  <div className="rounded border bg-muted/20 p-2">
-                    <Label htmlFor="alft-dummy-send-email-step3" className="text-[11px]">Step 3 test email override (optional)</Label>
-                    <Input
-                      id="alft-dummy-send-email-step3"
-                      value={dummySendSwEmail}
-                      onChange={(e) => setDummySendSwEmail(e.target.value)}
-                      placeholder="name@example.com"
-                      className="mt-1 h-8 text-xs"
-                    />
-                    <div className="mt-1 text-[10px] text-muted-foreground">
-                      If set, Step 3 SW send/re-send goes to this test email.
-                    </div>
-                  </div>
                   {editAssignmentSignals?.swInviteSent ? (
                     <div className="text-[10px] text-muted-foreground">SW email already sent. Step 3 lets you preview and re-send if needed.</div>
                   ) : (
