@@ -18,6 +18,7 @@ import {
 import { useGlobalNotifications } from './NotificationProvider';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
+  ELECTRON_POPUPS_MOTHBALLED,
   getPriorityRank,
   isNotificationClosedLike,
   isNotificationSoftDeleted,
@@ -171,6 +172,11 @@ export function RealTimeNotifications() {
   const emitDesktopPill = useCallback((params?: { openPanel?: boolean }) => {
     try {
       if (typeof window === 'undefined') return;
+      if (ELECTRON_POPUPS_MOTHBALLED) {
+        window.desktopNotifications?.setPendingCount?.(0);
+        window.desktopNotifications?.setPillSummary?.({ count: 0, openPanel: false, notes: [] });
+        return;
+      }
       if (!window.desktopNotifications?.setPillSummary) return;
       const priorityNotes = desktopPriorityPillRef.current || [];
       const count = priorityNotes.length;
@@ -210,6 +216,10 @@ export function RealTimeNotifications() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!window.desktopNotifications) return;
+    if (ELECTRON_POPUPS_MOTHBALLED) {
+      clearDesktopIndicators();
+      return;
+    }
     if (desktopEffectivePaused) {
       clearDesktopIndicators();
       return;
@@ -656,6 +666,7 @@ export function RealTimeNotifications() {
           typeof window !== 'undefined' &&
           Boolean(window.desktopNotifications) &&
           !Boolean(window.desktopNotifications?.__shim) &&
+          !ELECTRON_POPUPS_MOTHBALLED &&
           !desktopEffectivePaused;
 
         const shouldMarkSeenNow = !desktopEffectivePaused;
@@ -767,7 +778,8 @@ export function RealTimeNotifications() {
             const desktopPending = sortedPending.filter((n) =>
               isDesktopNotifiable({ priority: n.priority, type: n.type, isGeneral: n.isGeneral, source: n.source })
             );
-            window.desktopNotifications.setPendingCount(desktopEffectivePaused ? 0 : desktopPending.length);
+            const nextCount = ELECTRON_POPUPS_MOTHBALLED ? 0 : (desktopEffectivePaused ? 0 : desktopPending.length);
+            window.desktopNotifications.setPendingCount(nextCount);
           }
 
           if (sortedPending.length === 0) {
@@ -849,7 +861,7 @@ export function RealTimeNotifications() {
             Boolean(latestPending?.timestamp) &&
             Date.now() - latestPending.timestamp.getTime() <= recentThresholdMs;
           const forceExpanded = hasNewUrgent || hasNewPriority || hasNewDesktopAlert || isRecent;
-          const desktopPresent = typeof window !== 'undefined'
+          const desktopPresent = !ELECTRON_POPUPS_MOTHBALLED && typeof window !== 'undefined'
             && Boolean(window.desktopNotifications)
             && !Boolean(window.desktopNotifications?.__shim);
           const desktopAppActivelyNotifying = desktopPresent && !desktopEffectivePaused;

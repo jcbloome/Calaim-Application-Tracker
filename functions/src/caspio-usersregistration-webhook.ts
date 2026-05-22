@@ -194,9 +194,9 @@ const normalizeSubjectTemplate = (value: unknown): string => {
 const normalizeBodyTemplate = (value: unknown): string => {
   let body = String(value || DEFAULT_WELCOME_SETTINGS.bodyTemplate);
   body = body
-    .replaceAll("If you need help, please reply to this email and our team will assist you.", SUPPORT_LINE)
-    .replaceAll("If you need help, please email us at info@carehomefinders.com.", SUPPORT_LINE)
-    .replaceAll("For RCFE billers: after logging in, select \"Add CalAIM RCFE\" to register your RCFE(s).", "{{rcfeInstruction}}");
+    .split("If you need help, please reply to this email and our team will assist you.").join(SUPPORT_LINE)
+    .split("If you need help, please email us at info@carehomefinders.com.").join(SUPPORT_LINE)
+    .split("For RCFE billers: after logging in, select \"Add CalAIM RCFE\" to register your RCFE(s).").join("{{rcfeInstruction}}");
   let lines = body.split("\n").map((line) => {
     const trimmed = String(line || "").trim();
     if (trimmed.startsWith(LEGACY_RCFE_PREFIX)) return "{{rcfeInstruction}}";

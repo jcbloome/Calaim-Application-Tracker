@@ -511,10 +511,6 @@ const resolveContextNearProcLine = (
   current: EraMemberContext,
   parserProfile: EraParserProfile
 ): EraMemberContext => {
-  if (parserProfile === "health_net") {
-    return resolveHealthNetContextBackward(lines, idx, current);
-  }
-
   let resolved: EraMemberContext = { ...current };
 
   // Health Net remits can contain multiple member blocks per page.

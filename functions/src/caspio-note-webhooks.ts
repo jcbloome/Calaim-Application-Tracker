@@ -58,6 +58,7 @@ const caspioClientSecret = defineSecret("CASPIO_CLIENT_SECRET");
 const caspioWebhookSecret = defineSecret("CASPIO_WEBHOOK_SECRET");
 const WEBHOOK_EVENTS_COLLECTION = "caspio-webhook-events";
 const DEDUPE_RETRY_WINDOW_MS = 15 * 1000;
+const SUSPEND_CASPIO_NOTE_WEBHOOKS = true;
 
 const normalizeCaspioBlankValue = (value: any): any => {
   if (value === null || value === undefined) return '';
@@ -580,6 +581,15 @@ export const caspioCalAIMNotesWebhook = onRequest(
         return;
       }
 
+      if (SUSPEND_CASPIO_NOTE_WEBHOOKS) {
+        response.status(202).json({
+          success: true,
+          suspended: true,
+          message: 'Caspio note webhooks are temporarily suspended'
+        });
+        return;
+      }
+
       const noteData: CalAIMNoteData & { secret?: string } = normalizeCaspioBlankValue(request.body || {});
       if (hasWebhookTestMarker(noteData.Note_ID, noteData.Client_ID2, noteData.Member_Name, noteData.Note_Content)) {
         response.status(200).json({ success: true, message: 'Webhook test marker ignored' });
@@ -704,6 +714,15 @@ export const caspioClientNotesWebhook = onRequest(
 
       if (request.method !== 'POST') {
         response.status(405).json({ error: 'Method not allowed' });
+        return;
+      }
+
+      if (SUSPEND_CASPIO_NOTE_WEBHOOKS) {
+        response.status(202).json({
+          success: true,
+          suspended: true,
+          message: 'Caspio note webhooks are temporarily suspended'
+        });
         return;
       }
 

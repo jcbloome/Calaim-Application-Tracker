@@ -402,7 +402,7 @@ function MyTasksPageContent() {
     try {
       const actionUrl = followUpForm.memberClientId
         ? `/admin/member-notes?clientId2=${encodeURIComponent(followUpForm.memberClientId)}`
-        : '/admin/my-notes';
+        : '/admin/tasks';
 
       await addDoc(collection(firestore, 'staff_notifications'), {
         userId: user.uid,
@@ -1852,14 +1852,7 @@ function MyTasksPageContent() {
                               </div>
                             ) : (
                               <>
-                                {task.id.startsWith('staff-followup-') && (
-                                  <Button variant="outline" size="sm" asChild>
-                                    <Link href={`/admin/my-notes?replyTo=${task.id.replace('staff-followup-', '')}`}>
-                                      <MessageSquare className="h-4 w-4" />
-                                    </Link>
-                                  </Button>
-                                )}
-                                {task.actionUrl && (
+                                {task.actionUrl && !String(task.actionUrl).includes('/admin/my-notes') && (
                                   <Button variant="outline" size="sm" asChild>
                                     <Link href={task.actionUrl}>
                                       <FileText className="h-4 w-4" />

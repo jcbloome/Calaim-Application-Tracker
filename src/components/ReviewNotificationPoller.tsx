@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useUser } from '@/firebase';
+import { ELECTRON_POPUPS_MOTHBALLED } from '@/lib/notification-utils';
 
 const DEFAULT_POLL_SECONDS = 180;
 
@@ -108,12 +109,23 @@ export function ReviewNotificationPoller() {
   const shouldRun = useMemo(() => {
     if (!user?.uid) return false;
     if (typeof window === 'undefined') return false;
+    if (ELECTRON_POPUPS_MOTHBALLED) return false;
     // Admin pages already trigger review popups from live action-item counters.
     if (typeof window !== 'undefined' && window.location?.pathname?.startsWith('/admin')) return false;
     return true;
   }, [user?.uid]);
 
   const pollOnce = async (): Promise<number> => {
+    if (ELECTRON_POPUPS_MOTHBALLED) {
+      try {
+        if (typeof window !== 'undefined') {
+          window.desktopNotifications?.setReviewPillSummary?.({ count: 0, openPanel: false, notes: [] });
+        }
+      } catch {
+        // ignore
+      }
+      return DEFAULT_POLL_SECONDS;
+    }
     if (!user?.uid) return;
     if (inFlightRef.current) return;
     inFlightRef.current = true;

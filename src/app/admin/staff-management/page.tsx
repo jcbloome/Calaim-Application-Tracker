@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
+import { INTEROFFICE_NOTES_MOTHBALLED } from '@/lib/notification-utils';
 interface StaffMember {
     uid: string;
     role: 'Admin' | 'Super Admin' | 'Staff';
@@ -378,7 +379,11 @@ export default function StaffManagementPage() {
                 const rawRecipientUids = (data as any)?.recipientUids;
                 setNotificationRecipientsHadField(rawRecipientUids !== undefined);
                 setNotificationRecipients(Array.isArray(rawRecipientUids) ? rawRecipientUids : []);
-                setInterofficeElectronEnabled(Boolean((data as any)?.interofficeElectronEnabled ?? (data as any)?.interofficeNotificationsEnabled ?? true));
+                setInterofficeElectronEnabled(
+                    INTEROFFICE_NOTES_MOTHBALLED
+                        ? false
+                        : Boolean((data as any)?.interofficeElectronEnabled ?? (data as any)?.interofficeNotificationsEnabled ?? true)
+                );
                 setIlsNotePermissions(data?.ilsNotePermissions || []);
                 setSwVisitDeletePermissions((data as any)?.swVisitDeletePermissions || []);
                 setMemberVerificationKaiserRecipientUids((data as any)?.memberVerificationKaiserRecipientUids || []);
@@ -387,7 +392,7 @@ export default function StaffManagementPage() {
                 setSuppressWebWhenDesktopActive(Boolean((data as any)?.suppressWebWhenDesktopActive ?? true));
             } else {
                 setNotificationRecipientsHadField(false);
-                setInterofficeElectronEnabled(true);
+                setInterofficeElectronEnabled(false);
                 setMemberVerificationKaiserRecipientUids([]);
                 setMemberVerificationHealthNetRecipientUids([]);
             }
@@ -446,6 +451,7 @@ export default function StaffManagementPage() {
     // Interoffice notes should be ON by default for staff.
     // If `recipientUids` isn't present yet, default it to all staff IDs in the UI (and on save it will persist).
     useEffect(() => {
+        if (INTEROFFICE_NOTES_MOTHBALLED) return;
         if (notificationRecipientsHadField !== false) return;
         if (!staffList || staffList.length === 0) return;
         setNotificationRecipients((prev) => {
@@ -585,6 +591,10 @@ export default function StaffManagementPage() {
     };
 
     const applyInterofficeMasterSwitch = (enabled: boolean) => {
+        if (INTEROFFICE_NOTES_MOTHBALLED) {
+            setInterofficeElectronEnabled(false);
+            return;
+        }
         const nextEnabled = Boolean(enabled);
         setInterofficeElectronEnabled(nextEnabled);
 
@@ -801,8 +811,8 @@ export default function StaffManagementPage() {
             const notificationsRef = doc(firestore, 'system_settings', 'notifications');
             const notificationsData = {
                 recipientUids: notificationRecipients,
-                interofficeNotificationsEnabled: Boolean(interofficeElectronEnabled),
-                interofficeElectronEnabled: Boolean(interofficeElectronEnabled),
+                interofficeNotificationsEnabled: INTEROFFICE_NOTES_MOTHBALLED ? false : Boolean(interofficeElectronEnabled),
+                interofficeElectronEnabled: INTEROFFICE_NOTES_MOTHBALLED ? false : Boolean(interofficeElectronEnabled),
                 ilsNotePermissions: ilsNotePermissions,
                 swVisitDeletePermissions: swVisitDeletePermissions,
                 memberVerificationKaiserRecipientUids: Array.from(
@@ -1212,11 +1222,19 @@ export default function StaffManagementPage() {
                         </div>
                         <div className="flex items-center justify-between gap-4 p-3 border rounded-lg bg-muted/20">
                             <div className="space-y-1">
-                                <div className="text-sm font-semibold">Interoffice + Electron tray alerts</div>
-                                <div className="text-xs text-muted-foreground">Single master on/off for interoffice priority alerts and Electron tray popups.</div>
+                                <div className="flex items-center gap-2 text-sm font-semibold">
+                                    <span>Interoffice + Electron tray alerts</span>
+                                    {INTEROFFICE_NOTES_MOTHBALLED ? <Badge variant="secondary">Inactive</Badge> : null}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                    {INTEROFFICE_NOTES_MOTHBALLED
+                                        ? 'Mothballed for now. Interoffice controls are disabled.'
+                                        : 'Single master on/off for interoffice priority alerts and Electron tray popups.'}
+                                </div>
                             </div>
                             <Switch
-                                checked={interofficeElectronEnabled}
+                                checked={INTEROFFICE_NOTES_MOTHBALLED ? false : interofficeElectronEnabled}
+                                disabled={INTEROFFICE_NOTES_MOTHBALLED}
                                 onCheckedChange={(v) => applyInterofficeMasterSwitch(Boolean(v))}
                             />
                         </div>
@@ -1444,13 +1462,15 @@ export default function StaffManagementPage() {
                                         </div>
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
-                                                <Bell className={`h-4 w-4 ${interofficeElectronChecked ? 'text-primary' : 'text-muted-foreground'}`} />
-                                                <Label htmlFor={`interoffice-electron-${staff.uid}`} className="text-sm font-medium">Interoffice + Electron</Label>
+                                                <Bell className={`h-4 w-4 ${INTEROFFICE_NOTES_MOTHBALLED ? 'text-muted-foreground' : interofficeElectronChecked ? 'text-primary' : 'text-muted-foreground'}`} />
+                                                <Label htmlFor={`interoffice-electron-${staff.uid}`} className="text-sm font-medium">
+                                                    Interoffice + Electron {INTEROFFICE_NOTES_MOTHBALLED ? '(Inactive)' : ''}
+                                                </Label>
                                             </div>
                                             <Checkbox 
                                                 id={`interoffice-electron-${staff.uid}`}
-                                                checked={interofficeElectronChecked}
-                                                disabled={!interofficeElectronEnabled}
+                                                checked={INTEROFFICE_NOTES_MOTHBALLED ? false : interofficeElectronChecked}
+                                                disabled={INTEROFFICE_NOTES_MOTHBALLED || !interofficeElectronEnabled}
                                                 onCheckedChange={(checked) => {
                                                     const nextValue = Boolean(checked);
                                                     handleInterofficeElectronCardToggle(staff.uid, nextValue, staff, reviewRecipient);

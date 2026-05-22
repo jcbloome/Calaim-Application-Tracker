@@ -27,6 +27,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 
+const SUSPEND_CASPIO_NOTE_WEBHOOKS = true;
+
 interface CaspioNoteWebhookData {
   Client_ID2?: string;
   Member_Name?: string;
@@ -140,6 +142,14 @@ async function resolveAssignedStaff(assignedToRaw: string): Promise<ResolvedStaf
 
 export async function POST(request: NextRequest) {
   try {
+    if (SUSPEND_CASPIO_NOTE_WEBHOOKS) {
+      return NextResponse.json({
+        success: true,
+        suspended: true,
+        message: 'Caspio note webhook processing is temporarily suspended',
+      }, { status: 202 });
+    }
+
     const body = await request.json();
     console.log('📥 Received Caspio note webhook:', body);
 

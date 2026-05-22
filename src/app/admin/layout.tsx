@@ -58,8 +58,6 @@ import {
   Receipt,
   Search,
   Monitor,
-  Wifi,
-  WifiOff,
   AlertTriangle
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -93,12 +91,13 @@ import { CaspioUsageAlert } from '@/components/admin/CaspioUsageAlert';
 import { DesktopPresenceBeacon } from '@/components/admin/DesktopPresenceBeacon';
 import { AuthGuard } from '@/components/AuthGuard';
 import {
+  ELECTRON_POPUPS_MOTHBALLED,
+  INTEROFFICE_NOTES_MOTHBALLED,
   isNotificationClosedLike,
   isNotificationSoftDeleted,
   isPriorityOrUrgent,
   normalizePriorityLabel
 } from '@/lib/notification-utils';
-import { useDesktopPresenceMap } from '@/hooks/use-desktop-presence';
 
 // Temporary operational pause:
 // Suspend webhook-driven Caspio note assignments from Action Items counters.
@@ -139,7 +138,6 @@ const adminNavLinks = [
     icon: ClipboardList,
     isSubmenu: true,
     submenuItems: [
-      { href: '/admin/my-notes', label: 'Interoffice Notes', icon: Bell },
       { href: '/admin/tasks', label: 'Daily Task Tracker', icon: ClipboardList },
       { href: '/admin/followup-notes', label: 'Follow-up Notes (Caspio)', icon: MessageSquareText },
     ],
@@ -187,6 +185,7 @@ const superAdminNavLinks = [
       { href: '/admin/activity-log', label: 'System Activity Log', icon: Activity },
       { href: '/admin/member-activity', label: 'Member Activity Tracking', icon: Activity },
       { href: '/admin/login-activity', label: 'Login Activity Tracker', icon: Activity },
+      { isDivider: true, label: 'Electron', icon: Monitor },
       { href: '/admin/electron-controls', label: 'Electron Controls', icon: Monitor },
       { href: '/admin/system-configuration', label: 'System Configuration', icon: Settings },
       { href: '/admin/data-integration', label: 'Data & Integration Tools', icon: Database },
@@ -244,9 +243,6 @@ function AdminHeader() {
   const [alftPendingCount, setAlftPendingCount] = useState(0);
   const [kTierCount, setKTierCount] = useState(0);
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
-  const [staffList, setStaffList] = useState<Array<{ uid: string; name: string }>>([]);
-  const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
-  const { isActiveByUid: isElectronActiveByUid, presenceByUid } = useDesktopPresenceMap(staffUids);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
     alftElectronEnabled: boolean;
@@ -451,6 +447,10 @@ function AdminHeader() {
   // Keep Action items counts aligned with the Electron pill summary (Chat + Priority Notes).
   useEffect(() => {
     if (!firestore || !user?.uid) return;
+    if (INTEROFFICE_NOTES_MOTHBALLED) {
+      setPriorityNotesCount(0);
+      return;
+    }
     const isDesktopNotifiable = (data: any) => {
       const type = String(data?.type || '').toLowerCase();
       const source = String(data?.source || '').toLowerCase();
@@ -519,60 +519,6 @@ function AdminHeader() {
     return () => unsub();
   }, [firestore, user?.uid]);
 
-  useEffect(() => {
-    const loadAdminStaff = async () => {
-      if (!firestore) return;
-      const pickStaffName = (data: any, uid: string) => {
-        const first = String(data?.firstName || '').trim();
-        const last = String(data?.lastName || '').trim();
-        const fullName = `${first} ${last}`.trim();
-        const displayName = String(data?.displayName || '').trim();
-        const safeDisplayName = displayName && !displayName.includes('@') ? displayName : '';
-        return fullName || safeDisplayName || `Staff ${uid.slice(0, 6)}`;
-      };
-      try {
-        const [adminSnap, superAdminSnap, staffSnap] = await Promise.all([
-          getDocs(collection(firestore, 'roles_admin')),
-          getDocs(collection(firestore, 'roles_super_admin')),
-          getDocs(query(collection(firestore, 'users'), where('isStaff', '==', true)))
-        ]);
-        const adminIds = adminSnap.docs.map((docItem) => docItem.id);
-        const superAdminIds = superAdminSnap.docs.map((docItem) => docItem.id);
-        const staffIds = staffSnap.docs.map((docItem) => docItem.id);
-        const allIds = Array.from(new Set([...adminIds, ...superAdminIds, ...staffIds])).filter((id) => !String(id).includes('@'));
-        if (allIds.length === 0) {
-          setStaffList([]);
-          return;
-        }
-
-        const chunks: string[][] = [];
-        for (let i = 0; i < allIds.length; i += 10) {
-          chunks.push(allIds.slice(i, i + 10));
-        }
-
-        const users: Array<{ uid: string; name: string }> = [];
-        for (const chunk of chunks) {
-          const usersSnap = await getDocs(
-            query(collection(firestore, 'users'), where(documentId(), 'in', chunk))
-          );
-          usersSnap.forEach((docItem) => {
-            const data = docItem.data() as any;
-            users.push({
-              uid: docItem.id,
-              name: pickStaffName(data, docItem.id),
-            });
-          });
-        }
-
-        users.sort((a, b) => a.name.localeCompare(b.name));
-        setStaffList(users);
-      } catch {
-        setStaffList([]);
-      }
-    };
-    loadAdminStaff();
-  }, [firestore]);
-
   const handleSignOut = async () => {
     try {
       if (firestore && user?.uid) {
@@ -601,6 +547,7 @@ function AdminHeader() {
     const isRealDesktop =
       typeof window !== 'undefined' &&
       Boolean((window as any).desktopNotifications) &&
+      !ELECTRON_POPUPS_MOTHBALLED &&
       !Boolean((window as any).desktopNotifications?.__shim);
     try {
       localStorage.removeItem(ADMIN_LAST_ACTIVITY_KEY);
@@ -973,6 +920,7 @@ function AdminHeader() {
         const isRealDesktop =
           typeof window !== 'undefined' &&
           Boolean((window as any).desktopNotifications) &&
+          !ELECTRON_POPUPS_MOTHBALLED &&
           !Boolean((window as any).desktopNotifications?.__shim);
         if (isRealDesktop) {
           // Keep CS/docs/ALFT as Action Items counters only (no Electron review notification cards).
@@ -1368,7 +1316,10 @@ function AdminHeader() {
       : null;
     const dLabel = showDocs ? `D(${newUploadCount})` : null;
     const sLabel = showStandalone ? `S(${standalonePendingCount})` : null;
-    const notesLabel = priorityNotesCount > 0 ? `Notes(${priorityNotesCount})` : null;
+    const notesLabel =
+      !INTEROFFICE_NOTES_MOTHBALLED && priorityNotesCount > 0
+        ? `Notes(${priorityNotesCount})`
+        : null;
     const assignmentsLabel = assignmentAlertCount > 0 ? `My Tasks(${assignmentAlertCount})` : null;
 
     const normalizeIdentity = (value: string) =>
@@ -1663,53 +1614,6 @@ function AdminHeader() {
             <DropdownMenuSeparator />
             <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-green-700">Health Net</div>
             {renderPlanSection('Health Net', healthNetRows)}
-          </div>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  };
-
-  const renderElectronStatusDropdown = () => {
-    const activeCount = staffList.filter((staff) => Boolean(isElectronActiveByUid[staff.uid])).length;
-    const inactiveCount = Math.max(0, staffList.length - activeCount);
-
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-7 px-2 text-xs">
-            Electron status
-            <span className="ml-1 text-muted-foreground">
-              {activeCount}/{staffList.length}
-            </span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-72">
-          <DropdownMenuLabel>Staff Electron status</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <div className="px-2 pb-2 text-xs text-muted-foreground">
-            {activeCount} active • {inactiveCount} inactive
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            {staffList.length === 0 ? (
-              <DropdownMenuItem disabled>No staff found.</DropdownMenuItem>
-            ) : (
-              staffList.map((staff) => {
-                const active = Boolean(isElectronActiveByUid[staff.uid]);
-                const statusLabel = active ? 'Active' : 'Not active';
-                return (
-                  <DropdownMenuItem key={`electron-${staff.uid}`} className="flex items-center justify-between gap-2">
-                    <span className="truncate">{staff.name}</span>
-                    <span className={cn(
-                      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]',
-                      active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                    )}>
-                      {active ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                      {statusLabel}
-                    </span>
-                  </DropdownMenuItem>
-                );
-              })
-            )}
           </div>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -2141,7 +2045,6 @@ function AdminHeader() {
             <div className="flex items-center gap-2">
               {renderPillAlignedBadges()}
               {renderDocsByStaffDropdown()}
-              {renderElectronStatusDropdown()}
             </div>
           </div>
           {renderPlanBadges()}
