@@ -138,10 +138,12 @@ export function RealTimeNotifications() {
     webAppNotificationsEnabled: boolean;
     suppressWebWhenDesktopActive: boolean;
     interofficeNotificationsEnabled: boolean;
+    caspioAnnouncementsInElectronEnabled: boolean;
   }>({
     webAppNotificationsEnabled: true,
     suppressWebWhenDesktopActive: true,
-    interofficeNotificationsEnabled: true
+    interofficeNotificationsEnabled: true,
+    caspioAnnouncementsInElectronEnabled: false
   });
   const [electronPresenceActive, setElectronPresenceActive] = useState(false);
   const desktopPriorityPillRef = useRef<
@@ -231,7 +233,8 @@ export function RealTimeNotifications() {
         setWebToastPolicy({
           webAppNotificationsEnabled: Boolean(data?.webAppNotificationsEnabled ?? true),
           suppressWebWhenDesktopActive: Boolean(data?.suppressWebWhenDesktopActive ?? true),
-          interofficeNotificationsEnabled: Boolean(data?.interofficeNotificationsEnabled ?? true)
+          interofficeNotificationsEnabled: Boolean(data?.interofficeNotificationsEnabled ?? true),
+          caspioAnnouncementsInElectronEnabled: Boolean(data?.caspioAnnouncementsInElectronEnabled ?? false)
         });
       } catch (error) {
         console.warn('Failed to load web toast policy:', error);
@@ -250,6 +253,7 @@ export function RealTimeNotifications() {
         const browser = parsed?.browserNotifications;
         const globals = parsed?.globalControls;
         const nextWebEnabled = parsed?.userControls?.webAppNotificationsEnabled;
+        const nextCaspioDesktopEnabled = parsed?.userControls?.caspioAnnouncementsInElectronEnabled;
         if (!browser) return;
         setNotificationPrefs((prev) => ({
           ...prev,
@@ -273,6 +277,12 @@ export function RealTimeNotifications() {
             },
             forceSuppressWebWhenDesktopActive:
               globals.forceSuppressWebWhenDesktopActive ?? prev.forceSuppressWebWhenDesktopActive
+          }));
+        }
+        if (nextCaspioDesktopEnabled !== undefined) {
+          setWebToastPolicy((prev) => ({
+            ...prev,
+            caspioAnnouncementsInElectronEnabled: Boolean(nextCaspioDesktopEnabled)
           }));
         }
       } catch (error) {
@@ -331,6 +341,26 @@ export function RealTimeNotifications() {
           forceSuppressWebWhenDesktopActive: Boolean(nextGlobalControls.forceSuppressWebWhenDesktopActive)
         };
         setGlobalPolicy(nextPolicy);
+        const globalCaspioElectronEnabled = Boolean(nextGlobalControls.caspioAnnouncementsInElectronEnabled);
+        setWebToastPolicy((prev) => {
+          let userOverride: boolean | undefined;
+          try {
+            const raw = localStorage.getItem('notificationSettings');
+            if (raw) {
+              const parsed = JSON.parse(raw) as any;
+              if (parsed?.userControls?.caspioAnnouncementsInElectronEnabled !== undefined) {
+                userOverride = Boolean(parsed.userControls.caspioAnnouncementsInElectronEnabled);
+              }
+            }
+          } catch {
+            // ignore parse errors and fall back to global default
+          }
+          return {
+            ...prev,
+            caspioAnnouncementsInElectronEnabled:
+              userOverride === undefined ? globalCaspioElectronEnabled : userOverride
+          };
+        });
         try {
           localStorage.setItem('notificationSettingsGlobal', JSON.stringify({
             globalControls: nextGlobalControls
@@ -490,13 +520,22 @@ export function RealTimeNotifications() {
       const normalizedWebEnabled = nextWebEnabled === undefined ? true : Boolean(nextWebEnabled);
       const desktopPresent = Boolean((window as any).desktopNotifications);
       const nextSuppress = parsed?.userControls?.suppressWebWhenDesktopActive;
+      const nextCaspioDesktopEnabled = parsed?.userControls?.caspioAnnouncementsInElectronEnabled;
       setWebAppEnabled(normalizedWebEnabled);
+      setWebToastPolicy((prev) => ({
+        ...prev,
+        caspioAnnouncementsInElectronEnabled: nextCaspioDesktopEnabled === undefined
+          ? prev.caspioAnnouncementsInElectronEnabled
+          : Boolean(nextCaspioDesktopEnabled)
+      }));
       localStorage.setItem('notificationSettings', JSON.stringify({
         ...parsed,
         userControls: {
           ...(parsed?.userControls || {}),
           suppressWebWhenDesktopActive: nextSuppress === undefined ? desktopPresent : nextSuppress,
-          webAppNotificationsEnabled: normalizedWebEnabled
+          webAppNotificationsEnabled: normalizedWebEnabled,
+          caspioAnnouncementsInElectronEnabled:
+            nextCaspioDesktopEnabled === undefined ? false : Boolean(nextCaspioDesktopEnabled)
         }
       }));
     } catch (error) {
@@ -564,10 +603,11 @@ export function RealTimeNotifications() {
   };
   const isDesktopNotifiable = (input: { priority?: unknown; type?: unknown; isGeneral?: unknown; source?: unknown }) => {
     const type = String(input?.type || '').toLowerCase();
-    const source = String((input as any)?.source || '').toLowerCase();
     const interoffice = Boolean(input?.isGeneral) || type.includes('interoffice');
+    if (interoffice) return true;
+    const source = String((input as any)?.source || '').toLowerCase();
     const caspioAssigned = source === 'caspio' || type.includes('note_assignment');
-    return interoffice || caspioAssigned;
+    return webToastPolicy.caspioAnnouncementsInElectronEnabled && caspioAssigned;
   };
 
   const sanitizeFieldLabel = (value?: string) => {

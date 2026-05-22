@@ -59,6 +59,7 @@ interface NotificationSettings {
       endTime: string;
     };
     forceSuppressWebWhenDesktopActive: boolean;
+    caspioAnnouncementsInElectronEnabled: boolean;
   };
 }
 
@@ -91,7 +92,8 @@ const DEFAULT_SETTINGS: NotificationSettings = {
       startTime: '18:00',
       endTime: '08:00'
     },
-    forceSuppressWebWhenDesktopActive: false
+    forceSuppressWebWhenDesktopActive: false,
+    caspioAnnouncementsInElectronEnabled: false
   }
 };
 
@@ -829,6 +831,23 @@ export default function NotificationSettings() {
               checked={settings.globalControls.forceSuppressWebWhenDesktopActive}
               onCheckedChange={(checked) =>
                 updateSettings(['globalControls', 'forceSuppressWebWhenDesktopActive'], checked)
+              }
+            />
+          </div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label className="text-base font-medium">Caspio Announcements In Electron</Label>
+              <p className="text-xs text-muted-foreground">
+                Global default for showing Caspio note announcements in desktop tray/pill alerts
+              </p>
+            </div>
+            <Switch
+              checked={settings.globalControls.caspioAnnouncementsInElectronEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings(['globalControls', 'caspioAnnouncementsInElectronEnabled'], checked)
               }
             />
           </div>

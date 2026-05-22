@@ -35,6 +35,7 @@ interface NotificationSettings {
   displayStyle: 'standard' | 'compact';
   urgentOnly: boolean;
   suppressWebWhenDesktopActive: boolean;
+  caspioAnnouncementsInElectronEnabled: boolean;
   quietHours: {
     enabled: boolean;
     start: string;
@@ -52,6 +53,7 @@ export default function NotificationSettingsPage() {
     displayStyle: 'standard',
     urgentOnly: false,
     suppressWebWhenDesktopActive: true,
+    caspioAnnouncementsInElectronEnabled: false,
     quietHours: {
       enabled: false,
       start: '22:00',
@@ -101,7 +103,7 @@ export default function NotificationSettingsPage() {
       if (typeof window !== 'undefined') {
         const savedSettings = localStorage.getItem(`notification-settings-${user?.uid}`);
         if (savedSettings) {
-          setSettings(JSON.parse(savedSettings));
+          setSettings((prev) => ({ ...prev, ...(JSON.parse(savedSettings) as Partial<NotificationSettings>) }));
         }
       }
     } catch (error) {
@@ -145,7 +147,8 @@ export default function NotificationSettingsPage() {
           globalControls: existingGlobalControls,
           userControls: {
             ...existingUserControls,
-            suppressWebWhenDesktopActive: settings.suppressWebWhenDesktopActive
+            suppressWebWhenDesktopActive: settings.suppressWebWhenDesktopActive,
+            caspioAnnouncementsInElectronEnabled: settings.caspioAnnouncementsInElectronEnabled
           }
         }));
         notifyNotificationSettingsChanged();
@@ -392,6 +395,21 @@ export default function NotificationSettingsPage() {
               checked={settings.suppressWebWhenDesktopActive}
               onCheckedChange={(checked) =>
                 setSettings(prev => ({ ...prev, suppressWebWhenDesktopActive: checked }))
+              }
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-base font-medium">Caspio Announcements In Electron</Label>
+              <p className="text-sm text-muted-foreground">
+                Show Caspio note announcements in the desktop tray/pill notifications
+              </p>
+            </div>
+            <Switch
+              checked={settings.caspioAnnouncementsInElectronEnabled}
+              onCheckedChange={(checked) =>
+                setSettings(prev => ({ ...prev, caspioAnnouncementsInElectronEnabled: checked }))
               }
             />
           </div>
