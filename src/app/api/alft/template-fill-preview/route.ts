@@ -181,7 +181,7 @@ async function resolveTemplatePathFromLocalWorkspace(): Promise<string> {
   }
 
   const knownLegacyPath = clean(
-    'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf',
+    'C:/ConnectionsILOS/ALFT_Agreement.pdf',
     2000
   );
   if (knownLegacyPath) {

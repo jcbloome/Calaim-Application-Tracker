@@ -29,16 +29,16 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
   { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
   { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
   { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
-  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'General Health, Sensory, and Communication' },
-  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'Activities of Daily Living' },
-  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'Instrumental Activities of Daily Living' },
-  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'Health Conditions' },
+  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'GENERAL HEALTH, SENSORY, AND COMMUNICATION' },
+  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'ACTIVITIES OF DAILY LIVING' },
+  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' },
+  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'HEALTH CONDITIONS AND THERAPIES' },
   { number: 8, sourceId: 'page7_8', prefix: 'p8_', title: 'Therapies + Specialty Care' },
-  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'Mental Health' },
-  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'Nutrition + Behavior Follow-Up' },
-  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'Medication + Advance Directive + Environment' },
+  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'MENTAL HEALTH' },
+  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
+  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
   { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'Medication and Substance Use' },
+  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'MEDICATIONS' },
 ];
 const TOTAL_PAGES = PAGE_LAYOUT.length;
 
@@ -65,15 +65,15 @@ const HIDE_FROM_PDF_QUESTION_IDS = new Set([
 
 const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: string }>> = {
   1: [
-    { beforeQuestionId: 'p1_member_name', label: 'Header Information' },
-    { beforeQuestionId: 'p1_first_name', label: 'Demographic' },
+    { beforeQuestionId: 'p1_member_name', label: 'HEADER INFORMATION' },
+    { beforeQuestionId: 'p1_first_name', label: 'DEMOGRAPHIC' },
   ],
   4: [
-    { beforeQuestionId: 'p4_adl_bathing', label: 'Activities of Daily Living' },
+    { beforeQuestionId: 'p4_adl_bathing', label: 'ACTIVITIES OF DAILY LIVING' },
   ],
-  5: [{ beforeQuestionId: 'p5_iadl_heavy_chores', label: 'Instrumental Activities of Daily Living' }],
+  5: [{ beforeQuestionId: 'p5_iadl_heavy_chores', label: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' }],
   6: [],
-  13: [{ beforeQuestionId: 'p13_commentary_section', label: 'Commentary Section' }],
+  13: [{ beforeQuestionId: 'p13_commentary_section', label: 'ADDITIONAL DETAILS/RN COMMENTARY:' }],
 };
 
 const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
@@ -471,20 +471,19 @@ export default function AdminAlftDummyPreviewPage() {
     setPdfError('');
     setPdfTemplateMode('');
     try {
-      // Allow React to commit the hidden capture div before we read the DOM.
+      // Native preview pipeline: render the in-app ALFT form to PDF.
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => setTimeout(resolve, 400));
       });
 
       const container = captureRef.current;
       if (!container) throw new Error('Capture container not ready — please try again.');
-
       const sections = Array.from(container.querySelectorAll('.alft-page')) as HTMLElement[];
       if (!sections.length) throw new Error('No ALFT pages found in capture container.');
 
       const { generatePdfFromHtmlSections } = await import('@/lib/pdf/generatePdfFromHtmlSections');
       const pdfBytes = await generatePdfFromHtmlSections(sections, {
-        stampPageNumbers: false, // each page already has its own page-number footer
+        stampPageNumbers: false,
         options: {
           scale: 3,
           marginIn: 0.35,
@@ -493,12 +492,10 @@ export default function AdminAlftDummyPreviewPage() {
           fitSafetyScale: 0.999,
         },
       });
-
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
+      const templateUrl = URL.createObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
       setPdfUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
-        return url;
+        return templateUrl;
       });
       setPdfTemplateMode('html-render');
     } catch (e: any) {
@@ -641,7 +638,7 @@ export default function AdminAlftDummyPreviewPage() {
           const mswName = asText(answers.p1_assessor_name);
           const mswDate = asText(answers.p14_date);
           return (
-            <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5">
+            <section key={layout.number} className="alft-page border border-zinc-300 bg-white p-5 flex flex-col">
               <div className="mb-2 border-b border-zinc-400 pb-1.5">
                 <div className="flex flex-col items-center gap-1">
                   <img
@@ -663,105 +660,106 @@ export default function AdminAlftDummyPreviewPage() {
                   {layout.title}
                 </div>
               </div>
-              <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
-                {renderedQuestions.map((q) => (
-                  <div key={q.id} className="contents">
-                    {(SECTION_DIVIDERS[layout.number] || [])
-                      .filter((divider) => divider.beforeQuestionId === q.id)
-                      .map((divider) => (
-                        <div
-                          key={`${layout.number}-${divider.beforeQuestionId}-divider`}
-                          className="alft-subsection-title md:col-span-2 alft-col-span-2"
-                        >
-                          {divider.label}
-                        </div>
-                      ))}
-                  <div
-                    className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${
-                      isLongTextQuestion(q) ? 'md:col-span-2 alft-col-span-2' : ''
-                    }`}
-                  >
-                    <div className="font-semibold leading-tight">
-                      {formatPromptLabel(q.label)}
-                    </div>
-                    {!isReadOnlyView && q.type === 'text' ? (
-                      <input
-                        value={String(answers[q.id] || '')}
-                        onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                        className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
-                      />
-                    ) : null}
-                    {!isReadOnlyView && q.type === 'textarea' ? (
-                      <textarea
-                        value={String(answers[q.id] || '')}
-                        onChange={(e) => setSingleAnswer(q.id, e.target.value)}
-                        rows={isLargeCommentaryQuestion(q) ? 12 : Math.min(Math.max(q.rows || 3, 3), 6)}
-                        className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentaryQuestion(q) ? 'min-h-[220px]' : ''}`}
-                      />
-                    ) : null}
-                    {!isReadOnlyView && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
-                      <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
-                        {q.options.map((opt) => (
-                          <label key={`edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
-                            <input
-                              type="radio"
-                              name={`preview-edit-${q.id}`}
-                              checked={String(answers[q.id] || '') === opt.value}
-                              onChange={() => setSingleAnswer(q.id, opt.value)}
-                            />
-                            <span>{opt.label}</span>
-                          </label>
+              <div className="flex-1 flex flex-col">
+                <div className="alft-question-grid grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
+                  {renderedQuestions.map((q) => (
+                    <div key={q.id} className="contents">
+                      {(SECTION_DIVIDERS[layout.number] || [])
+                        .filter((divider) => divider.beforeQuestionId === q.id)
+                        .map((divider) => (
+                          <div
+                            key={`${layout.number}-${divider.beforeQuestionId}-divider`}
+                            className="alft-subsection-title md:col-span-2 alft-col-span-2"
+                          >
+                            {divider.label}
+                          </div>
                         ))}
+                    <div
+                      className={`question-block rounded-sm border border-zinc-300 px-2 py-1 ${
+                        isLongTextQuestion(q) ? 'md:col-span-2 alft-col-span-2' : ''
+                      }`}
+                    >
+                      <div className="font-semibold leading-tight">
+                        {formatPromptLabel(q.label)}
                       </div>
-                    ) : null}
-                    {!isReadOnlyView && q.type === 'checkboxGroup' && q.options?.length ? (
-                      <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
-                        {q.options.map((opt) => {
-                          const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
-                          return (
-                            <label key={`edit-check-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
-                              <input type="checkbox" checked={selected} onChange={() => toggleMultiAnswer(q.id, opt.value)} />
+                      {!isReadOnlyView && q.type === 'text' ? (
+                        <input
+                          value={String(answers[q.id] || '')}
+                          onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                          className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
+                        />
+                      ) : null}
+                      {!isReadOnlyView && q.type === 'textarea' ? (
+                        <textarea
+                          value={String(answers[q.id] || '')}
+                          onChange={(e) => setSingleAnswer(q.id, e.target.value)}
+                          rows={isLargeCommentaryQuestion(q) ? 12 : Math.min(Math.max(q.rows || 3, 3), 6)}
+                          className={`mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-[10px] ${isLargeCommentaryQuestion(q) ? 'min-h-[220px]' : ''}`}
+                        />
+                      ) : null}
+                      {!isReadOnlyView && (q.type === 'radio' || q.type === 'select') && q.options?.length ? (
+                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                          {q.options.map((opt) => (
+                            <label key={`edit-opt-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                              <input
+                                type="radio"
+                                name={`preview-edit-${q.id}`}
+                                checked={String(answers[q.id] || '') === opt.value}
+                                onChange={() => setSingleAnswer(q.id, opt.value)}
+                              />
                               <span>{opt.label}</span>
                             </label>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                    {isReadOnlyView && isOptionQuestion(q) && q.options?.length ? (
-                      <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
-                        {q.options.map((opt) => {
-                          const selected =
-                            q.type === 'checkboxGroup'
-                              ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value)
-                              : String(answers[q.id] || '') === opt.value;
-                          return (
-                            <div
-                              key={`output-opt-${q.id}-${opt.value}`}
-                              className="inline-flex min-h-[14px] items-center gap-1.5 text-[9.5px] leading-tight"
-                            >
-                              <Dot selected={selected} />
-                              <span className={`${selected ? 'font-semibold text-zinc-900' : 'text-zinc-600'}`}>{opt.label}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : isReadOnlyView ? (
-                      <div
-                        className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${
-                          isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'
-                        } ${
-                          isLargeCommentaryQuestion(q) ? 'large-commentary-box' : ''
-                        }`}
-                      >
-                        {String(answers[q.id] || '').trim() || ' '}
-                      </div>
-                    ) : null}
-                  </div>
-                  </div>
-                ))}
-              </div>
-              {layout.number === 13 ? (
-                <div className="signature-section mt-3 space-y-2 text-[10px]">
+                          ))}
+                        </div>
+                      ) : null}
+                      {!isReadOnlyView && q.type === 'checkboxGroup' && q.options?.length ? (
+                        <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-3">
+                          {q.options.map((opt) => {
+                            const selected = Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value);
+                            return (
+                              <label key={`edit-check-${q.id}-${opt.value}`} className="inline-flex items-center gap-1.5 text-[9.5px]">
+                                <input type="checkbox" checked={selected} onChange={() => toggleMultiAnswer(q.id, opt.value)} />
+                                <span>{opt.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      {isReadOnlyView && isOptionQuestion(q) && q.options?.length ? (
+                        <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
+                          {q.options.map((opt) => {
+                            const selected =
+                              q.type === 'checkboxGroup'
+                                ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(opt.value)
+                                : String(answers[q.id] || '') === opt.value;
+                            return (
+                              <div
+                                key={`output-opt-${q.id}-${opt.value}`}
+                                className="inline-flex min-h-[14px] items-center gap-1.5 text-[9.5px] leading-tight"
+                              >
+                                <Dot selected={selected} />
+                                <span className={`${selected ? 'font-semibold text-zinc-900' : 'text-zinc-600'}`}>{opt.label}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : isReadOnlyView ? (
+                        <div
+                          className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${
+                            isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'
+                          } ${
+                            isLargeCommentaryQuestion(q) ? 'large-commentary-box' : ''
+                          }`}
+                        >
+                          {String(answers[q.id] || '').trim() || ' '}
+                        </div>
+                      ) : null}
+                    </div>
+                    </div>
+                  ))}
+                </div>
+                {layout.number === 13 ? (
+                  <div className="signature-section mt-3 space-y-2 text-[10px]">
                   <div className="alft-subsection-title">Signature Section</div>
                   <div className="signature-block">
                     <div className="signature-title">MSW Signature</div>
@@ -802,8 +800,9 @@ export default function AdminAlftDummyPreviewPage() {
                       </div>
                     </div>
                   </div>
-                </div>
-              ) : null}
+                  </div>
+                ) : null}
+              </div>
 
               <div className="mt-4 border-t border-zinc-300 pt-2 text-right text-[10px] text-zinc-600">
                 ALF Transition Assessment - Page {layout.number} of {TOTAL_PAGES}
@@ -822,7 +821,8 @@ export default function AdminAlftDummyPreviewPage() {
           color: #18181b;
         }
         .alft-page {
-          min-height: 10.45in;
+          min-height: 10.5in;
+          height: 10.5in;
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
           font-family: Arial, Helvetica, sans-serif;
           letter-spacing: 0.01em;
@@ -931,7 +931,8 @@ export default function AdminAlftDummyPreviewPage() {
             padding: 0 !important;
           }
           .alft-page {
-            min-height: auto !important;
+            min-height: 10.5in !important;
+            height: 10.5in !important;
             box-shadow: none !important;
             padding: 0.12in 0.12in 0.08in !important;
             border-color: #a1a1aa !important;

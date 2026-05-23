@@ -21,23 +21,23 @@ type SourcePage = { id: string; title: string; questions: Question[] };
 const SOURCE = EXACT_ALFT_PAGES as SourcePage[];
 const DEFAULT_ALFT_MANAGER_EMAIL = 'jason@carehomefinders.com';
 const ALFT_TEMPLATE_PATH =
-  'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf';
-const FORCE_FILLED_HTML_PRINTABLE = false;
+  'C:/ConnectionsILOS/ALFT_Agreement.pdf';
+const FORCE_FILLED_HTML_PRINTABLE = true;
 
 const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; title: string }> = [
   { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
   { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
   { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
-  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'General Health, Sensory, and Communication' },
-  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'Activities of Daily Living' },
-  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'Instrumental Activities of Daily Living' },
-  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'Health Conditions' },
+  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'GENERAL HEALTH, SENSORY, AND COMMUNICATION' },
+  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'ACTIVITIES OF DAILY LIVING' },
+  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' },
+  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'HEALTH CONDITIONS AND THERAPIES' },
   { number: 8, sourceId: 'page7_8', prefix: 'p8_', title: 'Therapies + Specialty Care' },
-  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'Mental Health' },
-  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'Nutrition + Behavior Follow-Up' },
-  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'Medication + Advance Directive + Environment' },
+  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'MENTAL HEALTH' },
+  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
+  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
   { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'Medication and Substance Use' },
+  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'MEDICATIONS' },
 ];
 
 const MOVED_TEXT_FIELDS: Array<{ questionId: string; targetPage: number; afterQuestionId: string; label: string }> = [
@@ -362,9 +362,7 @@ export default function AlftViewPage() {
 
   const useHtmlPrintableFallback =
     FORCE_FILLED_HTML_PRINTABLE ||
-    !templatePdfUrl ||
-    templatePdfMode === 'passthrough-no-form' ||
-    templatePdfMode === 'passthrough-save-error';
+    !templatePdfUrl;
   const openPrintablePdf = useCallback(() => {
     window.location.assign(`/admin/alft-view/${encodeURIComponent(String(intakeId || ''))}?view=pdf`);
   }, [intakeId]);

@@ -35,7 +35,7 @@ type Question = {
 type SourcePage = { id: string; title: string; questions: Question[] };
 const AGENCY_NAME = 'Connections Care Home Consultants';
 const ALFT_TEMPLATE_PATH =
-  'C:/Users/Jason.Jason-PC/AppData/Roaming/Cursor/User/workspaceStorage/2871420c389bbb745bfd4b95a2ccaf63/pdfs/dd55d23e-d594-449d-b000-00a43d8f47d5/ALFT_Agreement (2).pdf';
+  'C:/ConnectionsILOS/ALFT_Agreement.pdf';
 
 type KaiserMember = {
   id: string;
@@ -83,16 +83,16 @@ const PAGE_LAYOUT: Array<{ number: number; sourceId: string; prefix: string; tit
   { number: 1, sourceId: 'page1', prefix: 'p1_', title: 'Header Information + Demographic' },
   { number: 2, sourceId: 'page2', prefix: 'p2_', title: 'Addresses, Site, Risk, Living Situation, Income' },
   { number: 3, sourceId: 'page3', prefix: 'p3_', title: 'Memory and Cognitive Questions' },
-  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'General Health, Sensory, and Communication' },
-  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'Activities of Daily Living' },
-  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'Instrumental Activities of Daily Living' },
-  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'Health Conditions' },
+  { number: 4, sourceId: 'page4_6', prefix: 'p4_', title: 'GENERAL HEALTH, SENSORY, AND COMMUNICATION' },
+  { number: 5, sourceId: 'page4_6', prefix: 'p5_', title: 'ACTIVITIES OF DAILY LIVING' },
+  { number: 6, sourceId: 'page4_6', prefix: 'p6_', title: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' },
+  { number: 7, sourceId: 'page7_8', prefix: 'p7_', title: 'HEALTH CONDITIONS AND THERAPIES' },
   { number: 8, sourceId: 'page7_8', prefix: 'p8_', title: 'Therapies + Specialty Care' },
-  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'Mental Health' },
-  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'Nutrition + Behavior Follow-Up' },
-  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'Medication + Advance Directive + Environment' },
+  { number: 9, sourceId: 'page9_10', prefix: 'p9_', title: 'MENTAL HEALTH' },
+  { number: 10, sourceId: 'page9_10', prefix: 'p10_', title: 'NUTRITION' },
+  { number: 11, sourceId: 'page11_12', prefix: 'p11_', title: 'MEDICATION AND SUBSTANCE USE' },
   { number: 12, sourceId: 'page11_12', prefix: 'p12_', title: 'Self-Reported Health + Vision/Hearing' },
-  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'Medication and Substance Use' },
+  { number: 13, sourceId: 'page13_14', prefix: 'p13_', title: 'MEDICATIONS' },
 ];
 const TOTAL_PAGES = PAGE_LAYOUT.length;
 
@@ -116,13 +116,13 @@ const HIDE_FROM_PDF_QUESTION_IDS = new Set([
 
 const SECTION_DIVIDERS: Record<number, Array<{ beforeQuestionId: string; label: string }>> = {
   1: [
-    { beforeQuestionId: 'p1_member_name', label: 'Header Information' },
-    { beforeQuestionId: 'p1_first_name', label: 'Demographic' },
+    { beforeQuestionId: 'p1_member_name', label: 'HEADER INFORMATION' },
+    { beforeQuestionId: 'p1_first_name', label: 'DEMOGRAPHIC' },
   ],
-  4: [{ beforeQuestionId: 'p4_adl_bathing', label: 'Activities of Daily Living' }],
-  5: [{ beforeQuestionId: 'p5_iadl_heavy_chores', label: 'Instrumental Activities of Daily Living' }],
+  4: [{ beforeQuestionId: 'p4_adl_bathing', label: 'ACTIVITIES OF DAILY LIVING' }],
+  5: [{ beforeQuestionId: 'p5_iadl_heavy_chores', label: 'INSTRUMENTAL ACTIVITIES OF DAILY LIVING' }],
   6: [],
-  13: [{ beforeQuestionId: 'p13_commentary_section', label: 'Commentary Section' }],
+  13: [{ beforeQuestionId: 'p13_commentary_section', label: 'ADDITIONAL DETAILS/RN COMMENTARY:' }],
 };
 
 const QUESTION_BY_ID: Record<string, Question> = SOURCE.reduce<Record<string, Question>>((acc, page) => {
