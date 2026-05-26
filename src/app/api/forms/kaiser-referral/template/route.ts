@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 
 const DEFAULT_TEMPLATE_PATH =
   'C:\\Users\\Jason.Jason-PC\\AppData\\Roaming\\Cursor\\User\\workspaceStorage\\2871420c389bbb745bfd4b95a2ccaf63\\pdfs\\00490bac-ad5b-4f06-8cba-374155b8db87\\#5 (2026) Kaiser Auth Sheet ORIGINAL (2).pdf';
+const DEFAULT_TEMPLATE_URL = '';
 const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
 const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';
@@ -17,6 +18,10 @@ const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 
 function getTemplatePath() {
   return String(process.env.KAISER_REFERRAL_TEMPLATE_PATH || DEFAULT_TEMPLATE_PATH).trim();
+}
+
+function getTemplateUrl() {
+  return String(process.env.KAISER_REFERRAL_TEMPLATE_URL || DEFAULT_TEMPLATE_URL).trim();
 }
 
 function clean(value: string | null) {
@@ -58,6 +63,79 @@ function buildKaiserReferralFileName(memberNameRaw: string) {
   const memberName = sanitizeFileComponent(memberNameRaw) || 'Member';
   const label = 'Kaiser Authorization Request';
   return `${memberName} - ${label}.pdf`;
+}
+
+async function resolveTemplateUrlFromRecentKaiserSubmissions(): Promise<string> {
+  try {
+    const adminModule = await import('@/firebase-admin');
+    const adminDb = adminModule.adminDb;
+    const snap = await adminDb.collection('standalone_upload_submissions').orderBy('createdAt', 'desc').limit(250).get();
+    for (const doc of snap.docs) {
+      const row = (doc.data() || {}) as Record<string, any>;
+      const docType = String(row?.documentType || '').trim().toLowerCase();
+      const source = String(row?.source || '').trim().toLowerCase();
+      const title = String(row?.title || row?.name || '').trim().toLowerCase();
+      const looksKaiser = docType.includes('kaiser') || source.includes('kaiser') || title.includes('kaiser');
+      if (!looksKaiser) continue;
+
+      const files = Array.isArray(row?.files) ? row.files : [];
+      for (const file of files) {
+        const url = String(file?.downloadURL || '').trim();
+        const name = String(file?.fileName || '').trim().toLowerCase();
+        if (!url) continue;
+        if (!/\.pdf(\?|$)/i.test(url) && !/\.pdf(\?|$)/i.test(name)) continue;
+        const looksAuthSheet =
+          name.includes('kaiser') ||
+          name.includes('auth') ||
+          name.includes('authorization') ||
+          name.includes('referral');
+        if (looksAuthSheet) return url;
+      }
+    }
+  } catch {
+    // best-effort discovery only
+  }
+  return '';
+}
+
+async function loadTemplatePdfBuffer() {
+  const templatePath = getTemplatePath();
+  const envTemplateUrl = getTemplateUrl();
+
+  if (templatePath) {
+    try {
+      const bytes = await fs.readFile(templatePath);
+      return { ok: true as const, buffer: bytes, source: `path:${templatePath}` };
+    } catch {
+      // Continue to URL fallbacks.
+    }
+  }
+
+  const discoveredUrl = envTemplateUrl || (await resolveTemplateUrlFromRecentKaiserSubmissions());
+  if (discoveredUrl && /^https?:\/\//i.test(discoveredUrl)) {
+    try {
+      const res = await fetch(discoveredUrl, { cache: 'no-store' });
+      if (res.ok) {
+        const arr = await res.arrayBuffer();
+        return { ok: true as const, buffer: Buffer.from(arr), source: `url:${discoveredUrl}` };
+      }
+      return {
+        ok: false as const,
+        error: `Template URL responded HTTP ${res.status}: ${discoveredUrl}`,
+      };
+    } catch (e: any) {
+      return {
+        ok: false as const,
+        error: `Template URL fetch failed: ${String(e?.message || discoveredUrl)}`,
+      };
+    }
+  }
+
+  return {
+    ok: false as const,
+    error:
+      'Kaiser template PDF not found. Configure KAISER_REFERRAL_TEMPLATE_URL (preferred for published), or KAISER_REFERRAL_TEMPLATE_PATH for local.',
+  };
 }
 
 type TextFieldLike = { setText: (value: string) => void };
@@ -102,14 +180,13 @@ function isMultiWidgetChoiceField(field: unknown): field is MultiWidgetChoiceFie
 
 export async function GET(req: NextRequest) {
   const download = String(req.nextUrl.searchParams.get('download') || '') === '1';
-  const templatePath = getTemplatePath();
-
-  if (!templatePath) {
-    return new NextResponse('Kaiser template path is not configured.', { status: 500 });
+  const templateResult = await loadTemplatePdfBuffer();
+  if (!templateResult.ok) {
+    return new NextResponse(templateResult.error, { status: 500 });
   }
 
   try {
-    const rawPdfBuffer = await fs.readFile(templatePath);
+    const rawPdfBuffer = templateResult.buffer;
     const params = req.nextUrl.searchParams;
 
     const prefill = {
@@ -352,6 +429,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch {
-    return new NextResponse(`Could not read Kaiser template PDF at: ${templatePath}`, { status: 404 });
+    return new NextResponse('Could not prepare Kaiser template PDF for output.', { status: 500 });
   }
 }
