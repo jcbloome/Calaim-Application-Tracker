@@ -431,8 +431,8 @@ export function PrintableKaiserReferralForm({
   const previewMessage = `Hello ${kaiserRegion || 'Kaiser South'} Intake,\n\n${emailDescription.trim()}\n\nMember: ${resolvedMemberName}\nMRN: ${resolvedMrn}\nCounty: ${memberCounty || 'N/A'}\n\nThank you.`;
   const hasRequiredLocation = Boolean(currentLivingLocation);
   const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
-  const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && hasReviewedPdfPreview && !isSendingToKaiser;
-  const canOpenEmailTemplate = requiresKaiserReferralSendFlow && canOpenSendDialog && isStep3Confirmed;
+  const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && !isSendingToKaiser;
+  const canOpenEmailTemplate = requiresKaiserReferralSendFlow && canOpenSendDialog;
   const testRecipientEmail = lineValue(loggedInUserEmail || referrerEmail).toLowerCase();
   const step5AcknowledgedAtLabel = React.useMemo(() => {
     const raw = String(step5AcknowledgedAtIso || '').trim();
@@ -515,18 +515,12 @@ export function PrintableKaiserReferralForm({
       window.alert('Section 2.2 is required: select either A, B, or C for where the member is currently living.');
       return;
     }
-    if (!hasReviewedPdfPreview) {
-      window.alert('Please click "View PDF" and review the exact Kaiser PDF format before sending.');
-      return;
-    }
     if (!hasRequiredSection1Usage) {
       window.alert('Section 1 Current Service Usage is required: choose Yes or No for Assisted Living Facility Transitions.');
       return;
     }
-    if (!isStep3Confirmed) {
-      window.alert('Please check "Confirm PDF view is correct" before continuing.');
-      return;
-    }
+    // Step 3 remains visible for explicit confirmation, but no longer blocks Step 4.
+    if (!isStep3Confirmed) setIsStep3Confirmed(true);
     if (!lineValue(formValues.memberPhone)) {
       window.alert('Member phone number is required before sending to Kaiser Intake.');
       return;
@@ -534,7 +528,8 @@ export function PrintableKaiserReferralForm({
     setIsPdfConfirmedForSend(true);
     setHasSentTestEmail(false);
     setLastTestEmailSentTo('');
-    setEmailPreviewOpen(true);
+    // Open on next tick to avoid Radix outside-click close race from the same button click.
+    window.setTimeout(() => setEmailPreviewOpen(true), 0);
   };
 
   const buildAttachmentBlob = async () => {
@@ -601,8 +596,10 @@ export function PrintableKaiserReferralForm({
 
   const handleSendToKaiserIntake = async () => {
     if (!hasSentTestEmail) {
-      window.alert('Please send a test email first so staff can verify formatting before final send.');
-      return;
+      const proceedWithoutTest = window.confirm(
+        'No test email has been sent yet. Do you want to continue and send directly to Kaiser Intake?'
+      );
+      if (!proceedWithoutTest) return;
     }
     setIsSendingToKaiser(true);
     try {
@@ -718,7 +715,7 @@ export function PrintableKaiserReferralForm({
               <div>{ccRecipients.join(', ')}</div>
             </div>
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-              <div className="font-semibold">Required before final send</div>
+              <div className="font-semibold">Recommended before final send</div>
               <div className="mt-1">
                 Send a test email to the current referrer email first so staff can verify email text and PDF formatting.
               </div>
@@ -727,9 +724,11 @@ export function PrintableKaiserReferralForm({
               </div>
               {hasSentTestEmail ? (
                 <div className="mt-1 text-emerald-700">
-                  Test email sent successfully to {lastTestEmailSentTo || testRecipientEmail}.
+                  Status: Test email sent to {lastTestEmailSentTo || testRecipientEmail}.
                 </div>
-              ) : null}
+              ) : (
+                <div className="mt-1 text-amber-800">Status: Test email not sent yet.</div>
+              )}
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Email description (editable)</div>
@@ -765,7 +764,6 @@ export function PrintableKaiserReferralForm({
                 isSendingToKaiser ||
                 isSendingTestEmail ||
                 !isPdfConfirmedForSend ||
-                !hasSentTestEmail ||
                 (overrideResubmit && !overrideReason.trim())
               }
             >
@@ -850,7 +848,12 @@ export function PrintableKaiserReferralForm({
                 <div className="mt-1 text-xs">This activates only after all prior steps are complete.</div>
                 <div className="mt-2">
                   <Button
-                    onClick={handleOpenEmailPreview}
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleOpenEmailPreview();
+                    }}
                     variant="outline"
                     className="w-full sm:w-auto"
                     disabled={isSendingToKaiser || isSendingTestEmail}
@@ -873,6 +876,106 @@ export function PrintableKaiserReferralForm({
                     )}
                   </Button>
                 </div>
+                <div className="mt-2 text-xs">
+                  {hasSentTestEmail ? (
+                    <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-medium text-emerald-700">
+                      Status: Test email sent to {lastTestEmailSentTo || testRecipientEmail}
+                    </span>
+                  ) : (
+                    <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">
+                      Status: Test email not sent yet
+                    </span>
+                  )}
+                </div>
+                {emailPreviewOpen ? (
+                  <div className="mt-3 rounded-md border border-indigo-200 bg-white p-3 text-sm text-slate-900">
+                    <div className="font-medium">Kaiser Pre-Email Send Template</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Add any custom message, send test email first, then send to Kaiser Intake.
+                    </div>
+                    {duplicateSubmissionMessage ? (
+                      <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                        <div className="font-semibold">Referral already submitted</div>
+                        <div className="mt-1 text-xs">{duplicateSubmissionMessage}</div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant={overrideResubmit ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setOverrideResubmit((prev) => !prev)}
+                            disabled={isSendingToKaiser}
+                          >
+                            {overrideResubmit ? 'Override enabled' : 'Enable override resend'}
+                          </Button>
+                        </div>
+                        {overrideResubmit ? (
+                          <div className="mt-2">
+                            <div className="text-xs text-muted-foreground">Override reason (required)</div>
+                            <Textarea
+                              value={overrideReason}
+                              onChange={(e) => setOverrideReason(e.target.value)}
+                              rows={2}
+                              disabled={isSendingToKaiser}
+                              placeholder="Reason for resubmitting this referral"
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <div className="text-xs text-muted-foreground">To</div>
+                        <div>{kaiserIntakeEmail}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">CC</div>
+                        <div>{ccRecipients.join(', ')}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <div className="text-xs text-muted-foreground">Email description (editable)</div>
+                      <Textarea
+                        value={emailDescription}
+                        onChange={(e) => setEmailDescription(e.target.value)}
+                        rows={4}
+                        disabled={isSendingToKaiser}
+                      />
+                    </div>
+                    <div className="mt-3 rounded-md border bg-muted/30 p-3">
+                      <div className="text-xs text-muted-foreground">Resolved subject</div>
+                      <div className="font-medium">{subjectLine}</div>
+                      <div className="mt-3 text-xs text-muted-foreground">Email preview</div>
+                      <div className="mt-1 whitespace-pre-wrap text-sm">{previewMessage}</div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" onClick={() => setEmailPreviewOpen(false)} disabled={isSendingToKaiser}>
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void handleSendTestEmail()}
+                        disabled={isSendingToKaiser || isSendingTestEmail || !testRecipientEmail || !testRecipientEmail.includes('@')}
+                      >
+                        {isSendingTestEmail ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                        Send Test Email to Staff
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => void handleSendToKaiserIntake()}
+                        disabled={
+                          isSendingToKaiser ||
+                          isSendingTestEmail ||
+                          !isPdfConfirmedForSend ||
+                          (overrideResubmit && !overrideReason.trim())
+                        }
+                      >
+                        {isSendingToKaiser ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                        {overrideResubmit ? 'Resend to Kaiser Intake (Override)' : 'Send to Kaiser Intake'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div className="mt-1 text-xs">
