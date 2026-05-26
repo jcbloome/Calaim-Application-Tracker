@@ -202,6 +202,9 @@ function getMissingRequestedDocuments(appData: Record<string, unknown>): string[
   const forms = Array.isArray(appData?.forms) ? (appData.forms as Array<Record<string, unknown>>) : [];
   const healthPlan = String(appData?.healthPlan || '').trim().toLowerCase();
   const pathway = String(appData?.pathway || '').trim().toLowerCase();
+  const isSnfTransition = pathway === 'snf transition';
+  const isSnfDiversion = pathway === 'snf diversion';
+  const isHealthNet = healthPlan.includes('health net');
   const internalExclusions = new Set([
     'eligibility screenshot',
     'eligibility check',
@@ -256,6 +259,9 @@ function getMissingRequestedDocuments(appData: Record<string, unknown>): string[
       const normalizedName = name.toLowerCase();
       if (normalizedName === 'cs member summary' || normalizedName === 'cs summary') return false;
       if (internalExclusions.has(normalizedName)) return false;
+      // Keep pathway-specific requirements out of "missing docs" when they are not applicable.
+      if (normalizedName === 'snf facesheet' && !isSnfTransition) return false;
+      if (normalizedName === 'declaration of eligibility' && (!isSnfDiversion || !isHealthNet)) return false;
       if (String(form?.type || '').trim().toLowerCase() === 'info') return false;
       const status = String(form?.status || '').trim().toLowerCase();
       return status !== 'completed';

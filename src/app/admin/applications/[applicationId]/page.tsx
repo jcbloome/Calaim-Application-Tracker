@@ -11306,6 +11306,15 @@ function ApplicationDetailPageContent() {
           />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {application?.pathway === 'SNF Diversion' ? (
+              <Alert className="md:col-span-2 border-blue-200 bg-blue-50 text-blue-900">
+                <Info className="h-4 w-4" />
+                <AlertTitle>SNF Facesheet note</AlertTitle>
+                <AlertDescription>
+                  SNF Facesheet is only required for the SNF Transition pathway and is not required for SNF Diversion.
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {displayedPathwayRequirements.map((req) => {
                 const formInfo = formStatusMap.get(req.title);
                 const status = getComponentStatus(req.title);
