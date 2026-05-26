@@ -26,7 +26,7 @@ const fetchMemberCandidates = async (
   const url =
     `${baseUrl}/tables/${MEMBERS_TABLE}/records` +
     `?q.where=${encodeURIComponent(whereClause)}` +
-    `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Senior_First,Senior_Last,CalAIM_MCO,Kaiser_Status')}` +
+    `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Senior_First,Senior_Last,CalAIM_MCO,Kaiser_Status,Kaiser_ID_Status')}` +
     `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
     `&q.limit=${limit}`;
   const response = await fetch(url, {
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
         firstName: clean(row?.Senior_First),
         lastName: clean(row?.Senior_Last),
         calaimMco: clean(row?.CalAIM_MCO),
-        kaiserStatus: clean(row?.Kaiser_Status),
+        kaiserStatus: clean(row?.Kaiser_Status || row?.Kaiser_ID_Status),
       },
     });
   } catch (error: any) {

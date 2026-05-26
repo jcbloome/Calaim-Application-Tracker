@@ -923,13 +923,18 @@ export async function POST(request: NextRequest) {
     );
     const kaiserAuthorizationMode = clean(applicationData?.kaiserAuthorizationMode).toLowerCase();
     const isAlreadySent = Boolean(applicationData?.caspioSent);
+    const intakeType = clean(applicationData?.intakeType).toLowerCase();
+    const applicationStatus = clean(applicationData?.status).toLowerCase();
     const isAuthReceivedMode =
-      kaiserAuthorizationMode === 'authorization_received' || Boolean(applicationData?.kaiserAuthReceivedViaIls);
+      kaiserAuthorizationMode === 'authorization_received' ||
+      Boolean(applicationData?.kaiserAuthReceivedViaIls) ||
+      intakeType === 'kaiser_auth_received_via_ils' ||
+      applicationStatus === 'authorization received (doc collection)';
     const requestedKaiserStatus =
       !isAlreadySent && isAuthReceivedMode
-        ? 'T2038 Received, Doc Collection'
+        ? 'T2038 Received, doc collection'
         : isAuthReceivedMode && isNotRequestedDocCollectionStatus(requestedKaiserStatusRaw)
-          ? 'T2038 Received, Doc Collection'
+          ? 'T2038 Received, doc collection'
           : requestedKaiserStatusRaw;
     const requestedSocialWorkerHold = clean(
       applicationData?.holdForSocialWorkerStatus ||

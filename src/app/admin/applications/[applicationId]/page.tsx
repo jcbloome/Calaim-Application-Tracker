@@ -8467,7 +8467,7 @@ function ApplicationDetailPageContent() {
         ...(isAuthorized
           ? { caspioCalAIMStatus: 'Authorized' }
           : { caspioCalAIMStatus: normalizedCurrentCaspio === 'authorized' || normalizedCurrentCaspio === 'pending' ? currentCaspioCalAIMStatus : 'Pending' }),
-        ...(isAuthorized && !currentKaiserStatus ? { kaiserStatus: 'T2038 Received, Need First Contact' } : {}),
+        ...(isAuthorized && !currentKaiserStatus ? { kaiserStatus: 'T2038 Received, doc collection' } : {}),
         ...(!isAuthorized && !currentKaiserStatus ? { kaiserStatus: 'T2038 Requested' } : {}),
         lastUpdated: serverTimestamp(),
       };
