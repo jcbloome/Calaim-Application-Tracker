@@ -8,6 +8,10 @@ export const dynamic = 'force-dynamic';
 const DEFAULT_TEMPLATE_PATH =
   'C:\\Users\\Jason.Jason-PC\\AppData\\Roaming\\Cursor\\User\\workspaceStorage\\2871420c389bbb745bfd4b95a2ccaf63\\pdfs\\00490bac-ad5b-4f06-8cba-374155b8db87\\#5 (2026) Kaiser Auth Sheet ORIGINAL (2).pdf';
 const DEFAULT_TEMPLATE_URL = '';
+const PUBLIC_TEMPLATE_CANDIDATE_PATHS = [
+  '/Templates/Kaiser%20Referral%20Form.pdf',
+  '/templates/Kaiser%20Referral%20Form.pdf',
+];
 const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
 const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';
@@ -98,7 +102,7 @@ async function resolveTemplateUrlFromRecentKaiserSubmissions(): Promise<string> 
   return '';
 }
 
-async function loadTemplatePdfBuffer() {
+async function loadTemplatePdfBuffer(req: NextRequest) {
   const templatePath = getTemplatePath();
   const envTemplateUrl = getTemplateUrl();
 
@@ -131,10 +135,30 @@ async function loadTemplatePdfBuffer() {
     }
   }
 
+  // Repo-hosted fallback for published environments:
+  // if the template PDF is committed under /public/Templates, use it directly from this app origin.
+  const origin = String(req.nextUrl.origin || '').trim();
+  if (origin) {
+    for (const candidatePath of PUBLIC_TEMPLATE_CANDIDATE_PATHS) {
+      const candidateUrl = `${origin}${candidatePath}`;
+      try {
+        const res = await fetch(candidateUrl, { cache: 'no-store' });
+        if (!res.ok) continue;
+        const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+        if (contentType && !contentType.includes('pdf')) continue;
+        const arr = await res.arrayBuffer();
+        if (!arr.byteLength) continue;
+        return { ok: true as const, buffer: Buffer.from(arr), source: `public:${candidateUrl}` };
+      } catch {
+        // keep trying candidate paths
+      }
+    }
+  }
+
   return {
     ok: false as const,
     error:
-      'Kaiser template PDF not found. Configure KAISER_REFERRAL_TEMPLATE_URL (preferred for published), or KAISER_REFERRAL_TEMPLATE_PATH for local.',
+      'Kaiser template PDF not found. Configure KAISER_REFERRAL_TEMPLATE_URL (preferred for published), or KAISER_REFERRAL_TEMPLATE_PATH for local, or commit template to /public/Templates.',
   };
 }
 
@@ -180,7 +204,7 @@ function isMultiWidgetChoiceField(field: unknown): field is MultiWidgetChoiceFie
 
 export async function GET(req: NextRequest) {
   const download = String(req.nextUrl.searchParams.get('download') || '') === '1';
-  const templateResult = await loadTemplatePdfBuffer();
+  const templateResult = await loadTemplatePdfBuffer(req);
   if (!templateResult.ok) {
     return new NextResponse(templateResult.error, { status: 500 });
   }
@@ -426,6 +450,7 @@ export async function GET(req: NextRequest) {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${filename}"`,
         'Cache-Control': 'no-store',
+        'x-kaiser-template-source': templateResult.source,
       },
     });
   } catch {

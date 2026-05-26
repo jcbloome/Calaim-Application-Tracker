@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
-import admin, { adminDb } from '@/firebase-admin';
+import admin, { adminDb, adminStorage } from '@/firebase-admin';
 
 type SendPayload = {
   to: string;
@@ -29,6 +29,16 @@ const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
 const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
+const PDF_RETENTION_URL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
+
+function sanitizePathComponent(value: unknown) {
+  return String(value || '')
+    .trim()
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 120);
+}
 
 function getKaiserReferralCcRecipients() {
   return Array.from(
@@ -232,6 +242,8 @@ export async function POST(request: NextRequest) {
       referrerName: referrerName || null,
       referrerEmail: referrerEmail || null,
       fileName,
+      pdfStoragePath: pdfStoragePath || null,
+      pdfStorageSignedUrl: pdfStorageSignedUrl || null,
       overrideResubmit,
       overrideReason: overrideReason || null,
     };
@@ -241,6 +253,41 @@ export async function POST(request: NextRequest) {
       `CS Referral for Member Name: ${memberName} and MRN: ${memberMrn || 'N/A'}`;
     const customMessage = String(body?.customMessage || '').trim();
     const resolvedAttachmentName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+    const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+    if (!pdfBuffer.length) {
+      return NextResponse.json({ success: false, error: 'Invalid PDF payload.' }, { status: 400 });
+    }
+    if (pdfBuffer.length > 25 * 1024 * 1024) {
+      return NextResponse.json({ success: false, error: 'PDF payload too large.' }, { status: 413 });
+    }
+
+    let pdfStoragePath = '';
+    let pdfStorageSignedUrl = '';
+    try {
+      const ts = Date.now();
+      const appSegment = sanitizePathComponent(appId || 'standalone');
+      const memberSegment = sanitizePathComponent(memberName || 'member');
+      const nameSegment = sanitizePathComponent(resolvedAttachmentName) || 'kaiser-referral.pdf';
+      pdfStoragePath = `kaiser-referrals/${appSegment}/${memberSegment}/${ts}-${nameSegment}`;
+      const bucket = adminStorage.bucket();
+      await bucket.file(pdfStoragePath).save(pdfBuffer, {
+        resumable: false,
+        contentType: 'application/pdf',
+        metadata: {
+          cacheControl: 'private, max-age=0, no-store',
+        },
+      });
+      const [signedUrl] = await bucket.file(pdfStoragePath).getSignedUrl({
+        action: 'read',
+        expires: Date.now() + PDF_RETENTION_URL_MS,
+      });
+      pdfStorageSignedUrl = String(signedUrl || '').trim();
+    } catch (storageError) {
+      // Storage persistence is best-effort; do not block outgoing email if this fails.
+      console.warn('[kaiser-referral/send-intake] failed to persist generated PDF to storage', storageError);
+      pdfStoragePath = '';
+      pdfStorageSignedUrl = '';
+    }
 
     if (testSend) {
       const testTo = testRecipientEmail || String(referrerEmail || '').trim().toLowerCase();
@@ -417,6 +464,8 @@ export async function POST(request: NextRequest) {
             providerMessageId: String(data?.id || ''),
             submittedByName: referrerName || null,
             submittedByEmail: referrerEmail || null,
+            pdfStoragePath: pdfStoragePath || null,
+            pdfStorageSignedUrl: pdfStorageSignedUrl || null,
             overrideResubmit,
             overrideReason: overrideReason || null,
           },
@@ -441,7 +490,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, submittedAtIso });
+    return NextResponse.json({
+      success: true,
+      submittedAtIso,
+      pdfStoragePath: pdfStoragePath || null,
+    });
   } catch (error: any) {
     await logKaiserReferralEmail({
       status: 'failure',
