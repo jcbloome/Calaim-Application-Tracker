@@ -58,6 +58,7 @@ const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
   healthPlan?: string | null
 ) => {
+  const normalizedPathway = String(pathway || '').trim().toLowerCase();
   const commonRequirements = [
     { id: 'cs-summary', title: 'CS Member Summary', description: 'This form MUST be completed online, as it provides the necessary data for the rest of the application.', type: 'online-form', href: '/forms/cs-summary-form/review', icon: FileText },
     { id: 'waivers', title: 'Waivers & Authorizations', description: 'Complete the consolidated HIPAA, Liability, Freedom of Choice, and Room & Board Commitment waiver form.', type: 'online-form', href: '/forms/waivers', icon: FileText },
@@ -72,7 +73,7 @@ const getPathwayRequirements = (
       ? commonRequirements.filter((req) => req.id !== 'proof-of-income')
       : commonRequirements;
   
-  if (pathway === 'SNF Diversion') {
+  if (normalizedPathway === 'snf diversion') {
     return [
       ...filteredCommonRequirements,
       { id: 'declaration-of-eligibility', title: 'Declaration of Eligibility', description: "Required for SNF Diversion. Download, have it signed by a PCP, and upload. Note: This form is not required for any Kaiser members.", type: 'Upload', icon: Printer, href: '/forms/declaration-of-eligibility/printable' },
@@ -80,10 +81,14 @@ const getPathwayRequirements = (
   }
   
   // SNF Transition
-  return [
-      ...filteredCommonRequirements,
-      { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'Upload', icon: UploadCloud, href: '#' },
-  ];
+  if (normalizedPathway === 'snf transition') {
+    return [
+        ...filteredCommonRequirements,
+        { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility. Required for SNF Transition only; not needed for SNF Diversion members.", type: 'Upload', icon: UploadCloud, href: '#' },
+    ];
+  }
+
+  return filteredCommonRequirements;
 };
 
 function StatusIndicator({

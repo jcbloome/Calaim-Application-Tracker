@@ -540,6 +540,7 @@ const getPathwayRequirements = (
   pathway: 'SNF Transition' | 'SNF Diversion',
   healthPlan?: string
 ) => {
+  const normalizedPathway = String(pathway || '').trim().toLowerCase();
   const normalizedPlan = String(healthPlan || '').trim().toLowerCase();
   const isHealthNet = normalizedPlan.includes('health net');
   const isKaiser = normalizedPlan.includes('kaiser');
@@ -588,7 +589,7 @@ const getPathwayRequirements = (
     normalizedHealthPlan === 'Health Net'
       ? commonRequirements.filter((req) => req.id !== 'proof-of-income')
       : commonRequirements;
-  if (pathway === 'SNF Diversion') {
+  if (normalizedPathway === 'snf diversion') {
     const isHealthNet = normalizedHealthPlan === 'Health Net';
     return [
       ...filteredCommonRequirements,
@@ -607,11 +608,14 @@ const getPathwayRequirements = (
     ];
   }
   
-  // SNF Transition
-  return [
-      ...filteredCommonRequirements,
-      { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility.", type: 'Upload', icon: UploadCloud, href: '#' },
-  ];
+  if (normalizedPathway === 'snf transition') {
+    return [
+        ...filteredCommonRequirements,
+        { id: 'snf-facesheet', title: 'SNF Facesheet', description: "Upload the resident's facesheet from the Skilled Nursing Facility. Required for SNF Transition only; not needed for SNF Diversion members.", type: 'Upload', icon: UploadCloud, href: '#' },
+    ];
+  }
+
+  return filteredCommonRequirements;
 };
 
 function StatusIndicator({ status }: { status: FormStatusType['status'] }) {
