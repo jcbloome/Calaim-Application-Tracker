@@ -11430,7 +11430,7 @@ function ApplicationDetailPageContent() {
                                           size="sm"
                                           className="w-full border-amber-300 text-amber-800 hover:bg-amber-100"
                                         >
-                                          Reject card / request redo
+                                          {isReviewed ? 'Unlock card / request redo' : 'Reject card / request redo'}
                                         </Button>
                                       </DialogTrigger>
                                       <DialogContent className="sm:max-w-xl">

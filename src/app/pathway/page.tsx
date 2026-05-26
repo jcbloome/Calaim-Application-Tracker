@@ -1644,6 +1644,9 @@ function PathwayPageContent() {
             if (req.id === 'waivers') {
                 return (
                     <div className="space-y-3">
+                        <p className="text-xs text-muted-foreground">
+                          Waivers are completed directly in this form; this card does not use file uploads.
+                        </p>
                         {renderMissingGuidance()}
                         <div className="space-y-2 rounded-md border p-3">
                             {waiverSubTasks.map(task => (
