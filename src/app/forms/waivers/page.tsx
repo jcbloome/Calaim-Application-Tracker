@@ -85,16 +85,47 @@ function WaiversFormComponent() {
     const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
     const [focChoice, setFocChoice] = useState<'accept' | 'decline' | undefined>(undefined);
 
+    const isAdminCreatedApp = String(applicationId || '').startsWith('admin_app_');
 
     const applicationDocRef = useMemoFirebase(() => {
-        if (isUserLoading || !user || !firestore || !applicationId) {
+        if (!firestore || !applicationId) {
+            return null;
+        }
+        if (isAdminCreatedApp) {
+            return doc(firestore, 'applications', applicationId);
+        }
+        if (isUserLoading || !user) {
             return null;
         }
         return doc(firestore, `users/${user.uid}/applications`, applicationId);
-    }, [user, firestore, applicationId, isUserLoading]);
+    }, [user, firestore, applicationId, isUserLoading, isAdminCreatedApp]);
 
     const { data: application, isLoading: isLoadingApplication } = useDoc<Application>(applicationDocRef);
     const isReadOnly = application?.status === 'Completed & Submitted' || application?.status === 'Approved';
+    const memberNameDisplay = [
+      String(
+        (application as any)?.memberFirstName ||
+          (application as any)?.member_first_name ||
+          (application as any)?.Senior_First ||
+          ''
+      ).trim(),
+      String(
+        (application as any)?.memberLastName ||
+          (application as any)?.member_last_name ||
+          (application as any)?.Senior_Last ||
+          ''
+      ).trim(),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    const memberMrnDisplay = String(
+      (application as any)?.memberMrn ||
+        (application as any)?.Member_MRN ||
+        (application as any)?.medicalRecordNumber ||
+        (application as any)?.mrn ||
+        ''
+    ).trim();
 
     useEffect(() => {
         if (application) {
@@ -308,11 +339,11 @@ function WaiversFormComponent() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                      <div>
                                         <h3 className="text-sm font-medium text-muted-foreground">Member Name</h3>
-                                        <p className="font-semibold">{application?.memberFirstName} {application?.memberLastName}</p>
+                                        <p className="font-semibold">{memberNameDisplay || 'Not available'}</p>
                                     </div>
                                     <div>
                                         <h3 className="text-sm font-medium text-muted-foreground">Medical Record Number</h3>
-                                        <p className="font-semibold font-mono text-sm">{application?.memberMrn}</p>
+                                        <p className="font-semibold font-mono text-sm">{memberMrnDisplay || 'Not available'}</p>
                                     </div>
                                 </div>
                             </div>

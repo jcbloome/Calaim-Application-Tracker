@@ -1597,7 +1597,7 @@ function PathwayPageContent() {
 
     const isUploading = uploading[req.title];
     const currentProgress = uploadProgress[req.title];
-    const isMultiple = req.title === 'Proof of Income';
+    const isMultiple = req.title === 'Proof of Income' || req.title === 'Medicine List';
     const renderUploadReceipt = () => {
       if (!uploadReceipt || uploadReceipt.fileCount <= 0) return null;
       const uploadedAtLabel = uploadReceipt.uploadedAtIso
