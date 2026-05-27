@@ -7351,6 +7351,14 @@ function ApplicationDetailPageContent() {
           : new Date(value);
     return Number.isNaN(parsed.getTime()) ? '' : format(parsed, 'PPP p');
   };
+  const waiversPrintableHref = (() => {
+    const params = new URLSearchParams({
+      memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
+      memberMrn: String((application as any)?.memberMrn || '').trim(),
+      applicationId: String((application as any)?.id || applicationId || '').trim(),
+    });
+    return `/forms/waivers/printable?${params.toString()}`;
+  })();
   const signedWaiversPrintableHref = (() => {
     const waiverForm = (formStatusMap.get('Waivers & Authorizations') || formStatusMap.get('Waivers')) as any;
     const waiverStatus = String(waiverForm?.status || '').trim().toLowerCase();
@@ -9645,7 +9653,7 @@ function ApplicationDetailPageContent() {
                                 </div>
                             ))}
                         </div>
-                        <div className={cn('grid gap-2', waiverShowReset || signedWaiversPrintableHref ? 'sm:grid-cols-2 lg:grid-cols-3' : '')}>
+                        <div className={cn('grid gap-2', waiverShowReset || signedWaiversPrintableHref ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2')}>
                           <Button asChild variant="secondary" className="w-full">
                             <Link href={viewHref}>View/Edit Waivers</Link>
                           </Button>
@@ -9694,6 +9702,15 @@ function ApplicationDetailPageContent() {
                             </AlertDialog>
                           ) : null}
                         </div>
+                        <Link
+                          href={waiversPrintableHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          <Printer className="h-4 w-4" />
+                          Download/Print Waiver Form
+                        </Link>
                         {isUploading && <Progress value={currentProgress} className="h-1 w-full" />}
                         {hasWaiverUpload ? (
                           <div className="space-y-2 rounded-md border p-3">

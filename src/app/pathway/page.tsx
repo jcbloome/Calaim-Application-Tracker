@@ -1475,6 +1475,18 @@ function PathwayPageContent() {
     const uploadReceipt = uploadReceiptByRequirement[req.title];
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
     const csSummaryPdfHref = `/forms/cs-summary-form/printable?applicationId=${encodeURIComponent(applicationId)}`;
+    const waiversPrintableHref = (() => {
+      const params = new URLSearchParams();
+      params.set('applicationId', String(applicationId || '').trim());
+      params.set(
+        'memberName',
+        `${String(application?.memberFirstName || '').trim()} ${String(application?.memberLastName || '').trim()}`
+          .replace(/\s+/g, ' ')
+          .trim()
+      );
+      params.set('memberMrn', String((application as any)?.memberMrn || '').trim());
+      return `/forms/waivers/printable?${params.toString()}`;
+    })();
     
     if (isReadOnly) {
        if (req.id === 'cs-summary') {
@@ -1647,6 +1659,15 @@ function PathwayPageContent() {
                         <p className="text-xs text-muted-foreground">
                           Waivers are completed directly in this form; this card does not use file uploads.
                         </p>
+                        <Link
+                          href={waiversPrintableHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          <Printer className="h-4 w-4" />
+                          Download/Print Waiver Form
+                        </Link>
                         {renderMissingGuidance()}
                         <div className="space-y-2 rounded-md border p-3">
                             {waiverSubTasks.map(task => (

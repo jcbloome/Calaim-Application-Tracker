@@ -126,6 +126,13 @@ function WaiversFormComponent() {
         (application as any)?.mrn ||
         ''
     ).trim();
+    const waiversPrintableHref = (() => {
+      const params = new URLSearchParams();
+      if (applicationId) params.set('applicationId', String(applicationId || '').trim());
+      if (memberNameDisplay) params.set('memberName', memberNameDisplay);
+      if (memberMrnDisplay) params.set('memberMrn', memberMrnDisplay);
+      return `/forms/waivers/printable?${params.toString()}`;
+    })();
 
     useEffect(() => {
         if (application) {
@@ -310,13 +317,18 @@ function WaiversFormComponent() {
             <Header />
             <main className="flex-grow container mx-auto px-4 py-8 sm:px-6">
                 <div className="max-w-3xl mx-auto">
-                     <div className="mb-6">
-                         <Button variant="outline" asChild>
-                            <Link href={`/pathway?applicationId=${applicationId}`}>
-                                <ArrowLeft className="mr-2 h-4 w-4" />
-                                Back to Pathway
-                            </Link>
-                        </Button>
+                     <div className="mb-6 flex flex-col gap-2 sm:flex-row">
+                        <Button variant="outline" asChild>
+                           <Link href={`/pathway?applicationId=${applicationId}`}>
+                               <ArrowLeft className="mr-2 h-4 w-4" />
+                               Back to Pathway
+                           </Link>
+                       </Button>
+                        <Button variant="outline" asChild>
+                           <Link href={waiversPrintableHref} target="_blank" rel="noopener noreferrer">
+                               Download Printable Waivers (3rd party)
+                           </Link>
+                       </Button>
                     </div>
 
                      {isReadOnly && (
