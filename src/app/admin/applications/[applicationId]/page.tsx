@@ -7203,14 +7203,6 @@ function ApplicationDetailPageContent() {
           <DialogDescription>All member files in this application, including eligibility, authorization, and ISP uploads.</DialogDescription>
         </DialogHeader>
         <div className="flex items-center justify-end gap-2">
-          {signedWaiversPrintableHref ? (
-            <Button type="button" variant="outline" size="sm" asChild>
-              <Link href={signedWaiversPrintableHref} target="_blank" rel="noopener noreferrer">
-                <Printer className="mr-2 h-4 w-4" />
-                Signed Waivers Printable
-              </Link>
-            </Button>
-          ) : null}
           {isDownloadingAllMemberFiles ? (
             <Button
               type="button"
@@ -7356,48 +7348,6 @@ function ApplicationDetailPageContent() {
       memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
       memberMrn: String((application as any)?.memberMrn || '').trim(),
       applicationId: String((application as any)?.id || applicationId || '').trim(),
-    });
-    return `/forms/waivers/printable?${params.toString()}`;
-  })();
-  const signedWaiversPrintableHref = (() => {
-    const waiverForm = (formStatusMap.get('Waivers & Authorizations') || formStatusMap.get('Waivers')) as any;
-    const waiverStatus = String(waiverForm?.status || '').trim().toLowerCase();
-    if (waiverStatus !== 'completed') return '';
-    const signerDateRaw = waiverForm?.dateCompleted;
-    const signerDate =
-      typeof signerDateRaw?.toDate === 'function'
-        ? signerDateRaw.toDate()
-        : signerDateRaw instanceof Date
-          ? signerDateRaw
-          : signerDateRaw
-            ? new Date(signerDateRaw)
-            : null;
-    const signatureDate = signerDate && !Number.isNaN(signerDate.getTime())
-      ? signerDate.toLocaleDateString()
-      : '';
-    const incomeSourceValue = Array.isArray(waiverForm?.incomeSource)
-      ? waiverForm.incomeSource.map((item: unknown) => String(item || '').trim()).filter(Boolean).join(';')
-      : String(waiverForm?.incomeSource || '').trim();
-    const params = new URLSearchParams({
-      memberName: `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim(),
-      memberMrn: String((application as any)?.memberMrn || '').trim(),
-      applicationId: String((application as any)?.id || applicationId || '').trim(),
-      signerType: String(waiverForm?.signerType || '').trim(),
-      signerName: String(waiverForm?.signerName || '').trim(),
-      signerRelationship: String(waiverForm?.signerRelationship || '').trim(),
-      signatureDate,
-      monthlyIncome: String(waiverForm?.monthlyIncome || (application as any)?.monthlyIncome || '').trim(),
-      incomeSource: incomeSourceValue,
-      focChoice: String(waiverForm?.choice || '').trim(),
-      ackHipaa: Boolean(waiverForm?.ackHipaa) ? '1' : '0',
-      ackLiability: Boolean(waiverForm?.ackLiability) ? '1' : '0',
-      ackFoc: Boolean(waiverForm?.ackFoc) ? '1' : '0',
-      ackRoomAndBoard: Boolean(
-        waiverForm?.ackRoomAndBoard ??
-        waiverForm?.ackSocDetermination ??
-        (application as any)?.ackRoomAndBoard ??
-        (application as any)?.ackSocDetermination
-      ) ? '1' : '0',
     });
     return `/forms/waivers/printable?${params.toString()}`;
   })();
@@ -9653,54 +9603,10 @@ function ApplicationDetailPageContent() {
                                 </div>
                             ))}
                         </div>
-                        <div className={cn('grid gap-2', waiverShowReset || signedWaiversPrintableHref ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2')}>
+                        <div className="grid gap-2 sm:grid-cols-2">
                           <Button asChild variant="secondary" className="w-full">
                             <Link href={viewHref}>View/Edit Waivers</Link>
                           </Button>
-                          {signedWaiversPrintableHref ? (
-                            <Button asChild variant="outline" className="w-full">
-                              <Link href={signedWaiversPrintableHref} target="_blank" rel="noopener noreferrer">
-                                Signed Waivers Printable
-                              </Link>
-                            </Button>
-                          ) : null}
-                          {waiverShowReset ? (
-                            <AlertDialog open={waiverResetOpen} onOpenChange={setWaiverResetOpen}>
-                              <AlertDialogTrigger asChild>
-                                <Button type="button" variant="outline" className="w-full" disabled={waiverResetting}>
-                                  {waiverResetting ? (
-                                    <>
-                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                      Resetting...
-                                    </>
-                                  ) : (
-                                    'Reset status'
-                                  )}
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Reset Waivers status?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This will set <strong>Waivers &amp; Authorizations</strong> back to <strong>Pending</strong> and clear waiver acknowledgements
-                                    so it can be re-completed.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel disabled={waiverResetting}>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      void resetWaiversStatus();
-                                    }}
-                                    disabled={waiverResetting}
-                                  >
-                                    Reset
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          ) : null}
                         </div>
                         <Link
                           href={waiversPrintableHref}
