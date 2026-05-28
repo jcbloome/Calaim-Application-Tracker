@@ -117,6 +117,34 @@ interface CaspioApiResponse {
   error?: string;
 }
 
+function toCaspioLegalRepChoice(value: unknown): 'Unknown' | 'No' | 'Yes' | 'Requires' {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  switch (normalized) {
+    case 'unknown':
+      return 'Unknown';
+    case 'notapplicable':
+      return 'No';
+    case 'sameasprimary':
+    case 'different':
+      return 'Yes';
+    case 'nocapacityhasrep':
+      return 'Requires';
+    case 'nohasrep':
+      return 'No';
+    case 'yes':
+      return 'Yes';
+    case 'no':
+      return 'No';
+    case 'requires':
+      return 'Requires';
+    default:
+      return 'Unknown';
+  }
+}
+
 class CaspioApiError extends Error {
   constructor(
     message: string,
@@ -218,7 +246,7 @@ function transformToCaspioFormat(firebaseData: any): CaspioApplication {
     
     // Legal Representative
     HasCapacity: firebaseData.hasCapacity || 'Yes',
-    HasLegalRep: firebaseData.hasLegalRep,
+    HasLegalRep: toCaspioLegalRepChoice(firebaseData.hasLegalRep),
     LegalRepFirstName: firebaseData.repFirstName,
     LegalRepLastName: firebaseData.repLastName,
     LegalRepRelationship: firebaseData.repRelationship,

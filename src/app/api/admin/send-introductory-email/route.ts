@@ -59,22 +59,31 @@ function toSafeHttpUrl(raw: string): string {
 
 function renderTextWithLinks(text: string): string {
   const raw = String(text || '');
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const tokenRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s]+)/g;
   let output = '';
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = urlRegex.exec(raw)) !== null) {
+  while ((match = tokenRegex.exec(raw)) !== null) {
     const fullMatch = String(match[0] || '');
     const start = match.index;
     const end = start + fullMatch.length;
     output += htmlEscape(raw.slice(lastIndex, start));
 
-    const safeUrl = toSafeHttpUrl(fullMatch);
-    if (safeUrl) {
-      output += `<a href="${htmlEscape(safeUrl)}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">${htmlEscape(fullMatch)}</a>`;
+    const markdownLabel = String(match[1] || '').trim();
+    const markdownUrl = String(match[2] || '').trim();
+    const plainUrl = String(match[3] || '').trim();
+
+    const markdownSafeUrl = toSafeHttpUrl(markdownUrl);
+    if (markdownLabel && markdownSafeUrl) {
+      output += `<a href="${htmlEscape(markdownSafeUrl)}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">${htmlEscape(markdownLabel)}</a>`;
     } else {
-      output += htmlEscape(fullMatch);
+      const safeUrl = toSafeHttpUrl(plainUrl || fullMatch);
+      if (safeUrl) {
+        output += `<a href="${htmlEscape(safeUrl)}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">${htmlEscape(plainUrl || fullMatch)}</a>`;
+      } else {
+        output += htmlEscape(fullMatch);
+      }
     }
     lastIndex = end;
   }
@@ -94,8 +103,9 @@ function renderPortalLinkAction(label: string, buttonLabel: string, url: string)
     </li>`;
 }
 
-function toHtmlBody(message: string): string {
+function toHtmlBody(message: string, options?: { portalLoginUrl?: string }): string {
   const lines = String(message || '').split('\n');
+  const safePortalLoginUrl = toSafeHttpUrl(options?.portalLoginUrl || '');
   const chunks: string[] = [];
   let bulletBuffer: string[] = [];
 
@@ -103,8 +113,8 @@ function toHtmlBody(message: string): string {
     if (bulletBuffer.length === 0) return;
     const renderedItems = bulletBuffer
       .map((item) => {
-        const loginMatch = item.match(/^Open your secure portal login:\s*(https?:\/\/\S+)/i);
-        if (loginMatch) return renderPortalLinkAction('Portal Login', 'Open Portal', loginMatch[1]);
+        const loginMatch = item.match(/^(?:Open your secure portal login|Log in):\s*(https?:\/\/\S+)/i);
+        if (loginMatch) return renderPortalLinkAction('Portal Login', 'Log in', loginMatch[1]);
 
         return `<li>${renderTextWithLinks(item)}</li>`;
       })
@@ -127,6 +137,19 @@ function toHtmlBody(message: string): string {
     }
 
     flushBullets();
+    if (
+      safePortalLoginUrl &&
+      /connect calaim portal/i.test(line) &&
+      !/https?:\/\//i.test(line)
+    ) {
+      chunks.push(
+        `<p style="margin: 0 0 8px;">Please continue in the <a href="${htmlEscape(
+          safePortalLoginUrl
+        )}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">Connect CalAIM portal</a>.</p>`
+      );
+      continue;
+    }
+
     const isHeading =
       line.endsWith(':') &&
       (line.toLowerCase().includes('required documents') ||
@@ -313,33 +336,26 @@ function buildPortalLinks(params: {
 }
 
 function buildDefaultDraft(params: {
-  applicationId: string;
   memberName: string;
   contactName: string;
   memberMrn: string;
   hasKaiserAuthorizationAtIntake: boolean;
   hasPriorIntroEmail: boolean;
-  focusRequirementId: string;
-  baseUrl: string;
   missingDocuments: string[];
   senderName: string;
   senderEmail: string;
 }): { subject: string; message: string } {
   const {
-    applicationId,
     memberName,
     contactName,
     memberMrn,
     hasKaiserAuthorizationAtIntake,
     hasPriorIntroEmail,
-    focusRequirementId,
-    baseUrl,
     missingDocuments,
     senderName,
     senderEmail,
   } = params;
   const greetingFirstName = getFirstNameOnly(contactName) || 'there';
-  const { loginUrl } = buildPortalLinks({ applicationId, focusRequirementId, baseUrl });
   const kaiserAuthorizationLine = hasKaiserAuthorizationAtIntake
     ? hasPriorIntroEmail
       ? `This is a reminder to sign in and continue the existing Kaiser-authorized CalAIM Assisted Living Transitions application for ${memberName}${memberMrn ? ` (MRN: ${memberMrn})` : ''}.`
@@ -369,8 +385,7 @@ function buildDefaultDraft(params: {
       '',
       kaiserAuthorizationLine,
       '',
-      'Please continue in the Connect CalAIM portal:',
-      `- Open your secure portal login: ${loginUrl}`,
+      'Please continue in the Connect CalAIM portal.',
       '',
       'Please use this same email address for your account so we can match it correctly.',
       ...missingDocumentsSection,
@@ -514,6 +529,7 @@ export async function POST(request: NextRequest) {
     const baseUrl = getAppBaseUrl();
     const missingDocuments = getMissingRequestedDocuments(effectiveAppData);
     const focusRequirementId = getFocusRequirementId(missingDocuments);
+    const portalLinks = buildPortalLinks({ applicationId, focusRequirementId, baseUrl });
     const introSendHistory = Array.isArray(effectiveAppData.introEmailSendHistory)
       ? (effectiveAppData.introEmailSendHistory as Array<Record<string, unknown>>)
       : [];
@@ -535,14 +551,11 @@ export async function POST(request: NextRequest) {
           (effectiveAppData.introEmailSendHistory as unknown[]).length > 0)
     );
     const defaults = buildDefaultDraft({
-      applicationId,
       memberName,
       contactName,
       memberMrn,
       hasKaiserAuthorizationAtIntake,
       hasPriorIntroEmail,
-      focusRequirementId,
-      baseUrl,
       missingDocuments,
       senderName,
       senderEmail,
@@ -573,7 +586,7 @@ export async function POST(request: NextRequest) {
         success: true,
         draft: { to: toRecipients.join(', '), cc: ccRecipients.join(', '), subject, message },
         missingDocuments,
-        portalLinks: buildPortalLinks({ applicationId, focusRequirementId, baseUrl }),
+        portalLinks,
         acknowledgement: {
           lastSentAtIso: lastSentAtIso || null,
           lastSentTo: lastSentTo || null,
@@ -611,8 +624,10 @@ export async function POST(request: NextRequest) {
     }
 
     const resend = new Resend(resendApiKey);
-    const html = toHtmlBody(message);
-    const text = message;
+    const html = toHtmlBody(message, { portalLoginUrl: portalLinks.loginUrl });
+    const text = /https?:\/\//i.test(message)
+      ? message
+      : `${message}\n\nLog in: ${portalLinks.loginUrl}`;
 
     let providerMessageId = '';
     try {

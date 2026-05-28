@@ -108,7 +108,7 @@ export default function EmailPrimaryContactPage() {
       ...docsLines,
       '',
       'Quick links:',
-      `- Open your secure portal login: ${portalLinks.loginUrl || ''}`,
+      `- Log in: ${portalLinks.loginUrl || ''}`,
       `- Create your portal account (if needed): ${portalLinks.signupUrl || ''}`,
       `- Connect application: ${portalLinks.inviteUrl || ''}`,
       '',

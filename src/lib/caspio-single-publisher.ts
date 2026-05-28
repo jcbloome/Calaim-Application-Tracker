@@ -388,6 +388,33 @@ async function getOrCreateClientId(firstName: string, lastName: string): Promise
  */
 function transformToMembersFormat(firebaseData: any, clientId: string): any {
   const now = new Date().toISOString();
+  const toCaspioLegalRepChoice = (value: unknown): 'Unknown' | 'No' | 'Yes' | 'Requires' => {
+    const normalized = String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+    switch (normalized) {
+      case 'unknown':
+        return 'Unknown';
+      case 'notapplicable':
+        return 'No';
+      case 'sameasprimary':
+      case 'different':
+        return 'Yes';
+      case 'nocapacityhasrep':
+        return 'Requires';
+      case 'nohasrep':
+        return 'No';
+      case 'yes':
+        return 'Yes';
+      case 'no':
+        return 'No';
+      case 'requires':
+        return 'Requires';
+      default:
+        return 'Unknown';
+    }
+  };
   
   return {
     client_ID2: clientId,
@@ -433,7 +460,7 @@ function transformToMembersFormat(firebaseData: any, clientId: string): any {
     
     // Legal Representative
     HasCapacity: firebaseData.hasCapacity || 'Yes',
-    HasLegalRep: firebaseData.hasLegalRep || null,
+    HasLegalRep: toCaspioLegalRepChoice(firebaseData.hasLegalRep),
     LegalRepFirstName: firebaseData.repFirstName || null,
     LegalRepLastName: firebaseData.repLastName || null,
     LegalRepRelationship: firebaseData.repRelationship || null,

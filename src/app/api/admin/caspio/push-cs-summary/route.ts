@@ -30,6 +30,31 @@ const looksLikeSexField = (fieldName: string) => {
   const normalized = normalizeFieldName(fieldName);
   return normalized === 'sex' || normalized === 'gender' || normalized === 'membersex' || normalized === 'membergender';
 };
+const toCaspioLegalRepChoice = (value: unknown): 'Unknown' | 'No' | 'Yes' | 'Requires' => {
+  const normalized = normalizeFieldName(value);
+  switch (normalized) {
+    case 'unknown':
+      return 'Unknown';
+    case 'notapplicable':
+      return 'No';
+    case 'sameasprimary':
+    case 'different':
+      return 'Yes';
+    case 'nocapacityhasrep':
+      return 'Requires';
+    // Legacy value retained for backward compatibility with older records.
+    case 'nohasrep':
+      return 'No';
+    case 'yes':
+      return 'Yes';
+    case 'no':
+      return 'No';
+    case 'requires':
+      return 'Requires';
+    default:
+      return 'Unknown';
+  }
+};
 const toCaspioSexValue = (value: unknown): 'F' | 'M' | '' => {
   const raw = clean(value).toLowerCase();
   if (!raw) return '';
@@ -383,6 +408,19 @@ const getApplicationValueByCsField = (applicationData: any, csField: string) => 
       'Current_County',
     ]);
     if (hasValue(countyValue)) return countyValue;
+  }
+  if (
+    normalizedTarget === 'haslegalrep' ||
+    normalizedTarget === 'legalrep' ||
+    normalizedTarget === 'legalrepresentative'
+  ) {
+    return toCaspioLegalRepChoice(
+      pickFirstNonEmpty(applicationData as Record<string, any>, [
+        'hasLegalRep',
+        'HasLegalRep',
+        'legalRepresentative',
+      ])
+    );
   }
   if (MEDI_CAL_CS_FIELD_ALIASES.has(normalizedTarget)) {
     const mediCalValue = extractMediCalNumberFromApplication(applicationData as Record<string, any>);
