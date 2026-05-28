@@ -83,6 +83,7 @@ import { AlertDialog, AlertDialogTitle, AlertDialogHeader, AlertDialogContent, A
 import { format } from 'date-fns';
 import ActivityLog from '@/components/admin/ActivityLog';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
+import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
 
 const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
 
@@ -381,6 +382,52 @@ function StaffAssignmentDropdown({
               });
             } catch (calendarError) {
               console.warn('Failed to create calendar task for assignment:', calendarError);
+            }
+
+            // Send assignment email so staff are notified outside the portal too.
+            try {
+              const recipientEmail = String(selectedStaff.email || '').trim();
+              if (recipientEmail && recipientEmail.includes('@')) {
+                const memberMrn = String(
+                  (application as any)?.memberMrn ||
+                  (application as any)?.Member_MRN ||
+                  (application as any)?.memberMRN ||
+                  ''
+                ).trim();
+                const memberCounty = String(
+                  (application as any)?.memberCounty ||
+                  (application as any)?.county ||
+                  ''
+                ).trim();
+                const kaiserStatus = String(
+                  (application as any)?.Kaiser_Status ||
+                  (application as any)?.kaiserStatus ||
+                  ''
+                ).trim();
+                const calaimStatus = String(
+                  (application as any)?.CalAIM_Status ||
+                  (application as any)?.status ||
+                  ''
+                ).trim();
+                await sendStaffAssignmentEmail({
+                  to: recipientEmail,
+                  staffName: selectedStaff.displayName,
+                  memberName,
+                  memberMrn: memberMrn || 'N/A',
+                  memberCounty: memberCounty || 'N/A',
+                  kaiserStatus: kaiserStatus || 'Pending',
+                  calaimStatus: calaimStatus || 'Pending',
+                  assignedBy: assignedByName,
+                  dashboardUrl: actionUrl,
+                });
+              } else {
+                console.warn('Skipping assignment email: selected staff has no valid email.', {
+                  staffId: selectedStaff.uid,
+                  email: selectedStaff.email,
+                });
+              }
+            } catch (assignmentEmailError) {
+              console.warn('Failed to send assignment email notification:', assignmentEmailError);
             }
 
             onStaffChange(staffId, selectedStaff.displayName);
