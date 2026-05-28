@@ -919,8 +919,8 @@ function noteMatchesAssignedStaff(
     return true;
   }
 
-  // Strict no-action matching: only count note authorship fields.
-  // Do not treat assignment targets or other staff touches as assigned-staff action.
+  // No-action matching should reflect activity from the assigned staff member
+  // actually entering a note, not reassignment to another user.
   const noteNames = [
     note?.createdByName,
     note?.createdBy,
