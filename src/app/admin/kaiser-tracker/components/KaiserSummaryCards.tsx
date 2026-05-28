@@ -31,9 +31,11 @@ export interface KaiserSummaryCardsProps {
       totalMembers: KaiserMember[];
       criticalMembers: KaiserMember[];
       priorityMembers: KaiserMember[];
+      normalMembers: KaiserMember[];
       total: number;
       critical: number;
       priority: number;
+      normal: number;
     }>
   ) => void;
 }
@@ -162,6 +164,20 @@ export function KaiserSummaryCards({
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) return 999;
     return Math.floor((Date.now() - parsed.getTime()) / (24 * 60 * 60 * 1000));
+  };
+  const hasActiveT2038EndDate = (member: KaiserMember) => {
+    const endRaw = String(
+      (member as any)?.Authorization_End_Date_T2038 ||
+        (member as any)?.Next_Auth_End_T2038 ||
+        ''
+    ).trim();
+    if (!endRaw) return false;
+    const parsed = new Date(endRaw);
+    if (Number.isNaN(parsed.getTime())) return false;
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endDay = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+    return endDay >= todayStart;
   };
 
   const getPriorityBucket = (status: string): 'priority' | 'lesser' | 'other' => {
@@ -325,20 +341,21 @@ export function KaiserSummaryCards({
     };
   }, [auth, members]);
 
+  const noActionEligibleMembers = React.useMemo(
+    () => members.filter((member) => hasActiveT2038EndDate(member)),
+    [members]
+  );
   const noActionMembers = React.useMemo(() => {
-    return members.filter((member) => {
+    return noActionEligibleMembers.filter((member) => {
       const clientId2 = String(member?.client_ID2 || '').trim();
       const meta = assignedStaffMetaByClientId[clientId2];
       if (!meta) return false;
       if (activeOverrideByMemberId[clientId2]) return false;
       return isNoActionForWeek(meta.lastAssignedStaffActionAt);
     });
-  }, [members, assignedStaffMetaByClientId, activeOverrideByMemberId]);
+  }, [noActionEligibleMembers, assignedStaffMetaByClientId, activeOverrideByMemberId]);
 
-  const scopedNoActionMembers = React.useMemo(
-    () => noActionMembers.filter((m) => isNoActionStatusInScope(getEffectiveKaiserStatus(m))),
-    [noActionMembers]
-  );
+  const scopedNoActionMembers = noActionMembers;
 
   const noActionPriorityMembers = React.useMemo(
     () => scopedNoActionMembers.filter((m) => getPriorityBucket(getEffectiveKaiserStatus(m)) === 'priority'),
@@ -346,6 +363,10 @@ export function KaiserSummaryCards({
   );
   const noActionLesserPriorityMembers = React.useMemo(
     () => scopedNoActionMembers.filter((m) => getPriorityBucket(getEffectiveKaiserStatus(m)) === 'lesser'),
+    [scopedNoActionMembers, getPriorityBucket]
+  );
+  const noActionNormalMembers = React.useMemo(
+    () => scopedNoActionMembers.filter((m) => getPriorityBucket(getEffectiveKaiserStatus(m)) === 'other'),
     [scopedNoActionMembers, getPriorityBucket]
   );
   const currentNoActionCriticalCount = noActionPriorityMembers.length;
@@ -376,10 +397,14 @@ export function KaiserSummaryCards({
       const lesserMembers = row.staffMembers.filter(
         (member) => getPriorityBucket(getEffectiveKaiserStatus(member)) === 'lesser'
       );
+      const normalMembers = row.staffMembers.filter(
+        (member) => getPriorityBucket(getEffectiveKaiserStatus(member)) === 'other'
+      );
       return {
         ...row,
         priorityMembers,
         lesserMembers,
+        normalMembers,
       };
     });
   }, [noActionByStaffRows, getPriorityBucket]);
@@ -388,9 +413,10 @@ export function KaiserSummaryCards({
       acc[row.staffName] = {
         critical: row.priorityMembers.length,
         priority: row.lesserMembers.length,
+        normal: row.normalMembers.length,
       };
       return acc;
-    }, {} as Record<string, { critical: number; priority: number }>);
+    }, {} as Record<string, { critical: number; priority: number; normal: number }>);
   }, [noActionOverviewByStaffRows]);
 
   React.useEffect(() => {
@@ -400,9 +426,11 @@ export function KaiserSummaryCards({
       totalMembers: row.staffMembers,
       criticalMembers: row.priorityMembers,
       priorityMembers: row.lesserMembers,
+      normalMembers: row.normalMembers,
       total: row.staffMembers.length,
       critical: row.priorityMembers.length,
       priority: row.lesserMembers.length,
+      normal: row.normalMembers.length,
     }));
 
     onNoActionByStaffComputed(rows);

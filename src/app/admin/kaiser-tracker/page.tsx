@@ -303,9 +303,11 @@ function KaiserTrackerPageContent() {
         totalMembers: KaiserMember[];
         criticalMembers: KaiserMember[];
         priorityMembers: KaiserMember[];
+        normalMembers: KaiserMember[];
         total: number;
         critical: number;
         priority: number;
+        normal: number;
       }>
     ) => {
       setNoActionByStaffMap((prev) => {

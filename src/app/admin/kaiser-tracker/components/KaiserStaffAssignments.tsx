@@ -44,9 +44,11 @@ export interface NoActionStaffSummary {
   totalMembers: KaiserMember[];
   criticalMembers: KaiserMember[];
   priorityMembers: KaiserMember[];
+  normalMembers: KaiserMember[];
   total: number;
   critical: number;
   priority: number;
+  normal: number;
 }
 
 export interface KaiserStaffAssignmentsProps {
@@ -108,11 +110,9 @@ export function KaiserStaffAssignments({
         <div className="text-xs text-muted-foreground mt-1">
           Notes sync (ET): {notesSyncLastAtLabel || 'Never'}
         </div>
-        {Array.isArray(noActionScopedStatuses) && noActionScopedStatuses.length > 0 ? (
-          <div className="text-xs text-muted-foreground mt-1">
-            No Action 7+ Days scoped fields: {noActionScopedStatuses.join(' | ')}
-          </div>
-        ) : null}
+        <div className="text-xs text-muted-foreground mt-1">
+          No Action 7+ Days scope: members with active T2038 authorization end dates.
+        </div>
         <div className="text-xs text-muted-foreground mt-2 space-y-1">
           <div>
             <span className="font-medium text-slate-700">Active:</span>{' '}
@@ -141,9 +141,11 @@ export function KaiserStaffAssignments({
           const noAction = noActionByStaff?.[staffName];
           const criticalMembers = noAction?.criticalMembers || [];
           const priorityMembers = noAction?.priorityMembers || [];
+          const normalMembers = noAction?.normalMembers || [];
           const total = Number(noAction?.total || 0);
           const critical = Number(noAction?.critical || 0);
           const priority = Number(noAction?.priority || 0);
+          const normal = Number(noAction?.normal || 0);
           const activeActionMembers = assignment.members.filter((member) =>
             activeStatusSet.has(normalizeStatusText(getEffectiveKaiserStatus(member)))
           );
@@ -286,6 +288,23 @@ export function KaiserStaffAssignments({
                         >
                           <span className="text-amber-900">Priority</span>
                           <span className={`font-semibold ${priority > 0 ? 'text-amber-700 hover:underline' : 'text-slate-400'}`}>{priority}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="w-full flex items-center justify-between rounded px-1 py-0.5 hover:bg-emerald-100"
+                          onClick={() =>
+                            openMemberModal(
+                              normalMembers,
+                              `No Action Normal — ${staffName}`,
+                              `${normal} normal weekly follow-up members for ${staffName}`,
+                              'staff_assignment',
+                              `no_action_normal_${staffName}`
+                            )
+                          }
+                          disabled={normal === 0}
+                        >
+                          <span className="text-emerald-900">Normal</span>
+                          <span className={`font-semibold ${normal > 0 ? 'text-emerald-700 hover:underline' : 'text-slate-400'}`}>{normal}</span>
                         </button>
                       </div>
                     </div>
