@@ -3,7 +3,7 @@
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-import { Suspense, useMemo, useState, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import { Suspense, useMemo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter, useParams } from 'next/navigation';
 import {
@@ -2805,6 +2805,7 @@ function ApplicationDetailPageContent() {
   const [memberFilesDownloadStatusLabel, setMemberFilesDownloadStatusLabel] = useState('');
   const [memberFileResolvedUrls, setMemberFileResolvedUrls] = useState<Record<string, string>>({});
   const [memberFileUrlLoading, setMemberFileUrlLoading] = useState<Record<string, boolean>>({});
+  const [documentPreview, setDocumentPreview] = useState<{ url: string; title: string } | null>(null);
   const [alftCompletionFileEntries, setAlftCompletionFileEntries] = useState<
     Array<{
       id: string;
@@ -2818,13 +2819,6 @@ function ApplicationDetailPageContent() {
   >([]);
   const memberFilesDownloadCancelRef = useRef(false);
   const memberFilesDownloadAbortRef = useRef<AbortController | null>(null);
-  const memberFileOpenInFlightRef = useRef<Record<string, boolean>>({});
-  const memberFileOpenedAtRef = useRef<Record<string, number>>({});
-  const externalLinkOpenedAtRef = useRef<Record<string, number>>({});
-  const capturedBlankLinkOpenedAtRef = useRef<Record<string, number>>({});
-  const anyDocumentOpenAtRef = useRef<number>(0);
-  const documentOpenLockedUntilRef = useRef<number>(0);
-  const memberFilePreviewWindowRef = useRef<Window | null>(null);
   const [ispUpload, setIspUpload] = useState<{
     planDate: string;
     file: File | null;
@@ -2851,64 +2845,6 @@ function ApplicationDetailPageContent() {
   const [memberPortalLoginStatusFilter, setMemberPortalLoginStatusFilter] = useState<'all' | 'success' | 'failed'>('all');
   const [memberPortalLoginRangeFilter, setMemberPortalLoginRangeFilter] =
     useState<'all' | 'today' | '7d' | '30d'>('30d');
-
-  const acquireDocumentOpenLock = () => {
-    const now = Date.now();
-    if (now < Number(documentOpenLockedUntilRef.current || 0)) {
-      return false;
-    }
-    // Keep this window long enough to suppress delayed duplicate handlers.
-    documentOpenLockedUntilRef.current = now + 5000;
-    return true;
-  };
-
-  const openMemberFilePreview = (url: string) => {
-    const safeUrl = String(url || '').trim();
-    if (!safeUrl) return;
-    // Hard-stop mode: force same-tab navigation to eliminate duplicate new-tab opens.
-    window.location.assign(safeUrl);
-  };
-
-  useEffect(() => {
-    const shouldInterceptPreviewLink = (href: string) => {
-      const url = String(href || '').trim().toLowerCase();
-      if (!url) return false;
-      return (
-        url.includes('firebasestorage.googleapis.com') ||
-        url.includes('/o/user_uploads%2f') ||
-        url.includes('/o/user_uploads/')
-      );
-    };
-
-    const onCapturedAnchorClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      const anchor = target?.closest?.('a[target="_blank"]') as HTMLAnchorElement | null;
-      if (!anchor) return;
-      const href = String(anchor.href || '').trim();
-      if (!shouldInterceptPreviewLink(href)) return;
-      if (!acquireDocumentOpenLock()) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      if (typeof (event as any).stopImmediatePropagation === 'function') {
-        (event as any).stopImmediatePropagation();
-      }
-
-      const now = Date.now();
-      const lastAnyOpen = Number(anyDocumentOpenAtRef.current || 0);
-      if (now - lastAnyOpen < 1500) return;
-      const lastOpenedAt = Number(capturedBlankLinkOpenedAtRef.current[href] || 0);
-      if (now - lastOpenedAt < 1200) return;
-      anyDocumentOpenAtRef.current = now;
-      capturedBlankLinkOpenedAtRef.current[href] = now;
-      openMemberFilePreview(href);
-    };
-
-    document.addEventListener('click', onCapturedAnchorClick, true);
-    return () => {
-      document.removeEventListener('click', onCapturedAnchorClick, true);
-    };
-  }, []);
 
   const mergeCurrentUserIntoStaff = (
     staff: Array<{ uid: string; name: string; email: string; role?: string }>
@@ -7069,27 +7005,25 @@ function ApplicationDetailPageContent() {
     }
     throw new Error('File URL unavailable');
   };
+  const openDocumentPreview = (url: string, title?: string) => {
+    const safeUrl = String(url || '').trim();
+    if (!safeUrl) return;
+    setDocumentPreview({
+      url: safeUrl,
+      title: String(title || 'Document preview').trim() || 'Document preview',
+    });
+  };
   const handleViewMemberFile = async (entry: {
     id: string;
     filePath: string;
     downloadURL: string;
+    fileName?: string;
+    documentName?: string;
   }) => {
-    if (!acquireDocumentOpenLock()) return;
-    const now = Date.now();
-    const lastAnyOpen = Number(anyDocumentOpenAtRef.current || 0);
-    if (now - lastAnyOpen < 1500) return;
-    const lastOpenedAt = Number(memberFileOpenedAtRef.current[entry.id] || 0);
-    if (memberFileOpenInFlightRef.current[entry.id]) return;
-    // Guard against rapid duplicate click events opening multiple tabs.
-    if (now - lastOpenedAt < 1200) return;
-
-    memberFileOpenInFlightRef.current[entry.id] = true;
     setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: true }));
     try {
       const url = await resolveMemberFileUrl(entry);
-      anyDocumentOpenAtRef.current = Date.now();
-      openMemberFilePreview(url);
-      memberFileOpenedAtRef.current[entry.id] = Date.now();
+      openDocumentPreview(url, entry.fileName || entry.documentName || 'Document preview');
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -7097,28 +7031,8 @@ function ApplicationDetailPageContent() {
         description: String(error?.message || 'Could not resolve file URL.'),
       });
     } finally {
-      memberFileOpenInFlightRef.current[entry.id] = false;
       setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: false }));
     }
-  };
-  const openExternalLinkOnce = (url: string) => {
-    const safeUrl = String(url || '').trim();
-    if (!safeUrl) return;
-    if (!acquireDocumentOpenLock()) return;
-    const now = Date.now();
-    const lastAnyOpen = Number(anyDocumentOpenAtRef.current || 0);
-    if (now - lastAnyOpen < 1500) return;
-    const lastOpenedAt = Number(externalLinkOpenedAtRef.current[safeUrl] || 0);
-    // Some environments fire duplicate click events on anchor taps/clicks.
-    if (now - lastOpenedAt < 1200) return;
-    anyDocumentOpenAtRef.current = now;
-    externalLinkOpenedAtRef.current[safeUrl] = now;
-    openMemberFilePreview(safeUrl);
-  };
-  const handleGuardedExternalLinkClick = (event: ReactMouseEvent<HTMLElement>, url: string) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openExternalLinkOnce(url);
   };
   const handleDownloadMemberFile = async (entry: {
     id: string;
@@ -9775,7 +9689,7 @@ function ApplicationDetailPageContent() {
                                     type="button"
                                     className="block w-full truncate text-left text-green-800 font-medium hover:underline"
                                     title={entry.fileName}
-                                    onClick={(event) => handleGuardedExternalLinkClick(event, entry.url)}
+                                    onClick={() => openDocumentPreview(entry.url, entry.fileName)}
                                   >
                                     {entry.fileName}
                                   </button>
@@ -10101,7 +10015,7 @@ function ApplicationDetailPageContent() {
                                  type="button"
                                  className="truncate flex-1 text-left text-green-800 font-medium hover:underline"
                                  title={u.fileName}
-                                 onClick={(event) => handleGuardedExternalLinkClick(event, effectiveUrl)}
+                                 onClick={() => openDocumentPreview(effectiveUrl, u.fileName)}
                                >
                                  {u.fileName}
                                </button>
@@ -10225,7 +10139,7 @@ function ApplicationDetailPageContent() {
                                   key={entry.key}
                                   type="button"
                                   className="block w-full truncate text-left text-green-800 font-medium hover:underline"
-                                  onClick={(event) => handleGuardedExternalLinkClick(event, entry.url)}
+                                  onClick={() => openDocumentPreview(entry.url, entry.fileName)}
                                 >
                                   {entry.fileName}
                                 </button>
@@ -11373,6 +11287,25 @@ function ApplicationDetailPageContent() {
             triggerClassName="justify-start gap-2"
           />
         </div>
+        <Dialog open={Boolean(documentPreview)} onOpenChange={(open) => !open && setDocumentPreview(null)}>
+          <DialogContent className="h-[92vh] w-[96vw] max-w-6xl p-0">
+            <DialogHeader className="px-4 pt-4">
+              <DialogTitle className="truncate pr-8">{documentPreview?.title || 'Document preview'}</DialogTitle>
+              <DialogDescription>
+                Review the uploaded document here, then close this window to return to the application.
+              </DialogDescription>
+            </DialogHeader>
+            {documentPreview?.url ? (
+              <div className="h-[calc(92vh-96px)] border-t">
+                <iframe
+                  src={documentPreview.url}
+                  title={documentPreview.title || 'Document preview'}
+                  className="h-full w-full"
+                />
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {application?.pathway === 'SNF Diversion' ? (
               <Alert className="md:col-span-2 border-blue-200 bg-blue-50 text-blue-900">
