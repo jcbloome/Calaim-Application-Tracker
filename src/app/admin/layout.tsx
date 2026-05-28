@@ -1412,10 +1412,10 @@ function AdminHeader() {
       items.push({
         key: 'kaiser-manager-docs',
         label: `Kaiser Mgr Actions(${kaiserManagerDocActionCount})`,
-        href: '/admin/alft-tracker?managerActions=1',
+        href: '/admin/applications?review=docs&plan=kaiser',
         dot: 'bg-red-600',
         isNew: true,
-        title: 'Open ALFT tracker actions for Kaiser managers (Jason / Deydry)',
+        title: 'Open pending Kaiser document actions for Kaiser managers (Jason / Deydry)',
       });
     }
 

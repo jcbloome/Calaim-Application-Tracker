@@ -3,7 +3,7 @@
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-import { Suspense, useMemo, useState, useEffect, useRef } from 'react';
+import { Suspense, useMemo, useState, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter, useParams } from 'next/navigation';
 import {
@@ -2818,6 +2818,13 @@ function ApplicationDetailPageContent() {
   >([]);
   const memberFilesDownloadCancelRef = useRef(false);
   const memberFilesDownloadAbortRef = useRef<AbortController | null>(null);
+  const memberFileOpenInFlightRef = useRef<Record<string, boolean>>({});
+  const memberFileOpenedAtRef = useRef<Record<string, number>>({});
+  const externalLinkOpenedAtRef = useRef<Record<string, number>>({});
+  const capturedBlankLinkOpenedAtRef = useRef<Record<string, number>>({});
+  const anyDocumentOpenAtRef = useRef<number>(0);
+  const documentOpenLockedUntilRef = useRef<number>(0);
+  const memberFilePreviewWindowRef = useRef<Window | null>(null);
   const [ispUpload, setIspUpload] = useState<{
     planDate: string;
     file: File | null;
@@ -2844,6 +2851,64 @@ function ApplicationDetailPageContent() {
   const [memberPortalLoginStatusFilter, setMemberPortalLoginStatusFilter] = useState<'all' | 'success' | 'failed'>('all');
   const [memberPortalLoginRangeFilter, setMemberPortalLoginRangeFilter] =
     useState<'all' | 'today' | '7d' | '30d'>('30d');
+
+  const acquireDocumentOpenLock = () => {
+    const now = Date.now();
+    if (now < Number(documentOpenLockedUntilRef.current || 0)) {
+      return false;
+    }
+    // Keep this window long enough to suppress delayed duplicate handlers.
+    documentOpenLockedUntilRef.current = now + 5000;
+    return true;
+  };
+
+  const openMemberFilePreview = (url: string) => {
+    const safeUrl = String(url || '').trim();
+    if (!safeUrl) return;
+    // Hard-stop mode: force same-tab navigation to eliminate duplicate new-tab opens.
+    window.location.assign(safeUrl);
+  };
+
+  useEffect(() => {
+    const shouldInterceptPreviewLink = (href: string) => {
+      const url = String(href || '').trim().toLowerCase();
+      if (!url) return false;
+      return (
+        url.includes('firebasestorage.googleapis.com') ||
+        url.includes('/o/user_uploads%2f') ||
+        url.includes('/o/user_uploads/')
+      );
+    };
+
+    const onCapturedAnchorClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const anchor = target?.closest?.('a[target="_blank"]') as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = String(anchor.href || '').trim();
+      if (!shouldInterceptPreviewLink(href)) return;
+      if (!acquireDocumentOpenLock()) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof (event as any).stopImmediatePropagation === 'function') {
+        (event as any).stopImmediatePropagation();
+      }
+
+      const now = Date.now();
+      const lastAnyOpen = Number(anyDocumentOpenAtRef.current || 0);
+      if (now - lastAnyOpen < 1500) return;
+      const lastOpenedAt = Number(capturedBlankLinkOpenedAtRef.current[href] || 0);
+      if (now - lastOpenedAt < 1200) return;
+      anyDocumentOpenAtRef.current = now;
+      capturedBlankLinkOpenedAtRef.current[href] = now;
+      openMemberFilePreview(href);
+    };
+
+    document.addEventListener('click', onCapturedAnchorClick, true);
+    return () => {
+      document.removeEventListener('click', onCapturedAnchorClick, true);
+    };
+  }, []);
 
   const mergeCurrentUserIntoStaff = (
     staff: Array<{ uid: string; name: string; email: string; role?: string }>
@@ -7009,10 +7074,22 @@ function ApplicationDetailPageContent() {
     filePath: string;
     downloadURL: string;
   }) => {
+    if (!acquireDocumentOpenLock()) return;
+    const now = Date.now();
+    const lastAnyOpen = Number(anyDocumentOpenAtRef.current || 0);
+    if (now - lastAnyOpen < 1500) return;
+    const lastOpenedAt = Number(memberFileOpenedAtRef.current[entry.id] || 0);
+    if (memberFileOpenInFlightRef.current[entry.id]) return;
+    // Guard against rapid duplicate click events opening multiple tabs.
+    if (now - lastOpenedAt < 1200) return;
+
+    memberFileOpenInFlightRef.current[entry.id] = true;
     setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: true }));
     try {
       const url = await resolveMemberFileUrl(entry);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      anyDocumentOpenAtRef.current = Date.now();
+      openMemberFilePreview(url);
+      memberFileOpenedAtRef.current[entry.id] = Date.now();
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -7020,8 +7097,28 @@ function ApplicationDetailPageContent() {
         description: String(error?.message || 'Could not resolve file URL.'),
       });
     } finally {
+      memberFileOpenInFlightRef.current[entry.id] = false;
       setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: false }));
     }
+  };
+  const openExternalLinkOnce = (url: string) => {
+    const safeUrl = String(url || '').trim();
+    if (!safeUrl) return;
+    if (!acquireDocumentOpenLock()) return;
+    const now = Date.now();
+    const lastAnyOpen = Number(anyDocumentOpenAtRef.current || 0);
+    if (now - lastAnyOpen < 1500) return;
+    const lastOpenedAt = Number(externalLinkOpenedAtRef.current[safeUrl] || 0);
+    // Some environments fire duplicate click events on anchor taps/clicks.
+    if (now - lastOpenedAt < 1200) return;
+    anyDocumentOpenAtRef.current = now;
+    externalLinkOpenedAtRef.current[safeUrl] = now;
+    openMemberFilePreview(safeUrl);
+  };
+  const handleGuardedExternalLinkClick = (event: ReactMouseEvent<HTMLElement>, url: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openExternalLinkOnce(url);
   };
   const handleDownloadMemberFile = async (entry: {
     id: string;
@@ -9673,16 +9770,15 @@ function ApplicationDetailPageContent() {
                             <div className="space-y-1">
                               {waiverUploadedEntries.map((entry: any) =>
                                 entry.url ? (
-                                  <a
+                                  <button
                                     key={entry.key}
-                                    href={entry.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="block truncate text-green-800 font-medium hover:underline"
+                                    type="button"
+                                    className="block w-full truncate text-left text-green-800 font-medium hover:underline"
                                     title={entry.fileName}
+                                    onClick={(event) => handleGuardedExternalLinkClick(event, entry.url)}
                                   >
                                     {entry.fileName}
-                                  </a>
+                                  </button>
                                 ) : (
                                   <span key={entry.key} className="block truncate text-amber-800 font-medium" title={entry.fileName}>
                                     {entry.fileName}
@@ -10001,15 +10097,14 @@ function ApplicationDetailPageContent() {
                             )}
                           >
                             {effectiveUrl ? (
-                               <a
-                                href={effectiveUrl}
-                                 target="_blank"
-                                 rel="noopener noreferrer"
-                                 className="truncate flex-1 text-green-800 font-medium hover:underline"
+                               <button
+                                 type="button"
+                                 className="truncate flex-1 text-left text-green-800 font-medium hover:underline"
                                  title={u.fileName}
+                                 onClick={(event) => handleGuardedExternalLinkClick(event, effectiveUrl)}
                                >
                                  {u.fileName}
-                               </a>
+                               </button>
                              ) : (
                                <span className="truncate flex-1 text-amber-800 font-medium" title={u.fileName}>
                                  {u.fileName}
@@ -10126,15 +10221,14 @@ function ApplicationDetailPageContent() {
                             ) : null}
                             {uploadedFileEntries.map((entry: any) =>
                               entry.url ? (
-                                <a
+                                <button
                                   key={entry.key}
-                                  href={entry.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="block truncate text-green-800 font-medium hover:underline"
+                                  type="button"
+                                  className="block w-full truncate text-left text-green-800 font-medium hover:underline"
+                                  onClick={(event) => handleGuardedExternalLinkClick(event, entry.url)}
                                 >
                                   {entry.fileName}
-                                </a>
+                                </button>
                               ) : (
                                 <span key={entry.key} className="block truncate text-amber-800 font-medium">
                                   {entry.fileName}
