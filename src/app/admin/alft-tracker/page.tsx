@@ -223,6 +223,13 @@ type AlftAssignmentQueueRow = {
     verifiedByEmail?: string | null;
     verifiedByName?: string | null;
   } | null;
+  prefillVerification?: {
+    manualSyncAt?: any;
+    manualSyncByUid?: string | null;
+    manualSyncByEmail?: string | null;
+    manualSyncByName?: string | null;
+    resolvedFields?: Record<string, string>;
+  } | null;
   updatedAt?: any;
 };
 
@@ -1119,6 +1126,7 @@ export default function AdminAlftTrackerPage() {
               workflowSteps: (r.workflowSteps || null) as any,
               alftCompletionEmail: (r.alftCompletionEmail || null) as any,
               verificationSignoff: (r.verificationSignoff || null) as any,
+              prefillVerification: (r.prefillVerification || null) as any,
               updatedAt: r.updatedAt,
             } as AlftAssignmentQueueRow;
           })
@@ -1242,6 +1250,17 @@ export default function AdminAlftTrackerPage() {
 
   const swEmailPreview = useMemo(() => {
     if (!swEmailPreviewRow) return null;
+    const previewResolved =
+      ((((swEmailPreviewRow as any)?.prefillVerification || {}) as any)?.resolvedFields || {}) as Record<string, unknown>;
+    const pickPreview = (...keys: string[]) => {
+      for (const key of keys) {
+        const resolvedValue = String(previewResolved?.[key] || '').trim();
+        if (resolvedValue) return resolvedValue;
+        const rowValue = String((swEmailPreviewRow as any)?.[key] || '').trim();
+        if (rowValue) return rowValue;
+      }
+      return '';
+    };
     const memberName = String(swEmailPreviewRow.memberName || 'Member').trim();
     const mrn = String(swEmailPreviewRow.memberMrn || '').trim();
     const swName = String(swEmailPreviewRow.assignedSwName || 'Social Worker').trim();
@@ -1253,21 +1272,24 @@ export default function AdminAlftTrackerPage() {
       'Unknown user';
     const verifiedAtMs = toMs(swEmailPreviewRow.verificationSignoff?.verifiedAt);
     const verifiedAtLabel = verifiedAtMs ? fmtTimeline(verifiedAtMs) : '';
-    const ispContactName = String((swEmailPreviewRow as any)?.ispContactName || '').trim();
-    const ispContactRelationship = String((swEmailPreviewRow as any)?.ispContactRelationship || '').trim();
-    const ispFacilityName = String((swEmailPreviewRow as any)?.ispFacilityName || (swEmailPreviewRow as any)?.ispCurrentLocation || '').trim();
-    const ispFacilityType = String((swEmailPreviewRow as any)?.currentLocationType || '').trim();
+    const contactFirst = pickPreview('isp_contact_first');
+    const contactLast = pickPreview('isp_contact_last');
+    const contactFromParts = [contactFirst, contactLast].filter(Boolean).join(' ').trim();
+    const ispContactName = pickPreview('p1_other_responder_name', 'ispContactName') || contactFromParts;
+    const ispContactRelationship = pickPreview('p1_other_responder_relationship', 'ispContactRelationship');
+    const ispFacilityName = pickPreview('p2_facility_name', 'isp_location_name', 'ispFacilityName', 'ispCurrentLocation');
+    const ispFacilityType = pickPreview('p2_current_type', 'isp_location_type', 'currentLocationType');
     const ispAddress = [
-      String((swEmailPreviewRow as any)?.ispCurrentAddressStreet || '').trim(),
-      String((swEmailPreviewRow as any)?.ispCurrentAddressCity || '').trim(),
-      String((swEmailPreviewRow as any)?.ispCurrentAddressState || '').trim(),
-      String((swEmailPreviewRow as any)?.ispCurrentAddressZip || '').trim(),
+      pickPreview('p2_current_street', 'isp_location_address', 'ispCurrentAddressStreet'),
+      pickPreview('p2_current_city', 'isp_location_city', 'ispCurrentAddressCity'),
+      pickPreview('p2_current_state', 'isp_location_state', 'ispCurrentAddressState'),
+      pickPreview('p2_current_zip', 'isp_location_zip', 'ispCurrentAddressZip'),
     ]
       .filter(Boolean)
       .join(', ');
-    const ispPhone = String((swEmailPreviewRow as any)?.ispContactPhone || '').trim();
-    const ispEmail = String((swEmailPreviewRow as any)?.ispContactEmail || '').trim();
-    const ispLastVerified = String((swEmailPreviewRow as any)?.ispContactConfirmDate || '').trim();
+    const ispPhone = pickPreview('isp_contact_phone', 'ispContactPhone');
+    const ispEmail = pickPreview('isp_contact_email', 'ispContactEmail');
+    const ispLastVerified = pickPreview('isp_contact_confirm_date', 'ispContactConfirmDate');
     const hasContactMethod = Boolean(ispPhone || ispEmail);
     const hasFacilityTypeOrName = Boolean(ispFacilityType || ispFacilityName);
     const missingIspFields = [
@@ -1421,6 +1443,7 @@ export default function AdminAlftTrackerPage() {
             : 'review';
         const prefillSourceMode = resolvePrefillSourceMode(row);
         let resolved: Record<string, string> = {};
+        let caspioSourceRecord: Record<string, unknown> = {};
         if (prefillSourceMode === 'caspio_selected_fields') {
           const prefillRes = await fetch('/api/alft/prefill/resolve', {
             method: 'POST',
@@ -1433,6 +1456,10 @@ export default function AdminAlftTrackerPage() {
             throw new Error(String(prefillData?.error || `Could not validate required prefill fields (HTTP ${prefillRes.status})`));
           }
           resolved = (prefillData?.resolved || {}) as Record<string, string>;
+          caspioSourceRecord =
+            prefillData?.source && typeof prefillData.source === 'object'
+              ? (prefillData.source as Record<string, unknown>)
+              : {};
           const missing = BLOCKING_REQUIRED_PREFILL_FIELDS.filter(
             ({ key }) => !getRequiredValueFromResolvedOrAssignment(row, key, resolved)
           );
@@ -1445,8 +1472,14 @@ export default function AdminAlftTrackerPage() {
         }
         const pick = (key: string, fallback = '') => String(resolved?.[key] || '').trim() || fallback;
         const pickCity = (key: string, fallback = '') => toTitleCaseCity(pick(key, fallback));
-        const responderName = pick('p1_other_responder_name', row.ispContactName || '');
+        const ispContactFirst = pick('isp_contact_first', '');
+        const ispContactLast = pick('isp_contact_last', '');
+        const ispContactNameFromParts = [ispContactFirst, ispContactLast].filter(Boolean).join(' ').trim();
+        const responderName = pick('p1_other_responder_name', ispContactNameFromParts || row.ispContactName || '');
         const responderRelationship = pick('p1_other_responder_relationship', row.ispContactRelationship || '');
+        const ispContactPhone = pick('isp_contact_phone', row.ispContactPhone || '');
+        const ispContactEmail = pick('isp_contact_email', row.ispContactEmail || '');
+        const ispContactConfirmDate = pick('isp_contact_confirm_date', row.ispContactConfirmDate || '');
         const responderFlagRaw = pick(
           'p1_other_responder',
           responderName || responderRelationship ? 'yes' : 'no'
@@ -1480,16 +1513,17 @@ export default function AdminAlftTrackerPage() {
               homeAddressZip: pick('p2_home_zip', row.homeAddressZip || ''),
               ispFacilityName: pick('p2_facility_name', pick('isp_location_name', '')),
               ispCurrentLocation: pick('p2_facility_name', pick('isp_location_name', '')),
-              ispContactPhone: pick('p1_phone', row.memberPhone || ''),
-              ispContactName: ispContactName,
+              ispContactPhone: ispContactPhone,
+              ispContactName: responderName || ispContactNameFromParts || row.ispContactName || '',
               ispContactRelationship: responderRelationship,
-              ispContactEmail: ispEmail,
-              ispContactConfirmDate: ispLastVerified,
+              ispContactEmail: ispContactEmail,
+              ispContactConfirmDate: ispContactConfirmDate,
               otherResponder,
               otherResponderName: responderName,
               otherResponderRelationship: responderRelationship,
               alftPlanId: pick('p1_plan_id', row.memberMrn || row.alftPlanId || ''),
               prefillSourceMode,
+              caspioSourceRecord,
               swId: row.assignedSwId || '',
               socialWorkerAssigned: row.assignedSwName || '',
               prefillPurpose,

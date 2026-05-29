@@ -211,10 +211,6 @@ function preFillFromMember(
   if (parsedName.last) next.p1_last_name = parsedName.last;
   if (member.memberMrn) next.p1_mrn = member.memberMrn;
   if (member.memberMrn || member.alftPlanId) next.p1_plan_id = String(member.memberMrn || member.alftPlanId || '').trim();
-  const purpose = String(member.prefillPurpose || '').trim();
-  if (purpose === 'initial' || purpose === 'change_condition' || purpose === 'review') {
-    next.p1_purpose = purpose;
-  }
   if (member.birthDate) next.p1_dob = toMmDdYyyyOrRaw(member.birthDate);
   if (member.ispContactConfirmDate) next.p1_referral_date = toMmDdYyyyOrRaw(member.ispContactConfirmDate);
   const otherResponderName = String(member.ispContactName || '').trim();
@@ -461,6 +457,14 @@ export default function SwKaiserAlftPage() {
   const [templatePdfLoading, setTemplatePdfLoading] = useState(false);
   const [templatePdfError, setTemplatePdfError] = useState('');
   const [templatePdfMode, setTemplatePdfMode] = useState('');
+  const facilityNameFromMember = (member: KaiserMember | null | undefined) =>
+    String(
+      member?.prefillResolved?.p2_facility_name ||
+        member?.prefillResolved?.isp_location_name ||
+        member?.ispFacilityName ||
+        member?.ispCurrentLocation ||
+        ''
+    ).trim();
 
   // ── Load assigned members from Firestore alft_assignments ─────────────────────
 
@@ -604,6 +608,23 @@ export default function SwKaiserAlftPage() {
     void loadMembers();
   }, [isSocialWorker, loadMembers, swLoading]);
 
+  useEffect(() => {
+    if (!selectedMember) return;
+    const facilityFromPrefill = facilityNameFromMember(selectedMember);
+    if (!facilityFromPrefill) return;
+    setAnswers((prev) => {
+      const existing = String(prev.p2_facility_name || '').trim();
+      if (existing) return prev;
+      return { ...prev, p2_facility_name: facilityFromPrefill };
+    });
+  }, [
+    selectedMember,
+    selectedMember?.prefillResolved?.p2_facility_name,
+    selectedMember?.prefillResolved?.isp_location_name,
+    selectedMember?.ispFacilityName,
+    selectedMember?.ispCurrentLocation,
+  ]);
+
   // ── Select member ─────────────────────────────────────────────────────────────
 
   const selectMember = useCallback((m: KaiserMember) => {
@@ -707,6 +728,9 @@ export default function SwKaiserAlftPage() {
     setTemplatePdfError('');
     try {
       const previewAnswers = applyLatestCriticalPrefill({ ...answers }, selectedMember);
+      if (!String(previewAnswers.p2_facility_name || '').trim()) {
+        previewAnswers.p2_facility_name = facilityNameFromMember(selectedMember);
+      }
       const res = await fetch('/api/alft/template-fill-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -773,6 +797,9 @@ export default function SwKaiserAlftPage() {
         p14_print_name: swSignature.trim() || swName,
         p14_date: todayLocalKey(),
       };
+      if (!String(finalAnswers.p2_facility_name || '').trim()) {
+        finalAnswers.p2_facility_name = facilityNameFromMember(selectedMember);
+      }
 
       const body = {
         idToken,
@@ -1085,7 +1112,11 @@ export default function SwKaiserAlftPage() {
                       <div className="font-semibold leading-tight">{formatLabel(q.label)}</div>
                       {mode === 'edit' && q.type === 'text' ? (
                         <input
-                          value={String(answers[q.id] || '')}
+                          value={
+                            q.id === 'p2_facility_name'
+                              ? String(answers[q.id] || facilityNameFromMember(selectedMember) || '')
+                              : String(answers[q.id] || '')
+                          }
                           onChange={(e) => setSingleAnswer(q.id, e.target.value)}
                           className="mt-1 h-7 w-full rounded border border-zinc-300 bg-white px-2 text-[10px]"
                         />
@@ -1142,7 +1173,9 @@ export default function SwKaiserAlftPage() {
                         </div>
                       ) : mode === 'preview' ? (
                         <div className={`answer-line mt-1 pb-0.5 text-zinc-900 whitespace-pre-wrap ${isMovedTextQuestion(q.id) ? 'section-notes-answer' : 'border-b border-zinc-500'} ${isLargeCommentary(q) ? 'large-commentary-box' : ''}`}>
-                          {asText(answers[q.id]) || ' '}
+                          {q.id === 'p2_facility_name'
+                            ? asText(answers[q.id]) || facilityNameFromMember(selectedMember) || ' '
+                            : asText(answers[q.id]) || ' '}
                         </div>
                       ) : null}
                       {mode === 'preview' && q.type === 'select' && q.options?.length ? (

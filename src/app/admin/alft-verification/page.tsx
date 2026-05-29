@@ -175,7 +175,7 @@ export default function AlftVerificationPage() {
         const syncedCurrentZip = asText(resolvedNow.p2_current_zip);
         const syncedCurrentType = asText(resolvedNow.p2_current_type);
         const syncedCurrentTypeOther = asText(resolvedNow.p2_current_type_other);
-        const syncedFacilityName = asText(resolvedNow.p2_facility_name);
+        const syncedFacilityName = asText(resolvedNow.p2_facility_name || resolvedNow.isp_location_name);
         await setDoc(
           doc(firestore, 'alft_assignments', memberId),
           {
