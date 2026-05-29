@@ -41,6 +41,13 @@ type AssignmentRecord = {
   ispContactPhone?: string;
   ispContactEmail?: string;
   ispContactConfirmDate?: string;
+  prefillVerification?: {
+    manualSyncAt?: any;
+    manualSyncByUid?: string | null;
+    manualSyncByEmail?: string | null;
+    manualSyncByName?: string | null;
+    resolvedFields?: Record<string, string>;
+  } | null;
   verificationSignoff?: {
     verified?: boolean | null;
     verifiedAt?: any;
@@ -162,6 +169,13 @@ export default function AlftVerificationPage() {
         const syncedHomeCity = asText(resolvedNow.p2_home_city);
         const syncedHomeState = asText(resolvedNow.p2_home_state);
         const syncedHomeZip = asText(resolvedNow.p2_home_zip);
+        const syncedCurrentStreet = asText(resolvedNow.p2_current_street);
+        const syncedCurrentCity = asText(resolvedNow.p2_current_city);
+        const syncedCurrentState = asText(resolvedNow.p2_current_state);
+        const syncedCurrentZip = asText(resolvedNow.p2_current_zip);
+        const syncedCurrentType = asText(resolvedNow.p2_current_type);
+        const syncedCurrentTypeOther = asText(resolvedNow.p2_current_type_other);
+        const syncedFacilityName = asText(resolvedNow.p2_facility_name);
         await setDoc(
           doc(firestore, 'alft_assignments', memberId),
           {
@@ -171,6 +185,18 @@ export default function AlftVerificationPage() {
             ...(syncedHomeCity ? { homeAddressCity: syncedHomeCity } : {}),
             ...(syncedHomeState ? { homeAddressState: syncedHomeState } : {}),
             ...(syncedHomeZip ? { homeAddressZip: syncedHomeZip } : {}),
+            ...(syncedCurrentStreet ? { ispCurrentAddressStreet: syncedCurrentStreet } : {}),
+            ...(syncedCurrentCity ? { ispCurrentAddressCity: syncedCurrentCity } : {}),
+            ...(syncedCurrentState ? { ispCurrentAddressState: syncedCurrentState } : {}),
+            ...(syncedCurrentZip ? { ispCurrentAddressZip: syncedCurrentZip } : {}),
+            ...(syncedCurrentType ? { currentLocationType: syncedCurrentType } : {}),
+            ...(syncedCurrentTypeOther ? { currentLocationTypeOther: syncedCurrentTypeOther } : {}),
+            ...(syncedFacilityName
+              ? {
+                  ispFacilityName: syncedFacilityName,
+                  ispCurrentLocation: syncedFacilityName,
+                }
+              : {}),
             // Each manual sync is a fresh pull, so force a new verification sign-off.
             verificationSignoff: {
               verified: false,
@@ -180,10 +206,12 @@ export default function AlftVerificationPage() {
               verifiedByName: null,
             },
             prefillVerification: {
+              ...(((assignment as any)?.prefillVerification || {}) as Record<string, unknown>),
               manualSyncAt: serverTimestamp(),
               manualSyncByUid: auth.currentUser?.uid || null,
               manualSyncByEmail: actorEmail || null,
               manualSyncByName: actorName || null,
+              resolvedFields: resolvedNow,
             },
             updatedAt: serverTimestamp(),
           },
@@ -196,6 +224,10 @@ export default function AlftVerificationPage() {
       setToolResetMode(false);
       setAssignment((prev) => ({
         ...(prev || {}),
+        prefillVerification: {
+          ...(((prev as any)?.prefillVerification || {}) as Record<string, unknown>),
+          resolvedFields: (data?.resolved || {}) as Record<string, string>,
+        },
         verificationSignoff: {
           verified: false,
           verifiedAt: null,
@@ -238,6 +270,7 @@ export default function AlftVerificationPage() {
             manualSyncByUid: null,
             manualSyncByEmail: null,
             manualSyncByName: null,
+            resolvedFields: {},
           },
           updatedAt: serverTimestamp(),
         },
@@ -319,11 +352,25 @@ export default function AlftVerificationPage() {
 
   const sections = useMemo(() => {
     const row = assignment || {};
+    const persistedResolved = (((assignment as any)?.prefillVerification || {}) as any)?.resolvedFields || {};
     const pick = (key: string, fallback?: unknown) =>
-      toolResetMode ? '' : asText(resolved[key]) || asText(fallback);
+      toolResetMode ? '' : asText(resolved[key]) || asText(persistedResolved[key]) || asText(fallback);
+    const currentLocationStreet = pick('p2_current_street', row.ispCurrentAddressStreet);
+    const currentLocationCity = pick('p2_current_city', row.ispCurrentAddressCity);
+    const currentLocationState = pick('p2_current_state', row.ispCurrentAddressState);
+    const currentLocationZip = pick('p2_current_zip', row.ispCurrentAddressZip);
+    const currentLocationType = pick('p2_current_type', row.currentLocationType);
+    const currentLocationTypeOther = pick('p2_current_type_other', row.currentLocationTypeOther || row.currentLocationType);
+    const currentLocationName = pick('isp_location_name', row.ispCurrentLocation || row.ispFacilityName);
+    const ispLocationAddress = pick('isp_contact_street', '');
+    const ispLocationCity = pick('isp_contact_city', '');
+    const ispLocationState = pick('isp_contact_state', '');
+    const ispLocationZip = pick('isp_contact_zip', '');
+    const ispLocationType = pick('isp_location_type', '');
+    const ispLocationName = pick('isp_location_name', '');
     return [
       {
-        title: 'Current Location',
+        title: 'Form Basics',
         fields: [
           { label: 'Plan ID', value: toolResetMode ? '' : asText(resolved.p1_plan_id || resolved.p1_mrn || resolved.isp_mcp_cin) },
           { label: 'MRN Number', value: toolResetMode ? '' : asText(resolved.p1_mrn || resolved.isp_mcp_cin) },
@@ -332,38 +379,29 @@ export default function AlftVerificationPage() {
           { label: 'Assessment Site', value: pick('p2_assessment_site', row.assessmentSite) },
           { label: 'Primary Language', value: pick('p1_primary_language', row.memberPrimaryLanguage) },
           { label: 'Phone Number', value: pick('p1_phone', row.memberPhone) },
-          { label: 'Current Location Street', value: pick('p2_current_street', row.ispCurrentAddressStreet) },
-          { label: 'Current Location City', value: pick('p2_current_city', row.ispCurrentAddressCity) },
-          { label: 'Current Location State', value: pick('p2_current_state', row.ispCurrentAddressState) },
-          { label: 'Current Location Zip', value: pick('p2_current_zip', row.ispCurrentAddressZip) },
-          { label: 'Current Location Type', value: pick('p2_current_type', row.currentLocationType) },
-          { label: 'Current Location Type Other Detail', value: pick('p2_current_type_other', row.currentLocationTypeOther || row.currentLocationType) },
-          { label: 'ISP Location Type', value: pick('isp_location_type', '') },
-          { label: 'ISP Location Name', value: pick('isp_location_name', '') },
-          { label: 'Current Location (ISP)', value: asText(row.ispCurrentLocation) || asText(row.ispFacilityName) },
-          { label: 'Facility Name', value: pick('p2_facility_name', row.ispFacilityName) },
         ],
       },
       {
-        title: 'ISP Contact Information',
+        title: 'ISP Location',
         fields: [
-      { label: 'Is someone besides client answering?', value: pick('p1_other_responder', row.ispContactName ? 'yes' : '') },
+      { label: 'ISP Location Address', value: ispLocationAddress },
+      { label: 'ISP Location City', value: ispLocationCity },
+      { label: 'ISP Location State', value: ispLocationState },
+      { label: 'ISP Location Zip', value: ispLocationZip },
+      { label: 'ISP Location Type', value: ispLocationType },
+      { label: 'ISP Location Name', value: ispLocationName },
+      { label: 'Facility Name (ALFT)', value: pick('p2_facility_name', row.ispFacilityName) },
+      { label: 'Current Location Type Other Detail (ALFT)', value: currentLocationTypeOther },
       { label: 'ISP Contact First', value: pick('isp_contact_first', '') },
       { label: 'ISP Contact Last', value: pick('isp_contact_last', '') },
-      { label: 'ISP Contact Street', value: pick('isp_contact_street', row.ispCurrentAddressStreet) },
-      { label: 'ISP Contact City', value: pick('isp_contact_city', row.ispCurrentAddressCity) },
-      { label: 'ISP Contact State', value: pick('isp_contact_state', row.ispCurrentAddressState) },
-      { label: 'ISP Contact Zip', value: pick('isp_contact_zip', row.ispCurrentAddressZip) },
-      { label: 'ISP Location Type', value: pick('isp_location_type', '') },
-      { label: 'If yes, name', value: pick('p1_other_responder_name', row.ispContactName) },
-      { label: 'If yes, relationship', value: pick('p1_other_responder_relationship', row.ispContactRelationship) },
       { label: 'ISP Contact Phone', value: pick('isp_contact_phone', row.ispContactPhone) },
       { label: 'ISP Contact Email', value: pick('isp_contact_email', row.ispContactEmail) },
+      { label: 'ISP Contact Relationship', value: pick('p1_other_responder_relationship', row.ispContactRelationship) },
       { label: 'ISP Contact Last Verified', value: toDmy(pick('isp_contact_confirm_date', row.ispContactConfirmDate)) },
         ],
       },
       {
-        title: 'Home Address (MCP Address for Member)',
+        title: 'Home Location (MCP Address for Member)',
         fields: [
           { label: 'Home Address Street', value: pick('p2_home_street', row.homeAddressStreet) },
           { label: 'Home Address City', value: pick('p2_home_city', row.homeAddressCity) },
@@ -372,7 +410,13 @@ export default function AlftVerificationPage() {
         ],
       },
     ];
-  }, [assignment, memberMrnFromQuery, memberNameFromQuery, resolved, toolResetMode]);
+  }, [
+    assignment,
+    memberMrnFromQuery,
+    memberNameFromQuery,
+    resolved,
+    toolResetMode,
+  ]);
 
   const verified = Boolean(assignment?.verificationSignoff?.verified);
   const verifiedBy =

@@ -512,24 +512,22 @@ export async function POST(req: NextRequest) {
       ? otherResponderRaw
       : (otherResponderName || otherResponderRelationship ? 'yes' : 'no');
     const ispLocation = clean(
-      pickFirst(caspioSource as any, ['ISP_Location_Name', 'ISP_Contact_Location', 'ISP_Current_Location', 'RCFE_Name', 'Facility_Name']) ||
+      pickFirst(caspioSource as any, ['ISP_Contact_Location']) ||
         (resolved as any).ispCurrentLocation ||
-        member?.ispCurrentLocation ||
         (resolved as any).ispFacilityName ||
-        member?.ispFacilityName,
+        member?.ispCurrentLocation,
       240
     );
     const facilityType = clean(
-      pickFirst(caspioSource as any, ['ISP_Location_Type', 'Current_Location_Type', 'Location_Type']) ||
+      pickFirst(caspioSource as any, ['ISP_Location_Type']) ||
         (resolved as any).currentLocationType ||
         member?.currentLocationType,
       120
     );
     const facilityName = clean(
-      pickFirst(caspioSource as any, ['ISP_Location_Name', 'ISP_Contact_Location', 'ISP_Current_Location', 'RCFE_Name', 'Facility_Name']) ||
+      pickFirst(caspioSource as any, ['ISP_Contact_Location']) ||
         (resolved as any).ispFacilityName ||
-        member?.ispFacilityName ||
-        member?.ispCurrentLocation,
+        member?.ispFacilityName,
       240
     );
     const currentLocationTypeOther = clean(
@@ -538,22 +536,10 @@ export async function POST(req: NextRequest) {
         facilityType,
       120
     );
-    const caspioStreet = clean(
-      pickFirst(caspioSource as any, ['ISP_Location_Address', 'ISP_Contact_Address', 'ISP_Current_Address', 'Member_Address', 'Address']),
-      240
-    );
-    const caspioCity = clean(
-      pickFirst(caspioSource as any, ['ISP_Location_City', 'ISP_Contact_City', 'ISP_Current_City', 'Member_City', 'City']),
-      120
-    );
-    const caspioState = clean(
-      pickFirst(caspioSource as any, ['ISP_Location_State', 'ISP_Contact_State', 'ISP_Current_State', 'Member_State', 'State']),
-      50
-    );
-    const caspioZip = clean(
-      pickFirst(caspioSource as any, ['ISP_Location_Zip', 'ISP_Contact_Zip', 'ISP_Current_Zip', 'Member_Zip', 'Zip']),
-      30
-    );
+    const caspioStreet = clean(pickFirst(caspioSource as any, ['ISP_Contact_Address']), 240);
+    const caspioCity = clean(pickFirst(caspioSource as any, ['ISP_Contact_City']), 120);
+    const caspioState = clean(pickFirst(caspioSource as any, ['ISP_Contact_State']), 50);
+    const caspioZip = clean(pickFirst(caspioSource as any, ['ISP_Contact_Zip']), 30);
     const caspioAddress = clean(
       [caspioStreet, caspioCity, caspioState, caspioZip].filter(Boolean).join(', '),
       400
@@ -616,10 +602,10 @@ export async function POST(req: NextRequest) {
       memberSex: clean(resolved.memberSex, 80),
       memberPrimaryLanguage: clean(resolved.memberPrimaryLanguage, 120),
       memberPhone: clean(resolved.memberPhone, 80),
-      ispCurrentAddressStreet: caspioStreet || clean(resolved.ispCurrentAddressStreet, 240),
-      ispCurrentAddressCity: caspioCity || clean(resolved.ispCurrentAddressCity, 120),
-      ispCurrentAddressState: caspioState || clean(resolved.ispCurrentAddressState, 50) || 'CA',
-      ispCurrentAddressZip: caspioZip || clean(resolved.ispCurrentAddressZip, 30),
+      ispCurrentAddressStreet: caspioStreet,
+      ispCurrentAddressCity: caspioCity,
+      ispCurrentAddressState: caspioState || 'CA',
+      ispCurrentAddressZip: caspioZip,
       currentLocationType: clean((resolved as any).currentLocationType, 80),
       currentLocationTypeOther: clean((resolved as any).currentLocationTypeOther, 120),
       assessmentSite: clean((resolved as any).assessmentSite, 80),

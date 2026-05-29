@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth, useFirestore } from '@/firebase';
-import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { useSocialWorker } from '@/hooks/use-social-worker';
 import { useToast } from '@/hooks/use-toast';
 import { EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuestionnaire';
@@ -76,6 +76,7 @@ type KaiserMember = {
   prefillPurpose?: string;
   alftPlanId?: string;
   expectedVisitDate?: string;
+  prefillResolved?: Record<string, string>;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -189,6 +190,14 @@ function preFillFromMember(
   swName: string,
 ): Record<string, AnswerValue> {
   const next = { ...base };
+  const resolved = (member.prefillResolved || {}) as Record<string, string>;
+  const pickResolved = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = String(resolved[key] || '').trim();
+      if (value) return value;
+    }
+    return '';
+  };
   const parsedName = splitName(member);
   const fullName =
     [parsedName.first, parsedName.last].filter(Boolean).join(' ') ||
@@ -219,18 +228,31 @@ function preFillFromMember(
   if (member.memberSex) next.p1_sex = member.memberSex;
   if (member.memberPrimaryLanguage) next.p1_primary_language = member.memberPrimaryLanguage;
 
-  const facilityName = String(member.ispFacilityName || member.ispCurrentLocation || '').trim();
+  const facilityName = String(
+    pickResolved('p2_facility_name', 'isp_location_name') || member.ispFacilityName || member.ispCurrentLocation || ''
+  ).trim();
   if (facilityName) next.p2_facility_name = facilityName;
-  if (member.currentLocationType) next.p2_current_type = member.currentLocationType;
-  if (member.currentLocationTypeOther || member.currentLocationType) {
-    next.p2_current_type_other = String(member.currentLocationTypeOther || member.currentLocationType || '').trim();
+  const currentType = String(pickResolved('p2_current_type', 'isp_location_type') || member.currentLocationType || '').trim();
+  if (currentType) next.p2_current_type = currentType;
+  const currentTypeOther = String(
+    pickResolved('p2_current_type_other', 'p2_current_type', 'isp_location_type') ||
+      member.currentLocationTypeOther ||
+      member.currentLocationType ||
+      ''
+  ).trim();
+  if (currentTypeOther) {
+    next.p2_current_type_other = currentTypeOther;
   }
   if (member.assessmentSite) next.p2_assessment_site = member.assessmentSite;
 
-  if (member.ispCurrentAddressStreet) next.p2_current_street = member.ispCurrentAddressStreet;
-  if (member.ispCurrentAddressCity) next.p2_current_city = member.ispCurrentAddressCity;
-  next.p2_current_state = String(member.ispCurrentAddressState || '').trim() || 'CA';
-  if (member.ispCurrentAddressZip) next.p2_current_zip = member.ispCurrentAddressZip;
+  const currentStreet = String(pickResolved('p2_current_street', 'isp_location_address') || member.ispCurrentAddressStreet || '').trim();
+  const currentCity = String(pickResolved('p2_current_city', 'isp_location_city') || member.ispCurrentAddressCity || '').trim();
+  const currentState = String(pickResolved('p2_current_state', 'isp_location_state') || member.ispCurrentAddressState || '').trim();
+  const currentZip = String(pickResolved('p2_current_zip', 'isp_location_zip') || member.ispCurrentAddressZip || '').trim();
+  if (currentStreet) next.p2_current_street = currentStreet;
+  if (currentCity) next.p2_current_city = currentCity;
+  next.p2_current_state = currentState || 'CA';
+  if (currentZip) next.p2_current_zip = currentZip;
   if (member.homeAddressStreet) next.p2_home_street = member.homeAddressStreet;
   if (member.homeAddressCity) next.p2_home_city = member.homeAddressCity;
   next.p2_home_state = normalizeStateForDisplay(String(member.homeAddressState || '').trim()) || 'CA';
@@ -264,6 +286,14 @@ function normalizeAssessmentHeaderAnswers(input: Record<string, AnswerValue>): R
 
 function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: KaiserMember): Record<string, AnswerValue> {
   const next = normalizeAssessmentHeaderAnswers(input);
+  const resolved = (member.prefillResolved || {}) as Record<string, string>;
+  const pickResolved = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = String(resolved[key] || '').trim();
+      if (value) return value;
+    }
+    return '';
+  };
   const mrn = String(member.memberMrn || '').trim();
   if (mrn) {
     next.p1_mrn = mrn;
@@ -274,6 +304,33 @@ function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: 
   if (parsedName.first) next.p1_first_name = parsedName.first;
   if (parsedName.last) next.p1_last_name = parsedName.last;
   next.p1_member_name = [parsedName.first, parsedName.last].filter(Boolean).join(' ').trim() || String(next.p1_member_name || '');
+
+  // Always refresh ALFT #3 location fields from latest assignment-prefill values,
+  // even when restoring an older local draft.
+  const latestFacilityName = String(
+    pickResolved('p2_facility_name', 'isp_location_name') || member.ispFacilityName || member.ispCurrentLocation || ''
+  ).trim();
+  if (latestFacilityName) next.p2_facility_name = latestFacilityName;
+  const latestType = String(pickResolved('p2_current_type', 'isp_location_type') || member.currentLocationType || '').trim();
+  if (latestType) next.p2_current_type = latestType;
+  const latestTypeOther = String(
+    pickResolved('p2_current_type_other', 'p2_current_type', 'isp_location_type') ||
+      member.currentLocationTypeOther ||
+      member.currentLocationType ||
+      ''
+  ).trim();
+  if (latestTypeOther) {
+    next.p2_current_type_other = latestTypeOther;
+  }
+  const latestStreet = String(pickResolved('p2_current_street', 'isp_location_address') || member.ispCurrentAddressStreet || '').trim();
+  const latestCity = String(pickResolved('p2_current_city', 'isp_location_city') || member.ispCurrentAddressCity || '').trim();
+  const latestState = String(pickResolved('p2_current_state', 'isp_location_state') || member.ispCurrentAddressState || '').trim();
+  const latestZip = String(pickResolved('p2_current_zip', 'isp_location_zip') || member.ispCurrentAddressZip || '').trim();
+  if (latestStreet) next.p2_current_street = latestStreet;
+  if (latestCity) next.p2_current_city = latestCity;
+  next.p2_current_state = latestState || 'CA';
+  if (latestZip) next.p2_current_zip = latestZip;
+
   return normalizeAssessmentHeaderAnswers(next);
 }
 
@@ -394,6 +451,7 @@ export default function SwKaiserAlftPage() {
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(buildDefaultAnswers);
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [submitting, setSubmitting] = useState(false);
+  const [refreshingPrefill, setRefreshingPrefill] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitPending, setSubmitPending] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
@@ -423,6 +481,14 @@ export default function SwKaiserAlftPage() {
         const byMemberId = new Map<string, KaiserMember>();
         docs.forEach((d: any) => {
           const data = d.data() as any;
+          const resolved = (((data?.prefillVerification || {}) as any)?.resolvedFields || {}) as Record<string, unknown>;
+          const pickPrefill = (...keys: string[]) => {
+            for (const key of keys) {
+              const value = String(resolved?.[key] || '').trim();
+              if (value) return value;
+            }
+            return '';
+          };
           const row: KaiserMember = {
             id: String(data.memberId || d.id).trim(),
             memberName: String(data.memberName || '').trim(),
@@ -433,19 +499,21 @@ export default function SwKaiserAlftPage() {
             memberSex: String(data.memberSex || '').trim(),
             memberPrimaryLanguage: String(data.memberPrimaryLanguage || '').trim(),
             memberPhone: String(data.memberPhone || '').trim(),
-            ispCurrentAddressStreet: String(data.ispCurrentAddressStreet || '').trim(),
-            ispCurrentAddressCity: String(data.ispCurrentAddressCity || '').trim(),
-            ispCurrentAddressState: String(data.ispCurrentAddressState || '').trim(),
-            ispCurrentAddressZip: String(data.ispCurrentAddressZip || '').trim(),
-            currentLocationType: String(data.currentLocationType || '').trim(),
-            currentLocationTypeOther: String(data.currentLocationTypeOther || '').trim(),
+            ispCurrentAddressStreet: pickPrefill('p2_current_street', 'isp_location_address') || String(data.ispCurrentAddressStreet || '').trim(),
+            ispCurrentAddressCity: pickPrefill('p2_current_city', 'isp_location_city') || String(data.ispCurrentAddressCity || '').trim(),
+            ispCurrentAddressState: pickPrefill('p2_current_state', 'isp_location_state') || String(data.ispCurrentAddressState || '').trim(),
+            ispCurrentAddressZip: pickPrefill('p2_current_zip', 'isp_location_zip') || String(data.ispCurrentAddressZip || '').trim(),
+            currentLocationType: pickPrefill('p2_current_type', 'isp_location_type') || String(data.currentLocationType || '').trim(),
+            currentLocationTypeOther:
+              pickPrefill('p2_current_type_other', 'p2_current_type', 'isp_location_type') ||
+              String(data.currentLocationTypeOther || '').trim(),
             assessmentSite: String(data.assessmentSite || '').trim(),
             homeAddressStreet: String(data.homeAddressStreet || '').trim(),
             homeAddressCity: String(data.homeAddressCity || '').trim(),
             homeAddressState: String(data.homeAddressState || '').trim(),
             homeAddressZip: String(data.homeAddressZip || '').trim(),
-            ispFacilityName: String(data.ispFacilityName || '').trim(),
-            ispCurrentLocation: String(data.ispCurrentLocation || '').trim(),
+            ispFacilityName: pickPrefill('p2_facility_name', 'isp_location_name') || String(data.ispFacilityName || '').trim(),
+            ispCurrentLocation: pickPrefill('p2_facility_name', 'isp_location_name') || String(data.ispCurrentLocation || '').trim(),
             ispContactName: String(data.ispContactName || '').trim(),
             ispContactRelationship: String(data.ispContactRelationship || '').trim(),
             ispContactPhone: String(data.ispContactPhone || '').trim(),
@@ -460,6 +528,9 @@ export default function SwKaiserAlftPage() {
             prefillPurpose: String(data.prefillPurpose || '').trim(),
             alftPlanId: String(data.alftPlanId || '').trim(),
             expectedVisitDate: String(data.expectedVisitDate || data.alftExpectedVisitDate || '').trim(),
+            prefillResolved: Object.fromEntries(
+              Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])
+            ) as Record<string, string>,
           };
           if (row.id && row.assignmentStatus !== 'completed') {
             byMemberId.set(row.id, row);
@@ -479,6 +550,55 @@ export default function SwKaiserAlftPage() {
     }
   }, [firestore, swEmail, swId, toast]);
 
+  const hydrateMemberFromLatestAssignment = useCallback(async (member: KaiserMember): Promise<KaiserMember> => {
+    if (!firestore || !member?.id) return member;
+    try {
+      const snap = await getDoc(doc(firestore, 'alft_assignments', member.id));
+      if (!snap.exists()) return member;
+      const data = snap.data() as any;
+      const resolved = (((data?.prefillVerification || {}) as any)?.resolvedFields || {}) as Record<string, unknown>;
+      const pickPrefill = (...keys: string[]) => {
+        for (const key of keys) {
+          const value = String(resolved?.[key] || '').trim();
+          if (value) return value;
+        }
+        return '';
+      };
+      return {
+        ...member,
+        ispCurrentAddressStreet:
+          pickPrefill('p2_current_street', 'isp_location_address') ||
+          String(data.ispCurrentAddressStreet || member.ispCurrentAddressStreet || '').trim(),
+        ispCurrentAddressCity:
+          pickPrefill('p2_current_city', 'isp_location_city') ||
+          String(data.ispCurrentAddressCity || member.ispCurrentAddressCity || '').trim(),
+        ispCurrentAddressState:
+          pickPrefill('p2_current_state', 'isp_location_state') ||
+          String(data.ispCurrentAddressState || member.ispCurrentAddressState || '').trim(),
+        ispCurrentAddressZip:
+          pickPrefill('p2_current_zip', 'isp_location_zip') ||
+          String(data.ispCurrentAddressZip || member.ispCurrentAddressZip || '').trim(),
+        currentLocationType:
+          pickPrefill('p2_current_type', 'isp_location_type') ||
+          String(data.currentLocationType || member.currentLocationType || '').trim(),
+        currentLocationTypeOther:
+          pickPrefill('p2_current_type_other', 'p2_current_type', 'isp_location_type') ||
+          String(data.currentLocationTypeOther || member.currentLocationTypeOther || '').trim(),
+        ispFacilityName:
+          pickPrefill('p2_facility_name', 'isp_location_name') ||
+          String(data.ispFacilityName || member.ispFacilityName || '').trim(),
+        ispCurrentLocation:
+          pickPrefill('p2_facility_name', 'isp_location_name') ||
+          String(data.ispCurrentLocation || member.ispCurrentLocation || '').trim(),
+        prefillResolved: Object.fromEntries(
+          Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])
+        ) as Record<string, string>,
+      };
+    } catch {
+      return member;
+    }
+  }, [firestore]);
+
   useEffect(() => {
     if (swLoading || !isSocialWorker) return;
     void loadMembers();
@@ -487,21 +607,28 @@ export default function SwKaiserAlftPage() {
   // ── Select member ─────────────────────────────────────────────────────────────
 
   const selectMember = useCallback((m: KaiserMember) => {
-    setSelectedMember(m);
-    setSubmitted(false);
-    setMode('edit');
-    setExpectedVisitDate(String(m.expectedVisitDate || '').trim());
-    const base = buildDefaultAnswers();
-    const draft = loadDraftLocally(m.id);
-    if (draft) {
-      setAnswers(applyLatestCriticalPrefill(draft, m));
-      setDraftSavedAt(localStorage.getItem(DRAFT_KEY(m.id)) ? JSON.parse(localStorage.getItem(DRAFT_KEY(m.id))!).savedAt : null);
-      toast({ title: 'Draft restored', description: 'Your saved draft has been loaded.' });
-    } else {
-      setAnswers(applyLatestCriticalPrefill(preFillFromMember(base, m, swName), m));
-      setDraftSavedAt(null);
-    }
-  }, [swName, toast]);
+    void (async () => {
+      const latestMember = await hydrateMemberFromLatestAssignment(m);
+      setSelectedMember(latestMember);
+      setSubmitted(false);
+      setMode('edit');
+      setExpectedVisitDate(String(latestMember.expectedVisitDate || '').trim());
+      const base = buildDefaultAnswers();
+      const draft = loadDraftLocally(latestMember.id);
+      if (draft) {
+        setAnswers(applyLatestCriticalPrefill(draft, latestMember));
+        setDraftSavedAt(
+          localStorage.getItem(DRAFT_KEY(latestMember.id))
+            ? JSON.parse(localStorage.getItem(DRAFT_KEY(latestMember.id))!).savedAt
+            : null
+        );
+        toast({ title: 'Draft restored', description: 'Your saved draft has been loaded.' });
+      } else {
+        setAnswers(applyLatestCriticalPrefill(preFillFromMember(base, latestMember, swName), latestMember));
+        setDraftSavedAt(null);
+      }
+    })();
+  }, [hydrateMemberFromLatestAssignment, swName, toast]);
 
   const markMemberViewed = useCallback(async (memberId: string) => {
     if (!auth?.currentUser || !memberId) return;
@@ -516,6 +643,39 @@ export default function SwKaiserAlftPage() {
       // best effort
     }
   }, [auth]);
+
+  const refreshFromPrefill = useCallback(async () => {
+    if (!selectedMember) return;
+    setRefreshingPrefill(true);
+    try {
+      const latestMember = await hydrateMemberFromLatestAssignment(selectedMember);
+      setSelectedMember(latestMember);
+      setAnswers((prev) => {
+        const merged = preFillFromMember({ ...prev }, latestMember, swName);
+        return applyLatestCriticalPrefill(merged, latestMember);
+      });
+      const street = String(
+        latestMember.prefillResolved?.p2_current_street ||
+          latestMember.prefillResolved?.isp_location_address ||
+          latestMember.ispCurrentAddressStreet ||
+          ''
+      ).trim();
+      toast({
+        title: 'Prefill refreshed',
+        description: street
+          ? `ALFT #3 now uses latest prefill values (street: ${street}).`
+          : 'Latest prefill values pulled from assignment.',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Prefill refresh failed',
+        description: e?.message || 'Could not refresh latest prefill values.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRefreshingPrefill(false);
+    }
+  }, [hydrateMemberFromLatestAssignment, selectedMember, swName, toast]);
 
   // ── Answer helpers (dummy-preview identical editor behavior) ─────────────────
 
@@ -546,10 +706,11 @@ export default function SwKaiserAlftPage() {
     setTemplatePdfLoading(true);
     setTemplatePdfError('');
     try {
+      const previewAnswers = applyLatestCriticalPrefill({ ...answers }, selectedMember);
       const res = await fetch('/api/alft/template-fill-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers }),
+        body: JSON.stringify({ templatePath: ALFT_TEMPLATE_PATH, answers: previewAnswers }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({} as any));
@@ -873,6 +1034,10 @@ export default function SwKaiserAlftPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setSelectedMember(null)}>
             ← Back
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void refreshFromPrefill()} disabled={refreshingPrefill}>
+            {refreshingPrefill ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+            Refresh Prefill
           </Button>
           <Button variant="outline" size="sm" onClick={saveDraft}>
             Save Draft
