@@ -2661,14 +2661,14 @@ export default function AdminAlftTrackerPage() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Social Worker email preview</DialogTitle>
             <DialogDescription>
               Preview the workflow notice email that will be sent for portal login and ALFT completion.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 text-sm">
+          <div className="space-y-2 text-sm overflow-y-auto pr-1">
             <div>
               <span className="font-medium">To:</span> {swEmailPreview?.to || '—'}
             </div>
@@ -2732,7 +2732,7 @@ export default function AdminAlftTrackerPage() {
               ) : null}
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-background pt-3">
             {swEmailPreviewRow ? (
               <Button
                 variant="outline"
