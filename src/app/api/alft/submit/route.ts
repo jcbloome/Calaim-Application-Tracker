@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
     const kaiserMrn =
       kaiserMrnRaw || (medicalRecordNumber && planLower.includes('kaiser') ? medicalRecordNumber : '');
 
-    const focusUrl = (id: string) => `/admin/alft-tracker?focus=${encodeURIComponent(id)}`;
+    const focusUrl = (id: string) => `/admin/alft-tracker?edit=${encodeURIComponent(id)}`;
 
     let assignedManagerName = '';
     let assignedManagerEmail = '';
@@ -309,6 +309,28 @@ export async function POST(request: NextRequest) {
         {
           expectedVisitDate: expectedVisitDate || null,
           alftExpectedVisitDate: expectedVisitDate || null,
+          status: 'submitted',
+          workflowStatus: 'awaiting_manager_review_pre_rn',
+          workflowStage: 'submitted_by_sw_waiting_manager_review',
+          workflowRouting: {
+            nextStepKey: 'manager_review',
+            nextStepLabel: 'ALFT Manager Review',
+            nextRecipientName: primaryManagerName || null,
+            nextRecipientEmail: primaryManagerEmail || null,
+            finalReviewOwnerName: primaryManagerName || null,
+            finalReviewOwnerEmail: primaryManagerEmail || null,
+          },
+          workflowSteps: {
+            swInviteSent: true,
+            swSubmittedSigned: true,
+            managerReview: 'pending',
+            rnReviewSignature: 'pending',
+            pdfReady: false,
+          },
+          workflowStepsAt: {
+            swSubmittedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          submittedAt: admin.firestore.FieldValue.serverTimestamp(),
           expectedVisitDateUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
           expectedVisitDateUpdatedByUid: uploaderUid,
           expectedVisitDateUpdatedByName: uploaderName,

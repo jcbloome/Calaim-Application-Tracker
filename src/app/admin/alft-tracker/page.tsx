@@ -748,13 +748,12 @@ const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
   return [
     { step: 1, chip: 'Verify Prefill', label: 'Staff verifies required ALFT prefill fields', done: swInviteSent || swSubmitted, current: !swInviteSent },
     { step: 2, chip: 'Verify Checkbox', label: 'Staff verification checkbox sign-off with timestamp', done: swInviteSent || swSubmitted, current: false },
-    { step: 3, chip: 'SW Email Preview', label: 'Preview SW email content (no manager queue link)', done: swInviteSent || swSubmitted, current: false },
-    { step: 4, chip: 'SW Email Sent', label: 'Send SW email notice with timestamp', done: swInviteSent, current: swInviteSent && !swSubmitted },
-    { step: 5, chip: 'SW Signed', label: 'SW completes and signs ALFT packet', done: swSubmitted, current: swInviteSent && !swSubmitted },
-    { step: 6, chip: 'John First Review', label: 'John approves or rejects with needed changes', done: swSubmitted, current: swSubmitted && !returnedToSw && !rnStep },
-    { step: 7, chip: 'Return + Re-check', label: 'If rejected, SW updates and John re-checks before RN', done: returnedToSw || rnStep || finalManager || complete, current: returnedToSw },
-    { step: 8, chip: 'RN Review + Sign', label: 'RN reviews, edits as needed, and signs', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
-    { step: 9, chip: 'Final + Jocelyn', label: 'Deydry/Jason final review then send completed PDF to Jocelyn', done: finalManager || complete, current: finalManager && !complete },
+    { step: 3, chip: 'SW Email Sent', label: 'Preview/send SW email notice with timestamp', done: swInviteSent || swSubmitted, current: !swInviteSent },
+    { step: 4, chip: 'SW Signed', label: 'SW completes and signs ALFT packet', done: swSubmitted, current: swInviteSent && !swSubmitted },
+    { step: 5, chip: 'John First Review', label: 'John approves or rejects with needed changes', done: swSubmitted, current: swSubmitted && !returnedToSw && !rnStep },
+    { step: 6, chip: 'Return + Re-check', label: 'If rejected, SW updates and John re-checks before RN', done: returnedToSw || rnStep || finalManager || complete, current: returnedToSw },
+    { step: 7, chip: 'RN Review + Sign', label: 'RN reviews, edits as needed, and signs', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
+    { step: 8, chip: 'Final + Jocelyn', label: 'Deydry/Jason final review then send completed PDF to Jocelyn', done: finalManager || complete, current: finalManager && !complete },
   ];
 };
 
@@ -2292,27 +2291,6 @@ export default function AdminAlftTrackerPage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 className="h-6 w-6 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!isAdmin && !isKaiserStaff && !isRnStaff) {
-    return (
-      <div className="container mx-auto p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Kaiser staff access required</CardTitle>
-            <CardDescription>Please sign in as Kaiser staff, RN staff, or admin to continue.</CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
-
   const canApproveToRnFromEdit = Boolean(editRow && canSendToRnAfterPreReview(editRow));
   const canRejectToSwFromEdit = Boolean(editRow && canKickBackToSw(editRow));
   const canRunFinalReviewFromEdit = Boolean(
@@ -2354,6 +2332,17 @@ export default function AdminAlftTrackerPage() {
   const editAssignmentSignals = editAssignmentRow ? assignmentWorkflowSignals(editAssignmentRow) : null;
   const editAssignmentStage = editAssignmentRow ? assignmentStageBlock(editAssignmentRow) : null;
   const editAssignmentSteps = editAssignmentRow ? assignmentWorkflowSteps(editAssignmentRow) : [];
+  const swPreviewActionRow = useMemo(() => {
+    if (isEditRoute && editAssignmentRow) return editAssignmentRow;
+    if (!swEmailPreviewRow) return null;
+    const memberKey = String(swEmailPreviewRow.memberId || swEmailPreviewRow.id || '').trim();
+    if (!memberKey) return swEmailPreviewRow;
+    return (
+      assignmentRows.find(
+        (row) => String(row.memberId || row.id || '').trim() === memberKey
+      ) || swEmailPreviewRow
+    );
+  }, [assignmentRows, editAssignmentRow, isEditRoute, swEmailPreviewRow]);
   const editAssignmentDoneCount = editAssignmentSteps.filter((step) => step.done).length;
   const editVerificationDone = Boolean((editAssignmentRow as any)?.verificationSignoff?.verified);
   const editVerificationAtMs = toMs((editAssignmentRow as any)?.verificationSignoff?.verifiedAt);
@@ -2396,9 +2385,39 @@ export default function AdminAlftTrackerPage() {
     : '/admin/alft-tracker';
   const headerBackToTrackerHref = '/admin/alft-tracker';
   const workflowPageTitle = isEditRoute ? 'ALFT Workflow' : 'ALFT Tracker';
+
+  useEffect(() => {
+    if (!swEmailPreviewOpen || !isEditRoute || !editAssignmentRow) return;
+    const currentMemberKey = String(swEmailPreviewRow?.memberId || swEmailPreviewRow?.id || '').trim();
+    const editMemberKey = String(editAssignmentRow.memberId || editAssignmentRow.id || '').trim();
+    if (currentMemberKey !== editMemberKey) {
+      setSwEmailPreviewRow(editAssignmentRow);
+    }
+  }, [editAssignmentRow, isEditRoute, swEmailPreviewOpen, swEmailPreviewRow]);
   const workflowPageDescription = isEditRoute
     ? 'Single-member workflow page. Complete edits and actions for this member only.'
     : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, Kaiser manager does final review, then completed packet is sent to Jocelyn.';
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAdmin && !isKaiserStaff && !isRnStaff) {
+    return (
+      <div className="container mx-auto p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Kaiser staff access required</CardTitle>
+            <CardDescription>Please sign in as Kaiser staff, RN staff, or admin to continue.</CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
   const approveToRnDisabledReason = !editRow
     ? 'No ALFT loaded'
     : sigRequestingId === String(editRow?.id || '')
@@ -2733,18 +2752,18 @@ export default function AdminAlftTrackerPage() {
             </div>
           </div>
           <DialogFooter className="shrink-0 border-t bg-background pt-3">
-            {swEmailPreviewRow ? (
+            {swPreviewActionRow ? (
               <Button
                 variant="outline"
-                disabled={pullingIspForMemberId === String(swEmailPreviewRow.memberId || swEmailPreviewRow.id || '').trim()}
-                onClick={() => void pullIspInfoFromCaspio(swEmailPreviewRow)}
+                disabled={pullingIspForMemberId === String(swPreviewActionRow.memberId || swPreviewActionRow.id || '').trim()}
+                onClick={() => void pullIspInfoFromCaspio(swPreviewActionRow)}
               >
-                {pullingIspForMemberId === String(swEmailPreviewRow.memberId || swEmailPreviewRow.id || '').trim()
+                {pullingIspForMemberId === String(swPreviewActionRow.memberId || swPreviewActionRow.id || '').trim()
                   ? 'Pulling ISP info...'
                   : 'Pull ISP info from Caspio'}
               </Button>
             ) : null}
-            {swEmailPreviewRow ? (
+            {swPreviewActionRow ? (
               <Button
                 variant={swEmailPreview?.canSend ? 'default' : 'outline'}
                 className={swEmailPreview?.canSend ? 'bg-indigo-600 text-white hover:bg-indigo-700' : ''}
@@ -2754,7 +2773,7 @@ export default function AdminAlftTrackerPage() {
                   (swEmailPreviewUseTestOverride && !String(swEmailPreviewTestEmail || '').trim())
                 }
                 onClick={() =>
-                  void startWorkflowFromIntake(swEmailPreviewRow, {
+                  void startWorkflowFromIntake(swPreviewActionRow, {
                     overrideRecipientEmail: swEmailPreviewUseTestOverride ? swEmailPreviewTestEmail : undefined,
                   })
                 }
@@ -2843,6 +2862,12 @@ export default function AdminAlftTrackerPage() {
                   ) : (
                     <div className="text-[10px] text-muted-foreground">SW email has not been sent yet. Use Step 3 to preview and send.</div>
                   )}
+                  <div className="text-[11px]">
+                    <span className="font-medium">4) SW Signed</span>{' '}
+                    <span className={editAssignmentSignals?.swSubmitted ? 'text-emerald-700' : 'text-muted-foreground'}>
+                      {editAssignmentSignals?.swSubmitted ? 'completed' : 'waiting for SW submission/signature'}
+                    </span>
+                  </div>
                 </div>
               </div>
             ) : null}
