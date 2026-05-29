@@ -382,7 +382,12 @@ function PathwayPageContent() {
       if (isAdminCreatedApp) {
         router.push('/admin/applications');
       } else {
-        router.push('/applications');
+        const id = String(applicationId || '').trim();
+        if (id) {
+          router.push(`/invite/continue?applicationId=${encodeURIComponent(id)}`);
+        } else {
+          router.push('/applications');
+        }
       }
     }
   }, [isLoading, application, isUserLoading, router, isAdminCreatedApp]);

@@ -331,7 +331,9 @@ function buildPortalLinks(params: {
   }`;
   const loginUrl = `${baseUrl}/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
   const signupUrl = `${baseUrl}/signup`;
-  const inviteUrl = `${baseUrl}/invite/continue?applicationId=${encodeURIComponent(applicationId)}`;
+  // Keep primary-contact emails login-first so existing users are not funneled
+  // into account creation when opening an in-progress application.
+  const inviteUrl = loginUrl;
   return { loginUrl, signupUrl, inviteUrl };
 }
 

@@ -261,7 +261,7 @@ function LoginPageContent() {
                 <AlertDescription className="text-sm text-blue-800">
                   Sign in to continue, or{' '}
                   <Link href={`/signup${redirectPathRaw ? `?redirect=${encodeURIComponent(redirectPathRaw)}` : ''}`} className="font-medium underline">
-                    create a free account
+                    create a new account
                   </Link>{' '}
                   if you&apos;re new.
                 </AlertDescription>
@@ -334,7 +334,7 @@ function LoginPageContent() {
              <div className="mt-4 p-3 rounded-lg bg-slate-50 border text-center text-sm">
               New to Connect CalAIM?{' '}
               <Link href="/signup" className="font-semibold text-primary hover:underline">
-                Create a free account
+                Create a new account
               </Link>
               {' '}to start your application.
             </div>

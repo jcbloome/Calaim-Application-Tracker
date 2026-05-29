@@ -37,12 +37,60 @@ interface ExtractedFields {
   Diagnostic_Code: string;
 }
 
+const cleanText = (value: unknown) => String(value ?? '').trim();
+
 const normalizeMediCalNumber = (value: string): string => {
   const raw = String(value || '').trim().toUpperCase();
   if (!raw) return '';
   const compact = raw.replace(/[^A-Z0-9]/g, '');
   if (/^9\d{7}[A-Z]$/.test(compact)) return compact;
   return raw;
+};
+
+const pickFirstNonEmpty = (source: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    const value = cleanText(source[key]);
+    if (value) return value;
+  }
+  return '';
+};
+
+const splitAddressBlock = (raw: string) => {
+  const input = cleanText(raw).replace(/\r/g, '\n');
+  if (!input) return { street: '', city: '', state: '', zip: '' };
+
+  const lines = input.split('\n').map((line) => line.trim()).filter(Boolean);
+  const oneLine = lines.join(' ').replace(/\s{2,}/g, ' ').trim();
+  const cityStateZipRegex = /(?:,\s*)?([A-Za-z][A-Za-z .'-]*?),?\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/;
+
+  const parseLine = (line: string) => {
+    const match = line.match(cityStateZipRegex);
+    if (!match) return { street: '', city: '', state: '', zip: '' };
+    const street = line.slice(0, match.index || 0).replace(/[,\s]+$/, '').trim();
+    return {
+      street,
+      city: cleanText(match[1]),
+      state: cleanText(match[2]).toUpperCase(),
+      zip: cleanText(match[3]),
+    };
+  };
+
+  if (lines.length > 1) {
+    const lastParsed = parseLine(lines[lines.length - 1]);
+    if (lastParsed.city || lastParsed.state || lastParsed.zip) {
+      const streetLines = lines.slice(0, -1).join(' ').trim();
+      return {
+        street: streetLines || lastParsed.street,
+        city: lastParsed.city,
+        state: lastParsed.state,
+        zip: lastParsed.zip,
+      };
+    }
+  }
+
+  const parsed = parseLine(oneLine);
+  if (parsed.city || parsed.state || parsed.zip || parsed.street) return parsed;
+  return { street: oneLine, city: '', state: '', zip: '' };
 };
 
 export async function POST(request: NextRequest) {
@@ -144,6 +192,38 @@ Return ONLY the JSON object, no other text.`;
     }
 
     const extractedFields: Partial<ExtractedFields> = JSON.parse(jsonMatch[0]);
+    const extractedAny = extractedFields as Record<string, unknown>;
+
+    // Address fallback: Vision responses occasionally place address in alternate keys
+    // or as a single combined block. Normalize into memberCustomary* fields.
+    const addressRaw =
+      cleanText(extractedFields.memberCustomaryAddress) ||
+      pickFirstNonEmpty(extractedAny, [
+        'memberAddress',
+        'member_address',
+        'memberStreetAddress',
+        'memberStreet',
+        'address',
+        'Address',
+        'Member Address',
+      ]);
+    const splitAddress = splitAddressBlock(addressRaw);
+    const cityFallback = pickFirstNonEmpty(extractedAny, ['memberCity', 'city', 'City']);
+    const stateFallback = pickFirstNonEmpty(extractedAny, ['memberState', 'state', 'State']).toUpperCase();
+    const zipFallback = pickFirstNonEmpty(extractedAny, ['memberZip', 'zip', 'Zip']);
+
+    if (!cleanText(extractedFields.memberCustomaryAddress) && splitAddress.street) {
+      extractedFields.memberCustomaryAddress = splitAddress.street;
+    }
+    if (!cleanText(extractedFields.memberCustomaryCity) && (splitAddress.city || cityFallback)) {
+      extractedFields.memberCustomaryCity = splitAddress.city || cityFallback;
+    }
+    if (!cleanText(extractedFields.memberCustomaryState) && (splitAddress.state || stateFallback)) {
+      extractedFields.memberCustomaryState = splitAddress.state || stateFallback;
+    }
+    if (!cleanText(extractedFields.memberCustomaryZip) && (splitAddress.zip || zipFallback)) {
+      extractedFields.memberCustomaryZip = splitAddress.zip || zipFallback;
+    }
 
     // Format fields to proper case (Title Case for names/addresses, etc.)
     const formatToTitleCase = (text: string): string => {
