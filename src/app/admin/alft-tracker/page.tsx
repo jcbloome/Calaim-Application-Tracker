@@ -174,6 +174,7 @@ type AlftAssignmentQueueRow = {
   ispCurrentAddressState?: string | null;
   ispCurrentAddressZip?: string | null;
   currentLocationType?: string | null;
+  currentLocationTypeOther?: string | null;
   assessmentSite?: string | null;
   homeAddressStreet?: string | null;
   homeAddressCity?: string | null;
@@ -182,6 +183,7 @@ type AlftAssignmentQueueRow = {
   ispFacilityName?: string | null;
   ispCurrentLocation?: string | null;
   ispContactName?: string | null;
+  ispContactRelationship?: string | null;
   ispContactPhone?: string | null;
   ispContactEmail?: string | null;
   ispContactConfirmDate?: string | null;
@@ -264,13 +266,13 @@ const todayLocalKey = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const toYmdOrRaw = (value: string | undefined | null) => {
+const toMmDdYyyyOrRaw = (value: string | undefined | null) => {
   const raw = String(value || '').trim();
   if (!raw) return '';
-  const usFmt = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (usFmt) return `${usFmt[3]}-${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}`;
   const isoLike = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (isoLike) return `${isoLike[1]}-${isoLike[2].padStart(2, '0')}-${isoLike[3].padStart(2, '0')}`;
+  if (isoLike) return `${isoLike[2].padStart(2, '0')}-${isoLike[3].padStart(2, '0')}-${isoLike[1]}`;
+  const usFmt = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (usFmt) return `${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}-${usFmt[3]}`;
   return raw;
 };
 
@@ -633,6 +635,8 @@ const REQUIRED_PREFILL_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'p1_dob', label: 'Date of Birth' },
   { key: 'p1_sex', label: 'Sex' },
   { key: 'p1_primary_language', label: 'Primary Language' },
+  { key: 'p1_other_responder_name', label: 'If yes, name' },
+  { key: 'p1_other_responder_relationship', label: 'If yes, relationship' },
   { key: 'p2_current_street', label: 'Current Location Street' },
   { key: 'p2_current_city', label: 'Current Location City' },
   { key: 'p2_current_state', label: 'Current Location State' },
@@ -645,7 +649,12 @@ const REQUIRED_PREFILL_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'p2_home_zip', label: 'Home Address Zip' },
 ];
 
-const NON_BLOCKING_PREFILL_FIELD_KEYS = new Set(['p1_phone', 'p1_primary_language']);
+const NON_BLOCKING_PREFILL_FIELD_KEYS = new Set([
+  'p1_phone',
+  'p1_primary_language',
+  'p1_other_responder_name',
+  'p1_other_responder_relationship',
+]);
 const BLOCKING_REQUIRED_PREFILL_FIELDS = REQUIRED_PREFILL_FIELDS.filter(
   ({ key }) => !NON_BLOCKING_PREFILL_FIELD_KEYS.has(key)
 );
@@ -685,6 +694,10 @@ const getRequiredValueFromAssignmentRow = (row: AlftAssignmentQueueRow, key: str
       return toLabel(row.memberSex);
     case 'p1_primary_language':
       return toLabel(row.memberPrimaryLanguage);
+    case 'p1_other_responder_name':
+      return toLabel(row.ispContactName);
+    case 'p1_other_responder_relationship':
+      return toLabel(row.ispContactRelationship);
     case 'p2_current_street':
       return toLabel(row.ispCurrentAddressStreet);
     case 'p2_current_city':
@@ -695,6 +708,8 @@ const getRequiredValueFromAssignmentRow = (row: AlftAssignmentQueueRow, key: str
       return toLabel(row.ispCurrentAddressZip);
     case 'p2_current_type':
       return toLabel(row.currentLocationType);
+    case 'p2_current_type_other':
+      return toLabel(row.currentLocationTypeOther || row.currentLocationType);
     case 'p2_assessment_site':
       return toLabel(row.assessmentSite);
     case 'p2_home_street':
@@ -1080,6 +1095,7 @@ export default function AdminAlftTrackerPage() {
               ispCurrentAddressState: toLabel(r.ispCurrentAddressState) || null,
               ispCurrentAddressZip: toLabel(r.ispCurrentAddressZip) || null,
               currentLocationType: toLabel(r.currentLocationType) || null,
+              currentLocationTypeOther: toLabel(r.currentLocationTypeOther) || null,
               assessmentSite: toLabel(r.assessmentSite) || null,
               homeAddressStreet: toLabel(r.homeAddressStreet) || null,
               homeAddressCity: toTitleCaseCity(toLabel(r.homeAddressCity)) || null,
@@ -1088,6 +1104,7 @@ export default function AdminAlftTrackerPage() {
               ispFacilityName: toLabel(r.ispFacilityName) || null,
               ispCurrentLocation: toLabel(r.ispCurrentLocation) || null,
               ispContactName: toLabel(r.ispContactName) || null,
+              ispContactRelationship: toLabel(r.ispContactRelationship) || null,
               ispContactPhone: toLabel(r.ispContactPhone) || null,
               ispContactEmail: toLabel(r.ispContactEmail) || null,
               ispContactConfirmDate: toLabel(r.ispContactConfirmDate || r.ispContactConfirmField) || null,
@@ -1237,6 +1254,7 @@ export default function AdminAlftTrackerPage() {
     const verifiedAtMs = toMs(swEmailPreviewRow.verificationSignoff?.verifiedAt);
     const verifiedAtLabel = verifiedAtMs ? fmtTimeline(verifiedAtMs) : '';
     const ispContactName = String((swEmailPreviewRow as any)?.ispContactName || '').trim();
+    const ispContactRelationship = String((swEmailPreviewRow as any)?.ispContactRelationship || '').trim();
     const ispFacilityName = String((swEmailPreviewRow as any)?.ispFacilityName || (swEmailPreviewRow as any)?.ispCurrentLocation || '').trim();
     const ispFacilityType = String((swEmailPreviewRow as any)?.currentLocationType || '').trim();
     const ispAddress = [
@@ -1272,6 +1290,7 @@ export default function AdminAlftTrackerPage() {
       sentAtLabel,
       missingIspFields,
       ispContactName,
+      ispContactRelationship,
       ispAddress,
       ispFacilityName,
       ispFacilityType,
@@ -1286,6 +1305,7 @@ export default function AdminAlftTrackerPage() {
         '',
         `Verification checkbox: ${verified ? `Checked by ${verifiedBy}${verifiedAtLabel ? ` on ${verifiedAtLabel}` : ''}` : 'Not checked yet'}`,
         `ISP contact name: ${ispContactName || 'Not provided'}`,
+        `ISP contact relationship: ${ispContactRelationship || 'Not provided'}`,
         `ISP address: ${ispAddress || 'MISSING'}`,
         `Facility name: ${ispFacilityName || 'Not provided'}`,
         `Facility type: ${ispFacilityType || 'Not provided'}`,
@@ -1425,6 +1445,13 @@ export default function AdminAlftTrackerPage() {
         }
         const pick = (key: string, fallback = '') => String(resolved?.[key] || '').trim() || fallback;
         const pickCity = (key: string, fallback = '') => toTitleCaseCity(pick(key, fallback));
+        const responderName = pick('p1_other_responder_name', row.ispContactName || '');
+        const responderRelationship = pick('p1_other_responder_relationship', row.ispContactRelationship || '');
+        const responderFlagRaw = pick(
+          'p1_other_responder',
+          responderName || responderRelationship ? 'yes' : 'no'
+        ).toLowerCase();
+        const otherResponder = responderFlagRaw === 'yes' ? 'yes' : 'no';
         const res = await fetch('/api/alft/workflow/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1432,7 +1459,7 @@ export default function AdminAlftTrackerPage() {
             idToken,
             member: {
               id: memberId,
-              memberName: pick('p1_member_name', row.memberName || ''),
+              memberName: pick('p1_member_name', String(row.memberName || '').replace(/\s+\d+$/, '').trim()),
               memberFirstName: pick('p1_first_name', row.memberFirstName || ''),
               memberLastName: pick('p1_last_name', row.memberLastName || ''),
               memberMrn: pick('p1_mrn', row.memberMrn || ''),
@@ -1440,23 +1467,28 @@ export default function AdminAlftTrackerPage() {
               memberSex: pick('p1_sex', row.memberSex || ''),
               memberPrimaryLanguage: pick('p1_primary_language', row.memberPrimaryLanguage || ''),
               memberPhone: pick('p1_phone', row.memberPhone || ''),
-              ispCurrentAddressStreet: pick('p2_current_street', row.ispCurrentAddressStreet || ''),
-              ispCurrentAddressCity: pickCity('p2_current_city', row.ispCurrentAddressCity || ''),
-              ispCurrentAddressState: pick('p2_current_state', row.ispCurrentAddressState || ''),
-              ispCurrentAddressZip: pick('p2_current_zip', row.ispCurrentAddressZip || ''),
-              currentLocationType: pick('p2_current_type', row.currentLocationType || ''),
+              ispCurrentAddressStreet: pick('p2_current_street', pick('isp_location_address', row.ispCurrentAddressStreet || '')),
+              ispCurrentAddressCity: pickCity('p2_current_city', pick('isp_location_city', row.ispCurrentAddressCity || '')),
+              ispCurrentAddressState: pick('p2_current_state', pick('isp_location_state', row.ispCurrentAddressState || '')),
+              ispCurrentAddressZip: pick('p2_current_zip', pick('isp_location_zip', row.ispCurrentAddressZip || '')),
+              currentLocationType: pick('p2_current_type', pick('isp_location_type', row.currentLocationType || '')),
+              currentLocationTypeOther: pick('p2_current_type_other', pick('isp_location_type', row.currentLocationTypeOther || row.currentLocationType || '')),
               assessmentSite: pick('p2_assessment_site', row.assessmentSite || ''),
               homeAddressStreet: pick('p2_home_street', row.homeAddressStreet || ''),
               homeAddressCity: pickCity('p2_home_city', row.homeAddressCity || ''),
               homeAddressState: pick('p2_home_state', row.homeAddressState || ''),
               homeAddressZip: pick('p2_home_zip', row.homeAddressZip || ''),
-              ispFacilityName: pick('p2_facility_name', row.ispFacilityName || ''),
-              ispCurrentLocation: pick('p2_facility_name', row.ispFacilityName || ''),
+              ispFacilityName: pick('p2_facility_name', pick('isp_location_name', row.ispFacilityName || '')),
+              ispCurrentLocation: pick('p2_facility_name', pick('isp_location_name', row.ispFacilityName || '')),
               ispContactPhone: pick('p1_phone', row.memberPhone || ''),
               ispContactName: ispContactName,
+              ispContactRelationship: responderRelationship,
               ispContactEmail: ispEmail,
               ispContactConfirmDate: ispLastVerified,
-              alftPlanId: pick('p1_plan_id', row.alftPlanId || row.memberMrn || ''),
+              otherResponder,
+              otherResponderName: responderName,
+              otherResponderRelationship: responderRelationship,
+              alftPlanId: pick('p1_plan_id', row.memberMrn || row.alftPlanId || ''),
               prefillSourceMode,
               swId: row.assignedSwId || '',
               socialWorkerAssigned: row.assignedSwName || '',
@@ -1572,11 +1604,13 @@ export default function AdminAlftTrackerPage() {
           ),
           ispFacilityName: toLabel(hit?.ISP_Contact_Location || hit?.RCFE_Name || hit?.ispFacilityName || hit?.ISP_Current_Location),
           currentLocationType: toLabel(hit?.ISP_Location_Type || hit?.Current_Location_Type || hit?.currentLocationType || hit?.Location_Type),
+          currentLocationTypeOther: toLabel(hit?.ISP_Location_Type || hit?.Current_Location_Type || hit?.currentLocationType || hit?.Location_Type),
           ispCurrentAddressStreet: toLabel(hit?.ISP_Contact_Address || hit?.ISP_Current_Address || hit?.ispCurrentAddressStreet || hit?.Member_Address || hit?.Address),
           ispCurrentAddressCity: toTitleCaseCity(toLabel(hit?.ISP_Contact_City || hit?.ISP_Current_City || hit?.ispCurrentAddressCity || hit?.Member_City || hit?.City)),
           ispCurrentAddressState: toLabel(hit?.ISP_Contact_State || hit?.ISP_Current_State || hit?.ispCurrentAddressState || hit?.Member_State || hit?.State),
           ispCurrentAddressZip: toLabel(hit?.ISP_Contact_Zip || hit?.ISP_Current_Zip || hit?.ispCurrentAddressZip || hit?.Member_Zip || hit?.Zip),
           ispContactName: toLabel(combinedContactName || hit?.ISP_Contact_Name || hit?.ispContactName || hit?.RCFE_Admin_Name || hit?.Contact_Name),
+          ispContactRelationship: toLabel(hit?.ISP_Contact_Relationship || hit?.ispContactRelationship || hit?.Contact_Relationship),
           ispContactPhone: toLabel(hit?.ISP_Contact_Phone || hit?.ispContactPhone || hit?.Member_Phone || hit?.memberPhone),
           ispContactEmail: toLabel(hit?.ISP_Contact_Email || hit?.ispContactEmail || hit?.Member_Email || hit?.memberEmail).toLowerCase(),
           ispContactConfirmDate: toLabel(
@@ -1634,9 +1668,8 @@ export default function AdminAlftTrackerPage() {
       const current = String(merged[key] ?? '').trim();
       if (!current) merged[key] = nextValue;
     };
-    applyIfBlank('p1_assessment_date', todayLocalKey());
     applyIfBlank('p1_agency', AGENCY_NAME);
-    applyIfBlank('p1_member_name', row.memberName);
+    applyIfBlank('p1_member_name', String(row.memberName || '').replace(/\s+\d+$/, '').trim());
     applyIfBlank('p1_mrn', row.medicalRecordNumber || '');
     applyIfBlank('p1_plan_id', row.medicalRecordNumber || '');
     applyIfBlank('p1_assessor_name', assignmentRow?.assignedSwName || row.uploaderName || staffName);
@@ -1644,13 +1677,38 @@ export default function AdminAlftTrackerPage() {
     if (assignmentRow) {
       REQUIRED_PREFILL_FIELDS.forEach(({ key }) => {
         const fromAssignment = getRequiredValueFromAssignmentRow(assignmentRow, key);
-        applyIfBlank(key, key === 'p1_dob' ? toYmdOrRaw(fromAssignment) : fromAssignment);
+        applyIfBlank(key, key === 'p1_dob' ? toMmDdYyyyOrRaw(fromAssignment) : fromAssignment);
       });
-      applyIfBlank('p1_plan_id', assignmentRow.alftPlanId || assignmentRow.memberMrn || '');
+      applyIfBlank('p1_plan_id', assignmentRow.memberMrn || assignmentRow.alftPlanId || '');
       const purpose = String(assignmentRow.prefillPurpose || '').trim();
       if (!String(merged.p1_purpose || '').trim() && (purpose === 'initial' || purpose === 'change_condition' || purpose === 'review')) {
         merged.p1_purpose = purpose;
       }
+    }
+    const forcedMrn = String(assignmentRow?.memberMrn || row.medicalRecordNumber || '').trim();
+    if (forcedMrn) {
+      merged.p1_mrn = forcedMrn;
+      merged.p1_plan_id = forcedMrn;
+    }
+    const memberFirst = String(merged.p1_first_name || '').replace(/\s+\d+$/, '').trim();
+    const memberLast = String(merged.p1_last_name || '').replace(/\s+\d+$/, '').trim();
+    const rawMemberName = String(merged.p1_member_name || '').trim();
+    if (memberFirst || memberLast) {
+      merged.p1_member_name = `${memberFirst} ${memberLast}`.trim();
+    } else if (rawMemberName) {
+      if (rawMemberName.includes(',')) {
+        const [ln, fn] = rawMemberName
+          .split(',', 2)
+          .map((part) => String(part || '').replace(/\s+\d+$/, '').trim());
+        merged.p1_member_name = `${fn || ''} ${ln || ''}`.trim();
+      } else {
+        merged.p1_member_name = rawMemberName.replace(/\s+\d+$/, '').trim();
+      }
+    }
+    const rawAssessmentDate = String(merged.p1_assessment_date || '').trim();
+    const isoAssessmentDate = rawAssessmentDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (isoAssessmentDate) {
+      merged.p1_assessment_date = `${isoAssessmentDate[2].padStart(2, '0')}-${isoAssessmentDate[3].padStart(2, '0')}-${isoAssessmentDate[1]}`;
     }
     merged.p1_agency = AGENCY_NAME;
     setEditExactAnswers(merged);
@@ -2272,11 +2330,17 @@ export default function AdminAlftTrackerPage() {
     toLabel((editAssignmentRow as any)?.verificationSignoff?.verifiedByName) ||
     toLabel((editAssignmentRow as any)?.verificationSignoff?.verifiedByEmail) ||
     '';
+  const verificationReturnToHref = editAssignmentRow
+    ? `/admin/alft-tracker?edit=${encodeURIComponent(
+        String(editAssignmentRow.id || editAssignmentRow.memberId || '').trim()
+      )}${managerActionsOnly ? '&managerActions=1' : ''}`
+    : '/admin/alft-tracker';
   const step1VerificationHref = editAssignmentRow
     ? `/admin/alft-verification?${new URLSearchParams({
         memberId: String(editAssignmentRow.memberId || editAssignmentRow.id || '').trim(),
         member: String(editAssignmentRow.memberName || '').trim(),
         mrn: String(editAssignmentRow.memberMrn || '').trim(),
+        returnTo: verificationReturnToHref,
       }).toString()}`
     : '/admin/alft-verification';
   const editWorkflowSummary =
@@ -2587,6 +2651,7 @@ export default function AdminAlftTrackerPage() {
             </div>
             <div className="rounded border bg-muted/20 p-2 text-xs space-y-1">
               <div><span className="font-medium">ISP contact name:</span> {swEmailPreview?.ispContactName || 'Not provided'}</div>
+              <div><span className="font-medium">ISP contact relationship:</span> {swEmailPreview?.ispContactRelationship || 'Not provided'}</div>
               <div><span className="font-medium">ISP address:</span> {swEmailPreview?.ispAddress || 'Missing'}</div>
               <div><span className="font-medium">Facility name:</span> {swEmailPreview?.ispFacilityName || 'Not provided'}</div>
               <div><span className="font-medium">Facility type:</span> {swEmailPreview?.ispFacilityType || 'Not provided'}</div>

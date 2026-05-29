@@ -24,6 +24,7 @@ type Body = {
     ispCurrentAddressState?: string;
     ispCurrentAddressZip?: string;
     currentLocationType?: string;
+    currentLocationTypeOther?: string;
     assessmentSite?: string;
     homeAddressStreet?: string;
     homeAddressCity?: string;
@@ -36,6 +37,10 @@ type Body = {
     ispContactEmail?: string;
     ispContactConfirmDate?: string;
     ispContactName?: string;
+    ispContactRelationship?: string;
+    otherResponder?: string;
+    otherResponderName?: string;
+    otherResponderRelationship?: string;
     swId?: string;
     socialWorkerAssigned?: string;
     prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
@@ -60,6 +65,18 @@ const formatSocialWorkerName = (raw: unknown) => {
     .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1) : ''))
     .join(' ')
     .trim();
+};
+const normalizeMemberName = (input: { first?: unknown; last?: unknown; full?: unknown }) => {
+  const first = clean(input.first, 120).replace(/\s+\d+$/, '').trim();
+  const last = clean(input.last, 120).replace(/\s+\d+$/, '').trim();
+  if (first || last) return `${first} ${last}`.trim();
+  const full = clean(input.full, 220);
+  if (!full) return '';
+  if (full.includes(',')) {
+    const [ln, fn] = full.split(',', 2).map((part) => clean(part, 120).replace(/\s+\d+$/, '').trim());
+    return `${fn || ''} ${ln || ''}`.trim();
+  }
+  return full.replace(/\s+\d+$/, '').trim();
 };
 const pickFirst = (row: Record<string, any> | null | undefined, keys: string[]) => {
   const source = row || {};
@@ -123,8 +140,8 @@ function resolveMappedCaspioPrefill(
 ) {
   const source = sourceRecord || {};
   const sourceRaw = (((sourceRecord as any) || {}).caspioRaw || {}) as Record<string, unknown>;
-  const HARD_HOME_MAPPING: Record<string, string> = {
-    p2_home_street: 'Normal_Housing_Street',
+  const HARD_HOME_MAPPING: Record<string, string | string[]> = {
+    p2_home_street: ['Normal_Housing_Address', 'Normal_Housing_Street'],
     p2_home_city: 'Normal_Housing_City',
     p2_home_state: 'Normal_Housing_State',
     p2_home_zip: 'Normal_Housing_Zip',
@@ -156,9 +173,12 @@ function resolveMappedCaspioPrefill(
   };
   const getMapped = (alftField: string) => {
     const row = mappingRows?.[alftField] || {};
-    const forced = clean(HARD_HOME_MAPPING[alftField], 200);
+    const forced = HARD_HOME_MAPPING[alftField];
+    const forcedCandidates = Array.isArray(forced)
+      ? forced.map((f) => clean(f, 200)).filter(Boolean)
+      : [clean(forced, 200)].filter(Boolean);
     const candidates = [
-      forced,
+      ...forcedCandidates,
       clean(row?.primary, 200),
       ...((row?.fallbacks || []).map((f) => clean(f, 200))),
     ].filter(Boolean);
@@ -186,7 +206,11 @@ function resolveMappedCaspioPrefill(
     ispCurrentAddressState: getMapped('p2_current_state'),
     ispCurrentAddressZip: getMapped('p2_current_zip'),
     currentLocationType: getMapped('p2_current_type'),
+    currentLocationTypeOther: getMapped('p2_current_type_other'),
     assessmentSite: getMapped('p2_assessment_site'),
+    otherResponder: getMapped('p1_other_responder'),
+    otherResponderName: getMapped('p1_other_responder_name'),
+    otherResponderRelationship: getMapped('p1_other_responder_relationship'),
     homeAddressStreet: getMapped('p2_home_street'),
     homeAddressCity: getMapped('p2_home_city'),
     homeAddressState: getMapped('p2_home_state'),
@@ -318,7 +342,11 @@ export async function POST(req: NextRequest) {
         ? rawPrefillPurpose
         : 'review';
     const fallbackFromMember = {
-      memberName,
+      memberName: normalizeMemberName({
+        first: member?.memberFirstName,
+        last: member?.memberLastName,
+        full: memberName,
+      }),
       memberFirstName: clean(member?.memberFirstName, 80),
       memberLastName: clean(member?.memberLastName, 80),
       memberMrn,
@@ -329,6 +357,10 @@ export async function POST(req: NextRequest) {
       ispFacilityName: clean(member?.ispFacilityName, 240) || clean(member?.ispCurrentLocation, 240),
       ispCurrentLocation: clean(member?.ispCurrentLocation, 240) || clean(member?.ispFacilityName, 240),
       ispContactName: clean(member?.ispContactName, 180),
+      ispContactRelationship: clean(member?.ispContactRelationship, 180),
+      otherResponder: clean(member?.otherResponder, 10),
+      otherResponderName: clean(member?.otherResponderName, 180),
+      otherResponderRelationship: clean(member?.otherResponderRelationship, 180),
       ispContactPhone: clean(member?.ispContactPhone, 80) || clean(member?.memberPhone, 80),
       ispContactEmail: clean(member?.ispContactEmail, 200),
       ispContactConfirmDate: clean(member?.ispContactConfirmDate, 120),
@@ -337,6 +369,7 @@ export async function POST(req: NextRequest) {
       ispCurrentAddressState: clean(member?.ispCurrentAddressState, 50),
       ispCurrentAddressZip: clean(member?.ispCurrentAddressZip, 30),
       currentLocationType: '',
+      currentLocationTypeOther: '',
       assessmentSite: '',
       homeAddressStreet: '',
       homeAddressCity: '',
@@ -363,7 +396,7 @@ export async function POST(req: NextRequest) {
       const mappedFields = Object.values(mappingRows || {})
         .map((r: any) => clean(r?.primary, 200))
         .filter(Boolean);
-      const forcedHome = ['Normal_Housing_Street', 'Normal_Housing_City', 'Normal_Housing_State', 'Normal_Housing_Zip'];
+      const forcedHome = ['Normal_Housing_Address', 'Normal_Housing_Street', 'Normal_Housing_City', 'Normal_Housing_State', 'Normal_Housing_Zip'];
       liveMappedSource = await fetchCaspioMemberByClientId({
         memberId,
         credentials,
@@ -428,7 +461,11 @@ export async function POST(req: NextRequest) {
             ...caspioResolved,
           };
     const resolvedMemberName = clean(
-      resolved.memberName || `${resolved.memberFirstName || ''} ${resolved.memberLastName || ''}`.trim() || memberName,
+      normalizeMemberName({
+        first: resolved.memberFirstName,
+        last: resolved.memberLastName,
+        full: resolved.memberName || memberName,
+      }) || memberName,
       180
     );
     const resolvedMemberMrn = clean(resolved.memberMrn || memberMrn, 80);
@@ -449,8 +486,33 @@ export async function POST(req: NextRequest) {
         member?.ispContactName,
       180
     );
+    const ispContactRelationship = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_Relationship', 'Contact_Relationship']) ||
+        (resolved as any).otherResponderRelationship ||
+        (resolved as any).ispContactRelationship ||
+        member?.otherResponderRelationship ||
+        member?.ispContactRelationship,
+      180
+    );
+    const otherResponderName = clean(
+      (resolved as any).otherResponderName || member?.otherResponderName || ispContactName,
+      180
+    );
+    const otherResponderRelationship = clean(
+      (resolved as any).otherResponderRelationship ||
+        member?.otherResponderRelationship ||
+        ispContactRelationship,
+      180
+    );
+    const otherResponderRaw = clean(
+      (resolved as any).otherResponder || member?.otherResponder,
+      10
+    ).toLowerCase();
+    const otherResponder = otherResponderRaw === 'yes' || otherResponderRaw === 'no'
+      ? otherResponderRaw
+      : (otherResponderName || otherResponderRelationship ? 'yes' : 'no');
     const ispLocation = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_Location', 'ISP_Current_Location', 'RCFE_Name', 'Facility_Name']) ||
+      pickFirst(caspioSource as any, ['ISP_Location_Name', 'ISP_Contact_Location', 'ISP_Current_Location', 'RCFE_Name', 'Facility_Name']) ||
         (resolved as any).ispCurrentLocation ||
         member?.ispCurrentLocation ||
         (resolved as any).ispFacilityName ||
@@ -464,26 +526,32 @@ export async function POST(req: NextRequest) {
       120
     );
     const facilityName = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_Location', 'ISP_Current_Location', 'RCFE_Name', 'Facility_Name']) ||
+      pickFirst(caspioSource as any, ['ISP_Location_Name', 'ISP_Contact_Location', 'ISP_Current_Location', 'RCFE_Name', 'Facility_Name']) ||
         (resolved as any).ispFacilityName ||
         member?.ispFacilityName ||
         member?.ispCurrentLocation,
       240
     );
+    const currentLocationTypeOther = clean(
+      (resolved as any).currentLocationTypeOther ||
+        member?.currentLocationTypeOther ||
+        facilityType,
+      120
+    );
     const caspioStreet = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_Address', 'ISP_Current_Address', 'Member_Address', 'Address']),
+      pickFirst(caspioSource as any, ['ISP_Location_Address', 'ISP_Contact_Address', 'ISP_Current_Address', 'Member_Address', 'Address']),
       240
     );
     const caspioCity = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_City', 'ISP_Current_City', 'Member_City', 'City']),
+      pickFirst(caspioSource as any, ['ISP_Location_City', 'ISP_Contact_City', 'ISP_Current_City', 'Member_City', 'City']),
       120
     );
     const caspioState = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_State', 'ISP_Current_State', 'Member_State', 'State']),
+      pickFirst(caspioSource as any, ['ISP_Location_State', 'ISP_Contact_State', 'ISP_Current_State', 'Member_State', 'State']),
       50
     );
     const caspioZip = clean(
-      pickFirst(caspioSource as any, ['ISP_Contact_Zip', 'ISP_Current_Zip', 'Member_Zip', 'Zip']),
+      pickFirst(caspioSource as any, ['ISP_Location_Zip', 'ISP_Contact_Zip', 'ISP_Current_Zip', 'Member_Zip', 'Zip']),
       30
     );
     const caspioAddress = clean(
@@ -543,7 +611,7 @@ export async function POST(req: NextRequest) {
       memberFirstName: clean(resolved.memberFirstName, 80),
       memberLastName: clean(resolved.memberLastName, 80),
       memberMrn: resolvedMemberMrn,
-      alftPlanId: clean((resolved as any).alftPlanId || resolvedMemberMrn, 80),
+      alftPlanId: clean(resolvedMemberMrn || (resolved as any).alftPlanId, 80),
       birthDate: clean(resolved.birthDate, 80),
       memberSex: clean(resolved.memberSex, 80),
       memberPrimaryLanguage: clean(resolved.memberPrimaryLanguage, 120),
@@ -553,6 +621,7 @@ export async function POST(req: NextRequest) {
       ispCurrentAddressState: caspioState || clean(resolved.ispCurrentAddressState, 50) || 'CA',
       ispCurrentAddressZip: caspioZip || clean(resolved.ispCurrentAddressZip, 30),
       currentLocationType: clean((resolved as any).currentLocationType, 80),
+      currentLocationTypeOther: clean((resolved as any).currentLocationTypeOther, 120),
       assessmentSite: clean((resolved as any).assessmentSite, 80),
       homeAddressStreet: clean((resolved as any).homeAddressStreet, 240),
       homeAddressCity: clean((resolved as any).homeAddressCity, 120),
@@ -561,7 +630,9 @@ export async function POST(req: NextRequest) {
       ispFacilityName: clean(resolved.ispFacilityName, 240),
       ispCurrentLocation: ispLocation,
       currentLocationType: facilityType,
+      currentLocationTypeOther,
       ispContactName,
+      ispContactRelationship,
       ispContactPhone,
       ispContactEmail,
       ispContactConfirmDate,
@@ -572,6 +643,9 @@ export async function POST(req: NextRequest) {
           ? 'App CS Summary'
           : 'Caspio selected fields',
       prefillPurpose,
+      otherResponder,
+      otherResponderName,
+      otherResponderRelationship,
       prefillContext: {
         csSummaryApplicationId: csSummaryApplicationId || null,
         csSummaryFound: Boolean(csSummaryApplicationId),
@@ -697,6 +771,7 @@ export async function POST(req: NextRequest) {
           portalUrl: '/sw-portal/alft-upload',
           assignedBy: displayName,
           ispContactName,
+          ispContactRelationship,
           ispAddress,
           facilityName,
           facilityType,

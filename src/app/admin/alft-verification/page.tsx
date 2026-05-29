@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
@@ -23,6 +24,8 @@ type AssignmentRecord = {
   memberPhone?: string;
   memberPrimaryLanguage?: string;
   currentLocationType?: string;
+  currentLocationTypeOther?: string;
+  ispCurrentLocation?: string;
   assessmentSite?: string;
   ispCurrentAddressStreet?: string;
   ispCurrentAddressCity?: string;
@@ -33,6 +36,11 @@ type AssignmentRecord = {
   homeAddressState?: string;
   homeAddressZip?: string;
   ispFacilityName?: string;
+  ispContactName?: string;
+  ispContactRelationship?: string;
+  ispContactPhone?: string;
+  ispContactEmail?: string;
+  ispContactConfirmDate?: string;
   verificationSignoff?: {
     verified?: boolean | null;
     verifiedAt?: any;
@@ -43,6 +51,20 @@ type AssignmentRecord = {
 };
 
 const asText = (value: unknown) => String(value ?? '').trim();
+const toDmy = (value: unknown) => {
+  const raw = asText(value);
+  if (!raw) return '';
+  const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) return `${us[2].padStart(2, '0')}-${us[1].padStart(2, '0')}-${us[3]}`;
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) return `${iso[3].padStart(2, '0')}-${iso[2].padStart(2, '0')}-${iso[1]}`;
+  const dt = new Date(raw);
+  const time = dt.getTime();
+  if (!Number.isNaN(time)) {
+    return `${String(dt.getDate()).padStart(2, '0')}-${String(dt.getMonth() + 1).padStart(2, '0')}-${dt.getFullYear()}`;
+  }
+  return raw;
+};
 const toMs = (value: any): number => {
   if (!value) return 0;
   try {
@@ -73,13 +95,14 @@ export default function AlftVerificationPage() {
     ...(memberId ? { memberId } : {}),
   }).toString();
   const trackerUrl = safeReturnTo || `/admin/alft-tracker${workflowQuery ? `?${workflowQuery}` : ''}`;
-  const queueUrl = memberNameFromQuery
-    ? `/admin/alft-assignment?member=${encodeURIComponent(memberNameFromQuery)}`
-    : '/admin/alft-assignment';
 
   const [assignment, setAssignment] = useState<AssignmentRecord | null>(null);
   const [initialLoading, setInitialLoading] = useState(false);
   const [manualSyncing, setManualSyncing] = useState(false);
+  const [step2Completed, setStep2Completed] = useState(false);
+  const [verificationSaving, setVerificationSaving] = useState(false);
+  const [resettingTool, setResettingTool] = useState(false);
+  const [toolResetMode, setToolResetMode] = useState(false);
   const [resolved, setResolved] = useState<Record<string, string>>({});
   const [lastManualSyncAt, setLastManualSyncAt] = useState<number>(0);
 
@@ -132,9 +155,30 @@ export default function AlftVerificationPage() {
       if (firestore) {
         const actorEmail = asText(auth.currentUser?.email).toLowerCase();
         const actorName = asText(auth.currentUser?.displayName) || actorEmail || 'Admin';
+        const resolvedNow = (data?.resolved || {}) as Record<string, string>;
+        const syncedMrn = asText(resolvedNow.p1_mrn || resolvedNow.isp_mcp_cin);
+        const syncedPlanId = asText(resolvedNow.p1_plan_id || syncedMrn);
+        const syncedHomeStreet = asText(resolvedNow.p2_home_street);
+        const syncedHomeCity = asText(resolvedNow.p2_home_city);
+        const syncedHomeState = asText(resolvedNow.p2_home_state);
+        const syncedHomeZip = asText(resolvedNow.p2_home_zip);
         await setDoc(
           doc(firestore, 'alft_assignments', memberId),
           {
+            ...(syncedMrn ? { memberMrn: syncedMrn } : {}),
+            ...(syncedPlanId ? { alftPlanId: syncedPlanId } : {}),
+            ...(syncedHomeStreet ? { homeAddressStreet: syncedHomeStreet } : {}),
+            ...(syncedHomeCity ? { homeAddressCity: syncedHomeCity } : {}),
+            ...(syncedHomeState ? { homeAddressState: syncedHomeState } : {}),
+            ...(syncedHomeZip ? { homeAddressZip: syncedHomeZip } : {}),
+            // Each manual sync is a fresh pull, so force a new verification sign-off.
+            verificationSignoff: {
+              verified: false,
+              verifiedAt: null,
+              verifiedByUid: null,
+              verifiedByEmail: null,
+              verifiedByName: null,
+            },
             prefillVerification: {
               manualSyncAt: serverTimestamp(),
               manualSyncByUid: auth.currentUser?.uid || null,
@@ -148,6 +192,18 @@ export default function AlftVerificationPage() {
       }
       setResolved((data?.resolved || {}) as Record<string, string>);
       setLastManualSyncAt(Date.now());
+      setStep2Completed(true);
+      setToolResetMode(false);
+      setAssignment((prev) => ({
+        ...(prev || {}),
+        verificationSignoff: {
+          verified: false,
+          verifiedAt: null,
+          verifiedByUid: null,
+          verifiedByEmail: null,
+          verifiedByName: null,
+        },
+      }));
       toast({ title: 'Step 2 complete', description: 'Pre-fill fields refreshed from Caspio and saved to assignment record.' });
     } catch (e: any) {
       toast({
@@ -160,29 +216,163 @@ export default function AlftVerificationPage() {
     }
   };
 
-  const fields = useMemo(() => {
+  const resetToolState = async () => {
+    if (!auth?.currentUser || !firestore || !memberId) {
+      toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
+      return;
+    }
+    setResettingTool(true);
+    try {
+      await setDoc(
+        doc(firestore, 'alft_assignments', memberId),
+        {
+          verificationSignoff: {
+            verified: false,
+            verifiedAt: null,
+            verifiedByUid: null,
+            verifiedByEmail: null,
+            verifiedByName: null,
+          },
+          prefillVerification: {
+            manualSyncAt: null,
+            manualSyncByUid: null,
+            manualSyncByEmail: null,
+            manualSyncByName: null,
+          },
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setResolved({});
+      setLastManualSyncAt(0);
+      setStep2Completed(false);
+      setToolResetMode(true);
+      setAssignment((prev) => ({
+        ...(prev || {}),
+        verificationSignoff: {
+          verified: false,
+          verifiedAt: null,
+          verifiedByUid: null,
+          verifiedByEmail: null,
+          verifiedByName: null,
+        },
+      }));
+      toast({ title: 'Tool reset', description: 'Cleared pulled values, unchecked verification, and returned to Step 2.' });
+    } catch (e: any) {
+      toast({
+        title: 'Could not reset tool',
+        description: e?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setResettingTool(false);
+    }
+  };
+
+  const setVerifiedState = async (checked: boolean) => {
+    if (!auth?.currentUser || !firestore || !memberId) {
+      toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
+      return;
+    }
+    setVerificationSaving(true);
+    try {
+      const actorEmail = asText(auth.currentUser?.email).toLowerCase();
+      const actorName = asText(auth.currentUser?.displayName) || actorEmail || 'Admin';
+      await setDoc(
+        doc(firestore, 'alft_assignments', memberId),
+        {
+          verificationSignoff: {
+            verified: checked,
+            verifiedAt: checked ? serverTimestamp() : null,
+            verifiedByUid: checked ? auth.currentUser?.uid || null : null,
+            verifiedByEmail: checked ? actorEmail || null : null,
+            verifiedByName: checked ? actorName : null,
+          },
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setAssignment((prev) => ({
+        ...(prev || {}),
+        verificationSignoff: {
+          verified: checked,
+          verifiedAt: checked ? new Date() : null,
+          verifiedByUid: checked ? auth.currentUser?.uid || null : null,
+          verifiedByEmail: checked ? actorEmail || null : null,
+          verifiedByName: checked ? actorName : null,
+        },
+      }));
+      toast({
+        title: checked ? 'Verified saved' : 'Verification cleared',
+        description: checked ? 'Verification checkbox saved with staff attribution.' : 'Verification checkbox reset.',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Could not save verification',
+        description: e?.message || 'Try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setVerificationSaving(false);
+    }
+  };
+
+  const sections = useMemo(() => {
     const row = assignment || {};
-    const pick = (key: string, fallback?: unknown) => asText(resolved[key]) || asText(fallback);
+    const pick = (key: string, fallback?: unknown) =>
+      toolResetMode ? '' : asText(resolved[key]) || asText(fallback);
     return [
-      { label: 'Plan ID', value: pick('p1_plan_id', row.alftPlanId) },
-      { label: 'MRN Number', value: pick('p1_mrn', row.memberMrn || memberMrnFromQuery) },
-      { label: 'Member Name', value: pick('p1_member_name', row.memberName || memberNameFromQuery) },
-      { label: 'Purpose of assessment', value: asText(row.prefillPurpose) || 'review' },
-      { label: 'Current Location Street', value: pick('p2_current_street', row.ispCurrentAddressStreet) },
-      { label: 'Current Location City', value: pick('p2_current_city', row.ispCurrentAddressCity) },
-      { label: 'Current Location State', value: pick('p2_current_state', row.ispCurrentAddressState) },
-      { label: 'Current Location Zip', value: pick('p2_current_zip', row.ispCurrentAddressZip) },
-      { label: 'Current Location Type', value: pick('p2_current_type', row.currentLocationType) },
-      { label: 'Assessment Site', value: pick('p2_assessment_site', row.assessmentSite) },
-      { label: 'Home Address Street', value: pick('p2_home_street', row.homeAddressStreet) },
-      { label: 'Home Address City', value: pick('p2_home_city', row.homeAddressCity) },
-      { label: 'Home Address State', value: pick('p2_home_state', row.homeAddressState) },
-      { label: 'Home Address Zip', value: pick('p2_home_zip', row.homeAddressZip) },
-      { label: 'Facility Name', value: pick('p2_facility_name', row.ispFacilityName) },
-      { label: 'Primary Language', value: pick('p1_primary_language', row.memberPrimaryLanguage) },
-      { label: 'Phone Number', value: pick('p1_phone', row.memberPhone) },
+      {
+        title: 'Current Location',
+        fields: [
+          { label: 'Plan ID', value: toolResetMode ? '' : asText(resolved.p1_plan_id || resolved.p1_mrn || resolved.isp_mcp_cin) },
+          { label: 'MRN Number', value: toolResetMode ? '' : asText(resolved.p1_mrn || resolved.isp_mcp_cin) },
+          { label: 'Member Name', value: pick('p1_member_name', row.memberName || memberNameFromQuery) },
+          { label: 'Purpose of assessment', value: asText(row.prefillPurpose) || 'review' },
+          { label: 'Assessment Site', value: pick('p2_assessment_site', row.assessmentSite) },
+          { label: 'Primary Language', value: pick('p1_primary_language', row.memberPrimaryLanguage) },
+          { label: 'Phone Number', value: pick('p1_phone', row.memberPhone) },
+          { label: 'Current Location Street', value: pick('p2_current_street', row.ispCurrentAddressStreet) },
+          { label: 'Current Location City', value: pick('p2_current_city', row.ispCurrentAddressCity) },
+          { label: 'Current Location State', value: pick('p2_current_state', row.ispCurrentAddressState) },
+          { label: 'Current Location Zip', value: pick('p2_current_zip', row.ispCurrentAddressZip) },
+          { label: 'Current Location Type', value: pick('p2_current_type', row.currentLocationType) },
+          { label: 'Current Location Type Other Detail', value: pick('p2_current_type_other', row.currentLocationTypeOther || row.currentLocationType) },
+          { label: 'ISP Location Type', value: pick('isp_location_type', '') },
+          { label: 'ISP Location Name', value: pick('isp_location_name', '') },
+          { label: 'Current Location (ISP)', value: asText(row.ispCurrentLocation) || asText(row.ispFacilityName) },
+          { label: 'Facility Name', value: pick('p2_facility_name', row.ispFacilityName) },
+        ],
+      },
+      {
+        title: 'ISP Contact Information',
+        fields: [
+      { label: 'Is someone besides client answering?', value: pick('p1_other_responder', row.ispContactName ? 'yes' : '') },
+      { label: 'ISP Contact First', value: pick('isp_contact_first', '') },
+      { label: 'ISP Contact Last', value: pick('isp_contact_last', '') },
+      { label: 'ISP Contact Street', value: pick('isp_contact_street', row.ispCurrentAddressStreet) },
+      { label: 'ISP Contact City', value: pick('isp_contact_city', row.ispCurrentAddressCity) },
+      { label: 'ISP Contact State', value: pick('isp_contact_state', row.ispCurrentAddressState) },
+      { label: 'ISP Contact Zip', value: pick('isp_contact_zip', row.ispCurrentAddressZip) },
+      { label: 'ISP Location Type', value: pick('isp_location_type', '') },
+      { label: 'If yes, name', value: pick('p1_other_responder_name', row.ispContactName) },
+      { label: 'If yes, relationship', value: pick('p1_other_responder_relationship', row.ispContactRelationship) },
+      { label: 'ISP Contact Phone', value: pick('isp_contact_phone', row.ispContactPhone) },
+      { label: 'ISP Contact Email', value: pick('isp_contact_email', row.ispContactEmail) },
+      { label: 'ISP Contact Last Verified', value: toDmy(pick('isp_contact_confirm_date', row.ispContactConfirmDate)) },
+        ],
+      },
+      {
+        title: 'Home Address (MCP Address for Member)',
+        fields: [
+          { label: 'Home Address Street', value: pick('p2_home_street', row.homeAddressStreet) },
+          { label: 'Home Address City', value: pick('p2_home_city', row.homeAddressCity) },
+          { label: 'Home Address State', value: pick('p2_home_state', row.homeAddressState) },
+          { label: 'Home Address Zip', value: pick('p2_home_zip', row.homeAddressZip) },
+        ],
+      },
     ];
-  }, [assignment, memberMrnFromQuery, memberNameFromQuery, resolved]);
+  }, [assignment, memberMrnFromQuery, memberNameFromQuery, resolved, toolResetMode]);
 
   const verified = Boolean(assignment?.verificationSignoff?.verified);
   const verifiedBy =
@@ -223,19 +413,33 @@ export default function AlftVerificationPage() {
               </CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" asChild>
-                <Link href={queueUrl}>
-                  Back to Assignment Queue
-                </Link>
-              </Button>
-              <Button variant="outline" asChild>
-                <Link href={trackerUrl}>
-                  ALFT Tracker
-                </Link>
-              </Button>
-              <Button className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => void runManualSync()} disabled={!memberId || manualSyncing}>
+              <Button
+                variant="outline"
+                className="border-emerald-500 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                onClick={() => void runManualSync()}
+                disabled={!memberId || manualSyncing || resettingTool}
+              >
                 {manualSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                 Step 2: Manual Sync (Pull Caspio Prefill)
+              </Button>
+              <Button
+                variant="outline"
+                className="border-emerald-500 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 disabled:border-slate-300 disabled:text-slate-500 disabled:hover:bg-transparent"
+                asChild
+                disabled={!step2Completed || !verified || manualSyncing || verificationSaving || resettingTool}
+              >
+                <Link href={trackerUrl}>
+                  Step 3: Tool Complete Return to Workflow
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void resetToolState()}
+                disabled={manualSyncing || verificationSaving || resettingTool}
+              >
+                {resettingTool ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Reset Tool
               </Button>
             </div>
           </div>
@@ -264,6 +468,27 @@ export default function AlftVerificationPage() {
               Verification checkbox is not checked yet in workflow.
             </div>
           )}
+          <div className="rounded-md border p-3">
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="prefill-verified"
+                checked={verified}
+                disabled={!step2Completed || manualSyncing || verificationSaving || resettingTool}
+                onCheckedChange={(next) => void setVerifiedState(next === true)}
+              />
+              <label htmlFor="prefill-verified" className="text-sm font-medium leading-none">
+                Verified
+              </label>
+              {verificationSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">
+              {!step2Completed
+                ? 'Run Step 2 first to enable verification.'
+                : verifiedBy
+                  ? `Verified by ${verifiedBy}${verifiedAtLabel ? ` on ${verifiedAtLabel}` : ''}.`
+                  : 'Not yet verified by staff.'}
+            </div>
+          </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline">{Object.keys(resolved).length > 0 ? 'Live Caspio values loaded' : 'Showing saved assignment values'}</Badge>
@@ -276,14 +501,19 @@ export default function AlftVerificationPage() {
             ) : null}
           </div>
 
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            {fields.map((f) => (
-              <div key={f.label} className="rounded border bg-muted/20 p-2">
-                <div className="text-[11px] text-muted-foreground">{f.label}</div>
-                <div className="text-sm">{f.value || '—'}</div>
+          {sections.map((section) => (
+            <div key={section.title} className="space-y-2">
+              <div className="text-sm font-semibold text-slate-800">{section.title}</div>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {section.fields.map((f) => (
+                  <div key={`${section.title}-${f.label}`} className="rounded border bg-muted/20 p-2">
+                    <div className="text-[11px] text-muted-foreground">{f.label}</div>
+                    <div className="text-sm">{f.value || '—'}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
     </div>

@@ -25,6 +25,29 @@ const asString = (value: unknown) => clean(value, 3000);
 
 const asArray = (value: unknown) => (Array.isArray(value) ? value.map((v) => clean(v, 300)).filter(Boolean) : []);
 
+const toMmDdYyyy = (value: unknown) => {
+  const raw = clean(value, 80);
+  if (!raw) return '';
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) return `${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}-${iso[1]}`;
+  const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) return `${us[1].padStart(2, '0')}-${us[2].padStart(2, '0')}-${us[3]}`;
+  return raw;
+};
+
+const normalizeMemberName = (memberName: unknown, firstName: unknown, lastName: unknown) => {
+  const first = clean(firstName, 120).replace(/\s+\d+$/, '').trim();
+  const last = clean(lastName, 120).replace(/\s+\d+$/, '').trim();
+  if (first || last) return `${first} ${last}`.trim();
+  const full = clean(memberName, 220);
+  if (!full) return '';
+  if (full.includes(',')) {
+    const [ln, fn] = full.split(',', 2).map((part) => clean(part, 120).replace(/\s+\d+$/, '').trim());
+    return `${fn || ''} ${ln || ''}`.trim();
+  }
+  return full.replace(/\s+\d+$/, '').trim();
+};
+
 const buildKeyCandidates = (key: string) => {
   const raw = clean(key, 200);
   const base = baseKey(raw);
@@ -266,6 +289,14 @@ export async function POST(req: NextRequest) {
       discoveredTemplatePath = requestedTemplatePath || (!templateUrl ? await resolveTemplatePathFromLocalWorkspace() : '');
     }
     const answers = (body?.answers && typeof body.answers === 'object' ? body.answers : {}) as Record<string, string | string[]>;
+    const normalizedAnswers: Record<string, string | string[]> = {
+      ...answers,
+      p1_assessment_date: toMmDdYyyy(answers.p1_assessment_date),
+      p1_dob: toMmDdYyyy(answers.p1_dob),
+      p1_member_name: normalizeMemberName(answers.p1_member_name, answers.p1_first_name, answers.p1_last_name),
+    };
+    const normalizedMrn = clean(normalizedAnswers.p1_mrn, 80);
+    if (normalizedMrn) normalizedAnswers.p1_plan_id = normalizedMrn;
 
     if (!discoveredTemplatePath && !templateUrl) {
       return NextResponse.json(
@@ -310,7 +341,7 @@ export async function POST(req: NextRequest) {
 
     const originalPdfBytes = Buffer.from(templateBuffer);
     if (Boolean(body?.forceOverlay)) {
-      const forced = await renderOverlayPdf(templateBuffer, answers);
+      const forced = await renderOverlayPdf(templateBuffer, normalizedAnswers);
       return new NextResponse(forced, {
         status: 200,
         headers: {
@@ -386,7 +417,7 @@ export async function POST(req: NextRequest) {
     const explicitlyHandledKeys = new Set<string>();
 
     Object.entries(explicitAlftFieldMap).forEach(([key, fieldName]) => {
-      const rawValue = answers[key];
+      const rawValue = normalizedAnswers[key];
       const stringValue = asString(rawValue);
       if (!stringValue) return;
       const field = fields.find((f) => {
@@ -423,7 +454,7 @@ export async function POST(req: NextRequest) {
       },
     };
     Object.entries(explicitAlftCheckboxMap).forEach(([key, optionMap]) => {
-      const raw = clean(answers[key], 80).toLowerCase();
+      const raw = clean(normalizedAnswers[key], 80).toLowerCase();
       if (!raw) return;
       const selectedFieldName = optionMap[raw];
       if (!selectedFieldName) return;
@@ -446,7 +477,7 @@ export async function POST(req: NextRequest) {
       explicitlyHandledKeys.add(key);
     });
 
-    Object.entries(answers).forEach(([key, rawValue]) => {
+    Object.entries(normalizedAnswers).forEach(([key, rawValue]) => {
       if (explicitlyHandledKeys.has(key)) return;
       const candidates = buildKeyCandidates(key);
       if (!candidates.length) return;
@@ -509,7 +540,7 @@ export async function POST(req: NextRequest) {
         out = await pdfDoc.save({ useObjectStreams: false });
       } catch {
         try {
-          const overlaid = await renderOverlayPdf(templateBuffer, answers);
+          const overlaid = await renderOverlayPdf(templateBuffer, normalizedAnswers);
           return new NextResponse(overlaid, {
             status: 200,
             headers: {

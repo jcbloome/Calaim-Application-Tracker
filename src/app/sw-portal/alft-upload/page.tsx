@@ -52,6 +52,7 @@ type KaiserMember = {
   ispCurrentAddressState?: string;
   ispCurrentAddressZip?: string;
   currentLocationType?: string;
+  currentLocationTypeOther?: string;
   assessmentSite?: string;
   homeAddressStreet?: string;
   homeAddressCity?: string;
@@ -61,6 +62,8 @@ type KaiserMember = {
   kaiserStatus?: string;
   alftAssigned?: string;
   ispCurrentLocation?: string;
+  ispContactName?: string;
+  ispContactRelationship?: string;
   ispContactPhone?: string;
   ispContactEmail?: string;
   ispContactConfirmDate?: string;
@@ -137,27 +140,34 @@ const todayLocalKey = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const toYmdOrRaw = (value: string | undefined) => {
+const toMmDdYyyyOrRaw = (value: string | undefined) => {
   const raw = String(value || '').trim();
   if (!raw) return '';
-  const usFmt = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (usFmt) {
-    return `${usFmt[3]}-${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}`;
-  }
   const isoLike = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (isoLike) {
-    return `${isoLike[1]}-${isoLike[2].padStart(2, '0')}-${isoLike[3].padStart(2, '0')}`;
+    return `${isoLike[2].padStart(2, '0')}-${isoLike[3].padStart(2, '0')}-${isoLike[1]}`;
+  }
+  const usFmt = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (usFmt) {
+    return `${usFmt[1].padStart(2, '0')}-${usFmt[2].padStart(2, '0')}-${usFmt[3]}`;
   }
   return raw;
 };
 
+const stripTrailingNumericId = (value: string) => String(value || '').replace(/\s+\d+$/, '').trim();
+const normalizeStateForDisplay = (value: string) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return /^[A-Za-z]{2}$/.test(raw) ? raw.toUpperCase() : raw;
+};
+
 const splitName = (member: KaiserMember) => {
-  const first = String(member.memberFirstName || '').trim();
-  const last = String(member.memberLastName || '').trim();
+  const first = stripTrailingNumericId(String(member.memberFirstName || '').trim());
+  const last = stripTrailingNumericId(String(member.memberLastName || '').trim());
   if (first || last) return { first, last };
-  const full = String(member.memberName || '').trim();
+  const full = stripTrailingNumericId(String(member.memberName || '').trim());
   if (full.includes(',')) {
-    const [ln, fn] = full.split(',', 2).map((s) => s.trim());
+    const [ln, fn] = full.split(',', 2).map((s) => stripTrailingNumericId(s.trim()));
     return { first: fn || '', last: ln || '' };
   }
   const parts = full.split(/\s+/).filter(Boolean);
@@ -181,24 +191,28 @@ function preFillFromMember(
   const next = { ...base };
   const parsedName = splitName(member);
   const fullName =
-    member.memberName ||
-    [parsedName.last, parsedName.first].filter(Boolean).join(', ') ||
+    [parsedName.first, parsedName.last].filter(Boolean).join(' ') ||
+    stripTrailingNumericId(String(member.memberName || '').trim()) ||
     `${parsedName.first} ${parsedName.last}`.trim();
 
   next.p1_member_name = fullName;
   next.p1_assessor_name = String(member.assignedSwName || '').trim() || swName;
-  next.p1_assessment_date = todayLocalKey();
   next.p1_agency = AGENCY_NAME;
   if (parsedName.first) next.p1_first_name = parsedName.first;
   if (parsedName.last) next.p1_last_name = parsedName.last;
   if (member.memberMrn) next.p1_mrn = member.memberMrn;
-  if (member.alftPlanId || member.memberMrn) next.p1_plan_id = String(member.alftPlanId || member.memberMrn || '').trim();
+  if (member.memberMrn || member.alftPlanId) next.p1_plan_id = String(member.memberMrn || member.alftPlanId || '').trim();
   const purpose = String(member.prefillPurpose || '').trim();
   if (purpose === 'initial' || purpose === 'change_condition' || purpose === 'review') {
     next.p1_purpose = purpose;
   }
-  if (member.birthDate) next.p1_dob = toYmdOrRaw(member.birthDate);
-  if (member.ispContactConfirmDate) next.p1_referral_date = toYmdOrRaw(member.ispContactConfirmDate);
+  if (member.birthDate) next.p1_dob = toMmDdYyyyOrRaw(member.birthDate);
+  if (member.ispContactConfirmDate) next.p1_referral_date = toMmDdYyyyOrRaw(member.ispContactConfirmDate);
+  const otherResponderName = String(member.ispContactName || '').trim();
+  const otherResponderRelationship = String(member.ispContactRelationship || '').trim();
+  if (otherResponderName || otherResponderRelationship) next.p1_other_responder = 'yes';
+  if (otherResponderName) next.p1_other_responder_name = otherResponderName;
+  if (otherResponderRelationship) next.p1_other_responder_relationship = otherResponderRelationship;
 
   const primaryPhone = String(member.ispContactPhone || member.memberPhone || '').trim();
   if (primaryPhone) next.p1_phone = primaryPhone;
@@ -208,6 +222,9 @@ function preFillFromMember(
   const facilityName = String(member.ispFacilityName || member.ispCurrentLocation || '').trim();
   if (facilityName) next.p2_facility_name = facilityName;
   if (member.currentLocationType) next.p2_current_type = member.currentLocationType;
+  if (member.currentLocationTypeOther || member.currentLocationType) {
+    next.p2_current_type_other = String(member.currentLocationTypeOther || member.currentLocationType || '').trim();
+  }
   if (member.assessmentSite) next.p2_assessment_site = member.assessmentSite;
 
   if (member.ispCurrentAddressStreet) next.p2_current_street = member.ispCurrentAddressStreet;
@@ -216,10 +233,48 @@ function preFillFromMember(
   if (member.ispCurrentAddressZip) next.p2_current_zip = member.ispCurrentAddressZip;
   if (member.homeAddressStreet) next.p2_home_street = member.homeAddressStreet;
   if (member.homeAddressCity) next.p2_home_city = member.homeAddressCity;
-  next.p2_home_state = String(member.homeAddressState || '').trim() || 'CA';
+  next.p2_home_state = normalizeStateForDisplay(String(member.homeAddressState || '').trim()) || 'CA';
   if (member.homeAddressZip) next.p2_home_zip = member.homeAddressZip;
 
   return next;
+}
+
+function normalizeAssessmentHeaderAnswers(input: Record<string, AnswerValue>): Record<string, AnswerValue> {
+  const next = { ...input };
+  const first = String(next.p1_first_name || '').replace(/\s+\d+$/, '').trim();
+  const last = String(next.p1_last_name || '').replace(/\s+\d+$/, '').trim();
+  const full = String(next.p1_member_name || '').trim();
+  if (first || last) next.p1_member_name = `${first} ${last}`.trim();
+  else if (full) {
+    if (full.includes(',')) {
+      const [ln, fn] = full.split(',', 2).map((part) => String(part || '').replace(/\s+\d+$/, '').trim());
+      next.p1_member_name = `${fn || ''} ${ln || ''}`.trim();
+    } else {
+      next.p1_member_name = full.replace(/\s+\d+$/, '').trim();
+    }
+  }
+  const rawAssessmentDate = String(next.p1_assessment_date || '').trim();
+  const iso = rawAssessmentDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    next.p1_assessment_date = `${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}-${iso[1]}`;
+  }
+  next.p1_dob = toMmDdYyyyOrRaw(String(next.p1_dob || ''));
+  return next;
+}
+
+function applyLatestCriticalPrefill(input: Record<string, AnswerValue>, member: KaiserMember): Record<string, AnswerValue> {
+  const next = normalizeAssessmentHeaderAnswers(input);
+  const mrn = String(member.memberMrn || '').trim();
+  if (mrn) {
+    next.p1_mrn = mrn;
+    next.p1_plan_id = mrn;
+  }
+  if (member.birthDate) next.p1_dob = toMmDdYyyyOrRaw(member.birthDate);
+  const parsedName = splitName(member);
+  if (parsedName.first) next.p1_first_name = parsedName.first;
+  if (parsedName.last) next.p1_last_name = parsedName.last;
+  next.p1_member_name = [parsedName.first, parsedName.last].filter(Boolean).join(' ').trim() || String(next.p1_member_name || '');
+  return normalizeAssessmentHeaderAnswers(next);
 }
 
 function getRenderedQuestionsForPage(layoutNumber: number, baseQuestions: Question[]): Question[] {
@@ -383,6 +438,7 @@ export default function SwKaiserAlftPage() {
             ispCurrentAddressState: String(data.ispCurrentAddressState || '').trim(),
             ispCurrentAddressZip: String(data.ispCurrentAddressZip || '').trim(),
             currentLocationType: String(data.currentLocationType || '').trim(),
+            currentLocationTypeOther: String(data.currentLocationTypeOther || '').trim(),
             assessmentSite: String(data.assessmentSite || '').trim(),
             homeAddressStreet: String(data.homeAddressStreet || '').trim(),
             homeAddressCity: String(data.homeAddressCity || '').trim(),
@@ -390,6 +446,8 @@ export default function SwKaiserAlftPage() {
             homeAddressZip: String(data.homeAddressZip || '').trim(),
             ispFacilityName: String(data.ispFacilityName || '').trim(),
             ispCurrentLocation: String(data.ispCurrentLocation || '').trim(),
+            ispContactName: String(data.ispContactName || '').trim(),
+            ispContactRelationship: String(data.ispContactRelationship || '').trim(),
             ispContactPhone: String(data.ispContactPhone || '').trim(),
             ispContactEmail: String(data.ispContactEmail || '').trim(),
             ispContactConfirmDate: String(data.ispContactConfirmDate || '').trim(),
@@ -436,11 +494,11 @@ export default function SwKaiserAlftPage() {
     const base = buildDefaultAnswers();
     const draft = loadDraftLocally(m.id);
     if (draft) {
-      setAnswers(draft);
+      setAnswers(applyLatestCriticalPrefill(draft, m));
       setDraftSavedAt(localStorage.getItem(DRAFT_KEY(m.id)) ? JSON.parse(localStorage.getItem(DRAFT_KEY(m.id))!).savedAt : null);
       toast({ title: 'Draft restored', description: 'Your saved draft has been loaded.' });
     } else {
-      setAnswers(preFillFromMember(base, m, swName));
+      setAnswers(applyLatestCriticalPrefill(preFillFromMember(base, m, swName), m));
       setDraftSavedAt(null);
     }
   }, [swName, toast]);

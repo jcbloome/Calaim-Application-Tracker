@@ -90,6 +90,17 @@ function getRenderedQuestionsForPage(layoutNumber: number, baseQuestions: Questi
   return rendered;
 }
 
+const normalizeDisplayMemberName = (raw: string) => {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+  if (value.includes(',')) {
+    const [ln, fn] = value.split(',', 2).map((part) => String(part || '').replace(/\s+\d+$/, '').trim());
+    const combined = `${fn || ''} ${ln || ''}`.trim();
+    return combined || value.replace(/\s+\d+$/, '').trim();
+  }
+  return value.replace(/\s+\d+$/, '').trim();
+};
+
 export function SwStyleAlftEditor({
   answers,
   onChange,
@@ -124,7 +135,7 @@ export function SwStyleAlftEditor({
                 <div className="text-center text-[12px] font-semibold tracking-wide">ALF TRANSITION ASSESSMENT</div>
               </div>
               <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-700">
-                <span>{memberName || 'Member'} {memberMrn ? `• MRN: ${memberMrn}` : ''}</span>
+                <span>{normalizeDisplayMemberName(memberName || '') || 'Member'} {memberMrn ? `• MRN: ${memberMrn}` : ''}</span>
                 <span>Page {layout.number} of {PAGE_LAYOUT.length}</span>
               </div>
               <div className="mt-1 text-[11px] font-semibold uppercase tracking-wide">{layout.title}</div>

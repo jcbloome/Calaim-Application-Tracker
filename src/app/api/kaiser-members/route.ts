@@ -119,7 +119,7 @@ const toDraftKaiserMember = (docId: string, app: Record<string, unknown>) => {
     memberLastName: memberLastName || 'Member',
     Senior_Last_First_ID: `${memberLastName || 'Unknown'}, ${memberFirstName || 'Member'}`,
     memberCounty,
-    memberMrn: String(app?.memberMrn || app?.MCP_CIN || app?.Member_MRN || '').trim(),
+    memberMrn: String(app?.MCP_CIN || app?.memberMrn || app?.Member_MRN || '').trim(),
     Birth_Date: String(app?.memberDob || app?.Birth_Date || '').trim(),
     birthDate: String(app?.memberDob || app?.Birth_Date || '').trim(),
     memberPhone,
@@ -269,7 +269,7 @@ export async function GET(request: NextRequest) {
           member.Senior_Last_First_Id ||
           `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
         memberCounty: member.Member_County || member.memberCounty || 'Unknown',
-        memberMrn: member.MCP_CIN || member.MediCal_Number || member.memberMrn || member.Member_MRN || '',
+        memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
         Birth_Date: member.Birth_Date || '',
         birthDate: member.Birth_Date || '',
         memberPhone: member.Member_Phone || member.memberPhone || '',
@@ -637,8 +637,8 @@ export async function GET(request: NextRequest) {
       memberLastName: member.Senior_Last || 'Member',
       Senior_Last_First_ID: member.Senior_Last_First_ID || `${member.Senior_Last || 'Unknown'}, ${member.Senior_First || 'Member'}`,
       memberCounty: member.Member_County || member.County || 'Unknown',
-      // Prefer MCP_CIN (CalAIM_tbl_Members), fallback to legacy fields
-      memberMrn: member.MCP_CIN || member.MediCal_Number || member.memberMrn || member.Member_MRN || '',
+      // Prefer MCP_CIN for Kaiser ALFT, fallback to legacy fields.
+      memberMrn: member.MCP_CIN || member.Member_MRN || member.memberMrn || member.MediCal_Number || '',
       Birth_Date: member.Birth_Date || '',
       birthDate: member.Birth_Date || '',
       memberPhone: member.memberPhone || member.Member_Phone || '',
