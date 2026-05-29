@@ -20,6 +20,12 @@ const {
 } = introEmailSenderUtils as any;
 
 type IntroEmailMode = 'preview' | 'send';
+type IntroEmailHistoryItem = {
+  sentAtIso: string;
+  to: string;
+  sentByName?: string | null;
+  sentByEmail?: string | null;
+};
 
 function parseEmailList(value: unknown): string[] {
   const raw = String(value || '').trim();
@@ -535,17 +541,24 @@ export async function POST(request: NextRequest) {
     const introSendHistory = Array.isArray(effectiveAppData.introEmailSendHistory)
       ? (effectiveAppData.introEmailSendHistory as Array<Record<string, unknown>>)
       : [];
-    const latestSendHistoryEntry = introSendHistory
+    const normalizedSendHistory = introSendHistory
       .map((entry) => {
         const iso = String(entry?.sentAtIso || '').trim();
         const ms = iso ? new Date(iso).getTime() : 0;
-        return { entry, iso, ms };
+        return {
+          sentAtIso: iso,
+          ms,
+          to: String(entry?.to || '').trim(),
+          sentByName: String(entry?.sentByName || '').trim() || null,
+          sentByEmail: String(entry?.sentByEmail || '').trim() || null,
+        } as IntroEmailHistoryItem & { ms: number };
       })
-      .filter((item) => Boolean(item.iso) && Number.isFinite(item.ms) && item.ms > 0)
-      .sort((a, b) => b.ms - a.ms)[0];
-    const lastSentAtIso = String(latestSendHistoryEntry?.iso || '').trim();
+      .filter((item) => Boolean(item.sentAtIso) && Number.isFinite(item.ms) && item.ms > 0)
+      .sort((a, b) => b.ms - a.ms);
+    const latestSendHistoryEntry = normalizedSendHistory[0];
+    const lastSentAtIso = String(latestSendHistoryEntry?.sentAtIso || '').trim();
     const lastSentTo = String(
-      effectiveAppData.introEmailLastSentTo || latestSendHistoryEntry?.entry?.to || ''
+      effectiveAppData.introEmailLastSentTo || latestSendHistoryEntry?.to || ''
     ).trim();
     const hasPriorIntroEmail = Boolean(
       effectiveAppData.introEmailLastSentAt ||
@@ -593,6 +606,12 @@ export async function POST(request: NextRequest) {
           lastSentAtIso: lastSentAtIso || null,
           lastSentTo: lastSentTo || null,
         },
+        sendHistory: normalizedSendHistory.map((item) => ({
+          sentAtIso: item.sentAtIso,
+          to: item.to,
+          sentByName: item.sentByName || null,
+          sentByEmail: item.sentByEmail || null,
+        })),
         sender: {
           name: senderName || null,
           email: senderEmail || null,

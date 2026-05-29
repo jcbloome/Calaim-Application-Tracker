@@ -68,7 +68,14 @@ function WaiversFormComponent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const applicationId = searchParams.get('applicationId');
-    const appUserId = searchParams.get('userId'); // For admins
+    const appUserIdRaw = searchParams.get('userId'); // For admins
+    const appUserId = (() => {
+      const normalized = String(appUserIdRaw || '').trim();
+      if (!normalized) return '';
+      const lowered = normalized.toLowerCase();
+      if (lowered === 'undefined' || lowered === 'null') return '';
+      return normalized;
+    })();
     const firestore = useFirestore();
 
     const [signerType, setSignerType] = useState<'member' | 'representative' | null>(null);
@@ -84,16 +91,51 @@ function WaiversFormComponent() {
     const [ackRoomAndBoard, setAckRoomAndBoard] = useState(false);
     const [focChoice, setFocChoice] = useState<'accept' | 'decline' | ''>('');
 
-    const applicationDocRef = useMemoFirebase(() => {
-        if (appUserId && firestore && applicationId) {
+    const primaryApplicationDocRef = useMemoFirebase(() => {
+        if (!firestore || !applicationId) return null;
+        if (appUserId) {
             return doc(firestore, `users/${appUserId}/applications`, applicationId);
         }
-        return null;
+        return doc(firestore, 'applications', applicationId);
+    }, [appUserId, firestore, applicationId]);
+    const fallbackApplicationDocRef = useMemoFirebase(() => {
+        if (!firestore || !applicationId || !appUserId) return null;
+        return doc(firestore, 'applications', applicationId);
     }, [appUserId, firestore, applicationId]);
 
-    const { data: application, isLoading: isLoadingApplication } = useDoc<Application>(applicationDocRef);
+    const { data: primaryApplication, isLoading: isLoadingPrimaryApplication } = useDoc<Application>(primaryApplicationDocRef);
+    const { data: fallbackApplication, isLoading: isLoadingFallbackApplication } = useDoc<Application>(fallbackApplicationDocRef);
+    const application = (primaryApplication || fallbackApplication) as Application | undefined;
+    const isLoadingApplication = isLoadingPrimaryApplication || isLoadingFallbackApplication;
     const isReadOnly = application?.status === 'Completed & Submitted' || application?.status === 'Approved';
-    const backLink = `/admin/applications/${applicationId}?userId=${appUserId}`;
+    const backLink = appUserId
+      ? `/admin/applications/${applicationId}?userId=${appUserId}`
+      : `/admin/applications/${applicationId}`;
+    const memberNameDisplay = [
+      String(
+        (application as any)?.memberFirstName ||
+          (application as any)?.member_first_name ||
+          (application as any)?.Senior_First ||
+          ''
+      ).trim(),
+      String(
+        (application as any)?.memberLastName ||
+          (application as any)?.member_last_name ||
+          (application as any)?.Senior_Last ||
+          ''
+      ).trim(),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    const memberMrnDisplay = String(
+      (application as any)?.memberMrn ||
+        (application as any)?.MCP_CIN ||
+        (application as any)?.Member_MRN ||
+        (application as any)?.medicalRecordNumber ||
+        (application as any)?.mrn ||
+        ''
+    ).trim();
 
     useEffect(() => {
         if (application) {
@@ -196,18 +238,18 @@ function WaiversFormComponent() {
             <Card>
                 <CardHeader>
                     <CardTitle className="text-2xl">Waivers & Authorizations</CardTitle>
-                    <CardDescription>Viewing authorizations for {application?.memberFirstName} {application?.memberLastName}.</CardDescription>
+                    <CardDescription>Viewing authorizations for {memberNameDisplay || 'member'}.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="space-y-2 p-4 border rounded-lg bg-muted/30">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                              <div>
                                 <h3 className="text-sm font-medium text-muted-foreground">Member Name</h3>
-                                <p className="font-semibold">{application?.memberFirstName} {application?.memberLastName}</p>
+                                <p className="font-semibold">{memberNameDisplay || 'Not available'}</p>
                             </div>
                             <div>
                                 <h3 className="text-sm font-medium text-muted-foreground">Medical Record Number</h3>
-                                <p className="font-semibold font-mono text-sm">{application?.memberMrn}</p>
+                                <p className="font-semibold font-mono text-sm">{memberMrnDisplay || 'Not available'}</p>
                             </div>
                         </div>
                     </div>

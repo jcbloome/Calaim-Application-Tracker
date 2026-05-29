@@ -31,6 +31,12 @@ type PreviewResponse = {
     lastSentAtIso?: string | null;
     lastSentTo?: string | null;
   };
+  sendHistory?: Array<{
+    sentAtIso?: string | null;
+    to?: string | null;
+    sentByName?: string | null;
+    sentByEmail?: string | null;
+  }>;
   sender?: {
     from?: string;
     warning?: string;
@@ -62,6 +68,9 @@ export default function EmailPrimaryContactPage() {
   const [senderUsesFallbackFrom, setSenderUsesFallbackFrom] = useState(false);
   const [lastSentAtIso, setLastSentAtIso] = useState('');
   const [lastSentTo, setLastSentTo] = useState('');
+  const [sendHistory, setSendHistory] = useState<
+    Array<{ sentAtIso: string; to: string; sentByName: string; sentByEmail: string }>
+  >([]);
   const [missingDocuments, setMissingDocuments] = useState<string[]>([]);
   const [portalLinks, setPortalLinks] = useState<{ loginUrl: string; signupUrl: string; inviteUrl: string }>({
     loginUrl: '',
@@ -188,6 +197,16 @@ export default function EmailPrimaryContactPage() {
       setSenderUsesFallbackFrom(Boolean(data?.sender?.usesFallbackFrom));
       setLastSentAtIso(String(data?.acknowledgement?.lastSentAtIso || '').trim());
       setLastSentTo(String(data?.acknowledgement?.lastSentTo || '').trim());
+      setSendHistory(
+        (Array.isArray(data?.sendHistory) ? data.sendHistory : [])
+          .map((item) => ({
+            sentAtIso: String(item?.sentAtIso || '').trim(),
+            to: String(item?.to || '').trim(),
+            sentByName: String(item?.sentByName || '').trim(),
+            sentByEmail: String(item?.sentByEmail || '').trim(),
+          }))
+          .filter((item) => Boolean(item.sentAtIso))
+      );
       setMissingDocuments(Array.isArray(data?.missingDocuments) ? data.missingDocuments.filter(Boolean) : []);
       setPortalLinks({
         loginUrl: String(data?.portalLinks?.loginUrl || '').trim(),
@@ -249,6 +268,7 @@ export default function EmailPrimaryContactPage() {
       }
       setLastSentAtIso(String(data?.sentAtIso || new Date().toISOString()).trim());
       setLastSentTo(String(data?.sentTo || to || '').trim());
+      await loadPreview();
       toast({
         title: 'Email sent',
         description: `Primary contact email sent to ${String(to || '').trim()}.`,
@@ -314,6 +334,32 @@ export default function EmailPrimaryContactPage() {
                 .
               </AlertDescription>
             </Alert>
+          ) : null}
+          {sendHistory.length > 0 ? (
+            <div className="rounded-md border p-3">
+              <div className="text-sm font-semibold">Email send history</div>
+              <div className="mt-2 space-y-1.5 text-xs">
+                {sendHistory.map((item) => {
+                  const sentAt = new Date(item.sentAtIso);
+                  const sentAtLabel = Number.isNaN(sentAt.getTime()) ? item.sentAtIso : sentAt.toLocaleString();
+                  return (
+                    <div key={`${item.sentAtIso}-${item.to}`} className="rounded border bg-muted/20 px-2 py-1.5">
+                      <div>
+                        <span className="font-medium">Sent:</span> {sentAtLabel}
+                      </div>
+                      <div>
+                        <span className="font-medium">To:</span> {item.to || '—'}
+                      </div>
+                      {(item.sentByName || item.sentByEmail) ? (
+                        <div>
+                          <span className="font-medium">By:</span> {item.sentByName || item.sentByEmail}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           ) : null}
           {senderFromLabel ? (
             <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">

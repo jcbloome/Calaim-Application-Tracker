@@ -1442,6 +1442,8 @@ function PushToCaspioDialog({
                 }
 
                 if (docRef) {
+                    const shouldPromoteFromDraft =
+                      String((application as any)?.status || '').trim().toLowerCase() === 'draft';
                     const effectiveMapping = (mappingOverride || caspioMappingPreview || {}) as Record<string, string>;
                     const pushedMappedSnapshot: Record<string, string> = {};
                     const pushedSpecialSnapshot: Record<string, string> = {
@@ -1480,6 +1482,9 @@ function PushToCaspioDialog({
                             caspioLastPushedMappingDraftName: draftName || null,
                             caspioLastPushedMappingDraftSavedAt: savedAtIso || null,
                             caspioLastPushedAt: serverTimestamp(),
+                            createdByAdmin: false,
+                            allowDraftCaspioPush: false,
+                            ...(shouldPromoteFromDraft ? { status: 'In Progress' } : {}),
                             lastUpdated: serverTimestamp(),
                         },
                         { merge: true }
@@ -8566,6 +8571,11 @@ function ApplicationDetailPageContent() {
         ...(retrievedKaiserStatus ? { kaiserStatus: retrievedKaiserStatus } : {}),
         caspioSent: true,
         caspioPushLastStatus: 'confirmed',
+        createdByAdmin: false,
+        allowDraftCaspioPush: false,
+        ...(String((application as any)?.status || '').trim().toLowerCase() === 'draft'
+          ? { status: 'In Progress' }
+          : {}),
         lastUpdated: serverTimestamp(),
       } as Record<string, any>;
       await setDoc(docRef, patch, { merge: true });

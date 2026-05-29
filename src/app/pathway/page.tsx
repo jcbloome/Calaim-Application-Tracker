@@ -1684,7 +1684,7 @@ function PathwayPageContent() {
                                 </div>
                             ))}
                         </div>
-                         <Button asChild variant="outline" className="w-full bg-slate-50 hover:bg-slate-100">
+                        <Button asChild className="w-full bg-blue-600 text-white hover:bg-blue-700">
                             <Link href={href}>
                                 {isCompleted ? 'View/Edit Waivers' : 'Complete Waivers'} &rarr;
                             </Link>
@@ -1886,7 +1886,7 @@ function PathwayPageContent() {
                                 <Label
                                   htmlFor={`${req.id}-replace`}
                                   className={cn(
-                                    "flex h-9 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-xs font-medium ring-offset-background transition-colors hover:bg-primary/90",
+                                    "flex h-9 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-slate-50 text-slate-900 text-xs font-medium ring-offset-background transition-colors hover:bg-slate-100",
                                     isUploading && "opacity-50 pointer-events-none"
                                   )}
                                 >
@@ -1935,7 +1935,7 @@ function PathwayPageContent() {
                     <p className="text-xs text-muted-foreground">
                       Accepted: PDF, Word, JPG, PNG (max 10MB). You can replace files anytime before submit.
                     </p>
-                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
+                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-slate-50 text-slate-900 text-sm font-medium ring-offset-background transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
                       {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                       <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
                     </Label>
