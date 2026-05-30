@@ -17,6 +17,7 @@ import Image from 'next/image';
 import { clearStoredSwLoginDay, getTodayLocalDayKey, msUntilNextLocalMidnight, readStoredSwLoginDay, writeStoredSwLoginDay } from '@/lib/sw-daily-session';
 import { SWTopNav } from '@/components/sw/SWTopNav';
 import { setPortalSessionOfflineClient, trackLoginActivityClient } from '@/lib/login-activity-client';
+import { AuthGuard } from '@/components/AuthGuard';
 
 export default function SWPortalLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -130,116 +131,118 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50/50">
-      {/* Header */}
-      <div className="bg-card border-b sticky top-0 z-40">
-        <div className="container mx-auto px-4 py-2 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Link href="/sw-portal/home" className="shrink-0">
-              <Image
-                src="/calaimlogopdf.png"
-                alt="Connect CalAIM Logo"
-                width={240}
-                height={67}
-                className="w-36 sm:w-44 h-auto object-contain"
-                priority
-              />
-            </Link>
+    <AuthGuard require2FA loginPath="/sw-login">
+      <div className="flex flex-col min-h-screen bg-slate-50/50">
+        {/* Header */}
+        <div className="bg-card border-b sticky top-0 z-40">
+          <div className="container mx-auto px-4 py-2 sm:px-6">
+            <div className="flex items-center gap-3">
+              <Link href="/sw-portal/home" className="shrink-0">
+                <Image
+                  src="/calaimlogopdf.png"
+                  alt="Connect CalAIM Logo"
+                  width={240}
+                  height={67}
+                  className="w-36 sm:w-44 h-auto object-contain"
+                  priority
+                />
+              </Link>
 
-            <SWTopNav className="hidden md:flex shrink-0" />
+              <SWTopNav className="hidden md:flex shrink-0" />
 
-            <div className="ml-auto shrink-0 flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="md:hidden"
-                onClick={() => setMobileNavOpen((prev) => !prev)}
-                aria-expanded={isMobileNavOpen}
-                aria-controls="sw-mobile-nav"
-              >
-                <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle menu</span>
-              </Button>
-              {/* Global search (SW) */}
-              <div className="hidden md:block w-[280px]">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const q = headerSearch.trim();
-                    if (!q) return;
-                    router.push(`/sw-portal/home?q=${encodeURIComponent(q)}`);
-                    setHeaderSearch('');
-                  }}
+              <div className="ml-auto shrink-0 flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="md:hidden"
+                  onClick={() => setMobileNavOpen((prev) => !prev)}
+                  aria-expanded={isMobileNavOpen}
+                  aria-controls="sw-mobile-nav"
                 >
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      value={headerSearch}
-                      onChange={(e) => setHeaderSearch(e.target.value)}
-                      placeholder="Search roster…"
-                      className="pl-9"
-                      aria-label="Search roster"
-                    />
-                  </div>
-                </form>
-              </div>
-              <div className="hidden md:block text-sm font-semibold text-foreground max-w-[160px] sm:max-w-[240px] truncate">
-                {swName}
-              </div>
-              <Button variant="ghost" size="sm" onClick={handleSignOut} className="hidden md:inline-flex">
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign Out
-              </Button>
-            </div>
-          </div>
-          {isMobileNavOpen ? (
-            <>
-              <button
-                type="button"
-                aria-label="Close social worker menu overlay"
-                className="fixed inset-0 z-40 bg-black/40 md:hidden"
-                onClick={() => setMobileNavOpen(false)}
-              />
-              <div
-                id="sw-mobile-nav"
-                className="absolute left-0 right-0 top-full z-50 border-t bg-card px-4 pb-5 pt-4 shadow-lg md:hidden"
-              >
-                <div className="space-y-2">
-                  {mobileNavLinks.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMobileNavOpen(false)}
-                      className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-                <div className="mt-3 border-t pt-3">
-                  <div className="mb-2 text-sm font-semibold text-foreground truncate">{swName}</div>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      void handleSignOut();
-                      setMobileNavOpen(false);
+                  <Menu className="h-5 w-5" />
+                  <span className="sr-only">Toggle menu</span>
+                </Button>
+                {/* Global search (SW) */}
+                <div className="hidden md:block w-[280px]">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const q = headerSearch.trim();
+                      if (!q) return;
+                      router.push(`/sw-portal/home?q=${encodeURIComponent(q)}`);
+                      setHeaderSearch('');
                     }}
                   >
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Sign Out
-                  </Button>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        value={headerSearch}
+                        onChange={(e) => setHeaderSearch(e.target.value)}
+                        placeholder="Search roster…"
+                        className="pl-9"
+                        aria-label="Search roster"
+                      />
+                    </div>
+                  </form>
                 </div>
+                <div className="hidden md:block text-sm font-semibold text-foreground max-w-[160px] sm:max-w-[240px] truncate">
+                  {swName}
+                </div>
+                <Button variant="ghost" size="sm" onClick={handleSignOut} className="hidden md:inline-flex">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
+                </Button>
               </div>
-            </>
-          ) : null}
+            </div>
+            {isMobileNavOpen ? (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close social worker menu overlay"
+                  className="fixed inset-0 z-40 bg-black/40 md:hidden"
+                  onClick={() => setMobileNavOpen(false)}
+                />
+                <div
+                  id="sw-mobile-nav"
+                  className="absolute left-0 right-0 top-full z-50 border-t bg-card px-4 pb-5 pt-4 shadow-lg md:hidden"
+                >
+                  <div className="space-y-2">
+                    {mobileNavLinks.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setMobileNavOpen(false)}
+                        className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                  <div className="mt-3 border-t pt-3">
+                    <div className="mb-2 text-sm font-semibold text-foreground truncate">{swName}</div>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        void handleSignOut();
+                        setMobileNavOpen(false);
+                      }}
+                    >
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Sign Out
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <main className="flex-grow p-4 sm:p-6 md:p-8">
-        {children}
-      </main>
-    </div>
+        {/* Main Content */}
+        <main className="flex-grow p-4 sm:p-6 md:p-8">
+          {children}
+        </main>
+      </div>
+    </AuthGuard>
   );
 }

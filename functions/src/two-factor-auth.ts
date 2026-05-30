@@ -353,13 +353,19 @@ export const check2FAStatus = onCall(async (request) => {
     }
     
     const db = admin.firestore();
-    const userDoc = await db.collection('users').doc(request.auth.uid).get();
-    
+    const userRef = db.collection('users').doc(request.auth.uid);
+    const userDoc = await userRef.get();
+    const userData = userDoc.exists ? (userDoc.data() || {}) : {};
     if (!userDoc.exists) {
-      throw new HttpsError('not-found', 'User not found');
+      // Seed a minimal user record so first-time users/SWs can complete 2FA.
+      await userRef.set(
+        {
+          email: String(request.auth.token.email || '').trim() || null,
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
     }
-    
-    const userData = userDoc.data()!;
     const now = new Date();
     
     // Check if 2FA session is still valid
@@ -388,7 +394,7 @@ export const check2FAStatus = onCall(async (request) => {
       pendingCodeExpiresAt: pendingExpiry?.toISOString(),
       preferredMethod: userData['2faPreferredMethod'] || 'email',
       totpEnabled: Boolean(userData['2faTotpEnabled']),
-      email: userData.email,
+      email: userData.email || String(request.auth.token.email || '').trim(),
       phone: userData.phone
     };
     

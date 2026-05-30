@@ -5,16 +5,20 @@ import { TwoFactorAuth } from './TwoFactorAuth';
 import { useUser } from '@/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface AuthGuardProps {
   children: React.ReactNode;
   require2FA?: boolean;
+  loginPath?: string;
 }
 
-export function AuthGuard({ children, require2FA = false }: AuthGuardProps) {
+export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuardProps) {
   const [is2FAVerified, setIs2FAVerified] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const { user, isUserLoading } = useUser();
+  const router = useRouter();
 
   useEffect(() => {
     if (!user || isUserLoading) return;
@@ -47,12 +51,20 @@ export function AuthGuard({ children, require2FA = false }: AuthGuardProps) {
     check2FAStatus();
   }, [user, isUserLoading, require2FA]);
 
-  if (isUserLoading || isChecking) {
+  useEffect(() => {
+    if (isUserLoading || isChecking) return;
+    if (user) return;
+    if (!loginPath) return;
+    setIsRedirecting(true);
+    router.replace(loginPath);
+  }, [isChecking, isUserLoading, loginPath, router, user]);
+
+  if (isUserLoading || isChecking || isRedirecting) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex items-center space-x-2">
           <Loader2 className="h-6 w-6 animate-spin" />
-          <span>Checking authentication...</span>
+          <span>{isRedirecting ? 'Redirecting to login...' : 'Checking authentication...'}</span>
         </div>
       </div>
     );
