@@ -4,7 +4,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, BellRing, Clock3 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
@@ -46,6 +46,7 @@ export default function AdminDashboardPage() {
   });
   const [logStartDate, setLogStartDate] = useState<string>('');
   const [logEndDate, setLogEndDate] = useState<string>('');
+  const [logPlanFilter, setLogPlanFilter] = useState<'all' | 'health-net' | 'kaiser'>('all');
 
   const seenStorageKey = useMemo(() => {
     if (!user?.uid) return null;
@@ -342,6 +343,12 @@ export default function AdminDashboardPage() {
   }, [allApplications, eligibilityChecks, standaloneUploads]);
 
   const filteredAndSortedLog = useMemo(() => {
+    const matchesPlanFilter = (healthPlan: string) => {
+      const normalized = String(healthPlan || '').trim().toLowerCase();
+      if (logPlanFilter === 'health-net') return normalized.includes('health net');
+      if (logPlanFilter === 'kaiser') return normalized.includes('kaiser');
+      return true;
+    };
     const inDateRange = (ms: number) => {
       if (!Number.isFinite(ms)) return false;
       if (logFilterMode === 'month') {
@@ -359,7 +366,7 @@ export default function AdminDashboardPage() {
       return ms >= startMs && ms <= endMs;
     };
 
-    const items = (newItemLog || []).filter((e) => inDateRange(e.createdAtMs));
+    const items = (newItemLog || []).filter((e) => inDateRange(e.createdAtMs) && matchesPlanFilter(e.healthPlan));
 
     const dirMul = logSort.dir === 'asc' ? 1 : -1;
     const norm = (v: any) => String(v || '').trim().toLowerCase();
@@ -370,7 +377,7 @@ export default function AdminDashboardPage() {
       if (logSort.key === 'by') return norm(a.byName).localeCompare(norm(b.byName)) * dirMul;
       return 0;
     });
-  }, [logEndDate, logFilterMode, logMonth, logSort.dir, logSort.key, logStartDate, newItemLog]);
+  }, [logEndDate, logFilterMode, logMonth, logPlanFilter, logSort.dir, logSort.key, logStartDate, newItemLog]);
 
   const groupedDashboardLog = useMemo(() => {
     type LogItem = (typeof filteredAndSortedLog)[number];
@@ -526,6 +533,83 @@ export default function AdminDashboardPage() {
 
     return result;
   }, [eligibilityChecks]);
+
+  const healthNetReadyForAuth = useMemo(() => {
+    const rows: Array<{
+      id: string;
+      memberName: string;
+      appHref: string;
+      assignedStaff: string;
+      readyAtMs: number;
+      reminderLevel: 'fresh' | 'due' | 'overdue';
+      daysReady: number;
+    }> = [];
+
+    (allApplications || []).forEach((app: any) => {
+      const plan = String(app?.healthPlan || '').trim().toLowerCase();
+      if (!plan.includes('health net')) return;
+      const forms = Array.isArray(app?.forms) ? app.forms : [];
+      const nonSummaryForms = forms.filter((form: any) => {
+        const name = String(form?.name || '').trim().toLowerCase();
+        return name !== 'cs member summary' && name !== 'cs summary';
+      });
+      if (nonSummaryForms.length === 0) return;
+
+      const hasCompletedSummary = forms.some((form: any) => {
+        const name = String(form?.name || '').trim().toLowerCase();
+        return (name === 'cs member summary' || name === 'cs summary') && String(form?.status || '').trim() === 'Completed';
+      });
+      if (!hasCompletedSummary) return;
+      if (!Boolean(app?.applicationChecked)) return;
+
+      const allNonSummaryCompleted = nonSummaryForms.every((form: any) => String(form?.status || '').trim() === 'Completed');
+      if (!allNonSummaryCompleted) return;
+
+      const pendingReview = nonSummaryForms.some((form: any) => !Boolean(form?.acknowledged));
+      if (pendingReview) return;
+
+      const ownerUid = app?.appUserId || app?.userId || null;
+      const appHref = ownerUid
+        ? `/admin/applications/${app.id}?userId=${encodeURIComponent(String(ownerUid))}`
+        : `/admin/applications/${app.id}`;
+      const memberName = `${String(app?.memberFirstName || '').trim()} ${String(app?.memberLastName || '').trim()}`.trim() || 'Unknown Member';
+      const assignedStaff = String(app?.assignedStaffName || app?.assignedStaff || 'Staff unassigned').trim();
+      const readyAtMs = Math.max(
+        ...nonSummaryForms.map((form: any) =>
+          toMs(form?.acknowledgedDate || form?.dateCompleted || form?.uploadedAt || form?.lastUpdated)
+        ),
+        toMs(app?.lastUpdated),
+        toMs(app?.applicationCheckedDate)
+      );
+      const daysReady = readyAtMs > 0 ? Math.floor((Date.now() - readyAtMs) / (24 * 60 * 60 * 1000)) : 0;
+      const reminderLevel: 'fresh' | 'due' | 'overdue' =
+        daysReady >= 7 ? 'overdue' : daysReady >= 3 ? 'due' : 'fresh';
+
+      rows.push({
+        id: String(app.id || '').trim(),
+        memberName,
+        appHref,
+        assignedStaff,
+        readyAtMs,
+        reminderLevel,
+        daysReady,
+      });
+    });
+
+    return rows.sort((a, b) => b.readyAtMs - a.readyAtMs);
+  }, [allApplications]);
+
+  const healthNetReadyReminderStats = useMemo(() => {
+    return healthNetReadyForAuth.reduce(
+      (acc, row) => {
+        if (row.reminderLevel === 'overdue') acc.overdue += 1;
+        else if (row.reminderLevel === 'due') acc.due += 1;
+        else acc.fresh += 1;
+        return acc;
+      },
+      { fresh: 0, due: 0, overdue: 0 }
+    );
+  }, [healthNetReadyForAuth]);
 
   if (isAdminLoading || isLoadingApps) {
     return (
@@ -742,6 +826,33 @@ export default function AdminDashboardPage() {
               Reset
             </Button>
 
+            <div className="flex flex-col gap-1">
+              <div className="text-xs text-muted-foreground">Health Plan</div>
+              <div className="inline-flex rounded-md border bg-background p-1">
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logPlanFilter === 'all' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogPlanFilter('all')}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logPlanFilter === 'health-net' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogPlanFilter('health-net')}
+                >
+                  Health Net
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logPlanFilter === 'kaiser' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogPlanFilter('kaiser')}
+                >
+                  Kaiser
+                </button>
+              </div>
+            </div>
+
             <div className="ml-auto text-xs text-muted-foreground">
               Showing <span className="font-medium text-foreground">{groupedDashboardLog.length}</span> rows
             </div>
@@ -802,7 +913,7 @@ export default function AdminDashboardPage() {
                         {logSort.key === 'by' ? (logSort.dir === 'asc' ? '▲' : '▼') : null}
                       </button>
                     </th>
-                    <th className="text-center py-2 pr-3">Seen</th>
+                    <th className="text-center py-2 pr-3">Seen (local)</th>
                     <th className="text-right py-2">Actions</th>
                   </tr>
                 </thead>
@@ -881,9 +992,87 @@ export default function AdminDashboardPage() {
               </table>
             </div>
           )}
+          <div className="pt-3 text-xs text-muted-foreground">
+            “Seen (local)” only affects your personal dashboard checkmark. Action-item counts remain until CS/doc items are reviewed in the application.
+          </div>
         </CardContent>
       </Card>
-      
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BellRing className="h-4 w-4 text-green-700" />
+            Health Net Authorization Readiness
+          </CardTitle>
+          <CardDescription>
+            Members where CS summary + required documents are complete and reviewed, so assigned Health Net staff can submit authorization requests.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-3 flex flex-wrap gap-2 text-xs">
+            <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200">
+              Ready now {healthNetReadyReminderStats.fresh}
+            </Badge>
+            <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200">
+              Reminder due {healthNetReadyReminderStats.due}
+            </Badge>
+            <Badge variant="outline" className="bg-red-50 text-red-800 border-red-200">
+              Overdue {healthNetReadyReminderStats.overdue}
+            </Badge>
+          </div>
+          {healthNetReadyForAuth.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No Health Net members are fully ready yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {healthNetReadyForAuth.slice(0, 25).map((row) => {
+                const reminderIcon =
+                  row.reminderLevel === 'overdue' ? (
+                    <AlertTriangle className="h-4 w-4 text-red-600" />
+                  ) : row.reminderLevel === 'due' ? (
+                    <Clock3 className="h-4 w-4 text-amber-600" />
+                  ) : (
+                    <BellRing className="h-4 w-4 text-emerald-600" />
+                  );
+                const reminderLabel =
+                  row.reminderLevel === 'overdue'
+                    ? `Overdue (${row.daysReady}d)`
+                    : row.reminderLevel === 'due'
+                      ? `Reminder due (${row.daysReady}d)`
+                      : `Ready (${row.daysReady}d)`;
+                return (
+                  <div key={`${row.id}-${row.readyAtMs}`} className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{row.memberName}</div>
+                      <div className="text-xs text-muted-foreground">Assigned: {row.assignedStaff || 'Staff unassigned'}</div>
+                    </div>
+                    <div className="ml-3 flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={
+                          row.reminderLevel === 'overdue'
+                            ? 'bg-red-50 text-red-800 border-red-200'
+                            : row.reminderLevel === 'due'
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        }
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {reminderIcon}
+                          {reminderLabel}
+                        </span>
+                      </Badge>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={row.appHref}>Open</Link>
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
     </div>
   );
 }

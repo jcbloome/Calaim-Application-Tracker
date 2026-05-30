@@ -1341,6 +1341,22 @@ function AdminHeader() {
         const matchesStaffKey = hasAliasHit(row.staffKey, aliases);
         return matchesStaff || matchesStaffKey ? sum + Number(row.total || 0) : sum;
       }, 0);
+    const viewerUid = String(user?.uid || '').trim();
+    const viewerName = normalizeIdentity(String(user?.displayName || ''));
+    const viewerEmail = normalizeIdentity(String(user?.email || ''));
+    const viewerEmailPrefix = viewerEmail.includes('@') ? viewerEmail.split('@')[0] : viewerEmail;
+    const myAssignedDocActionCount = docsByAssignedStaff.reduce((sum, row) => {
+      const staffNormalized = normalizeIdentity(row.staff);
+      const staffKeyNormalized = normalizeIdentity(row.staffKey);
+      const isMine =
+        (viewerUid && (row.staffKey === viewerUid || staffKeyNormalized === normalizeIdentity(viewerUid))) ||
+        (viewerName &&
+          (staffNormalized === viewerName ||
+            staffNormalized.includes(viewerName) ||
+            viewerName.includes(staffNormalized))) ||
+        (viewerEmailPrefix && staffNormalized.includes(viewerEmailPrefix));
+      return isMine ? sum + Number(row.total || 0) : sum;
+    }, 0);
 
     const johnDocActionCount = countDocsForAliases(['john', 'john@carehomefinders.com']);
     const kaiserManagerDocActionCount = countDocsForAliases([
@@ -1367,6 +1383,16 @@ function AdminHeader() {
         href: '/admin/applications?review=docs',
         dot: 'bg-green-600',
         title: 'Uploaded documents requiring acknowledgement',
+      });
+    }
+    if (myAssignedDocActionCount > 0) {
+      items.push({
+        key: 'my-docs',
+        label: `My Docs(${myAssignedDocActionCount})`,
+        href: '/admin/applications?review=docs',
+        dot: 'bg-emerald-600',
+        isNew: true,
+        title: 'Documents assigned to you that still require review acknowledgement',
       });
     }
     if (sLabel) {
