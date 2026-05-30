@@ -8524,6 +8524,13 @@ function ApplicationDetailPageContent() {
     try {
       const controller = new AbortController();
       timeoutId = setTimeout(() => controller.abort(), 15000);
+      const existingClientId2 = String(
+        (application as any)?.client_ID2 ||
+        (application as any)?.clientId2 ||
+        (application as any)?.caspioClientId2 ||
+        ''
+      ).trim();
+      const alreadyMarkedPushed = Boolean((application as any)?.caspioSent);
       const res = await fetch('/api/admin/caspio/confirm-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -8532,7 +8539,8 @@ function ApplicationDetailPageContent() {
           applicationData: {
             memberFirstName: (application as any)?.memberFirstName || '',
             memberLastName: (application as any)?.memberLastName || '',
-            clientId2: (application as any)?.client_ID2 || (application as any)?.clientId2 || '',
+            clientId2: existingClientId2,
+            caspioClientId2: existingClientId2,
             healthPlan: (application as any)?.healthPlan || '',
             memberMediCalNum:
               (application as any)?.memberMediCalNum ||
@@ -8555,6 +8563,36 @@ function ApplicationDetailPageContent() {
         throw new Error(data?.message || data?.details || `Confirm failed (HTTP ${res.status})`);
       }
       if (!data?.found || !String(data?.member?.clientId2 || '').trim()) {
+        if (existingClientId2 && alreadyMarkedPushed) {
+          const patch = {
+            clientId2: existingClientId2,
+            client_ID2: existingClientId2,
+            caspioClientId2: existingClientId2,
+            caspioSent: true,
+            caspioPushLastStatus: 'confirmed',
+            createdByAdmin: false,
+            allowDraftCaspioPush: false,
+            ...(String((application as any)?.status || '').trim().toLowerCase() === 'draft'
+              ? { status: 'In Progress' }
+              : {}),
+            lastUpdated: serverTimestamp(),
+          } as Record<string, any>;
+          await setDoc(docRef, patch, { merge: true });
+          setApplication((prev) =>
+            prev
+              ? ({
+                  ...prev,
+                  ...patch,
+                } as any)
+              : prev
+          );
+          toast({
+            title: 'Client_ID2 already linked',
+            description: `Using existing Client_ID2: ${existingClientId2}. Caspio test lookup did not return a new match, but this application is already marked as pushed.`,
+            className: 'bg-green-100 text-green-900 border-green-200',
+          });
+          return;
+        }
         toast({
           variant: 'destructive',
           title: 'Not found in Caspio',
