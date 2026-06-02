@@ -15,6 +15,8 @@ type SendPayload = {
   memberCounty?: string;
   referrerName?: string;
   referrerEmail?: string;
+  submitterName?: string;
+  submitterEmail?: string;
   customSubject?: string;
   customMessage?: string;
   pdfBase64: string;
@@ -169,6 +171,17 @@ async function resolveApplicationDoc(params: {
 }
 
 export async function POST(request: NextRequest) {
+  const baseCcRecipients = getKaiserReferralCcRecipients();
+  let failureLogTo = 'unknown';
+  let failureLogCc = baseCcRecipients;
+  let failureLogSubject = 'Kaiser referral send failed (unexpected error)';
+  let failureLogMetadata: Record<string, unknown> = {
+    route: '/api/forms/kaiser-referral/send-intake',
+    memberName: 'Unknown member',
+    memberMrn: 'Unknown MRN',
+    submitterName: 'Unknown staff',
+    submitterEmail: 'Unknown staff email',
+  };
   try {
     const body = (await request.json()) as SendPayload;
     const to = String(body?.to || '').trim();
@@ -176,7 +189,7 @@ export async function POST(request: NextRequest) {
     const pdfBase64 = String(body?.pdfBase64 || '').trim();
     const fileName = String(body?.fileName || 'kaiser_referral.pdf').trim();
     const testSend = Boolean(body?.testSend);
-    const baseCcRecipients = getKaiserReferralCcRecipients();
+    failureLogTo = to || 'unknown';
 
     if (!to || !pdfBase64) {
       await logKaiserReferralEmail({
@@ -218,7 +231,12 @@ export async function POST(request: NextRequest) {
     const memberCounty = String(body?.memberCounty || '').trim();
     const referrerName = String(body?.referrerName || '').trim();
     const referrerEmail = String(body?.referrerEmail || '').trim();
-    const ccRecipients = getKaiserReferralCcRecipientsWithSubmitter(referrerEmail);
+    const submitterName = String(body?.submitterName || '').trim();
+    const submitterEmail = String(body?.submitterEmail || '').trim().toLowerCase();
+    const resolvedSubmitterName = submitterName || referrerName || 'Unknown staff';
+    const resolvedSubmitterEmail = submitterEmail || referrerEmail || 'Unknown staff email';
+    const ccRecipients = getKaiserReferralCcRecipientsWithSubmitter(submitterEmail || referrerEmail);
+    failureLogCc = ccRecipients;
     const testRecipientEmail = String(body?.testRecipientEmail || '').trim().toLowerCase();
     const appId = String(body?.applicationId || '').trim();
     const userId = String(body?.userId || '').trim();
@@ -227,30 +245,29 @@ export async function POST(request: NextRequest) {
     const taskId = String(body?.taskId || '').trim();
     const memberClientId = String(body?.memberClientId || '').trim();
     const referralContext = String(body?.referralContext || '').trim();
-    const metadata = {
-      region,
-      testSend,
-      testRecipientEmail: testRecipientEmail || null,
-      applicationId: appId || null,
-      userId: userId || null,
-      taskId: taskId || null,
-      memberClientId: memberClientId || null,
-      referralContext: referralContext || null,
-      memberName: memberName || null,
-      memberMrn: memberMrn || null,
-      memberCounty: memberCounty || null,
-      referrerName: referrerName || null,
-      referrerEmail: referrerEmail || null,
-      fileName,
-      pdfStoragePath: pdfStoragePath || null,
-      pdfStorageSignedUrl: pdfStorageSignedUrl || null,
-      overrideResubmit,
-      overrideReason: overrideReason || null,
-    };
-
     const subject =
       String(body?.customSubject || '').trim() ||
       `CS Referral for Member Name: ${memberName} and MRN: ${memberMrn || 'N/A'}`;
+    failureLogSubject = subject || failureLogSubject;
+    failureLogMetadata = {
+      route: '/api/forms/kaiser-referral/send-intake',
+      testSend,
+      applicationId: appId || 'N/A',
+      userId: userId || 'N/A',
+      taskId: taskId || 'N/A',
+      memberClientId: memberClientId || 'N/A',
+      referralContext: referralContext || 'N/A',
+      memberName: memberName || 'Unknown member',
+      memberMrn: memberMrn || 'Unknown MRN',
+      memberCounty: memberCounty || 'N/A',
+      submitterName: resolvedSubmitterName,
+      submitterEmail: resolvedSubmitterEmail,
+      referrerName: referrerName || 'N/A',
+      referrerEmail: referrerEmail || 'N/A',
+      fileName: fileName || 'kaiser_referral.pdf',
+      overrideResubmit,
+      overrideReason: overrideReason || null,
+    };
     const customMessage = String(body?.customMessage || '').trim();
     const resolvedAttachmentName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
     const pdfBuffer = Buffer.from(pdfBase64, 'base64');
@@ -289,6 +306,29 @@ export async function POST(request: NextRequest) {
       pdfStorageSignedUrl = '';
     }
 
+    const metadata = {
+      region,
+      testSend,
+      testRecipientEmail: testRecipientEmail || null,
+      applicationId: appId || null,
+      userId: userId || null,
+      taskId: taskId || null,
+      memberClientId: memberClientId || null,
+      referralContext: referralContext || null,
+      memberName: memberName || 'Unknown member',
+      memberMrn: memberMrn || 'Unknown MRN',
+      memberCounty: memberCounty || null,
+      submitterName: resolvedSubmitterName,
+      submitterEmail: resolvedSubmitterEmail,
+      referrerName: referrerName || 'N/A',
+      referrerEmail: referrerEmail || 'N/A',
+      fileName,
+      pdfStoragePath: pdfStoragePath || null,
+      pdfStorageSignedUrl: pdfStorageSignedUrl || null,
+      overrideResubmit,
+      overrideReason: overrideReason || null,
+    };
+
     if (testSend) {
       const testTo = testRecipientEmail || String(referrerEmail || '').trim().toLowerCase();
       if (!testTo || !testTo.includes('@')) {
@@ -312,7 +352,7 @@ export async function POST(request: NextRequest) {
           <strong>MRN:</strong> ${memberMrn || 'N/A'}<br/>
           <strong>County:</strong> ${memberCounty || 'N/A'}<br/>
           <strong>Application ID:</strong> ${appId || 'N/A'}<br/>
-          <strong>Referrer:</strong> ${referrerName || 'N/A'}
+          <strong>Submitted by:</strong> ${resolvedSubmitterName || 'N/A'}
         </p>
         <p>This was sent only to staff for verification and has not been sent to Kaiser intake.</p>
       </div>
@@ -403,7 +443,7 @@ export async function POST(request: NextRequest) {
           <strong>MRN:</strong> ${memberMrn || 'N/A'}<br/>
           <strong>County:</strong> ${memberCounty || 'N/A'}<br/>
           <strong>Application ID:</strong> ${appId || 'N/A'}<br/>
-          <strong>Referrer:</strong> ${referrerName || 'N/A'}
+          <strong>Submitted by:</strong> ${resolvedSubmitterName || 'N/A'}
         </p>
         <p>Thank you.</p>
       </div>
@@ -462,8 +502,8 @@ export async function POST(request: NextRequest) {
             subject,
             region: region || null,
             providerMessageId: String(data?.id || ''),
-            submittedByName: referrerName || null,
-            submittedByEmail: referrerEmail || null,
+            submittedByName: resolvedSubmitterName || null,
+            submittedByEmail: resolvedSubmitterEmail || null,
             pdfStoragePath: pdfStoragePath || null,
             pdfStorageSignedUrl: pdfStorageSignedUrl || null,
             overrideResubmit,
@@ -472,13 +512,13 @@ export async function POST(request: NextRequest) {
           kaiserStatus: 'T2038 Requested',
           kaiserStatusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
           kaiserStatusUpdatedAtIso: submittedAtIso,
-          kaiserStatusUpdatedBy: referrerName || referrerEmail || null,
+          kaiserStatusUpdatedBy: resolvedSubmitterName || resolvedSubmitterEmail || null,
           kaiserReferralStep5: {
             required: step5Required,
             acknowledged: true,
             acknowledgedAt: admin.firestore.FieldValue.serverTimestamp(),
             acknowledgedAtIso: submittedAtIso,
-            acknowledgedBy: referrerName || referrerEmail || null,
+            acknowledgedBy: resolvedSubmitterName || resolvedSubmitterEmail || null,
             note: step5Required
               ? 'Kaiser referral sent and Step 5 acknowledged.'
               : 'Step 5 not required because authorization was already received at intake.',
@@ -499,13 +539,11 @@ export async function POST(request: NextRequest) {
     await logKaiserReferralEmail({
       status: 'failure',
       from: KAISER_REFERRAL_FROM,
-      to: 'unknown',
-      cc: getKaiserReferralCcRecipients(),
-      subject: 'Kaiser referral send failed (unexpected error)',
+      to: failureLogTo,
+      cc: failureLogCc,
+      subject: failureLogSubject,
       errorMessage: String(error?.message || 'Unexpected error while sending.'),
-      metadata: {
-        route: '/api/forms/kaiser-referral/send-intake',
-      },
+      metadata: failureLogMetadata,
     });
     return NextResponse.json(
       { success: false, error: String(error?.message || 'Unexpected error while sending.') },

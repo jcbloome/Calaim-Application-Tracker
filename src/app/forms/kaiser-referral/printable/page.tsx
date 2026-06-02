@@ -46,6 +46,7 @@ function KaiserReferralPrintableContent() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [hasReviewedPdfPreview, setHasReviewedPdfPreview] = useState(false);
   const loggedInUserEmail = String(user?.email || '').trim().toLowerCase();
+  const loggedInUserName = String((user as any)?.displayName || (user as any)?.name || '').trim();
 
   const formPrefill = useMemo(
     () => ({
@@ -172,6 +173,46 @@ function KaiserReferralPrintableContent() {
     currentLocationName: formPrefill.currentLocationName,
     currentLocationAddress: formPrefill.currentLocationAddress,
   }));
+  const handleFormValuesChange = useCallback(
+    (value: {
+      memberName: string;
+      memberDob: string;
+      memberMrn: string;
+      referralDate: string;
+      referrerName: string;
+      referrerOrganization: string;
+      referrerNpi: string;
+      referrerAddress: string;
+      referrerEmail: string;
+      referrerPhone: string;
+      referrerRelationship: string;
+      currentLocationName: string;
+      currentLocationAddress: string;
+    }) => {
+      setFormFieldOverrides((prev) => {
+        const next = {
+          ...prev,
+          memberName: value.memberName,
+          memberDob: value.memberDob,
+          memberMrn: value.memberMrn,
+          referralDate: value.referralDate,
+          referrerName: value.referrerName,
+          referrerOrganization: value.referrerOrganization,
+          referrerNpi: value.referrerNpi,
+          referrerAddress: value.referrerAddress,
+          referrerEmail: value.referrerEmail,
+          referrerPhone: value.referrerPhone,
+          referrerRelationship: value.referrerRelationship,
+          currentLocationName: value.currentLocationName,
+          currentLocationAddress: value.currentLocationAddress,
+        };
+        const keys = Object.keys(next) as Array<keyof typeof next>;
+        const changed = keys.some((key) => String(prev[key] || '') !== String(next[key] || ''));
+        return changed ? next : prev;
+      });
+    },
+    []
+  );
 
   const printablePropsWithOverrides = useMemo(
     () => ({
@@ -411,28 +452,12 @@ function KaiserReferralPrintableContent() {
       </div>
       <PrintableKaiserReferralForm
         {...printablePropsWithOverrides}
-        onFormValuesChange={(value) =>
-          setFormFieldOverrides((prev) => ({
-            ...prev,
-            memberName: value.memberName,
-            memberDob: value.memberDob,
-            memberMrn: value.memberMrn,
-            referralDate: value.referralDate,
-            referrerName: value.referrerName,
-            referrerOrganization: value.referrerOrganization,
-            referrerNpi: value.referrerNpi,
-            referrerAddress: value.referrerAddress,
-            referrerEmail: value.referrerEmail,
-            referrerPhone: value.referrerPhone,
-            referrerRelationship: value.referrerRelationship,
-            currentLocationName: value.currentLocationName,
-            currentLocationAddress: value.currentLocationAddress,
-          }))
-        }
+        onFormValuesChange={handleFormValuesChange}
         onMemberContactAddressChange={setMemberOverrides}
         onCaregiverChange={setCaregiverOverrides}
         buildTemplatePdfUrl={buildTemplateUrl}
         loggedInUserEmail={loggedInUserEmail}
+        loggedInUserName={loggedInUserName}
         showPrintButton={false}
         hasReviewedPdfPreview={hasReviewedPdfPreview}
         onOpenPdfPreview={handleViewPdf}

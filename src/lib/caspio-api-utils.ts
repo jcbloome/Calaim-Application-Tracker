@@ -27,6 +27,24 @@ export interface CaspioCredentials {
 
 import { trackCaspioCall } from '@/lib/caspio-usage-tracker';
 
+function normalizeCaspioOauthBaseUrl(rawValue: string): string {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(withProtocol);
+    return parsed.origin.replace(/\/+$/g, '');
+  } catch {
+    return withProtocol
+      .replace(/\/rest\/v2\/?$/i, '')
+      .replace(/\/integrations\/rest\/v3\/?$/i, '')
+      .replace(/\/tables\/.*$/i, '')
+      .replace(/\/oauth\/token.*$/i, '')
+      .replace(/\/+$/g, '');
+  }
+}
+
 export function getCaspioCredentialsFromEnv(): CaspioCredentials {
   const baseUrlRaw = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com';
   const clientId = process.env.CASPIO_CLIENT_ID;
@@ -36,9 +54,10 @@ export function getCaspioCredentialsFromEnv(): CaspioCredentials {
     throw new Error('Caspio credentials not configured');
   }
 
-  const baseUrl = baseUrlRaw
-    .replace(/\/rest\/v2\/?$/i, '')
-    .replace(/\/integrations\/rest\/v3\/?$/i, '');
+  const baseUrl = normalizeCaspioOauthBaseUrl(baseUrlRaw);
+  if (!baseUrl) {
+    throw new Error('Caspio base URL is not configured correctly');
+  }
   return { baseUrl, clientId, clientSecret };
 }
 
@@ -118,6 +137,9 @@ export function normalizeCaspioBlankValue<T = any>(value: T): any {
  */
 export async function getCaspioToken(credentials: CaspioCredentials): Promise<string> {
   const encoded = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString('base64');
+  const tokenBody = new URLSearchParams({ grant_type: 'client_credentials' });
+  const scope = String(process.env.CASPIO_SCOPE || '').trim();
+  if (scope) tokenBody.set('scope', scope);
   const tokenResponse = await fetch(`${credentials.baseUrl}/oauth/token`, {
     method: 'POST',
     headers: {
@@ -125,7 +147,7 @@ export async function getCaspioToken(credentials: CaspioCredentials): Promise<st
       'Content-Type': 'application/x-www-form-urlencoded',
       Accept: 'application/json',
     },
-    body: 'grant_type=client_credentials',
+    body: tokenBody.toString(),
   });
   trackCaspioCall({ method: 'POST', kind: 'token', status: tokenResponse.status, ok: tokenResponse.ok, context: 'oauth/token' });
 

@@ -78,6 +78,7 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
   onMemberContactAddressChange?: (value: { memberPhone: string; memberAddress: string }) => void;
   buildTemplatePdfUrl?: (download?: boolean) => string;
   loggedInUserEmail?: string;
+  loggedInUserName?: string;
 }
 
 const Checkbox = ({ checked, editable = true }: { checked?: boolean; editable?: boolean }) => {
@@ -146,6 +147,17 @@ const sanitizeFileComponent = (value?: string) =>
 const buildKaiserReferralFileName = (memberName?: string) => {
   const safeMemberName = sanitizeFileComponent(memberName) || 'Member';
   return `${safeMemberName} - Kaiser Authorization Request.pdf`;
+};
+
+const inferNameFromEmail = (value?: string) => {
+  const raw = lineValue(value).toLowerCase();
+  if (!raw || !raw.includes('@')) return '';
+  const local = raw.split('@')[0].replace(/[._-]+/g, ' ').trim();
+  if (!local) return '';
+  return local
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 };
 
 const normalizeMemberName = (value?: string) => {
@@ -352,6 +364,7 @@ export function PrintableKaiserReferralForm({
   onMemberContactAddressChange,
   buildTemplatePdfUrl,
   loggedInUserEmail = '',
+  loggedInUserName = '',
   ...prefill
 }: PrintableKaiserReferralFormProps) {
   const packetRef = React.useRef<HTMLDivElement>(null);
@@ -414,6 +427,9 @@ export function PrintableKaiserReferralForm({
   const [emailDescription, setEmailDescription] = React.useState(
     'Please review the attached referral form for authorization request processing.'
   );
+  const [isDraftHydrated, setIsDraftHydrated] = React.useState(false);
+  const [autosaveStatus, setAutosaveStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastAutosavedAtIso, setLastAutosavedAtIso] = React.useState('');
   const memberName = formValues.memberName;
   const referrerRelationship = lineValue(formValues.referrerRelationship).toLowerCase();
   const hasKaiserPlan = lineValue(prefill.healthPlan).toLowerCase().includes('kaiser');
@@ -453,13 +469,41 @@ export function PrintableKaiserReferralForm({
   const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
   const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && !isSendingToKaiser;
   const canOpenEmailTemplate = requiresKaiserReferralSendFlow && canOpenSendDialog;
-  const testRecipientEmail = lineValue(loggedInUserEmail || referrerEmail).toLowerCase();
+  const submitterEmail = lineValue(loggedInUserEmail || referrerEmail).toLowerCase();
+  const submitterName =
+    lineValue(loggedInUserName) ||
+    (!lineValue(referrerName).includes('@') ? lineValue(referrerName) : '') ||
+    inferNameFromEmail(submitterEmail) ||
+    'Unknown staff';
+  const testRecipientEmail = submitterEmail;
   const step5AcknowledgedAtLabel = React.useMemo(() => {
     const raw = String(step5AcknowledgedAtIso || '').trim();
     if (!raw) return '';
     const parsed = new Date(raw);
     return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString();
   }, [step5AcknowledgedAtIso]);
+  const draftStorageKey = React.useMemo(() => {
+    const appKey = lineValue(applicationId) || 'standalone';
+    const userKey = lineValue(userId) || 'nouser';
+    const memberKey = lineValue(memberClientId || prefill.memberMrn || prefill.memberName) || 'member';
+    return `kaiser-referral-draft:${appKey}:${userKey}:${memberKey}`.toLowerCase();
+  }, [applicationId, userId, memberClientId, prefill.memberMrn, prefill.memberName]);
+  const autosavePayload = React.useMemo(
+    () => ({
+      formValues,
+      emailDescription,
+      isStep3Confirmed,
+      currentLivingLocation,
+      section1AlfUsage: requiredSection1AlfUsage,
+    }),
+    [formValues, emailDescription, isStep3Confirmed, currentLivingLocation, requiredSection1AlfUsage]
+  );
+  const lastAutosavedAtLabel = React.useMemo(() => {
+    const raw = String(lastAutosavedAtIso || '').trim();
+    if (!raw) return '';
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString();
+  }, [lastAutosavedAtIso]);
 
   React.useEffect(() => {
     if (requiredAlft22Choice === 'A' || requiredAlft22Choice === 'B' || requiredAlft22Choice === 'C') {
@@ -512,6 +556,186 @@ export function PrintableKaiserReferralForm({
       currentLocationAddress: lineValue(formValues.currentLocationAddress),
     });
   }, [formValues, onFormValuesChange]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const parseSavedAt = (value: unknown) => {
+      const parsed = new Date(String(value || ''));
+      return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    };
+    const applyDraft = (draft: any) => {
+      if (!draft || typeof draft !== 'object') return;
+      const draftFormValues = draft.formValues && typeof draft.formValues === 'object' ? draft.formValues : {};
+      setFormValues((prev) => ({
+        ...prev,
+        memberName:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'memberName')
+            ? normalizeMemberName((draftFormValues as any).memberName)
+            : prev.memberName,
+        memberDob:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'memberDob')
+            ? toMmDdYyyy((draftFormValues as any).memberDob)
+            : prev.memberDob,
+        memberPhone:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'memberPhone')
+            ? formatPhoneDashed((draftFormValues as any).memberPhone)
+            : prev.memberPhone,
+        memberAddress:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'memberAddress')
+            ? lineValue((draftFormValues as any).memberAddress)
+            : prev.memberAddress,
+        memberMrn:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'memberMrn')
+            ? lineValue((draftFormValues as any).memberMrn)
+            : prev.memberMrn,
+        caregiverName:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'caregiverName')
+            ? lineValue((draftFormValues as any).caregiverName)
+            : prev.caregiverName,
+        caregiverContact:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'caregiverContact')
+            ? lineValue((draftFormValues as any).caregiverContact)
+            : prev.caregiverContact,
+        referralDate:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'referralDate')
+            ? toMmDdYyyy((draftFormValues as any).referralDate)
+            : prev.referralDate,
+        referrerName:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerName')
+            ? lineValue((draftFormValues as any).referrerName)
+            : prev.referrerName,
+        referrerOrganization:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerOrganization')
+            ? lineValue((draftFormValues as any).referrerOrganization)
+            : prev.referrerOrganization,
+        referrerNpi:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerNpi')
+            ? lineValue((draftFormValues as any).referrerNpi)
+            : prev.referrerNpi,
+        referrerAddress:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerAddress')
+            ? lineValue((draftFormValues as any).referrerAddress)
+            : prev.referrerAddress,
+        referrerEmail:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerEmail')
+            ? lineValue((draftFormValues as any).referrerEmail)
+            : prev.referrerEmail,
+        referrerPhone:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerPhone')
+            ? lineValue((draftFormValues as any).referrerPhone)
+            : prev.referrerPhone,
+        referrerRelationship:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'referrerRelationship')
+            ? lineValue((draftFormValues as any).referrerRelationship)
+            : prev.referrerRelationship,
+        currentLocationName:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'currentLocationName')
+            ? lineValue((draftFormValues as any).currentLocationName)
+            : prev.currentLocationName,
+        currentLocationAddress:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'currentLocationAddress')
+            ? lineValue((draftFormValues as any).currentLocationAddress)
+            : prev.currentLocationAddress,
+      }));
+      if (Object.prototype.hasOwnProperty.call(draft, 'emailDescription')) {
+        setEmailDescription(lineValue((draft as any).emailDescription));
+      }
+      if (Object.prototype.hasOwnProperty.call(draft, 'isStep3Confirmed')) {
+        setIsStep3Confirmed(Boolean((draft as any).isStep3Confirmed));
+      }
+      if (Object.prototype.hasOwnProperty.call(draft, 'currentLivingLocation')) {
+        const raw = String((draft as any).currentLivingLocation || '').trim();
+        if (raw === 'A' || raw === 'B' || raw === 'C') setCurrentLivingLocation(raw);
+      }
+      const savedAtIso = String((draft as any).savedAtIso || '').trim();
+      if (savedAtIso) setLastAutosavedAtIso(savedAtIso);
+    };
+
+    const hydrateDraft = async () => {
+      let localDraft: any = null;
+      try {
+        const localRaw = window.localStorage.getItem(draftStorageKey);
+        if (localRaw) {
+          localDraft = JSON.parse(localRaw);
+        }
+      } catch {
+        localDraft = null;
+      }
+
+      let remoteDraft: any = null;
+      if (lineValue(applicationId)) {
+        try {
+          const params = new URLSearchParams({
+            applicationId: lineValue(applicationId),
+            userId: lineValue(userId),
+          });
+          const response = await fetch(`/api/forms/kaiser-referral/autosave?${params.toString()}`, {
+            cache: 'no-store',
+          });
+          const result = await response.json().catch(() => ({}));
+          if (response.ok && result?.success && result?.draft && typeof result.draft === 'object') {
+            remoteDraft = result.draft;
+          }
+        } catch {
+          remoteDraft = null;
+        }
+      }
+
+      if (cancelled) return;
+      const localTime = parseSavedAt(localDraft?.savedAtIso);
+      const remoteTime = parseSavedAt(remoteDraft?.savedAtIso);
+      if (localDraft || remoteDraft) {
+        applyDraft(remoteTime >= localTime ? remoteDraft || localDraft : localDraft || remoteDraft);
+      }
+      setIsDraftHydrated(true);
+    };
+
+    void hydrateDraft();
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId, userId, draftStorageKey]);
+
+  const saveDraftNow = React.useCallback(async () => {
+    if (!isDraftHydrated) return;
+    const savedAtIso = new Date().toISOString();
+    const draft = {
+      ...autosavePayload,
+      savedAtIso,
+    };
+    setAutosaveStatus('saving');
+    try {
+      window.localStorage.setItem(draftStorageKey, JSON.stringify(draft));
+      if (lineValue(applicationId)) {
+        const response = await fetch('/api/forms/kaiser-referral/autosave', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicationId: lineValue(applicationId),
+            userId: lineValue(userId),
+            draft,
+          }),
+        });
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          throw new Error(String(result?.error || 'Failed to autosave draft.'));
+        }
+      }
+      setLastAutosavedAtIso(savedAtIso);
+      setAutosaveStatus('saved');
+    } catch (error) {
+      console.warn('[kaiser-referral] autosave failed:', error);
+      setAutosaveStatus('error');
+    }
+  }, [applicationId, autosavePayload, draftStorageKey, isDraftHydrated, userId]);
+
+  React.useEffect(() => {
+    if (!isDraftHydrated) return;
+    const handle = window.setTimeout(() => {
+      void saveDraftNow();
+    }, 700);
+    return () => window.clearTimeout(handle);
+  }, [isDraftHydrated, saveDraftNow]);
 
   const buildPacketPdfBlob = async () => {
     if (!packetRef.current) {
@@ -612,6 +836,8 @@ export function PrintableKaiserReferralForm({
           memberCounty: memberCounty || '',
           referrerName: referrerName || '',
           referrerEmail: referrerEmail || '',
+          submitterName,
+          submitterEmail,
           taskId: String(taskId || ''),
           memberClientId: String(memberClientId || ''),
           referralContext: String(referralContext || ''),
@@ -662,6 +888,8 @@ export function PrintableKaiserReferralForm({
           memberCounty: memberCounty || '',
           referrerName: referrerName || '',
           referrerEmail: referrerEmail || '',
+          submitterName,
+          submitterEmail,
           taskId: String(taskId || ''),
           memberClientId: String(memberClientId || ''),
           referralContext: String(referralContext || ''),
@@ -711,12 +939,12 @@ export function PrintableKaiserReferralForm({
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Kaiser Pre-Email Send Template</DialogTitle>
             <DialogDescription>Add any custom message, confirm PDF was reviewed, then send.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 text-sm">
+          <div className="space-y-3 text-sm overflow-y-auto pr-1">
             <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
               PDF view was acknowledged. You can now customize message and send.
             </div>
@@ -789,7 +1017,7 @@ export function PrintableKaiserReferralForm({
               <div className="mt-1 whitespace-pre-wrap text-sm">{previewMessage}</div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-background pt-3">
             <Button variant="outline" onClick={() => setEmailPreviewOpen(false)} disabled={isSendingToKaiser}>
               Cancel
             </Button>
@@ -828,6 +1056,29 @@ export function PrintableKaiserReferralForm({
       controlsPlacement="bottom"
       extraControlsBelow={
         <div className="space-y-3">
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                Draft autosaves while you type.
+                {autosaveStatus === 'saving'
+                  ? ' Saving...'
+                  : autosaveStatus === 'error'
+                    ? ' Autosave failed. Changes remain in this browser; retrying automatically.'
+                    : lastAutosavedAtLabel
+                      ? ` Last saved ${lastAutosavedAtLabel}.`
+                      : ''}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!isDraftHydrated || autosaveStatus === 'saving'}
+                onClick={() => void saveDraftNow()}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
           <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
             <div className="font-medium">Step 2: View PDF</div>
             <div className="mt-1 text-xs">Open external printable preview, review it, then close it and continue.</div>

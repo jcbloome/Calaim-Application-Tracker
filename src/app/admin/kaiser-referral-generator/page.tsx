@@ -206,6 +206,11 @@ export default function KaiserReferralGeneratorPage() {
             {lastLoadedLabel ? (
               <span className="text-xs text-muted-foreground">Last loaded: {lastLoadedLabel}</span>
             ) : null}
+            <Button asChild variant="outline" size="sm">
+              <Link href="/admin/email-logs/kaiser-referrals">
+                View Referral DataPage
+              </Link>
+            </Button>
           </div>
 
           <div className="relative max-w-md">
@@ -226,13 +231,23 @@ export default function KaiserReferralGeneratorPage() {
               </CardHeader>
               <CardContent>
                 <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                  {filteredMembers.map((member) => {
+                  {filteredMembers.map((member, index) => {
                     const clientId2 = clean(member.Client_ID2 || member.client_ID2);
                     const isSelected = clientId2 && clientId2 === clean(selectedClientId);
+                    const stableRowKey = [
+                      clientId2 || 'no-client-id2',
+                      clean(member.id),
+                      toName(member),
+                      clean(member.memberMrn),
+                      clean(member.memberCounty),
+                      String(index),
+                    ]
+                      .filter(Boolean)
+                      .join('__');
                     return (
                       <button
                         type="button"
-                        key={`${clientId2}-${toName(member)}`}
+                        key={stableRowKey}
                         onClick={() => setSelectedClientId(clientId2)}
                         className={`w-full rounded-md border p-3 text-left transition ${
                           isSelected ? 'border-blue-500 bg-blue-50' : 'hover:bg-muted/40'
