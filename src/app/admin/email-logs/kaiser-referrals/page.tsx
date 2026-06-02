@@ -87,6 +87,10 @@ function toTimestampMs(value: any): number {
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 }
 
+function resolveAuthorizationFileUrl(row: EmailLogEntry): string {
+  return String((row.metadata?.pdfStorageSignedUrl as string) || '').trim();
+}
+
 function KaiserReferralEmailLogsPageContent() {
   const { isAdmin, isUserLoading } = useAdmin();
   const firestore = useFirestore();
@@ -275,6 +279,7 @@ function KaiserReferralEmailLogsPageContent() {
                 const isTestSend = Boolean(row.metadata?.testSend);
                 const status = String(row.status || 'unknown').toLowerCase();
                 const kaiserRegion = resolveKaiserRegion(row);
+                const authorizationFileUrl = resolveAuthorizationFileUrl(row);
                 return (
                   <div key={row.id} className="rounded-md border p-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -310,6 +315,22 @@ function KaiserReferralEmailLogsPageContent() {
 
                     <div className="mt-2 text-sm">
                       <span className="font-medium">Subject:</span> {String(row.subject || 'N/A')}
+                    </div>
+
+                    <div className="mt-2 text-sm">
+                      <span className="font-medium">Authorization request file:</span>{' '}
+                      {authorizationFileUrl ? (
+                        <a
+                          href={authorizationFileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-700 underline underline-offset-2"
+                        >
+                          View PDF
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">Not available for this log</span>
+                      )}
                     </div>
 
                     {row.errorMessage ? (
