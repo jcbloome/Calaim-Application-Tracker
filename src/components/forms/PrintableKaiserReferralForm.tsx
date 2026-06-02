@@ -55,6 +55,25 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
   initialStep5AcknowledgedAtIso?: string;
   requiredAlft22Choice?: 'A' | 'B' | 'C' | '';
   requiredSection1AlfUsage?: 'yes' | 'no' | '';
+  onFormValuesChange?: (value: {
+    memberName: string;
+    memberDob: string;
+    memberPhone: string;
+    memberAddress: string;
+    memberMrn: string;
+    caregiverName: string;
+    caregiverContact: string;
+    referralDate: string;
+    referrerName: string;
+    referrerOrganization: string;
+    referrerNpi: string;
+    referrerAddress: string;
+    referrerEmail: string;
+    referrerPhone: string;
+    referrerRelationship: string;
+    currentLocationName: string;
+    currentLocationAddress: string;
+  }) => void;
   onCaregiverChange?: (value: { caregiverName: string; caregiverContact: string }) => void;
   onMemberContactAddressChange?: (value: { memberPhone: string; memberAddress: string }) => void;
   buildTemplatePdfUrl?: (download?: boolean) => string;
@@ -328,6 +347,7 @@ export function PrintableKaiserReferralForm({
   initialStep5AcknowledgedAtIso = '',
   requiredAlft22Choice = '',
   requiredSection1AlfUsage = '',
+  onFormValuesChange,
   onCaregiverChange,
   onMemberContactAddressChange,
   buildTemplatePdfUrl,
@@ -469,6 +489,29 @@ export function PrintableKaiserReferralForm({
       memberAddress: lineValue(formValues.memberAddress),
     });
   }, [formValues.memberPhone, formValues.memberAddress, onMemberContactAddressChange]);
+
+  React.useEffect(() => {
+    if (!onFormValuesChange) return;
+    onFormValuesChange({
+      memberName: lineValue(formValues.memberName),
+      memberDob: lineValue(formValues.memberDob),
+      memberPhone: lineValue(formValues.memberPhone),
+      memberAddress: lineValue(formValues.memberAddress),
+      memberMrn: lineValue(formValues.memberMrn),
+      caregiverName: lineValue(formValues.caregiverName),
+      caregiverContact: lineValue(formValues.caregiverContact),
+      referralDate: lineValue(formValues.referralDate),
+      referrerName: lineValue(formValues.referrerName),
+      referrerOrganization: lineValue(formValues.referrerOrganization),
+      referrerNpi: lineValue(formValues.referrerNpi),
+      referrerAddress: lineValue(formValues.referrerAddress),
+      referrerEmail: lineValue(formValues.referrerEmail),
+      referrerPhone: lineValue(formValues.referrerPhone),
+      referrerRelationship: lineValue(formValues.referrerRelationship),
+      currentLocationName: lineValue(formValues.currentLocationName),
+      currentLocationAddress: lineValue(formValues.currentLocationAddress),
+    });
+  }, [formValues, onFormValuesChange]);
 
   const buildPacketPdfBlob = async () => {
     if (!packetRef.current) {

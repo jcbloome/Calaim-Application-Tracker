@@ -143,16 +143,58 @@ function KaiserReferralPrintableContent() {
     memberPhone: formPrefill.memberPhone,
     memberAddress: formPrefill.memberAddress,
   }));
+  const [formFieldOverrides, setFormFieldOverrides] = useState<{
+    memberName: string;
+    memberDob: string;
+    memberMrn: string;
+    referralDate: string;
+    referrerName: string;
+    referrerOrganization: string;
+    referrerNpi: string;
+    referrerAddress: string;
+    referrerEmail: string;
+    referrerPhone: string;
+    referrerRelationship: string;
+    currentLocationName: string;
+    currentLocationAddress: string;
+  }>(() => ({
+    memberName: formPrefill.memberName,
+    memberDob: formPrefill.memberDob,
+    memberMrn: formPrefill.memberMrn || formPrefill.memberMediCal,
+    referralDate: formPrefill.referralDate,
+    referrerName: formPrefill.referrerName,
+    referrerOrganization: formPrefill.referrerOrganization,
+    referrerNpi: formPrefill.referrerNpi,
+    referrerAddress: formPrefill.referrerAddress,
+    referrerEmail: formPrefill.referrerEmail,
+    referrerPhone: formPrefill.referrerPhone,
+    referrerRelationship: formPrefill.referrerRelationship,
+    currentLocationName: formPrefill.currentLocationName,
+    currentLocationAddress: formPrefill.currentLocationAddress,
+  }));
 
   const printablePropsWithOverrides = useMemo(
     () => ({
       ...printableProps,
+      memberName: formFieldOverrides.memberName,
+      memberDob: formFieldOverrides.memberDob,
       memberPhone: memberOverrides.memberPhone,
       memberAddress: memberOverrides.memberAddress,
+      memberMrn: formFieldOverrides.memberMrn,
       caregiverName: caregiverOverrides.caregiverName,
       caregiverContact: caregiverOverrides.caregiverContact,
+      referralDate: formFieldOverrides.referralDate,
+      referrerName: formFieldOverrides.referrerName,
+      referrerOrganization: formFieldOverrides.referrerOrganization,
+      referrerNpi: formFieldOverrides.referrerNpi,
+      referrerAddress: formFieldOverrides.referrerAddress,
+      referrerEmail: formFieldOverrides.referrerEmail,
+      referrerPhone: formFieldOverrides.referrerPhone,
+      referrerRelationship: formFieldOverrides.referrerRelationship,
+      currentLocationName: formFieldOverrides.currentLocationName,
+      currentLocationAddress: formFieldOverrides.currentLocationAddress,
     }),
-    [printableProps, memberOverrides, caregiverOverrides]
+    [printableProps, memberOverrides, caregiverOverrides, formFieldOverrides]
   );
 
   const kaiserRegion = useMemo(
@@ -369,6 +411,24 @@ function KaiserReferralPrintableContent() {
       </div>
       <PrintableKaiserReferralForm
         {...printablePropsWithOverrides}
+        onFormValuesChange={(value) =>
+          setFormFieldOverrides((prev) => ({
+            ...prev,
+            memberName: value.memberName,
+            memberDob: value.memberDob,
+            memberMrn: value.memberMrn,
+            referralDate: value.referralDate,
+            referrerName: value.referrerName,
+            referrerOrganization: value.referrerOrganization,
+            referrerNpi: value.referrerNpi,
+            referrerAddress: value.referrerAddress,
+            referrerEmail: value.referrerEmail,
+            referrerPhone: value.referrerPhone,
+            referrerRelationship: value.referrerRelationship,
+            currentLocationName: value.currentLocationName,
+            currentLocationAddress: value.currentLocationAddress,
+          }))
+        }
         onMemberContactAddressChange={setMemberOverrides}
         onCaregiverChange={setCaregiverOverrides}
         buildTemplatePdfUrl={buildTemplateUrl}
