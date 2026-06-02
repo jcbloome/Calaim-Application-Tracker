@@ -28,29 +28,41 @@ export interface CaspioCredentials {
 import { trackCaspioCall } from '@/lib/caspio-usage-tracker';
 
 function normalizeCaspioOauthBaseUrl(rawValue: string): string {
-  const raw = String(rawValue || '').trim();
+  const raw = String(rawValue || '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '');
   if (!raw) return '';
 
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  try {
-    const parsed = new URL(withProtocol);
-    return parsed.origin.replace(/\/+$/g, '');
-  } catch {
-    return withProtocol
+  const stripKnownSuffixes = (value: string) =>
+    value
       .replace(/\/rest\/v2\/?$/i, '')
       .replace(/\/integrations\/rest\/v3\/?$/i, '')
       .replace(/\/tables\/.*$/i, '')
       .replace(/\/oauth\/token.*$/i, '')
       .replace(/\/+$/g, '');
+  try {
+    const parsed = new URL(withProtocol);
+    const normalizedPath = stripKnownSuffixes(parsed.pathname || '');
+    const path = normalizedPath && normalizedPath !== '/' ? normalizedPath : '';
+    return `${parsed.origin}${path}`.replace(/\/+$/g, '');
+  } catch {
+    return stripKnownSuffixes(withProtocol);
   }
 }
 
 export function getCaspioCredentialsFromEnv(): CaspioCredentials {
   const baseUrlRaw = process.env.CASPIO_BASE_URL || 'https://c7ebl500.caspio.com';
-  const clientId = process.env.CASPIO_CLIENT_ID;
-  const clientSecret = process.env.CASPIO_CLIENT_SECRET;
+  const clientId = String(process.env.CASPIO_CLIENT_ID || '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '');
+  const clientSecret = String(process.env.CASPIO_CLIENT_SECRET || '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '');
+  const sanitizedClientId = clientId.replace(/\s+/g, '');
+  const sanitizedClientSecret = clientSecret.replace(/\s+/g, '');
 
-  if (!clientId || !clientSecret) {
+  if (!sanitizedClientId || !sanitizedClientSecret) {
     throw new Error('Caspio credentials not configured');
   }
 
@@ -58,7 +70,7 @@ export function getCaspioCredentialsFromEnv(): CaspioCredentials {
   if (!baseUrl) {
     throw new Error('Caspio base URL is not configured correctly');
   }
-  return { baseUrl, clientId, clientSecret };
+  return { baseUrl, clientId: sanitizedClientId, clientSecret: sanitizedClientSecret };
 }
 
 export interface CaspioQueryOptions {
@@ -137,10 +149,16 @@ export function normalizeCaspioBlankValue<T = any>(value: T): any {
  */
 export async function getCaspioToken(credentials: CaspioCredentials): Promise<string> {
   const encoded = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString('base64');
-  const tokenBody = new URLSearchParams({ grant_type: 'client_credentials' });
-  const scope = String(process.env.CASPIO_SCOPE || '').trim();
-  if (scope) tokenBody.set('scope', scope);
-  const tokenResponse = await fetch(`${credentials.baseUrl}/oauth/token`, {
+  const buildTokenBody = (includeScope: boolean) => {
+    const body = new URLSearchParams({ grant_type: 'client_credentials' });
+    const scope = String(process.env.CASPIO_SCOPE || '').trim().replace(/^['"]+|['"]+$/g, '');
+    if (includeScope && scope) body.set('scope', scope);
+    return body;
+  };
+  const tokenBody = buildTokenBody(true);
+  const tokenUrl = `${credentials.baseUrl}/oauth/token`;
+
+  const tokenResponse = await fetch(tokenUrl, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${encoded}`,
@@ -151,12 +169,90 @@ export async function getCaspioToken(credentials: CaspioCredentials): Promise<st
   });
   trackCaspioCall({ method: 'POST', kind: 'token', status: tokenResponse.status, ok: tokenResponse.ok, context: 'oauth/token' });
 
-  if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text().catch(() => '');
-    throw new Error(`Failed to get Caspio token: ${tokenResponse.status} ${errorText}`);
+  let resolvedResponse = tokenResponse;
+  if (!resolvedResponse.ok) {
+    // Fallback for environments that reject Basic auth but accept body credentials.
+    const fallbackBody = new URLSearchParams(tokenBody);
+    fallbackBody.set('client_id', credentials.clientId);
+    fallbackBody.set('client_secret', credentials.clientSecret);
+
+    const fallbackResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: fallbackBody.toString(),
+    });
+    trackCaspioCall({
+      method: 'POST',
+      kind: 'token',
+      status: fallbackResponse.status,
+      ok: fallbackResponse.ok,
+      context: 'oauth/token:fallback-body-credentials',
+    });
+    if (fallbackResponse.ok) {
+      resolvedResponse = fallbackResponse;
+    } else {
+      // Last-resort fallback: retry body credentials without optional scope.
+      // Some environments reject unknown scope values with generic 400 responses.
+      const noScopeBody = buildTokenBody(false);
+      noScopeBody.set('client_id', credentials.clientId);
+      noScopeBody.set('client_secret', credentials.clientSecret);
+      const noScopeFallback = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: noScopeBody.toString(),
+      });
+      trackCaspioCall({
+        method: 'POST',
+        kind: 'token',
+        status: noScopeFallback.status,
+        ok: noScopeFallback.ok,
+        context: 'oauth/token:fallback-body-no-scope',
+      });
+      if (noScopeFallback.ok) {
+        resolvedResponse = noScopeFallback;
+      } else {
+      // Last-resort fallback: JSON body credentials.
+      const jsonFallback = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          grant_type: 'client_credentials',
+          client_id: credentials.clientId,
+          client_secret: credentials.clientSecret,
+        }),
+      });
+      trackCaspioCall({
+        method: 'POST',
+        kind: 'token',
+        status: jsonFallback.status,
+        ok: jsonFallback.ok,
+        context: 'oauth/token:fallback-json-body',
+      });
+      if (jsonFallback.ok) {
+        resolvedResponse = jsonFallback;
+      } else {
+      const firstErrorText = await tokenResponse.text().catch(() => '');
+      const fallbackErrorText = await fallbackResponse.text().catch(() => '');
+      const noScopeErrorText = await noScopeFallback.text().catch(() => '');
+      const jsonErrorText = await jsonFallback.text().catch(() => '');
+      throw new Error(
+        `Failed to get Caspio token (${tokenUrl}): primary=${tokenResponse.status} ${firstErrorText} | fallback=${fallbackResponse.status} ${fallbackErrorText} | fallbackNoScope=${noScopeFallback.status} ${noScopeErrorText} | fallbackJson=${jsonFallback.status} ${jsonErrorText}`
+      );
+      }
+      }
+    }
   }
 
-  const tokenData = await tokenResponse.json();
+  const tokenData = await resolvedResponse.json();
   const accessToken = String(tokenData?.access_token || '');
   if (!accessToken) throw new Error('Caspio token response missing access_token');
   return accessToken;

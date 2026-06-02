@@ -123,6 +123,14 @@ export function KaiserStaffAssignments({
             Non-active, Final-Member at RCFE, RN/MSW Scheduled, Tier Level Appeal, T2038 Received, Unreachable.
           </div>
           <div>
+            <span className="font-medium text-slate-700">No Action 7+ Days Excluded:</span>{' '}
+            T2038 Received, Unreachable; Final- Member at RCFE; Tier Level Appeal; Tier Level Requested.
+          </div>
+          <div>
+            <span className="font-medium text-slate-700">No Action 7+ Days Normal:</span>{' '}
+            Other statuses that are not in Critical (Need First Contact) or Priority (Doc Collection/RCFE Needed/R&amp;B Needed), and are not excluded.
+          </div>
+          <div>
             Passive statuses remain on the weekly ILS list.
           </div>
         </div>

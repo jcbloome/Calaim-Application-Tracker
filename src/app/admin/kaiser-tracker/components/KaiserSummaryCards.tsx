@@ -179,6 +179,10 @@ export function KaiserSummaryCards({
     const endDay = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
     return endDay >= todayStart;
   };
+  const isNoActionExcludedStatus = (status: string) => {
+    const normalized = normalize(status);
+    return normalized === 't2038 received unreachable';
+  };
 
   const getPriorityBucket = (status: string): 'priority' | 'lesser' | 'other' => {
     const normalized = normalize(status);
@@ -342,7 +346,11 @@ export function KaiserSummaryCards({
   }, [auth, members]);
 
   const noActionEligibleMembers = React.useMemo(
-    () => members.filter((member) => hasActiveT2038EndDate(member)),
+    () =>
+      members.filter((member) => {
+        if (!hasActiveT2038EndDate(member)) return false;
+        return !isNoActionExcludedStatus(getEffectiveKaiserStatus(member));
+      }),
     [members]
   );
   const noActionMembers = React.useMemo(() => {
