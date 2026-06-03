@@ -31,6 +31,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 const AGENCY_NAME = 'Connections Care Home Consultants';
+const DEFAULT_SIGNATURE_PHONE = '800-330-5993';
 const DEFAULT_PRE_REVIEW_MANAGER_NAME = 'John';
 const DEFAULT_PRE_REVIEW_MANAGER_EMAIL = 'john@carehomefinders.com';
 const DEFAULT_SEND_OWNER_NAME = 'Deydry';
@@ -228,6 +229,15 @@ type AlftAssignmentQueueRow = {
     verifiedByEmail?: string | null;
     verifiedByName?: string | null;
   } | null;
+  swEmailDeliveryLog?: Array<{
+    status?: string | null;
+    recipientEmail?: string | null;
+    atIso?: string | null;
+    triggeredByName?: string | null;
+    triggeredByEmail?: string | null;
+    isResend?: boolean | null;
+    error?: string | null;
+  }> | null;
   prefillVerification?: {
     manualSyncAt?: any;
     manualSyncByUid?: string | null;
@@ -1146,6 +1156,7 @@ export default function AdminAlftTrackerPage() {
               workflowSteps: (r.workflowSteps || null) as any,
               alftCompletionEmail: (r.alftCompletionEmail || null) as any,
               verificationSignoff: (r.verificationSignoff || null) as any,
+              swEmailDeliveryLog: (Array.isArray(r.swEmailDeliveryLog) ? r.swEmailDeliveryLog : null) as any,
               prefillVerification: (r.prefillVerification || null) as any,
               updatedAt: r.updatedAt,
             } as AlftAssignmentQueueRow;
@@ -1284,10 +1295,14 @@ export default function AdminAlftTrackerPage() {
     const memberName = String(swEmailPreviewRow.memberName || 'Member').trim();
     const mrn = String(swEmailPreviewRow.memberMrn || '').trim();
     const swName = String(swEmailPreviewRow.assignedSwName || 'Social Worker').trim();
+    const swFirstName = String(swName.includes(',') ? swName.split(',', 2)[1] : swName.split(/\s+/, 2)[0])
+      .trim()
+      .split(/\s+/, 2)[0] || 'Social Worker';
     const swEmail = String(swEmailPreviewRow.assignedSwEmail || '').trim();
     const assignedByName = String((swEmailPreviewRow as any)?.assignedByName || '').trim() || 'ALFT Manager';
     const assignedByEmail = String((swEmailPreviewRow as any)?.assignedByEmail || '').trim();
     const assignedByPhone = String((swEmailPreviewRow as any)?.assignedByPhone || '').trim();
+    const signaturePhone = DEFAULT_SIGNATURE_PHONE || assignedByPhone;
     const verified = Boolean(swEmailPreviewRow.verificationSignoff?.verified);
     const contactFirst = pickPreview('isp_contact_first');
     const contactLast = pickPreview('isp_contact_last');
@@ -1343,7 +1358,7 @@ export default function AdminAlftTrackerPage() {
       ispPhone,
       ispEmail,
       body: [
-        `Hi ${swName},`,
+        `Hi ${swFirstName},`,
         '',
         'We have a client who needs a Kaiser ALFT Care Assessment.',
         '',
@@ -1382,7 +1397,7 @@ export default function AdminAlftTrackerPage() {
         '—',
         `${assignedByName}`,
         `${assignedByEmail || 'No sender email listed'}`,
-        `${assignedByPhone || 'No sender phone listed'}`,
+        `${signaturePhone || 'No sender phone listed'}`,
         'Connections Care Home Consultants',
       ].join('\n'),
     };
@@ -1571,6 +1586,7 @@ export default function AdminAlftTrackerPage() {
               caspioSourceRecord,
               swId: row.assignedSwId || '',
               socialWorkerAssigned: row.assignedSwName || '',
+              assignedSwEmail: row.assignedSwEmail || '',
               ...(prefillPurpose ? { prefillPurpose } : {}),
             },
             overrideRecipientEmail: dummyEmail || undefined,
@@ -2394,6 +2410,30 @@ export default function AdminAlftTrackerPage() {
     toLabel((editAssignmentRow as any)?.verificationSignoff?.verifiedByName) ||
     toLabel((editAssignmentRow as any)?.verificationSignoff?.verifiedByEmail) ||
     '';
+  const editSwEmailDeliveryLog = useMemo(() => {
+    const raw = Array.isArray((editAssignmentRow as any)?.swEmailDeliveryLog)
+      ? (((editAssignmentRow as any).swEmailDeliveryLog as any[]) || [])
+      : [];
+    return raw
+      .map((entry: any) => {
+        const atRaw = entry?.atIso || '';
+        const atMs = toMs(atRaw);
+        return {
+          status: String(entry?.status || '').trim().toLowerCase(),
+          recipientEmail: String(entry?.recipientEmail || '').trim(),
+          atMs,
+          atLabel: atMs ? fmtTimeline(atMs) : String(atRaw || '').trim(),
+          triggeredBy:
+            String(entry?.triggeredByName || '').trim() ||
+            String(entry?.triggeredByEmail || '').trim() ||
+            '',
+          isResend: Boolean(entry?.isResend),
+          error: String(entry?.error || '').trim(),
+        };
+      })
+      .filter((entry) => Boolean(entry.status))
+      .sort((a, b) => b.atMs - a.atMs);
+  }, [editAssignmentRow]);
   const verificationReturnToHref = editAssignmentRow
     ? `/admin/alft-tracker?edit=${encodeURIComponent(
         String(editAssignmentRow.id || editAssignmentRow.memberId || '').trim()
@@ -2798,17 +2838,6 @@ export default function AdminAlftTrackerPage() {
           <DialogFooter className="shrink-0 border-t bg-background pt-3">
             {swPreviewActionRow ? (
               <Button
-                variant="outline"
-                disabled={pullingIspForMemberId === String(swPreviewActionRow.memberId || swPreviewActionRow.id || '').trim()}
-                onClick={() => void pullIspInfoFromCaspio(swPreviewActionRow)}
-              >
-                {pullingIspForMemberId === String(swPreviewActionRow.memberId || swPreviewActionRow.id || '').trim()
-                  ? 'Pulling ISP info...'
-                  : 'Pull ISP info from Caspio'}
-              </Button>
-            ) : null}
-            {swPreviewActionRow ? (
-              <Button
                 variant={swEmailPreview?.canSend ? 'default' : 'outline'}
                 className={swEmailPreview?.canSend ? 'bg-indigo-600 text-white hover:bg-indigo-700' : ''}
                 disabled={
@@ -2905,6 +2934,21 @@ export default function AdminAlftTrackerPage() {
                   ) : (
                     <div className="text-xs text-muted-foreground">SW email has not been sent yet. Use Step 3 to preview and send.</div>
                   )}
+                  {editSwEmailDeliveryLog.length ? (
+                    <div className="rounded border bg-muted/20 px-2 py-1.5 text-xs space-y-1">
+                      <div className="font-medium text-foreground">SW email send log</div>
+                      {editSwEmailDeliveryLog.slice(0, 5).map((entry, idx) => (
+                        <div key={`sw-email-log-${idx}`} className="text-muted-foreground">
+                          {entry.status === 'sent' ? 'Sent' : entry.status === 'failed' ? 'Failed' : 'Missing recipient'} to{' '}
+                          <span className="font-medium text-foreground">{entry.recipientEmail || 'no recipient email'}</span>
+                          {entry.atLabel ? ` at ${entry.atLabel}` : ''}
+                          {entry.isResend ? ' (re-send)' : ''}
+                          {entry.triggeredBy ? ` by ${entry.triggeredBy}` : ''}
+                          {entry.error ? ` — ${entry.error}` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="text-sm">
                     <span className="font-medium">4) SW Signed</span>{' '}
                     <span className={editAssignmentSignals?.swSubmitted ? 'text-emerald-700' : 'text-muted-foreground'}>

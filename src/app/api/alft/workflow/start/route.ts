@@ -48,6 +48,7 @@ type Body = {
     otherResponderRelationship?: string;
     swId?: string;
     socialWorkerAssigned?: string;
+    assignedSwEmail?: string;
     prefillSourceMode?: 'cs_summary_app' | 'caspio_selected_fields' | string;
     prefillPurpose?: 'initial' | 'change_condition' | 'review' | string;
     caspioSourceRecord?: Record<string, unknown>;
@@ -280,17 +281,18 @@ export async function POST(req: NextRequest) {
 
     const swId = clean(member?.swId, 80).toLowerCase();
     const swName = formatSocialWorkerName(member?.socialWorkerAssigned);
-    if (!swId && !swName) {
+    const directAssignedSwEmail = clean(member?.assignedSwEmail, 220).toLowerCase();
+    if (!swId && !swName && !directAssignedSwEmail) {
       return NextResponse.json(
-        { success: false, error: 'Member is missing both SW_ID and Social_Worker_Assigned in Caspio.' },
+        { success: false, error: 'Member is missing SW assignment details (SW_ID, Social_Worker_Assigned, and assigned SW email).' },
         { status: 409 }
       );
     }
 
-    let swEmail = '';
+    let swEmail = directAssignedSwEmail;
     let caspioStaff: Array<{ sw_id?: string; email?: string; name?: string }> = [];
     try {
-      if (swId || swName) {
+      if (!swEmail && (swId || swName)) {
         const credentials = getCaspioCredentialsFromEnv();
         const staff = await fetchCaspioSocialWorkers(credentials, { includeAssignmentCounts: false });
         caspioStaff = (staff || []) as Array<{ sw_id?: string; email?: string; name?: string }>;
@@ -637,6 +639,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const assignmentRef = adminDb.collection('alft_assignments').doc(memberId);
+    const existingAssignmentSnap = await assignmentRef.get();
+    const existingAssignment = existingAssignmentSnap.exists ? ((existingAssignmentSnap.data() as Record<string, unknown>) || {}) : {};
+    const existingDeliveryLogs = Array.isArray((existingAssignment as any)?.swEmailDeliveryLog)
+      ? (((existingAssignment as any).swEmailDeliveryLog as any[]) || [])
+      : [];
+    const isResendAttempt = existingDeliveryLogs.some((entry: any) => String(entry?.status || '').toLowerCase() === 'sent');
+
     const assignmentDoc: Record<string, any> = {
       memberId,
       memberName: resolvedMemberName,
@@ -715,9 +725,24 @@ export async function POST(req: NextRequest) {
         invitedByName: displayName || null,
       },
     };
-    await adminDb.collection('alft_assignments').doc(memberId).set(assignmentDoc, { merge: true });
+    await assignmentRef.set(assignmentDoc, { merge: true });
 
     if (!recipientEmail) {
+      await assignmentRef.set(
+        {
+          swEmailDeliveryLog: admin.firestore.FieldValue.arrayUnion({
+            status: 'missing_recipient',
+            recipientEmail: null,
+            atIso: new Date().toISOString(),
+            triggeredByName: displayName || null,
+            triggeredByEmail: email || null,
+            isResend: isResendAttempt,
+            error: 'No social worker email is assigned.',
+          }),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
       return NextResponse.json(
         {
           success: false,
@@ -828,6 +853,7 @@ export async function POST(req: NextRequest) {
         assignedBy: displayName,
         assignedByEmail: email || undefined,
         assignedByPhone: senderPhone || undefined,
+        senderCopyEmail: !overrideRecipientEmail ? (email || undefined) : undefined,
         ispContactName,
         ispContactRelationship,
         ispAddress,
@@ -844,7 +870,7 @@ export async function POST(req: NextRequest) {
         ispLastVerified: ispContactConfirmDate,
       });
       swEmailSent = true;
-      await adminDb.collection('alft_assignments').doc(memberId).set(
+      await assignmentRef.set(
         {
           status: 'sw_form_in_progress',
           workflowStatus: 'sw_invited_pending_submission',
@@ -866,11 +892,35 @@ export async function POST(req: NextRequest) {
             invitedByEmail: email || null,
             invitedByName: displayName || null,
           },
+          swEmailDeliveryLog: admin.firestore.FieldValue.arrayUnion({
+            status: 'sent',
+            recipientEmail: recipientEmail,
+            atIso: new Date().toISOString(),
+            triggeredByName: displayName || null,
+            triggeredByEmail: email || null,
+            isResend: isResendAttempt,
+            error: null,
+          }),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
     } catch (sendErr: any) {
+      await assignmentRef.set(
+        {
+          swEmailDeliveryLog: admin.firestore.FieldValue.arrayUnion({
+            status: 'failed',
+            recipientEmail: recipientEmail || null,
+            atIso: new Date().toISOString(),
+            triggeredByName: displayName || null,
+            triggeredByEmail: email || null,
+            isResend: isResendAttempt,
+            error: String(sendErr?.message || 'Failed to deliver SW email.'),
+          }),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
       return NextResponse.json(
         {
           success: false,

@@ -36,6 +36,7 @@ function getResendClient(): Resend | null {
 
 const DEFAULT_APP_BASE_URL = 'https://connectcalaim.com';
 const DEFAULT_PORTAL_LOGIN_URL = `${DEFAULT_APP_BASE_URL}/login`;
+const DEFAULT_SIGNATURE_PHONE = '800-330-5993';
 const REQUIREMENT_TITLE_TO_ID: Record<string, string> = {
     'cs member summary': 'cs-summary',
     'cs summary': 'cs-summary',
@@ -223,6 +224,7 @@ interface AlftWorkflowStartPayload {
     assignedBy?: string;
     assignedByEmail?: string;
     assignedByPhone?: string;
+    senderCopyEmail?: string;
     ispContactName?: string;
     ispContactRelationship?: string;
     ispAddress?: string;
@@ -630,6 +632,13 @@ export const sendSwClaimReminderEmail = async (payload: SwClaimReminderPayload) 
 
     const portalUrl = String(payload.portalUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
+    const socialWorkerFirstName = String(
+      socialWorkerName.includes(',')
+        ? socialWorkerName.split(',', 2)[1]
+        : socialWorkerName.split(/\s+/, 2)[0]
+    )
+      .trim()
+      .split(/\s+/, 2)[0] || 'Social Worker';
     const items = Array.isArray(payload.items) ? payload.items : [];
 
     const emailHtml = await renderAsync(
@@ -821,11 +830,20 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const portalUrl = portalUrlRaw.startsWith('http') ? portalUrlRaw : `${baseUrl}${portalUrlRaw.startsWith('/') ? '' : '/'}${portalUrlRaw}`;
 
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
+    const socialWorkerFirstName = String(
+      socialWorkerName.includes(',')
+        ? socialWorkerName.split(',', 2)[1]
+        : socialWorkerName.split(/\s+/, 2)[0]
+    )
+      .trim()
+      .split(/\s+/, 2)[0] || 'Social Worker';
     const memberName = String(payload.memberName || '').trim() || 'Member';
     const mrn = String(payload.mrn || '').trim();
     const assignedBy = String(payload.assignedBy || '').trim() || 'ALFT Manager';
     const assignedByEmail = String(payload.assignedByEmail || '').trim();
     const assignedByPhone = String(payload.assignedByPhone || '').trim();
+    const senderCopyEmail = String(payload.senderCopyEmail || '').trim().toLowerCase();
+    const signaturePhone = DEFAULT_SIGNATURE_PHONE || assignedByPhone;
     const ispContactName = String(payload.ispContactName || '').trim();
     const ispContactRelationship = String(payload.ispContactRelationship || '').trim();
     const ispAddress = String(payload.ispAddress || '').trim();
@@ -853,7 +871,7 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         <div style="margin: 0 0 16px;">
           <img src="${logoUrl}" alt="Connections CalAIM" style="height: 44px; width: auto; display: block;" />
         </div>
-        <p style="margin: 0 0 16px;">Hi ${socialWorkerName},</p>
+        <p style="margin: 0 0 16px;">Hi ${socialWorkerFirstName},</p>
         <p style="margin: 0 0 16px;">We have a client who needs a Kaiser ALFT Care Assessment.</p>
 
         <p style="margin: 0; font-weight: 700;">Client:</p>
@@ -896,15 +914,18 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         <p style="margin: 0;">—</p>
         <p style="margin: 0;">${assignedBy || 'John Amber'}</p>
         <p style="margin: 0;">${assignedByEmail || 'No sender email listed'}</p>
-        <p style="margin: 0;">${assignedByPhone || 'No sender phone listed'}</p>
+        <p style="margin: 0;">${signaturePhone || 'No sender phone listed'}</p>
         <p style="margin: 0;">Connections Care Home Consultants</p>
       </div>
     `;
+
+    const bccList = senderCopyEmail && senderCopyEmail !== to.toLowerCase() ? [senderCopyEmail] : [];
 
     return await sendViaResendWithLog({
         resend,
         from: 'CalAIM Tracker <noreply@carehomefinders.com>',
         to: [to],
+        bcc: bccList,
         subject: `ALFT assigned: ${memberName}`,
         html,
         template: 'alft_workflow_start',
