@@ -7457,6 +7457,12 @@ function ApplicationDetailPageContent() {
     formatDateTimeValue(kaiserReferralSubmission?.submittedAt) ||
     formatDateTimeValue(kaiserReferralSubmission?.submittedAtIso) ||
     '';
+  const kaiserReferralFormGeneratedAtLabel =
+    formatDateTimeValue((application as any)?.kaiserReferralFormGeneratedAt) ||
+    formatDateTimeValue((application as any)?.kaiserReferralFormGeneratedAtIso) ||
+    '';
+  const kaiserReferralFormGeneratedByName = String((application as any)?.kaiserReferralFormGeneratedByName || '').trim();
+  const kaiserReferralFormGeneratedByEmail = String((application as any)?.kaiserReferralFormGeneratedByEmail || '').trim();
   const kaiserStep5AcknowledgedAtLabel =
     formatDateTimeValue(kaiserReferralStep5?.acknowledgedAt) ||
     formatDateTimeValue(kaiserReferralStep5?.acknowledgedAtIso) ||
@@ -7504,6 +7510,39 @@ function ApplicationDetailPageContent() {
       ];
   const canConvertSkeletonToNormal =
     getComponentStatus('CS Member Summary') === 'Completed' || getComponentStatus('CS Summary') === 'Completed';
+
+  const logKaiserReferralFormGenerated = async () => {
+    if (!docRef) return;
+    const generatedAtIso = new Date().toISOString();
+    const generatedByName = String(user?.displayName || '').trim() || 'Admin';
+    const generatedByEmail = String(user?.email || '').trim();
+    try {
+      await setDoc(
+        docRef,
+        {
+          kaiserReferralFormGeneratedAt: serverTimestamp(),
+          kaiserReferralFormGeneratedAtIso: generatedAtIso,
+          kaiserReferralFormGeneratedByName: generatedByName,
+          kaiserReferralFormGeneratedByEmail: generatedByEmail || null,
+          lastUpdated: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      setApplication((prev) =>
+        prev
+          ? ({
+              ...prev,
+              kaiserReferralFormGeneratedAt: generatedAtIso,
+              kaiserReferralFormGeneratedAtIso: generatedAtIso,
+              kaiserReferralFormGeneratedByName: generatedByName,
+              kaiserReferralFormGeneratedByEmail: generatedByEmail || null,
+            } as any)
+          : prev
+      );
+    } catch (error) {
+      console.warn('Failed to record Kaiser referral form generation timestamp:', error);
+    }
+  };
 
   const getReviewerMeta = (reqTitle: string, formInfo?: any) => {
     const isSummary = reqTitle === 'CS Member Summary' || reqTitle === 'CS Summary';
@@ -12105,11 +12144,27 @@ function ApplicationDetailPageContent() {
               return (
                 <div className="space-y-2">
                   <Button asChild variant="outline" className="w-full justify-start gap-2 border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100">
-                    <Link href={`/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`} target="_blank" rel="noopener noreferrer">
+                    <Link
+                      href={`/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => {
+                        void logKaiserReferralFormGenerated();
+                      }}
+                    >
                       <FileText className="h-4 w-4 shrink-0" />
                       Generate Kaiser Referral Form (Pre-Filled)
                     </Link>
                   </Button>
+                  {kaiserReferralFormGeneratedAtLabel ? (
+                    <div className="rounded-md border border-blue-200 bg-blue-50/70 p-2 text-xs text-blue-900">
+                      Referral form generated at {kaiserReferralFormGeneratedAtLabel}
+                      {(kaiserReferralFormGeneratedByName || kaiserReferralFormGeneratedByEmail)
+                        ? ` by ${kaiserReferralFormGeneratedByName || kaiserReferralFormGeneratedByEmail}${kaiserReferralFormGeneratedByName && kaiserReferralFormGeneratedByEmail ? ` (${kaiserReferralFormGeneratedByEmail})` : ''}`
+                        : ''}
+                      .
+                    </div>
+                  ) : null}
                   <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
                     Assigned staff:{' '}
                     <span className="font-medium text-foreground">
