@@ -17,7 +17,8 @@ type Body = {
 
 const clean = (v: unknown, max = 8000) => String(v ?? '').trim().slice(0, max);
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
-const DEFAULT_FINAL_MANAGER_EMAILS = ['jason@carehomefinders.com', 'deydry@carehomefinders.com'];
+const JOHN_FINAL_REVIEW_EMAIL = 'john@carehomefinders.com';
+const JOHN_FINAL_REVIEW_NAME = 'John';
 
 const parsePngDataUrl = (dataUrl: string): Buffer | null => {
   const raw = String(dataUrl || '').trim();
@@ -434,27 +435,24 @@ export async function POST(req: NextRequest) {
               alftSignatureRequestId: requestId,
             });
           }
-          // Notify Kaiser managers that final review is now required.
-          const managerUsersSnap = await adminDb
+          // Notify John that final review is now required.
+          const johnUserSnap = await adminDb
             .collection('users')
-            .where('isKaiserAssignmentManager', '==', true)
-            .limit(30)
+            .where('email', '==', JOHN_FINAL_REVIEW_EMAIL)
+            .limit(1)
             .get()
             .catch(() => null);
-          const superAdminSnap = await adminDb.collection('roles_super_admin').limit(100).get().catch(() => null);
-          const recipientUids = new Set<string>();
-          (managerUsersSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
-          (superAdminSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
-          if (recipientUids.size > 0) {
+          const johnUid = clean(johnUserSnap?.docs?.[0]?.id, 128);
+          if (johnUid) {
             await Promise.all(
-              Array.from(recipientUids).map((managerUid) =>
+              [johnUid].map((managerUid) =>
                 adminDb.collection('staff_notifications').add({
                   userId: managerUid,
-                  recipientName: 'Kaiser Manager',
-                  title: 'ALFT final manager review required',
-                  message: `${memberName} • MRN ${mrn || '—'}\nRN signed. Please complete final Kaiser manager review.`,
+                  recipientName: JOHN_FINAL_REVIEW_NAME,
+                  title: 'ALFT ready for John final review',
+                  message: `${memberName} • MRN ${mrn || '—'}\nRN signed. Please complete John's final review step.`,
                   memberName,
-                  type: 'alft_manager_final_review',
+                  type: 'alft_john_final_review',
                   priority: 'Priority',
                   status: 'Open',
                   isRead: false,
@@ -471,30 +469,12 @@ export async function POST(req: NextRequest) {
               )
             );
           }
-
-          const superAdminUsersSnap = superAdminSnap && !superAdminSnap.empty
-            ? await adminDb
-                .collection('users')
-                .where(admin.firestore.FieldPath.documentId(), 'in', superAdminSnap.docs.slice(0, 30).map((d: any) => d.id))
-                .get()
-                .catch(() => null)
-            : null;
           const managerEmails = [
-            ...(managerUsersSnap?.docs || []).map((d: any) => ({
-              email: clean((d.data() as any)?.email, 220).toLowerCase(),
-              name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Manager',
-            })),
-            ...((superAdminUsersSnap?.docs || []).map((d: any) => ({
-              email: clean((d.data() as any)?.email, 220).toLowerCase(),
-              name: clean((d.data() as any)?.displayName, 160) || clean((d.data() as any)?.email, 220) || 'Super Admin',
-            }))),
-            ...DEFAULT_FINAL_MANAGER_EMAILS.map((managerEmail) => ({
-              email: clean(managerEmail, 220).toLowerCase(),
-              name: managerEmail.includes('jason@') ? 'Jason' : managerEmail.includes('deydry@') ? 'Deydry' : 'Kaiser Manager',
-            })),
-          ]
-            .filter((m: any) => Boolean(m.email))
-            .filter((m: any, idx: number, arr: any[]) => arr.findIndex((x: any) => x.email === m.email) === idx);
+            {
+              email: JOHN_FINAL_REVIEW_EMAIL,
+              name: JOHN_FINAL_REVIEW_NAME,
+            },
+          ];
           let managerStep4SentCount = 0;
           if (managerEmails.length > 0) {
             const results = await Promise.all(
@@ -504,8 +484,8 @@ export async function POST(req: NextRequest) {
                   managerName: manager.name,
                   memberName,
                   mrn: mrn || undefined,
-                  stageLabel: 'Step 4/5 RN signed, final manager review required',
-                  nextAction: 'Complete final manager review and release completed PDF packet.',
+                  stageLabel: 'Step 4/5 RN signed, John final review required',
+                  nextAction: 'John reviews first, then routes to Deydry for final send/print to Jocelyn.',
                   actionUrl: `/admin/alft-tracker?edit=${encodeURIComponent(intakeId)}`,
                   triggeredBy: clean((decoded as any)?.name, 160) || email || 'RN',
                 })

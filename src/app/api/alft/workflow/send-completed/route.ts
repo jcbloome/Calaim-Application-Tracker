@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 
 const clean = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
 const JOCELYN_EMAIL = 'jocelyn@ilshealth.com';
+const DEYDRY_SEND_EMAIL = 'deydry@carehomefinders.com';
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,6 +44,12 @@ export async function POST(req: NextRequest) {
     if (!allowed) {
       return NextResponse.json(
         { success: false, error: 'Kaiser staff/manager (or admin) access required to send completed ALFT to Jocelyn.' },
+        { status: 403 }
+      );
+    }
+    if (!isAdmin && email !== DEYDRY_SEND_EMAIL) {
+      return NextResponse.json(
+        { success: false, error: 'This step is assigned to Deydry. Ask Deydry to send/print the completed ALFT packet to Jocelyn.' },
         { status: 403 }
       );
     }
@@ -117,6 +124,12 @@ export async function POST(req: NextRequest) {
         status: 'completed',
         workflowStatus: 'completed_sent_to_jocelyn',
         workflowStage: 'completed_email_sent',
+        workflowRouting: {
+          nextStepKey: 'completed',
+          nextStepLabel: 'Completed',
+          nextRecipientName: 'Jocelyn',
+          nextRecipientEmail: to,
+        },
         workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         alftCompletionEmail: {
           to,

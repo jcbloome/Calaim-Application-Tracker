@@ -367,6 +367,14 @@ export default function AlftVerificationPage() {
       toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
       return;
     }
+    if (checked && !ispContactLastVerifiedFresh) {
+      toast({
+        title: 'Cannot verify yet',
+        description: 'ISP Contact Last Verified must be within 1 day before checking Verified.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setVerificationSaving(true);
     try {
       const actorEmail = asText(auth.currentUser?.email).toLowerCase();
@@ -587,7 +595,7 @@ export default function AlftVerificationPage() {
               <Checkbox
                 id="prefill-verified"
                 checked={verified}
-                disabled={!step2Completed || manualSyncing || verificationSaving || resettingTool}
+                disabled={!step2Completed || manualSyncing || verificationSaving || resettingTool || (!ispContactLastVerifiedFresh && !verified)}
                 onCheckedChange={(next) => void setVerifiedState(next === true)}
               />
               <label htmlFor="prefill-verified" className="text-sm font-medium leading-none">
@@ -598,6 +606,8 @@ export default function AlftVerificationPage() {
             <div className="mt-2 text-xs text-muted-foreground">
               {!step2Completed
                 ? 'Run Step 2 first to enable verification.'
+                : !ispContactLastVerifiedFresh
+                  ? 'Verification is locked until ISP Contact Last Verified is within 1 day.'
                 : verifiedBy
                   ? `Verified by ${verifiedBy}${verifiedAtLabel ? ` on ${verifiedAtLabel}` : ''}.`
                   : 'Not yet verified by staff.'}

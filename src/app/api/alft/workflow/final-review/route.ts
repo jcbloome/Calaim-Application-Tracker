@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isHardcodedAdminEmail } from '@/lib/admin-emails';
+import { sendAlftManagerWorkflowStageEmail } from '@/app/actions/send-email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,9 @@ type Body = {
 };
 
 const clean = (v: unknown, max = 400) => String(v ?? '').trim().slice(0, max);
+const JOHN_FINAL_REVIEW_EMAIL = 'john@carehomefinders.com';
+const DEYDRY_SEND_EMAIL = 'deydry@carehomefinders.com';
+const DEYDRY_SEND_NAME = 'Deydry';
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,14 +44,11 @@ export async function POST(req: NextRequest) {
       isAdmin = adminRole.exists || superAdminRole.exists;
     }
 
-    const meSnap = await adminDb.collection('users').doc(uid).get().catch(() => null);
-    const me = meSnap?.exists ? (meSnap.data() as any) : null;
-    const isKaiserAssignmentManager = Boolean(me?.isKaiserAssignmentManager);
-    const isKaiserStaff = Boolean(me?.isKaiserStaff);
-    const canReview = isAdmin || isKaiserAssignmentManager || isKaiserStaff;
+    const isJohnFinalReviewer = email === JOHN_FINAL_REVIEW_EMAIL;
+    const canReview = isAdmin || isJohnFinalReviewer;
     if (!canReview) {
       return NextResponse.json(
-        { success: false, error: 'Kaiser staff/manager (or admin) access is required for final ALFT review.' },
+        { success: false, error: 'John (or admin) is required for this final ALFT review step.' },
         { status: 403 }
       );
     }
@@ -83,6 +84,14 @@ export async function POST(req: NextRequest) {
         },
         workflowStatus: 'manager_review_complete_ready_to_send',
         workflowStage: 'manager_final_review_complete',
+        workflowRouting: {
+          nextStepKey: 'deydry_send_to_jocelyn',
+          nextStepLabel: 'Deydry send/print to Jocelyn',
+          nextRecipientName: DEYDRY_SEND_NAME,
+          nextRecipientEmail: DEYDRY_SEND_EMAIL,
+          finalReviewOwnerName: JOHN_FINAL_REVIEW_EMAIL === email ? 'John' : name || 'John',
+          finalReviewOwnerEmail: email || JOHN_FINAL_REVIEW_EMAIL,
+        },
         workflowUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
@@ -90,46 +99,51 @@ export async function POST(req: NextRequest) {
     );
 
     try {
-      const managerUsersSnap = await adminDb
+      const deydryUserSnap = await adminDb
         .collection('users')
-        .where('isKaiserAssignmentManager', '==', true)
-        .limit(50)
+        .where('email', '==', DEYDRY_SEND_EMAIL)
+        .limit(1)
         .get()
         .catch(() => null);
-      const superAdminsSnap = await adminDb.collection('roles_super_admin').limit(100).get().catch(() => null);
-      const recipientUids = new Set<string>();
-      (managerUsersSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
-      (superAdminsSnap?.docs || []).forEach((d: any) => recipientUids.add(clean(d.id, 128)));
 
       const memberName = clean((intake as any)?.memberName, 160) || 'Member';
       const mrn = clean((intake as any)?.medicalRecordNumber || (intake as any)?.kaiserMrn, 80);
-      if (recipientUids.size > 0) {
+      const deydryUid = clean(deydryUserSnap?.docs?.[0]?.id, 128);
+      if (deydryUid) {
         await Promise.all(
-          Array.from(recipientUids)
-            .filter(Boolean)
-            .map((recipientUid) =>
-              adminDb.collection('staff_notifications').add({
-                userId: recipientUid,
-                recipientName: 'Kaiser Manager',
-                title: 'ALFT final review complete',
-                message: `${memberName} • MRN ${mrn || '—'}\nFinal review complete. Ready to send completed packet to Jocelyn.`,
-                memberName,
-                type: 'alft_ready_to_send_jocelyn',
-                priority: 'Priority',
-                status: 'Open',
-                isRead: false,
-                source: 'system',
-                createdBy: uid,
-                createdByName: name,
-                senderName: name,
-                senderId: uid,
-                timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
-                standaloneUploadId: intakeId,
-              })
-            )
+          [deydryUid].map((recipientUid) =>
+            adminDb.collection('staff_notifications').add({
+              userId: recipientUid,
+              recipientName: DEYDRY_SEND_NAME,
+              title: 'ALFT ready for Deydry send step',
+              message: `${memberName} • MRN ${mrn || '—'}\nJohn completed final review. Send/print packet to Jocelyn.`,
+              memberName,
+              type: 'alft_ready_for_deydry_send',
+              priority: 'Priority',
+              status: 'Open',
+              isRead: false,
+              source: 'system',
+              createdBy: uid,
+              createdByName: name,
+              senderName: name,
+              senderId: uid,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              actionUrl: `/admin/alft-tracker?focus=${encodeURIComponent(intakeId)}`,
+              standaloneUploadId: intakeId,
+            })
+          )
         );
       }
+      await sendAlftManagerWorkflowStageEmail({
+        to: DEYDRY_SEND_EMAIL,
+        managerName: DEYDRY_SEND_NAME,
+        memberName,
+        mrn: mrn || undefined,
+        stageLabel: 'John final review complete',
+        nextAction: 'Send or print the completed ALFT packet to Jocelyn at ILS.',
+        actionUrl: `/admin/alft-tracker?edit=${encodeURIComponent(intakeId)}`,
+        triggeredBy: name,
+      }).catch(() => null);
     } catch {
       // best-effort only
     }

@@ -33,6 +33,8 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 const AGENCY_NAME = 'Connections Care Home Consultants';
 const DEFAULT_PRE_REVIEW_MANAGER_NAME = 'John';
 const DEFAULT_PRE_REVIEW_MANAGER_EMAIL = 'john@carehomefinders.com';
+const DEFAULT_SEND_OWNER_NAME = 'Deydry';
+const DEFAULT_SEND_OWNER_EMAIL = 'deydry@carehomefinders.com';
 
 type StandaloneUpload = {
   id: string;
@@ -430,8 +432,8 @@ const stageBlockClass = (stage: StageKey) => {
 const trackerCurrentStatusLabel = (r: StandaloneUpload, stage: StageKey) => {
   const workflowStatus = toLabel((r as any)?.workflowStatus).toLowerCase();
   if (stage === 'returned_to_sw') return 'Sent back to social worker';
-  if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) return 'Sent to CS manager for final review';
-  if (workflowStatus.includes('manager_review_complete_ready_to_send')) return 'Manager final approval complete';
+  if (workflowStatus.includes('awaiting_kaiser_manager_final_review')) return 'Sent to John for final review';
+  if (workflowStatus.includes('manager_review_complete_ready_to_send')) return 'John final review complete; awaiting Deydry send step';
   if (workflowStatus.includes('awaiting_rn_revision_and_signatures') || workflowStatus.includes('awaiting_rn_final_signature')) {
     return 'Sent to Leslie for RN review/signature';
   }
@@ -529,12 +531,13 @@ const assignmentWorkflowSignals = (row: AlftAssignmentQueueRow) => {
     workflowStatus.includes('awaiting_rn_revision_and_signatures') ||
     workflowStatus.includes('awaiting_rn_final_signature');
   const finalManager = workflowStatus.includes('awaiting_kaiser_manager_final_review');
+  const readyToSend = workflowStatus.includes('manager_review_complete_ready_to_send');
   const complete = workflowStatus.includes('completed_sent_to_jocelyn') || status === 'completed';
-  return { status, workflowStatus, swInviteSent, swSubmitted, returnedToSw, rnStep, finalManager, complete };
+  return { status, workflowStatus, swInviteSent, swSubmitted, returnedToSw, rnStep, finalManager, readyToSend, complete };
 };
 
 const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
-  const { workflowStatus, swInviteSent, swSubmitted, returnedToSw, rnStep, finalManager, complete } =
+  const { workflowStatus, swInviteSent, swSubmitted, returnedToSw, rnStep, finalManager, readyToSend, complete } =
     assignmentWorkflowSignals(row);
   if (complete) {
     return 'Next: Workflow complete. Send/confirm completed ALFT PDF to Jocelyn.';
@@ -543,10 +546,13 @@ const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
     return 'Next: SW applies requested changes, signs again, and routes back to John for re-check.';
   }
   if (rnStep) {
-    return 'Next: RN reviews, edits as needed, and signs; then packet routes to Deydry/Jason for final review.';
+    return 'Next: RN reviews, edits as needed, and signs; then packet routes to John for final review.';
   }
   if (finalManager) {
-    return 'Next: Deydry/Jason final review, then send completed ALFT PDF to Jocelyn.';
+    return 'Next: John completes final review, then routes to Deydry for send/print to Jocelyn.';
+  }
+  if (readyToSend) {
+    return 'Next: Deydry sends or prints the completed ALFT packet to Jocelyn.';
   }
   if (swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
     return 'Next: John (ALTA manager) does first review and either rejects for SW changes or approves to send to RN.';
@@ -558,7 +564,7 @@ const nextStepForAssignment = (row: AlftAssignmentQueueRow) => {
 };
 
 const assignmentStageBlock = (row: AlftAssignmentQueueRow) => {
-  const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager, complete } =
+  const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager, readyToSend, complete } =
     assignmentWorkflowSignals(row);
   if (complete) {
     return { label: 'Completed', color: 'border-green-300 bg-green-50 text-green-900' };
@@ -570,7 +576,10 @@ const assignmentStageBlock = (row: AlftAssignmentQueueRow) => {
     return { label: 'RN review/signature', color: 'border-violet-300 bg-violet-50 text-violet-900' };
   }
   if (finalManager) {
-    return { label: 'Final manager review', color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900' };
+    return { label: 'John final review', color: 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900' };
+  }
+  if (readyToSend) {
+    return { label: 'Deydry send/print step', color: 'border-purple-300 bg-purple-50 text-purple-900' };
   }
   if (swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
     return { label: 'Manager pre-review', color: 'border-sky-300 bg-sky-50 text-sky-900' };
@@ -582,7 +591,7 @@ const assignmentStageBlock = (row: AlftAssignmentQueueRow) => {
 };
 
 const assignmentNextRecipientBlock = (row: AlftAssignmentQueueRow) => {
-  const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager, complete } = assignmentWorkflowSignals(row);
+  const { workflowStatus, swSubmitted, returnedToSw, rnStep, finalManager, readyToSend, complete } = assignmentWorkflowSignals(row);
   const swName = toLabel(row.assignedSwName) || 'Social Worker';
   const swEmail = toLabel(row.assignedSwEmail);
   const managerName = toLabel(
@@ -595,6 +604,12 @@ const assignmentNextRecipientBlock = (row: AlftAssignmentQueueRow) => {
     (row as any)?.assignedManagerEmail ||
     (row as any)?.assignedByEmail
   ) || DEFAULT_PRE_REVIEW_MANAGER_EMAIL;
+  const sendOwnerName =
+    toLabel((row as any)?.workflowRouting?.nextRecipientName) ||
+    DEFAULT_SEND_OWNER_NAME;
+  const sendOwnerEmail =
+    toLabel((row as any)?.workflowRouting?.nextRecipientEmail) ||
+    DEFAULT_SEND_OWNER_EMAIL;
 
   if (returnedToSw) {
     return { label: 'SW revision needed', name: swName, email: swEmail, color: 'border-red-300 bg-red-50 text-red-900' };
@@ -606,7 +621,10 @@ const assignmentNextRecipientBlock = (row: AlftAssignmentQueueRow) => {
     return { label: 'RN review/signature', name: 'Leslie (RN)', email: 'rn@carehomefinders.com', color: 'border-violet-300 bg-violet-50 text-violet-900' };
   }
   if (finalManager || swSubmitted || workflowStatus.includes('awaiting_manager_review_pre_rn')) {
-    return { label: 'Manager review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
+    return { label: finalManager ? 'John final review' : 'Manager review', name: managerName, email: managerEmail, color: 'border-sky-300 bg-sky-50 text-sky-900' };
+  }
+  if (readyToSend) {
+    return { label: 'Deydry send step', name: sendOwnerName, email: sendOwnerEmail, color: 'border-purple-300 bg-purple-50 text-purple-900' };
   }
   if (workflowStatus.includes('sw_invited') || workflowStatus.includes('sw_form')) {
     return { label: 'SW invited/submitting', name: swName, email: swEmail, color: 'border-emerald-300 bg-emerald-50 text-emerald-900' };
@@ -753,7 +771,7 @@ const assignmentWorkflowSteps = (row: AlftAssignmentQueueRow) => {
     { step: 5, chip: 'John First Review', label: 'John approves or rejects with needed changes', done: swSubmitted, current: swSubmitted && !returnedToSw && !rnStep },
     { step: 6, chip: 'Return + Re-check', label: 'If rejected, SW updates and John re-checks before RN', done: returnedToSw || rnStep || finalManager || complete, current: returnedToSw },
     { step: 7, chip: 'RN Review + Sign', label: 'RN reviews, edits as needed, and signs', done: rnStep || finalManager || complete, current: rnStep && !finalManager },
-    { step: 8, chip: 'Final + Jocelyn', label: 'Deydry/Jason final review then send completed PDF to Jocelyn', done: finalManager || complete, current: finalManager && !complete },
+    { step: 8, chip: 'Final + Jocelyn', label: 'John final review, then Deydry send/print to Jocelyn', done: finalManager || complete, current: finalManager && !complete },
   ];
 };
 
@@ -862,7 +880,7 @@ const workflowChecklistFor = (r: StandaloneUpload): WorkflowChecklistStep[] => {
     },
     {
       id: 'sent_to_cs_manager',
-      label: '5) Sent to CS manager for final review',
+      label: '5) Sent to John for final review',
       done: sentToManagerForFinalReview,
       current: workflowStatus.includes('awaiting_kaiser_manager_final_review'),
       atMs: sentToCsManagerAtMs || undefined,
@@ -1947,7 +1965,7 @@ export default function AdminAlftTrackerPage() {
       'ALFT form updated by Kaiser staff.';
     const actions =
       String(editRequestedActions || '').trim() ||
-      'Review digital ALFT form. RN (Leslie) to add comments and sign. Manager (Deydry/Jason) to review and send to Jocelyn.';
+      'Review digital ALFT form. RN (Leslie) adds comments/signature, John completes final review, then Deydry sends/prints to Jocelyn.';
     try {
       setEditSaving(true);
       const idToken = await auth.currentUser.getIdToken();
@@ -2054,12 +2072,12 @@ export default function AdminAlftTrackerPage() {
         throw new Error(String(data?.error || `Route failed (HTTP ${res.status})`));
       }
       toast({
-        title: 'Routed to CS manager',
-        description: 'This ALFT is now awaiting CS manager final review.',
+        title: 'Routed to John final review',
+        description: 'This ALFT is now awaiting John for final review.',
       });
     } catch (e: any) {
       toast({
-        title: 'Could not route to CS manager',
+        title: 'Could not route to John',
         description: e?.message || 'Route failed.',
         variant: 'destructive',
       });
@@ -2111,7 +2129,7 @@ export default function AdminAlftTrackerPage() {
       setSigDialogOpen(true);
       toast({
         title: 'Signature request sent',
-        description: `Pre-review complete. Next: ${String(data?.rnRecipient?.name || 'RN')} updates/signs, then Deydry final review. RN email to ${String(data?.rnRecipient?.email || 'configured RN')}: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.testMode ? 'skipped (test mode)' : data?.msw?.emailSent ? 'sent' : 'not sent'}`,
+        description: `Pre-review complete. Next: ${String(data?.rnRecipient?.name || 'RN')} updates/signs, then John final review, then Deydry send step. RN email to ${String(data?.rnRecipient?.email || 'configured RN')}: ${data?.rn?.emailSent ? 'sent' : 'not sent'} • MSW email: ${data?.testMode ? 'skipped (test mode)' : data?.msw?.emailSent ? 'sent' : 'not sent'}`,
       });
     } catch (e: any) {
       toast({ title: 'Could not request signatures', description: e?.message || 'Request failed.', variant: 'destructive' });
@@ -2396,7 +2414,7 @@ export default function AdminAlftTrackerPage() {
   }, [editAssignmentRow, isEditRoute, swEmailPreviewOpen, swEmailPreviewRow]);
   const workflowPageDescription = isEditRoute
     ? 'Single-member workflow page. Complete edits and actions for this member only.'
-    : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, Kaiser manager does final review, then completed packet is sent to Jocelyn.';
+    : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, then John final review routes to Deydry for send/print to Jocelyn.';
 
   if (isLoading) {
     return (
@@ -2475,7 +2493,7 @@ export default function AdminAlftTrackerPage() {
       ) : null}
       {managerActionsOnly ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          Showing only Kaiser Manager Actions. Review highlighted members, complete final manager review, and send completed packet to Jocelyn.
+          Showing only Kaiser Manager Actions. Review highlighted members, complete John final review, then route to Deydry for final send/print to Jocelyn.
         </div>
       ) : null}
       {!isEditRoute ? (
@@ -2528,6 +2546,10 @@ export default function AdminAlftTrackerPage() {
                     const isExpanded = expandedMemberId === r.id;
                     const trackerUpdatedAtMs = Math.max(toMs((r as any)?.updatedAt), toMs((r as any)?.createdAt));
                     const trackerUpdatedAtLabel = trackerUpdatedAtMs ? fmtTimeline(trackerUpdatedAtMs) : '';
+                    const finalReviewerName =
+                      toLabel((r as any)?.workflowRouting?.finalReviewOwnerName) || DEFAULT_PRE_REVIEW_MANAGER_NAME;
+                    const sendOwnerName =
+                      toLabel((r as any)?.workflowRouting?.nextRecipientName) || DEFAULT_SEND_OWNER_NAME;
 
                     return [
                       <TableRow key={`row-${r.id}`} className={cn(focused ? 'bg-amber-50/30' : '')}>
@@ -2582,6 +2604,12 @@ export default function AdminAlftTrackerPage() {
                             {r.alftRnName ? (
                               <Badge variant="outline">RN: {r.alftRnName}</Badge>
                             ) : null}
+                            <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-900">
+                              Final Reviewer: {finalReviewerName}
+                            </Badge>
+                            <Badge variant="outline" className="border-purple-300 bg-purple-50 text-purple-900">
+                              Send Owner: {sendOwnerName}
+                            </Badge>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
@@ -2916,7 +2944,7 @@ export default function AdminAlftTrackerPage() {
                 variant="outline"
                 onClick={() => editRow && void routeToCsManagerFinalReview(editRow)}
                 disabled={!canRouteToCsManagerFromEdit || routingToFinalManagerId === String(editRow?.id || '')}
-                title="After RN review/edits, route back to CS manager for final review"
+                title="After RN review/edits, route to John for final review"
               >
                 {routingToFinalManagerId === String(editRow?.id || '') ? 'Routing…' : 'Send to CS Manager for Final Review'}
               </Button>
