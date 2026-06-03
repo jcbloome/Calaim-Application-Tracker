@@ -131,6 +131,12 @@ const PRE_ASSESSMENT_NOTES_FIELD_CANDIDATES = [
   'Care_Needs_Notes',
   'Care_Notes',
 ];
+const SNF_DIVERSION_REASON_FIELD_CANDIDATES = [
+  'SNFDiversionReason',
+  'SNF_Diversion_Reason',
+  'SNF_Diversion_Notes',
+  'Diversion_Reason',
+];
 const LAST_ELIGIBILITY_CHECK_FIELD_CANDIDATES = [
   'Last_Eligibility_Check',
   'LastEligibilityCheck',
@@ -290,6 +296,13 @@ const canonicalizeApplicationData = (raw: Record<string, any>) => {
     'memberHealthPlan',
     'CalAIM_MCP',
   ]) || fromNormalized('health plan') || fromNormalized('calaim mco'));
+  setIfMissing('snfDiversionReason', pickFirstNonEmpty(app, [
+    'snfDiversionReason',
+    'SNFDiversionReason',
+    'SNF_Diversion_Reason',
+    'SNF_Diversion_Notes',
+    'Diversion_Reason',
+  ]) || fromNormalized('snf diversion reason') || fromNormalized('snf diversion notes') || fromNormalized('diversion reason'));
   const ispLocationTypeValue = pickFirstNonEmpty(app, [
     'ispLocationType',
     'ispLocation',
@@ -1003,6 +1016,23 @@ export async function POST(request: NextRequest) {
       applicationData?.pre_assessment_care_needs_notes ||
       applicationData?.preAssessmentNotes
     );
+    const snfDiversionReasonNotes = clean(
+      applicationData?.snfDiversionReason ||
+      applicationData?.SNFDiversionReason ||
+      applicationData?.SNF_Diversion_Reason ||
+      applicationData?.SNF_Diversion_Notes
+    );
+    const combinedPushNotes = (() => {
+      if (preAssessmentNotes && snfDiversionReasonNotes) {
+        if (normalizeFieldName(preAssessmentNotes) === normalizeFieldName(snfDiversionReasonNotes)) {
+          return preAssessmentNotes;
+        }
+        return `${preAssessmentNotes}\n\nSNF Diversion Reason: ${snfDiversionReasonNotes}`;
+      }
+      if (preAssessmentNotes) return preAssessmentNotes;
+      if (snfDiversionReasonNotes) return `SNF Diversion Reason: ${snfDiversionReasonNotes}`;
+      return '';
+    })();
     const isDraftLikeForPush =
       clean(applicationData?.status).toLowerCase() === 'draft' ||
       Boolean(applicationData?.createdByAdmin) ||
@@ -1088,12 +1118,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (isDraftLikeForPush && !preAssessmentNotes) {
+    if (isDraftLikeForPush && !combinedPushNotes) {
       return NextResponse.json(
         {
           success: false,
           code: 'missing-pre-push-notes',
-            message: 'Notes are required before pushing draft applications to Caspio.',
+            message: 'Pre-assessment notes or SNF diversion reason notes are required before pushing draft applications to Caspio.',
         },
         { status: 400 }
       );
@@ -1175,12 +1205,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      if (!preAssessmentNotes) {
+      if (!combinedPushNotes) {
         return NextResponse.json(
           {
             success: false,
             code: 'missing-pre-push-notes',
-            message: 'Notes are required before sending notes to Caspio.',
+            message: 'Pre-assessment notes or SNF diversion reason notes are required before sending notes to Caspio.',
           },
           { status: 400 }
         );
@@ -1189,7 +1219,7 @@ export async function POST(request: NextRequest) {
         baseUrl,
         token,
         clientId2: hintedClientId2,
-        preAssessmentNotes,
+        preAssessmentNotes: combinedPushNotes,
         firstName,
         lastName,
         assignedStaffId,
@@ -1391,6 +1421,19 @@ export async function POST(request: NextRequest) {
         memberData[notesFieldName] = preAssessmentNotes;
       }
     }
+    if (snfDiversionReasonNotes) {
+      const mappedDiversionField = Object.keys(memberData).find((name) =>
+        normalizeFieldName(name).includes('snfdiversionreason')
+      );
+      const diversionReasonFieldName =
+        mappedDiversionField ||
+        SNF_DIVERSION_REASON_FIELD_CANDIDATES.find((name) =>
+          fieldNameByNormalized.has(normalizeFieldName(name))
+        );
+      if (diversionReasonFieldName) {
+        memberData[diversionReasonFieldName] = snfDiversionReasonNotes;
+      }
+    }
     const holdFieldCandidates = [
       HOLD_FOR_SOCIAL_WORKER_FIELD,
       'Hold_For_Social_Worker',
@@ -1485,7 +1528,7 @@ export async function POST(request: NextRequest) {
         baseUrl,
         token,
         clientId2: resolvedClientId2,
-        preAssessmentNotes,
+        preAssessmentNotes: combinedPushNotes,
         firstName,
         lastName,
         assignedStaffId,

@@ -217,7 +217,6 @@ export function PrintableCsSummaryFormContent() {
                             <li>Is able to safely reside in RCFE with appropriate and cost-effective supports and services; and</li>
                             <li>Must be currently at medically necessary SNF level of care: e.g., require substantial help with activities of daily living (help with dressing, bathing, incontinence, etc.) or at risk of premature institutionalization; and meet the criteria to receive those services in RCFE or ARF.</li>
                         </ul>
-                            <Field label="Reason for SNF Diversion (if applicable)" className="sm:col-span-2 mt-2" />
                     </div>
                     <CheckboxField label="All criteria for the selected pathway (SNF Diversion/Transition) have been met." />
                 </div>
@@ -246,6 +245,10 @@ export function PrintableCsSummaryFormContent() {
                     <p className="text-xs text-gray-600 my-2">
                       Our MSW/RN needs to know who to contact to discuss the care needs of the member, review the Physician's report (602), and other clinical notes. Who is the best person to contact for the ISP? Please note this is not the primary care doctor but could be a SNF social worker, etc.
                     </p>
+                    <div className="mt-2">
+                      <CheckboxField label="Only ISP contact is the member" />
+                      <CheckboxField label="ISP contact is Primary Contact" />
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
                     <Field label="ISP Contact First Name" />
                     <Field label="ISP Contact Last Name" />
@@ -253,6 +256,7 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="ISP Contact Phone" description="xxx-xxx-xxxx"/>
                     <Field label="ISP Contact Email" className="sm:col-span-2" description='If no email, enter "N/A".'/>
                     </div>
+                    <Field label="Reason for SNF Diversion (notes)" className="sm:col-span-2 mt-2" />
                     
                     <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">

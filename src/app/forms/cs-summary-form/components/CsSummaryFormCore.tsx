@@ -33,13 +33,15 @@ const steps = [
       'hasLegalRep', 'repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail'
   ]},
   { id: 2, name: 'Location Information', fields: ['currentLocation', 'currentLocationName', 'currentAddress', 'currentCity', 'currentState', 'currentZip', 'currentCounty', 'customaryLocationType', 'customaryLocationName', 'customaryAddress', 'customaryCity', 'customaryState', 'customaryZip', 'customaryCounty'] },
-  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'switchingHealthPlan', 'existingHealthPlan', 'snfDiversionReason'] },
+  { id: 3, name: 'Health Plan & Pathway', fields: ['healthPlan', 'pathway', 'switchingHealthPlan', 'existingHealthPlan'] },
   { id: 4, name: 'Financial & Cost Information', fields: [] },
   { id: 5, name: 'ISP, ALW, RCFE Selection', fields: [
       'ispContactIsMember',
+      'ispContactSameAsPrimary',
       'ispLocationSameAsCurrent',
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail',
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip',
+      'snfDiversionReason',
       'preAssessmentCareNeedsNotes',
       'onALWWaitlist', 'hasPrefRCFE',
       'rcfeName', 'rcfeAddress', 'rcfePreferredCities',
@@ -147,6 +149,7 @@ function CsSummaryFormComponent() {
       submitterAlsoReceivesDocRequests: false,
       copyAddress: false,
       ispContactIsMember: false,
+      ispContactSameAsPrimary: false,
       ispLocationSameAsCurrent: false,
     }
   });
@@ -540,9 +543,15 @@ function CsSummaryFormComponent() {
               dataToSave.submissionDate = serverTimestamp();
           }
 
-          // For admin-created applications, mark them as such
+          // For admin-stored docs, preserve explicit conversion to normal apps.
+          // Previously this always reset createdByAdmin=true on every save for
+          // admin_app_* IDs, which made converted apps revert to skeleton mode.
           if (targetIsAdminCreatedDoc) {
-              dataToSave.createdByAdmin = true;
+              const keepSkeletonMode = isNewDoc ? true : Boolean((currentData as any)?.createdByAdmin);
+              dataToSave.createdByAdmin = keepSkeletonMode;
+              if (!keepSkeletonMode) {
+                dataToSave.allowDraftCaspioPush = false;
+              }
           }
 
           setDoc(resolvedDocRef, dataToSave, { merge: true })

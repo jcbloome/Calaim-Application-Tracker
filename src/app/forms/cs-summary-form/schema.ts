@@ -131,6 +131,7 @@ export const formSchema = z.object({
 
     // Step 4 - ISP & RCFE
     ispContactIsMember: z.boolean().optional().nullable().transform(val => val === true),
+    ispContactSameAsPrimary: z.boolean().optional().nullable().transform(val => val === true),
     ispFirstName: optionalString,
     ispLastName: optionalString,
     ispRelationship: optionalString,

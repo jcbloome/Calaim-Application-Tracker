@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import type { FormValues } from '../schema';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -151,26 +150,6 @@ export default function Step3() {
               </FormItem>
             )}
           />
-          {pathway === 'SNF Diversion' && (
-            <div className="space-y-4 p-4 border rounded-md">
-              <FormField
-                control={control}
-                name="snfDiversionReason"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reason for SNF Diversion</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        value={field.value ?? ''}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>

@@ -23,12 +23,19 @@ export default function Step5({
 }) {
   const { control, watch, getValues, setValue, clearErrors } = useFormContext<FormValues>();
   const hasPrefRCFE = watch('hasPrefRCFE');
+  const pathway = watch('pathway');
   const ispContactIsMember = watch('ispContactIsMember');
+  const ispContactSameAsPrimary = watch('ispContactSameAsPrimary');
   const ispLocationSameAsCurrent = watch('ispLocationSameAsCurrent');
   const memberFirstName = watch('memberFirstName');
   const memberLastName = watch('memberLastName');
   const memberPhone = watch('memberPhone');
   const memberEmail = watch('memberEmail');
+  const bestContactFirstName = watch('bestContactFirstName');
+  const bestContactLastName = watch('bestContactLastName');
+  const bestContactRelationship = watch('bestContactRelationship');
+  const bestContactPhone = watch('bestContactPhone');
+  const bestContactEmail = watch('bestContactEmail');
   const currentLocation = watch('currentLocation');
   const currentLocationName = watch('currentLocationName');
   const currentAddress = watch('currentAddress');
@@ -45,6 +52,9 @@ export default function Step5({
 
   useEffect(() => {
     if (!ispContactIsMember) return;
+    if (ispContactSameAsPrimary) {
+      setValue('ispContactSameAsPrimary', false);
+    }
     setValue('ispFirstName', String(memberFirstName || '').trim());
     setValue('ispLastName', String(memberLastName || '').trim());
     setValue('ispRelationship', 'Self (Member)');
@@ -55,7 +65,34 @@ export default function Step5({
       setValue('ispEmail', String(memberEmail || '').trim());
     }
     clearErrors(['ispFirstName', 'ispLastName', 'ispRelationship']);
-  }, [ispContactIsMember, memberFirstName, memberLastName, memberPhone, memberEmail, setValue, clearErrors]);
+  }, [ispContactIsMember, ispContactSameAsPrimary, memberFirstName, memberLastName, memberPhone, memberEmail, setValue, clearErrors]);
+
+  useEffect(() => {
+    if (!ispContactSameAsPrimary) return;
+    if (ispContactIsMember) {
+      setValue('ispContactIsMember', false);
+    }
+    setValue('ispFirstName', String(bestContactFirstName || '').trim());
+    setValue('ispLastName', String(bestContactLastName || '').trim());
+    setValue('ispRelationship', String(bestContactRelationship || '').trim() || 'Primary Contact');
+    if (String(bestContactPhone || '').trim()) {
+      setValue('ispPhone', String(bestContactPhone || '').trim());
+    }
+    if (String(bestContactEmail || '').trim()) {
+      setValue('ispEmail', String(bestContactEmail || '').trim());
+    }
+    clearErrors(['ispFirstName', 'ispLastName', 'ispRelationship']);
+  }, [
+    ispContactSameAsPrimary,
+    ispContactIsMember,
+    bestContactFirstName,
+    bestContactLastName,
+    bestContactRelationship,
+    bestContactPhone,
+    bestContactEmail,
+    setValue,
+    clearErrors,
+  ]);
 
   useEffect(() => {
     if (!ispLocationSameAsCurrent) return;
@@ -163,17 +200,34 @@ export default function Step5({
               </FormItem>
             )}
           />
+          <FormField
+            control={control}
+            name="ispContactSameAsPrimary"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3">
+                <FormControl>
+                  <Checkbox checked={Boolean(field.value)} onCheckedChange={(checked) => field.onChange(checked === true)} />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel className="text-sm font-medium">ISP contact is Primary Contact</FormLabel>
+                  <FormDescription className="text-xs text-muted-foreground">
+                    Auto-fills ISP contact first/last name, relationship, phone, and email from Primary Contact fields above.
+                  </FormDescription>
+                </div>
+              </FormItem>
+            )}
+          />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField control={control} name="ispFirstName" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact First Name {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact First Name {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember || ispContactSameAsPrimary)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
             <FormField control={control} name="ispLastName" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact Last Name {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact Last Name {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember || ispContactSameAsPrimary)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField control={control} name="ispRelationship" render={({ field }) => (
-              <FormItem><FormLabel>ISP Contact Relationship to Member {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>ISP Contact Relationship to Member {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispContactIsMember || ispContactSameAsPrimary)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
             )} />
             <FormField control={control} name="ispPhone" render={({ field }) => (
               <FormItem><FormLabel>ISP Contact Phone {!relaxIspRequiredForDraft && <span className="text-destructive">*</span>}</FormLabel><FormControl><PhoneInput {...field} /></FormControl><FormMessage /></FormItem>
@@ -187,6 +241,31 @@ export default function Step5({
               <FormMessage />
             </FormItem>
           )} />
+          {pathway === 'SNF Diversion' ? (
+            <div className="space-y-3 p-4 border rounded-md bg-slate-50">
+              <FormField
+                control={control}
+                name="snfDiversionReason"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reason for SNF Diversion (notes)</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        value={field.value ?? ''}
+                        rows={4}
+                        placeholder="Add diversion reason and notes for Caspio push."
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      These SNF Diversion notes are included when pushing this application to Caspio.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          ) : null}
 
           <div className="space-y-4 p-4 border rounded-md mt-4">
             <h3 className="font-medium text-base">ISP Assessment Location</h3>

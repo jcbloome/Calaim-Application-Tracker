@@ -508,16 +508,6 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           width="full"
         />
         
-        <div className="col-span-full mb-4 print:mb-6">
-          <label className="mb-2 block text-sm font-medium text-gray-700 print:text-black">
-            Reason for SNF Diversion (complete when SNF Diversion is selected)
-          </label>
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, idx) => (
-              <div key={`snf-diversion-line-${idx}`} className="h-5 border-b-2 border-gray-400 print:border-black" />
-            ))}
-          </div>
-        </div>
       </PrintableFormSection>
 
       {/* ISP & Facility Information */}
@@ -537,6 +527,20 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
             is not the primary care doctor but could be a SNF social worker, etc.
           </p>
         </div>
+        <PrintableField
+          label="ISP Contact Option"
+          value={data.ispContactIsMember ? 'Only ISP contact is the member' : ''}
+          type="checkbox"
+          options={['Only ISP contact is the member']}
+          width="half"
+        />
+        <PrintableField
+          label="ISP Contact Option"
+          value={data.ispContactSameAsPrimary ? 'ISP contact is Primary Contact' : ''}
+          type="checkbox"
+          options={['ISP contact is Primary Contact']}
+          width="half"
+        />
         <PrintableField
           label="ISP Contact First Name"
           value={data.ispFirstName}
@@ -567,6 +571,13 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           label="ISP Contact Email"
           value={data.ispEmail}
           width="half"
+        />
+        <PrintableField
+          label="Reason for SNF Diversion (notes)"
+          value={data.snfDiversionReason}
+          type="textarea"
+          rows={4}
+          width="full"
         />
         <div className="col-span-full text-sm font-semibold">ISP Assessment Location</div>
         <PrintableField
