@@ -17,6 +17,7 @@ type AssignmentRecord = {
   memberId?: string;
   memberName?: string;
   memberMrn?: string;
+  birthDate?: string;
   assignedSwName?: string;
   assignedSwEmail?: string;
   prefillPurpose?: string;
@@ -215,6 +216,7 @@ export default function AlftVerificationPage() {
         const syncedMcpCin = asText(resolvedNow.isp_mcp_cin);
         const syncedMrn = asText(syncedMcpCin || resolvedNow.p1_mrn);
         const syncedPlanId = asText(syncedMcpCin || resolvedNow.p1_plan_id || syncedMrn);
+        const syncedDob = asText(resolvedNow.p1_dob);
         const syncedHomeStreet = asText(resolvedNow.p2_home_street);
         const syncedHomeCity = asText(resolvedNow.p2_home_city);
         const syncedHomeState = asText(resolvedNow.p2_home_state);
@@ -236,6 +238,7 @@ export default function AlftVerificationPage() {
           {
             ...(syncedMrn ? { memberMrn: syncedMrn } : {}),
             ...(syncedPlanId ? { alftPlanId: syncedPlanId } : {}),
+            ...(syncedDob ? { birthDate: syncedDob } : {}),
             ...(syncedHomeStreet ? { homeAddressStreet: syncedHomeStreet } : {}),
             ...(syncedHomeCity ? { homeAddressCity: syncedHomeCity } : {}),
             ...(syncedHomeState ? { homeAddressState: syncedHomeState } : {}),
@@ -435,6 +438,7 @@ export default function AlftVerificationPage() {
         fields: [
           { label: 'Plan ID', value: toolResetMode ? '' : asText(resolved.p1_plan_id || resolved.p1_mrn || resolved.isp_mcp_cin) },
           { label: 'MRN Number', value: toolResetMode ? '' : asText(resolved.p1_mrn || resolved.isp_mcp_cin) },
+          { label: 'Date of Birth', value: toolResetMode ? '' : asText(resolved.p1_dob || row.birthDate) },
           { label: 'Member Name', value: pick('p1_member_name', row.memberName || memberNameFromQuery) },
           { label: 'Purpose of assessment', value: asText(row.prefillPurpose) || 'review' },
           { label: 'Assessment Site', value: pick('p2_assessment_site', row.assessmentSite) },

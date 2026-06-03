@@ -504,7 +504,7 @@ export default function SwKaiserAlftPage() {
             memberFirstName: String(data.memberFirstName || '').trim(),
             memberLastName: String(data.memberLastName || '').trim(),
             memberMrn: String(data.memberMrn || '').trim(),
-            birthDate: String(data.birthDate || '').trim(),
+            birthDate: pickPrefill('p1_dob') || String(data.birthDate || '').trim(),
             memberSex: String(data.memberSex || '').trim(),
             memberPrimaryLanguage: String(data.memberPrimaryLanguage || '').trim(),
             memberPhone: String(data.memberPhone || '').trim(),
@@ -585,6 +585,7 @@ export default function SwKaiserAlftPage() {
       };
       return {
         ...member,
+        birthDate: pickPrefill('p1_dob') || String(data.birthDate || member.birthDate || '').trim(),
         ispCurrentAddressStreet:
           pickPrefill('p2_current_street', 'isp_location_address') ||
           String(data.ispCurrentAddressStreet || member.ispCurrentAddressStreet || '').trim(),

@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 const FIELD_OVERRIDES: Record<string, string | string[]> = {
   // Kaiser ALFT: MRN field should come from MCP_CIN, not Medi-Cal number.
   p1_mrn: 'MCP_CIN',
+  // Ensure DOB prefill always comes from Caspio Birth_Date.
+  p1_dob: 'Birth_Date',
   p2_home_street: ['Normal_Housing_Address', 'Normal_Housing_Street'],
   p2_home_city: 'Normal_Housing_City',
   p2_home_state: 'Normal_Housing_State',
