@@ -164,6 +164,9 @@ type AlftAssignmentQueueRow = {
   assignedSwId?: string | null;
   assignedSwName?: string | null;
   assignedSwEmail?: string | null;
+  assignedByName?: string | null;
+  assignedByEmail?: string | null;
+  assignedByPhone?: string | null;
   memberFirstName?: string | null;
   memberLastName?: string | null;
   birthDate?: string | null;
@@ -1282,13 +1285,10 @@ export default function AdminAlftTrackerPage() {
     const mrn = String(swEmailPreviewRow.memberMrn || '').trim();
     const swName = String(swEmailPreviewRow.assignedSwName || 'Social Worker').trim();
     const swEmail = String(swEmailPreviewRow.assignedSwEmail || '').trim();
+    const assignedByName = String((swEmailPreviewRow as any)?.assignedByName || '').trim() || 'ALFT Manager';
+    const assignedByEmail = String((swEmailPreviewRow as any)?.assignedByEmail || '').trim();
+    const assignedByPhone = String((swEmailPreviewRow as any)?.assignedByPhone || '').trim();
     const verified = Boolean(swEmailPreviewRow.verificationSignoff?.verified);
-    const verifiedBy =
-      String(swEmailPreviewRow.verificationSignoff?.verifiedByName || '').trim() ||
-      String(swEmailPreviewRow.verificationSignoff?.verifiedByEmail || '').trim() ||
-      'Unknown user';
-    const verifiedAtMs = toMs(swEmailPreviewRow.verificationSignoff?.verifiedAt);
-    const verifiedAtLabel = verifiedAtMs ? fmtTimeline(verifiedAtMs) : '';
     const contactFirst = pickPreview('isp_contact_first');
     const contactLast = pickPreview('isp_contact_last');
     const contactFromParts = [contactFirst, contactLast].filter(Boolean).join(' ').trim();
@@ -1306,7 +1306,12 @@ export default function AdminAlftTrackerPage() {
       .join(', ');
     const ispPhone = pickPreview('isp_contact_phone', 'ispContactPhone');
     const ispEmail = pickPreview('isp_contact_email', 'ispContactEmail');
-    const ispLastVerified = pickPreview('isp_contact_confirm_date', 'ispContactConfirmDate');
+    const ispContact2First = pickPreview('isp_contact_2_first', 'ispContact2First');
+    const ispContact2Last = pickPreview('isp_contact_2_last', 'ispContact2Last');
+    const ispContact2Relationship = pickPreview('isp_contact_2_relationship', 'ispContact2Relationship');
+    const ispContact2Phone = pickPreview('isp_contact_2_phone', 'ispContact2Phone');
+    const ispContact2Email = pickPreview('isp_contact_2_email', 'ispContact2Email');
+    const secondaryContactName = [ispContact2First, ispContact2Last].filter(Boolean).join(' ').trim();
     const hasContactMethod = Boolean(ispPhone || ispEmail);
     const hasFacilityTypeOrName = Boolean(ispFacilityType || ispFacilityName);
     const missingIspFields = [
@@ -1321,6 +1326,7 @@ export default function AdminAlftTrackerPage() {
     const sentAtLabel = sentAtMs ? fmtTimeline(sentAtMs) : '';
     const alreadySent = Boolean((swEmailPreviewRow as any)?.workflowSteps?.swInviteSent) || sentAtMs > 0;
     const portalPath = '/sw-portal/alft-upload';
+    const logoPath = '/calaimlogopdf.png';
     return {
       to: swEmail || 'Missing email',
       subject: `ALFT assigned: ${memberName}`,
@@ -1328,6 +1334,7 @@ export default function AdminAlftTrackerPage() {
       alreadySent,
       sentAtLabel,
       missingIspFields,
+      logoPath,
       ispContactName,
       ispContactRelationship,
       ispAddress,
@@ -1335,27 +1342,48 @@ export default function AdminAlftTrackerPage() {
       ispFacilityType,
       ispPhone,
       ispEmail,
-      ispLastVerified,
       body: [
         `Hi ${swName},`,
         '',
-        `An ALFT workflow has been started for ${memberName}${mrn ? ` (MRN: ${mrn})` : ''}.`,
-        'Please log in to the portal and complete the ALFT form with your signature.',
+        'We have a client who needs a Kaiser ALFT Care Assessment.',
         '',
-        `Verification checkbox: ${verified ? `Checked by ${verifiedBy}${verifiedAtLabel ? ` on ${verifiedAtLabel}` : ''}` : 'Not checked yet'}`,
-        `ISP contact name: ${ispContactName || 'Not provided'}`,
-        `ISP contact relationship: ${ispContactRelationship || 'Not provided'}`,
-        `ISP address: ${ispAddress || 'MISSING'}`,
-        `Facility name: ${ispFacilityName || 'Not provided'}`,
-        `Facility type: ${ispFacilityType || 'Not provided'}`,
-        `ISP contact phone: ${ispPhone || 'Not provided'}`,
-        `ISP contact email: ${ispEmail || 'Not provided'}`,
-        `ISP last verified: ${ispLastVerified || 'Not provided'}`,
+        'Client:',
+        `${memberName || 'Not provided'}`,
+        '',
+        `Plan ID: ${mrn || 'Not provided'}`,
+        '',
+        'ISP Location:',
+        `${ispFacilityName || 'Not provided'}`,
+        `Type: ${ispFacilityType || 'Not provided'}`,
+        `Address: ${ispAddress || 'Address not provided'}`,
+        '',
+        'ISP Contact:',
+        `${ispContactName || 'Not provided'} (${ispContactRelationship || 'Relationship not provided'})`,
+        `Tel: ${ispPhone || 'Not provided'}`,
+        `Email: ${ispEmail || 'Not provided'}`,
+        '',
+        'Secondary ISP Contact:',
+        `${secondaryContactName || 'Not provided'} (${ispContact2Relationship || 'Relationship not provided'})`,
+        `Tel: ${ispContact2Phone || 'Not provided'}`,
+        `Email: ${ispContact2Email || 'Not provided'}`,
+        '',
+        "I'll make the 602 available to you. This will come in a separate email. Please let me know about the assessment:",
+        '- When it’s scheduled',
+        '- When it’s completed',
+        '- After completion, please email it to me.',
+        "- Please let me know once you've submitted your invoice, so I can take the client off of your caseload list.",
         `SW email status: ${alreadySent ? `Already sent${sentAtLabel ? ` at ${sentAtLabel}` : ''}` : 'Not sent yet'}`,
         '',
-        `1) Go to portal: ${portalPath}`,
-        '2) Login with your account',
-        '3) Open ALFT Assignment page (ALFT Upload) and complete the form',
+        'To complete the ALFT and signature workflow, open this link:',
+        `${portalPath}`,
+        'Login with your assigned account, open ALFT Upload, and complete/sign the packet.',
+        '',
+        'Regards,',
+        '—',
+        `${assignedByName}`,
+        `${assignedByEmail || 'No sender email listed'}`,
+        `${assignedByPhone || 'No sender phone listed'}`,
+        'Connections Care Home Consultants',
       ].join('\n'),
     };
   }, [swEmailPreviewRow]);
@@ -1457,7 +1485,7 @@ export default function AdminAlftTrackerPage() {
         const prefillPurpose =
           rowPrefillPurpose === 'initial' || rowPrefillPurpose === 'change_condition' || rowPrefillPurpose === 'review'
             ? rowPrefillPurpose
-            : 'review';
+            : '';
         const prefillSourceMode = resolvePrefillSourceMode(row);
         let resolved: Record<string, string> = {};
         let caspioSourceRecord: Record<string, unknown> = {};
@@ -1543,7 +1571,7 @@ export default function AdminAlftTrackerPage() {
               caspioSourceRecord,
               swId: row.assignedSwId || '',
               socialWorkerAssigned: row.assignedSwName || '',
-              prefillPurpose,
+              ...(prefillPurpose ? { prefillPurpose } : {}),
             },
             overrideRecipientEmail: dummyEmail || undefined,
           }),
@@ -1552,11 +1580,12 @@ export default function AdminAlftTrackerPage() {
         if (!res.ok || !data?.success) {
           throw new Error(String(data?.error || `Failed to start workflow (HTTP ${res.status})`));
         }
+        const sentTo = String(data?.sw?.swEmail || row.assignedSwEmail || '').trim();
         toast({
           title: 'Workflow notice sent',
           description: dummyEmail
             ? `${row.memberName || 'Member'} invite sent/re-sent to dummy email ${dummyEmail}.`
-            : `${row.memberName || 'Member'} invite sent/re-sent to assigned social worker.`,
+            : `${row.memberName || 'Member'} invite sent/re-sent to ${sentTo || 'assigned social worker email'}.`,
         });
       } catch (e: any) {
         toast({
@@ -1729,10 +1758,6 @@ export default function AdminAlftTrackerPage() {
         applyIfBlank(key, key === 'p1_dob' ? toMmDdYyyyOrRaw(fromAssignment) : fromAssignment);
       });
       applyIfBlank('p1_plan_id', assignmentRow.memberMrn || assignmentRow.alftPlanId || '');
-      const purpose = String(assignmentRow.prefillPurpose || '').trim();
-      if (!String(merged.p1_purpose || '').trim() && (purpose === 'initial' || purpose === 'change_condition' || purpose === 'review')) {
-        merged.p1_purpose = purpose;
-      }
     }
     const forcedMrn = String(assignmentRow?.memberMrn || row.medicalRecordNumber || '').trim();
     if (forcedMrn) {
@@ -2492,7 +2517,7 @@ export default function AdminAlftTrackerPage() {
         </div>
       ) : null}
       {managerActionsOnly ? (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           Showing only Kaiser Manager Actions. Review highlighted members, complete John final review, then route to Deydry for final send/print to Jocelyn.
         </div>
       ) : null}
@@ -2555,31 +2580,31 @@ export default function AdminAlftTrackerPage() {
                       <TableRow key={`row-${r.id}`} className={cn(focused ? 'bg-amber-50/30' : '')}>
                         <TableCell>
                           <div className="font-semibold truncate">{r.memberName || '—'}</div>
-                          <div className="text-xs text-muted-foreground break-words">
+                          <div className="text-sm text-muted-foreground break-words">
                             Social worker: {socialWorkerName}
                           </div>
-                          <div className="text-xs text-muted-foreground break-words">
+                          <div className="text-sm text-muted-foreground break-words">
                             MRN: {r.medicalRecordNumber || '—'} • {r.healthPlan || '—'}
                           </div>
-                          <div className="text-xs text-muted-foreground break-words">
+                          <div className="text-sm text-muted-foreground break-words">
                             Uploaded {r.alftUploadDate || (toMs(r.createdAt) ? new Date(toMs(r.createdAt)).toLocaleDateString() : '—')}
                             {r.uploaderName ? ` • By: ${r.uploaderName}` : ''}
                           </div>
                           {trackerUpdatedAtLabel ? (
-                            <div className="text-xs text-muted-foreground break-words">
+                            <div className="text-sm text-muted-foreground break-words">
                               Tracker updated: {trackerUpdatedAtLabel}
                             </div>
                           ) : null}
-                          <div className="mt-1 text-xs">
+                          <div className="mt-1 text-sm">
                             Current step: <span className="font-medium">{currentStepLabel}</span>
                             <span className="text-muted-foreground"> • {currentStepAtLabel || 'No timestamp yet'}</span>
                           </div>
-                          <div className="mt-1 flex items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5">
+                          <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5">
                             {checklist.map((step, idx) => (
                               <span
                                 key={`${r.id}-bar-${step.id}`}
                                 className={cn(
-                                  'inline-flex h-5 min-w-5 items-center justify-center rounded border px-1 text-[10px]',
+                                  'inline-flex h-6 min-w-6 items-center justify-center rounded border px-1.5 text-xs font-medium',
                                   step.done
                                     ? 'border-green-600 bg-green-600 text-white'
                                     : 'border-slate-300 bg-white text-slate-500'
@@ -2592,22 +2617,22 @@ export default function AdminAlftTrackerPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-1.5">
-                            <Badge variant="outline" className={cn('border', stageBlockClass(stage))}>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant="outline" className={cn('border text-sm px-2 py-1', stageBlockClass(stage))}>
                               {statusLabel}
                             </Badge>
                             {managerActionRequired ? (
-                              <Badge variant="outline" className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900">
+                              <Badge variant="outline" className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900 text-sm px-2 py-1">
                                 Kaiser Mgr Actions
                               </Badge>
                             ) : null}
                             {r.alftRnName ? (
-                              <Badge variant="outline">RN: {r.alftRnName}</Badge>
+                              <Badge variant="outline" className="text-sm px-2 py-1">RN: {r.alftRnName}</Badge>
                             ) : null}
-                            <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-900">
+                            <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-900 text-sm px-2 py-1">
                               Final Reviewer: {finalReviewerName}
                             </Badge>
-                            <Badge variant="outline" className="border-purple-300 bg-purple-50 text-purple-900">
+                            <Badge variant="outline" className="border-purple-300 bg-purple-50 text-purple-900 text-sm px-2 py-1">
                               Send Owner: {sendOwnerName}
                             </Badge>
                           </div>
@@ -2615,7 +2640,6 @@ export default function AdminAlftTrackerPage() {
                         <TableCell className="text-right">
                           <div className="inline-flex items-center gap-2 justify-end">
                             <Button
-                              size="sm"
                               variant={!workflowAlreadyStarted ? 'default' : 'outline'}
                               className={!workflowAlreadyStarted ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
                               disabled={!r?.id || isStartingWorkflow}
@@ -2628,7 +2652,6 @@ export default function AdminAlftTrackerPage() {
                               {workflowAlreadyStarted ? 'Open Workflow Page' : 'Step 4: Start Workflow'}
                             </Button>
                             <Button
-                              size="sm"
                               variant="outline"
                               onClick={() => setExpandedMemberId((prev) => (prev === r.id ? '' : r.id))}
                             >
@@ -2636,7 +2659,6 @@ export default function AdminAlftTrackerPage() {
                             </Button>
                             <Button
                               asChild
-                              size="sm"
                               variant="outline"
                               disabled={!canEditAlftRow(r)}
                               title={!canEditAlftRow(r) ? 'No edit permission for this intake' : 'View member ALFT'}
@@ -2646,7 +2668,6 @@ export default function AdminAlftTrackerPage() {
                               </Link>
                             </Button>
                             <Button
-                              size="sm"
                               variant="outline"
                               disabled={removingFromTrackerId === String(r.id || '')}
                               onClick={() => void removeMemberFromTracker(r)}
@@ -2661,9 +2682,9 @@ export default function AdminAlftTrackerPage() {
                         <TableRow key={`details-${r.id}`} className={cn(focused ? 'bg-amber-50/20' : '')}>
                           <TableCell colSpan={3} className="p-3">
                             <div className="grid grid-cols-1 gap-3 rounded-md border bg-white p-3">
-                              <div className="space-y-2">
-                                <div className="text-xs font-medium">Workflow progress</div>
-                                <div className="rounded border bg-muted/20 p-2 text-[11px] space-y-1">
+                              <div className="space-y-2.5">
+                                <div className="text-sm font-semibold">Workflow progress</div>
+                                <div className="rounded border bg-muted/20 p-3 text-sm space-y-1.5">
                                   {checklist.map((step, idx) => {
                                     const isCurrent =
                                       explicitCurrentChecklistIdx >= 0 ? idx === explicitCurrentChecklistIdx : idx === currentChecklistIdx && !step.done;
@@ -2676,13 +2697,13 @@ export default function AdminAlftTrackerPage() {
                                         )}
                                         <div className={step.done ? 'text-foreground' : isCurrent ? 'text-amber-700' : 'text-muted-foreground'}>
                                           <div>{step.label}</div>
-                                          {step.atLabel ? <div className="text-[10px] text-muted-foreground">{step.atLabel}</div> : null}
+                                          {step.atLabel ? <div className="text-xs text-muted-foreground">{step.atLabel}</div> : null}
                                         </div>
                                       </div>
                                     );
                                   })}
                                 </div>
-                                <div className="text-xs text-muted-foreground">RN: {r.alftRnName || '—'}</div>
+                                <div className="text-sm text-muted-foreground">RN: {r.alftRnName || '—'}</div>
                               </div>
                             </div>
                           </TableCell>
@@ -2728,27 +2749,22 @@ export default function AdminAlftTrackerPage() {
                 ? `Already sent${swEmailPreview?.sentAtLabel ? ` at ${swEmailPreview.sentAtLabel}` : ''}`
                 : 'Not sent yet'}
             </div>
-            <div className="rounded border bg-muted/20 p-2 text-xs space-y-1">
-              <div><span className="font-medium">ISP contact name:</span> {swEmailPreview?.ispContactName || 'Not provided'}</div>
-              <div><span className="font-medium">ISP contact relationship:</span> {swEmailPreview?.ispContactRelationship || 'Not provided'}</div>
-              <div><span className="font-medium">ISP address:</span> {swEmailPreview?.ispAddress || 'Missing'}</div>
-              <div><span className="font-medium">Facility name:</span> {swEmailPreview?.ispFacilityName || 'Not provided'}</div>
-              <div><span className="font-medium">Facility type:</span> {swEmailPreview?.ispFacilityType || 'Not provided'}</div>
-              <div><span className="font-medium">ISP contact phone:</span> {swEmailPreview?.ispPhone || 'Not provided'}</div>
-              <div><span className="font-medium">ISP contact email:</span> {swEmailPreview?.ispEmail || 'Not provided'}</div>
-              <div><span className="font-medium">ISP last verified:</span> {swEmailPreview?.ispLastVerified || 'Not provided'}</div>
-              {swEmailPreview?.missingIspFields?.length ? (
-                <div className="text-amber-700">
-                  Missing required fields: {swEmailPreview.missingIspFields.join(', ')}
-                </div>
-              ) : null}
-            </div>
             <div>
               <span className="font-medium">Body:</span>
+              {swEmailPreview?.logoPath ? (
+                <div className="mt-1 mb-2">
+                  <img src={swEmailPreview.logoPath} alt="Connections logo" className="h-10 w-auto object-contain" />
+                </div>
+              ) : null}
               <pre className="mt-1 whitespace-pre-wrap rounded border bg-muted/20 p-2 text-xs">
                 {swEmailPreview?.body || '—'}
               </pre>
             </div>
+            {swEmailPreview?.missingIspFields?.length ? (
+              <div className="rounded border bg-amber-50 p-2 text-xs text-amber-800">
+                Missing required fields: {swEmailPreview.missingIspFields.join(', ')}
+              </div>
+            ) : null}
             <div className="rounded border bg-muted/20 p-2 space-y-2">
               <div className="font-medium text-xs">Test override</div>
               <div className="flex items-center gap-2 text-xs">
@@ -2832,26 +2848,26 @@ export default function AdminAlftTrackerPage() {
             {editAssignmentRow && canRunManagerWorkflow ? (
               <div className="rounded-md border p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-medium">Pre-submission ALFT workflow queue</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-base font-semibold">Pre-submission ALFT workflow queue</div>
+                  <div className="text-sm text-muted-foreground">
                     Progress: {editAssignmentDoneCount}/{editAssignmentSteps.length} steps completed
                   </div>
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-sm text-muted-foreground">
                   Current status:{' '}
                   <span className="font-medium text-foreground">{editAssignmentStage?.label || 'Not started'}</span>
                 </div>
-                <div className="rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs text-blue-900">{editWorkflowSummary}</div>
-                <div className="flex flex-wrap gap-1">
+                <div className="rounded border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-900">{editWorkflowSummary}</div>
+                <div className="flex flex-wrap gap-1.5">
                   {editAssignmentSteps.map((step) => (
-                    <Badge key={`edit-assign-chip-${step.step}`} variant="outline" className={cn('text-[10px]', stepChipClass(step))}>
+                    <Badge key={`edit-assign-chip-${step.step}`} variant="outline" className={cn('text-xs px-2 py-1', stepChipClass(step))}>
                       {step.done ? `✓ ${step.chip}` : `${step.step}. ${step.chip}`}
                     </Badge>
                   ))}
                 </div>
-                <div className="rounded border p-2 text-xs space-y-2">
-                  <div className="font-medium">Ordered steps (click to run)</div>
-                  <Button size="sm" variant="outline" className="w-full justify-start text-[11px]" asChild>
+                <div className="rounded border p-3 text-sm space-y-2.5">
+                  <div className="font-semibold">Ordered steps (click to run)</div>
+                  <Button variant="outline" className="w-full justify-start text-sm" asChild>
                     <Link href={step1VerificationHref}>1) Open verification tool (manual sync + prefill review)</Link>
                   </Button>
                   <label className="flex items-start gap-2 rounded border p-2">
@@ -2863,18 +2879,17 @@ export default function AdminAlftTrackerPage() {
                     <div>
                       <div>2) Verification checkbox with staff name + timestamp (required before Step 3 send/re-send)</div>
                       {editVerificationDone ? (
-                        <div className="text-[10px] text-emerald-700">
+                        <div className="text-xs text-emerald-700">
                           Verified{editVerificationBy ? ` by ${editVerificationBy}` : ''}{editVerificationAtLabel ? ` at ${editVerificationAtLabel}` : ''}
                         </div>
                       ) : (
-                        <div className="text-[10px] text-amber-700">Not verified yet</div>
+                        <div className="text-xs text-amber-700">Not verified yet</div>
                       )}
                     </div>
                   </label>
-                  <Button
-                    size="sm"
+                    <Button
                     variant="link"
-                    className="h-auto w-auto justify-start p-0 text-[11px]"
+                    className="h-auto w-auto justify-start p-0 text-sm"
                     disabled={!editVerificationDone}
                     onClick={() => {
                       setSwEmailPreviewRow(editAssignmentRow);
@@ -2886,11 +2901,11 @@ export default function AdminAlftTrackerPage() {
                     3) Preview SW email + Send/Re-send with timestamp
                   </Button>
                   {editAssignmentSignals?.swInviteSent ? (
-                    <div className="text-[10px] text-muted-foreground">SW email already sent. Step 3 lets you preview and re-send if needed.</div>
+                    <div className="text-xs text-muted-foreground">SW email already sent. Step 3 lets you preview and re-send if needed.</div>
                   ) : (
-                    <div className="text-[10px] text-muted-foreground">SW email has not been sent yet. Use Step 3 to preview and send.</div>
+                    <div className="text-xs text-muted-foreground">SW email has not been sent yet. Use Step 3 to preview and send.</div>
                   )}
-                  <div className="text-[11px]">
+                  <div className="text-sm">
                     <span className="font-medium">4) SW Signed</span>{' '}
                     <span className={editAssignmentSignals?.swSubmitted ? 'text-emerald-700' : 'text-muted-foreground'}>
                       {editAssignmentSignals?.swSubmitted ? 'completed' : 'waiting for SW submission/signature'}
@@ -2900,20 +2915,20 @@ export default function AdminAlftTrackerPage() {
               </div>
             ) : null}
             <div className="rounded-md border p-3">
-              <div className="text-sm font-medium">{editRow?.memberName || '—'}</div>
-              <div className="text-xs text-muted-foreground font-mono">{editRow?.medicalRecordNumber || '—'}</div>
+              <div className="text-base font-semibold">{editRow?.memberName || '—'}</div>
+              <div className="text-sm text-muted-foreground font-mono">{editRow?.medicalRecordNumber || '—'}</div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className={stageBlockClass(editStage)}>
+                <Badge variant="outline" className={cn(stageBlockClass(editStage), 'text-sm px-2 py-1')}>
                   {editStageLabel}
                 </Badge>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   Current step: <span className="font-medium text-foreground">{editCurrentStepLabel}</span>
                   {editCurrentStepAtLabel ? <span className="ml-1">({editCurrentStepAtLabel})</span> : null}
                 </span>
               </div>
               {editRow?.id ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => printCurrentEditPdf()}>
+                  <Button variant="outline" onClick={() => printCurrentEditPdf()}>
                     <ExternalLink className="mr-2 h-3.5 w-3.5" />
                     View/Print current ALFT
                   </Button>
@@ -2992,33 +3007,33 @@ export default function AdminAlftTrackerPage() {
             </div>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               <div className="rounded border bg-muted/20 p-2">
-                <Label htmlFor="alft-dummy-send-rn" className="text-[11px]">RN stage test email (Approve → Send to Leslie)</Label>
+                <Label htmlFor="alft-dummy-send-rn" className="text-xs">RN stage test email (Approve → Send to Leslie)</Label>
                 <Input
                   id="alft-dummy-send-rn"
                   value={dummySendRnEmail}
                   onChange={(e) => setDummySendRnEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="mt-1 h-8 text-xs"
+                  className="mt-1 h-9 text-sm"
                 />
               </div>
               <div className="rounded border bg-muted/20 p-2">
-                <Label htmlFor="alft-dummy-send-manager" className="text-[11px]">CS Manager stage test email (Send to CS Manager for Final Review)</Label>
+                <Label htmlFor="alft-dummy-send-manager" className="text-xs">CS Manager stage test email (Send to CS Manager for Final Review)</Label>
                 <Input
                   id="alft-dummy-send-manager"
                   value={dummySendManagerEmail}
                   onChange={(e) => setDummySendManagerEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="mt-1 h-8 text-xs"
+                  className="mt-1 h-9 text-sm"
                 />
               </div>
               <div className="rounded border bg-muted/20 p-2">
-                <Label htmlFor="alft-dummy-send-completed" className="text-[11px]">Completed packet test email (Send to Jocelyn)</Label>
+                <Label htmlFor="alft-dummy-send-completed" className="text-xs">Completed packet test email (Send to Jocelyn)</Label>
                 <Input
                   id="alft-dummy-send-completed"
                   value={dummySendCompletedEmail}
                   onChange={(e) => setDummySendCompletedEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="mt-1 h-8 text-xs"
+                  className="mt-1 h-9 text-sm"
                 />
               </div>
             </div>
@@ -3038,7 +3053,7 @@ export default function AdminAlftTrackerPage() {
             <div className="space-y-1">
               <Label>Member</Label>
               <div className="text-sm">{assignRow?.memberName || '—'}</div>
-              <div className="text-xs text-muted-foreground font-mono">{assignRow?.medicalRecordNumber || '—'}</div>
+              <div className="text-sm text-muted-foreground font-mono">{assignRow?.medicalRecordNumber || '—'}</div>
             </div>
             <div className="space-y-1">
               <Label>Assignee</Label>
@@ -3079,7 +3094,7 @@ export default function AdminAlftTrackerPage() {
             <div className="space-y-1">
               <Label>Member</Label>
               <div className="text-sm">{revRow?.memberName || '—'}</div>
-              <div className="text-xs text-muted-foreground font-mono">{revRow?.medicalRecordNumber || '—'}</div>
+              <div className="text-sm text-muted-foreground font-mono">{revRow?.medicalRecordNumber || '—'}</div>
             </div>
             <div className="space-y-1">
               <Label htmlFor="alft-rev-file">Revised file</Label>
@@ -3100,7 +3115,7 @@ export default function AdminAlftTrackerPage() {
                 disabled={revUploading}
               />
             </div>
-            {revUploading ? <div className="text-xs text-muted-foreground">Uploading… {revProgress}%</div> : null}
+            {revUploading ? <div className="text-sm text-muted-foreground">Uploading… {revProgress}%</div> : null}
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setRevOpen(false)} disabled={revUploading}>
@@ -3128,7 +3143,7 @@ export default function AdminAlftTrackerPage() {
               <div className="text-muted-foreground">
                 RN email: {sigDialog?.rnEmailSent ? 'sent' : 'not sent'} • MSW email: {sigDialog?.mswEmailSent ? 'sent' : 'not sent'}
               </div>
-              {sigDialog?.requestId ? <div className="text-xs text-muted-foreground">Request ID: {sigDialog.requestId}</div> : null}
+              {sigDialog?.requestId ? <div className="text-sm text-muted-foreground">Request ID: {sigDialog.requestId}</div> : null}
             </div>
 
             <div className="space-y-1">
@@ -3170,8 +3185,8 @@ export default function AdminAlftTrackerPage() {
           <div className="space-y-3">
             <div className="rounded-md border p-3">
               <div className="text-sm font-medium">{rejectRow?.memberName || '—'}</div>
-              <div className="text-xs text-muted-foreground font-mono">{rejectRow?.medicalRecordNumber || '—'}</div>
-              <div className="mt-2 text-xs text-muted-foreground">
+              <div className="text-sm text-muted-foreground font-mono">{rejectRow?.medicalRecordNumber || '—'}</div>
+              <div className="mt-2 text-sm text-muted-foreground">
                 Social worker: {toLabel(rejectRow?.uploaderName) || '—'} {toLabel(rejectRow?.uploaderEmail) ? `(${toLabel(rejectRow?.uploaderEmail)})` : ''}
               </div>
             </div>
@@ -3209,10 +3224,10 @@ export default function AdminAlftTrackerPage() {
           <div className="space-y-3">
             <div className="rounded-md border p-3">
               <div className="text-sm font-medium">{sendConfirmRow?.memberName || '—'}</div>
-              <div className="text-xs text-muted-foreground font-mono">{sendConfirmRow?.medicalRecordNumber || '—'}</div>
+              <div className="text-sm text-muted-foreground font-mono">{sendConfirmRow?.medicalRecordNumber || '—'}</div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" asChild>
+              <Button variant="outline" asChild>
                 <Link href={`/admin/alft-view/${encodeURIComponent(String(sendConfirmRow?.id || ''))}`} target="_blank">
                   <ExternalLink className="h-4 w-4 mr-2" />
                   Open final preview
@@ -3220,7 +3235,6 @@ export default function AdminAlftTrackerPage() {
               </Button>
               {sendConfirmRow?.alftSignature?.requestId ? (
                 <Button
-                  size="sm"
                   variant="outline"
                   onClick={() => void downloadSignaturePdf(String(sendConfirmRow.alftSignature?.requestId), 'packet')}
                   disabled={!sendConfirmRow?.alftSignature?.packetPdfStoragePath}

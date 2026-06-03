@@ -250,6 +250,20 @@ export async function POST(req: NextRequest) {
     const email = clean((decoded as any)?.email, 220).toLowerCase();
     const displayName = clean((decoded as any)?.name, 160) || email || 'Admin';
     if (!uid) return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 401 });
+    let senderPhone = '';
+    try {
+      const senderSnap = await adminDb.collection('users').doc(uid).get();
+      const senderData = senderSnap.exists ? (senderSnap.data() as Record<string, unknown>) : {};
+      senderPhone = clean(
+        (senderData as any)?.phone ||
+          (senderData as any)?.phoneNumber ||
+          (senderData as any)?.staffPhone ||
+          (senderData as any)?.mobilePhone,
+        80
+      );
+    } catch {
+      senderPhone = '';
+    }
 
     let isAdmin = Boolean((decoded as any)?.admin) || Boolean((decoded as any)?.superAdmin);
     if (!isAdmin && isHardcodedAdminEmail(email)) isAdmin = true;
@@ -352,7 +366,7 @@ export async function POST(req: NextRequest) {
     const prefillPurpose =
       rawPrefillPurpose === 'initial' || rawPrefillPurpose === 'change_condition' || rawPrefillPurpose === 'review'
         ? rawPrefillPurpose
-        : 'review';
+        : '';
     const fallbackFromMember = {
       memberName: normalizeMemberName({
         first: member?.memberFirstName,
@@ -680,13 +694,14 @@ export async function POST(req: NextRequest) {
       caspioSocialWorkerAssigned: swName || '',
       assignedByEmail: email || null,
       assignedByName: displayName || null,
+      assignedByPhone: senderPhone || null,
       assignedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: 'sw_form_in_progress',
-      workflowStatus: 'sw_invited_pending_submission',
-      workflowStage: 'sw_invited_to_portal',
+      status: 'prefill_ready',
+      workflowStatus: 'prefill_ready_pending_sw_invite',
+      workflowStage: 'prefill_verified_ready_to_invite',
       workflowSteps: {
-        swInviteSent: Boolean(recipientEmail),
+        swInviteSent: false,
         swSubmittedSigned: false,
         managerReview: 'pending',
         rnReviewSignature: 'pending',
@@ -701,6 +716,25 @@ export async function POST(req: NextRequest) {
       },
     };
     await adminDb.collection('alft_assignments').doc(memberId).set(assignmentDoc, { merge: true });
+
+    if (!recipientEmail) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Could not send SW email because no social worker email is assigned. Please verify SW assignment/email and try again.',
+          memberId,
+          sw: {
+            swId: swId || null,
+            swName: swName || null,
+            swEmail: null,
+            swUid: swUid || null,
+            emailSent: false,
+          },
+        },
+        { status: 409 }
+      );
+    }
 
     // Notify SW in-app if we can resolve the user.
     if (swUid) {
@@ -784,34 +818,74 @@ export async function POST(req: NextRequest) {
     }
 
     let swEmailSent = false;
-    if (recipientEmail) {
-      try {
-        await sendAlftWorkflowStartEmail({
-          to: recipientEmail,
-          socialWorkerName: swName || recipientEmail,
-          memberName: resolvedMemberName,
-          mrn: resolvedMemberMrn || undefined,
-          portalUrl: '/sw-portal/alft-upload',
-          assignedBy: displayName,
-          ispContactName,
-          ispContactRelationship,
-          ispAddress,
-          facilityName,
-          facilityType,
-          ispLocation,
-          ispContactPhone,
-          ispContactEmail,
-          ispContact2First,
-          ispContact2Last,
-          ispContact2Relationship,
-          ispContact2Phone,
-          ispContact2Email,
-          ispLastVerified: ispContactConfirmDate,
-        });
-        swEmailSent = true;
-      } catch {
-        swEmailSent = false;
-      }
+    try {
+      await sendAlftWorkflowStartEmail({
+        to: recipientEmail,
+        socialWorkerName: swName || recipientEmail,
+        memberName: resolvedMemberName,
+        mrn: resolvedMemberMrn || undefined,
+        portalUrl: '/sw-portal/alft-upload',
+        assignedBy: displayName,
+        assignedByEmail: email || undefined,
+        assignedByPhone: senderPhone || undefined,
+        ispContactName,
+        ispContactRelationship,
+        ispAddress,
+        facilityName,
+        facilityType,
+        ispLocation,
+        ispContactPhone,
+        ispContactEmail,
+        ispContact2First,
+        ispContact2Last,
+        ispContact2Relationship,
+        ispContact2Phone,
+        ispContact2Email,
+        ispLastVerified: ispContactConfirmDate,
+      });
+      swEmailSent = true;
+      await adminDb.collection('alft_assignments').doc(memberId).set(
+        {
+          status: 'sw_form_in_progress',
+          workflowStatus: 'sw_invited_pending_submission',
+          workflowStage: 'sw_invited_to_portal',
+          workflowSteps: {
+            swInviteSent: true,
+            swSubmittedSigned: false,
+            managerReview: 'pending',
+            rnReviewSignature: 'pending',
+            pdfReady: false,
+          },
+          workflowStepsAt: {
+            swInviteSentAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          workflowInvites: {
+            swPortalPath: '/sw-portal/alft-upload',
+            managerWorkflowPath: '/admin/alft-tracker',
+            invitedAt: admin.firestore.FieldValue.serverTimestamp(),
+            invitedByEmail: email || null,
+            invitedByName: displayName || null,
+          },
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    } catch (sendErr: any) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: String(sendErr?.message || 'Failed to deliver SW email. Please verify recipient and retry.'),
+          memberId,
+          sw: {
+            swId: swId || null,
+            swName: swName || null,
+            swEmail: recipientEmail || null,
+            swUid: swUid || null,
+            emailSent: false,
+          },
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({

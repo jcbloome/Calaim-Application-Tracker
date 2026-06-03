@@ -440,7 +440,7 @@ export default function AlftVerificationPage() {
           { label: 'MRN Number', value: toolResetMode ? '' : asText(resolved.p1_mrn || resolved.isp_mcp_cin) },
           { label: 'Date of Birth', value: toolResetMode ? '' : asText(resolved.p1_dob || row.birthDate) },
           { label: 'Member Name', value: pick('p1_member_name', row.memberName || memberNameFromQuery) },
-          { label: 'Purpose of assessment', value: asText(row.prefillPurpose) || 'review' },
+          { label: 'Purpose of assessment', value: asText(row.prefillPurpose) },
           { label: 'Assessment Site', value: pick('p2_assessment_site', row.assessmentSite) },
           { label: 'Primary Language', value: pick('p1_primary_language', row.memberPrimaryLanguage) },
           { label: 'Phone Number', value: pick('p1_phone', row.memberPhone) },

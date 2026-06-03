@@ -221,6 +221,8 @@ interface AlftWorkflowStartPayload {
     mrn?: string;
     portalUrl?: string;
     assignedBy?: string;
+    assignedByEmail?: string;
+    assignedByPhone?: string;
     ispContactName?: string;
     ispContactRelationship?: string;
     ispAddress?: string;
@@ -822,6 +824,8 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const memberName = String(payload.memberName || '').trim() || 'Member';
     const mrn = String(payload.mrn || '').trim();
     const assignedBy = String(payload.assignedBy || '').trim() || 'ALFT Manager';
+    const assignedByEmail = String(payload.assignedByEmail || '').trim();
+    const assignedByPhone = String(payload.assignedByPhone || '').trim();
     const ispContactName = String(payload.ispContactName || '').trim();
     const ispContactRelationship = String(payload.ispContactRelationship || '').trim();
     const ispAddress = String(payload.ispAddress || '').trim();
@@ -837,44 +841,63 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const ispContact2Email = String(payload.ispContact2Email || '').trim();
     const ispLastVerified = String(payload.ispLastVerified || '').trim();
     const ispContact2Name = [ispContact2First, ispContact2Last].filter(Boolean).join(' ').trim();
+    const formattedAddress = ispAddress || 'Address not provided';
+    const primaryRelationship = ispContactRelationship || 'Relationship not provided';
+    const secondaryRelationship = ispContact2Relationship || 'Relationship not provided';
+    const primaryContactName = ispContactName || 'Not provided';
+    const secondaryContactName = ispContact2Name || 'Not provided';
+    const logoUrl = `${baseUrl}/calaimlogopdf.png`;
 
     const html = `
-      <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
-        <div style="background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%); border: 1px solid #bfdbfe; border-bottom: none; border-radius: 12px 12px 0 0; padding: 20px 24px;">
-          <p style="margin: 0; color: #1d4ed8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">CalAIM ALFT Workflow</p>
-          <h2 style="margin: 6px 0 0; color: #0f172a; font-size: 20px;">ALFT form assigned to you</h2>
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
+        <div style="margin: 0 0 16px;">
+          <img src="${logoUrl}" alt="Connections CalAIM" style="height: 44px; width: auto; display: block;" />
         </div>
-        <div style="border: 1px solid #bfdbfe; border-top: none; border-radius: 0 0 12px 12px; padding: 24px; background: #ffffff;">
-          <p style="margin: 0 0 10px;">Hi ${socialWorkerName},</p>
-          <p style="margin: 0 0 14px;">
-            An ALFT workflow has been started for <strong>${memberName}</strong>${mrn ? ` (MRN: ${mrn})` : ''}.
-            Please log in and complete the ALFT form with your signature.
-          </p>
-          <p style="margin: 0 0 14px; color: #334155;">
-            Assigned by: <strong>${assignedBy}</strong>
-          </p>
-          <div style="margin: 0 0 14px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; background: #f8fafc;">
-            <p style="margin: 0 0 6px; font-weight: 600; color: #0f172a;">ISP contact details (from Caspio)</p>
-            <p style="margin: 0;">Contact name: <strong>${ispContactName || '—'}</strong></p>
-            <p style="margin: 0;">Relationship: <strong>${ispContactRelationship || '—'}</strong></p>
-            <p style="margin: 0;">Address: <strong>${ispAddress || '—'}</strong></p>
-            <p style="margin: 0;">Facility name: <strong>${facilityName || ispLocation || '—'}</strong></p>
-            <p style="margin: 0;">Facility type: <strong>${facilityType || '—'}</strong></p>
-            <p style="margin: 0;">Phone: <strong>${ispContactPhone || '—'}</strong></p>
-            <p style="margin: 0;">Email: <strong>${ispContactEmail || '—'}</strong></p>
-            <p style="margin: 0;">Last verified: <strong>${ispLastVerified || '—'}</strong></p>
-            <p style="margin: 10px 0 0; font-weight: 600; color: #0f172a;">ISP contact 2 details</p>
-            <p style="margin: 0;">Contact name: <strong>${ispContact2Name || '—'}</strong></p>
-            <p style="margin: 0;">Relationship: <strong>${ispContact2Relationship || '—'}</strong></p>
-            <p style="margin: 0;">Phone: <strong>${ispContact2Phone || '—'}</strong></p>
-            <p style="margin: 0;">Email: <strong>${ispContact2Email || '—'}</strong></p>
-          </div>
-          <p style="margin: 0 0 14px;">
-            <a href="${portalUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">
-              Open SW Portal ALFT Form
-            </a>
-          </p>
-        </div>
+        <p style="margin: 0 0 16px;">Hi ${socialWorkerName},</p>
+        <p style="margin: 0 0 16px;">We have a client who needs a Kaiser ALFT Care Assessment.</p>
+
+        <p style="margin: 0; font-weight: 700;">Client:</p>
+        <p style="margin: 0 0 16px;"><strong>${memberName}</strong></p>
+
+        <p style="margin: 0 0 16px;"><strong>Plan ID:</strong> ${mrn || 'Not provided'}</p>
+
+        <p style="margin: 0; font-weight: 700;">ISP Location:</p>
+        <p style="margin: 0;">${facilityName || ispLocation || 'Not provided'}</p>
+        <p style="margin: 0;">Type: ${facilityType || 'Not provided'}</p>
+        <p style="margin: 0 0 16px;">Address: ${formattedAddress}</p>
+
+        <p style="margin: 0; font-weight: 700;">ISP Contact:</p>
+        <p style="margin: 0;">${primaryContactName} (${primaryRelationship})</p>
+        <p style="margin: 0;">Tel: ${ispContactPhone || 'Not provided'}</p>
+        <p style="margin: 0 0 12px;">Email: ${ispContactEmail || 'Not provided'}</p>
+
+        <p style="margin: 0; font-weight: 700;">Secondary ISP Contact:</p>
+        <p style="margin: 0;">${secondaryContactName} (${secondaryRelationship})</p>
+        <p style="margin: 0;">Tel: ${ispContact2Phone || 'Not provided'}</p>
+        <p style="margin: 0 0 16px;">Email: ${ispContact2Email || 'Not provided'}</p>
+
+        <p style="margin: 0 0 12px;">
+          I’ll make the 602 available to you. This will come in a separate email. Please let me know about the assessment:
+        </p>
+        <ul style="margin: 0 0 16px 20px; padding: 0;">
+          <li style="margin: 0 0 6px;">When it’s scheduled</li>
+          <li style="margin: 0 0 6px;">When it’s completed</li>
+          <li style="margin: 0 0 6px;">After completion, please email it to me.</li>
+          <li style="margin: 0 0 6px;">Please let me know once you’ve submitted your invoice, so I can take the client off of your caseload list.</li>
+        </ul>
+
+        <p style="margin: 0 0 16px;">
+          To complete the ALFT and signature workflow, open this link:
+          <a href="${portalUrl}" style="margin-left: 6px; color: #1d4ed8;">Open SW Portal ALFT Form</a>
+        </p>
+
+        <p style="margin: 0 0 10px;">If you have any questions, please feel free to contact me.</p>
+        <p style="margin: 0;">Regards,</p>
+        <p style="margin: 0;">—</p>
+        <p style="margin: 0;">${assignedBy || 'John Amber'}</p>
+        <p style="margin: 0;">${assignedByEmail || 'No sender email listed'}</p>
+        <p style="margin: 0;">${assignedByPhone || 'No sender phone listed'}</p>
+        <p style="margin: 0;">Connections Care Home Consultants</p>
       </div>
     `;
 

@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
           mrn: clean((assignment as any)?.memberMrn, 80) || undefined,
           portalUrl: '/sw-portal/alft-upload',
           assignedBy: clean((assignment as any)?.assignedByName, 160) || 'ALFT Manager',
+          assignedByEmail: clean((assignment as any)?.assignedByEmail, 220) || undefined,
+          assignedByPhone: clean((assignment as any)?.assignedByPhone, 80) || undefined,
         });
         reminderEmailSent = true;
       } catch {
