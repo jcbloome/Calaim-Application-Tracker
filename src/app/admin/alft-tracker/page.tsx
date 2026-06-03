@@ -21,6 +21,7 @@ import { createInitialExactAlftAnswers } from '@/components/alft/ExactAlftQuesti
 import { SwStyleAlftEditor } from '@/components/alft/SwStyleAlftEditor';
 import {
   addDoc,
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -238,6 +239,16 @@ type AlftAssignmentQueueRow = {
     isResend?: boolean | null;
     error?: string | null;
   }> | null;
+  swPortalSupportFiles?: Array<{
+    id?: string | null;
+    label?: string | null;
+    fileName?: string | null;
+    downloadURL?: string | null;
+    storagePath?: string | null;
+    uploadedAt?: any;
+    uploadedByName?: string | null;
+    uploadedByEmail?: string | null;
+  }> | null;
   prefillVerification?: {
     manualSyncAt?: any;
     manualSyncByUid?: string | null;
@@ -263,6 +274,12 @@ const matchesAllTokens = (queryValue: string, fields: Array<unknown>) => {
   const haystack = fields.map((field) => toLabel(field).toLowerCase()).join(' ');
   return tokens.every((token) => haystack.includes(token));
 };
+const parseCustomSwEmailLines = (raw: string) =>
+  String(raw || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 10);
 
 const isAlft = (row: Partial<StandaloneUpload>) => {
   const toolCode = toLabel((row as any)?.toolCode).toUpperCase();
@@ -990,7 +1007,12 @@ export default function AdminAlftTrackerPage() {
   const [dummySendCompletedEmail, setDummySendCompletedEmail] = useState('');
   const [swEmailPreviewOpen, setSwEmailPreviewOpen] = useState(false);
   const [swEmailPreviewRow, setSwEmailPreviewRow] = useState<AlftAssignmentQueueRow | null>(null);
+  const [swEmailPreviewCustomLines, setSwEmailPreviewCustomLines] = useState('');
   const [swEmailById, setSwEmailById] = useState<Record<string, string>>({});
+  const [swSupportUploadFile, setSwSupportUploadFile] = useState<File | null>(null);
+  const [swSupportUploadLabel, setSwSupportUploadLabel] = useState('');
+  const [swSupportUploading, setSwSupportUploading] = useState(false);
+  const [swSupportUploadProgress, setSwSupportUploadProgress] = useState(0);
   const editRouteId = String(searchParams?.get('edit') || '').trim();
   const isEditRoute = Boolean(editRouteId);
   const managerActionsOnly = String(searchParams?.get('managerActions') || '').trim() === '1';
@@ -1157,6 +1179,7 @@ export default function AdminAlftTrackerPage() {
               alftCompletionEmail: (r.alftCompletionEmail || null) as any,
               verificationSignoff: (r.verificationSignoff || null) as any,
               swEmailDeliveryLog: (Array.isArray(r.swEmailDeliveryLog) ? r.swEmailDeliveryLog : null) as any,
+              swPortalSupportFiles: (Array.isArray(r.swPortalSupportFiles) ? r.swPortalSupportFiles : null) as any,
               prefillVerification: (r.prefillVerification || null) as any,
               updatedAt: r.updatedAt,
             } as AlftAssignmentQueueRow;
@@ -1299,10 +1322,11 @@ export default function AdminAlftTrackerPage() {
       .trim()
       .split(/\s+/, 2)[0] || 'Social Worker';
     const swEmail = String(swEmailPreviewRow.assignedSwEmail || '').trim();
-    const assignedByName = String((swEmailPreviewRow as any)?.assignedByName || '').trim() || 'ALFT Manager';
+    const assignedByName = String((swEmailPreviewRow as any)?.assignedByName || '').trim();
     const assignedByEmail = String((swEmailPreviewRow as any)?.assignedByEmail || '').trim();
     const assignedByPhone = String((swEmailPreviewRow as any)?.assignedByPhone || '').trim();
     const signaturePhone = DEFAULT_SIGNATURE_PHONE || assignedByPhone;
+    const signatureName = assignedByName || assignedByEmail || 'Staff';
     const verified = Boolean(swEmailPreviewRow.verificationSignoff?.verified);
     const contactFirst = pickPreview('isp_contact_first');
     const contactLast = pickPreview('isp_contact_last');
@@ -1327,6 +1351,7 @@ export default function AdminAlftTrackerPage() {
     const ispContact2Phone = pickPreview('isp_contact_2_phone', 'ispContact2Phone');
     const ispContact2Email = pickPreview('isp_contact_2_email', 'ispContact2Email');
     const secondaryContactName = [ispContact2First, ispContact2Last].filter(Boolean).join(' ').trim();
+    const hasSecondaryIspContact = Boolean(secondaryContactName || ispContact2Relationship || ispContact2Phone || ispContact2Email);
     const hasContactMethod = Boolean(ispPhone || ispEmail);
     const hasFacilityTypeOrName = Boolean(ispFacilityType || ispFacilityName);
     const missingIspFields = [
@@ -1376,11 +1401,15 @@ export default function AdminAlftTrackerPage() {
         `${ispContactName || 'Not provided'} (${ispContactRelationship || 'Relationship not provided'})`,
         `Tel: ${ispPhone || 'Not provided'}`,
         `Email: ${ispEmail || 'Not provided'}`,
-        '',
-        'Secondary ISP Contact:',
-        `${secondaryContactName || 'Not provided'} (${ispContact2Relationship || 'Relationship not provided'})`,
-        `Tel: ${ispContact2Phone || 'Not provided'}`,
-        `Email: ${ispContact2Email || 'Not provided'}`,
+        ...(hasSecondaryIspContact
+          ? [
+              '',
+              'Secondary ISP Contact:',
+              `${secondaryContactName || 'Not provided'} (${ispContact2Relationship || 'Relationship not provided'})`,
+              `Tel: ${ispContact2Phone || 'Not provided'}`,
+              `Email: ${ispContact2Email || 'Not provided'}`,
+            ]
+          : []),
         '',
         "I'll make the 602 available to you. This will come in a separate email. Please let me know about the assessment:",
         '- When it’s scheduled',
@@ -1395,8 +1424,8 @@ export default function AdminAlftTrackerPage() {
         '',
         'Regards,',
         '—',
-        `${assignedByName}`,
-        `${assignedByEmail || 'No sender email listed'}`,
+        `${signatureName}`,
+        ...(assignedByEmail ? [assignedByEmail] : []),
         `${signaturePhone || 'No sender phone listed'}`,
         'Connections Care Home Consultants',
       ].join('\n'),
@@ -1476,7 +1505,10 @@ export default function AdminAlftTrackerPage() {
   );
 
   const startWorkflowFromIntake = useCallback(
-    async (row: AlftAssignmentQueueRow, opts?: { skipVerificationCheck?: boolean; overrideRecipientEmail?: string }) => {
+    async (
+      row: AlftAssignmentQueueRow,
+      opts?: { skipVerificationCheck?: boolean; overrideRecipientEmail?: string; customMessageLines?: string[] }
+    ) => {
       if (!auth?.currentUser) {
         toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
         return;
@@ -1496,6 +1528,9 @@ export default function AdminAlftTrackerPage() {
       try {
         const idToken = await auth.currentUser.getIdToken();
         const dummyEmail = String(opts?.overrideRecipientEmail || '').trim().toLowerCase();
+        const customMessageLines = Array.isArray(opts?.customMessageLines)
+          ? opts?.customMessageLines.map((line) => String(line || '').trim()).filter(Boolean).slice(0, 10)
+          : [];
         const rowPrefillPurpose = String(row.prefillPurpose || '').trim();
         const prefillPurpose =
           rowPrefillPurpose === 'initial' || rowPrefillPurpose === 'change_condition' || rowPrefillPurpose === 'review'
@@ -1589,6 +1624,7 @@ export default function AdminAlftTrackerPage() {
               assignedSwEmail: row.assignedSwEmail || '',
               ...(prefillPurpose ? { prefillPurpose } : {}),
             },
+            customMessageLines: customMessageLines.length ? customMessageLines : undefined,
             overrideRecipientEmail: dummyEmail || undefined,
           }),
         });
@@ -1987,6 +2023,69 @@ export default function AdminAlftTrackerPage() {
     } finally {
       setRevUploading(false);
       setRevProgress(0);
+    }
+  };
+
+  const uploadSwPortalSupportFile = async (row: AlftAssignmentQueueRow) => {
+    if (!row || !firestore || !storage) return;
+    if (!swSupportUploadFile) {
+      toast({ title: 'Select a file', description: 'Choose a support file to upload (e.g., 602, facesheet).', variant: 'destructive' });
+      return;
+    }
+    if (swSupportUploading) return;
+    const memberKey = String(row.memberId || row.id || '').trim();
+    if (!memberKey) {
+      toast({ title: 'Missing member', description: 'Could not resolve assignment member ID.', variant: 'destructive' });
+      return;
+    }
+    setSwSupportUploading(true);
+    setSwSupportUploadProgress(0);
+    try {
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const safeName = swSupportUploadFile.name.replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, '_').slice(0, 160);
+      const storagePath = `admin_uploads/alft-sw-portal-support/${memberKey}/${ts}_${safeName}`;
+      const storageRef = ref(storage, storagePath);
+
+      const uploaded = await new Promise<{ downloadURL: string }>((resolve, reject) => {
+        const task = uploadBytesResumable(storageRef, swSupportUploadFile);
+        task.on(
+          'state_changed',
+          (snap) => {
+            const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
+            setSwSupportUploadProgress(Math.max(1, Math.min(99, Math.round(pct))));
+          },
+          (err) => reject(err),
+          async () => {
+            const downloadURL = await getDownloadURL(task.snapshot.ref);
+            resolve({ downloadURL });
+          }
+        );
+      });
+
+      const supportFile = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        label: toLabel(swSupportUploadLabel) || null,
+        fileName: swSupportUploadFile.name,
+        downloadURL: uploaded.downloadURL,
+        storagePath,
+        uploadedAt: serverTimestamp(),
+        uploadedByName: toLabel((user as any)?.displayName) || null,
+        uploadedByEmail: toLabel((user as any)?.email) || null,
+      };
+
+      await updateDoc(doc(firestore, 'alft_assignments', memberKey), {
+        swPortalSupportFiles: arrayUnion(supportFile as any),
+        updatedAt: serverTimestamp(),
+      } as any);
+
+      toast({ title: 'Support file uploaded', description: 'This file is now visible to the social worker in the ALFT portal.' });
+      setSwSupportUploadFile(null);
+      setSwSupportUploadLabel('');
+    } catch (e: any) {
+      toast({ title: 'Upload failed', description: e?.message || 'Could not upload support file.', variant: 'destructive' });
+    } finally {
+      setSwSupportUploading(false);
+      setSwSupportUploadProgress(0);
     }
   };
 
@@ -2402,6 +2501,15 @@ export default function AdminAlftTrackerPage() {
       ) || swEmailPreviewRow
     );
   }, [assignmentRows, editAssignmentRow, isEditRoute, swEmailPreviewRow]);
+  const swEmailPreviewCustomMessageLines = useMemo(
+    () => parseCustomSwEmailLines(swEmailPreviewCustomLines),
+    [swEmailPreviewCustomLines]
+  );
+  const swEmailPreviewRenderedBody = useMemo(() => {
+    const base = String(swEmailPreview?.body || '—');
+    if (!swEmailPreviewCustomMessageLines.length) return base;
+    return `${base}\n\nAdditional Notes:\n${swEmailPreviewCustomMessageLines.map((line) => `- ${line}`).join('\n')}`;
+  }, [swEmailPreview?.body, swEmailPreviewCustomMessageLines]);
   const editAssignmentDoneCount = editAssignmentSteps.filter((step) => step.done).length;
   const editVerificationDone = Boolean((editAssignmentRow as any)?.verificationSignoff?.verified);
   const editVerificationAtMs = toMs((editAssignmentRow as any)?.verificationSignoff?.verifiedAt);
@@ -2433,6 +2541,25 @@ export default function AdminAlftTrackerPage() {
       })
       .filter((entry) => Boolean(entry.status))
       .sort((a, b) => b.atMs - a.atMs);
+  }, [editAssignmentRow]);
+  const editSwPortalSupportFiles = useMemo(() => {
+    const raw = Array.isArray((editAssignmentRow as any)?.swPortalSupportFiles)
+      ? (((editAssignmentRow as any).swPortalSupportFiles as any[]) || [])
+      : [];
+    return raw
+      .map((entry: any) => {
+        const uploadedAtMs = toMs(entry?.uploadedAt || entry?.uploadedAtIso || null);
+        return {
+          id: String(entry?.id || '').trim(),
+          label: String(entry?.label || '').trim(),
+          fileName: String(entry?.fileName || '').trim(),
+          downloadURL: String(entry?.downloadURL || '').trim(),
+          uploadedAtMs,
+          uploadedAtLabel: uploadedAtMs ? fmtTimeline(uploadedAtMs) : '',
+        };
+      })
+      .filter((entry) => Boolean(entry.downloadURL))
+      .sort((a, b) => b.uploadedAtMs - a.uploadedAtMs);
   }, [editAssignmentRow]);
   const verificationReturnToHref = editAssignmentRow
     ? `/admin/alft-tracker?edit=${encodeURIComponent(
@@ -2579,9 +2706,7 @@ export default function AdminAlftTrackerPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[56%]">Member</TableHead>
-                    <TableHead className="w-[20%]">Current Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>Member</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2618,7 +2743,7 @@ export default function AdminAlftTrackerPage() {
 
                     return [
                       <TableRow key={`row-${r.id}`} className={cn(focused ? 'bg-amber-50/30' : '')}>
-                        <TableCell>
+                        <TableCell colSpan={3}>
                           <div className="font-semibold truncate">{r.memberName || '—'}</div>
                           <div className="text-sm text-muted-foreground break-words">
                             Social worker: {socialWorkerName}
@@ -2639,46 +2764,29 @@ export default function AdminAlftTrackerPage() {
                             Current step: <span className="font-medium">{currentStepLabel}</span>
                             <span className="text-muted-foreground"> • {currentStepAtLabel || 'No timestamp yet'}</span>
                           </div>
-                          <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5">
-                            {checklist.map((step, idx) => (
-                              <span
-                                key={`${r.id}-bar-${step.id}`}
-                                className={cn(
-                                  'inline-flex h-6 min-w-6 items-center justify-center rounded border px-1.5 text-xs font-medium',
-                                  step.done
-                                    ? 'border-green-600 bg-green-600 text-white'
-                                    : 'border-slate-300 bg-white text-slate-500'
-                                )}
-                                title={step.label}
-                              >
-                                {step.done ? '✓' : String(idx + 1)}
-                              </span>
-                            ))}
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Checklist progress: {checklist.filter((step) => step.done).length}/{checklist.length} complete
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            <Badge variant="outline" className={cn('border text-sm px-2 py-1', stageBlockClass(stage))}>
-                              {statusLabel}
-                            </Badge>
+                          <div className="mt-2 space-y-2 text-sm">
+                            <div className={cn('rounded-md border px-2 py-1.5', stageBlockClass(stage))}>
+                              <span className="font-medium">Status:</span> {statusLabel}
+                            </div>
                             {managerActionRequired ? (
-                              <Badge variant="outline" className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900 text-sm px-2 py-1">
-                                Kaiser Mgr Actions
-                              </Badge>
+                              <div className="rounded-md border border-fuchsia-300 bg-fuchsia-50 px-2 py-1.5 text-fuchsia-800 font-medium">
+                                Manager action required
+                              </div>
                             ) : null}
-                            {r.alftRnName ? (
-                              <Badge variant="outline" className="text-sm px-2 py-1">RN: {r.alftRnName}</Badge>
-                            ) : null}
-                            <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-900 text-sm px-2 py-1">
-                              Final Reviewer: {finalReviewerName}
-                            </Badge>
-                            <Badge variant="outline" className="border-purple-300 bg-purple-50 text-purple-900 text-sm px-2 py-1">
-                              Send Owner: {sendOwnerName}
-                            </Badge>
+                            <div className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-blue-900">
+                              <span className="font-medium">Assigned social worker:</span> {socialWorkerName}
+                            </div>
+                            <div className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1.5 text-sky-900">
+                              <span className="font-medium">ALFT Reviewer:</span> {finalReviewerName}
+                            </div>
+                            <div className="rounded-md border border-purple-200 bg-purple-50 px-2 py-1.5 text-purple-900">
+                              <span className="font-medium">ALFTA Manager:</span> {sendOwnerName}
+                            </div>
                           </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="inline-flex items-center gap-2 justify-end">
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
                             <Button
                               variant={!workflowAlreadyStarted ? 'default' : 'outline'}
                               className={!workflowAlreadyStarted ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
@@ -2766,6 +2874,7 @@ export default function AdminAlftTrackerPage() {
           if (!open) {
             setSwEmailPreviewUseTestOverride(false);
             setSwEmailPreviewTestEmail('');
+            setSwEmailPreviewCustomLines('');
           }
         }}
       >
@@ -2797,7 +2906,7 @@ export default function AdminAlftTrackerPage() {
                 </div>
               ) : null}
               <pre className="mt-1 whitespace-pre-wrap rounded border bg-muted/20 p-2 text-xs">
-                {swEmailPreview?.body || '—'}
+                {swEmailPreviewRenderedBody}
               </pre>
             </div>
             {swEmailPreview?.missingIspFields?.length ? (
@@ -2805,6 +2914,19 @@ export default function AdminAlftTrackerPage() {
                 Missing required fields: {swEmailPreview.missingIspFields.join(', ')}
               </div>
             ) : null}
+            <div className="rounded border bg-muted/20 p-2 space-y-1">
+              <Label htmlFor="sw-email-custom-lines" className="text-[11px] font-medium">
+                Additional lines for this SW email (optional)
+              </Label>
+              <textarea
+                id="sw-email-custom-lines"
+                value={swEmailPreviewCustomLines}
+                onChange={(e) => setSwEmailPreviewCustomLines(e.target.value)}
+                placeholder={"Example:\n- Please call before arrival.\n- 602 attached in portal files."}
+                rows={4}
+                className="w-full rounded border bg-background px-2 py-1.5 text-xs"
+              />
+            </div>
             <div className="rounded border bg-muted/20 p-2 space-y-2">
               <div className="font-medium text-xs">Test override</div>
               <div className="flex items-center gap-2 text-xs">
@@ -2847,6 +2969,7 @@ export default function AdminAlftTrackerPage() {
                 }
                 onClick={() =>
                   void startWorkflowFromIntake(swPreviewActionRow, {
+                    customMessageLines: swEmailPreviewCustomMessageLines,
                     overrideRecipientEmail: swEmailPreviewUseTestOverride ? swEmailPreviewTestEmail : undefined,
                   })
                 }
@@ -2924,6 +3047,7 @@ export default function AdminAlftTrackerPage() {
                       setSwEmailPreviewRow(editAssignmentRow);
                       setSwEmailPreviewUseTestOverride(false);
                       setSwEmailPreviewTestEmail('');
+                      setSwEmailPreviewCustomLines('');
                       setSwEmailPreviewOpen(true);
                     }}
                   >
@@ -2949,6 +3073,54 @@ export default function AdminAlftTrackerPage() {
                       ))}
                     </div>
                   ) : null}
+                  <div className="rounded border bg-muted/20 px-2 py-2 text-xs space-y-2">
+                    <div className="font-medium text-foreground">Workflow files for SW portal (602, facesheet, etc.)</div>
+                    <div className="grid gap-2 md:grid-cols-[1fr_auto] md:items-end">
+                      <div className="space-y-1">
+                        <Label htmlFor="sw-support-file-label" className="text-[11px]">File label (optional)</Label>
+                        <Input
+                          id="sw-support-file-label"
+                          value={swSupportUploadLabel}
+                          onChange={(e) => setSwSupportUploadLabel(e.target.value)}
+                          placeholder="Example: 602 or Facesheet"
+                          className="h-8 text-xs"
+                        />
+                        <input
+                          type="file"
+                          onChange={(e) => setSwSupportUploadFile(e.target.files?.[0] || null)}
+                          className="text-xs"
+                        />
+                        {swSupportUploadFile ? (
+                          <div className="text-[11px] text-muted-foreground">Selected: {swSupportUploadFile.name}</div>
+                        ) : null}
+                      </div>
+                      <Button
+                        variant="outline"
+                        className="h-8"
+                        disabled={!editAssignmentRow || !swSupportUploadFile || swSupportUploading}
+                        onClick={() => editAssignmentRow && void uploadSwPortalSupportFile(editAssignmentRow)}
+                      >
+                        {swSupportUploading
+                          ? `Uploading${swSupportUploadProgress ? ` (${swSupportUploadProgress}%)` : '...'}`
+                          : 'Upload for SW portal'}
+                      </Button>
+                    </div>
+                    {editSwPortalSupportFiles.length ? (
+                      <div className="space-y-1">
+                        {editSwPortalSupportFiles.slice(0, 8).map((f, idx) => (
+                          <div key={f.id || `${f.fileName}-${idx}`} className="text-muted-foreground">
+                            <a href={f.downloadURL} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">
+                              {f.label || f.fileName || 'Support file'}
+                            </a>
+                            {f.label && f.fileName && f.label !== f.fileName ? ` (${f.fileName})` : ''}
+                            {f.uploadedAtLabel ? ` • uploaded ${f.uploadedAtLabel}` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground">No workflow files uploaded for this member yet.</div>
+                    )}
+                  </div>
                   <div className="text-sm">
                     <span className="font-medium">4) SW Signed</span>{' '}
                     <span className={editAssignmentSignals?.swSubmitted ? 'text-emerald-700' : 'text-muted-foreground'}>

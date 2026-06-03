@@ -10,6 +10,7 @@ import { EXACT_ALFT_PAGES, createInitialExactAlftAnswers } from '@/components/al
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -82,6 +83,13 @@ type KaiserMember = {
   alftPlanId?: string;
   expectedVisitDate?: string;
   prefillResolved?: Record<string, string>;
+  swPortalSupportFiles?: Array<{
+    id?: string;
+    label?: string;
+    fileName?: string;
+    downloadURL?: string;
+    uploadedAt?: any;
+  }>;
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -462,6 +470,8 @@ export default function SwKaiserAlftPage() {
   const [templatePdfLoading, setTemplatePdfLoading] = useState(false);
   const [templatePdfError, setTemplatePdfError] = useState('');
   const [templatePdfMode, setTemplatePdfMode] = useState('');
+  const [supportPreviewOpen, setSupportPreviewOpen] = useState(false);
+  const [supportPreview, setSupportPreview] = useState<{ url: string; name: string } | null>(null);
   const facilityNameFromMember = (member: KaiserMember | null | undefined) =>
     String(
       member?.prefillResolved?.p2_facility_name ||
@@ -547,6 +557,7 @@ export default function SwKaiserAlftPage() {
             prefillPurpose: String(data.prefillPurpose || '').trim(),
             alftPlanId: String(data.alftPlanId || '').trim(),
             expectedVisitDate: String(data.expectedVisitDate || data.alftExpectedVisitDate || '').trim(),
+            swPortalSupportFiles: Array.isArray(data.swPortalSupportFiles) ? data.swPortalSupportFiles : [],
             prefillResolved: Object.fromEntries(
               Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])
             ) as Record<string, string>,
@@ -625,6 +636,7 @@ export default function SwKaiserAlftPage() {
         ispContact2Email:
           pickPrefill('isp_contact_2_email') ||
           String(data.ispContact2Email || member.ispContact2Email || '').trim(),
+        swPortalSupportFiles: Array.isArray(data.swPortalSupportFiles) ? data.swPortalSupportFiles : member.swPortalSupportFiles || [],
         prefillResolved: Object.fromEntries(
           Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])
         ) as Record<string, string>,
@@ -970,6 +982,37 @@ export default function SwKaiserAlftPage() {
       String(selectedMember?.ispContact2Phone || '').trim() ||
       String(selectedMember?.ispContact2Email || '').trim()
   );
+  const swPortalSupportFiles = Array.isArray(selectedMember?.swPortalSupportFiles)
+    ? (selectedMember?.swPortalSupportFiles || [])
+        .map((entry: any) => {
+          const atMs = (() => {
+            try {
+              if (!entry?.uploadedAt) return 0;
+              if (typeof entry.uploadedAt?.toMillis === 'function') return entry.uploadedAt.toMillis();
+              if (typeof entry.uploadedAt?.toDate === 'function') return entry.uploadedAt.toDate().getTime();
+              const t = new Date(String(entry.uploadedAt || '')).getTime();
+              return Number.isNaN(t) ? 0 : t;
+            } catch {
+              return 0;
+            }
+          })();
+          return {
+            id: String(entry?.id || '').trim(),
+            label: String(entry?.label || '').trim(),
+            fileName: String(entry?.fileName || '').trim(),
+            downloadURL: String(entry?.downloadURL || '').trim(),
+            uploadedAtLabel: atMs ? new Date(atMs).toLocaleString() : '',
+            atMs,
+          };
+        })
+        .filter((entry) => Boolean(entry.downloadURL))
+        .sort((a, b) => b.atMs - a.atMs)
+    : [];
+  const openSupportPreview = useCallback((url: string, name: string) => {
+    if (!url) return;
+    setSupportPreview({ url, name: name || 'Reference file' });
+    setSupportPreviewOpen(true);
+  }, []);
 
   // ── Auth guard ────────────────────────────────────────────────────────────────
 
@@ -1182,6 +1225,37 @@ export default function SwKaiserAlftPage() {
         ) : null}
       </div>
 
+      <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 print:hidden">
+        <div className="text-sm font-semibold text-emerald-950">Workflow Reference Files</div>
+        <div className="text-xs text-emerald-900 mt-0.5">
+          Files uploaded by your ALFT workflow team (e.g., 602, facesheet) for this member.
+        </div>
+        {swPortalSupportFiles.length ? (
+          <div className="mt-2 space-y-1">
+            {swPortalSupportFiles.map((f, idx) => (
+              <div key={f.id || `${f.fileName}-${idx}`} className="flex flex-wrap items-center gap-2 text-xs text-emerald-900">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => openSupportPreview(f.downloadURL, f.label || f.fileName || 'Reference file')}
+                >
+                  View
+                </Button>
+                <span className="font-medium">{f.label || f.fileName || 'Reference file'}</span>
+                {f.label && f.fileName && f.label !== f.fileName ? <span>({f.fileName})</span> : null}
+                {f.uploadedAtLabel ? <span>• uploaded {f.uploadedAtLabel}</span> : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-amber-800">
+            No workflow reference files uploaded yet.
+          </div>
+        )}
+      </div>
+
       {/* ── Unified packet view: edit/preview in exact ALFT format ── */}
       <div className="space-y-4 print:space-y-0">
         {PAGE_LAYOUT.map((layout) => {
@@ -1375,6 +1449,20 @@ export default function SwKaiserAlftPage() {
       </div>
 
       {/* ── Print/PDF styles ── */}
+      <Dialog open={supportPreviewOpen} onOpenChange={setSupportPreviewOpen}>
+        <DialogContent className="max-w-4xl h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{supportPreview?.name || 'Reference file'}</DialogTitle>
+          </DialogHeader>
+          {supportPreview?.url ? (
+            <iframe
+              src={`${supportPreview.url}#toolbar=0&navpanes=0&scrollbar=1`}
+              title={supportPreview?.name || 'Reference file preview'}
+              className="w-full flex-1 rounded border"
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
       <style jsx global>{`
         body { background: #f5f5f5; }
         .alft-sw-tool { color: #18181b; }

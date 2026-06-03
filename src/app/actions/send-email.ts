@@ -87,6 +87,14 @@ function resolveAppBaseUrl(rawBaseUrl?: string): string {
     }
 }
 
+const escapeHtml = (value: string) =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 function getRequirementFocusId(incompleteItems: string[] = []): string {
     for (const item of incompleteItems) {
         const key = String(item || '').trim().toLowerCase();
@@ -225,6 +233,7 @@ interface AlftWorkflowStartPayload {
     assignedByEmail?: string;
     assignedByPhone?: string;
     senderCopyEmail?: string;
+    customMessageLines?: string[];
     ispContactName?: string;
     ispContactRelationship?: string;
     ispAddress?: string;
@@ -632,13 +641,6 @@ export const sendSwClaimReminderEmail = async (payload: SwClaimReminderPayload) 
 
     const portalUrl = String(payload.portalUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').trim();
     const socialWorkerName = String(payload.socialWorkerName || '').trim() || 'Social Worker';
-    const socialWorkerFirstName = String(
-      socialWorkerName.includes(',')
-        ? socialWorkerName.split(',', 2)[1]
-        : socialWorkerName.split(/\s+/, 2)[0]
-    )
-      .trim()
-      .split(/\s+/, 2)[0] || 'Social Worker';
     const items = Array.isArray(payload.items) ? payload.items : [];
 
     const emailHtml = await renderAsync(
@@ -839,10 +841,21 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
       .split(/\s+/, 2)[0] || 'Social Worker';
     const memberName = String(payload.memberName || '').trim() || 'Member';
     const mrn = String(payload.mrn || '').trim();
-    const assignedBy = String(payload.assignedBy || '').trim() || 'ALFT Manager';
+    const assignedBy = String(payload.assignedBy || '').trim();
     const assignedByEmail = String(payload.assignedByEmail || '').trim();
     const assignedByPhone = String(payload.assignedByPhone || '').trim();
     const senderCopyEmail = String(payload.senderCopyEmail || '').trim().toLowerCase();
+    const customMessageLines = Array.isArray(payload.customMessageLines)
+      ? payload.customMessageLines.map((line) => String(line || '').trim()).filter(Boolean).slice(0, 10)
+      : [];
+    const customMessageHtml = customMessageLines.length
+      ? `
+        <p style="margin: 0 0 8px;"><strong>Additional Notes:</strong></p>
+        <ul style="margin: 0 0 16px 20px; padding: 0;">
+          ${customMessageLines.map((line) => `<li style="margin: 0 0 6px;">${escapeHtml(line)}</li>`).join('')}
+        </ul>
+      `
+      : '';
     const signaturePhone = DEFAULT_SIGNATURE_PHONE || assignedByPhone;
     const ispContactName = String(payload.ispContactName || '').trim();
     const ispContactRelationship = String(payload.ispContactRelationship || '').trim();
@@ -865,6 +878,8 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const primaryContactName = ispContactName || 'Not provided';
     const secondaryContactName = ispContact2Name || 'Not provided';
     const logoUrl = `${baseUrl}/calaimlogopdf.png`;
+    const hasSecondaryIspContact = Boolean(ispContact2Name || ispContact2Relationship || ispContact2Phone || ispContact2Email);
+    const signatureName = assignedBy || assignedByEmail || 'Staff';
 
     const html = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
@@ -889,10 +904,12 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         <p style="margin: 0;">Tel: ${ispContactPhone || 'Not provided'}</p>
         <p style="margin: 0 0 12px;">Email: ${ispContactEmail || 'Not provided'}</p>
 
+        ${hasSecondaryIspContact ? `
         <p style="margin: 0; font-weight: 700;">Secondary ISP Contact:</p>
         <p style="margin: 0;">${secondaryContactName} (${secondaryRelationship})</p>
         <p style="margin: 0;">Tel: ${ispContact2Phone || 'Not provided'}</p>
         <p style="margin: 0 0 16px;">Email: ${ispContact2Email || 'Not provided'}</p>
+        ` : ''}
 
         <p style="margin: 0 0 12px;">
           I’ll make the 602 available to you. This will come in a separate email. Please let me know about the assessment:
@@ -908,12 +925,13 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
           To complete the ALFT and signature workflow, open this link:
           <a href="${portalUrl}" style="margin-left: 6px; color: #1d4ed8;">Open SW Portal ALFT Form</a>
         </p>
+        ${customMessageHtml}
 
         <p style="margin: 0 0 10px;">If you have any questions, please feel free to contact me.</p>
         <p style="margin: 0;">Regards,</p>
         <p style="margin: 0;">—</p>
-        <p style="margin: 0;">${assignedBy || 'John Amber'}</p>
-        <p style="margin: 0;">${assignedByEmail || 'No sender email listed'}</p>
+        <p style="margin: 0;">${signatureName}</p>
+        ${assignedByEmail ? `<p style="margin: 0;">${assignedByEmail}</p>` : ''}
         <p style="margin: 0;">${signaturePhone || 'No sender phone listed'}</p>
         <p style="margin: 0;">Connections Care Home Consultants</p>
       </div>
