@@ -17,7 +17,7 @@ import { format, parse, differenceInHours } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AlertTriangle, Sparkles, FileText, ExternalLink, CheckCircle2, Mail, Bell } from 'lucide-react';
+import { AlertTriangle, Sparkles, FileText, ExternalLink, CheckCircle2, Mail, Bell, Download } from 'lucide-react';
 import type { Application } from '@/lib/definitions';
 import { EmptyState } from '@/components/EmptyState';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
@@ -123,7 +123,7 @@ const isAdminStoredApplication = (app: WithId<Application & FormValues>) =>
   String((app as any)?.source || '').trim().toLowerCase() === 'admin' ||
   !sanitizeUserId((app as any)?.userId);
 
-const buildAdminApplicationHref = (
+export const buildAdminApplicationHref = (
   app: WithId<Application & FormValues>,
   extraParams?: Record<string, string>
 ) => {
@@ -139,7 +139,7 @@ const buildAdminApplicationHref = (
   return `/admin/applications/${app.id}${query ? `?${query}` : ''}`;
 };
 
-const getDisplayMemberName = (app: WithId<Application & FormValues>) => {
+export const getDisplayMemberName = (app: WithId<Application & FormValues>) => {
   const firstRaw = String((app as any)?.memberFirstName || '').trim();
   const lastRaw = String((app as any)?.memberLastName || '').trim();
   const invalidToken = (value: string) => {
@@ -535,14 +535,19 @@ const QuickViewDialog = ({ application }: { application: WithId<Application & Fo
 }
 
 const FilesQuickViewDialog = ({ application }: { application: WithId<Application & FormValues> }) => {
+  const { toast } = useToast();
+  const { user } = useAdmin();
+  const [isDownloadingAllFiles, setIsDownloadingAllFiles] = useState(false);
   const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
 
   const uploadedDocuments = forms
     .filter((form) => form?.status === 'Completed' && (form?.type === 'Upload' || form?.fileName || form?.downloadURL))
     .map((form) => ({
+      category: 'Application files',
       formName: String(form?.name || 'Uploaded Document'),
       fileName: String(form?.fileName || 'File uploaded'),
       downloadURL: String(form?.downloadURL || '').trim(),
+      filePath: String(form?.filePath || '').trim(),
       dateCompleted: form?.dateCompleted || null,
     }));
 
@@ -553,6 +558,100 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
       dateCompleted: form?.dateCompleted || null,
       type: String(form?.type || 'online-form'),
     }));
+  const printableCsSummaryHref = (() => {
+    const appId = String((application as any)?.id || '').trim();
+    const params = new URLSearchParams({ applicationId: appId });
+    const userId = String((application as any)?.userId || '').trim();
+    if (appId && !appId.startsWith('admin_app_') && userId) {
+      params.set('userId', userId);
+    }
+    return `/admin/forms/cs-summary-printable?${params.toString()}`;
+  })();
+
+  const sanitizeZipToken = (value: unknown, fallback: string) => {
+    const cleaned = String(value || '')
+      .trim()
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+      .replace(/\s+/g, ' ');
+    return cleaned || fallback;
+  };
+
+  const buildZipFileName = () => {
+    const lastName = sanitizeZipToken((application as any)?.memberLastName, 'UnknownLast');
+    const firstName = sanitizeZipToken((application as any)?.memberFirstName, 'UnknownFirst');
+    const mrn = sanitizeZipToken((application as any)?.memberMrn, 'UnknownMRN');
+    return `${lastName}, ${firstName} Member ${mrn}.zip`;
+  };
+
+  const handleDownloadAllFiles = async () => {
+    if (!uploadedDocuments.length) {
+      toast({
+        variant: 'destructive',
+        title: 'No files to download',
+        description: 'This application does not have uploaded files yet.',
+      });
+      return;
+    }
+
+    try {
+      setIsDownloadingAllFiles(true);
+      const idToken = await user?.getIdToken?.();
+      if (!idToken) {
+        throw new Error('Unable to verify admin session. Please refresh and try again.');
+      }
+
+      const entries = uploadedDocuments.map((doc) => ({
+        category: doc.category,
+        documentName: doc.formName,
+        fileName: doc.fileName,
+        downloadURL: doc.downloadURL,
+        filePath: doc.filePath,
+      }));
+
+      const response = await fetch('/api/admin/member-files-zip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          zipFileName: buildZipFileName(),
+          entries,
+        }),
+      });
+
+      if (!response.ok) {
+        const message = await response.text().catch(() => '');
+        throw new Error(message || `ZIP request failed (${response.status})`);
+      }
+
+      const zipBlob = await response.blob();
+      const objectUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = buildZipFileName();
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+
+      const downloadedCount = Number(response.headers.get('x-downloaded-count') || entries.length);
+      const skippedCount = Number(response.headers.get('x-skipped-count') || 0);
+      const failedCount = Number(response.headers.get('x-failed-count') || 0);
+      toast({
+        title: 'Download complete',
+        description: `${downloadedCount} downloaded${skippedCount ? ` • ${skippedCount} skipped` : ''}${failedCount ? ` • ${failedCount} failed` : ''}`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Download failed',
+        description: String(error?.message || 'Could not create ZIP download.'),
+      });
+    } finally {
+      setIsDownloadingAllFiles(false);
+    }
+  };
 
   return (
     <Dialog>
@@ -571,8 +670,33 @@ const FilesQuickViewDialog = ({ application }: { application: WithId<Application
             Quick view of uploaded files and completed forms for this member.
           </DialogDescription>
         </DialogHeader>
+        <div className="flex items-center justify-end">
+          <Button onClick={handleDownloadAllFiles} disabled={isDownloadingAllFiles || uploadedDocuments.length === 0}>
+            <Download className="mr-2 h-4 w-4" />
+            {isDownloadingAllFiles ? 'Preparing ZIP...' : 'Download Entire File Set'}
+          </Button>
+        </div>
 
         <div className="space-y-6 py-2">
+          <div>
+            <h3 className="text-lg font-semibold mb-2 text-primary">Printable Forms</h3>
+            <div className="rounded-md border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">CS Member Summary (Filled Printable)</p>
+                  <p className="text-xs text-muted-foreground">
+                    Opens the current printable CS Summary form for this application.
+                  </p>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={printableCsSummaryHref}>
+                    Open Printable
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+
           <div>
             <h3 className="text-lg font-semibold mb-2 text-primary">Uploaded Documents</h3>
             {uploadedDocuments.length === 0 ? (

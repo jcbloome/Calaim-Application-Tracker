@@ -256,6 +256,17 @@ export function PrintableCsSummaryFormContent() {
                     <Field label="ISP Contact Phone" description="xxx-xxx-xxxx"/>
                     <Field label="ISP Contact Email" className="sm:col-span-2" description='If no email, enter "N/A".'/>
                     </div>
+                    <h4 className="text-xs font-medium text-gray-800 mt-4">Secondary ISP Contact (Optional)</h4>
+                    <div className="mt-2">
+                      <CheckboxField label="Also contact Primary Contact for ISP" />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1">
+                    <Field label="Secondary ISP Contact First Name" />
+                    <Field label="Secondary ISP Contact Last Name" />
+                    <Field label="Secondary ISP Contact Relationship to Member" />
+                    <Field label="Secondary ISP Contact Phone" description="xxx-xxx-xxxx"/>
+                    <Field label="Secondary ISP Contact Email" className="sm:col-span-2" description='If no email, enter "N/A".'/>
+                    </div>
                     <Field label="Reason for SNF Diversion (notes)" className="sm:col-span-2 mt-2" />
                     
                     <h3 className="text-sm font-medium text-gray-800 mt-4">ISP Assessment Location</h3>

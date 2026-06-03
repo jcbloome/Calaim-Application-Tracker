@@ -29,6 +29,11 @@ const FIELD_OVERRIDES: Record<string, string | string[]> = {
   isp_contact_last: 'ISP_Contact_Last',
   isp_contact_email: 'ISP_Contact_Email',
   isp_contact_phone: 'ISP_Contact_Phone',
+  isp_contact_2_first: 'ISP_Contact_2_First',
+  isp_contact_2_last: 'ISP_Contact_2_Last',
+  isp_contact_2_relationship: 'ISP_Contact_2_Relationship',
+  isp_contact_2_email: 'ISP_Contact_2_Email',
+  isp_contact_2_phone: 'ISP_Contact_2_Phone',
   isp_contact_confirm_date: 'ISP_Contact_Confirm_Date',
   isp_location_type: 'ISP_Location_Type',
   isp_location_name: 'ISP_Contact_Location',
@@ -150,6 +155,11 @@ function applyPreviewFormatting(field: string, value: string): string {
     field === 'p1_other_responder_relationship' ||
     field === 'isp_contact_first' ||
     field === 'isp_contact_last' ||
+    field === 'isp_contact_2_first' ||
+    field === 'isp_contact_2_last' ||
+    field === 'isp_contact_2_relationship' ||
+    field === 'isp_contact_2_email' ||
+    field === 'isp_contact_2_phone' ||
     field === 'isp_location_name' ||
     field === 'isp_location_address' ||
     field === 'isp_location_city' ||
@@ -238,13 +248,44 @@ export async function POST(req: NextRequest) {
     }
 
     const decoded = await adminAuth.verifyIdToken(idToken);
+    const uid = String(decoded?.uid || '');
     const userEmail = String(decoded?.email || '').toLowerCase();
     const userRole = String((decoded as any)?.role || '').toLowerCase();
     const roles = Array.isArray((decoded as any)?.roles)
       ? (decoded as any).roles.map((r: any) => String(r).toLowerCase())
       : [];
-    const isAdmin = userRole === 'admin' || roles.includes('admin') || isHardcodedAdminEmail(userEmail);
-    if (!isAdmin) {
+    let isAdmin = userRole === 'admin' || roles.includes('admin') || isHardcodedAdminEmail(userEmail);
+    let isKaiserStaff = userRole.includes('kaiser') || roles.includes('kaiserstaff') || roles.includes('kaiser_staff');
+    let isKaiserManager = userRole.includes('kaiser manager') || roles.includes('kaisermanager') || roles.includes('kaiser_manager');
+
+    if (!isAdmin || (!isKaiserStaff && !isKaiserManager)) {
+      const [adminRoleByUid, superAdminRoleByUid, userDocByUid] = await Promise.all([
+        adminDb.collection('roles_admin').doc(uid).get().catch(() => null),
+        adminDb.collection('roles_super_admin').doc(uid).get().catch(() => null),
+        adminDb.collection('users').doc(uid).get().catch(() => null),
+      ]);
+      const userData = userDocByUid?.exists ? (userDocByUid.data() as any) : null;
+      const roleLabel = String(userData?.role || '').trim().toLowerCase();
+      if (!isAdmin) {
+        isAdmin = Boolean(adminRoleByUid?.exists || superAdminRoleByUid?.exists);
+      }
+      isKaiserStaff = Boolean(
+        isKaiserStaff ||
+          userData?.isKaiserStaff ||
+          userData?.isKaiserManager ||
+          userData?.isKaiserAssignmentManager ||
+          roleLabel.includes('kaiser staff') ||
+          roleLabel.includes('kaiser manager')
+      );
+      isKaiserManager = Boolean(
+        isKaiserManager ||
+          userData?.isKaiserManager ||
+          userData?.isKaiserAssignmentManager ||
+          roleLabel.includes('kaiser manager')
+      );
+    }
+
+    if (!isAdmin && !isKaiserStaff && !isKaiserManager) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 403 });
     }
 
@@ -280,6 +321,11 @@ export async function POST(req: NextRequest) {
       'p1_other_responder_relationship',
       'isp_contact_first',
       'isp_contact_last',
+      'isp_contact_2_first',
+      'isp_contact_2_last',
+      'isp_contact_2_relationship',
+      'isp_contact_2_email',
+      'isp_contact_2_phone',
       'isp_contact_email',
       'isp_contact_phone',
       'isp_contact_confirm_date',
@@ -334,10 +380,15 @@ export async function POST(req: NextRequest) {
       resolved.p1_other_responder = responderName || responderRelationship ? 'yes' : 'no';
     }
     // Strict rule: MRN/Plan ID come from MCP_CIN only.
-    const mcpCin = clean(
+    const mcpCinDirect = clean(
       getDirectRawValue(source, 'MCP_CIN') || getDirectRawValue(source, 'MCP CIN'),
       80
     );
+    const mcpCinAliasResolved = clean(
+      resolveAliasToken(getCaseInsensitive(source, 'MCP_CIN') || getCaseInsensitive(source, 'MCP CIN'), source),
+      80
+    );
+    const mcpCin = mcpCinDirect || mcpCinAliasResolved;
     // Force strict raw MCP_CIN into resolver output so UI cannot fall back
     // to alias-resolved values for this field.
     resolved.isp_mcp_cin = mcpCin;

@@ -38,8 +38,10 @@ const steps = [
   { id: 5, name: 'ISP, ALW, RCFE Selection', fields: [
       'ispContactIsMember',
       'ispContactSameAsPrimary',
+      'ispSecondaryContactSameAsPrimary',
       'ispLocationSameAsCurrent',
       'ispFirstName', 'ispLastName', 'ispRelationship', 'ispFacilityName', 'ispPhone', 'ispEmail',
+      'ispSecondaryFirstName', 'ispSecondaryLastName', 'ispSecondaryRelationship', 'ispSecondaryPhone', 'ispSecondaryEmail',
       'ispLocationType', 'ispAddress', 'ispCity', 'ispState', 'ispZip',
       'snfDiversionReason',
       'preAssessmentCareNeedsNotes',
@@ -150,6 +152,7 @@ function CsSummaryFormComponent() {
       copyAddress: false,
       ispContactIsMember: false,
       ispContactSameAsPrimary: false,
+      ispSecondaryContactSameAsPrimary: false,
       ispLocationSameAsCurrent: false,
     }
   });

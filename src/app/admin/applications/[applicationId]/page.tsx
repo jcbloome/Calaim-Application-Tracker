@@ -6702,6 +6702,149 @@ function ApplicationDetailPageContent() {
   const hasT2038AuthorizationSummary = Boolean(
     t2038AuthNumberDisplay || t2038AuthStartDisplay || t2038AuthEndDisplay
   );
+  const buildCsSummaryPrintableSections = () => {
+    const sections = [
+      {
+        title: 'Member',
+        rows: [
+          ['Member Name', `${String((application as any)?.memberFirstName || '').trim()} ${String((application as any)?.memberLastName || '').trim()}`.trim()],
+          ['Date of Birth', memberDobDisplay],
+          ['Member Phone', String((application as any)?.memberPhone || '').trim()],
+          ['Member Email', String((application as any)?.memberEmail || '').trim()],
+          ['Preferred Language', String((application as any)?.memberLanguage || '').trim()],
+          ['MRN', String((application as any)?.memberMrn || '').trim()],
+          ['Medi-Cal', String((application as any)?.memberMediCalNum || '').trim()],
+          ['County', String((application as any)?.currentCounty || '').trim()],
+          ['Current Status', String((application as any)?.status || '').trim()],
+          ['Health Plan', String((application as any)?.healthPlan || '').trim()],
+          ['Pathway', String((application as any)?.pathway || '').trim()],
+        ],
+      },
+      {
+        title: 'Submitting User',
+        rows: [
+          ['Referrer Name', `${String((application as any)?.referrerFirstName || '').trim()} ${String((application as any)?.referrerLastName || '').trim()}`.trim()],
+          ['Referrer Email', String((application as any)?.referrerEmail || '').trim()],
+          ['Referrer Phone', String((application as any)?.referrerPhone || '').trim()],
+          ['Referrer Relationship', String((application as any)?.referrerRelationship || '').trim()],
+          ['Agency', String((application as any)?.agency || '').trim()],
+        ],
+      },
+      {
+        title: 'Primary Contact',
+        rows: [
+          ['Primary Contact', `${String((application as any)?.bestContactFirstName || '').trim()} ${String((application as any)?.bestContactLastName || '').trim()}`.trim()],
+          ['Primary Contact Relationship', String((application as any)?.bestContactRelationship || '').trim()],
+          ['Primary Contact Phone', String((application as any)?.bestContactPhone || '').trim()],
+          ['Primary Contact Email', String((application as any)?.bestContactEmail || '').trim()],
+          ['Primary Contact Language', String((application as any)?.bestContactLanguage || '').trim()],
+        ],
+      },
+      {
+        title: 'Secondary Contact',
+        rows: [
+          ['Secondary Contact', `${String((application as any)?.secondaryContactFirstName || '').trim()} ${String((application as any)?.secondaryContactLastName || '').trim()}`.trim()],
+          ['Secondary Contact Relationship', String((application as any)?.secondaryContactRelationship || '').trim()],
+          ['Secondary Contact Phone', String((application as any)?.secondaryContactPhone || '').trim()],
+          ['Secondary Contact Email', String((application as any)?.secondaryContactEmail || '').trim()],
+          ['Secondary Contact Language', String((application as any)?.secondaryContactLanguage || '').trim()],
+        ],
+      },
+      {
+        title: 'Legal Representative',
+        rows: [
+          ['Legal Representative Status', String((application as any)?.hasLegalRep || '').trim()],
+          ['Representative Name', `${String((application as any)?.repFirstName || '').trim()} ${String((application as any)?.repLastName || '').trim()}`.trim()],
+          ['Representative Relationship', String((application as any)?.repRelationship || '').trim()],
+          ['Representative Phone', String((application as any)?.repPhone || '').trim()],
+          ['Representative Email', String((application as any)?.repEmail || '').trim()],
+        ],
+      },
+      {
+        title: 'Location',
+        rows: [
+          ['Current Location Type', String((application as any)?.currentLocation || '').trim()],
+          ['Current Location Name', String((application as any)?.currentLocationName || '').trim()],
+          [
+            'Current Address',
+            [
+              String((application as any)?.currentAddress || '').trim(),
+              String((application as any)?.currentCity || '').trim(),
+              [String((application as any)?.currentState || '').trim(), String((application as any)?.currentZip || '').trim()].filter(Boolean).join(' '),
+            ]
+              .filter(Boolean)
+              .join(', '),
+          ],
+          ['Customary Location Type', String((application as any)?.customaryLocationType || '').trim()],
+          ['Customary Location Name', String((application as any)?.customaryLocationName || '').trim()],
+          [
+            'Customary Address',
+            [
+              String((application as any)?.customaryAddress || '').trim(),
+              String((application as any)?.customaryCity || '').trim(),
+              [String((application as any)?.customaryState || '').trim(), String((application as any)?.customaryZip || '').trim()].filter(Boolean).join(' '),
+            ]
+              .filter(Boolean)
+              .join(', '),
+          ],
+        ],
+      },
+      {
+        title: 'ISP and RCFE',
+        rows: [
+          ['ISP Contact', `${String((application as any)?.ispFirstName || '').trim()} ${String((application as any)?.ispLastName || '').trim()}`.trim()],
+          ['ISP Phone', String((application as any)?.ispPhone || '').trim()],
+          ['ISP Email', String((application as any)?.ispEmail || '').trim()],
+          ['ISP Relationship', String((application as any)?.ispRelationship || '').trim()],
+          ['ISP Address', [String((application as any)?.ispAddress || '').trim(), String((application as any)?.ispCity || '').trim(), String((application as any)?.ispState || '').trim(), String((application as any)?.ispZip || '').trim()].filter(Boolean).join(', ')],
+          ['ISP Contact Is Member', Boolean((application as any)?.ispContactIsMember) ? 'Yes' : 'No'],
+          ['ISP Contact Is Primary Contact', Boolean((application as any)?.ispContactSameAsPrimary) ? 'Yes' : 'No'],
+          ['Secondary ISP Contact Is Primary Contact', Boolean((application as any)?.ispSecondaryContactSameAsPrimary) ? 'Yes' : 'No'],
+          ['Secondary ISP Contact', `${String((application as any)?.ispSecondaryFirstName || '').trim()} ${String((application as any)?.ispSecondaryLastName || '').trim()}`.trim()],
+          ['Secondary ISP Phone', String((application as any)?.ispSecondaryPhone || '').trim()],
+          ['Secondary ISP Email', String((application as any)?.ispSecondaryEmail || '').trim()],
+          ['Secondary ISP Relationship', String((application as any)?.ispSecondaryRelationship || '').trim()],
+          ['On ALW Waitlist', String((application as any)?.onALWWaitlist || '').trim()],
+          ['Preferred RCFE', String((application as any)?.rcfeName || '').trim()],
+          ['Preferred RCFE Cities', String((application as any)?.rcfePreferredCities || '').trim()],
+          ['RCFE Admin', `${String((application as any)?.rcfeAdminFirstName || '').trim()} ${String((application as any)?.rcfeAdminLastName || '').trim()}`.trim()],
+          ['RCFE Admin Phone', String((application as any)?.rcfeAdminPhone || '').trim()],
+          ['RCFE Admin Email', String((application as any)?.rcfeAdminEmail || '').trim()],
+          ['SNF Diversion Notes', String((application as any)?.snfDiversionReason || '').trim()],
+        ],
+      },
+      {
+        title: 'Financial and Program',
+        rows: [
+          ['Income Source', Array.isArray((application as any)?.incomeSource) ? ((application as any).incomeSource as string[]).join(', ') : String((application as any)?.incomeSource || '').trim()],
+          ['Monthly Income', String((application as any)?.monthlyIncome || '').trim()],
+          ['Share of Cost', String((application as any)?.shareOfCost || '').trim()],
+          ['Expected Room & Board Payment', String((application as any)?.expectedRoomBoardPayment || '').trim()],
+          ['Room & Board Acknowledged', (application as any)?.ackRoomAndBoard === true ? 'Yes' : (application as any)?.ackRoomAndBoard === false ? 'No' : ''],
+          ['SOC Determination Acknowledged', (application as any)?.ackSocDetermination === true ? 'Yes' : (application as any)?.ackSocDetermination === false ? 'No' : ''],
+          ['CalAIM Tracking Status', String((application as any)?.calaimTrackingStatus || '').trim()],
+          ['CalAIM Tracking Reason', String((application as any)?.calaimTrackingReason || '').trim()],
+        ],
+      },
+      {
+        title: 'Authorization',
+        rows: [
+          ['T2038 Authorization Number', t2038AuthNumberDisplay],
+          ['T2038 Start', t2038AuthStartDisplay],
+          ['T2038 End', t2038AuthEndDisplay],
+        ],
+      },
+    ];
+
+    return sections
+      .map((section) => ({
+        title: section.title,
+        rows: section.rows
+          .map(([label, value]) => ({ label, value: String(value || '').trim() }))
+          .filter((row) => row.value.length > 0),
+      }))
+      .filter((section) => section.rows.length > 0);
+  };
   const memberFileEntries = (() => {
     const toIso = (value: unknown): string => {
       if (!value) return '';
@@ -6939,6 +7082,31 @@ function ApplicationDetailPageContent() {
         ),
       };
     })();
+    const printableCsSummaryEntry = (() => {
+      const appId = String((application as any)?.id || applicationId || '').trim();
+      if (!appId) return null;
+      const csSummaryFormRecord = rawForms.find((form) => {
+        const name = String(form?.name || '').trim();
+        return (name === 'CS Member Summary' || name === 'CS Summary') && String(form?.status || '').trim() === 'Completed';
+      });
+      const printableQuery = new URLSearchParams({
+        applicationId: appId,
+      });
+      if (!appId.startsWith('admin_app_') && String(appUserId || '').trim()) {
+        printableQuery.set('userId', String(appUserId).trim());
+      }
+      return {
+        id: 'printable-cs-summary-form',
+        category: 'Printable form',
+        documentName: 'CS Member Summary (Filled Printable)',
+        fileName: 'CS Member Summary Printable.pdf',
+        downloadURL: `/admin/forms/cs-summary-printable?${printableQuery.toString()}`,
+        filePath: '',
+        inlineMode: 'cs-summary-pdf',
+        inlineSections: buildCsSummaryPrintableSections(),
+        uploadedAtIso: toIso(csSummaryFormRecord?.dateCompleted || csSummaryFormRecord?.updatedAt || csSummaryFormRecord?.createdAt),
+      };
+    })();
 
     const deduped = new Map<string, (typeof formEntries)[number]>();
     [
@@ -6948,6 +7116,7 @@ function ApplicationDetailPageContent() {
       ...ispEntries,
       ...alftCompletionFileEntries,
       ...(authorizationRequestSheetEntry ? [authorizationRequestSheetEntry] : []),
+      ...(printableCsSummaryEntry ? [printableCsSummaryEntry] : []),
     ].forEach((entry) => {
       const key = `${entry.documentName}::${entry.fileName}::${entry.downloadURL || entry.filePath}`;
       if (!deduped.has(key)) deduped.set(key, entry);
@@ -7049,6 +7218,17 @@ function ApplicationDetailPageContent() {
   }) => {
     setMemberFileUrlLoading((prev) => ({ ...prev, [entry.id]: true }));
     try {
+      const isPrintableCsSummary =
+        String(entry.downloadURL || '').includes('/admin/forms/cs-summary-printable');
+      if (isPrintableCsSummary) {
+        const resolvedUrl = await resolveMemberFileUrl(entry);
+        openDocumentPreview(resolvedUrl, entry.fileName || entry.documentName || 'CS Summary Printable');
+        toast({
+          title: 'Printable opened',
+          description: 'Use Print or Save as PDF from the preview window.',
+        });
+        return;
+      }
       const idToken = await user?.getIdToken?.();
       if (!idToken) {
         throw new Error('Unable to verify admin session. Please refresh and try again.');
@@ -7161,13 +7341,22 @@ function ApplicationDetailPageContent() {
 
       const controller = new AbortController();
       memberFilesDownloadAbortRef.current = controller;
-      const payloadEntries = memberFileEntries.map((entry) => ({
-        category: String(entry.category || ''),
-        documentName: String(entry.documentName || ''),
-        fileName: String(entry.fileName || ''),
-        downloadURL: String(entry.downloadURL || ''),
-        filePath: String(entry.filePath || ''),
-      }));
+      const payloadEntries = memberFileEntries
+        .map((entry) => ({
+          category: String(entry.category || ''),
+          documentName: String(entry.documentName || ''),
+          fileName: String(entry.fileName || ''),
+          downloadURL: String(entry.downloadURL || ''),
+          filePath: String(entry.filePath || ''),
+          inlineContent: String((entry as any).inlineContent || ''),
+          inlineMimeType: String((entry as any).inlineMimeType || ''),
+          inlineMode: String((entry as any).inlineMode || ''),
+          inlineRows: Array.isArray((entry as any).inlineRows) ? (entry as any).inlineRows : [],
+          inlineSections: Array.isArray((entry as any).inlineSections) ? (entry as any).inlineSections : [],
+        }));
+      if (!payloadEntries.length) {
+        throw new Error('No downloadable binary files are available for ZIP yet.');
+      }
       const response = await fetch('/api/admin/member-files-zip', {
         method: 'POST',
         headers: {
@@ -9952,6 +10141,11 @@ function ApplicationDetailPageContent() {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                                 <div><p className="text-sm text-muted-foreground">ISP Contact Name</p><p className="font-semibold">{`${application.ispFirstName || ''} ${application.ispLastName || ''}`.trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div><p className="text-sm text-muted-foreground">ISP Contact Phone</p><p className="font-semibold">{application.ispPhone || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Also Contact Primary for ISP</p><p className="font-semibold">{application.ispSecondaryContactSameAsPrimary ? 'Yes' : 'No'}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Secondary ISP Contact Name</p><p className="font-semibold">{`${application.ispSecondaryFirstName || ''} ${application.ispSecondaryLastName || ''}`.trim() || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Secondary ISP Contact Phone</p><p className="font-semibold">{application.ispSecondaryPhone || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div><p className="text-sm text-muted-foreground">Secondary ISP Contact Email</p><p className="font-semibold">{application.ispSecondaryEmail || <span className="font-normal text-gray-400">N/A</span>}</p></div>
+                                <div className="md:col-span-2"><p className="text-sm text-muted-foreground">Secondary ISP Relationship</p><p className="font-semibold">{application.ispSecondaryRelationship || <span className="font-normal text-gray-400">N/A</span>}</p></div>
                                 <div className="md:col-span-2"><p className="text-sm text-muted-foreground">ISP Assessment Location</p><p className="font-semibold">{[
                                   String(application.ispAddress || '').trim(),
                                   String(application.ispCity || '').trim(),

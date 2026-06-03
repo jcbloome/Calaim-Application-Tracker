@@ -40,6 +40,11 @@ type AssignmentRecord = {
   ispContactRelationship?: string;
   ispContactPhone?: string;
   ispContactEmail?: string;
+  ispContact2First?: string;
+  ispContact2Last?: string;
+  ispContact2Relationship?: string;
+  ispContact2Phone?: string;
+  ispContact2Email?: string;
   ispContactConfirmDate?: string;
   prefillVerification?: {
     manualSyncAt?: any;
@@ -58,19 +63,43 @@ type AssignmentRecord = {
 };
 
 const asText = (value: unknown) => String(value ?? '').trim();
-const toDmy = (value: unknown) => {
+const parseFlexibleDate = (value: unknown): Date | null => {
   const raw = asText(value);
-  if (!raw) return '';
-  const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (us) return `${us[2].padStart(2, '0')}-${us[1].padStart(2, '0')}-${us[3]}`;
+  if (!raw) return null;
   const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (iso) return `${iso[3].padStart(2, '0')}-${iso[2].padStart(2, '0')}-${iso[1]}`;
-  const dt = new Date(raw);
-  const time = dt.getTime();
-  if (!Number.isNaN(time)) {
-    return `${String(dt.getDate()).padStart(2, '0')}-${String(dt.getMonth() + 1).padStart(2, '0')}-${dt.getFullYear()}`;
+  if (iso) {
+    const dt = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return Number.isNaN(dt.getTime()) ? null : dt;
   }
-  return raw;
+  const us = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (us) {
+    const first = Number(us[1]);
+    const second = Number(us[2]);
+    const year = Number(us[3]);
+    const month = first > 12 ? second : first;
+    const day = first > 12 ? first : second;
+    const dt = new Date(year, month - 1, day);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const dt = new Date(raw);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+const toMdy = (value: unknown) => {
+  const parsed = parseFlexibleDate(value);
+  if (!parsed) return asText(value);
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  const yyyy = String(parsed.getFullYear());
+  return `${mm}-${dd}-${yyyy}`;
+};
+
+const isWithinOneDay = (value: unknown): boolean => {
+  const parsed = parseFlexibleDate(value);
+  if (!parsed) return false;
+  const ageMs = Date.now() - parsed.getTime();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  return ageMs >= 0 && ageMs <= oneDayMs;
 };
 const toMs = (value: any): number => {
   if (!value) return 0;
@@ -112,6 +141,26 @@ export default function AlftVerificationPage() {
   const [toolResetMode, setToolResetMode] = useState(false);
   const [resolved, setResolved] = useState<Record<string, string>>({});
   const [lastManualSyncAt, setLastManualSyncAt] = useState<number>(0);
+  const persistedResolved = useMemo(
+    () =>
+      ((((assignment as any)?.prefillVerification || {}) as any)?.resolvedFields || {}) as Record<string, unknown>,
+    [assignment]
+  );
+  const ispContactLastVerifiedRaw = toolResetMode
+    ? ''
+    : asText(resolved.isp_contact_confirm_date) ||
+      asText(persistedResolved.isp_contact_confirm_date) ||
+      asText(assignment?.ispContactConfirmDate);
+  const ispContactLastVerifiedDisplay = toMdy(ispContactLastVerifiedRaw);
+  const ispContactLastVerifiedFresh = isWithinOneDay(ispContactLastVerifiedRaw);
+  const verified = Boolean(assignment?.verificationSignoff?.verified);
+  const canReturnToWorkflow =
+    step2Completed &&
+    verified &&
+    ispContactLastVerifiedFresh &&
+    !manualSyncing &&
+    !verificationSaving &&
+    !resettingTool;
 
   useEffect(() => {
     let cancelled = false;
@@ -163,8 +212,9 @@ export default function AlftVerificationPage() {
         const actorEmail = asText(auth.currentUser?.email).toLowerCase();
         const actorName = asText(auth.currentUser?.displayName) || actorEmail || 'Admin';
         const resolvedNow = (data?.resolved || {}) as Record<string, string>;
-        const syncedMrn = asText(resolvedNow.p1_mrn || resolvedNow.isp_mcp_cin);
-        const syncedPlanId = asText(resolvedNow.p1_plan_id || syncedMrn);
+        const syncedMcpCin = asText(resolvedNow.isp_mcp_cin);
+        const syncedMrn = asText(syncedMcpCin || resolvedNow.p1_mrn);
+        const syncedPlanId = asText(syncedMcpCin || resolvedNow.p1_plan_id || syncedMrn);
         const syncedHomeStreet = asText(resolvedNow.p2_home_street);
         const syncedHomeCity = asText(resolvedNow.p2_home_city);
         const syncedHomeState = asText(resolvedNow.p2_home_state);
@@ -176,6 +226,11 @@ export default function AlftVerificationPage() {
         const syncedCurrentType = asText(resolvedNow.p2_current_type);
         const syncedCurrentTypeOther = asText(resolvedNow.p2_current_type_other);
         const syncedFacilityName = asText(resolvedNow.p2_facility_name || resolvedNow.isp_location_name);
+        const syncedIsp2First = asText(resolvedNow.isp_contact_2_first);
+        const syncedIsp2Last = asText(resolvedNow.isp_contact_2_last);
+        const syncedIsp2Relationship = asText(resolvedNow.isp_contact_2_relationship);
+        const syncedIsp2Phone = asText(resolvedNow.isp_contact_2_phone);
+        const syncedIsp2Email = asText(resolvedNow.isp_contact_2_email);
         await setDoc(
           doc(firestore, 'alft_assignments', memberId),
           {
@@ -197,6 +252,11 @@ export default function AlftVerificationPage() {
                   ispCurrentLocation: syncedFacilityName,
                 }
               : {}),
+            ...(syncedIsp2First ? { ispContact2First: syncedIsp2First } : {}),
+            ...(syncedIsp2Last ? { ispContact2Last: syncedIsp2Last } : {}),
+            ...(syncedIsp2Relationship ? { ispContact2Relationship: syncedIsp2Relationship } : {}),
+            ...(syncedIsp2Phone ? { ispContact2Phone: syncedIsp2Phone } : {}),
+            ...(syncedIsp2Email ? { ispContact2Email: syncedIsp2Email } : {}),
             // Each manual sync is a fresh pull, so force a new verification sign-off.
             verificationSignoff: {
               verified: false,
@@ -352,16 +412,9 @@ export default function AlftVerificationPage() {
 
   const sections = useMemo(() => {
     const row = assignment || {};
-    const persistedResolved = (((assignment as any)?.prefillVerification || {}) as any)?.resolvedFields || {};
     const pick = (key: string, fallback?: unknown) =>
       toolResetMode ? '' : asText(resolved[key]) || asText(persistedResolved[key]) || asText(fallback);
-    const currentLocationStreet = pick('p2_current_street', row.ispCurrentAddressStreet);
-    const currentLocationCity = pick('p2_current_city', row.ispCurrentAddressCity);
-    const currentLocationState = pick('p2_current_state', row.ispCurrentAddressState);
-    const currentLocationZip = pick('p2_current_zip', row.ispCurrentAddressZip);
-    const currentLocationType = pick('p2_current_type', row.currentLocationType);
     const currentLocationTypeOther = pick('p2_current_type_other', row.currentLocationTypeOther || row.currentLocationType);
-    const currentLocationName = pick('isp_location_name', row.ispCurrentLocation || row.ispFacilityName);
     const ispLocationAddress = pick('isp_contact_street', '');
     const ispLocationCity = pick('isp_contact_city', '');
     const ispLocationState = pick('isp_contact_state', '');
@@ -397,7 +450,12 @@ export default function AlftVerificationPage() {
       { label: 'ISP Contact Phone', value: pick('isp_contact_phone', row.ispContactPhone) },
       { label: 'ISP Contact Email', value: pick('isp_contact_email', row.ispContactEmail) },
       { label: 'ISP Contact Relationship', value: pick('p1_other_responder_relationship', row.ispContactRelationship) },
-      { label: 'ISP Contact Last Verified', value: toDmy(pick('isp_contact_confirm_date', row.ispContactConfirmDate)) },
+      { label: 'ISP Contact 2 First', value: pick('isp_contact_2_first', row.ispContact2First) },
+      { label: 'ISP Contact 2 Last', value: pick('isp_contact_2_last', row.ispContact2Last) },
+      { label: 'ISP Contact 2 Relationship', value: pick('isp_contact_2_relationship', row.ispContact2Relationship) },
+      { label: 'ISP Contact 2 Phone', value: pick('isp_contact_2_phone', row.ispContact2Phone) },
+      { label: 'ISP Contact 2 Email', value: pick('isp_contact_2_email', row.ispContact2Email) },
+      { label: 'ISP Contact Last Verified', value: toMdy(pick('isp_contact_confirm_date', row.ispContactConfirmDate)) },
         ],
       },
       {
@@ -412,13 +470,12 @@ export default function AlftVerificationPage() {
     ];
   }, [
     assignment,
-    memberMrnFromQuery,
     memberNameFromQuery,
+    persistedResolved,
     resolved,
     toolResetMode,
   ]);
 
-  const verified = Boolean(assignment?.verificationSignoff?.verified);
   const verifiedBy =
     asText(assignment?.verificationSignoff?.verifiedByName) ||
     asText(assignment?.verificationSignoff?.verifiedByEmail) ||
@@ -470,11 +527,14 @@ export default function AlftVerificationPage() {
                 variant="outline"
                 className="border-emerald-500 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 disabled:border-slate-300 disabled:text-slate-500 disabled:hover:bg-transparent"
                 asChild
-                disabled={!step2Completed || !verified || manualSyncing || verificationSaving || resettingTool}
+                disabled={!canReturnToWorkflow}
               >
                 <Link href={trackerUrl}>
                   Step 3: Tool Complete Return to Workflow
                 </Link>
+              </Button>
+              <Button type="button" variant="outline" asChild>
+                <Link href={trackerUrl}>Go Back to Workflow for Member</Link>
               </Button>
               <Button
                 type="button"
@@ -512,6 +572,16 @@ export default function AlftVerificationPage() {
               Verification checkbox is not checked yet in workflow.
             </div>
           )}
+          {!ispContactLastVerifiedFresh ? (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+              ISP Contact Last Verified must be within 1 day before returning to workflow.
+              <div className="text-xs">
+                {ispContactLastVerifiedDisplay
+                  ? `Current value: ${ispContactLastVerifiedDisplay}`
+                  : 'Current value is missing.'}
+              </div>
+            </div>
+          ) : null}
           <div className="rounded-md border p-3">
             <div className="flex items-center gap-3">
               <Checkbox

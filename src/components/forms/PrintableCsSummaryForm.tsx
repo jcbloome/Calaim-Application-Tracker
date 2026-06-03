@@ -573,6 +573,38 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           width="half"
         />
         <PrintableField
+          label="Secondary ISP Contact Option"
+          value={data.ispSecondaryContactSameAsPrimary ? 'Also contact Primary Contact for ISP' : ''}
+          type="checkbox"
+          options={['Also contact Primary Contact for ISP']}
+          width="full"
+        />
+        <PrintableField
+          label="Secondary ISP Contact First Name"
+          value={data.ispSecondaryFirstName}
+          width="half"
+        />
+        <PrintableField
+          label="Secondary ISP Contact Last Name"
+          value={data.ispSecondaryLastName}
+          width="half"
+        />
+        <PrintableField
+          label="Secondary ISP Contact Relationship to Member"
+          value={data.ispSecondaryRelationship}
+          width="half"
+        />
+        <PrintableField
+          label="Secondary ISP Contact Phone Number"
+          value={data.ispSecondaryPhone}
+          width="half"
+        />
+        <PrintableField
+          label="Secondary ISP Contact Email"
+          value={data.ispSecondaryEmail}
+          width="half"
+        />
+        <PrintableField
           label="Reason for SNF Diversion (notes)"
           value={data.snfDiversionReason}
           type="textarea"

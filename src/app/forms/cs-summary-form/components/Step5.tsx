@@ -26,6 +26,7 @@ export default function Step5({
   const pathway = watch('pathway');
   const ispContactIsMember = watch('ispContactIsMember');
   const ispContactSameAsPrimary = watch('ispContactSameAsPrimary');
+  const ispSecondaryContactSameAsPrimary = watch('ispSecondaryContactSameAsPrimary');
   const ispLocationSameAsCurrent = watch('ispLocationSameAsCurrent');
   const memberFirstName = watch('memberFirstName');
   const memberLastName = watch('memberLastName');
@@ -85,6 +86,29 @@ export default function Step5({
   }, [
     ispContactSameAsPrimary,
     ispContactIsMember,
+    bestContactFirstName,
+    bestContactLastName,
+    bestContactRelationship,
+    bestContactPhone,
+    bestContactEmail,
+    setValue,
+    clearErrors,
+  ]);
+
+  useEffect(() => {
+    if (!ispSecondaryContactSameAsPrimary) return;
+    setValue('ispSecondaryFirstName', String(bestContactFirstName || '').trim());
+    setValue('ispSecondaryLastName', String(bestContactLastName || '').trim());
+    setValue('ispSecondaryRelationship', String(bestContactRelationship || '').trim() || 'Primary Contact');
+    if (String(bestContactPhone || '').trim()) {
+      setValue('ispSecondaryPhone', String(bestContactPhone || '').trim());
+    }
+    if (String(bestContactEmail || '').trim()) {
+      setValue('ispSecondaryEmail', String(bestContactEmail || '').trim());
+    }
+    clearErrors(['ispSecondaryFirstName', 'ispSecondaryLastName', 'ispSecondaryRelationship', 'ispSecondaryPhone']);
+  }, [
+    ispSecondaryContactSameAsPrimary,
     bestContactFirstName,
     bestContactLastName,
     bestContactRelationship,
@@ -241,6 +265,53 @@ export default function Step5({
               <FormMessage />
             </FormItem>
           )} />
+          <div className="space-y-4 p-4 border rounded-md bg-slate-50">
+            <h3 className="font-medium text-base">Secondary ISP Contact (Optional)</h3>
+            <p className="text-sm text-muted-foreground">
+              Use this if someone else should also be contacted for ISP coordination (for example, another social worker).
+            </p>
+            <FormField
+              control={control}
+              name="ispSecondaryContactSameAsPrimary"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3 bg-white">
+                  <FormControl>
+                    <Checkbox checked={Boolean(field.value)} onCheckedChange={(checked) => field.onChange(checked === true)} />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel className="text-sm font-medium">Also contact Primary Contact for ISP</FormLabel>
+                    <FormDescription className="text-xs text-muted-foreground">
+                      Auto-fills secondary ISP contact details from Primary Contact.
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField control={control} name="ispSecondaryFirstName" render={({ field }) => (
+                <FormItem><FormLabel>Secondary ISP Contact First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispSecondaryContactSameAsPrimary)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={control} name="ispSecondaryLastName" render={({ field }) => (
+                <FormItem><FormLabel>Secondary ISP Contact Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispSecondaryContactSameAsPrimary)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField control={control} name="ispSecondaryRelationship" render={({ field }) => (
+                <FormItem><FormLabel>Secondary ISP Contact Relationship to Member</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(ispSecondaryContactSameAsPrimary)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={control} name="ispSecondaryPhone" render={({ field }) => (
+                <FormItem><FormLabel>Secondary ISP Contact Phone</FormLabel><FormControl><PhoneInput {...field} disabled={Boolean(ispSecondaryContactSameAsPrimary)} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
+            <FormField control={control} name="ispSecondaryEmail" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Secondary ISP Contact Email</FormLabel>
+                <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={Boolean(ispSecondaryContactSameAsPrimary)} /></FormControl>
+                <FormDescription>If no email, enter "N/A".</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )} />
+          </div>
           {pathway === 'SNF Diversion' ? (
             <div className="space-y-3 p-4 border rounded-md bg-slate-50">
               <FormField

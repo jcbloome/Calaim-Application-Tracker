@@ -66,6 +66,11 @@ type KaiserMember = {
   ispContactRelationship?: string;
   ispContactPhone?: string;
   ispContactEmail?: string;
+  ispContact2First?: string;
+  ispContact2Last?: string;
+  ispContact2Relationship?: string;
+  ispContact2Phone?: string;
+  ispContact2Email?: string;
   ispContactConfirmDate?: string;
   // from alft_assignments Firestore doc
   assignedSwEmail?: string;
@@ -522,6 +527,16 @@ export default function SwKaiserAlftPage() {
             ispContactRelationship: String(data.ispContactRelationship || '').trim(),
             ispContactPhone: String(data.ispContactPhone || '').trim(),
             ispContactEmail: String(data.ispContactEmail || '').trim(),
+            ispContact2First:
+              pickPrefill('isp_contact_2_first') || String(data.ispContact2First || '').trim(),
+            ispContact2Last:
+              pickPrefill('isp_contact_2_last') || String(data.ispContact2Last || '').trim(),
+            ispContact2Relationship:
+              pickPrefill('isp_contact_2_relationship') || String(data.ispContact2Relationship || '').trim(),
+            ispContact2Phone:
+              pickPrefill('isp_contact_2_phone') || String(data.ispContact2Phone || '').trim(),
+            ispContact2Email:
+              pickPrefill('isp_contact_2_email') || String(data.ispContact2Email || '').trim(),
             ispContactConfirmDate: String(data.ispContactConfirmDate || '').trim(),
             kaiserStatus: String(data.kaiserStatus || '').trim(),
             assignedSwEmail: String(data.assignedSwEmail || '').trim(),
@@ -594,6 +609,21 @@ export default function SwKaiserAlftPage() {
         ispCurrentLocation:
           pickPrefill('p2_facility_name', 'isp_location_name') ||
           String(data.ispCurrentLocation || member.ispCurrentLocation || '').trim(),
+        ispContact2First:
+          pickPrefill('isp_contact_2_first') ||
+          String(data.ispContact2First || member.ispContact2First || '').trim(),
+        ispContact2Last:
+          pickPrefill('isp_contact_2_last') ||
+          String(data.ispContact2Last || member.ispContact2Last || '').trim(),
+        ispContact2Relationship:
+          pickPrefill('isp_contact_2_relationship') ||
+          String(data.ispContact2Relationship || member.ispContact2Relationship || '').trim(),
+        ispContact2Phone:
+          pickPrefill('isp_contact_2_phone') ||
+          String(data.ispContact2Phone || member.ispContact2Phone || '').trim(),
+        ispContact2Email:
+          pickPrefill('isp_contact_2_email') ||
+          String(data.ispContact2Email || member.ispContact2Email || '').trim(),
         prefillResolved: Object.fromEntries(
           Object.entries(resolved).map(([k, v]) => [k, String(v ?? '').trim()])
         ) as Record<string, string>,
@@ -901,6 +931,44 @@ export default function SwKaiserAlftPage() {
   const rnLicense = asText(answers.p14_license_number);
   const mswName = asText(answers.p1_assessor_name);
   const mswDate = asText(answers.p14_date) || todayLocalKey();
+  const selectedResolved = (selectedMember?.prefillResolved || {}) as Record<string, string>;
+  const primaryIspContactFirst = String(selectedResolved.isp_contact_first || '').trim();
+  const primaryIspContactLast = String(selectedResolved.isp_contact_last || '').trim();
+  const primaryIspContactName =
+    String(selectedMember?.ispContactName || '').trim() ||
+    [primaryIspContactFirst, primaryIspContactLast].filter(Boolean).join(' ').trim();
+  const primaryIspContactRelationship =
+    String(selectedMember?.ispContactRelationship || '').trim() ||
+    String(selectedResolved.p1_other_responder_relationship || '').trim();
+  const primaryIspContactPhone =
+    String(selectedMember?.ispContactPhone || '').trim() ||
+    String(selectedResolved.isp_contact_phone || '').trim();
+  const primaryIspContactEmail =
+    String(selectedMember?.ispContactEmail || '').trim() ||
+    String(selectedResolved.isp_contact_email || '').trim();
+  const primaryIspContactLastVerified =
+    String(selectedMember?.ispContactConfirmDate || '').trim() ||
+    String(selectedResolved.isp_contact_confirm_date || '').trim();
+  const hasPrimaryIspContact = Boolean(
+    primaryIspContactName ||
+      primaryIspContactRelationship ||
+      primaryIspContactPhone ||
+      primaryIspContactEmail ||
+      primaryIspContactLastVerified
+  );
+  const secondaryIspContactName = [
+    String(selectedMember?.ispContact2First || '').trim(),
+    String(selectedMember?.ispContact2Last || '').trim(),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  const hasSecondaryIspContact = Boolean(
+    secondaryIspContactName ||
+      String(selectedMember?.ispContact2Relationship || '').trim() ||
+      String(selectedMember?.ispContact2Phone || '').trim() ||
+      String(selectedMember?.ispContact2Email || '').trim()
+  );
 
   // ── Auth guard ────────────────────────────────────────────────────────────────
 
@@ -1057,6 +1125,14 @@ export default function SwKaiserAlftPage() {
               </span>
             )}
           </div>
+          {hasSecondaryIspContact ? (
+            <div className="mt-1.5 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-900">
+              ISP Contact 2: {secondaryIspContactName || '—'}
+              {selectedMember.ispContact2Relationship ? ` • ${selectedMember.ispContact2Relationship}` : ''}
+              {selectedMember.ispContact2Phone ? ` • ${selectedMember.ispContact2Phone}` : ''}
+              {selectedMember.ispContact2Email ? ` • ${selectedMember.ispContact2Email}` : ''}
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setSelectedMember(null)}>
@@ -1070,6 +1146,39 @@ export default function SwKaiserAlftPage() {
             Save Draft
           </Button>
         </div>
+      </div>
+
+      <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-3 print:hidden">
+        <div className="text-sm font-semibold text-blue-950">ISP Contact Directory (Prefill)</div>
+        <div className="text-xs text-blue-900 mt-0.5">
+          Use these contacts when setting up ISP calls/visits. This block is informational and separate from ALFT form fields.
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded border bg-white p-2">
+            <div className="text-xs font-semibold text-slate-800">Primary ISP Contact</div>
+            <div className="mt-1 text-xs text-slate-700">
+              <div>Name: <span className="font-medium">{primaryIspContactName || '—'}</span></div>
+              <div>Relationship: <span className="font-medium">{primaryIspContactRelationship || '—'}</span></div>
+              <div>Phone: <span className="font-medium">{primaryIspContactPhone || '—'}</span></div>
+              <div>Email: <span className="font-medium">{primaryIspContactEmail || '—'}</span></div>
+              <div>Last Verified: <span className="font-medium">{toMmDdYyyyOrRaw(primaryIspContactLastVerified) || '—'}</span></div>
+            </div>
+          </div>
+          <div className="rounded border bg-white p-2">
+            <div className="text-xs font-semibold text-slate-800">Secondary ISP Contact</div>
+            <div className="mt-1 text-xs text-slate-700">
+              <div>Name: <span className="font-medium">{secondaryIspContactName || '—'}</span></div>
+              <div>Relationship: <span className="font-medium">{selectedMember.ispContact2Relationship || '—'}</span></div>
+              <div>Phone: <span className="font-medium">{selectedMember.ispContact2Phone || '—'}</span></div>
+              <div>Email: <span className="font-medium">{selectedMember.ispContact2Email || '—'}</span></div>
+            </div>
+          </div>
+        </div>
+        {!hasPrimaryIspContact && !hasSecondaryIspContact ? (
+          <div className="mt-2 text-xs text-amber-800">
+            No ISP contacts were prefilled yet. Ask your ALFT manager to run prefill sync again.
+          </div>
+        ) : null}
       </div>
 
       {/* ── Unified packet view: edit/preview in exact ALFT format ── */}

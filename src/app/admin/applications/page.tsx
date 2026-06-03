@@ -4,10 +4,11 @@
 import React, { useMemo, useState, useEffect, useCallback, Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFirestore, type WithId } from '@/firebase';
-import { collection, doc, writeBatch, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, collectionGroup, setDoc, serverTimestamp } from 'firebase/firestore';
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
+import { ApplicationFileSystemView } from './components/ApplicationFileSystemView';
 import { Button } from '@/components/ui/button';
 import { Trash2, Database, AlertTriangle, Plus, FolderArchive } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -29,6 +30,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { type FileSystemActiveBucket } from '@/lib/application-file-system';
+import { getApplicationFileSystemPlacement } from '@/lib/application-file-system';
 
 const getAssignedStaffLabel = (app: any): string => {
   const candidates = [
@@ -115,16 +118,19 @@ const deriveMemberNameFields = (raw: any) => {
 function AdminApplicationsPageContent() {
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading, user } = useAdmin();
   const [selected, setSelected] = useState<string[]>([]);
   const [allApplications, setAllApplications] = useState<WithId<Application & FormValues>[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [applicationsView, setApplicationsView] = useState<'table' | 'filesystem'>('table');
+  const [updatingOverrides, setUpdatingOverrides] = useState<Set<string>>(new Set());
 
   // Filter states
   const [healthPlanFilter, setHealthPlanFilter] = useState('all');
   const [pathwayFilter, setPathwayFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [caseActivityFilter, setCaseActivityFilter] = useState<'all' | 'active' | 'non-active'>('all');
   const [internalStatusFilter, setInternalStatusFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
   const [intakeFilter, setIntakeFilter] = useState<IntakeFilterValue>('all');
@@ -360,6 +366,9 @@ function AdminApplicationsPageContent() {
       const healthPlanMatch = healthPlanFilter === 'all' || app.healthPlan === healthPlanFilter;
       const pathwayMatch = pathwayFilter === 'all' || app.pathway === pathwayFilter;
       const statusMatch = statusFilter === 'all' || app.status === statusFilter;
+      const placement = getApplicationFileSystemPlacement(app as any);
+      const caseActivityMatch =
+        caseActivityFilter === 'all' || placement.bucket === caseActivityFilter;
       const appInternalStatus = String((app as any)?.adminProcessingStatus || '').trim();
       const internalStatusMatch =
         internalStatusFilter === 'all' ||
@@ -403,14 +412,96 @@ function AdminApplicationsPageContent() {
         (reviewFilter === 'cs' && hasCompletedSummary && !app.applicationChecked) ||
         (reviewFilter === 'docs' && hasUnacknowledgedDocs);
 
-      return healthPlanMatch && pathwayMatch && statusMatch && internalStatusMatch && staffMatch && memberMatch && intakeMatch && reviewMatch;
+      return (
+        healthPlanMatch &&
+        pathwayMatch &&
+        statusMatch &&
+        caseActivityMatch &&
+        internalStatusMatch &&
+        staffMatch &&
+        memberMatch &&
+        intakeMatch &&
+        reviewMatch
+      );
     });
-  }, [allApplications, healthPlanFilter, pathwayFilter, statusFilter, internalStatusFilter, staffFilter, intakeFilter, memberFilter, reviewFilter]);
+  }, [
+    allApplications,
+    healthPlanFilter,
+    pathwayFilter,
+    statusFilter,
+    caseActivityFilter,
+    internalStatusFilter,
+    staffFilter,
+    intakeFilter,
+    memberFilter,
+    reviewFilter,
+  ]);
   
 
   const handleSelectionChange = (id: string, checked: boolean) => {
     setSelected(prev => checked ? [...prev, id] : prev.filter(item => item !== id));
   };
+
+  const handleSetPlacementOverride = useCallback(
+    async (app: WithId<Application & FormValues>, override: FileSystemActiveBucket | null) => {
+      if (!firestore) return;
+      const cleanUserId = String((app as any)?.userId || '').trim();
+      const normalizedUserId =
+        ['undefined', 'null', 'nan'].includes(cleanUserId.toLowerCase()) ? '' : cleanUserId;
+      const isAdminSource =
+        String((app as any)?.source || '').trim().toLowerCase() === 'admin' ||
+        String(app.id || '').startsWith('admin_app_') ||
+        !normalizedUserId;
+
+      setUpdatingOverrides((prev) => new Set(prev).add(app.id));
+      const nowIso = new Date().toISOString();
+      const payload = {
+        fileSystemPlacementOverride: override,
+        fileSystemPlacementUpdatedAt: serverTimestamp(),
+        fileSystemPlacementUpdatedAtIso: nowIso,
+        fileSystemPlacementUpdatedByName: String(user?.displayName || '').trim() || null,
+        fileSystemPlacementUpdatedByEmail: String(user?.email || '').trim() || null,
+        fileSystemPlacementUpdatedByUid: String(user?.uid || '').trim() || null,
+      };
+
+      try {
+        const writes: Promise<void>[] = [];
+        if (normalizedUserId) {
+          writes.push(
+            setDoc(doc(firestore, `users/${normalizedUserId}/applications`, app.id), payload, { merge: true })
+          );
+        }
+        if (isAdminSource) {
+          writes.push(setDoc(doc(firestore, 'applications', app.id), payload, { merge: true }));
+        }
+        await Promise.all(writes);
+
+        setAllApplications((prev) =>
+          prev.map((entry) => (entry.id === app.id ? ({ ...entry, ...payload } as any) : entry))
+        );
+
+        toast({
+          title: 'Placement updated',
+          description: override
+            ? `Application moved to ${override} by manual override.`
+            : 'Manual override cleared. Auto placement is now active.',
+        });
+      } catch (updateError: any) {
+        toast({
+          variant: 'destructive',
+          title: 'Unable to update placement',
+          description: updateError?.message || 'Failed to update file system placement.',
+        });
+      } finally {
+        setUpdatingOverrides((prev) => {
+          const next = new Set(prev);
+          next.delete(app.id);
+          return next;
+        });
+      }
+    },
+    [firestore, toast, user?.displayName, user?.email, user?.uid]
+  );
 
   const handleDelete = async () => {
     if (!firestore || selected.length === 0) return;
@@ -483,6 +574,7 @@ function AdminApplicationsPageContent() {
     setHealthPlanFilter('all');
     setPathwayFilter('all');
     setStatusFilter('all');
+    setCaseActivityFilter('all');
     setInternalStatusFilter('all');
     setStaffFilter('all');
     setIntakeFilter('all');
@@ -642,8 +734,28 @@ function AdminApplicationsPageContent() {
             <div className="xl:col-span-2">
                  <Card>
                     <CardHeader>
-                        <CardTitle>Application Filters</CardTitle>
-                        <CardDescription>Refine the list of applications using the filters below.</CardDescription>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <CardTitle>Application Filters</CardTitle>
+                            <CardDescription>Refine the list of applications using the filters below.</CardDescription>
+                          </div>
+                          <div className="inline-flex rounded-md border bg-muted p-1">
+                            <Button
+                              size="sm"
+                              variant={applicationsView === 'table' ? 'default' : 'ghost'}
+                              onClick={() => setApplicationsView('table')}
+                            >
+                              Table
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={applicationsView === 'filesystem' ? 'default' : 'ghost'}
+                              onClick={() => setApplicationsView('filesystem')}
+                            >
+                              File System
+                            </Button>
+                          </div>
+                        </div>
                     </CardHeader>
                     <CardContent>
                       <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border bg-muted/50 p-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
@@ -685,6 +797,16 @@ function AdminApplicationsPageContent() {
                               <SelectItem value="Requires Revision">Requires Revision</SelectItem>
                               <SelectItem value="Approved">Approved</SelectItem>
                               <SelectItem value="Completed & Submitted">Completed & Submitted</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Select value={caseActivityFilter} onValueChange={(value) => setCaseActivityFilter(value as 'all' | 'active' | 'non-active')}>
+                            <SelectTrigger><SelectValue placeholder="Filter by Activity" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Activity States</SelectItem>
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="non-active">Non-active</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -731,14 +853,23 @@ function AdminApplicationsPageContent() {
                         <Button variant="ghost" onClick={clearFilters} className="whitespace-nowrap">Clear</Button>
                       </div>
                       {error && <p className="text-destructive">Error loading applications: A permission error occurred while fetching data.</p>}
-                      <AdminApplicationsTable 
-                        applications={filteredApplications} 
-                        isLoading={isLoading || isAdminLoading}
-                        onSelectionChange={isSuperAdmin ? handleSelectionChange : undefined}
-                        selected={isSuperAdmin ? selected : undefined}
-                        showInlineTracker
-                        onRefreshRequested={fetchAllApplications}
-                      />
+                      {applicationsView === 'table' ? (
+                        <AdminApplicationsTable 
+                          applications={filteredApplications} 
+                          isLoading={isLoading || isAdminLoading}
+                          onSelectionChange={isSuperAdmin ? handleSelectionChange : undefined}
+                          selected={isSuperAdmin ? selected : undefined}
+                          showInlineTracker
+                          onRefreshRequested={fetchAllApplications}
+                        />
+                      ) : (
+                        <ApplicationFileSystemView
+                          applications={filteredApplications}
+                          isLoading={isLoading || isAdminLoading}
+                          updatingOverrides={updatingOverrides}
+                          onSetPlacementOverride={handleSetPlacementOverride}
+                        />
+                      )}
                     </CardContent>
                 </Card>
             </div>

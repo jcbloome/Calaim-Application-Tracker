@@ -229,6 +229,11 @@ interface AlftWorkflowStartPayload {
     ispLocation?: string;
     ispContactPhone?: string;
     ispContactEmail?: string;
+    ispContact2First?: string;
+    ispContact2Last?: string;
+    ispContact2Relationship?: string;
+    ispContact2Phone?: string;
+    ispContact2Email?: string;
     ispLastVerified?: string;
 }
 
@@ -825,7 +830,13 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const ispLocation = String(payload.ispLocation || '').trim();
     const ispContactPhone = String(payload.ispContactPhone || '').trim();
     const ispContactEmail = String(payload.ispContactEmail || '').trim();
+    const ispContact2First = String(payload.ispContact2First || '').trim();
+    const ispContact2Last = String(payload.ispContact2Last || '').trim();
+    const ispContact2Relationship = String(payload.ispContact2Relationship || '').trim();
+    const ispContact2Phone = String(payload.ispContact2Phone || '').trim();
+    const ispContact2Email = String(payload.ispContact2Email || '').trim();
     const ispLastVerified = String(payload.ispLastVerified || '').trim();
+    const ispContact2Name = [ispContact2First, ispContact2Last].filter(Boolean).join(' ').trim();
 
     const html = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; line-height: 1.5; max-width: 620px;">
@@ -852,6 +863,11 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
             <p style="margin: 0;">Phone: <strong>${ispContactPhone || '—'}</strong></p>
             <p style="margin: 0;">Email: <strong>${ispContactEmail || '—'}</strong></p>
             <p style="margin: 0;">Last verified: <strong>${ispLastVerified || '—'}</strong></p>
+            <p style="margin: 10px 0 0; font-weight: 600; color: #0f172a;">ISP contact 2 details</p>
+            <p style="margin: 0;">Contact name: <strong>${ispContact2Name || '—'}</strong></p>
+            <p style="margin: 0;">Relationship: <strong>${ispContact2Relationship || '—'}</strong></p>
+            <p style="margin: 0;">Phone: <strong>${ispContact2Phone || '—'}</strong></p>
+            <p style="margin: 0;">Email: <strong>${ispContact2Email || '—'}</strong></p>
           </div>
           <p style="margin: 0 0 14px;">
             <a href="${portalUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 8px; display: inline-block; font-weight: 600;">

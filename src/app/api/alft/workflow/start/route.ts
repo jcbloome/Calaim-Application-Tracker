@@ -35,6 +35,11 @@ type Body = {
     ispCurrentLocation?: string;
     ispContactPhone?: string;
     ispContactEmail?: string;
+    ispContact2First?: string;
+    ispContact2Last?: string;
+    ispContact2Relationship?: string;
+    ispContact2Email?: string;
+    ispContact2Phone?: string;
     ispContactConfirmDate?: string;
     ispContactName?: string;
     ispContactRelationship?: string;
@@ -190,12 +195,19 @@ function resolveMappedCaspioPrefill(
     return '';
   };
 
+  const getRawMcpCin = () => {
+    const raw = clean(getFromSources('MCP_CIN') || getFromSources('MCP CIN'), 120);
+    if (!raw) return '';
+    return resolveAliasToken(raw);
+  };
+  const mcpCin = getRawMcpCin();
+
   return {
-    alftPlanId: getMapped('p1_plan_id'),
+    alftPlanId: mcpCin || getMapped('p1_plan_id'),
     memberName: getMapped('p1_member_name'),
     memberFirstName: getMapped('p1_first_name'),
     memberLastName: getMapped('p1_last_name'),
-    memberMrn: getMapped('p1_mrn'),
+    memberMrn: mcpCin || getMapped('p1_mrn'),
     birthDate: getMapped('p1_dob'),
     memberSex: getMapped('p1_sex'),
     memberPrimaryLanguage: getMapped('p1_primary_language'),
@@ -577,6 +589,26 @@ export async function POST(req: NextRequest) {
         member?.ispContactConfirmDate,
       120
     );
+    const ispContact2First = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_2_First']) || member?.ispContact2First,
+      120
+    );
+    const ispContact2Last = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_2_Last']) || member?.ispContact2Last,
+      120
+    );
+    const ispContact2Relationship = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_2_Relationship']) || member?.ispContact2Relationship,
+      180
+    );
+    const ispContact2Phone = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_2_Phone']) || member?.ispContact2Phone,
+      80
+    );
+    const ispContact2Email = clean(
+      pickFirst(caspioSource as any, ['ISP_Contact_2_Email']) || member?.ispContact2Email,
+      220
+    ).toLowerCase();
     const hasContactMethod = Boolean(ispContactPhone || ispContactEmail);
     const hasFacilityTypeOrName = Boolean(facilityType || facilityName || ispLocation);
     const missingIspFields = [
@@ -621,6 +653,11 @@ export async function POST(req: NextRequest) {
       ispContactRelationship,
       ispContactPhone,
       ispContactEmail,
+      ispContact2First,
+      ispContact2Last,
+      ispContact2Relationship,
+      ispContact2Phone,
+      ispContact2Email,
       ispContactConfirmDate,
       kaiserStatus: clean(member?.kaiserStatus, 120),
       prefillSourceMode,
@@ -764,6 +801,11 @@ export async function POST(req: NextRequest) {
           ispLocation,
           ispContactPhone,
           ispContactEmail,
+          ispContact2First,
+          ispContact2Last,
+          ispContact2Relationship,
+          ispContact2Phone,
+          ispContact2Email,
           ispLastVerified: ispContactConfirmDate,
         });
         swEmailSent = true;

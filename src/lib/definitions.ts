@@ -127,6 +127,12 @@ export type Application = {
   ispRelationship?: string;
   ispPhone?: string;
   ispEmail?: string;
+  ispSecondaryContactSameAsPrimary?: boolean;
+  ispSecondaryFirstName?: string;
+  ispSecondaryLastName?: string;
+  ispSecondaryRelationship?: string;
+  ispSecondaryPhone?: string;
+  ispSecondaryEmail?: string;
   ispLocationSameAsCurrent?: boolean;
   ispLocationType?: string;
   ispAddress?: string;
@@ -189,6 +195,12 @@ export type Application = {
     overrideReason?: string | null;
   };
   kaiserReferralSubmissionCount?: number;
+  fileSystemPlacementOverride?: 'active' | 'non-active' | null;
+  fileSystemPlacementUpdatedAt?: Timestamp | FieldValue;
+  fileSystemPlacementUpdatedAtIso?: string | null;
+  fileSystemPlacementUpdatedByName?: string | null;
+  fileSystemPlacementUpdatedByEmail?: string | null;
+  fileSystemPlacementUpdatedByUid?: string | null;
 };
 
 export type FormStatus = {
