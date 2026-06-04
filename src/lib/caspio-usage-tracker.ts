@@ -70,6 +70,19 @@ async function flushToFirestore(delta: PendingCounters) {
   const dim = daysInMonth(now);
 
   await adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(settingsRef);
+    const current = snap.exists ? (snap.data() as any) : {};
+    const currentMonth = String(current?.monthId || '');
+
+    const monthToDateTotal =
+      currentMonth === monthId ? Number(current?.monthToDateTotal || 0) : 0;
+    const nextMonthToDateTotal = monthToDateTotal + delta.total;
+    const projectedMonthly = Math.round((nextMonthToDateTotal / Math.max(dayOfMonth, 1)) * dim);
+
+    let warningLevel: 'ok' | 'warn' | 'error' = 'ok';
+    if (projectedMonthly >= ERROR_THRESHOLD) warningLevel = 'error';
+    else if (projectedMonthly >= WARN_THRESHOLD) warningLevel = 'warn';
+
     tx.set(
       dailyRef,
       {
@@ -84,19 +97,6 @@ async function flushToFirestore(delta: PendingCounters) {
       },
       { merge: true }
     );
-
-    const snap = await tx.get(settingsRef);
-    const current = snap.exists ? (snap.data() as any) : {};
-    const currentMonth = String(current?.monthId || '');
-
-    const monthToDateTotal =
-      currentMonth === monthId ? Number(current?.monthToDateTotal || 0) : 0;
-    const nextMonthToDateTotal = monthToDateTotal + delta.total;
-    const projectedMonthly = Math.round((nextMonthToDateTotal / Math.max(dayOfMonth, 1)) * dim);
-
-    let warningLevel: 'ok' | 'warn' | 'error' = 'ok';
-    if (projectedMonthly >= ERROR_THRESHOLD) warningLevel = 'error';
-    else if (projectedMonthly >= WARN_THRESHOLD) warningLevel = 'warn';
 
     tx.set(
       settingsRef,
@@ -124,7 +124,9 @@ function scheduleFlush() {
   if (state.flushTimer) return;
   state.flushTimer = setTimeout(() => {
     state.flushTimer = null;
-    void flushNow();
+    void flushNow().catch((error) => {
+      console.error('[CASPIO USAGE] flushNow failed', error);
+    });
   }, 60_000);
 }
 
@@ -148,7 +150,9 @@ export function trackCaspioCall(event: CaspioCallEvent) {
 
   // Flush sooner if we're accumulating quickly.
   if (state.pending.total >= 200) {
-    void flushNow();
+    void flushNow().catch((error) => {
+      console.error('[CASPIO USAGE] flushNow failed', error);
+    });
     return;
   }
 
