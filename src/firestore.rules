@@ -21,7 +21,8 @@ service cloud.firestore {
       // An admin is either the hardcoded user 'jason' OR a user whose UID is in the admin roles collection.
       return isSignedIn() && (
         isJason() ||
-        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid))
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) ||
+        exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid))
       );
     }
     
@@ -121,6 +122,13 @@ service cloud.firestore {
     match /emailLogs/{logId} {
       allow read, list: if isSignedIn();
       allow create: if false;
+      allow update, delete: if isAdmin();
+    }
+
+    // Standalone uploads queue consumed by admin layout/action counters
+    match /standalone_upload_submissions/{submissionId} {
+      allow read, list: if isAdmin();
+      allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 

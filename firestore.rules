@@ -1,12 +1,24 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isEmailLogsAdmin() {
-      return request.auth != null && (
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
         request.auth.token.email in ['jason@carehomefinders.com'] ||
         exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) ||
         exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid))
       );
+    }
+
+    function isEmailLogsAdmin() {
+      return isAdmin();
     }
 
     // Default deny. Add explicit collection rules below.
@@ -33,6 +45,33 @@ service cloud.firestore {
       // Super admins can manage synced social worker data
       allow read, write: if request.auth != null && 
                          request.auth.token.email in ['jason@carehomefinders.com'];
+    }
+
+    // User-owned applications (main tracker source)
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+
+      match /applications/{applicationId} {
+        allow read, write, delete: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Admin-created applications collection
+    match /applications/{applicationId} {
+      allow read, list, create, update, delete: if isAdmin();
+    }
+
+    // Needed for collectionGroup('applications') queries in admin pages
+    match /{path=**}/applications/{applicationId} {
+      allow read, list: if isAdmin();
+    }
+
+    // Standalone uploads queue consumed by admin layout/action counters
+    match /standalone_upload_submissions/{submissionId} {
+      allow read, list: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
     }
     
     // SW Claims collection
