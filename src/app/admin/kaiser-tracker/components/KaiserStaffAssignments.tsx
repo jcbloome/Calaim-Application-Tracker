@@ -127,6 +127,14 @@ export function KaiserStaffAssignments({
             T2038 Received, Unreachable; Final- Member at RCFE; Tier Level Appeal; Tier Level Requested.
           </div>
           <div>
+            <span className="font-medium text-slate-700">No Action 7+ Days Critical:</span>{' '}
+            T2038 Received; Received T2038; T2038 Received, Need(s) First Contact.
+          </div>
+          <div>
+            <span className="font-medium text-slate-700">No Action 7+ Days Priority:</span>{' '}
+            T2038 Received, Doc Collection; RCFE Needed; R&amp;B Needed.
+          </div>
+          <div>
             <span className="font-medium text-slate-700">No Action 7+ Days Normal:</span>{' '}
             Other statuses that are not in Critical (Need First Contact) or Priority (Doc Collection/RCFE Needed/R&amp;B Needed), and are not excluded.
           </div>
