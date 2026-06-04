@@ -1453,8 +1453,8 @@ export default function AdminAlftTrackerPage() {
   );
 
   const canRunManagerWorkflow = useMemo(
-    () => Boolean(isSuperAdmin || isAdmin || isKaiserAssignmentManager || isKaiserStaff),
-    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, isKaiserStaff]
+    () => Boolean(isSuperAdmin || isAdmin || isKaiserAssignmentManager || isKaiserStaff || isRnStaff),
+    [isSuperAdmin, isAdmin, isKaiserAssignmentManager, isKaiserStaff, isRnStaff]
   );
   // Step gate requested by workflow owner:
   // SW submit -> Kaiser manager pre-review -> send to Leslie (RN) -> Kaiser manager final review -> email Jocelyn.
