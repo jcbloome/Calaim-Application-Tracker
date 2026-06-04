@@ -1109,24 +1109,48 @@ function AdminHeader() {
       }
     };
 
-    unsubUserApps = onSnapshot(userAppsQuery, (snapshot) => {
-      userApps = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        __ownerUid: docSnap.ref?.parent?.parent?.id || null,
-        ...docSnap.data(),
-      }));
-      computeCount();
-    });
+    unsubUserApps = onSnapshot(
+      userAppsQuery,
+      (snapshot) => {
+        userApps = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          __ownerUid: docSnap.ref?.parent?.parent?.id || null,
+          ...docSnap.data(),
+        }));
+        computeCount();
+      },
+      (error) => {
+        console.warn('admin layout: user applications listener failed', error);
+        userApps = [];
+        computeCount();
+      }
+    );
 
-    unsubAdminApps = onSnapshot(adminAppsQuery, (snapshot) => {
-      adminApps = snapshot.docs.map((docSnap) => ({ id: docSnap.id, __ownerUid: null, ...docSnap.data() }));
-      computeCount();
-    });
+    unsubAdminApps = onSnapshot(
+      adminAppsQuery,
+      (snapshot) => {
+        adminApps = snapshot.docs.map((docSnap) => ({ id: docSnap.id, __ownerUid: null, ...docSnap.data() }));
+        computeCount();
+      },
+      (error) => {
+        console.warn('admin layout: admin applications listener failed', error);
+        adminApps = [];
+        computeCount();
+      }
+    );
 
-    unsubStandaloneUploads = onSnapshot(standaloneUploadsQuery, (snapshot) => {
-      standaloneUploads = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      computeCount();
-    });
+    unsubStandaloneUploads = onSnapshot(
+      standaloneUploadsQuery,
+      (snapshot) => {
+        standaloneUploads = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        computeCount();
+      },
+      (error) => {
+        console.warn('admin layout: standalone uploads listener failed', error);
+        standaloneUploads = [];
+        computeCount();
+      }
+    );
 
     return () => {
       isActive = false;

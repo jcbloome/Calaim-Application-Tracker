@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/use-admin';
 import { useFirestore } from '@/firebase';
@@ -46,6 +46,7 @@ function AdminEmailLogsPageContent() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'failure'>('all');
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [openDetailsById, setOpenDetailsById] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!firestore || !isAdmin) {
@@ -103,6 +104,10 @@ function AdminEmailLogsPageContent() {
     return <div className="p-6 text-sm text-destructive">Access denied.</div>;
   }
 
+  const toggleDetails = (id: string) => {
+    setOpenDetailsById((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -155,46 +160,82 @@ function AdminEmailLogsPageContent() {
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="py-2 pr-3">Time</th>
                     <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Sender</th>
-                    <th className="py-2 pr-3">Sent By</th>
-                    <th className="py-2 pr-3">Sender Email</th>
-                    <th className="py-2 pr-3">To</th>
-                    <th className="py-2 pr-3">Application</th>
                     <th className="py-2 pr-3">Member</th>
+                    <th className="py-2 pr-3">To</th>
                     <th className="py-2 pr-3">Subject</th>
-                    <th className="py-2 pr-3">Template</th>
-                    <th className="py-2 pr-3">Source</th>
-                    <th className="py-2 pr-3">Error</th>
+                    <th className="py-2 pr-3 text-right">Details</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((row) => (
-                    <tr key={row.id} className="border-b align-top">
-                      <td className="py-2 pr-3 whitespace-nowrap">{toDateLabel(row.createdAt)}</td>
-                      <td className="py-2 pr-3">
-                        <Badge
-                          variant="outline"
-                          className={
-                            String(row.status || '').toLowerCase() === 'success'
-                              ? 'bg-green-50 text-green-700 border-green-200'
-                              : 'bg-red-50 text-red-700 border-red-200'
-                          }
-                        >
-                          {String(row.status || 'unknown')}
-                        </Badge>
-                      </td>
-                      <td className="py-2 pr-3">{String(row.from || 'N/A')}</td>
-                      <td className="py-2 pr-3">{String((row.metadata?.sentByName as string) || 'N/A')}</td>
-                      <td className="py-2 pr-3">{String((row.metadata?.senderEmail as string) || 'N/A')}</td>
-                      <td className="py-2 pr-3">{Array.isArray(row.to) && row.to.length > 0 ? row.to.join(', ') : 'N/A'}</td>
-                      <td className="py-2 pr-3">{String((row.metadata?.applicationId as string) || 'N/A')}</td>
-                      <td className="py-2 pr-3">{String((row.metadata?.memberName as string) || 'N/A')}</td>
-                      <td className="py-2 pr-3">{String(row.subject || 'N/A')}</td>
-                      <td className="py-2 pr-3">{String(row.template || 'N/A')}</td>
-                      <td className="py-2 pr-3">{String(row.source || 'N/A')}</td>
-                      <td className="py-2 pr-3 text-red-700">{row.errorMessage ? String(row.errorMessage) : '-'}</td>
-                    </tr>
-                  ))}
+                  {filtered.map((row) => {
+                    const rowId = row.id;
+                    const isOpen = Boolean(openDetailsById[rowId]);
+                    return (
+                      <Fragment key={rowId}>
+                        <tr className="border-b align-top">
+                          <td className="py-2 pr-3 whitespace-nowrap">{toDateLabel(row.createdAt)}</td>
+                          <td className="py-2 pr-3">
+                            <Badge
+                              variant="outline"
+                              className={
+                                String(row.status || '').toLowerCase() === 'success'
+                                  ? 'bg-green-50 text-green-700 border-green-200'
+                                  : 'bg-red-50 text-red-700 border-red-200'
+                              }
+                            >
+                              {String(row.status || 'unknown')}
+                            </Badge>
+                          </td>
+                          <td className="max-w-[180px] truncate py-2 pr-3">{String((row.metadata?.memberName as string) || 'N/A')}</td>
+                          <td className="max-w-[220px] truncate py-2 pr-3">
+                            {Array.isArray(row.to) && row.to.length > 0 ? row.to.join(', ') : 'N/A'}
+                          </td>
+                          <td className="max-w-[320px] truncate py-2 pr-3">{String(row.subject || 'N/A')}</td>
+                          <td className="py-2 pr-3 text-right">
+                            <Button type="button" variant="outline" size="sm" onClick={() => toggleDetails(rowId)}>
+                              {isOpen ? 'Close details' : 'Open details'}
+                            </Button>
+                          </td>
+                        </tr>
+                        {isOpen ? (
+                          <tr className="border-b bg-muted/20">
+                            <td colSpan={6} className="px-3 py-3">
+                              <div className="grid gap-2 text-sm md:grid-cols-2">
+                                <div><span className="font-medium">Sender:</span> {String(row.from || 'N/A')}</div>
+                                <div><span className="font-medium">Sent By:</span> {String((row.metadata?.sentByName as string) || 'N/A')}</div>
+                                <div><span className="font-medium">Sender Email:</span> {String((row.metadata?.senderEmail as string) || 'N/A')}</div>
+                                <div><span className="font-medium">Application:</span> {String((row.metadata?.applicationId as string) || 'N/A')}</div>
+                                <div className="md:col-span-2">
+                                  <span className="font-medium">To:</span>{' '}
+                                  {Array.isArray(row.to) && row.to.length > 0 ? row.to.join(', ') : 'N/A'}
+                                </div>
+                                <div className="md:col-span-2">
+                                  <span className="font-medium">CC:</span>{' '}
+                                  {Array.isArray(row.cc) && row.cc.length > 0 ? row.cc.join(', ') : 'N/A'}
+                                </div>
+                                <div className="md:col-span-2">
+                                  <span className="font-medium">BCC:</span>{' '}
+                                  {Array.isArray(row.bcc) && row.bcc.length > 0 ? row.bcc.join(', ') : 'N/A'}
+                                </div>
+                                <div><span className="font-medium">Template:</span> {String(row.template || 'N/A')}</div>
+                                <div><span className="font-medium">Source:</span> {String(row.source || 'N/A')}</div>
+                                <div><span className="font-medium">Provider:</span> {String(row.provider || 'N/A')}</div>
+                                <div><span className="font-medium">Provider ID:</span> {String(row.providerMessageId || 'N/A')}</div>
+                                <div className="md:col-span-2">
+                                  <span className="font-medium">Error:</span>{' '}
+                                  {row.errorMessage ? (
+                                    <span className="text-red-700">{String(row.errorMessage)}</span>
+                                  ) : (
+                                    'None'
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

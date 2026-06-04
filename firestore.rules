@@ -1,6 +1,14 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isEmailLogsAdmin() {
+      return request.auth != null && (
+        request.auth.token.email in ['jason@carehomefinders.com'] ||
+        exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid)) ||
+        exists(/databases/$(database)/documents/roles_super_admin/$(request.auth.uid))
+      );
+    }
+
     // Default deny. Add explicit collection rules below.
     match /{document=**} {
       allow read, write: if false;
@@ -53,6 +61,13 @@ service cloud.firestore {
       allow read, list: if request.auth != null;
       allow create, update: if request.auth != null && request.auth.uid == uid;
       allow delete: if request.auth != null && request.auth.token.email in ['jason@carehomefinders.com'];
+    }
+
+    // Email logs (admin read + update/delete for log cleanup and flags)
+    match /emailLogs/{logId} {
+      allow read, list: if request.auth != null;
+      allow create: if false;
+      allow update, delete: if isEmailLogsAdmin();
     }
 
     // Staff Chat (Firestore source of truth)

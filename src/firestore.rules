@@ -119,8 +119,9 @@ service cloud.firestore {
 
     // 6. Email delivery logs (readable by admins).
     match /emailLogs/{logId} {
-      allow read, list: if isAdmin();
-      allow write: if false;
+      allow read, list: if isSignedIn();
+      allow create: if false;
+      allow update, delete: if isAdmin();
     }
 
     // 5. Staff Chat (Firestore source of truth)
