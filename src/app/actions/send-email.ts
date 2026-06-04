@@ -37,6 +37,8 @@ function getResendClient(): Resend | null {
 const DEFAULT_APP_BASE_URL = 'https://connectcalaim.com';
 const DEFAULT_PORTAL_LOGIN_URL = `${DEFAULT_APP_BASE_URL}/login`;
 const DEFAULT_SIGNATURE_PHONE = '800-330-5993';
+const DEFAULT_ALFT_REVIEWER_NAME = 'John';
+const DEFAULT_ALFT_REVIEWER_EMAIL = 'john@carehomefinders.com';
 const REQUIREMENT_TITLE_TO_ID: Record<string, string> = {
     'cs member summary': 'cs-summary',
     'cs summary': 'cs-summary',
@@ -94,6 +96,11 @@ const escapeHtml = (value: string) =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+
+const formatSwEmailBodyHtml = (value: string) =>
+  escapeHtml(String(value || '').trim())
+    .replace(/\r?\n/g, '<br/>')
+    .replace(/((?:^|<br\/>)\s*)(Client:|ISP Location:|ISP Contact:)/gi, (_, lead, label) => `${lead}<strong>${label}</strong>`);
 
 function getRequirementFocusId(incompleteItems: string[] = []): string {
     for (const item of incompleteItems) {
@@ -233,7 +240,7 @@ interface AlftWorkflowStartPayload {
     assignedByEmail?: string;
     assignedByPhone?: string;
     senderCopyEmail?: string;
-    customMessageLines?: string[];
+    customEmailBody?: string;
     ispContactName?: string;
     ispContactRelationship?: string;
     ispAddress?: string;
@@ -845,17 +852,8 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const assignedByEmail = String(payload.assignedByEmail || '').trim();
     const assignedByPhone = String(payload.assignedByPhone || '').trim();
     const senderCopyEmail = String(payload.senderCopyEmail || '').trim().toLowerCase();
-    const customMessageLines = Array.isArray(payload.customMessageLines)
-      ? payload.customMessageLines.map((line) => String(line || '').trim()).filter(Boolean).slice(0, 10)
-      : [];
-    const customMessageHtml = customMessageLines.length
-      ? `
-        <p style="margin: 0 0 8px;"><strong>Additional Notes:</strong></p>
-        <ul style="margin: 0 0 16px 20px; padding: 0;">
-          ${customMessageLines.map((line) => `<li style="margin: 0 0 6px;">${escapeHtml(line)}</li>`).join('')}
-        </ul>
-      `
-      : '';
+    const customEmailBody = String(payload.customEmailBody || '').trim();
+    const customEmailBodyHtml = customEmailBody ? formatSwEmailBodyHtml(customEmailBody) : '';
     const signaturePhone = DEFAULT_SIGNATURE_PHONE || assignedByPhone;
     const ispContactName = String(payload.ispContactName || '').trim();
     const ispContactRelationship = String(payload.ispContactRelationship || '').trim();
@@ -879,20 +877,18 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
     const secondaryContactName = ispContact2Name || 'Not provided';
     const logoUrl = `${baseUrl}/calaimlogopdf.png`;
     const hasSecondaryIspContact = Boolean(ispContact2Name || ispContact2Relationship || ispContact2Phone || ispContact2Email);
-    const signatureName = assignedBy || assignedByEmail || 'Staff';
+    const signatureName = assignedBy || DEFAULT_ALFT_REVIEWER_NAME;
+    const signatureEmail = assignedByEmail || DEFAULT_ALFT_REVIEWER_EMAIL;
 
-    const html = `
+    const defaultHtml = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
-        <div style="margin: 0 0 16px;">
-          <img src="${logoUrl}" alt="Connections CalAIM" style="height: 44px; width: auto; display: block;" />
-        </div>
         <p style="margin: 0 0 16px;">Hi ${socialWorkerFirstName},</p>
         <p style="margin: 0 0 16px;">We have a client who needs a Kaiser ALFT Care Assessment.</p>
 
         <p style="margin: 0; font-weight: 700;">Client:</p>
-        <p style="margin: 0 0 16px;"><strong>${memberName}</strong></p>
+        <p style="margin: 0;"><strong>${memberName}</strong></p>
 
-        <p style="margin: 0 0 16px;"><strong>Plan ID:</strong> ${mrn || 'Not provided'}</p>
+        <p style="margin: 0 0 16px;"><strong>Medical Record Number:</strong> ${mrn || 'Not provided'}</p>
 
         <p style="margin: 0; font-weight: 700;">ISP Location:</p>
         <p style="margin: 0;">${facilityName || ispLocation || 'Not provided'}</p>
@@ -921,21 +917,34 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
           <li style="margin: 0 0 6px;">Please let me know once you’ve submitted your invoice, so I can take the client off of your caseload list.</li>
         </ul>
 
-        <p style="margin: 0 0 16px;">
-          To complete the ALFT and signature workflow, open this link:
-          <a href="${portalUrl}" style="margin-left: 6px; color: #1d4ed8;">Open SW Portal ALFT Form</a>
-        </p>
-        ${customMessageHtml}
-
         <p style="margin: 0 0 10px;">If you have any questions, please feel free to contact me.</p>
         <p style="margin: 0;">Regards,</p>
         <p style="margin: 0;">—</p>
         <p style="margin: 0;">${signatureName}</p>
-        ${assignedByEmail ? `<p style="margin: 0;">${assignedByEmail}</p>` : ''}
+        <p style="margin: 0;">${signatureEmail}</p>
         <p style="margin: 0;">${signaturePhone || 'No sender phone listed'}</p>
         <p style="margin: 0;">Connections Care Home Consultants</p>
+        <div style="margin: 10px 0 0;">
+          <img src="${logoUrl}" alt="Connections CalAIM" style="height: 44px; width: auto; display: block;" />
+        </div>
       </div>
     `;
+    const html = customEmailBodyHtml
+      ? `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #111827; line-height: 1.5; max-width: 720px; margin: 0 auto; background: #ffffff;">
+        <div style="white-space: normal; font-size: 14px; line-height: 1.5; margin-bottom: 12px;">${customEmailBodyHtml}</div>
+        <p style="margin: 0;">Regards,</p>
+        <p style="margin: 0;">—</p>
+        <p style="margin: 0;">${signatureName}</p>
+        <p style="margin: 0;">${signatureEmail}</p>
+        <p style="margin: 0;">${signaturePhone || 'No sender phone listed'}</p>
+        <p style="margin: 0;">Connections Care Home Consultants</p>
+        <div style="margin: 10px 0 0;">
+          <img src="${logoUrl}" alt="Connections CalAIM" style="height: 44px; width: auto; display: block;" />
+        </div>
+      </div>
+    `
+      : defaultHtml;
 
     const bccList = senderCopyEmail && senderCopyEmail !== to.toLowerCase() ? [senderCopyEmail] : [];
 

@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 type Body = {
   idToken?: string;
   overrideRecipientEmail?: string;
-  customMessageLines?: string[];
+  customEmailBody?: string;
   member?: {
     id?: string;
     memberName?: string;
@@ -237,9 +237,7 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as Body;
     const idToken = clean(body?.idToken, 12000);
     const overrideRecipientEmail = clean(body?.overrideRecipientEmail, 220).toLowerCase();
-    const customMessageLines = Array.isArray(body?.customMessageLines)
-      ? body.customMessageLines.map((line) => clean(line, 400)).filter(Boolean).slice(0, 10)
-      : [];
+    const customEmailBody = clean(body?.customEmailBody, 20000);
     const member = body?.member || {};
     const memberId = clean(member?.id, 200);
     if (!idToken) return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
@@ -858,7 +856,7 @@ export async function POST(req: NextRequest) {
         assignedByEmail: email || undefined,
         assignedByPhone: senderPhone || undefined,
         senderCopyEmail: !overrideRecipientEmail ? (email || undefined) : undefined,
-        customMessageLines: customMessageLines.length ? customMessageLines : undefined,
+        customEmailBody: customEmailBody || undefined,
         ispContactName,
         ispContactRelationship,
         ispAddress,

@@ -274,12 +274,17 @@ const matchesAllTokens = (queryValue: string, fields: Array<unknown>) => {
   const haystack = fields.map((field) => toLabel(field).toLowerCase()).join(' ');
   return tokens.every((token) => haystack.includes(token));
 };
-const parseCustomSwEmailLines = (raw: string) =>
-  String(raw || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 10);
+const escapeHtml = (value: string) =>
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+const formatSwEmailBodyPreviewHtml = (value: string) =>
+  escapeHtml(String(value || ''))
+    .replace(/\r?\n/g, '<br/>')
+    .replace(/((?:^|<br\/>)\s*)(Client:|ISP Location:|ISP Contact:)/gi, (_, lead, label) => `${lead}<strong>${label}</strong>`);
 
 const isAlft = (row: Partial<StandaloneUpload>) => {
   const toolCode = toLabel((row as any)?.toolCode).toUpperCase();
@@ -1007,9 +1012,9 @@ export default function AdminAlftTrackerPage() {
   const [dummySendCompletedEmail, setDummySendCompletedEmail] = useState('');
   const [swEmailPreviewOpen, setSwEmailPreviewOpen] = useState(false);
   const [swEmailPreviewRow, setSwEmailPreviewRow] = useState<AlftAssignmentQueueRow | null>(null);
-  const [swEmailPreviewCustomLines, setSwEmailPreviewCustomLines] = useState('');
+  const [swEmailPreviewEditableBody, setSwEmailPreviewEditableBody] = useState('');
   const [swEmailById, setSwEmailById] = useState<Record<string, string>>({});
-  const [swSupportUploadFile, setSwSupportUploadFile] = useState<File | null>(null);
+  const [swSupportUploadFiles, setSwSupportUploadFiles] = useState<File[]>([]);
   const [swSupportUploadLabel, setSwSupportUploadLabel] = useState('');
   const [swSupportUploading, setSwSupportUploading] = useState(false);
   const [swSupportUploadProgress, setSwSupportUploadProgress] = useState(0);
@@ -1326,7 +1331,8 @@ export default function AdminAlftTrackerPage() {
     const assignedByEmail = String((swEmailPreviewRow as any)?.assignedByEmail || '').trim();
     const assignedByPhone = String((swEmailPreviewRow as any)?.assignedByPhone || '').trim();
     const signaturePhone = DEFAULT_SIGNATURE_PHONE || assignedByPhone;
-    const signatureName = assignedByName || assignedByEmail || 'Staff';
+    const signatureName = assignedByName || DEFAULT_PRE_REVIEW_MANAGER_NAME;
+    const signatureEmail = assignedByEmail || DEFAULT_PRE_REVIEW_MANAGER_EMAIL;
     const verified = Boolean(swEmailPreviewRow.verificationSignoff?.verified);
     const contactFirst = pickPreview('isp_contact_first');
     const contactLast = pickPreview('isp_contact_last');
@@ -1365,7 +1371,6 @@ export default function AdminAlftTrackerPage() {
     );
     const sentAtLabel = sentAtMs ? fmtTimeline(sentAtMs) : '';
     const alreadySent = Boolean((swEmailPreviewRow as any)?.workflowSteps?.swInviteSent) || sentAtMs > 0;
-    const portalPath = '/sw-portal/alft-upload';
     const logoPath = '/calaimlogopdf.png';
     return {
       to: swEmail || 'Missing email',
@@ -1389,8 +1394,7 @@ export default function AdminAlftTrackerPage() {
         '',
         'Client:',
         `${memberName || 'Not provided'}`,
-        '',
-        `Plan ID: ${mrn || 'Not provided'}`,
+        `Medical Record Number: ${mrn || 'Not provided'}`,
         '',
         'ISP Location:',
         `${ispFacilityName || 'Not provided'}`,
@@ -1416,16 +1420,11 @@ export default function AdminAlftTrackerPage() {
         '- When it’s completed',
         '- After completion, please email it to me.',
         "- Please let me know once you've submitted your invoice, so I can take the client off of your caseload list.",
-        `SW email status: ${alreadySent ? `Already sent${sentAtLabel ? ` at ${sentAtLabel}` : ''}` : 'Not sent yet'}`,
-        '',
-        'To complete the ALFT and signature workflow, open this link:',
-        `${portalPath}`,
-        'Login with your assigned account, open ALFT Upload, and complete/sign the packet.',
         '',
         'Regards,',
         '—',
         `${signatureName}`,
-        ...(assignedByEmail ? [assignedByEmail] : []),
+        `${signatureEmail}`,
         `${signaturePhone || 'No sender phone listed'}`,
         'Connections Care Home Consultants',
       ].join('\n'),
@@ -1507,7 +1506,7 @@ export default function AdminAlftTrackerPage() {
   const startWorkflowFromIntake = useCallback(
     async (
       row: AlftAssignmentQueueRow,
-      opts?: { skipVerificationCheck?: boolean; overrideRecipientEmail?: string; customMessageLines?: string[] }
+      opts?: { skipVerificationCheck?: boolean; overrideRecipientEmail?: string; customEmailBody?: string }
     ) => {
       if (!auth?.currentUser) {
         toast({ title: 'Sign in required', description: 'Please sign in and retry.', variant: 'destructive' });
@@ -1528,9 +1527,7 @@ export default function AdminAlftTrackerPage() {
       try {
         const idToken = await auth.currentUser.getIdToken();
         const dummyEmail = String(opts?.overrideRecipientEmail || '').trim().toLowerCase();
-        const customMessageLines = Array.isArray(opts?.customMessageLines)
-          ? opts?.customMessageLines.map((line) => String(line || '').trim()).filter(Boolean).slice(0, 10)
-          : [];
+        const customEmailBody = String(opts?.customEmailBody || '').trim();
         const rowPrefillPurpose = String(row.prefillPurpose || '').trim();
         const prefillPurpose =
           rowPrefillPurpose === 'initial' || rowPrefillPurpose === 'change_condition' || rowPrefillPurpose === 'review'
@@ -1624,7 +1621,7 @@ export default function AdminAlftTrackerPage() {
               assignedSwEmail: row.assignedSwEmail || '',
               ...(prefillPurpose ? { prefillPurpose } : {}),
             },
-            customMessageLines: customMessageLines.length ? customMessageLines : undefined,
+            customEmailBody: customEmailBody || undefined,
             overrideRecipientEmail: dummyEmail || undefined,
           }),
         });
@@ -2028,8 +2025,8 @@ export default function AdminAlftTrackerPage() {
 
   const uploadSwPortalSupportFile = async (row: AlftAssignmentQueueRow) => {
     if (!row || !firestore || !storage) return;
-    if (!swSupportUploadFile) {
-      toast({ title: 'Select a file', description: 'Choose a support file to upload (e.g., 602, facesheet).', variant: 'destructive' });
+    if (!swSupportUploadFiles.length) {
+      toast({ title: 'Select files', description: 'Choose one or more support files to upload (e.g., 602, facesheet).', variant: 'destructive' });
       return;
     }
     if (swSupportUploading) return;
@@ -2041,45 +2038,54 @@ export default function AdminAlftTrackerPage() {
     setSwSupportUploading(true);
     setSwSupportUploadProgress(0);
     try {
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const safeName = swSupportUploadFile.name.replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, '_').slice(0, 160);
-      const storagePath = `admin_uploads/alft-sw-portal-support/${memberKey}/${ts}_${safeName}`;
-      const storageRef = ref(storage, storagePath);
+      const uploadedSupportFiles: Array<Record<string, unknown>> = [];
+      const totalFiles = swSupportUploadFiles.length;
+      for (let index = 0; index < swSupportUploadFiles.length; index += 1) {
+        const file = swSupportUploadFiles[index];
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const safeName = file.name.replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, '_').slice(0, 160);
+        const storagePath = `admin_uploads/alft-sw-portal-support/${memberKey}/${ts}_${safeName}`;
+        const storageRef = ref(storage, storagePath);
 
-      const uploaded = await new Promise<{ downloadURL: string }>((resolve, reject) => {
-        const task = uploadBytesResumable(storageRef, swSupportUploadFile);
-        task.on(
-          'state_changed',
-          (snap) => {
-            const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
-            setSwSupportUploadProgress(Math.max(1, Math.min(99, Math.round(pct))));
-          },
-          (err) => reject(err),
-          async () => {
-            const downloadURL = await getDownloadURL(task.snapshot.ref);
-            resolve({ downloadURL });
-          }
-        );
-      });
+        const uploaded = await new Promise<{ downloadURL: string }>((resolve, reject) => {
+          const task = uploadBytesResumable(storageRef, file);
+          task.on(
+            'state_changed',
+            (snap) => {
+              const pct = snap.totalBytes > 0 ? (snap.bytesTransferred / snap.totalBytes) * 100 : 0;
+              const overall = ((index + pct / 100) / totalFiles) * 100;
+              setSwSupportUploadProgress(Math.max(1, Math.min(99, Math.round(overall))));
+            },
+            (err) => reject(err),
+            async () => {
+              const downloadURL = await getDownloadURL(task.snapshot.ref);
+              resolve({ downloadURL });
+            }
+          );
+        });
 
-      const supportFile = {
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        label: toLabel(swSupportUploadLabel) || null,
-        fileName: swSupportUploadFile.name,
-        downloadURL: uploaded.downloadURL,
-        storagePath,
-        uploadedAt: serverTimestamp(),
-        uploadedByName: toLabel((user as any)?.displayName) || null,
-        uploadedByEmail: toLabel((user as any)?.email) || null,
-      };
+        uploadedSupportFiles.push({
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          label: toLabel(swSupportUploadLabel) || null,
+          fileName: file.name,
+          downloadURL: uploaded.downloadURL,
+          storagePath,
+          uploadedAt: serverTimestamp(),
+          uploadedByName: toLabel((user as any)?.displayName) || null,
+          uploadedByEmail: toLabel((user as any)?.email) || null,
+        });
+      }
 
       await updateDoc(doc(firestore, 'alft_assignments', memberKey), {
-        swPortalSupportFiles: arrayUnion(supportFile as any),
+        swPortalSupportFiles: arrayUnion(...(uploadedSupportFiles as any[])),
         updatedAt: serverTimestamp(),
       } as any);
 
-      toast({ title: 'Support file uploaded', description: 'This file is now visible to the social worker in the ALFT portal.' });
-      setSwSupportUploadFile(null);
+      toast({
+        title: uploadedSupportFiles.length > 1 ? 'Support files uploaded' : 'Support file uploaded',
+        description: 'These files are now visible to the social worker in the ALFT portal.',
+      });
+      setSwSupportUploadFiles([]);
       setSwSupportUploadLabel('');
     } catch (e: any) {
       toast({ title: 'Upload failed', description: e?.message || 'Could not upload support file.', variant: 'destructive' });
@@ -2501,15 +2507,7 @@ export default function AdminAlftTrackerPage() {
       ) || swEmailPreviewRow
     );
   }, [assignmentRows, editAssignmentRow, isEditRoute, swEmailPreviewRow]);
-  const swEmailPreviewCustomMessageLines = useMemo(
-    () => parseCustomSwEmailLines(swEmailPreviewCustomLines),
-    [swEmailPreviewCustomLines]
-  );
-  const swEmailPreviewRenderedBody = useMemo(() => {
-    const base = String(swEmailPreview?.body || '—');
-    if (!swEmailPreviewCustomMessageLines.length) return base;
-    return `${base}\n\nAdditional Notes:\n${swEmailPreviewCustomMessageLines.map((line) => `- ${line}`).join('\n')}`;
-  }, [swEmailPreview?.body, swEmailPreviewCustomMessageLines]);
+  const swEmailPreviewRenderedBody = String(swEmailPreviewEditableBody || swEmailPreview?.body || '—');
   const editAssignmentDoneCount = editAssignmentSteps.filter((step) => step.done).length;
   const editVerificationDone = Boolean((editAssignmentRow as any)?.verificationSignoff?.verified);
   const editVerificationAtMs = toMs((editAssignmentRow as any)?.verificationSignoff?.verifiedAt);
@@ -2604,6 +2602,12 @@ export default function AdminAlftTrackerPage() {
       setSwEmailPreviewRow(editAssignmentRow);
     }
   }, [editAssignmentRow, isEditRoute, swEmailPreviewOpen, swEmailPreviewRow]);
+  useEffect(() => {
+    if (!swEmailPreviewOpen) return;
+    if (String(swEmailPreviewEditableBody || '').trim()) return;
+    const baseBody = String(swEmailPreview?.body || '').trim();
+    if (baseBody) setSwEmailPreviewEditableBody(baseBody);
+  }, [swEmailPreviewOpen, swEmailPreview?.body, swEmailPreviewEditableBody]);
   const workflowPageDescription = isEditRoute
     ? 'Single-member workflow page. Complete edits and actions for this member only.'
     : 'Plan A + Plan B workflow: SW submits/signs, ALFT manager reviews, sends to Leslie for final RN changes/signature, then John final review routes to Deydry for send/print to Jocelyn.';
@@ -2874,7 +2878,7 @@ export default function AdminAlftTrackerPage() {
           if (!open) {
             setSwEmailPreviewUseTestOverride(false);
             setSwEmailPreviewTestEmail('');
-            setSwEmailPreviewCustomLines('');
+            setSwEmailPreviewEditableBody('');
           }
         }}
       >
@@ -2900,14 +2904,15 @@ export default function AdminAlftTrackerPage() {
             </div>
             <div>
               <span className="font-medium">Body:</span>
+              <div
+                className="mt-1 whitespace-pre-wrap rounded border bg-muted/20 p-2 text-xs leading-5"
+                dangerouslySetInnerHTML={{ __html: formatSwEmailBodyPreviewHtml(swEmailPreviewRenderedBody) }}
+              />
               {swEmailPreview?.logoPath ? (
-                <div className="mt-1 mb-2">
+                <div className="mt-2">
                   <img src={swEmailPreview.logoPath} alt="Connections logo" className="h-10 w-auto object-contain" />
                 </div>
               ) : null}
-              <pre className="mt-1 whitespace-pre-wrap rounded border bg-muted/20 p-2 text-xs">
-                {swEmailPreviewRenderedBody}
-              </pre>
             </div>
             {swEmailPreview?.missingIspFields?.length ? (
               <div className="rounded border bg-amber-50 p-2 text-xs text-amber-800">
@@ -2915,15 +2920,15 @@ export default function AdminAlftTrackerPage() {
               </div>
             ) : null}
             <div className="rounded border bg-muted/20 p-2 space-y-1">
-              <Label htmlFor="sw-email-custom-lines" className="text-[11px] font-medium">
-                Additional lines for this SW email (optional)
+              <Label htmlFor="sw-email-editable-body" className="text-[11px] font-medium">
+                Editable SW email body
               </Label>
               <textarea
-                id="sw-email-custom-lines"
-                value={swEmailPreviewCustomLines}
-                onChange={(e) => setSwEmailPreviewCustomLines(e.target.value)}
-                placeholder={"Example:\n- Please call before arrival.\n- 602 attached in portal files."}
-                rows={4}
+                id="sw-email-editable-body"
+                value={swEmailPreviewEditableBody}
+                onChange={(e) => setSwEmailPreviewEditableBody(e.target.value)}
+                placeholder="Edit the full email body before sending."
+                rows={10}
                 className="w-full rounded border bg-background px-2 py-1.5 text-xs"
               />
             </div>
@@ -2969,7 +2974,7 @@ export default function AdminAlftTrackerPage() {
                 }
                 onClick={() =>
                   void startWorkflowFromIntake(swPreviewActionRow, {
-                    customMessageLines: swEmailPreviewCustomMessageLines,
+                    customEmailBody: swEmailPreviewRenderedBody,
                     overrideRecipientEmail: swEmailPreviewUseTestOverride ? swEmailPreviewTestEmail : undefined,
                   })
                 }
@@ -3047,7 +3052,7 @@ export default function AdminAlftTrackerPage() {
                       setSwEmailPreviewRow(editAssignmentRow);
                       setSwEmailPreviewUseTestOverride(false);
                       setSwEmailPreviewTestEmail('');
-                      setSwEmailPreviewCustomLines('');
+                      setSwEmailPreviewEditableBody(String(swEmailPreview?.body || ''));
                       setSwEmailPreviewOpen(true);
                     }}
                   >
@@ -3087,17 +3092,22 @@ export default function AdminAlftTrackerPage() {
                         />
                         <input
                           type="file"
-                          onChange={(e) => setSwSupportUploadFile(e.target.files?.[0] || null)}
+                          multiple
+                          onChange={(e) => setSwSupportUploadFiles(Array.from(e.target.files || []))}
                           className="text-xs"
                         />
-                        {swSupportUploadFile ? (
-                          <div className="text-[11px] text-muted-foreground">Selected: {swSupportUploadFile.name}</div>
+                        {swSupportUploadFiles.length ? (
+                          <div className="text-[11px] text-muted-foreground">
+                            Selected {swSupportUploadFiles.length} file{swSupportUploadFiles.length > 1 ? 's' : ''}:{' '}
+                            {swSupportUploadFiles.slice(0, 2).map((f) => f.name).join(', ')}
+                            {swSupportUploadFiles.length > 2 ? ` +${swSupportUploadFiles.length - 2} more` : ''}
+                          </div>
                         ) : null}
                       </div>
                       <Button
                         variant="outline"
                         className="h-8"
-                        disabled={!editAssignmentRow || !swSupportUploadFile || swSupportUploading}
+                        disabled={!editAssignmentRow || !swSupportUploadFiles.length || swSupportUploading}
                         onClick={() => editAssignmentRow && void uploadSwPortalSupportFile(editAssignmentRow)}
                       >
                         {swSupportUploading
