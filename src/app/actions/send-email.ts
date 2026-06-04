@@ -908,14 +908,18 @@ export const sendAlftWorkflowStartEmail = async (payload: AlftWorkflowStartPaylo
         ` : ''}
 
         <p style="margin: 0 0 12px;">
-          I’ll make the 602 available to you. This will come in a separate email. Please let me know about the assessment:
+          Please let me know about the assessment:
         </p>
         <ul style="margin: 0 0 16px 20px; padding: 0;">
           <li style="margin: 0 0 6px;">When it’s scheduled</li>
           <li style="margin: 0 0 6px;">When it’s completed</li>
-          <li style="margin: 0 0 6px;">After completion, please email it to me.</li>
           <li style="margin: 0 0 6px;">Please let me know once you’ve submitted your invoice, so I can take the client off of your caseload list.</li>
         </ul>
+
+        <p style="margin: 0 0 16px;">
+          To complete the ALFT and signature workflow, open this link:
+          <a href="${portalUrl}" style="margin-left: 6px; color: #1d4ed8;">Open SW Portal ALFT Form</a>
+        </p>
 
         <p style="margin: 0 0 10px;">If you have any questions, please feel free to contact me.</p>
         <p style="margin: 0;">Regards,</p>
