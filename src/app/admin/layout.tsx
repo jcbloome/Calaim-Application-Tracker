@@ -349,7 +349,7 @@ function AdminHeader() {
   };
 
   useEffect(() => {
-    if (!firestore || !user?.uid) return;
+    if (!isAdmin || !firestore || !user?.uid) return;
     const reviewRef = doc(firestore, 'system_settings', 'review_notifications');
     const unsubscribe = onSnapshot(
       reviewRef,
@@ -395,11 +395,11 @@ function AdminHeader() {
       }
     );
     return () => unsubscribe();
-  }, [firestore, user?.uid, user?.email]);
+  }, [isAdmin ? firestore : null, user?.uid, user?.email]);
 
   // Action item counter: pending Eligibility Checks
   useEffect(() => {
-    if (!firestore) return;
+    if (!isAdmin || !firestore) return;
     const q = query(collection(firestore, 'eligibilityChecks'), where('status', '==', 'pending'));
     const unsubscribe = onSnapshot(
       q,
@@ -411,11 +411,11 @@ function AdminHeader() {
       }
     );
     return () => unsubscribe();
-  }, [firestore]);
+  }, [isAdmin ? firestore : null]);
 
   // Action item counter: Kaiser Tier updates entered by ILS (show until Kaiser status changes).
   useEffect(() => {
-    if (!firestore) return;
+    if (!isAdmin || !firestore) return;
     const qy = query(collection(firestore, 'caspio_members_cache'), where('CalAIM_MCO', '==', 'Kaiser'), limit(5000));
     const normalize = (value: unknown) =>
       String(value ?? '')
@@ -442,11 +442,11 @@ function AdminHeader() {
       () => setKTierCount(0)
     );
     return () => unsub();
-  }, [firestore]);
+  }, [isAdmin ? firestore : null]);
 
   // Keep Action items counts aligned with the Electron pill summary (Chat + Priority Notes).
   useEffect(() => {
-    if (!firestore || !user?.uid) return;
+    if (!isAdmin || !firestore || !user?.uid) return;
     if (INTEROFFICE_NOTES_MOTHBALLED) {
       setPriorityNotesCount(0);
       return;
@@ -517,7 +517,7 @@ function AdminHeader() {
       }
     );
     return () => unsub();
-  }, [firestore, user?.uid]);
+  }, [isAdmin ? firestore : null, user?.uid]);
 
   const handleSignOut = async () => {
     try {
@@ -586,7 +586,7 @@ function AdminHeader() {
   }, [isMobileMenuOpen]);
 
   useEffect(() => {
-    if (!firestore || !user?.uid) return;
+    if (!isAdmin || !firestore || !user?.uid) return;
     const userAppsQuery = collectionGroup(firestore, 'applications');
     const adminAppsQuery = collection(firestore, 'applications');
     const standaloneUploadsQuery = query(
@@ -1159,7 +1159,7 @@ function AdminHeader() {
       unsubStandaloneUploads?.();
     };
   }, [
-    firestore,
+    isAdmin ? firestore : null,
     user?.uid,
     reviewPopupPrefs.enabled,
     reviewPopupPrefs.recipientEnabled,
