@@ -308,6 +308,13 @@ export default function PrintablePackagePage() {
                                 >
                                     Imprimir Paquete Completo (Español)
                                 </Button>
+                                <Button
+                                    variant="link"
+                                    className="p-0 h-auto text-sm font-bold text-primary block"
+                                    onClick={() => handlePrint('/forms/printable-package/vietnamese')}
+                                >
+                                    In Trọn Bộ Hồ Sơ (Tiếng Việt)
+                                </Button>
                             </li>
                           </ul>
                         </CardContent>
