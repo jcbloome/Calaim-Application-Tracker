@@ -203,21 +203,36 @@ function StaffAssignmentDropdown({
                 // - isKaiserStaff (designated Kaiser staff)
                 // - isHealthNetStaff (designated Health Net staff)
                 // This avoids missing staff that are designated but not flagged isStaff.
-                const [staffSnap, kaiserSnap, hnSnap, adminRolesSnap, superAdminRolesSnap] = await Promise.all([
-                  getDocs(query(collection(firestore, 'users'), where('isStaff', '==', true))),
-                  getDocs(query(collection(firestore, 'users'), where('isKaiserStaff', '==', true))),
-                  getDocs(query(collection(firestore, 'users'), where('isHealthNetStaff', '==', true))),
-                  getDocs(collection(firestore, 'roles_admin')),
-                  getDocs(collection(firestore, 'roles_super_admin')),
-                ]);
+                const [staffResult, kaiserResult, hnResult, adminRolesResult, superAdminRolesResult] =
+                  await Promise.allSettled([
+                    getDocs(query(collection(firestore, 'users'), where('isStaff', '==', true))),
+                    getDocs(query(collection(firestore, 'users'), where('isKaiserStaff', '==', true))),
+                    getDocs(query(collection(firestore, 'users'), where('isHealthNetStaff', '==', true))),
+                    getDocs(collection(firestore, 'roles_admin')),
+                    getDocs(collection(firestore, 'roles_super_admin')),
+                  ]);
 
-                const adminIds = new Set(adminRolesSnap.docs.map((d) => d.id));
-                const superAdminIds = new Set(superAdminRolesSnap.docs.map((d) => d.id));
+                const staffSnap = staffResult.status === 'fulfilled' ? staffResult.value : null;
+                const kaiserSnap = kaiserResult.status === 'fulfilled' ? kaiserResult.value : null;
+                const hnSnap = hnResult.status === 'fulfilled' ? hnResult.value : null;
+                const adminRolesSnap = adminRolesResult.status === 'fulfilled' ? adminRolesResult.value : null;
+                const superAdminRolesSnap = superAdminRolesResult.status === 'fulfilled' ? superAdminRolesResult.value : null;
+
+                if (!staffSnap && !kaiserSnap && !hnSnap) {
+                  throw new Error('Unable to load staff records from Firestore.');
+                }
+
+                if (adminRolesResult.status === 'rejected' || superAdminRolesResult.status === 'rejected') {
+                  console.warn('Staff role collections unavailable; continuing with fallback staff roles.');
+                }
+
+                const adminIds = new Set((adminRolesSnap?.docs || []).map((d) => d.id));
+                const superAdminIds = new Set((superAdminRolesSnap?.docs || []).map((d) => d.id));
 
                 const userDataByUid = new Map<string, any>();
-                staffSnap.docs.forEach((d) => userDataByUid.set(d.id, d.data()));
-                kaiserSnap.docs.forEach((d) => userDataByUid.set(d.id, d.data()));
-                hnSnap.docs.forEach((d) => userDataByUid.set(d.id, d.data()));
+                (staffSnap?.docs || []).forEach((d) => userDataByUid.set(d.id, d.data()));
+                (kaiserSnap?.docs || []).forEach((d) => userDataByUid.set(d.id, d.data()));
+                (hnSnap?.docs || []).forEach((d) => userDataByUid.set(d.id, d.data()));
 
                 const currentAssignedId = String((application as any)?.assignedStaffId || '').trim();
                 if (currentAssignedId && !userDataByUid.has(currentAssignedId)) {
@@ -286,7 +301,7 @@ function StaffAssignmentDropdown({
                 staff = [...filtered].sort((a, b) => a.displayName.localeCompare(b.displayName));
                 setStaffFilterLabel(label);
             } catch (error) {
-                console.error('Error loading staff list:', error);
+                console.warn('Error loading staff list:', error);
             } finally {
                 setStaffList(staff);
                 setIsLoadingStaff(false);
@@ -4036,7 +4051,7 @@ function ApplicationDetailPageContent() {
   ]);
 
   useEffect(() => {
-    if (!firestore || !memberPortalUserId) {
+    if (!isAdmin || !firestore || !memberPortalUserId) {
       setMemberPortalLoginLog([]);
       return;
     }
@@ -4078,79 +4093,87 @@ function ApplicationDetailPageContent() {
         setMemberPortalLoginLog(rows);
         setIsLoadingMemberPortalLoginLog(false);
       },
-      () => {
+      (error) => {
+        console.warn('Failed to load member portal login log:', error);
         setIsLoadingMemberPortalLoginLog(false);
       }
     );
 
     return () => unsubscribe();
-  }, [firestore, memberPortalUserId]);
+  }, [isAdmin, firestore, memberPortalUserId]);
 
   useEffect(() => {
-    if (!firestore || !docRef) return;
+    if (!isAdmin || !firestore || !docRef) return;
     const clientId2 = String((application as any)?.client_ID2 || (application as any)?.clientId2 || '').trim();
     if (!clientId2) return;
 
     const cacheRef = doc(firestore, 'caspio_members_cache', clientId2);
-    const unsubscribe = onSnapshot(cacheRef, (snap) => {
-      if (!snap.exists()) return;
-      const data = (snap.data() || {}) as Record<string, unknown>;
-      const incomingKaiserStatus = String(data.Kaiser_Status || data.kaiserStatus || '').trim();
-      const incomingCalAIMStatus = String(data.CalAIM_Status || data.caspioCalAIMStatus || data.calaimStatus || '').trim();
-      const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
-      const currentCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
+    const unsubscribe = onSnapshot(
+      cacheRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = (snap.data() || {}) as Record<string, unknown>;
+        const incomingKaiserStatus = String(data.Kaiser_Status || data.kaiserStatus || '').trim();
+        const incomingCalAIMStatus = String(data.CalAIM_Status || data.caspioCalAIMStatus || data.calaimStatus || '').trim();
+        const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+        const currentCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
 
-      const updateData: Record<string, unknown> = {
-        lastUpdated: serverTimestamp(),
-      };
-      let shouldPersist = false;
+        const updateData: Record<string, unknown> = {
+          lastUpdated: serverTimestamp(),
+        };
+        let shouldPersist = false;
 
-      const shouldAutoSyncKaiserFromCache = isKaiserPlan && !showDraftKaiserStatusSection;
-      if (shouldAutoSyncKaiserFromCache && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus) {
-        updateData.kaiserStatus = incomingKaiserStatus;
-        updateData.kaiserStatusSyncedFromCacheAt = serverTimestamp();
-        updateData.kaiserStatusSyncSource = 'caspio_members_cache_live';
-        shouldPersist = true;
+        const shouldAutoSyncKaiserFromCache = isKaiserPlan && !showDraftKaiserStatusSection;
+        if (shouldAutoSyncKaiserFromCache && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus) {
+          updateData.kaiserStatus = incomingKaiserStatus;
+          updateData.kaiserStatusSyncedFromCacheAt = serverTimestamp();
+          updateData.kaiserStatusSyncSource = 'caspio_members_cache_live';
+          shouldPersist = true;
+        }
+
+        if (incomingCalAIMStatus && incomingCalAIMStatus !== currentCalAIMStatus) {
+          updateData.caspioCalAIMStatus = incomingCalAIMStatus;
+          updateData.CalAIM_Status = incomingCalAIMStatus;
+          updateData.calaimStatusSyncedFromCacheAt = serverTimestamp();
+          updateData.calaimStatusSyncSource = 'caspio_members_cache_live';
+          shouldPersist = true;
+        }
+
+        if (!shouldPersist) return;
+
+        void setDoc(
+          docRef,
+          updateData,
+          { merge: true }
+        ).catch(() => {
+          // Best effort live sync; webhook/scheduled sync still provide server-side propagation.
+        });
+
+        setApplication((prev) =>
+          prev
+            ? ({
+                ...prev,
+                ...(shouldAutoSyncKaiserFromCache && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus
+                  ? { kaiserStatus: incomingKaiserStatus }
+                  : {}),
+                ...(incomingCalAIMStatus && incomingCalAIMStatus !== currentCalAIMStatus
+                  ? {
+                      caspioCalAIMStatus: incomingCalAIMStatus,
+                      CalAIM_Status: incomingCalAIMStatus,
+                    }
+                  : {}),
+              } as any)
+            : prev
+        );
+      },
+      (error) => {
+        console.warn('Failed to subscribe to caspio member cache:', error);
       }
-
-      if (incomingCalAIMStatus && incomingCalAIMStatus !== currentCalAIMStatus) {
-        updateData.caspioCalAIMStatus = incomingCalAIMStatus;
-        updateData.CalAIM_Status = incomingCalAIMStatus;
-        updateData.calaimStatusSyncedFromCacheAt = serverTimestamp();
-        updateData.calaimStatusSyncSource = 'caspio_members_cache_live';
-        shouldPersist = true;
-      }
-
-      if (!shouldPersist) return;
-
-      void setDoc(
-        docRef,
-        updateData,
-        { merge: true }
-      ).catch(() => {
-        // Best effort live sync; webhook/scheduled sync still provide server-side propagation.
-      });
-
-      setApplication((prev) =>
-        prev
-          ? ({
-              ...prev,
-              ...(shouldAutoSyncKaiserFromCache && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus
-                ? { kaiserStatus: incomingKaiserStatus }
-                : {}),
-              ...(incomingCalAIMStatus && incomingCalAIMStatus !== currentCalAIMStatus
-                ? {
-                    caspioCalAIMStatus: incomingCalAIMStatus,
-                    CalAIM_Status: incomingCalAIMStatus,
-                  }
-                : {}),
-            } as any)
-          : prev
-      );
-    });
+    );
 
     return () => unsubscribe();
   }, [
+    isAdmin,
     firestore,
     docRef,
     isKaiserPlan,
@@ -4516,7 +4539,7 @@ function ApplicationDetailPageContent() {
   }, [docRef, application]);
 
   useEffect(() => {
-    if (!firestore || !memberIdForNotes) return;
+    if (!isAdmin || !firestore || !memberIdForNotes) return;
     const notificationsQuery = query(
       collection(firestore, 'staff_notifications'),
       where('clientId2', '==', memberIdForNotes)
@@ -4544,12 +4567,13 @@ function ApplicationDetailPageContent() {
         setMemberNotifications(items);
       },
       (error) => {
-        console.error('Failed to load member notifications:', error);
+        console.warn('Failed to load member notifications:', error);
+        setMemberNotifications([]);
       }
     );
 
     return () => unsubscribe();
-  }, [firestore, memberIdForNotes]);
+  }, [isAdmin, firestore, memberIdForNotes]);
 
   useEffect(() => {
     const STAFF_CACHE_KEY = 'interoffice_admin_staff_cache_v1';

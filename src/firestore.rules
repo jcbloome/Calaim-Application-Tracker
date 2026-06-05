@@ -105,10 +105,10 @@ service cloud.firestore {
 
     // 4. Login Logs
     // Any authenticated user can create a log entry for themselves.
-    // Only super admins can read the full log.
+    // Admins can read logs in application detail views.
     match /loginLogs/{logId} {
         allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-        allow list, read: if isSuperAdmin();
+        allow list, read: if isAdmin();
     }
 
     // 5. Desktop Presence (Electron online indicator)
@@ -130,6 +130,13 @@ service cloud.firestore {
       allow read, list: if isAdmin();
       allow create: if isSignedIn();
       allow update, delete: if isAdmin();
+    }
+
+    // Staff notifications (action items / interoffice notes)
+    match /staff_notifications/{notificationId} {
+      allow get, list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin() || (isSignedIn() && request.resource.data.userId == request.auth.uid);
+      allow update, delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
     }
 
     // 5. Staff Chat (Firestore source of truth)
