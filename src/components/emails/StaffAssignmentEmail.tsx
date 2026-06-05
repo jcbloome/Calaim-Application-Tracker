@@ -4,7 +4,6 @@ import {
   Head,
   Heading,
   Html,
-  Img,
   Link,
   Preview,
   Section,
@@ -45,13 +44,6 @@ export default function StaffAssignmentEmail({
         <Container style={container}>
           {/* Header */}
           <Section style={header}>
-            <Img
-              src="https://carehomefinders.com/calaimlogopdf.png"
-              width="120"
-              height="40"
-              alt="CalAIM Logo"
-              style={logo}
-            />
             <Heading style={h1}>New Member Assignment</Heading>
           </Section>
 
@@ -151,10 +143,6 @@ const header = {
   padding: '32px 24px',
   backgroundColor: '#1e40af',
   textAlign: 'center' as const,
-};
-
-const logo = {
-  margin: '0 auto 16px',
 };
 
 const h1 = {

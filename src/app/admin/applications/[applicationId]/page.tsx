@@ -136,7 +136,7 @@ function StaffAssignmentDropdown({
 }) {
     const firestore = useFirestore();
     const { toast } = useToast();
-    const { user: adminUser, isSuperAdmin } = useAdmin();
+    const { user: adminUser } = useAdmin();
     type StaffCandidate = {
       uid: string;
       role: 'Admin' | 'Super Admin' | 'Staff';
@@ -151,35 +151,9 @@ function StaffAssignmentDropdown({
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingStaff, setIsLoadingStaff] = useState(true);
     const [staffFilterLabel, setStaffFilterLabel] = useState<string>('Showing all staff');
-    const [canAssignForKaiser, setCanAssignForKaiser] = useState(true);
     const staffUids = useMemo(() => staffList.map((s) => s.uid).filter(Boolean), [staffList]);
     const { isActiveByUid } = useDesktopPresenceMap(staffUids);
     const isKaiserPlan = String(application.healthPlan || '').toLowerCase().includes('kaiser');
-
-    useEffect(() => {
-      const run = async () => {
-        if (!isKaiserPlan) {
-          setCanAssignForKaiser(true);
-          return;
-        }
-        if (isSuperAdmin) {
-          setCanAssignForKaiser(true);
-          return;
-        }
-        if (!firestore || !adminUser?.uid) {
-          setCanAssignForKaiser(false);
-          return;
-        }
-        try {
-          const meSnap = await getDoc(doc(firestore, 'users', adminUser.uid));
-          const meData = meSnap.exists() ? (meSnap.data() as any) : null;
-          setCanAssignForKaiser(Boolean(meData?.isKaiserAssignmentManager));
-        } catch {
-          setCanAssignForKaiser(false);
-        }
-      };
-      run().catch(() => setCanAssignForKaiser(false));
-    }, [isKaiserPlan, isSuperAdmin, firestore, adminUser?.uid]);
 
     useEffect(() => {
         // Filter staff list based on the application's health plan.
@@ -336,11 +310,7 @@ function StaffAssignmentDropdown({
             const memberName = `${application.memberFirstName || ''} ${application.memberLastName || ''}`.trim() || 'Member';
             const dueDate = new Date();
             dueDate.setHours(17, 0, 0, 0);
-            const assignedByName = String(
-              adminUser?.displayName ||
-              adminUser?.email ||
-              'Manager'
-            ).trim();
+            const assignedByName = String(adminUser?.displayName || '').trim() || 'CalAIM Team';
             const planLabel = String(application.healthPlan || '').trim() || 'Member';
             const actionUrl = application.userId
               ? `/admin/applications/${application.id}?userId=${encodeURIComponent(String(application.userId))}`
@@ -483,7 +453,7 @@ function StaffAssignmentDropdown({
         <Select
           value={(application as any)?.assignedStaffId || ''}
           onValueChange={handleStaffAssignment}
-          disabled={isLoading || isLoadingStaff || (isKaiserPlan && !canAssignForKaiser)}
+          disabled={isLoading || isLoadingStaff}
         >
           <SelectTrigger>
             <SelectValue placeholder={isLoadingStaff ? 'Loading staff…' : 'Assign a staff member...'} />
@@ -505,11 +475,6 @@ function StaffAssignmentDropdown({
             ))}
           </SelectContent>
         </Select>
-        {isKaiserPlan && !canAssignForKaiser ? (
-          <div className="text-[11px] text-amber-700">
-            Kaiser assignment manager access is required to assign Kaiser staff from this portal.
-          </div>
-        ) : null}
       </div>
     );
 }

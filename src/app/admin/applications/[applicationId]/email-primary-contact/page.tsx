@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ExternalLink, Loader2, Mail, RefreshCcw, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +47,7 @@ type PreviewResponse = {
 
 export default function EmailPrimaryContactPage() {
   const params = useParams();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useUser();
   const { toast } = useToast();
@@ -273,6 +274,7 @@ export default function EmailPrimaryContactPage() {
         title: 'Email sent',
         description: `Primary contact email sent to ${String(to || '').trim()}.`,
       });
+      router.replace(backHref);
     } catch (error: any) {
       toast({
         title: 'Send failed',
