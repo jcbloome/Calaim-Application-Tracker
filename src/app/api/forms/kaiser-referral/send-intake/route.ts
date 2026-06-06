@@ -25,6 +25,7 @@ type SendPayload = {
   overrideReason?: string;
   testSend?: boolean;
   testRecipientEmail?: string;
+  formSnapshot?: Record<string, unknown>;
 };
 
 const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
@@ -269,6 +270,10 @@ export async function POST(request: NextRequest) {
       overrideReason: overrideReason || null,
     };
     const customMessage = String(body?.customMessage || '').trim();
+    const formSnapshot =
+      body?.formSnapshot && typeof body.formSnapshot === 'object' && !Array.isArray(body.formSnapshot)
+        ? (body.formSnapshot as Record<string, unknown>)
+        : null;
     const resolvedAttachmentName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
     const pdfBuffer = Buffer.from(pdfBase64, 'base64');
     if (!pdfBuffer.length) {
@@ -327,6 +332,7 @@ export async function POST(request: NextRequest) {
       pdfStorageSignedUrl: pdfStorageSignedUrl || null,
       overrideResubmit,
       overrideReason: overrideReason || null,
+      formSnapshot: formSnapshot || null,
     };
 
     if (testSend) {

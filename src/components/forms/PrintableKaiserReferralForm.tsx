@@ -821,6 +821,38 @@ export function PrintableKaiserReferralForm({
     }
     setIsSendingTestEmail(true);
     try {
+      const formSnapshot = {
+        applicationId: String(applicationId || ''),
+        userId: String(userId || ''),
+        taskId: String(taskId || ''),
+        memberClientId: String(memberClientId || ''),
+        referralContext: String(referralContext || ''),
+        memberName: lineValue(formValues.memberName),
+        memberDob: lineValue(formValues.memberDob),
+        memberPhone: lineValue(formValues.memberPhone),
+        memberEmail: lineValue(prefill.memberEmail),
+        memberAddress: lineValue(formValues.memberAddress),
+        memberMrn: lineValue(formValues.memberMrn),
+        memberMediCal: lineValue(prefill.memberMediCal || prefill.memberMrn || formValues.memberMrn),
+        caregiverName: lineValue(formValues.caregiverName),
+        caregiverContact: lineValue(formValues.caregiverContact),
+        referralDate: lineValue(formValues.referralDate),
+        referrerName: lineValue(formValues.referrerName),
+        referrerOrganization: lineValue(formValues.referrerOrganization),
+        referrerNpi: lineValue(formValues.referrerNpi),
+        referrerAddress: lineValue(formValues.referrerAddress),
+        referrerEmail: lineValue(formValues.referrerEmail),
+        referrerPhone: lineValue(formValues.referrerPhone),
+        referrerRelationship: lineValue(formValues.referrerRelationship),
+        currentLocationName: lineValue(formValues.currentLocationName),
+        currentLocationAddress: lineValue(formValues.currentLocationAddress),
+        healthPlan: lineValue(prefill.healthPlan),
+        memberCounty: lineValue(memberCounty),
+        alft22Choice: lineValue(currentLivingLocation),
+        section1AlfUsage: lineValue(requiredSection1AlfUsage),
+        kaiserAuthAlreadyReceived: requiresKaiserReferralSendFlow ? '0' : '1',
+        returnTo: '/admin/email-logs/kaiser-referrals',
+      };
       const pdfBlob = await buildAttachmentBlob();
       const pdfBase64 = await blobToBase64(pdfBlob);
       const response = await fetch('/api/forms/kaiser-referral/send-intake', {
@@ -847,6 +879,7 @@ export function PrintableKaiserReferralForm({
           fileName: buildKaiserReferralFileName(memberName || 'Member'),
           testSend: true,
           testRecipientEmail,
+          formSnapshot,
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -872,6 +905,38 @@ export function PrintableKaiserReferralForm({
     }
     setIsSendingToKaiser(true);
     try {
+      const formSnapshot = {
+        applicationId: String(applicationId || ''),
+        userId: String(userId || ''),
+        taskId: String(taskId || ''),
+        memberClientId: String(memberClientId || ''),
+        referralContext: String(referralContext || ''),
+        memberName: lineValue(formValues.memberName),
+        memberDob: lineValue(formValues.memberDob),
+        memberPhone: lineValue(formValues.memberPhone),
+        memberEmail: lineValue(prefill.memberEmail),
+        memberAddress: lineValue(formValues.memberAddress),
+        memberMrn: lineValue(formValues.memberMrn),
+        memberMediCal: lineValue(prefill.memberMediCal || prefill.memberMrn || formValues.memberMrn),
+        caregiverName: lineValue(formValues.caregiverName),
+        caregiverContact: lineValue(formValues.caregiverContact),
+        referralDate: lineValue(formValues.referralDate),
+        referrerName: lineValue(formValues.referrerName),
+        referrerOrganization: lineValue(formValues.referrerOrganization),
+        referrerNpi: lineValue(formValues.referrerNpi),
+        referrerAddress: lineValue(formValues.referrerAddress),
+        referrerEmail: lineValue(formValues.referrerEmail),
+        referrerPhone: lineValue(formValues.referrerPhone),
+        referrerRelationship: lineValue(formValues.referrerRelationship),
+        currentLocationName: lineValue(formValues.currentLocationName),
+        currentLocationAddress: lineValue(formValues.currentLocationAddress),
+        healthPlan: lineValue(prefill.healthPlan),
+        memberCounty: lineValue(memberCounty),
+        alft22Choice: lineValue(currentLivingLocation),
+        section1AlfUsage: lineValue(requiredSection1AlfUsage),
+        kaiserAuthAlreadyReceived: requiresKaiserReferralSendFlow ? '0' : '1',
+        returnTo: '/admin/email-logs/kaiser-referrals',
+      };
       const pdfBlob = await buildAttachmentBlob();
       const pdfBase64 = await blobToBase64(pdfBlob);
 
@@ -899,6 +964,7 @@ export function PrintableKaiserReferralForm({
           fileName: buildKaiserReferralFileName(memberName || 'Member'),
           overrideResubmit,
           overrideReason: overrideResubmit ? overrideReason.trim() : '',
+          formSnapshot,
         }),
       });
 

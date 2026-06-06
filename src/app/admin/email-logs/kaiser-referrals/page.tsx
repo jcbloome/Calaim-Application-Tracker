@@ -106,6 +106,65 @@ function resolveAuthorizationFileUrl(row: EmailLogEntry): string {
   return String((row.metadata?.pdfStorageSignedUrl as string) || '').trim();
 }
 
+function resolveReopenGeneratorUrl(row: EmailLogEntry): string {
+  const snapshotRaw = row.metadata?.formSnapshot;
+  const snapshot =
+    snapshotRaw && typeof snapshotRaw === 'object' && !Array.isArray(snapshotRaw)
+      ? (snapshotRaw as Record<string, unknown>)
+      : null;
+
+  const params = new URLSearchParams();
+  const setIfValue = (key: string, value: unknown) => {
+    const text = String(value ?? '').trim();
+    if (text) params.set(key, text);
+  };
+
+  if (snapshot) {
+    setIfValue('applicationId', snapshot.applicationId);
+    setIfValue('userId', snapshot.userId);
+    setIfValue('taskId', snapshot.taskId);
+    setIfValue('memberClientId', snapshot.memberClientId);
+    setIfValue('referralContext', snapshot.referralContext || 'email_log_reopen');
+    setIfValue('memberName', snapshot.memberName);
+    setIfValue('memberDob', snapshot.memberDob);
+    setIfValue('memberPhone', snapshot.memberPhone);
+    setIfValue('memberEmail', snapshot.memberEmail);
+    setIfValue('memberAddress', snapshot.memberAddress);
+    setIfValue('memberMrn', snapshot.memberMrn);
+    setIfValue('memberMediCal', snapshot.memberMediCal);
+    setIfValue('caregiverName', snapshot.caregiverName);
+    setIfValue('caregiverContact', snapshot.caregiverContact);
+    setIfValue('referralDate', snapshot.referralDate);
+    setIfValue('referrerName', snapshot.referrerName);
+    setIfValue('referrerOrganization', snapshot.referrerOrganization);
+    setIfValue('referrerNpi', snapshot.referrerNpi);
+    setIfValue('referrerAddress', snapshot.referrerAddress);
+    setIfValue('referrerEmail', snapshot.referrerEmail);
+    setIfValue('referrerPhone', snapshot.referrerPhone);
+    setIfValue('referrerRelationship', snapshot.referrerRelationship);
+    setIfValue('currentLocationName', snapshot.currentLocationName);
+    setIfValue('currentLocationAddress', snapshot.currentLocationAddress);
+    setIfValue('healthPlan', snapshot.healthPlan);
+    setIfValue('memberCounty', snapshot.memberCounty);
+    setIfValue('kaiserAuthAlreadyReceived', snapshot.kaiserAuthAlreadyReceived);
+    setIfValue('alft22Choice', snapshot.alft22Choice);
+    setIfValue('section1AlfUsage', snapshot.section1AlfUsage);
+  } else {
+    setIfValue('applicationId', row.metadata?.applicationId);
+    setIfValue('userId', row.metadata?.userId);
+    setIfValue('memberClientId', row.metadata?.memberClientId);
+    setIfValue('referralContext', 'email_log_reopen');
+    setIfValue('memberName', resolveMemberName(row));
+    setIfValue('memberMrn', resolveMemberMrn(row));
+    setIfValue('memberCounty', row.metadata?.memberCounty);
+    setIfValue('referrerName', row.metadata?.referrerName);
+    setIfValue('referrerEmail', row.metadata?.referrerEmail);
+    setIfValue('referrerRelationship', 'Community Support (CalAIM)');
+  }
+  setIfValue('returnTo', '/admin/email-logs/kaiser-referrals');
+  return `/forms/kaiser-referral/printable?${params.toString()}`;
+}
+
 function resolveMemberName(row: EmailLogEntry): string {
   const inferredFromSubject = parseMemberFromSubject(String(row.subject || ''));
   return String((row.metadata?.memberName as string) || '').trim() || inferredFromSubject.memberName || 'Unknown (legacy log)';
@@ -510,6 +569,7 @@ function KaiserReferralEmailLogsPageContent() {
                 const status = String(row.status || 'unknown').toLowerCase();
                 const kaiserRegion = resolveKaiserRegion(row);
                 const authorizationFileUrl = resolveAuthorizationFileUrl(row);
+                const reopenGeneratorUrl = resolveReopenGeneratorUrl(row);
                 const isDetailsOpen = Boolean(openDetailsById[row.id]);
                 const isSuccess = status === 'success';
                 const authReceived = isAuthReceived(row);
@@ -661,6 +721,18 @@ function KaiserReferralEmailLogsPageContent() {
                           ) : (
                             <span className="text-muted-foreground">Not available for this log</span>
                           )}
+                        </div>
+
+                        <div className="mt-2 text-sm">
+                          <span className="font-medium">Reopen form:</span>{' '}
+                          <a
+                            href={reopenGeneratorUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-700 underline underline-offset-2"
+                          >
+                            Open in Generator
+                          </a>
                         </div>
 
                         {row.errorMessage ? (
