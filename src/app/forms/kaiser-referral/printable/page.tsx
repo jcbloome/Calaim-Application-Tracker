@@ -47,6 +47,10 @@ function KaiserReferralPrintableContent() {
   const [hasReviewedPdfPreview, setHasReviewedPdfPreview] = useState(false);
   const loggedInUserEmail = String(user?.email || '').trim().toLowerCase();
   const loggedInUserName = String((user as any)?.displayName || (user as any)?.name || '').trim();
+  const submitterNameFromQuery = String(searchParams.get('submitterName') || '').trim();
+  const submitterEmailFromQuery = String(searchParams.get('submitterEmail') || '').trim().toLowerCase();
+  const effectiveSubmitterName = loggedInUserName || submitterNameFromQuery;
+  const effectiveSubmitterEmail = loggedInUserEmail || submitterEmailFromQuery;
 
   const formPrefill = useMemo(
     () => ({
@@ -470,8 +474,8 @@ function KaiserReferralPrintableContent() {
         onMemberContactAddressChange={setMemberOverrides}
         onCaregiverChange={setCaregiverOverrides}
         buildTemplatePdfUrl={buildTemplateUrl}
-        loggedInUserEmail={loggedInUserEmail}
-        loggedInUserName={loggedInUserName}
+        loggedInUserName={effectiveSubmitterName}
+        loggedInUserEmail={effectiveSubmitterEmail}
         showPrintButton={false}
         hasReviewedPdfPreview={hasReviewedPdfPreview}
         onOpenPdfPreview={handleViewPdf}

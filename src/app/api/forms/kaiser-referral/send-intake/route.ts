@@ -234,9 +234,9 @@ export async function POST(request: NextRequest) {
     const referrerEmail = String(body?.referrerEmail || '').trim();
     const submitterName = String(body?.submitterName || '').trim();
     const submitterEmail = String(body?.submitterEmail || '').trim().toLowerCase();
-    const resolvedSubmitterName = submitterName || referrerName || 'Unknown staff';
-    const resolvedSubmitterEmail = submitterEmail || referrerEmail || 'Unknown staff email';
-    const ccRecipients = getKaiserReferralCcRecipientsWithSubmitter(submitterEmail || referrerEmail);
+    const resolvedSubmitterName = submitterName || 'Unknown staff';
+    const resolvedSubmitterEmail = submitterEmail || 'Unknown staff email';
+    const ccRecipients = getKaiserReferralCcRecipientsWithSubmitter(submitterEmail);
     failureLogCc = ccRecipients;
     const testRecipientEmail = String(body?.testRecipientEmail || '').trim().toLowerCase();
     const appId = String(body?.applicationId || '').trim();

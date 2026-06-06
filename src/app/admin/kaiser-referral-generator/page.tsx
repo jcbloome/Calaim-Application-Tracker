@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useAdmin } from '@/hooks/use-admin';
 
 type DataSource = 'cache' | 'caspio';
 
@@ -60,7 +61,10 @@ const toName = (member: KaiserMember) => {
   return preferred || `Client ${clean(member.Client_ID2 || member.client_ID2)}`;
 };
 
-const buildReferralUrl = (member: KaiserMember) => {
+const buildReferralUrl = (
+  member: KaiserMember,
+  submitter: { name: string; email: string }
+) => {
   const query = new URLSearchParams();
   const today = format(new Date(), 'yyyy-MM-dd');
   const memberName = toName(member);
@@ -79,6 +83,8 @@ const buildReferralUrl = (member: KaiserMember) => {
   query.set('memberEmail', clean(member.memberEmail));
   query.set('memberCounty', memberCounty);
   query.set('healthPlan', clean(member.CalAIM_MCO || 'Kaiser'));
+  query.set('submitterName', clean(submitter.name));
+  query.set('submitterEmail', clean(submitter.email).toLowerCase());
   query.set('referralDate', today);
   query.set('kaiserAuthAlreadyReceived', '0');
   query.set('currentLocationName', clean(member.RCFE_Name));
@@ -89,6 +95,7 @@ const buildReferralUrl = (member: KaiserMember) => {
 
 export default function KaiserReferralGeneratorPage() {
   const { toast } = useToast();
+  const { user } = useAdmin();
   const [source, setSource] = useState<DataSource>('cache');
   const [members, setMembers] = useState<KaiserMember[]>([]);
   const [query, setQuery] = useState('');
@@ -164,7 +171,12 @@ export default function KaiserReferralGeneratorPage() {
     [filteredMembers, selectedClientId]
   );
 
-  const selectedReferralUrl = selectedMember ? buildReferralUrl(selectedMember) : '';
+  const selectedReferralUrl = selectedMember
+    ? buildReferralUrl(selectedMember, {
+        name: String(user?.displayName || '').trim(),
+        email: String(user?.email || '').trim(),
+      })
+    : '';
 
   return (
     <div className="space-y-6">

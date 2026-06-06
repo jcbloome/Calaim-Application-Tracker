@@ -142,6 +142,8 @@ function resolveReopenGeneratorUrl(row: EmailLogEntry): string {
     setIfValue('referrerEmail', snapshot.referrerEmail);
     setIfValue('referrerPhone', snapshot.referrerPhone);
     setIfValue('referrerRelationship', snapshot.referrerRelationship);
+    setIfValue('submitterName', snapshot.submitterName);
+    setIfValue('submitterEmail', snapshot.submitterEmail);
     setIfValue('currentLocationName', snapshot.currentLocationName);
     setIfValue('currentLocationAddress', snapshot.currentLocationAddress);
     setIfValue('healthPlan', snapshot.healthPlan);
@@ -159,6 +161,8 @@ function resolveReopenGeneratorUrl(row: EmailLogEntry): string {
     setIfValue('memberCounty', row.metadata?.memberCounty);
     setIfValue('referrerName', row.metadata?.referrerName);
     setIfValue('referrerEmail', row.metadata?.referrerEmail);
+    setIfValue('submitterName', row.metadata?.submitterName);
+    setIfValue('submitterEmail', row.metadata?.submitterEmail);
     setIfValue('referrerRelationship', 'Community Support (CalAIM)');
   }
   setIfValue('returnTo', '/admin/email-logs/kaiser-referrals');
@@ -180,8 +184,7 @@ function resolveMemberLastName(row: EmailLogEntry): string {
 }
 
 function resolveSubmittedByName(row: EmailLogEntry): string {
-  const submittedByNameRaw =
-    String((row.metadata?.submitterName as string) || (row.metadata?.referrerName as string) || '').trim();
+  const submittedByNameRaw = String((row.metadata?.submitterName as string) || '').trim();
   return submittedByNameRaw && !looksLikeEmail(submittedByNameRaw) ? submittedByNameRaw : 'Unknown staff name';
 }
 

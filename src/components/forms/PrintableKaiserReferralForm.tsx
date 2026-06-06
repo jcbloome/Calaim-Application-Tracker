@@ -475,10 +475,9 @@ export function PrintableKaiserReferralForm({
   const hasRequiredSection1Usage = requiredSection1AlfUsage === 'yes' || requiredSection1AlfUsage === 'no';
   const canOpenSendDialog = hasRequiredLocation && hasRequiredSection1Usage && !isSendingToKaiser;
   const canOpenEmailTemplate = requiresKaiserReferralSendFlow && canOpenSendDialog;
-  const submitterEmail = lineValue(loggedInUserEmail || referrerEmail).toLowerCase();
+  const submitterEmail = lineValue(loggedInUserEmail).toLowerCase();
   const submitterName =
     lineValue(loggedInUserName) ||
-    (!lineValue(referrerName).includes('@') ? lineValue(referrerName) : '') ||
     inferNameFromEmail(submitterEmail) ||
     'Unknown staff';
   const testRecipientEmail = submitterEmail;
@@ -862,6 +861,8 @@ export function PrintableKaiserReferralForm({
         referrerRelationship: lineValue(formValues.referrerRelationship),
         currentLocationName: lineValue(formValues.currentLocationName),
         currentLocationAddress: lineValue(formValues.currentLocationAddress),
+        submitterName: lineValue(submitterName),
+        submitterEmail: lineValue(submitterEmail),
         healthPlan: lineValue(prefill.healthPlan),
         memberCounty: lineValue(memberCounty),
         alft22Choice: lineValue(currentLivingLocation),
@@ -946,6 +947,8 @@ export function PrintableKaiserReferralForm({
         referrerRelationship: lineValue(formValues.referrerRelationship),
         currentLocationName: lineValue(formValues.currentLocationName),
         currentLocationAddress: lineValue(formValues.currentLocationAddress),
+        submitterName: lineValue(submitterName),
+        submitterEmail: lineValue(submitterEmail),
         healthPlan: lineValue(prefill.healthPlan),
         memberCounty: lineValue(memberCounty),
         alft22Choice: lineValue(currentLivingLocation),

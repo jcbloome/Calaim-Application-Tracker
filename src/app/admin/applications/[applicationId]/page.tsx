@@ -9853,6 +9853,8 @@ function ApplicationDetailPageContent() {
         currentLocationAddress: memberAddress,
         healthPlan: String((application as any)?.healthPlan || '').trim(),
         memberCounty: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
+        submitterName: String(user?.displayName || '').trim(),
+        submitterEmail: String(user?.email || '').trim().toLowerCase(),
         kaiserAuthAlreadyReceived: isKaiserAuthReceivedIntake ? '1' : '0',
         kaiserReferralSubmittedAtIso: String(kaiserReferralSubmission?.submittedAtIso || '').trim(),
       });
@@ -12321,6 +12323,8 @@ function ApplicationDetailPageContent() {
                 currentLocationAddress: qaMemberAddress,
                 healthPlan: String((application as any)?.healthPlan || '').trim(),
                 memberCounty: String((application as any)?.currentCounty || (application as any)?.memberCounty || '').trim(),
+                submitterName: String(user?.displayName || '').trim(),
+                submitterEmail: String(user?.email || '').trim().toLowerCase(),
                 kaiserAuthAlreadyReceived: isKaiserAuthReceivedIntake ? '1' : '0',
                 kaiserReferralSubmittedAtIso: String(kaiserReferralSubmission?.submittedAtIso || '').trim(),
               });
