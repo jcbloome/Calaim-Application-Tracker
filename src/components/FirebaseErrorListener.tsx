@@ -13,8 +13,19 @@ export function FirebaseErrorListener() {
   const [error, setError] = useState<FirestorePermissionError | null>(null);
 
   useEffect(() => {
+    const isIgnorableRoleListPermissionError = (nextError: FirestorePermissionError) => {
+      const path = String(nextError?.request?.path || '').toLowerCase();
+      const method = String(nextError?.request?.method || '').toLowerCase();
+      if (method !== 'list') return false;
+      return path.includes('/roles_admin') || path.includes('/roles_super_admin');
+    };
+
     // The callback now expects a strongly-typed error, matching the event payload.
     const handleError = (error: FirestorePermissionError) => {
+      if (isIgnorableRoleListPermissionError(error)) {
+        console.warn('[FirebaseErrorListener] Ignoring non-fatal role-list permission error.', error.request);
+        return;
+      }
       // Set error in state to trigger a re-render.
       setError(error);
     };

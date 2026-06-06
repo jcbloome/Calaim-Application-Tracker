@@ -16,7 +16,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAdmin } from '@/hooks/use-admin';
-import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { format } from 'date-fns';
 
 const trackedComponents = [
@@ -122,6 +121,7 @@ function ProgressTrackerPageClient() {
   const [missingDocReminderFilter, setMissingDocReminderFilter] = useState<'all' | 'on' | 'off'>('all');
   const [statusReminderFilter, setStatusReminderFilter] = useState<'all' | 'on' | 'off'>('all');
   const [mcoFilter, setMcoFilter] = useState<'all' | 'kaiser' | 'health-net'>('all');
+  const [sortOrder, setSortOrder] = useState<'most-recent' | 'oldest'>('most-recent');
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [trackers, setTrackers] = useState<Map<string, StaffTracker>>(new Map());
@@ -138,31 +138,36 @@ function ProgressTrackerPageClient() {
     setIsLoading(true);
     setError(null);
     try {
+        const safeGetDocs = async (queryRef: any, label: string) => {
+          try {
+            return await getDocs(queryRef);
+          } catch (e) {
+            console.warn(`[progress-tracker] ${label} read blocked; continuing with partial data.`, e);
+            return null;
+          }
+        };
+
         // Query both user applications and admin-created applications
         const userAppsQuery = collectionGroup(firestore, 'applications');
         const adminAppsQuery = collection(firestore, 'applications');
         const trackersQuery = collectionGroup(firestore, 'staffTrackers');
-        const adminRolesQuery = collection(firestore, 'roles_admin');
-        const superAdminRolesQuery = collection(firestore, 'roles_super_admin');
         const usersQuery = collection(firestore, 'users');
 
-        const [userAppsSnap, adminAppsSnap, trackersSnap, adminRolesSnap, superAdminRolesSnap, usersSnap] = await Promise.all([
-            getDocs(userAppsQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection group)', operation: 'list' })); throw e; }),
-            getDocs(adminAppsQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'applications (collection)', operation: 'list' })); throw e; }),
-            getDocs(trackersQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'staffTrackers (collection group)', operation: 'list' })); throw e; }),
-            getDocs(adminRolesQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_admin (collection)', operation: 'list' })); throw e; }),
-            getDocs(superAdminRolesQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_super_admin (collection)', operation: 'list' })); throw e; }),
-            getDocs(usersQuery).catch(e => { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'users (collection)', operation: 'list' })); throw e; }),
+        const [userAppsSnap, adminAppsSnap, trackersSnap, usersSnap] = await Promise.all([
+            safeGetDocs(userAppsQuery, 'applications (collection group)'),
+            safeGetDocs(adminAppsQuery, 'applications (collection)'),
+            safeGetDocs(trackersQuery, 'staffTrackers (collection group)'),
+            safeGetDocs(usersQuery, 'users (collection)'),
         ]);
 
         // Combine both user and admin applications with unique keys
-        const userApps = userAppsSnap.docs.map(doc => ({
+        const userApps = (userAppsSnap?.docs || []).map(doc => ({
             ...doc.data(), 
             id: doc.id,
             uniqueKey: `user-${doc.id}`,
             source: 'user'
         })) as Application[];
-        const adminApps = adminAppsSnap.docs.map(doc => ({
+        const adminApps = (adminAppsSnap?.docs || []).map(doc => ({
             ...doc.data(), 
             id: doc.id,
             uniqueKey: `admin-${doc.id}`,
@@ -265,16 +270,12 @@ function ProgressTrackerPageClient() {
         });
 
         const apps = Array.from(byId.values());
-        const trackersMap = new Map(trackersSnap.docs.map(doc => [doc.data().applicationId, doc.data() as StaffTracker]));
+        const trackersMap = new Map((trackersSnap?.docs || []).map(doc => [doc.data().applicationId, doc.data() as StaffTracker]));
         
-        const adminIds = new Set(adminRolesSnap.docs.map(d => d.id));
-        const superAdminIds = new Set(superAdminRolesSnap.docs.map(d => d.id));
         const staffMap = new Map();
-        usersSnap.docs.forEach(doc => {
+        (usersSnap?.docs || []).forEach(doc => {
             const uid = doc.id;
-            if (adminIds.has(uid) || superAdminIds.has(uid)) {
-                 staffMap.set(uid, { uid, ...doc.data() } as StaffMember);
-            }
+            staffMap.set(uid, { uid, ...doc.data() } as StaffMember);
         });
 
         setApplications(apps);
@@ -307,11 +308,37 @@ function ProgressTrackerPageClient() {
 
   const filteredApplications = useMemo(() => {
     if (!applications) return [];
-    
+    const toSortMs = (app: Application) => {
+      const candidates = [
+        (app as any)?.lastUpdated,
+        (app as any)?.submissionDate,
+        (app as any)?.lastModified,
+        (app as any)?.createdAt,
+      ];
+      for (const value of candidates) {
+        if (!value) continue;
+        try {
+          if (typeof (value as any)?.toMillis === 'function') {
+            const ms = Number((value as any).toMillis());
+            if (Number.isFinite(ms)) return ms;
+          }
+          if (typeof (value as any)?.toDate === 'function') {
+            const ms = (value as any).toDate().getTime();
+            if (Number.isFinite(ms)) return ms;
+          }
+          const ms = new Date(String(value)).getTime();
+          if (Number.isFinite(ms)) return ms;
+        } catch {
+          // Ignore parse failures and continue to next candidate.
+        }
+      }
+      return 0;
+    };
+
     const sorted = [...applications].sort((a, b) => {
-        const timeA = a.lastUpdated ? (a.lastUpdated as Timestamp).toMillis() : 0;
-        const timeB = b.lastUpdated ? (b.lastUpdated as Timestamp).toMillis() : 0;
-        return timeB - timeA;
+      const timeA = toSortMs(a);
+      const timeB = toSortMs(b);
+      return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA;
     });
 
     const missingOnlyFiltered = showMissingOnly
@@ -354,7 +381,7 @@ function ProgressTrackerPageClient() {
       String(app.memberLastName || '').trim().toLowerCase().includes(searchTerm)
     );
 
-  }, [applications, filters, showMissingOnly, lastNameSearch, missingDocReminderFilter, statusReminderFilter, mcoFilter])
+  }, [applications, filters, showMissingOnly, lastNameSearch, missingDocReminderFilter, statusReminderFilter, mcoFilter, sortOrder])
 
   return (
     <div className="space-y-6">
@@ -415,6 +442,23 @@ function ProgressTrackerPageClient() {
                         ))}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="sort-order-filter" className="text-sm font-medium">
+                          Sort
+                        </Label>
+                        <Select
+                          value={sortOrder}
+                          onValueChange={(value: 'most-recent' | 'oldest') => setSortOrder(value)}
+                        >
+                          <SelectTrigger id="sort-order-filter">
+                            <SelectValue placeholder="Most Recent" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="most-recent">Most Recent</SelectItem>
+                            <SelectItem value="oldest">Oldest</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="space-y-2">
                         <Label htmlFor="mco-filter" className="text-sm font-medium">
                           CalAIM_MCO
