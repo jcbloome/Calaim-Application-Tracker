@@ -232,6 +232,8 @@ export async function GET(req: NextRequest) {
       healthPlan: clean(params.get('healthPlan')).toLowerCase(),
       currentLocationName: clean(params.get('currentLocationName')),
       currentLocationAddress: normalizeAddress(params.get('currentLocationAddress')),
+      alft22CurrentCost: clean(params.get('alft22CurrentCost')),
+      alftTransitionsComments: clean(params.get('alftTransitionsComments')),
       alft21Choice: clean(params.get('alft21Choice')).toUpperCase(),
       alft22Choice: clean(params.get('alft22Choice')).toUpperCase(),
       section1AlfUsage: clean(params.get('section1AlfUsage')).toLowerCase(),
@@ -385,6 +387,8 @@ export async function GET(req: NextRequest) {
 
       setText('ALF 2.2 Facility Name', prefill.currentLocationName);
       setText('ALF 2.2 Address', prefill.currentLocationAddress || prefill.memberAddress);
+      setText("ALF 2.2 Current cost and how it's being covered", prefill.alft22CurrentCost);
+      setText('ALF Transitions - Comments', prefill.alftTransitionsComments);
 
       selectRadio('Is the person being referred a Kaiser Permanente K', prefill.healthPlan.includes('kaiser'));
       const alft21Index = prefill.alft21Choice === 'B' ? 1 : 0;

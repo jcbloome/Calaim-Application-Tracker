@@ -35,6 +35,8 @@ type ReferralPrefill = {
   referrerRelationship?: string;
   currentLocationName?: string;
   currentLocationAddress?: string;
+  alft22CurrentCost?: string;
+  alftTransitionsComments?: string;
   healthPlan?: string;
   memberCounty?: string;
 };
@@ -73,6 +75,8 @@ interface PrintableKaiserReferralFormProps extends ReferralPrefill {
     referrerRelationship: string;
     currentLocationName: string;
     currentLocationAddress: string;
+    alft22CurrentCost: string;
+    alftTransitionsComments: string;
   }) => void;
   onCaregiverChange?: (value: { caregiverName: string; caregiverContact: string }) => void;
   onMemberContactAddressChange?: (value: { memberPhone: string; memberAddress: string }) => void;
@@ -386,6 +390,8 @@ export function PrintableKaiserReferralForm({
     referrerRelationship: lineValue(prefill.referrerRelationship) || DEFAULT_REFERRER_RELATIONSHIP,
     currentLocationName: lineValue(prefill.currentLocationName),
     currentLocationAddress: lineValue(prefill.currentLocationAddress || prefill.memberAddress),
+    alft22CurrentCost: lineValue(prefill.alft22CurrentCost),
+    alftTransitionsComments: lineValue(prefill.alftTransitionsComments),
   }));
   const [serviceUsage, setServiceUsage] = React.useState({
     ecm: false,
@@ -554,6 +560,8 @@ export function PrintableKaiserReferralForm({
       referrerRelationship: lineValue(formValues.referrerRelationship),
       currentLocationName: lineValue(formValues.currentLocationName),
       currentLocationAddress: lineValue(formValues.currentLocationAddress),
+      alft22CurrentCost: lineValue(formValues.alft22CurrentCost),
+      alftTransitionsComments: lineValue(formValues.alftTransitionsComments),
     });
   }, [formValues, onFormValuesChange]);
 
@@ -636,6 +644,14 @@ export function PrintableKaiserReferralForm({
           Object.prototype.hasOwnProperty.call(draftFormValues, 'currentLocationAddress')
             ? lineValue((draftFormValues as any).currentLocationAddress)
             : prev.currentLocationAddress,
+        alft22CurrentCost:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'alft22CurrentCost')
+            ? lineValue((draftFormValues as any).alft22CurrentCost)
+            : prev.alft22CurrentCost,
+        alftTransitionsComments:
+          Object.prototype.hasOwnProperty.call(draftFormValues, 'alftTransitionsComments')
+            ? lineValue((draftFormValues as any).alftTransitionsComments)
+            : prev.alftTransitionsComments,
       }));
       if (Object.prototype.hasOwnProperty.call(draft, 'emailDescription')) {
         setEmailDescription(lineValue((draft as any).emailDescription));
@@ -1840,12 +1856,22 @@ export function PrintableKaiserReferralForm({
               </div>
               <div className="font-semibold">Current cost and how it&apos;s being covered?</div>
               <div className="min-h-[44px] border-2 border-black bg-[#d9e8f7]">
-                <EditableBox className="h-[36px]" />
+                <input
+                  value={formValues.alft22CurrentCost}
+                  onChange={(event) => setFormValues((prev) => ({ ...prev, alft22CurrentCost: event.target.value }))}
+                  className="h-[36px] w-full border border-transparent bg-transparent px-2 py-1 leading-5 focus:border-black focus:outline-none"
+                />
               </div>
             </div>
             <div className="mt-3 font-semibold">COMMENTS <span className="font-normal">(optional)</span></div>
             <div className="mt-1 min-h-[120px] border-2 border-black bg-[#d9e8f7]">
-              <EditableBox multiline className="min-h-[112px]" />
+              <textarea
+                value={formValues.alftTransitionsComments}
+                onChange={(event) =>
+                  setFormValues((prev) => ({ ...prev, alftTransitionsComments: event.target.value }))
+                }
+                className="min-h-[112px] w-full resize-none border border-transparent bg-transparent px-2 py-1 leading-5 focus:border-black focus:outline-none"
+              />
             </div>
           </div>
         </PageShell>

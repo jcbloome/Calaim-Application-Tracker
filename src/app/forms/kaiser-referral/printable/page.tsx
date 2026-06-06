@@ -71,6 +71,8 @@ function KaiserReferralPrintableContent() {
       referrerRelationship: searchParams.get('referrerRelationship') || DEFAULT_REFERRER_RELATIONSHIP,
       currentLocationName: searchParams.get('currentLocationName') || '',
       currentLocationAddress: searchParams.get('currentLocationAddress') || '',
+      alft22CurrentCost: searchParams.get('alft22CurrentCost') || '',
+      alftTransitionsComments: searchParams.get('alftTransitionsComments') || '',
       healthPlan: searchParams.get('healthPlan') || '',
       memberCounty: searchParams.get('memberCounty') || '',
       alft21Choice: searchParams.get('alft21Choice') || '',
@@ -127,6 +129,8 @@ function KaiserReferralPrintableContent() {
       referrerRelationship: formPrefill.referrerRelationship,
       currentLocationName: formPrefill.currentLocationName,
       currentLocationAddress: formPrefill.currentLocationAddress,
+      alft22CurrentCost: formPrefill.alft22CurrentCost,
+      alftTransitionsComments: formPrefill.alftTransitionsComments,
       healthPlan: formPrefill.healthPlan,
       memberCounty: formPrefill.memberCounty,
       taskId: formPrefill.taskId,
@@ -158,6 +162,8 @@ function KaiserReferralPrintableContent() {
     referrerRelationship: string;
     currentLocationName: string;
     currentLocationAddress: string;
+    alft22CurrentCost: string;
+    alftTransitionsComments: string;
   }>(() => ({
     memberName: formPrefill.memberName,
     memberDob: formPrefill.memberDob,
@@ -172,6 +178,8 @@ function KaiserReferralPrintableContent() {
     referrerRelationship: formPrefill.referrerRelationship,
     currentLocationName: formPrefill.currentLocationName,
     currentLocationAddress: formPrefill.currentLocationAddress,
+    alft22CurrentCost: formPrefill.alft22CurrentCost,
+    alftTransitionsComments: formPrefill.alftTransitionsComments,
   }));
   const handleFormValuesChange = useCallback(
     (value: {
@@ -188,6 +196,8 @@ function KaiserReferralPrintableContent() {
       referrerRelationship: string;
       currentLocationName: string;
       currentLocationAddress: string;
+      alft22CurrentCost: string;
+      alftTransitionsComments: string;
     }) => {
       setFormFieldOverrides((prev) => {
         const next = {
@@ -205,6 +215,8 @@ function KaiserReferralPrintableContent() {
           referrerRelationship: value.referrerRelationship,
           currentLocationName: value.currentLocationName,
           currentLocationAddress: value.currentLocationAddress,
+          alft22CurrentCost: value.alft22CurrentCost,
+          alftTransitionsComments: value.alftTransitionsComments,
         };
         const keys = Object.keys(next) as Array<keyof typeof next>;
         const changed = keys.some((key) => String(prev[key] || '') !== String(next[key] || ''));
@@ -234,6 +246,8 @@ function KaiserReferralPrintableContent() {
       referrerRelationship: formFieldOverrides.referrerRelationship,
       currentLocationName: formFieldOverrides.currentLocationName,
       currentLocationAddress: formFieldOverrides.currentLocationAddress,
+      alft22CurrentCost: formFieldOverrides.alft22CurrentCost,
+      alftTransitionsComments: formFieldOverrides.alftTransitionsComments,
     }),
     [printableProps, memberOverrides, caregiverOverrides, formFieldOverrides]
   );
