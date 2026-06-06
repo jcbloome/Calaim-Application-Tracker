@@ -2412,18 +2412,20 @@ function AdminActions({ application }: { application: Application }) {
         }
 
         try {
-            const rawUserId = String(application.userId || '').trim();
-            const normalizedUserId = ['undefined', 'null', 'nan'].includes(rawUserId.toLowerCase()) ? '' : rawUserId;
-
-            if (normalizedUserId) {
-                const userDocRef = doc(firestore, `users/${normalizedUserId}/applications`, application.id);
-                await deleteDoc(userDocRef);
-            }
-
-            // Always attempt admin copy cleanup too. Some records are mirrored in both
-            // locations and leaving one behind keeps counts unchanged in list views.
-            if (adminDocRef) {
-                await deleteDoc(adminDocRef);
+            const idToken = await adminUser?.getIdToken?.();
+            if (!idToken) throw new Error('Unable to verify admin session. Please refresh and retry.');
+            const response = await fetch('/api/admin/applications/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                idToken,
+                applicationId: application.id,
+                userId: String(application.userId || '').trim() || null,
+              }),
+            });
+            const result = await response.json().catch(() => ({} as any));
+            if (!response.ok || !result?.success) {
+              throw new Error(String(result?.error || `Delete failed (${response.status})`));
             }
 
             toast({
@@ -4097,8 +4099,10 @@ function ApplicationDetailPageContent() {
         const data = (snap.data() || {}) as Record<string, unknown>;
         const incomingKaiserStatus = String(data.Kaiser_Status || data.kaiserStatus || '').trim();
         const incomingCalAIMStatus = String(data.CalAIM_Status || data.caspioCalAIMStatus || data.calaimStatus || '').trim();
-        const currentKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+        const currentKaiserStatus = String((application as any)?.kaiserStatus || (application as any)?.Kaiser_Status || '').trim();
         const currentCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
+        const manualLockUntilMs = Number((application as any)?.kaiserStatusManualLockUntilMs || 0);
+        const isManualLockActive = Number.isFinite(manualLockUntilMs) && manualLockUntilMs > Date.now();
 
         const updateData: Record<string, unknown> = {
           lastUpdated: serverTimestamp(),
@@ -4106,8 +4110,14 @@ function ApplicationDetailPageContent() {
         let shouldPersist = false;
 
         const shouldAutoSyncKaiserFromCache = isKaiserPlan && !showDraftKaiserStatusSection;
-        if (shouldAutoSyncKaiserFromCache && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus) {
+        if (
+          shouldAutoSyncKaiserFromCache &&
+          !isManualLockActive &&
+          incomingKaiserStatus &&
+          incomingKaiserStatus !== currentKaiserStatus
+        ) {
           updateData.kaiserStatus = incomingKaiserStatus;
+          updateData.Kaiser_Status = incomingKaiserStatus;
           updateData.kaiserStatusSyncedFromCacheAt = serverTimestamp();
           updateData.kaiserStatusSyncSource = 'caspio_members_cache_live';
           shouldPersist = true;
@@ -4136,7 +4146,7 @@ function ApplicationDetailPageContent() {
             ? ({
                 ...prev,
                 ...(shouldAutoSyncKaiserFromCache && incomingKaiserStatus && incomingKaiserStatus !== currentKaiserStatus
-                  ? { kaiserStatus: incomingKaiserStatus }
+                  ? { kaiserStatus: incomingKaiserStatus, Kaiser_Status: incomingKaiserStatus }
                   : {}),
                 ...(incomingCalAIMStatus && incomingCalAIMStatus !== currentCalAIMStatus
                   ? {
@@ -6558,6 +6568,46 @@ function ApplicationDetailPageContent() {
   const eligibilityCompleted = getComponentStatus('Eligibility Check') === 'Completed';
   const caspioPushed = Boolean((application as any)?.caspioSent);
   const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
+  const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
+  const assignedStaffEmail = String((application as any)?.assignedStaffEmail || '').trim();
+  const unacknowledgedDocsCount = (application.forms || []).filter((form: any) => {
+    const isCompleted = form?.status === 'Completed';
+    const isSummary = form?.name === 'CS Member Summary' || form?.name === 'CS Summary';
+    return isCompleted && !isSummary && !form?.acknowledged;
+  }).length;
+  const isRequiresRevision = String((application as any)?.status || '').trim().toLowerCase() === 'requires revision';
+  const referralSubmission = (application as any)?.kaiserReferralSubmission || {};
+  const referralStep5 = (application as any)?.kaiserReferralStep5 || {};
+  const referralAlreadySent = Boolean(
+    referralSubmission?.submitted ||
+      referralSubmission?.submittedAt ||
+      referralSubmission?.submittedAtIso ||
+      referralSubmission?.providerMessageId ||
+      referralStep5?.acknowledged ||
+      referralStep5?.acknowledgedAt ||
+      referralStep5?.acknowledgedAtIso
+  );
+  const hasRevisionPhase = (application.forms || []).some((form: any) => {
+    const formStatus = String(form?.status || '').trim().toLowerCase();
+    if (formStatus === 'requires revision') return true;
+    return Boolean(String(form?.revisionRequestedAt || '').trim() || String(form?.revisionRequestedReason || '').trim());
+  });
+  const hasRevisionEmailSent = (application.forms || []).some((form: any) => {
+    const sentAt = String(form?.revisionEmailSentAt || '').trim();
+    if (sentAt) return true;
+    const history = Array.isArray(form?.revisionHistory) ? form.revisionHistory : [];
+    return history.some((entry: any) => Boolean(entry?.emailed));
+  });
+  const kaiserManagerActionRequired =
+    isKaiserPlan &&
+    unacknowledgedDocsCount > 0 &&
+    !isRequiresRevision &&
+    !hasRevisionPhase &&
+    String((application as any)?.kaiserStatus || (application as any)?.Kaiser_Status || '')
+      .trim()
+      .toLowerCase() !== 'r&b sent pending ils contract' &&
+    !referralAlreadySent &&
+    !(isRequiresRevision && hasRevisionEmailSent);
   const staffAssigned = Boolean(
     String((application as any)?.assignedStaffId || '').trim() ||
     assignedStaffName
@@ -6578,7 +6628,7 @@ function ApplicationDetailPageContent() {
     ''
   ).trim();
   const currentKaiserStatus = (() => {
-    return String((application as any)?.kaiserStatus || '').trim();
+    return String((application as any)?.kaiserStatus || (application as any)?.Kaiser_Status || '').trim();
   })();
   const currentSocialWorkerHold = String(
     (application as any)?.holdForSocialWorkerStatus ||
@@ -8865,11 +8915,14 @@ function ApplicationDetailPageContent() {
       const retrievedClientId2 = String(data.member.clientId2 || '').trim();
       const retrievedKaiserStatus = String(data?.member?.kaiserStatus || '').trim();
       const shouldMarkComplete = isKaiserCompletionStatus(retrievedKaiserStatus);
+      const manualLockUntilMs = Date.now() + 5 * 60 * 1000;
       const patch = {
         clientId2: retrievedClientId2,
         client_ID2: retrievedClientId2,
         caspioClientId2: retrievedClientId2,
         ...(retrievedKaiserStatus ? { kaiserStatus: retrievedKaiserStatus, Kaiser_Status: retrievedKaiserStatus } : {}),
+        kaiserStatusManualLockUntilMs: manualLockUntilMs,
+        kaiserStatusSyncSource: 'manual-confirm-refresh',
         ...(shouldMarkComplete ? { status: 'Completed & Submitted' } : {}),
         caspioSent: true,
         caspioPushLastStatus: 'confirmed',
@@ -8914,6 +8967,10 @@ function ApplicationDetailPageContent() {
       if (timeoutId) clearTimeout(timeoutId);
       setIsConfirmingCaspioPush(false);
     }
+  };
+
+  const handleUpdateKaiserStatusFromCaspio = async () => {
+    await confirmCaspioPushAndRetrieveClientId2();
   };
 
   const updateKaiserTierLevel = async (tierLevel: string) => {
@@ -11052,6 +11109,7 @@ function ApplicationDetailPageContent() {
                       Submitted By {by} | {application.pathway} ({application.healthPlan})
                       {` • Submitted Date: ${submittedDate}`}
                       {processStatusLabel ? ` • Process: ${processStatusLabel}` : ''}
+                      {kaiserManagerActionRequired ? ' • Kaiser manager action required' : ''}
                     </>
                   );
                 })()}
@@ -11204,6 +11262,27 @@ function ApplicationDetailPageContent() {
                           ? `Kaiser Status: ${currentKaiserStatus}`
                           : 'Kaiser Status: Pending selection'}
                       </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="ml-2 h-7 px-2 text-xs"
+                        onClick={() => void handleUpdateKaiserStatusFromCaspio()}
+                        disabled={isConfirmingCaspioPush}
+                      >
+                        {isConfirmingCaspioPush ? (
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-1 h-3 w-3" />
+                        )}
+                        Update status
+                      </Button>
+                    </div>
+                  ) : null}
+                  {kaiserManagerActionRequired ? (
+                    <div className="flex items-center gap-2 text-base font-semibold text-red-700">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-600" />
+                      <span>Kaiser manager action required</span>
                     </div>
                   ) : null}
                   {isKaiserPlan ? (
@@ -12945,7 +13024,7 @@ function ApplicationDetailPageContent() {
               disabled={isConfirmingCaspioPush}
             >
               {isConfirmingCaspioPush ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-              Test if pushed + retrieve Client_ID2
+              Update Kaiser Status + retrieve Client_ID2
             </Button>
             </div>
             <div className="order-[-20]">

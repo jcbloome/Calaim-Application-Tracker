@@ -58,6 +58,14 @@ const isCompletedApplication = (app: any) => {
   return isKaiserCompletionStatus((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status);
 };
 
+const isSoftDeletedApplication = (app: any) => {
+  const status = String((app as any)?.status || '').trim().toLowerCase();
+  if (status === 'deleted') return true;
+  if (Boolean((app as any)?.isDeleted)) return true;
+  if (String((app as any)?.deletedAt || '').trim()) return true;
+  return false;
+};
+
 const getAssignedStaffLabel = (app: any): string => {
   const candidates = [
     app?.assignedStaffName,
@@ -324,7 +332,8 @@ function AdminApplicationsPageContent() {
         aliases.forEach((alias) => aliasToCanonical.set(alias, canonicalId));
       });
 
-      setAllApplications(Array.from(byId.values()));
+      const liveApplications = Array.from(byId.values()).filter((app) => !isSoftDeletedApplication(app));
+      setAllApplications(liveApplications);
       
     } catch (err: any) {
       setError(err);
@@ -609,39 +618,21 @@ function AdminApplicationsPageContent() {
     );
     if (!confirmDelete) return;
     
-    const batch = writeBatch(firestore);
-    let deletedCount = 0;
-    
-    selected.forEach(id => {
-      const appToDelete = allApplications?.find(app => app.id === id);
-      if (!appToDelete) return;
+    const idToken = await user?.getIdToken?.();
+    if (!idToken) {
+      toast({
+        variant: 'destructive',
+        title: 'Session required',
+        description: 'Please refresh and sign in again to delete applications.',
+      });
+      return;
+    }
 
-      let didQueueDelete = false;
-      const rawUserId = String(appToDelete.userId || '').trim();
-      const normalizedUserId = ['undefined', 'null', 'nan'].includes(rawUserId.toLowerCase()) ? '' : rawUserId;
-      const isAdminSource =
-        appToDelete.source === 'admin' ||
-        appToDelete.id.startsWith('admin_app_') ||
-        !normalizedUserId;
+    const targets = selected
+      .map((id) => allApplications?.find((app) => app.id === id))
+      .filter(Boolean) as Array<WithId<Application & FormValues>>;
 
-      if (normalizedUserId) {
-        const docRef = doc(firestore, `users/${normalizedUserId}/applications`, id);
-        batch.delete(docRef);
-        didQueueDelete = true;
-      }
-
-      if (isAdminSource) {
-        const docRef = doc(firestore, `applications`, id);
-        batch.delete(docRef);
-        didQueueDelete = true;
-      }
-
-      if (didQueueDelete) {
-        deletedCount++;
-      }
-    });
-
-    if (deletedCount === 0) {
+    if (targets.length === 0) {
       toast({
         variant: 'destructive',
         title: 'No Applications to Delete',
@@ -651,13 +642,29 @@ function AdminApplicationsPageContent() {
     }
 
     try {
-      await batch.commit();
+      let deletedCount = 0;
+      let failedCount = 0;
+      for (const appToDelete of targets) {
+        const response = await fetch('/api/admin/applications/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idToken,
+            applicationId: appToDelete.id,
+            userId: String(appToDelete.userId || '').trim() || null,
+          }),
+        });
+        const result = await response.json().catch(() => ({} as any));
+        if (response.ok && result?.success) deletedCount += 1;
+        else failedCount += 1;
+      }
+
+      await fetchAllApplications();
       toast({
         title: 'Applications Deleted',
-        description: `${deletedCount} application(s) have been successfully deleted.`,
+        description:
+          `${deletedCount} application(s) deleted.` + (failedCount ? ` ${failedCount} failed.` : ''),
       });
-      // Refetch data
-       setAllApplications(prev => prev.filter(app => !selected.includes(app.id)));
       setSelected([]);
     } catch (error: any) {
       toast({
@@ -692,6 +699,21 @@ function AdminApplicationsPageContent() {
     setMemberFilter('');
     setReviewFilter('all');
     setSummaryViewFilter('all');
+  };
+
+  const applySummaryViewFilter = (
+    target: 'all' | 'complete' | 'in-process' | 'on-hold' | 'non-complete'
+  ) => {
+    setHealthPlanFilter('all');
+    setPathwayFilter('all');
+    setStatusFilter('all');
+    setCaseActivityFilter('all');
+    setInternalStatusFilter('all');
+    setStaffFilter('all');
+    setIntakeFilter('all');
+    setMemberFilter('');
+    setReviewFilter('all');
+    setSummaryViewFilter(target);
   };
 
   const handlePullCurrentKaiserStatusForAll = async () => {
@@ -984,7 +1006,7 @@ function AdminApplicationsPageContent() {
                         <div className="mb-1 grid grid-cols-1 gap-2 sm:grid-cols-4">
                           <button
                             type="button"
-                            onClick={resetToAllApplicationsView}
+                            onClick={() => applySummaryViewFilter('all')}
                             className={cn(
                               'rounded-md border px-3 py-2 text-left text-sm transition-colors',
                               summaryViewFilter === 'all' ? 'border-primary bg-primary/10' : 'bg-muted/40 hover:bg-muted/60'
@@ -995,7 +1017,7 @@ function AdminApplicationsPageContent() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setSummaryViewFilter('complete')}
+                            onClick={() => applySummaryViewFilter('complete')}
                             className={cn(
                               'rounded-md border px-3 py-2 text-left text-sm transition-colors',
                               summaryViewFilter === 'complete'
@@ -1008,7 +1030,7 @@ function AdminApplicationsPageContent() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setSummaryViewFilter('in-process')}
+                            onClick={() => applySummaryViewFilter('in-process')}
                             className={cn(
                               'rounded-md border px-3 py-2 text-left text-sm transition-colors',
                               summaryViewFilter === 'in-process'
@@ -1021,7 +1043,7 @@ function AdminApplicationsPageContent() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setSummaryViewFilter('on-hold')}
+                            onClick={() => applySummaryViewFilter('on-hold')}
                             className={cn(
                               'rounded-md border px-3 py-2 text-left text-sm transition-colors',
                               summaryViewFilter === 'on-hold'
@@ -1139,7 +1161,7 @@ function AdminApplicationsPageContent() {
                         <Button
                           variant={summaryViewFilter === 'all' ? 'secondary' : 'outline'}
                           onClick={() =>
-                            setSummaryViewFilter((prev) => (prev === 'all' ? 'non-complete' : 'all'))
+                            applySummaryViewFilter(summaryViewFilter === 'all' ? 'non-complete' : 'all')
                           }
                           className="whitespace-nowrap"
                         >

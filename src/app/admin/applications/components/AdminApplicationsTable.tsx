@@ -291,6 +291,45 @@ const getAssignedStaffLabel = (app: WithId<Application & FormValues>) => {
   return label || 'Staff unassigned';
 };
 
+const isKaiserManagerActionRequired = (
+  app: WithId<Application & FormValues>,
+  unacknowledgedDocsCount: number
+) => {
+  const isKaiserPlan = String(app.healthPlan || '').trim().toLowerCase().includes('kaiser');
+  if (!isKaiserPlan) return false;
+  if (unacknowledgedDocsCount <= 0) return false;
+  const forms = Array.isArray((app as any)?.forms) ? ((app as any).forms as any[]) : [];
+  const isRequiresRevision = String((app as any)?.status || '').trim().toLowerCase() === 'requires revision';
+  const hasRevisionPhase = forms.some((form: any) => {
+    const formStatus = String(form?.status || '').trim().toLowerCase();
+    if (formStatus === 'requires revision') return true;
+    return Boolean(String(form?.revisionRequestedAt || '').trim() || String(form?.revisionRequestedReason || '').trim());
+  });
+  if (isRequiresRevision || hasRevisionPhase) return false;
+  const kaiserStatus = normalizeKaiserStatus((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status);
+  if (kaiserStatus === 'r&b sent pending ils contract') return false;
+  const referral = (app as any)?.kaiserReferralSubmission || {};
+  const step5 = (app as any)?.kaiserReferralStep5 || {};
+  const referralSent = Boolean(
+    referral?.submitted ||
+      referral?.submittedAt ||
+      referral?.submittedAtIso ||
+      referral?.providerMessageId ||
+      step5?.acknowledged ||
+      step5?.acknowledgedAt ||
+      step5?.acknowledgedAtIso
+  );
+  if (referralSent) return false;
+  const hasRevisionEmailSent = forms.some((form: any) => {
+    const sentAt = String(form?.revisionEmailSentAt || '').trim();
+    if (sentAt) return true;
+    const history = Array.isArray(form?.revisionHistory) ? form.revisionHistory : [];
+    return history.some((entry: any) => Boolean(entry?.emailed));
+  });
+  if (isRequiresRevision && hasRevisionEmailSent) return false;
+  return true;
+};
+
 const getLatestStatusLabel = (app: WithId<Application & FormValues>) => {
   const referral = (app as any)?.kaiserReferralSubmission || {};
   const referralSent = Boolean(
@@ -1010,6 +1049,7 @@ export const AdminApplicationsTable = ({
               );
               const latestStatusLabel = getLatestStatusLabel(app);
               const staffLabel = getAssignedStaffLabel(app);
+              const kaiserManagerActionRequired = isKaiserManagerActionRequired(app, unacknowledgedDocsCount);
               const isAuthReceivedIntake = Boolean(
                 (app as any)?.kaiserAuthReceivedViaIls ||
                 String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
@@ -1108,6 +1148,12 @@ export const AdminApplicationsTable = ({
                           Skeleton - required fields pending
                         </Badge>
                       )}
+                      {kaiserManagerActionRequired ? (
+                        <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200">
+                          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600" />
+                          Kaiser manager action required
+                        </Badge>
+                      ) : null}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 break-words">
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy h:mm a')}` : 'Created: N/A'}
@@ -1171,6 +1217,14 @@ export const AdminApplicationsTable = ({
                       <span>{app.healthPlan}</span>
                     </div>
                     <div className="text-xs text-muted-foreground">{app.pathway}</div>
+                    {String(app.healthPlan || '').toLowerCase().includes('kaiser') ? (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Kaiser Status:{' '}
+                        <span className="font-medium text-foreground">
+                          {String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || 'N/A').trim() || 'N/A'}
+                        </span>
+                      </div>
+                    ) : null}
                 </TableCell>
                 <TableCell className="text-right">
                    <div className="inline-flex items-center gap-2">
@@ -1298,6 +1352,7 @@ export const AdminApplicationsTable = ({
             );
             const latestStatusLabel = getLatestStatusLabel(app);
             const staffLabel = getAssignedStaffLabel(app);
+            const kaiserManagerActionRequired = isKaiserManagerActionRequired(app, unacknowledgedDocsCount);
             const isAuthReceivedIntake = Boolean(
               (app as any)?.kaiserAuthReceivedViaIls ||
               String((app as any)?.intakeType || '').trim() === 'kaiser_auth_received_via_ils' ||
@@ -1381,6 +1436,12 @@ export const AdminApplicationsTable = ({
                           Skeleton - required fields pending
                         </Badge>
                       )}
+                      {kaiserManagerActionRequired ? (
+                        <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200 text-xs">
+                          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-red-600" />
+                          Action required
+                        </Badge>
+                      ) : null}
                     </div>
                     <div className="text-xs text-muted-foreground break-words">
                       {submissionDate ? `Created: ${format(submissionDate, 'MM/dd/yyyy h:mm a')}` : 'Created: N/A'}
@@ -1394,6 +1455,14 @@ export const AdminApplicationsTable = ({
                     <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
                       <span>{app.healthPlan}</span>
                     </div>
+                    {String(app.healthPlan || '').toLowerCase().includes('kaiser') ? (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Kaiser Status:{' '}
+                        <span className="font-medium text-foreground">
+                          {String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || 'N/A').trim() || 'N/A'}
+                        </span>
+                      </div>
+                    ) : null}
                     <div className="mt-2 space-y-1">
                       {group.incomingDocuments.length > 0 ? (
                         group.incomingDocuments.map((doc) => (

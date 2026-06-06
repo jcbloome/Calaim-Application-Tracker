@@ -242,6 +242,7 @@ function AdminHeader() {
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [alftPendingCount, setAlftPendingCount] = useState(0);
   const [kTierCount, setKTierCount] = useState(0);
+  const [kaiserManagerDocActionCount, setKaiserManagerDocActionCount] = useState(0);
   const [csIsNewFlag, setCsIsNewFlag] = useState(false);
   const [reviewPopupPrefs, setReviewPopupPrefs] = useState<{
     enabled: boolean;
@@ -667,6 +668,23 @@ function AdminHeader() {
           members: Map<string, { name: string; plan: 'Kaiser' | 'Health Net'; url: string; count: number }>;
         }
       >();
+      const normalizeIdentity = (value: string) =>
+        String(value || '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, ' ');
+      const hasAliasHit = (value: string, aliases: string[]) => {
+        const normalized = normalizeIdentity(value);
+        if (!normalized) return false;
+        return aliases.some((alias) => {
+          const a = normalizeIdentity(alias);
+          return Boolean(a) && (normalized === a || normalized.includes(a));
+        });
+      };
+      const isKaiserManagerAlias = (staffValue: string, staffKeyValue: string) =>
+        hasAliasHit(staffValue, ['jason', 'jason@carehomefinders.com', 'deydry', 'dedry', 'deydry@carehomefinders.com']) ||
+        hasAliasHit(staffKeyValue, ['jason', 'jason@carehomefinders.com', 'deydry', 'dedry', 'deydry@carehomefinders.com']);
+      let nextKaiserManagerDocActions = 0;
 
       dedupedApps.forEach((app: any) => {
         const memberName = `${app.memberFirstName || 'Unknown'} ${app.memberLastName || 'Member'}`.trim();
@@ -687,6 +705,41 @@ function AdminHeader() {
         const assignedStaffKey = getAssignedStaffKeyFromApp(app, assignedStaffLabel);
 
         const forms = app.forms || [];
+        const nonSummaryPendingDocs = forms.filter((form: any) => {
+          const isCompleted = form?.status === 'Completed';
+          const isSummary = form?.name === 'CS Member Summary' || form?.name === 'CS Summary';
+          return isCompleted && !isSummary && !form?.acknowledged;
+        });
+        const unacknowledgedDocsCount = nonSummaryPendingDocs.length;
+        const isRequiresRevision = String(app?.status || '').trim().toLowerCase() === 'requires revision';
+        const hasRevisionPhase = forms.some((form: any) => {
+          const formStatus = String(form?.status || '').trim().toLowerCase();
+          if (formStatus === 'requires revision') return true;
+          return Boolean(String(form?.revisionRequestedAt || '').trim() || String(form?.revisionRequestedReason || '').trim());
+        });
+        const kaiserStatusNormalized = String(app?.kaiserStatus || app?.Kaiser_Status || '').trim().toLowerCase();
+        const referralSubmission = app?.kaiserReferralSubmission || {};
+        const referralStep5 = app?.kaiserReferralStep5 || {};
+        const referralAlreadySent = Boolean(
+          referralSubmission?.submitted ||
+            referralSubmission?.submittedAt ||
+            referralSubmission?.submittedAtIso ||
+            referralSubmission?.providerMessageId ||
+            referralStep5?.acknowledged ||
+            referralStep5?.acknowledgedAt ||
+            referralStep5?.acknowledgedAtIso
+        );
+        if (
+          isKaiser &&
+          unacknowledgedDocsCount > 0 &&
+          isKaiserManagerAlias(assignedStaffLabel, assignedStaffKey) &&
+          !isRequiresRevision &&
+          !hasRevisionPhase &&
+          kaiserStatusNormalized !== 'r&b sent pending ils contract' &&
+          !referralAlreadySent
+        ) {
+          nextKaiserManagerDocActions += unacknowledgedDocsCount;
+        }
 
         // CS Summary needs review: completed CS Summary + not checked.
         const hasCompletedSummary = forms.some((form: any) =>
@@ -877,6 +930,7 @@ function AdminHeader() {
           }))
           .sort((a, b) => b.total - a.total || a.staff.localeCompare(b.staff))
       );
+      setKaiserManagerDocActionCount(nextKaiserManagerDocActions);
 
       // Review notifications (CS + documents) are only for recipients explicitly enabled in system settings.
       // - CS: can auto-expand (low volume).
@@ -1383,13 +1437,6 @@ function AdminHeader() {
     }, 0);
 
     const johnDocActionCount = countDocsForAliases(['john', 'john@carehomefinders.com']);
-    const kaiserManagerDocActionCount = countDocsForAliases([
-      'jason',
-      'jason@carehomefinders.com',
-      'deydry',
-      'deydry@carehomefinders.com',
-    ]);
-
     const items: Array<{ key: string; label: string; href: string; dot: string; dim?: boolean; title?: string; isNew?: boolean }> = [];
     if (csLabel) {
       items.push({

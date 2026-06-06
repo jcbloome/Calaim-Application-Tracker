@@ -16,6 +16,30 @@ const buildEqualsClause = (fieldName: string, value: unknown) => {
 };
 
 const MEMBERS_TABLE = 'CalAIM_tbl_Members';
+const KAISER_STATUS_TABLE = 'CalAIM_Kaiser_Status';
+
+const getRowClientId2 = (row: Record<string, any>) =>
+  clean(
+    row?.client_ID2 ||
+      row?.Client_ID2 ||
+      row?.clientId2 ||
+      row?.clientid2 ||
+      row?.ClientID2 ||
+      row?.Record_ID
+  );
+
+const normalizeClientIdComparable = (value: unknown) => {
+  const raw = clean(value);
+  if (!raw) return '';
+  if (/^\d+$/.test(raw)) return String(Number(raw));
+  return raw.toLowerCase();
+};
+
+const clientIdsMatch = (a: unknown, b: unknown) => {
+  const left = normalizeClientIdComparable(a);
+  const right = normalizeClientIdComparable(b);
+  return Boolean(left && right && left === right);
+};
 
 const fetchMemberCandidates = async (
   baseUrl: string,
@@ -23,32 +47,208 @@ const fetchMemberCandidates = async (
   whereClause: string,
   limit = 5
 ) => {
+  const selectCandidates = [
+    // Primary projection
+    'PK_ID,Client_ID2,Senior_First,Senior_Last,CalAIM_MCO,Kaiser_Status,Kaiser_ID_Status',
+    // Fallback: include lowercase variant for environments that use it
+    'PK_ID,client_ID2,Senior_First,Senior_Last,CalAIM_MCO,Kaiser_Status,Kaiser_ID_Status',
+    // Minimal fallback to avoid hard failure on unknown columns
+    'PK_ID,Client_ID2,Kaiser_Status,Kaiser_ID_Status,Senior_First,Senior_Last',
+  ];
+
+  for (const selectClause of selectCandidates) {
+    const url =
+      `${baseUrl}/tables/${MEMBERS_TABLE}/records` +
+      `?q.where=${encodeURIComponent(whereClause)}` +
+      `&q.select=${encodeURIComponent(selectClause)}` +
+      `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
+      `&q.limit=${limit}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      console.warn('Caspio confirm lookup failed for select-clause:', {
+        status: response.status,
+        whereClause,
+        selectClause,
+        errorPreview: clean(errorText).slice(0, 500),
+      });
+      continue;
+    }
+    const json = await response.json().catch(() => ({} as any));
+    const rows = Array.isArray(json?.Result) ? (json.Result as Array<Record<string, any>>) : [];
+    if (rows.length > 0) return rows;
+  }
+
+  return [] as Array<Record<string, any>>;
+};
+
+const fetchMemberCandidatesByClientId2 = async (
+  baseUrl: string,
+  token: string,
+  hintedClientId2: string
+) => {
+  const normalizedClientId2 = clean(hintedClientId2);
+  if (!normalizedClientId2) return [] as Array<Record<string, any>>;
+
+  const fieldCandidates = [
+    'client_ID2',
+    'Client_ID2',
+    'clientid2',
+    'ClientID2',
+  ];
+
+  const whereCandidates = new Set<string>();
+  fieldCandidates.forEach((fieldName) => {
+    const dynamicClause = buildEqualsClause(fieldName, normalizedClientId2);
+    if (dynamicClause) whereCandidates.add(dynamicClause);
+    // Always try string-equals too, because many Caspio numeric-looking IDs are stored in text columns.
+    whereCandidates.add(`${fieldName}='${esc(normalizedClientId2)}'`);
+    if (looksLikeNumericId(normalizedClientId2)) {
+      whereCandidates.add(`${fieldName}=${normalizedClientId2}`);
+    }
+  });
+
+  for (const whereClause of whereCandidates) {
+    const rows = await fetchMemberCandidates(baseUrl, token, whereClause, 3);
+    if (rows.length > 0) return rows;
+  }
+
+  return [] as Array<Record<string, any>>;
+};
+
+const fetchMemberByClientId2WithoutSelect = async (
+  baseUrl: string,
+  token: string,
+  hintedClientId2: string
+) => {
+  const normalizedClientId2 = clean(hintedClientId2);
+  if (!normalizedClientId2) return [] as Array<Record<string, any>>;
+
+  const whereCandidates = [
+    `Client_ID2='${esc(normalizedClientId2)}'`,
+    `client_ID2='${esc(normalizedClientId2)}'`,
+  ];
+  if (looksLikeNumericId(normalizedClientId2)) {
+    whereCandidates.push(`Client_ID2=${normalizedClientId2}`);
+    whereCandidates.push(`client_ID2=${normalizedClientId2}`);
+  }
+
+  for (const whereClause of whereCandidates) {
+    const url =
+      `${baseUrl}/tables/${MEMBERS_TABLE}/records` +
+      `?q.where=${encodeURIComponent(whereClause)}` +
+      `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
+      `&q.limit=1`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    });
+    if (!response.ok) continue;
+    const json = await response.json().catch(() => ({} as any));
+    const rows = Array.isArray(json?.Result) ? (json.Result as Array<Record<string, any>>) : [];
+    if (rows.length > 0) return rows;
+  }
+
+  return [] as Array<Record<string, any>>;
+};
+
+const fetchMemberByClientId2ByScan = async (
+  baseUrl: string,
+  token: string,
+  hintedClientId2: string
+) => {
+  const target = clean(hintedClientId2);
+  if (!target) return [] as Array<Record<string, any>>;
+
+  const pageSize = 200;
+  const maxPages = 20;
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const url =
+      `${baseUrl}/tables/${MEMBERS_TABLE}/records` +
+      `?q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
+      `&q.pageSize=${pageSize}` +
+      `&q.pageNumber=${pageNumber}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    });
+    if (!response.ok) continue;
+    const json = await response.json().catch(() => ({} as any));
+    const rows = Array.isArray(json?.Result) ? (json.Result as Array<Record<string, any>>) : [];
+    if (rows.length === 0) break;
+
+    const match = rows.find((row) => clientIdsMatch(getRowClientId2(row), target));
+    if (match) return [match];
+    if (rows.length < pageSize) break;
+  }
+
+  return [] as Array<Record<string, any>>;
+};
+
+const resolveKaiserStatusFromLookup = async (
+  baseUrl: string,
+  token: string,
+  kaiserIdStatusValue: unknown
+) => {
+  const normalized = clean(kaiserIdStatusValue);
+  if (!normalized || !looksLikeNumericId(normalized)) return '';
+  const whereById = buildEqualsClause('Kaiser_ID_Status', normalized);
+  if (!whereById) return '';
   const url =
-    `${baseUrl}/tables/${MEMBERS_TABLE}/records` +
-    `?q.where=${encodeURIComponent(whereClause)}` +
-    `&q.select=${encodeURIComponent('PK_ID,client_ID2,Client_ID2,Senior_First,Senior_Last,CalAIM_MCO,Kaiser_Status,Kaiser_ID_Status')}` +
-    `&q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
-    `&q.limit=${limit}`;
+    `${baseUrl}/tables/${KAISER_STATUS_TABLE}/records` +
+    `?q.where=${encodeURIComponent(whereById)}` +
+    `&q.select=${encodeURIComponent('Kaiser_ID_Status,Status')}` +
+    `&q.limit=1`;
   const response = await fetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
+    cache: 'no-store',
   });
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    // Some field candidates can be invalid in certain Caspio environments.
-    // Treat individual lookup failures as non-fatal and continue fallback matching.
-    console.warn('Caspio confirm lookup failed for where-clause:', {
-      status: response.status,
-      whereClause,
-      errorPreview: clean(errorText).slice(0, 500),
-    });
-    return [] as Array<Record<string, any>>;
-  }
+  if (!response.ok) return '';
   const json = await response.json().catch(() => ({} as any));
-  return Array.isArray(json?.Result) ? (json.Result as Array<Record<string, any>>) : [];
+  const row = Array.isArray(json?.Result) ? json.Result[0] : null;
+  return clean(row?.Status);
+};
+
+const resolvePreferredKaiserStatus = async (
+  baseUrl: string,
+  token: string,
+  row: Record<string, any>
+) => {
+  const kaiserIdStatus = clean(row?.Kaiser_ID_Status);
+  const kaiserStatus = clean(row?.Kaiser_Status);
+
+  // Prefer Kaiser_ID_Status when it is already a text label.
+  if (kaiserIdStatus && !looksLikeNumericId(kaiserIdStatus)) return kaiserIdStatus;
+
+  // Fallback to Kaiser_Status if it is a text label.
+  if (kaiserStatus && !looksLikeNumericId(kaiserStatus)) return kaiserStatus;
+
+  // If Kaiser_ID_Status is numeric, resolve the label from CalAIM_Kaiser_Status.
+  if (kaiserIdStatus && looksLikeNumericId(kaiserIdStatus)) {
+    const resolved = await resolveKaiserStatusFromLookup(baseUrl, token, kaiserIdStatus);
+    if (resolved) return resolved;
+  }
+
+  return kaiserStatus || kaiserIdStatus;
 };
 
 export async function POST(request: NextRequest) {
@@ -85,12 +285,12 @@ export async function POST(request: NextRequest) {
 
     let candidates: Array<Record<string, any>> = [];
     if (hintedClientId2) {
-      const clientIdFields = ['client_ID2', 'Client_ID2', 'clientid2'];
-      for (const fieldName of clientIdFields) {
-        if (candidates.length > 0) break;
-        const whereByClient = buildEqualsClause(fieldName, hintedClientId2);
-        if (!whereByClient) continue;
-        candidates = await fetchMemberCandidates(baseUrl, token, whereByClient, 3);
+      candidates = await fetchMemberCandidatesByClientId2(baseUrl, token, hintedClientId2);
+      if (candidates.length === 0) {
+        candidates = await fetchMemberByClientId2WithoutSelect(baseUrl, token, hintedClientId2);
+      }
+      if (candidates.length === 0) {
+        candidates = await fetchMemberByClientId2ByScan(baseUrl, token, hintedClientId2);
       }
     }
 
@@ -122,7 +322,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const row = candidates.find((candidate) => clean(candidate?.client_ID2 || candidate?.Client_ID2)) || candidates[0] || null;
+    const row = candidates.find((candidate) => getRowClientId2(candidate)) || candidates[0] || null;
     if (!row) {
       return NextResponse.json({
         success: true,
@@ -131,7 +331,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const clientId2 = clean(row?.client_ID2 || row?.Client_ID2);
+    const clientId2 = getRowClientId2(row);
+    const preferredKaiserStatus = await resolvePreferredKaiserStatus(baseUrl, token, row);
     return NextResponse.json({
       success: true,
       found: Boolean(clientId2),
@@ -144,7 +345,7 @@ export async function POST(request: NextRequest) {
         firstName: clean(row?.Senior_First),
         lastName: clean(row?.Senior_Last),
         calaimMco: clean(row?.CalAIM_MCO),
-        kaiserStatus: clean(row?.Kaiser_Status || row?.Kaiser_ID_Status),
+        kaiserStatus: preferredKaiserStatus,
       },
     });
   } catch (error: any) {
