@@ -57,7 +57,7 @@ const uploadableDocumentTypes = [
 
 export default function PrintablePackagePage() {
     const { toast } = useToast();
-    const { user, isUserLoading } = useUser();
+    const { user } = useUser();
     const storage = useStorage();
     const [isUploading, setIsUploading] = useState(false);
     const [files, setFiles] = useState<FileList | null>(null);
@@ -327,7 +327,7 @@ export default function PrintablePackagePage() {
                         <CardDescription>Upload completed forms individually for processing and tracking.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        {!user && !isUserLoading && (
+                        {!user && (
                             <Alert className="mb-4">
                                 <AlertCircle className="h-4 w-4" />
                                 <AlertDescription>
@@ -335,23 +335,21 @@ export default function PrintablePackagePage() {
                                 </AlertDescription>
                             </Alert>
                         )}
-                        
-                        {isUserLoading && (
-                            <div className="flex items-center justify-center py-8">
-                                <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                                <span>Checking authentication...</span>
-                            </div>
-                        )}
 
-                        {user && (
-                            <div className="space-y-4">
-                                    <form onSubmit={handleUpload} className="space-y-4">
+                        <div className="space-y-4">
+                            <form onSubmit={handleUpload} className="space-y-4">
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                                     <div className="flex items-start gap-3">
                                         <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
                                         <div className="text-sm text-blue-800">
-                                            <p className="font-medium mb-1">Signed in as: {user.email}</p>
-                                            <p>Your uploaded documents will be associated with your account for easy tracking.</p>
+                                            <p className="font-medium mb-1">
+                                              {user ? `Signed in as: ${user.email}` : 'Not signed in'}
+                                            </p>
+                                            <p>
+                                              {user
+                                                ? 'Your uploaded documents will be associated with your account for easy tracking.'
+                                                : 'Sign in first to upload documents and attach them to your account.'}
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
@@ -492,7 +490,7 @@ export default function PrintablePackagePage() {
                                         Accepted formats: PDF, Word documents, Images (JPG, PNG)
                                     </p>
                                 </div>
-                                <Button type="submit" className="w-full" disabled={isUploading || !documentType}>
+                                <Button type="submit" className="w-full" disabled={isUploading || !documentType || !user}>
                                     {isUploading ? (
                                         <>
                                             <Loader2 className="mr-2 h-4 w-4 animate-spin"/> 
@@ -506,8 +504,7 @@ export default function PrintablePackagePage() {
                                     )}
                                 </Button>
                             </form>
-                            </div>
-                        )}
+                        </div>
                     </CardContent>
                 </Card>
             </div>

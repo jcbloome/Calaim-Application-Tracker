@@ -235,11 +235,11 @@ function LoginPageContent() {
   };
 
   
-  if (isUserLoading || isForcingFreshLogin || Boolean(user)) {
+  if (isForcingFreshLogin || Boolean(user)) {
       return (
           <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
               <Loader2 className="h-8 w-8 animate-spin" />
-              <p className="ml-2">Loading session...</p>
+              <p className="ml-2">Loading...</p>
           </div>
       );
   }
@@ -357,7 +357,7 @@ export default function LoginPage() {
       fallback={
         <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
           <Loader2 className="h-8 w-8 animate-spin" />
-          <p className="ml-2">Loading session...</p>
+          <p className="ml-2">Loading...</p>
         </div>
       }
     >

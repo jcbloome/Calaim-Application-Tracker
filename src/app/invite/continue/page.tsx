@@ -128,7 +128,7 @@ function ContinueInvitePageContent() {
               </Alert>
             )}
 
-            {!isUserLoading && !user && (
+            {!user && (
               <Alert>
                 <AlertTitle>Sign in required</AlertTitle>
                 <AlertDescription className="space-y-2">
@@ -145,14 +145,7 @@ function ContinueInvitePageContent() {
               </Alert>
             )}
 
-            {isUserLoading && (
-              <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Checking account session...
-              </div>
-            )}
-
-            {!isUserLoading && user && (
+            {user && (
               <form onSubmit={onLink} className="space-y-4">
                 {laneError && (
                   <Alert variant="destructive">
