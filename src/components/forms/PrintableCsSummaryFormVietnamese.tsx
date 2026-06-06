@@ -48,9 +48,13 @@ export function PrintableCsSummaryFormVietnamese({
       buildField({ label: 'Dien thoai thanh vien', value: data.memberPhone, width: 'half' }),
       buildField({ label: 'Email thanh vien', value: data.memberEmail, width: 'half' }),
       buildRow([
-        buildField({ label: 'So Medi-Cal', value: data.memberMediCalNum, placeholder: '9XXXXXXXA', required: true, width: 'half' }),
-        buildField({ label: 'Xac nhan so Medi-Cal', value: data.confirmMemberMediCalNum, placeholder: '9XXXXXXXA', required: true, width: 'half' }),
+        buildField({ label: 'So Medi-Cal', value: data.memberMediCalNum, required: true, width: 'half' }),
+        buildField({ label: 'Xac nhan so Medi-Cal', value: data.confirmMemberMediCalNum, required: true, width: 'half' }),
       ]),
+      React.createElement('div', {
+        key: 'medi-cal-format-tip',
+        className: 'col-span-full -mt-2 text-xs italic text-gray-500 print:text-black'
+      }, 'Luu y: dinh dang so Medi-Cal vi du: 9XXXXXXXA.'),
       buildRow([
         buildField({ label: 'Ma ho so y te (MRN)', value: data.memberMrn, required: true, width: 'half' }),
         buildField({ label: 'Xac nhan MRN', value: data.confirmMemberMrn, required: true, width: 'half' }),

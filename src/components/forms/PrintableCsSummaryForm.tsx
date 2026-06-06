@@ -91,18 +91,19 @@ export function PrintableCsSummaryForm(props: PrintableCsSummaryFormProps) {
           <PrintableField
             label="Medi-Cal Number"
             value={data.memberMediCalNum}
-            placeholder="9XXXXXXXA"
             required
             width="half"
           />
           <PrintableField
             label="Confirm Medi-Cal Number"
             value={data.confirmMemberMediCalNum}
-            placeholder="9XXXXXXXA"
             required
             width="half"
           />
         </PrintableFormRow>
+        <div className="col-span-full -mt-2 text-xs italic text-gray-500 print:text-black">
+          Tip: Medi-Cal format example is 9XXXXXXXA.
+        </div>
         
         <PrintableFormRow>
           <PrintableField

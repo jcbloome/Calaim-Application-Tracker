@@ -48,9 +48,13 @@ export function PrintableCsSummaryFormSpanish({
       buildField({ label: 'Teléfono del Miembro', value: data.memberPhone, width: 'half' }),
       buildField({ label: 'Correo Electrónico del Miembro', value: data.memberEmail, width: 'half' }),
       buildRow([
-        buildField({ label: 'Número de Medi-Cal', value: data.memberMediCalNum, placeholder: '9XXXXXXXA', required: true, width: 'half' }),
-        buildField({ label: 'Confirmar Número de Medi-Cal', value: data.confirmMemberMediCalNum, placeholder: '9XXXXXXXA', required: true, width: 'half' }),
+        buildField({ label: 'Número de Medi-Cal', value: data.memberMediCalNum, required: true, width: 'half' }),
+        buildField({ label: 'Confirmar Número de Medi-Cal', value: data.confirmMemberMediCalNum, required: true, width: 'half' }),
       ]),
+      React.createElement('div', {
+        key: 'medi-cal-format-tip',
+        className: 'col-span-full -mt-2 text-xs italic text-gray-500 print:text-black'
+      }, 'Tip: formato de Medi-Cal, por ejemplo: 9XXXXXXXA.'),
       buildRow([
         buildField({ label: 'Número de Registro Médico (MRN)', value: data.memberMrn, required: true, width: 'half' }),
         buildField({ label: 'Confirmar MRN', value: data.confirmMemberMrn, required: true, width: 'half' }),
