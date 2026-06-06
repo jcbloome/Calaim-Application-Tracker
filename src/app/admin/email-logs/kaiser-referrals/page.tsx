@@ -449,7 +449,7 @@ function KaiserReferralEmailLogsPageContent() {
         <CardHeader>
           <CardTitle>Kaiser Referral Submission History</CardTitle>
           <CardDescription>
-            Includes submitted time, submitted by staff, member, recipients, and delivery status.
+            Includes submitted date/time, Submitted By staff, member, recipients, and delivery status.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -692,8 +692,8 @@ function KaiserReferralEmailLogsPageContent() {
                     {isDetailsOpen ? (
                       <>
                         <div className="mt-3 grid gap-2 text-sm md:grid-cols-2">
-                          <div><span className="font-medium">Submitted:</span> {toDateLabel(row.createdAt)}</div>
-                          <div><span className="font-medium">Submitted by:</span> {submittedByName}</div>
+                          <div><span className="font-medium">Submitted Date:</span> {toDateLabel(row.createdAt)}</div>
+                          <div><span className="font-medium">Submitted By:</span> {submittedByName}</div>
                           <div><span className="font-medium">Staff email:</span> {submittedByEmail || 'N/A'}</div>
                           <div><span className="font-medium">Member:</span> {memberName}</div>
                           <div><span className="font-medium">MRN:</span> {memberMrn}</div>

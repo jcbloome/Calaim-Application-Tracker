@@ -779,7 +779,7 @@ function StaffApplicationTracker({ application }: { application: Application }) 
                     </DialogTrigger>
                 </CardContent>
             </Card>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Staff Application Tracker</DialogTitle>
                     <DialogDescription>Internal progress for the {application.healthPlan} pathway.</DialogDescription>
@@ -2420,7 +2420,9 @@ function AdminActions({ application }: { application: Application }) {
                 await deleteDoc(userDocRef);
             }
 
-            if (isAdminSource && adminDocRef) {
+            // Always attempt admin copy cleanup too. Some records are mirrored in both
+            // locations and leaving one behind keeps counts unchanged in list views.
+            if (adminDocRef) {
                 await deleteDoc(adminDocRef);
             }
 
@@ -2498,7 +2500,7 @@ function AdminActions({ application }: { application: Application }) {
                       <DialogTrigger asChild>
                         <Button variant="secondary" className="w-full">Set Internal Processing Status</Button>
                       </DialogTrigger>
-                      <DialogContent>
+                      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle>Internal Processing Status</DialogTitle>
                           <DialogDescription>Set admin tracking status (notifies no one by default).</DialogDescription>
@@ -2559,7 +2561,7 @@ function AdminActions({ application }: { application: Application }) {
                           Schedule Next Step in Calendar
                         </Button>
                       </DialogTrigger>
-                      <DialogContent>
+                      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle>Schedule Next Step in Calendar</DialogTitle>
                           <DialogDescription>Add a follow-up date to the daily task calendar for this member.</DialogDescription>
@@ -2662,7 +2664,7 @@ function AdminActions({ application }: { application: Application }) {
                 </CardContent>
                 )}
             </Card>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Admin Actions</DialogTitle>
                     <DialogDescription>Update status and notify the referrer.</DialogDescription>
@@ -8768,6 +8770,17 @@ function ApplicationDetailPageContent() {
 
   const confirmCaspioPushAndRetrieveClientId2 = async () => {
     if (!docRef || !application) return;
+    const normalizeKaiserStatus = (value: unknown) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/[-_]+/g, ' ')
+        .trim();
+    const isKaiserCompletionStatus = (value: unknown) => {
+      const normalized = normalizeKaiserStatus(value);
+      return normalized === 'final at rfe' || normalized === 'r&b sent pending ils contract';
+    };
     setIsConfirmingCaspioPush(true);
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
@@ -8851,11 +8864,13 @@ function ApplicationDetailPageContent() {
       }
       const retrievedClientId2 = String(data.member.clientId2 || '').trim();
       const retrievedKaiserStatus = String(data?.member?.kaiserStatus || '').trim();
+      const shouldMarkComplete = isKaiserCompletionStatus(retrievedKaiserStatus);
       const patch = {
         clientId2: retrievedClientId2,
         client_ID2: retrievedClientId2,
         caspioClientId2: retrievedClientId2,
-        ...(retrievedKaiserStatus ? { kaiserStatus: retrievedKaiserStatus } : {}),
+        ...(retrievedKaiserStatus ? { kaiserStatus: retrievedKaiserStatus, Kaiser_Status: retrievedKaiserStatus } : {}),
+        ...(shouldMarkComplete ? { status: 'Completed & Submitted' } : {}),
         caspioSent: true,
         caspioPushLastStatus: 'confirmed',
         createdByAdmin: false,
@@ -8877,7 +8892,7 @@ function ApplicationDetailPageContent() {
       toast({
         title: 'Caspio record confirmed',
         description: retrievedKaiserStatus
-          ? `Retrieved Client_ID2: ${retrievedClientId2}. Kaiser Status synced: ${retrievedKaiserStatus}`
+          ? `Retrieved Client_ID2: ${retrievedClientId2}. Kaiser Status synced: ${retrievedKaiserStatus}${shouldMarkComplete ? ' (marked complete)' : ''}`
           : `Found pushed Caspio record and retrieved Client_ID2: ${retrievedClientId2}`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
@@ -11028,9 +11043,14 @@ function ApplicationDetailPageContent() {
                   const name = String(application.referrerName || user?.displayName || 'User').trim();
                   const email = String((application as any)?.referrerEmail || '').trim();
                   const by = email ? `${name} (${email})` : name;
+                  const submittedDate =
+                    formatDateTimeValue((application as any)?.submissionDate) ||
+                    formatDateTimeValue((application as any)?.createdAt) ||
+                    'N/A';
                   return (
                     <>
-                      Submitted by {by} | {application.pathway} ({application.healthPlan})
+                      Submitted By {by} | {application.pathway} ({application.healthPlan})
+                      {` • Submitted Date: ${submittedDate}`}
                       {processStatusLabel ? ` • Process: ${processStatusLabel}` : ''}
                     </>
                   );

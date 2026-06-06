@@ -8,7 +8,6 @@ import { collection, doc, writeBatch, getDocs, collectionGroup, setDoc, serverTi
 import type { Application } from '@/lib/definitions';
 import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { AdminApplicationsTable } from './components/AdminApplicationsTable';
-import { ApplicationFileSystemView } from './components/ApplicationFileSystemView';
 import { Button } from '@/components/ui/button';
 import { Trash2, Database, AlertTriangle, Plus, FolderArchive } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -32,6 +31,32 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { type FileSystemActiveBucket } from '@/lib/application-file-system';
 import { getApplicationFileSystemPlacement } from '@/lib/application-file-system';
+import { cn } from '@/lib/utils';
+
+const normalizeKaiserStatus = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+
+const isKaiserCompletionStatus = (value: unknown) => {
+  const normalized = normalizeKaiserStatus(value);
+  return (
+    normalized === 'final at rfe' ||
+    normalized === 'r&b sent pending ils contract' ||
+    normalized === 'r&b sent pending ils contract.'
+  );
+};
+
+const isKaiserOnHoldStatus = (value: unknown) => normalizeKaiserStatus(value) === 'on hold';
+
+const isCompletedApplication = (app: any) => {
+  const appStatus = String(app?.status || '').trim().toLowerCase();
+  if (appStatus === 'completed & submitted') return true;
+  return isKaiserCompletionStatus((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status);
+};
 
 const getAssignedStaffLabel = (app: any): string => {
   const candidates = [
@@ -123,7 +148,6 @@ function AdminApplicationsPageContent() {
   const [allApplications, setAllApplications] = useState<WithId<Application & FormValues>[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [applicationsView, setApplicationsView] = useState<'table' | 'filesystem'>('table');
   const [updatingOverrides, setUpdatingOverrides] = useState<Set<string>>(new Set());
 
   // Filter states
@@ -136,6 +160,8 @@ function AdminApplicationsPageContent() {
   const [intakeFilter, setIntakeFilter] = useState<IntakeFilterValue>('all');
   const [memberFilter, setMemberFilter] = useState('');
   const [reviewFilter, setReviewFilter] = useState<'all' | 'cs' | 'docs'>('all');
+  const [summaryViewFilter, setSummaryViewFilter] = useState<'non-complete' | 'all' | 'complete' | 'in-process' | 'on-hold'>('non-complete');
+  const [isPullingKaiserStatuses, setIsPullingKaiserStatuses] = useState(false);
   const searchParams = useSearchParams();
 
   const fetchAllApplications = useCallback(async () => {
@@ -312,6 +338,29 @@ function AdminApplicationsPageContent() {
   }, [fetchAllApplications]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const refreshOnFocus = () => {
+      void fetchAllApplications();
+    };
+    const refreshOnVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchAllApplications();
+      }
+    };
+    const refreshOnPageShow = () => {
+      void fetchAllApplications();
+    };
+    window.addEventListener('focus', refreshOnFocus);
+    window.addEventListener('pageshow', refreshOnPageShow);
+    document.addEventListener('visibilitychange', refreshOnVisible);
+    return () => {
+      window.removeEventListener('focus', refreshOnFocus);
+      window.removeEventListener('pageshow', refreshOnPageShow);
+      document.removeEventListener('visibilitychange', refreshOnVisible);
+    };
+  }, [fetchAllApplications]);
+
+  useEffect(() => {
     const plan = (searchParams.get('plan') || '').toLowerCase();
     const review = (searchParams.get('review') || '').toLowerCase();
     const member = String(searchParams.get('member') || '').trim();
@@ -361,7 +410,7 @@ function AdminApplicationsPageContent() {
     return Array.from(unique).sort((a, b) => a.localeCompare(b));
   }, [allApplications]);
 
-  const filteredApplications = useMemo(() => {
+  const scopedApplications = useMemo(() => {
     return allApplications.filter(app => {
       const healthPlanMatch = healthPlanFilter === 'all' || app.healthPlan === healthPlanFilter;
       const pathwayMatch = pathwayFilter === 'all' || app.pathway === pathwayFilter;
@@ -436,6 +485,56 @@ function AdminApplicationsPageContent() {
     memberFilter,
     reviewFilter,
   ]);
+
+  const filteredApplications = useMemo(() => {
+    return scopedApplications.filter((app) => {
+      const placement = getApplicationFileSystemPlacement(app as any);
+      const kaiserStatus = String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || '').trim();
+      switch (summaryViewFilter) {
+        case 'all':
+          return true;
+        case 'complete':
+          return isCompletedApplication(app);
+        case 'in-process':
+          return !isCompletedApplication(app) && placement.bucket === 'active';
+        case 'on-hold':
+          return !isCompletedApplication(app) && (isKaiserOnHoldStatus(kaiserStatus) || placement.bucket === 'non-active');
+        case 'non-complete':
+        default:
+          return !isCompletedApplication(app);
+      }
+    });
+  }, [scopedApplications, summaryViewFilter]);
+
+  const completedApplicationsCount = useMemo(
+    () => allApplications.filter((app) => isCompletedApplication(app)).length,
+    [allApplications]
+  );
+
+  const nonCompletedApplicationsCount = useMemo(
+    () => allApplications.filter((app) => !isCompletedApplication(app)).length,
+    [allApplications]
+  );
+
+  const totalApplicationsCount = allApplications.length;
+  const inProcessApplicationsCount = useMemo(
+    () =>
+      allApplications.filter((app) => {
+        if (isCompletedApplication(app)) return false;
+        return getApplicationFileSystemPlacement(app as any).bucket === 'active';
+      }).length,
+    [allApplications]
+  );
+  const onHoldApplicationsCount = useMemo(
+    () =>
+      allApplications.filter((app) => {
+        if (isCompletedApplication(app)) return false;
+        const kaiserStatus = String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || '').trim();
+        if (isKaiserOnHoldStatus(kaiserStatus)) return true;
+        return getApplicationFileSystemPlacement(app as any).bucket === 'non-active';
+      }).length,
+    [allApplications]
+  );
   
 
   const handleSelectionChange = (id: string, checked: boolean) => {
@@ -579,6 +678,145 @@ function AdminApplicationsPageContent() {
     setStaffFilter('all');
     setIntakeFilter('all');
     setMemberFilter('');
+    setSummaryViewFilter('non-complete');
+  };
+
+  const resetToAllApplicationsView = () => {
+    setHealthPlanFilter('all');
+    setPathwayFilter('all');
+    setStatusFilter('all');
+    setCaseActivityFilter('all');
+    setInternalStatusFilter('all');
+    setStaffFilter('all');
+    setIntakeFilter('all');
+    setMemberFilter('');
+    setReviewFilter('all');
+    setSummaryViewFilter('all');
+  };
+
+  const handlePullCurrentKaiserStatusForAll = async () => {
+    if (!firestore || isPullingKaiserStatuses) return;
+    const kaiserApps = allApplications.filter((app) =>
+      String((app as any)?.healthPlan || '')
+        .trim()
+        .toLowerCase()
+        .includes('kaiser')
+    );
+    if (kaiserApps.length === 0) {
+      toast({
+        title: 'No Kaiser applications found',
+        description: 'There are no Kaiser applications to sync right now.',
+      });
+      return;
+    }
+    setIsPullingKaiserStatuses(true);
+    let updatedCount = 0;
+    let completionMarkedCount = 0;
+    let failedCount = 0;
+    const updatedById = new Map<string, Record<string, any>>();
+    try {
+      for (const app of kaiserApps) {
+        const existingClientId2 = String(
+          (app as any)?.client_ID2 || (app as any)?.clientId2 || (app as any)?.caspioClientId2 || ''
+        ).trim();
+        const response = await fetch('/api/admin/caspio/confirm-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicationData: {
+              memberFirstName: (app as any)?.memberFirstName || '',
+              memberLastName: (app as any)?.memberLastName || '',
+              clientId2: existingClientId2,
+              caspioClientId2: existingClientId2,
+              healthPlan: (app as any)?.healthPlan || '',
+              memberMediCalNum:
+                (app as any)?.memberMediCalNum ||
+                (app as any)?.confirmMemberMediCalNum ||
+                (app as any)?.MediCal_Number ||
+                (app as any)?.Medical_Number ||
+                '',
+              memberMrn:
+                (app as any)?.memberMrn ||
+                (app as any)?.medicalRecordNumber ||
+                (app as any)?.mrn ||
+                (app as any)?.Member_MRN ||
+                '',
+            },
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as any;
+        if (!response.ok || !payload?.success || !payload?.found) {
+          failedCount += 1;
+          continue;
+        }
+        const retrievedClientId2 = String(payload?.member?.clientId2 || '').trim();
+        const retrievedKaiserStatus = String(payload?.member?.kaiserStatus || '').trim();
+        const shouldMarkComplete = isKaiserCompletionStatus(retrievedKaiserStatus);
+        const patch: Record<string, any> = {
+          caspioSent: true,
+          caspioPushLastStatus: 'confirmed',
+          createdByAdmin: false,
+          allowDraftCaspioPush: false,
+          lastUpdated: serverTimestamp(),
+        };
+        if (retrievedClientId2) {
+          patch.clientId2 = retrievedClientId2;
+          patch.client_ID2 = retrievedClientId2;
+          patch.caspioClientId2 = retrievedClientId2;
+        }
+        if (retrievedKaiserStatus) {
+          patch.kaiserStatus = retrievedKaiserStatus;
+          patch.Kaiser_Status = retrievedKaiserStatus;
+        }
+        if (shouldMarkComplete) {
+          patch.status = 'Completed & Submitted';
+          completionMarkedCount += 1;
+        }
+
+        const rawUserId = String((app as any)?.userId || '').trim();
+        const normalizedUserId = ['undefined', 'null', 'nan'].includes(rawUserId.toLowerCase()) ? '' : rawUserId;
+        const isAdminSource =
+          String((app as any)?.source || '').trim().toLowerCase() === 'admin' ||
+          String(app.id || '').startsWith('admin_app_') ||
+          !normalizedUserId;
+        const writes: Promise<void>[] = [];
+        if (normalizedUserId) {
+          writes.push(setDoc(doc(firestore, `users/${normalizedUserId}/applications`, app.id), patch, { merge: true }));
+        }
+        if (isAdminSource) {
+          writes.push(setDoc(doc(firestore, 'applications', app.id), patch, { merge: true }));
+        }
+        if (writes.length === 0) {
+          failedCount += 1;
+          continue;
+        }
+        await Promise.all(writes);
+        updatedById.set(app.id, patch);
+        updatedCount += 1;
+      }
+
+      if (updatedById.size > 0) {
+        setAllApplications((prev) =>
+          prev.map((entry) => (updatedById.has(entry.id) ? ({ ...entry, ...updatedById.get(entry.id)! } as any) : entry))
+        );
+      }
+
+      toast({
+        title: 'Kaiser status pull complete',
+        description:
+          `Updated ${updatedCount} application(s)` +
+          (completionMarkedCount ? ` • Marked complete: ${completionMarkedCount}` : '') +
+          (failedCount ? ` • Not updated: ${failedCount}` : ''),
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Kaiser status pull failed',
+        description: String(error?.message || 'Failed while syncing Kaiser statuses.'),
+      });
+    } finally {
+      setIsPullingKaiserStatuses(false);
+    }
   };
 
   const handleRemoveDuplicates = async () => {
@@ -694,6 +932,15 @@ function AdminApplicationsPageContent() {
                 Create Application
               </Link>
             </Button>
+            <Button
+              variant="outline"
+              className="whitespace-nowrap"
+              onClick={handlePullCurrentKaiserStatusForAll}
+              disabled={isPullingKaiserStatuses}
+            >
+              <Database className="mr-2 h-4 w-4" />
+              {isPullingKaiserStatuses ? 'Pulling Kaiser Status...' : 'Pull Current Kaiser Status (All)'}
+            </Button>
            {selected.length > 0 && isSuperAdmin && (
               <div className="flex flex-wrap gap-2">
                 <Button 
@@ -734,26 +981,64 @@ function AdminApplicationsPageContent() {
             <div className="xl:col-span-2">
                  <Card>
                     <CardHeader>
+                        <div className="mb-1 grid grid-cols-1 gap-2 sm:grid-cols-4">
+                          <button
+                            type="button"
+                            onClick={resetToAllApplicationsView}
+                            className={cn(
+                              'rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                              summaryViewFilter === 'all' ? 'border-primary bg-primary/10' : 'bg-muted/40 hover:bg-muted/60'
+                            )}
+                          >
+                            <span className="text-muted-foreground">Total Applications:</span>{' '}
+                            <span className="font-semibold">{totalApplicationsCount}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSummaryViewFilter('complete')}
+                            className={cn(
+                              'rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                              summaryViewFilter === 'complete'
+                                ? 'border-emerald-600 bg-emerald-100'
+                                : 'bg-emerald-50 hover:bg-emerald-100'
+                            )}
+                          >
+                            <span className="text-emerald-800">Complete:</span>{' '}
+                            <span className="font-semibold text-emerald-900">{completedApplicationsCount}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSummaryViewFilter('in-process')}
+                            className={cn(
+                              'rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                              summaryViewFilter === 'in-process'
+                                ? 'border-blue-600 bg-blue-100'
+                                : 'bg-blue-50 hover:bg-blue-100'
+                            )}
+                          >
+                            <span className="text-blue-800">In Process:</span>{' '}
+                            <span className="font-semibold text-blue-900">{inProcessApplicationsCount}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSummaryViewFilter('on-hold')}
+                            className={cn(
+                              'rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                              summaryViewFilter === 'on-hold'
+                                ? 'border-amber-600 bg-amber-100'
+                                : 'bg-amber-50 hover:bg-amber-100'
+                            )}
+                          >
+                            <span className="text-amber-800">On Hold:</span>{' '}
+                            <span className="font-semibold text-amber-900">{onHoldApplicationsCount}</span>
+                          </button>
+                        </div>
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <CardTitle>Application Filters</CardTitle>
-                            <CardDescription>Refine the list of applications using the filters below.</CardDescription>
-                          </div>
-                          <div className="inline-flex rounded-md border bg-muted p-1">
-                            <Button
-                              size="sm"
-                              variant={applicationsView === 'table' ? 'default' : 'ghost'}
-                              onClick={() => setApplicationsView('table')}
-                            >
-                              Table
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant={applicationsView === 'filesystem' ? 'default' : 'ghost'}
-                              onClick={() => setApplicationsView('filesystem')}
-                            >
-                              File System
-                            </Button>
+                            <CardDescription>
+                              Default view shows non-complete applications. Use the toggle to include completed.
+                            </CardDescription>
                           </div>
                         </div>
                     </CardHeader>
@@ -851,25 +1136,40 @@ function AdminApplicationsPageContent() {
                           </Select>
                         </div>
                         <Button variant="ghost" onClick={clearFilters} className="whitespace-nowrap">Clear</Button>
+                        <Button
+                          variant={summaryViewFilter === 'all' ? 'secondary' : 'outline'}
+                          onClick={() =>
+                            setSummaryViewFilter((prev) => (prev === 'all' ? 'non-complete' : 'all'))
+                          }
+                          className="whitespace-nowrap"
+                        >
+                          {summaryViewFilter === 'all'
+                            ? `Hide Complete (${completedApplicationsCount})`
+                            : `Show Complete (${completedApplicationsCount})`}
+                        </Button>
+                      </div>
+                      <div className="mb-3 text-xs text-muted-foreground">
+                        Showing {filteredApplications.length} application(s) in{' '}
+                        {summaryViewFilter === 'all'
+                          ? 'Total Applications'
+                          : summaryViewFilter === 'complete'
+                            ? 'Complete'
+                            : summaryViewFilter === 'in-process'
+                              ? 'In Process'
+                              : summaryViewFilter === 'on-hold'
+                                ? 'On Hold'
+                                : 'Non-complete'}
+                        .
                       </div>
                       {error && <p className="text-destructive">Error loading applications: A permission error occurred while fetching data.</p>}
-                      {applicationsView === 'table' ? (
-                        <AdminApplicationsTable 
-                          applications={filteredApplications} 
-                          isLoading={isLoading || isAdminLoading}
-                          onSelectionChange={isSuperAdmin ? handleSelectionChange : undefined}
-                          selected={isSuperAdmin ? selected : undefined}
-                          showInlineTracker
-                          onRefreshRequested={fetchAllApplications}
-                        />
-                      ) : (
-                        <ApplicationFileSystemView
-                          applications={filteredApplications}
-                          isLoading={isLoading || isAdminLoading}
-                          updatingOverrides={updatingOverrides}
-                          onSetPlacementOverride={handleSetPlacementOverride}
-                        />
-                      )}
+                      <AdminApplicationsTable 
+                        applications={filteredApplications} 
+                        isLoading={isLoading || isAdminLoading}
+                        onSelectionChange={isSuperAdmin ? handleSelectionChange : undefined}
+                        selected={isSuperAdmin ? selected : undefined}
+                        showInlineTracker
+                        onRefreshRequested={fetchAllApplications}
+                      />
                     </CardContent>
                 </Card>
             </div>

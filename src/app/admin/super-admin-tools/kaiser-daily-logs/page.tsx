@@ -269,7 +269,7 @@ export default function KaiserDailyLogsPage() {
               {row.staffName} - {row.dateKey}
             </CardTitle>
             <div className="text-xs text-muted-foreground">
-              Submitted by {row.submittedByName || row.submittedByEmail || 'Unknown'} at {formatEt(String(row.submittedAt || ''))}
+              Submitted By {row.submittedByName || row.submittedByEmail || 'Unknown'} at {formatEt(String(row.submittedAt || ''))}
             </div>
           </CardHeader>
           <CardContent className="space-y-3">

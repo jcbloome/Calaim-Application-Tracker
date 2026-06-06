@@ -54,6 +54,11 @@ service cloud.firestore {
 
       match /applications/{applicationId} {
         allow read, write, delete: if isOwner(userId) || isAdmin();
+
+        // Internal staff tracker state used by admin application detail page.
+        match /staffTrackers/{trackerId} {
+          allow read, list, write: if isAdmin();
+        }
       }
     }
 

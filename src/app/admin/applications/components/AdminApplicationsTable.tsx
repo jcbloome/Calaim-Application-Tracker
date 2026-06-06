@@ -291,6 +291,41 @@ const getAssignedStaffLabel = (app: WithId<Application & FormValues>) => {
   return label || 'Staff unassigned';
 };
 
+const getLatestStatusLabel = (app: WithId<Application & FormValues>) => {
+  const referral = (app as any)?.kaiserReferralSubmission || {};
+  const referralSent = Boolean(
+    referral?.submitted ||
+      referral?.submittedAt ||
+      referral?.submittedAtIso ||
+      referral?.providerMessageId
+  );
+  if (referralSent) return 'Referral form sent';
+
+  const internalStatus = String((app as any)?.adminProcessingStatus || '').trim();
+  if (internalStatus) return internalStatus;
+
+  const kaiserStatus = String((app as any)?.kaiserStatus || (app as any)?.Kaiser_Status || '').trim();
+  if (normalizeKaiserStatus(kaiserStatus) === 'on hold') return 'On Hold';
+  if (kaiserStatus) return kaiserStatus;
+
+  return String(app.status || 'In Progress').trim() || 'In Progress';
+};
+
+const normalizeKaiserStatus = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+
+const isKaiserCompletionStatus = (value: unknown) => {
+  const normalized = normalizeKaiserStatus(value);
+  return normalized === 'final at rfe' || normalized === 'r&b sent pending ils contract';
+};
+
+const isKaiserOnHoldStatus = (value: unknown) => normalizeKaiserStatus(value) === 'on hold';
+
 const QuickViewField = ({ label, value, fullWidth = false }: { label: string, value?: string | number | boolean | null, fullWidth?: boolean }) => (
     <div className={fullWidth ? 'col-span-2' : ''}>
         <p className="text-sm text-muted-foreground">{label}</p>
@@ -967,6 +1002,13 @@ export const AdminApplicationsTable = ({
               const adminProcessingStatus = getAdminProcessingStatus(app);
               const adminProcessingReason = getAdminProcessingReason(app);
               void adminProcessingReason;
+              const isKaiserCompleted = isKaiserCompletionStatus(
+                (app as any)?.kaiserStatus || (app as any)?.Kaiser_Status
+              );
+              const isKaiserOnHold = isKaiserOnHoldStatus(
+                (app as any)?.kaiserStatus || (app as any)?.Kaiser_Status
+              );
+              const latestStatusLabel = getLatestStatusLabel(app);
               const staffLabel = getAssignedStaffLabel(app);
               const isAuthReceivedIntake = Boolean(
                 (app as any)?.kaiserAuthReceivedViaIls ||
@@ -1073,6 +1115,9 @@ export const AdminApplicationsTable = ({
                       • By: {referrerName || (sanitizeUserId(app.userId) ? `user-ID: ...${sanitizeUserId(app.userId).substring(sanitizeUserId(app.userId).length - 4)}` : 'Unknown')}
                       {` • Staff: ${staffLabel}`}
                     </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Latest Status: <span className="font-medium text-foreground">{latestStatusLabel}</span>
+                    </div>
                     <div className="mt-2 space-y-1">
                       {group.incomingDocuments.length > 0 ? (
                         group.incomingDocuments.map((doc) => (
@@ -1099,6 +1144,16 @@ export const AdminApplicationsTable = ({
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
                     </Badge>
+                    {isKaiserCompleted ? (
+                      <Badge variant="outline" className="bg-emerald-100 text-emerald-800 border-emerald-200">
+                        Complete (Kaiser)
+                      </Badge>
+                    ) : null}
+                    {isKaiserOnHold ? (
+                      <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300">
+                        On Hold
+                      </Badge>
+                    ) : null}
                     {adminProcessingStatus ? (
                       <div className="space-y-1">
                         <Badge
@@ -1235,6 +1290,13 @@ export const AdminApplicationsTable = ({
             const planBadgeClass = getPlanBadgeClass(app);
             const csSummaryIsNew = isNewCsSummary(app);
             const adminProcessingStatus = getAdminProcessingStatus(app);
+            const isKaiserCompleted = isKaiserCompletionStatus(
+              (app as any)?.kaiserStatus || (app as any)?.Kaiser_Status
+            );
+            const isKaiserOnHold = isKaiserOnHoldStatus(
+              (app as any)?.kaiserStatus || (app as any)?.Kaiser_Status
+            );
+            const latestStatusLabel = getLatestStatusLabel(app);
             const staffLabel = getAssignedStaffLabel(app);
             const isAuthReceivedIntake = Boolean(
               (app as any)?.kaiserAuthReceivedViaIls ||
@@ -1326,6 +1388,9 @@ export const AdminApplicationsTable = ({
                       • By: {referrerName || (sanitizeUserId(app.userId) ? `user-ID: ...${sanitizeUserId(app.userId).substring(sanitizeUserId(app.userId).length - 4)}` : 'Unknown')}
                       {` • Staff: ${staffLabel}`}
                     </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Latest Status: <span className="font-medium text-foreground">{latestStatusLabel}</span>
+                    </div>
                     <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
                       <span>{app.healthPlan}</span>
                     </div>
@@ -1353,6 +1418,16 @@ export const AdminApplicationsTable = ({
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
                     </Badge>
+                    {isKaiserCompleted ? (
+                      <Badge variant="outline" className="bg-emerald-100 text-emerald-800 border-emerald-200 text-xs">
+                        Complete (Kaiser)
+                      </Badge>
+                    ) : null}
+                    {isKaiserOnHold ? (
+                      <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 text-xs">
+                        On Hold
+                      </Badge>
+                    ) : null}
                     {adminProcessingStatus ? (
                       <Badge
                         variant="outline"
