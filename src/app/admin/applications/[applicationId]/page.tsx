@@ -3175,12 +3175,11 @@ function ApplicationDetailPageContent() {
   } | null>(null);
   const [nextStepDateMissing, setNextStepDateMissing] = useState(false);
   const [isSendingFamilyStatusNow, setIsSendingFamilyStatusNow] = useState(false);
-  const [rejectReasonByForm, setRejectReasonByForm] = useState<Record<string, string>>({});
   const [rejectingByForm, setRejectingByForm] = useState<Record<string, boolean>>({});
   const [rejectDialogForm, setRejectDialogForm] = useState<string | null>(null);
   const [rejectScopeByForm, setRejectScopeByForm] = useState<Record<string, 'form' | 'file'>>({});
   const [rejectFileByForm, setRejectFileByForm] = useState<Record<string, string>>({});
-  const [rejectRecipientByForm, setRejectRecipientByForm] = useState<Record<string, 'applicant' | 'primary'>>({});
+  const [rejectEmailBodyByForm, setRejectEmailBodyByForm] = useState<Record<string, string>>({});
   const [resolvedStorageUrls, setResolvedStorageUrls] = useState<Record<string, string>>({});
   const emailReminderSectionRef = useRef<HTMLDivElement | null>(null);
   const statusReminderSectionRef = useRef<HTMLDivElement | null>(null);
@@ -3535,11 +3534,27 @@ function ApplicationDetailPageContent() {
             } as any)
           : prev
       );
+      const noteSync = result?.noteSync && typeof result.noteSync === 'object' ? (result.noteSync as any) : null;
       toast({
         title: 'Status reminder sent',
-        description: `Family update sent to ${String((application as any)?.referrerEmail || '').trim() || 'recipient'}.`,
+        description:
+          noteSync?.success
+            ? `Family update sent and note pushed to Caspio for ${String((application as any)?.bestContactEmail || '').trim() || 'recipient'}.`
+            : `Family update sent to ${String((application as any)?.bestContactEmail || '').trim() || 'recipient'}.`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
+      if (noteSync && !noteSync.success) {
+        const reason = String(noteSync?.reason || '').trim();
+        const details = String(noteSync?.error || '').trim();
+        toast({
+          variant: 'destructive',
+          title: 'Caspio note sync failed',
+          description:
+            reason === 'missing-client-id2'
+              ? 'Email was sent, but Caspio notes were not updated because Client_ID2 is missing.'
+              : details || 'Email was sent, but Caspio notes could not be updated.',
+        });
+      }
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -7840,33 +7855,29 @@ function ApplicationDetailPageContent() {
   const handleRejectFormRedo = async (
     formName: string,
     sendEmail: boolean,
-    options?: { scope?: 'form' | 'file'; targetFileKey?: string; recipientType?: 'applicant' | 'primary' }
+    options?: {
+      scope?: 'form' | 'file';
+      targetFileKey?: string;
+      resetCard?: boolean;
+    }
   ) => {
     if (!docRef || !application) return;
-    const reason = String(rejectReasonByForm[formName] || '').trim();
-    if (!reason) {
-      toast({
-        variant: 'destructive',
-        title: 'Description required',
-        description: 'Enter a description so the member/applicant knows what to redo.',
-      });
-      return;
-    }
 
-    const recipientType = options?.recipientType === 'primary' ? 'primary' : 'applicant';
-    const recipientEmail = String(
-      recipientType === 'primary'
-        ? (application as any)?.bestContactEmail || ''
-        : (application as any)?.referrerEmail || ''
-    ).trim();
+    const buildRevisionInstructions = (portalLoginUrl: string, portalPathUrl: string) =>
+      [
+        'Log in to the application portal and update this form so we can continue processing.',
+        '',
+        `Go directly to your application: ${portalPathUrl}`,
+        `Login: ${portalLoginUrl}`,
+      ].join('\n');
+    const recipientType: 'primary' = 'primary';
+    const shouldResetCard = options?.resetCard !== false;
+    const recipientEmail = String((application as any)?.bestContactEmail || '').trim();
     if (sendEmail && !recipientEmail) {
       toast({
         variant: 'destructive',
         title: 'Email not available',
-        description:
-          recipientType === 'primary'
-            ? 'Primary contact email is not available for this application.'
-            : 'Applicant/referrer email is not available for this application.',
+        description: 'Primary contact email is not available for this application.',
       });
       return;
     }
@@ -7879,6 +7890,34 @@ function ApplicationDetailPageContent() {
       rejectScope === 'file' && targetEligibilityUploadId
         ? getEligibilityScreenshotUploads().find((upload) => upload.id === targetEligibilityUploadId)
         : null;
+    const focusIdByFormName: Record<string, string> = {
+      'cs member summary': 'cs-summary',
+      'cs summary': 'cs-summary',
+      'waivers & authorizations': 'waivers',
+      'proof of income': 'proof-of-income',
+      "lic 602a - physician's report": 'lic-602a',
+      'medicine list': 'medicine-list',
+      'declaration of eligibility': 'declaration-of-eligibility',
+      'snf facesheet': 'snf-facesheet',
+    };
+    const focusId = focusIdByFormName[String(formName || '').trim().toLowerCase()] || '';
+    const pathwayReturnPath = `/pathway?applicationId=${encodeURIComponent(String(applicationId || ''))}${
+      focusId ? `&focus=${encodeURIComponent(focusId)}&mode=upload-missing` : ''
+    }`;
+    const applicantPortalLoginUrl = `https://connectcalaim.com/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
+    const applicantPathwayUrl = `https://connectcalaim.com${pathwayReturnPath}`;
+    const customDescription = String(rejectEmailBodyByForm[formName] || '').trim();
+    if (!customDescription) {
+      toast({
+        variant: 'destructive',
+        title: 'Description required',
+        description: 'Add a custom revision description before sending or resetting.',
+      });
+      return;
+    }
+    const revisionNote = [customDescription, '', buildRevisionInstructions(applicantPortalLoginUrl, applicantPathwayUrl)].join(
+      '\n'
+    );
 
     if (rejectScope === 'file' && !targetFileKey) {
       toast({
@@ -7923,7 +7962,7 @@ function ApplicationDetailPageContent() {
       ).filter(Boolean);
 
       // Best-effort cleanup: remove prior uploaded file objects so the rejected component is a true reset.
-      if (storagePathsToDelete.length > 0) {
+      if (shouldResetCard && storagePathsToDelete.length > 0) {
         await Promise.all(
           storagePathsToDelete.map(async (path) => {
             try {
@@ -7946,37 +7985,8 @@ function ApplicationDetailPageContent() {
       let sentAtIso: string | null = null;
 
       if (sendEmail) {
-        const focusIdByFormName: Record<string, string> = {
-          'cs member summary': 'cs-summary',
-          'cs summary': 'cs-summary',
-          'waivers & authorizations': 'waivers',
-          'proof of income': 'proof-of-income',
-          "lic 602a - physician's report": 'lic-602a',
-          'medicine list': 'medicine-list',
-          'declaration of eligibility': 'declaration-of-eligibility',
-          'snf facesheet': 'snf-facesheet',
-        };
-        const focusId = focusIdByFormName[String(formName || '').trim().toLowerCase()] || '';
-        const pathwayReturnPath = `/pathway?applicationId=${encodeURIComponent(String(applicationId || ''))}${
-          focusId ? `&focus=${encodeURIComponent(focusId)}&mode=upload-missing` : ''
-        }`;
-        const applicantPortalLoginUrl = `https://connectcalaim.com/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
-        const applicantPathwayUrl = `https://connectcalaim.com${pathwayReturnPath}`;
         const subject = `Action needed: Please redo ${formName}`;
-        const emailMessage = [
-          `We reviewed your application and need an updated submission for: "${formName}".`,
-          '',
-          ...(rejectScope === 'file' && targetFileLabel ? [`File rejected: ${targetFileLabel}`, ''] : []),
-          'What to update:',
-          `- ${reason}`,
-          '',
-          'What happens next:',
-          '- This form has been reset so you can upload or complete it again.',
-          '- Once you resubmit, our team will continue processing your application.',
-          '',
-          `Go directly to your application: ${applicantPathwayUrl}`,
-          `Portal login: ${applicantPortalLoginUrl}`,
-        ].join('\n');
+        const emailMessage = revisionNote;
         const response = await fetch('/api/email/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -8016,7 +8026,7 @@ function ApplicationDetailPageContent() {
           ? ((form as any).revisionHistory as any[])
           : [];
         const historyEntry = {
-          reason,
+          reason: revisionNote,
           rejectedAt: rejectedAtIso,
           rejectedBy: reviewerName,
           rejectedByUid: reviewerUid,
@@ -8054,6 +8064,19 @@ function ApplicationDetailPageContent() {
         const hasRemainingUploads = remainingUploads.length > 0;
         const nextPrimaryUpload = hasRemainingUploads ? remainingUploads[0] : null;
         const shouldPreserveNonRejectedFiles = rejectScope === 'file' && hasRemainingUploads;
+        if (!shouldResetCard) {
+          return {
+            ...form,
+            revisionRequestedReason: revisionNote,
+            revisionRequestedAt: rejectedAtIso,
+            revisionRequestedBy: reviewerName,
+            revisionRequestedByUid: reviewerUid,
+            revisionEmailTo: sentAtIso ? recipientEmail : null,
+            revisionEmailRecipientType: sentAtIso ? recipientType : null,
+            revisionEmailSentAt: sentAtIso,
+            revisionHistory: [historyEntry, ...existingHistory].slice(0, 10),
+          };
+        }
         return {
           ...form,
           status: shouldPreserveNonRejectedFiles ? 'Completed' : 'Pending',
@@ -8086,7 +8109,7 @@ function ApplicationDetailPageContent() {
                 incomeSource: [],
               }
             : {}),
-          revisionRequestedReason: reason,
+          revisionRequestedReason: revisionNote,
           revisionRequestedAt: rejectedAtIso,
           revisionRequestedBy: reviewerName,
           revisionRequestedByUid: reviewerUid,
@@ -8110,7 +8133,7 @@ function ApplicationDetailPageContent() {
       }).length;
 
       const nextEligibilityUploads =
-        rejectScope === 'file' && targetEligibilityUploadId
+        shouldResetCard && rejectScope === 'file' && targetEligibilityUploadId
           ? getEligibilityScreenshotUploads().filter((upload) => upload.id !== targetEligibilityUploadId)
           : getEligibilityScreenshotUploads();
 
@@ -8154,18 +8177,27 @@ function ApplicationDetailPageContent() {
         };
       });
 
-      setRejectReasonByForm((prev) => ({ ...prev, [formName]: '' }));
+      setRejectEmailBodyByForm((prev) => {
+        const next = { ...prev };
+        delete next[formName];
+        return next;
+      });
       setRejectScopeByForm((prev) => ({ ...prev, [formName]: 'form' }));
       setRejectFileByForm((prev) => ({ ...prev, [formName]: '' }));
-      setRejectRecipientByForm((prev) => ({ ...prev, [formName]: 'applicant' }));
       setRejectDialogForm(null);
       toast({
         title: sendEmail ? 'Rejection saved and email sent' : 'Rejection saved',
         description: sendEmail
-          ? `${formName} set to pending and email sent to ${recipientEmail} (${recipientType === 'primary' ? 'Primary contact' : 'Applicant/referrer'}).`
+          ? shouldResetCard
+            ? `${formName} reset and revision email sent to ${recipientEmail} (Primary contact).`
+            : `Revision email sent to ${recipientEmail} (Primary contact) and card data/files were kept.`
           : rejectScope === 'file'
-            ? 'Selected file rejected. Remaining files were kept and applicant can upload replacements.'
-            : `${formName} set to pending. Applicant can now redo the form.`,
+            ? shouldResetCard
+              ? 'Selected file rejected. Remaining files were kept and applicant can upload replacements.'
+              : 'Marked requires revision without resetting the selected file.'
+            : shouldResetCard
+              ? `${formName} set to pending. Applicant can now redo the form.`
+              : `${formName} marked as requires revision without resetting current card data.`,
       });
     } catch (error: any) {
       console.error('Reject form redo error:', error);
@@ -11699,14 +11731,14 @@ function ApplicationDetailPageContent() {
                                           size="sm"
                                           className="w-full border-amber-300 text-amber-800 hover:bg-amber-100"
                                         >
-                                          {isReviewed ? 'Unlock card / request redo' : 'Reject card / request redo'}
+                                          {isReviewed ? 'Unlock card / requires revision' : 'Requires Revision'}
                                         </Button>
                                       </DialogTrigger>
-                                      <DialogContent className="sm:max-w-xl">
+                                      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
                                         <DialogHeader>
-                                          <DialogTitle>Reject {req.title}</DialogTitle>
+                                          <DialogTitle>Requires Revision: {req.title}</DialogTitle>
                                           <DialogDescription>
-                                            Add a reason for rejection. You can reject the card only, or reject and email the applicant/referrer or primary contact to redo this form.
+                                            Description is required. Your custom note appears first, and login instructions are always included below it.
                                           </DialogDescription>
                                         </DialogHeader>
                                         <div className="space-y-3">
@@ -11747,7 +11779,7 @@ function ApplicationDetailPageContent() {
                                             const selectedFile = rejectFileByForm[req.title] || '';
                                             return hasFileOptions ? (
                                               <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-                                                <div className="text-xs font-medium">Reject scope</div>
+                                                <div className="text-xs font-medium">Revision scope (for reset action)</div>
                                                 <div className="flex flex-wrap gap-2">
                                                   <Button
                                                     type="button"
@@ -11757,7 +11789,7 @@ function ApplicationDetailPageContent() {
                                                       setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'form' }))
                                                     }
                                                   >
-                                                    Reject whole set/card
+                                                    Reset whole set/card
                                                   </Button>
                                                   <Button
                                                     type="button"
@@ -11767,7 +11799,7 @@ function ApplicationDetailPageContent() {
                                                       setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'file' }))
                                                     }
                                                   >
-                                                    Reject specific file
+                                                    Reset specific file
                                                   </Button>
                                                 </div>
                                                 {selectedScope === 'file' ? (
@@ -11799,46 +11831,39 @@ function ApplicationDetailPageContent() {
                                             ) : null;
                                           })()}
                                           {(() => {
-                                            const selectedRecipient = rejectRecipientByForm[req.title] || 'applicant';
                                             const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
-                                            const previewReason = String(rejectReasonByForm[req.title] || '').trim() || '[Enter description above]';
                                             const previewSubject = `Action needed: Please redo ${req.title}`;
-                                            const previewBody = `Please redo the "${req.title}" form.\n\nReason: ${previewReason}\n\nLog in to the application portal and update this form so we can continue processing.\n\nLogin: ${applicantPortalLoginUrl}`;
+                                            const descriptionValue = String(rejectEmailBodyByForm[req.title] || '');
+                                            const loginInstructionsPreview =
+                                              'Log in to the application portal and update this form so we can continue processing.\n\n' +
+                                              `Login: ${applicantPortalLoginUrl}`;
                                             return (
                                               <div className="rounded-md border bg-white p-3 text-xs space-y-2">
-                                                <div className="space-y-1">
-                                                  <span className="font-medium">Email recipient</span>
-                                                  <div className="flex flex-wrap gap-2">
-                                                    <Button
-                                                      type="button"
-                                                      size="sm"
-                                                      variant={selectedRecipient === 'applicant' ? 'default' : 'outline'}
-                                                      onClick={() =>
-                                                        setRejectRecipientByForm((prev) => ({ ...prev, [req.title]: 'applicant' }))
-                                                      }
-                                                    >
-                                                      Applicant / Referrer
-                                                    </Button>
-                                                    <Button
-                                                      type="button"
-                                                      size="sm"
-                                                      variant={selectedRecipient === 'primary' ? 'default' : 'outline'}
-                                                      onClick={() =>
-                                                        setRejectRecipientByForm((prev) => ({ ...prev, [req.title]: 'primary' }))
-                                                      }
-                                                    >
-                                                      Primary Contact
-                                                    </Button>
-                                                  </div>
-                                                </div>
-                                                <div className="font-medium text-foreground">Email preview (Reject + Email recipient)</div>
+                                                <div className="font-medium text-foreground">Email preview (Primary contact)</div>
                                                 <div>
                                                   <span className="font-medium">Subject:</span> {previewSubject}
                                                 </div>
                                                 <div className="space-y-1">
-                                                  <span className="font-medium">Body:</span>
+                                                  <Label htmlFor={`reject-email-body-${req.id}`} className="text-xs font-medium">
+                                                    Description (required)
+                                                  </Label>
+                                                  <Textarea
+                                                    id={`reject-email-body-${req.id}`}
+                                                    value={descriptionValue}
+                                                    onChange={(e) =>
+                                                      setRejectEmailBodyByForm((prev) => ({ ...prev, [req.title]: e.target.value }))
+                                                    }
+                                                    placeholder="Add a custom revision note..."
+                                                    className="min-h-[120px] text-[11px] leading-relaxed"
+                                                  />
+                                                  <p className="text-[11px] text-muted-foreground">
+                                                    This description is required and appears above the login instructions.
+                                                  </p>
+                                                </div>
+                                                <div className="space-y-1">
+                                                  <span className="font-medium">Login instructions (always included)</span>
                                                   <pre className="whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-relaxed">
-{previewBody}
+{loginInstructionsPreview}
                                                   </pre>
                                                 </div>
                                                 <div className="pt-1">
@@ -11854,22 +11879,14 @@ function ApplicationDetailPageContent() {
                                           <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
                                             <div>
                                               <span className="font-medium">Sending to:</span>{' '}
-                                              {(() => {
-                                                const selectedRecipient = rejectRecipientByForm[req.title] || 'applicant';
-                                                const email =
-                                                  selectedRecipient === 'primary'
-                                                    ? String((application as any)?.bestContactEmail || '').trim()
-                                                    : String((application as any)?.referrerEmail || '').trim();
-                                                const label = selectedRecipient === 'primary' ? 'Primary contact' : 'Applicant/referrer';
-                                                return `${email || 'No email on file'} (${label})`;
-                                              })()}{' '}
+                                              {`${String((application as any)?.bestContactEmail || '').trim() || 'No email on file'} (Primary contact)`}{' '}
                                               <span className="text-muted-foreground">(BCC disabled)</span>
                                             </div>
                                             {formInfo && (
                                               <>
                                                 {String((formInfo as any)?.revisionEmailSentAt || '').trim() ? (
                                                   <div>
-                                                    <span className="font-medium">Last rejection email sent:</span>{' '}
+                                                    <span className="font-medium">Last revision email sent:</span>{' '}
                                                     {format(new Date(String((formInfo as any).revisionEmailSentAt)), 'MMM d, yyyy h:mm a')}
                                                     {String((formInfo as any)?.revisionEmailTo || '').trim()
                                                       ? ` to ${String((formInfo as any).revisionEmailTo).trim()}`
@@ -11877,25 +11894,11 @@ function ApplicationDetailPageContent() {
                                                   </div>
                                                 ) : (
                                                   <div>
-                                                    <span className="font-medium">Last rejection email sent:</span> Not sent yet
+                                                    <span className="font-medium">Last revision email sent:</span> Not sent yet
                                                   </div>
                                                 )}
                                               </>
                                             )}
-                                          </div>
-                                          <div className="space-y-1">
-                                            <Label htmlFor={`reject-reason-${req.id}`} className="text-xs font-medium">
-                                              Description (required)
-                                            </Label>
-                                            <Textarea
-                                              id={`reject-reason-${req.id}`}
-                                              value={rejectReasonByForm[req.title] || ''}
-                                              onChange={(e) =>
-                                                setRejectReasonByForm((prev) => ({ ...prev, [req.title]: e.target.value }))
-                                              }
-                                              placeholder="Explain what needs to be corrected before this form can be approved."
-                                              className="min-h-[110px]"
-                                            />
                                           </div>
                                           <div className="flex flex-wrap justify-end gap-2 pt-2">
                                             <Button
@@ -11908,32 +11911,36 @@ function ApplicationDetailPageContent() {
                                             <Button
                                               size="sm"
                                               variant="outline"
-                                              disabled={Boolean(rejectingByForm[req.title])}
+                                              disabled={
+                                                Boolean(rejectingByForm[req.title]) ||
+                                                !String(rejectEmailBodyByForm[req.title] || '').trim()
+                                              }
                                               onClick={() =>
                                                 handleRejectFormRedo(req.title, false, {
                                                   scope: rejectScopeByForm[req.title] || 'form',
                                                   targetFileKey: rejectFileByForm[req.title] || '',
-                                                  recipientType: rejectRecipientByForm[req.title] || 'applicant',
+                                                  resetCard: true,
                                                 })
                                               }
                                             >
                                               {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                                              Reject only
+                                              Reset Card
                                             </Button>
                                             <Button
                                               size="sm"
                                               className="bg-amber-600 text-white hover:bg-amber-700"
-                                              disabled={Boolean(rejectingByForm[req.title])}
+                                              disabled={
+                                                Boolean(rejectingByForm[req.title]) ||
+                                                !String(rejectEmailBodyByForm[req.title] || '').trim()
+                                              }
                                               onClick={() =>
                                                 handleRejectFormRedo(req.title, true, {
-                                                  scope: rejectScopeByForm[req.title] || 'form',
-                                                  targetFileKey: rejectFileByForm[req.title] || '',
-                                                  recipientType: rejectRecipientByForm[req.title] || 'applicant',
+                                                  resetCard: false,
                                                 })
                                               }
                                             >
                                               {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                                              Reject + Email recipient
+                                              Email Primary Contact
                                             </Button>
                                           </div>
                                         </div>
@@ -11958,14 +11965,14 @@ function ApplicationDetailPageContent() {
                                             type="button"
                                             className="text-xs text-amber-800 underline underline-offset-2 hover:text-amber-900 w-fit"
                                           >
-                                            View reject history ({(formInfo as any).revisionHistory.length})
+                                            View revision history ({(formInfo as any).revisionHistory.length})
                                           </button>
                                         </DialogTrigger>
                                         <DialogContent className="sm:max-w-2xl">
                                           <DialogHeader>
-                                            <DialogTitle>Reject history: {req.title}</DialogTitle>
+                                            <DialogTitle>Revision history: {req.title}</DialogTitle>
                                             <DialogDescription>
-                                              Recent rejection requests and email delivery details for this card.
+                                              Recent revision requests and email delivery details for this card.
                                             </DialogDescription>
                                           </DialogHeader>
                                           <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">

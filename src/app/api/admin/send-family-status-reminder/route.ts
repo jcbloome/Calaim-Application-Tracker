@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { sendApplicationStatusEmail } from '@/app/actions/send-email';
+import { getCaspioCredentialsFromEnv, getCaspioToken } from '@/lib/caspio-api-utils';
 
 let adminDb: any;
 try {
@@ -30,6 +31,104 @@ const toMs = (value: any): number => {
   const ms = d.getTime();
   return Number.isNaN(ms) ? 0 : ms;
 };
+
+const clean = (value: unknown): string => String(value || '').trim();
+const hasValue = (value: unknown): boolean => clean(value).length > 0;
+
+async function resolveClientNotesUserId(params: {
+  baseUrl: string;
+  token: string;
+  clientId2: string;
+  preferredUserId?: string;
+}): Promise<number> {
+  const preferredNumeric = Number.parseInt(clean(params.preferredUserId), 10);
+  if (Number.isFinite(preferredNumeric) && preferredNumeric > 0) return preferredNumeric;
+
+  try {
+    const q = encodeURIComponent(`Client_ID2=${clean(params.clientId2)}`);
+    const url = `${params.baseUrl}/tables/connect_tbl_clientnotes/records?q.where=${q}&q.orderBy=Time_Stamp DESC&q.limit=1`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${params.token}` },
+      cache: 'no-store',
+    });
+    if (response.ok) {
+      const json = await response.json().catch(() => ({} as any));
+      const row = Array.isArray(json?.Result) ? json.Result[0] : null;
+      const parsed = Number.parseInt(clean(row?.User_ID), 10);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  } catch {
+    // fall through to default
+  }
+
+  return 1;
+}
+
+async function syncFamilyStatusNoteToCaspioClientNotes(params: {
+  clientId2: string;
+  comments: string;
+  preferredUserId?: string;
+  assignedStaffName?: string;
+}): Promise<{ success: boolean; reason: 'inserted' | 'missing-client-id2' | 'insert-failed'; error?: string }> {
+  const clientId2 = clean(params.clientId2);
+  if (!clientId2) {
+    return { success: false, reason: 'missing-client-id2' };
+  }
+  const comments = clean(params.comments);
+  if (!comments) {
+    return { success: true, reason: 'inserted' };
+  }
+
+  try {
+    const credentials = getCaspioCredentialsFromEnv();
+    const token = await getCaspioToken(credentials);
+    const resolvedUserId = await resolveClientNotesUserId({
+      baseUrl: credentials.baseUrl,
+      token,
+      clientId2,
+      preferredUserId: params.preferredUserId,
+    });
+
+    const basePayload: Record<string, any> = {
+      Client_ID2: /^\d+$/.test(clientId2) ? Number(clientId2) : clientId2,
+      User_ID: resolvedUserId,
+      Comments: comments,
+      Time_Stamp: new Date().toISOString(),
+      Follow_Up_Status: '🟢Open',
+    };
+    if (hasValue(params.preferredUserId)) basePayload.Follow_Up_Assignment = clean(params.preferredUserId);
+    if (hasValue(params.assignedStaffName)) {
+      basePayload.Assigned_First = clean(params.assignedStaffName);
+      basePayload.User_Full_Name = clean(params.assignedStaffName);
+    }
+
+    const insertUrl = `${credentials.baseUrl}/tables/connect_tbl_clientnotes/records`;
+    const insertResponse = await fetch(insertUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(basePayload),
+    });
+    if (insertResponse.ok) {
+      return { success: true, reason: 'inserted' };
+    }
+    const errorText = await insertResponse.text().catch(() => '');
+    return {
+      success: false,
+      reason: 'insert-failed',
+      error: `Caspio note insert failed: ${insertResponse.status} ${errorText}`,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      reason: 'insert-failed',
+      error: String(error?.message || 'unknown'),
+    };
+  }
+}
 
 const REQUIREMENT_TITLE_TO_ID: Record<string, string> = {
   'cs member summary': 'cs-summary',
@@ -214,6 +313,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const clientId2 = clean(appData?.clientId2 || appData?.client_ID2 || appData?.caspioClientId2 || appData?.memberClientId);
+    const caspioNoteComments = [
+      `Family status update emailed to primary contact (${recipientEmail}).`,
+      `Status: ${statusText}${reason ? ` | Reason: ${reason}` : ''}`,
+      `Sent by: ${senderName}`,
+      `Application ID: ${applicationId}`,
+    ].join(' ');
+    const noteSync = await syncFamilyStatusNoteToCaspioClientNotes({
+      clientId2,
+      comments: caspioNoteComments,
+      preferredUserId: String(appData?.assignedStaffId || '').trim(),
+      assignedStaffName: String(appData?.assignedStaffName || senderName || '').trim(),
+    });
+
     const historyEntry = {
       status: statusText,
       reason,
@@ -243,6 +356,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       sent: true,
+      noteSync,
       lastEmail: historyEntry,
       history: nextHistory.slice(0, 5),
     });
