@@ -3181,7 +3181,7 @@ function ApplicationDetailPageContent() {
   const [isSendingFamilyStatusNow, setIsSendingFamilyStatusNow] = useState(false);
   const [rejectingByForm, setRejectingByForm] = useState<Record<string, boolean>>({});
   const [rejectDialogForm, setRejectDialogForm] = useState<string | null>(null);
-  const [rejectScopeByForm, setRejectScopeByForm] = useState<Record<string, 'form' | 'file'>>({});
+  const [rejectScopeByForm, setRejectScopeByForm] = useState<Record<string, 'form' | 'file' | 'info'>>({});
   const [rejectFileByForm, setRejectFileByForm] = useState<Record<string, string>>({});
   const [rejectEmailBodyByForm, setRejectEmailBodyByForm] = useState<Record<string, string>>({});
   const [rejectUseSameLinkByForm, setRejectUseSameLinkByForm] = useState<Record<string, boolean>>({});
@@ -7909,7 +7909,7 @@ function ApplicationDetailPageContent() {
     formName: string,
     sendEmail: boolean,
     options?: {
-      scope?: 'form' | 'file';
+      scope?: 'form' | 'file' | 'info';
       targetFileKey?: string;
       resetCard?: boolean;
       useSameLink?: boolean;
@@ -7936,7 +7936,7 @@ function ApplicationDetailPageContent() {
       return;
     }
 
-    const rejectScope = options?.scope === 'file' ? 'file' : 'form';
+    const rejectScope = options?.scope === 'file' ? 'file' : options?.scope === 'info' ? 'info' : 'form';
     const targetFileKey = String(options?.targetFileKey || '').trim();
     const targetEligibilityUploadId = targetFileKey.startsWith('eligibility:') ? targetFileKey.replace('eligibility:', '') : '';
     const targetFormFilePath = targetFileKey.startsWith('form-path:') ? targetFileKey.replace('form-path:', '') : '';
@@ -11858,6 +11858,108 @@ function ApplicationDetailPageContent() {
                             ) : null}
                             {(
                                 <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
+                                    {(() => {
+                                      const baseFiles: Array<{ key: string; label: string }> = [];
+                                      const perFile = Array.isArray((formInfo as any)?.uploadedFiles)
+                                        ? (formInfo as any).uploadedFiles
+                                        : [];
+                                      if (perFile.length > 0) {
+                                        perFile.forEach((entry: any, index: number) => {
+                                          const path = String(entry?.filePath || '').trim();
+                                          const name = String(entry?.fileName || '').trim() || `Uploaded file ${index + 1}`;
+                                          baseFiles.push({
+                                            key: path ? `form-path:${path}` : `form-name:${req.title}`,
+                                            label: name,
+                                          });
+                                        });
+                                      } else {
+                                        const formFileName = String((formInfo as any)?.fileName || '').trim();
+                                        const formFilePath = String((formInfo as any)?.filePath || '').trim();
+                                        if (formFileName || formFilePath) {
+                                          baseFiles.push({
+                                            key: formFilePath ? `form-path:${formFilePath}` : `form-name:${req.title}`,
+                                            label: formFileName || `${req.title} upload`,
+                                          });
+                                        }
+                                      }
+                                      const eligibilityFiles =
+                                        req.id === 'eligibility-screenshot'
+                                          ? getEligibilityScreenshotUploads().map((upload) => ({
+                                              key: `eligibility:${upload.id}`,
+                                              label: upload.fileName || 'Eligibility screenshot upload',
+                                            }))
+                                          : [];
+                                      const rejectableFiles = [...baseFiles, ...eligibilityFiles];
+                                      const hasFileOptions = rejectableFiles.length > 0;
+                                      const selectedScope = rejectScopeByForm[req.title] || 'form';
+                                      const selectedFile = rejectFileByForm[req.title] || '';
+                                      return (
+                                        <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                                          <div className="text-xs font-medium">Revision action (on pathway)</div>
+                                          <div className="flex flex-wrap gap-2">
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant={selectedScope === 'form' ? 'default' : 'outline'}
+                                              onClick={() =>
+                                                setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'form' }))
+                                              }
+                                            >
+                                              Reset whole set/card
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant={selectedScope === 'file' ? 'default' : 'outline'}
+                                              onClick={() =>
+                                                setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'file' }))
+                                              }
+                                              disabled={!hasFileOptions}
+                                            >
+                                              Reset specific file
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant={selectedScope === 'info' ? 'default' : 'outline'}
+                                              onClick={() =>
+                                                setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'info' }))
+                                              }
+                                            >
+                                              Request more info only
+                                            </Button>
+                                          </div>
+                                          {selectedScope === 'file' ? (
+                                            <div className="space-y-1">
+                                              <Label htmlFor={`reject-file-${req.id}`} className="text-xs">
+                                                Select file
+                                              </Label>
+                                              <select
+                                                id={`reject-file-${req.id}`}
+                                                className="w-full rounded-md border bg-background px-2 py-1.5 text-xs"
+                                                value={selectedFile}
+                                                onChange={(event) =>
+                                                  setRejectFileByForm((prev) => ({
+                                                    ...prev,
+                                                    [req.title]: event.target.value,
+                                                  }))
+                                                }
+                                              >
+                                                <option value="">Select a file...</option>
+                                                {rejectableFiles.map((file) => (
+                                                  <option key={file.key} value={file.key}>
+                                                    {file.label}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                              {!hasFileOptions ? (
+                                                <div className="text-[11px] text-muted-foreground">No uploaded files available to target.</div>
+                                              ) : null}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      );
+                                    })()}
                                     <Dialog
                                       open={rejectDialogForm === req.title}
                                       onOpenChange={(open) => setRejectDialogForm(open ? req.title : null)}
@@ -11880,92 +11982,19 @@ function ApplicationDetailPageContent() {
                                         </DialogHeader>
                                         <div className="space-y-3">
                                           {(() => {
-                                            const baseFiles: Array<{ key: string; label: string }> = [];
-                                            const perFile = Array.isArray((formInfo as any)?.uploadedFiles)
-                                              ? (formInfo as any).uploadedFiles
-                                              : [];
-                                            if (perFile.length > 0) {
-                                              perFile.forEach((entry: any, index: number) => {
-                                                const path = String(entry?.filePath || '').trim();
-                                                const name = String(entry?.fileName || '').trim() || `Uploaded file ${index + 1}`;
-                                                baseFiles.push({
-                                                  key: path ? `form-path:${path}` : `form-name:${req.title}`,
-                                                  label: name,
-                                                });
-                                              });
-                                            } else {
-                                              const formFileName = String((formInfo as any)?.fileName || '').trim();
-                                              const formFilePath = String((formInfo as any)?.filePath || '').trim();
-                                              if (formFileName || formFilePath) {
-                                                baseFiles.push({
-                                                  key: formFilePath ? `form-path:${formFilePath}` : `form-name:${req.title}`,
-                                                  label: formFileName || `${req.title} upload`,
-                                                });
-                                              }
-                                            }
-                                            const eligibilityFiles =
-                                              req.id === 'eligibility-screenshot'
-                                                ? getEligibilityScreenshotUploads().map((upload) => ({
-                                                    key: `eligibility:${upload.id}`,
-                                                    label: upload.fileName || 'Eligibility screenshot upload',
-                                                  }))
-                                                : [];
-                                            const rejectableFiles = [...baseFiles, ...eligibilityFiles];
-                                            const hasFileOptions = rejectableFiles.length > 0;
                                             const selectedScope = rejectScopeByForm[req.title] || 'form';
                                             const selectedFile = rejectFileByForm[req.title] || '';
-                                            return hasFileOptions ? (
-                                              <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-                                                <div className="text-xs font-medium">Revision scope (for reset action)</div>
-                                                <div className="flex flex-wrap gap-2">
-                                                  <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant={selectedScope === 'form' ? 'default' : 'outline'}
-                                                    onClick={() =>
-                                                      setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'form' }))
-                                                    }
-                                                  >
-                                                    Reset whole set/card
-                                                  </Button>
-                                                  <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant={selectedScope === 'file' ? 'default' : 'outline'}
-                                                    onClick={() =>
-                                                      setRejectScopeByForm((prev) => ({ ...prev, [req.title]: 'file' }))
-                                                    }
-                                                  >
-                                                    Reset specific file
-                                                  </Button>
-                                                </div>
-                                                {selectedScope === 'file' ? (
-                                                  <div className="space-y-1">
-                                                    <Label htmlFor={`reject-file-${req.id}`} className="text-xs">
-                                                      Select file
-                                                    </Label>
-                                                    <select
-                                                      id={`reject-file-${req.id}`}
-                                                      className="w-full rounded-md border bg-background px-2 py-1.5 text-xs"
-                                                      value={selectedFile}
-                                                      onChange={(event) =>
-                                                        setRejectFileByForm((prev) => ({
-                                                          ...prev,
-                                                          [req.title]: event.target.value,
-                                                        }))
-                                                      }
-                                                    >
-                                                      <option value="">Select a file...</option>
-                                                      {rejectableFiles.map((file) => (
-                                                        <option key={file.key} value={file.key}>
-                                                          {file.label}
-                                                        </option>
-                                                      ))}
-                                                    </select>
-                                                  </div>
-                                                ) : null}
+                                            const scopeLabel =
+                                              selectedScope === 'file'
+                                                ? `Reset specific file${selectedFile ? ' (selected)' : ''}`
+                                                : selectedScope === 'info'
+                                                  ? 'Request more info only (no reset)'
+                                                  : 'Reset whole set/card';
+                                            return (
+                                              <div className="rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
+                                                Selected pathway action: <span className="font-medium text-foreground">{scopeLabel}</span>
                                               </div>
-                                            ) : null;
+                                            );
                                           })()}
                                           {(() => {
                                             const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
@@ -12094,16 +12123,18 @@ function ApplicationDetailPageContent() {
                                                 Boolean(rejectingByForm[req.title]) ||
                                                 !String(rejectEmailBodyByForm[req.title] || '').trim()
                                               }
-                                              onClick={() =>
-                                                handleRejectFormRedo(req.title, false, {
-                                                  scope: rejectScopeByForm[req.title] || 'form',
+                                              onClick={() => {
+                                                const selectedScope = rejectScopeByForm[req.title] || 'form';
+                                                const isInfoOnly = selectedScope === 'info';
+                                                void handleRejectFormRedo(req.title, false, {
+                                                  scope: selectedScope,
                                                   targetFileKey: rejectFileByForm[req.title] || '',
-                                                  resetCard: true,
-                                                })
-                                              }
+                                                  resetCard: !isInfoOnly,
+                                                });
+                                              }}
                                             >
                                               {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                                              Reset Card
+                                              {(rejectScopeByForm[req.title] || 'form') === 'info' ? 'Save Request (No Reset)' : 'Apply Reset Action'}
                                             </Button>
                                             <Button
                                               size="sm"
@@ -12112,12 +12143,16 @@ function ApplicationDetailPageContent() {
                                                 Boolean(rejectingByForm[req.title]) ||
                                                 !String(rejectEmailBodyByForm[req.title] || '').trim()
                                               }
-                                              onClick={() =>
-                                                handleRejectFormRedo(req.title, true, {
-                                                  resetCard: false,
+                                              onClick={() => {
+                                                const selectedScope = rejectScopeByForm[req.title] || 'form';
+                                                const isInfoOnly = selectedScope === 'info';
+                                                void handleRejectFormRedo(req.title, true, {
+                                                  scope: selectedScope,
+                                                  targetFileKey: rejectFileByForm[req.title] || '',
+                                                  resetCard: !isInfoOnly,
                                                   useSameLink: rejectUseSameLinkByForm[req.title] ?? true,
-                                                })
-                                              }
+                                                });
+                                              }}
                                             >
                                               {rejectingByForm[req.title] ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
                                               Email Primary Contact
