@@ -174,12 +174,25 @@ function LoginPageContent() {
       // Enforce lane separation: this portal is for end-users only.
       const tokenResult = await userCredential.user.getIdTokenResult();
       const claims = (tokenResult?.claims || {}) as Record<string, any>;
-      if (Boolean(claims.socialWorker)) {
+      let laneData: any = null;
+      try {
+        const laneResponse = await fetch('/api/auth/email-lane', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: normalizedEmail }),
+        });
+        laneData = await laneResponse.json().catch(() => null);
+      } catch {
+        laneData = null;
+      }
+      const isSwReserved = Boolean(laneData?.isSwLaneAccount ?? claims.socialWorker);
+      const isAdminReservedByRole = Boolean(laneData?.isAdminLaneByRoleOnly);
+      if (isSwReserved) {
         await auth.signOut().catch(() => null);
         setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');
         return;
       }
-      if (Boolean(claims.admin) || Boolean(claims.superAdmin)) {
+      if (isAdminReservedByRole || (!laneData && (Boolean(claims.admin) || Boolean(claims.superAdmin)))) {
         await auth.signOut().catch(() => null);
         setError('This email is assigned to Admin login. Please sign in at /admin/login.');
         return;

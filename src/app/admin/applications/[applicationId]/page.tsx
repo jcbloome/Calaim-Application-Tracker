@@ -3184,6 +3184,7 @@ function ApplicationDetailPageContent() {
   const [rejectScopeByForm, setRejectScopeByForm] = useState<Record<string, 'form' | 'file'>>({});
   const [rejectFileByForm, setRejectFileByForm] = useState<Record<string, string>>({});
   const [rejectEmailBodyByForm, setRejectEmailBodyByForm] = useState<Record<string, string>>({});
+  const [rejectUseSameLinkByForm, setRejectUseSameLinkByForm] = useState<Record<string, boolean>>({});
   const [resolvedStorageUrls, setResolvedStorageUrls] = useState<Record<string, string>>({});
   const emailReminderSectionRef = useRef<HTMLDivElement | null>(null);
   const statusReminderSectionRef = useRef<HTMLDivElement | null>(null);
@@ -7911,6 +7912,7 @@ function ApplicationDetailPageContent() {
       scope?: 'form' | 'file';
       targetFileKey?: string;
       resetCard?: boolean;
+      useSameLink?: boolean;
     }
   ) => {
     if (!docRef || !application) return;
@@ -7953,11 +7955,45 @@ function ApplicationDetailPageContent() {
       'snf facesheet': 'snf-facesheet',
     };
     const focusId = focusIdByFormName[String(formName || '').trim().toLowerCase()] || '';
+    const latestHistoryEntry = (() => {
+      const requestedName = String(formName || '').trim();
+      const forms = Array.isArray((application as any)?.forms) ? ((application as any).forms as any[]) : [];
+      const matched = forms.find((form: any) => {
+        const currentName = String(form?.name || '').trim();
+        const isWaiversAlias =
+          (currentName === 'Waivers' && requestedName === 'Waivers & Authorizations') ||
+          (currentName === 'Waivers & Authorizations' && requestedName === 'Waivers') ||
+          (isWaiverFormName(currentName) && isWaiverFormName(requestedName));
+        return currentName === requestedName || isWaiversAlias;
+      });
+      if (!matched) return null;
+      const history = Array.isArray((matched as any)?.revisionHistory) ? ((matched as any).revisionHistory as any[]) : [];
+      return history[0] || null;
+    })();
+    const parseLinkFromReason = (reason: string, marker: string) => {
+      const line = reason
+        .split('\n')
+        .map((value) => value.trim())
+        .find((value) => value.toLowerCase().startsWith(marker.toLowerCase()));
+      if (!line) return '';
+      return String(line.slice(marker.length).trim()).replace(/[)>.,;]+$/g, '');
+    };
+    const previousReason = String(latestHistoryEntry?.reason || '').trim();
+    const previousPortalLoginUrl =
+      String(latestHistoryEntry?.portalLoginUrl || '').trim() || parseLinkFromReason(previousReason, 'Login:');
+    const previousPortalPathUrl =
+      String(latestHistoryEntry?.portalPathUrl || '').trim() ||
+      parseLinkFromReason(previousReason, 'Go directly to your application:');
     const pathwayReturnPath = `/pathway?applicationId=${encodeURIComponent(String(applicationId || ''))}${
       focusId ? `&focus=${encodeURIComponent(focusId)}&mode=upload-missing` : ''
     }`;
-    const applicantPortalLoginUrl = `https://connectcalaim.com/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
-    const applicantPathwayUrl = `https://connectcalaim.com${pathwayReturnPath}`;
+    const useSameLink = Boolean(options?.useSameLink);
+    const applicantPortalLoginUrl =
+      useSameLink && previousPortalLoginUrl
+        ? previousPortalLoginUrl
+        : `https://connectcalaim.com/login?redirect=${encodeURIComponent(pathwayReturnPath)}&forceLogin=1`;
+    const applicantPathwayUrl =
+      useSameLink && previousPortalPathUrl ? previousPortalPathUrl : `https://connectcalaim.com${pathwayReturnPath}`;
     const customDescription = String(rejectEmailBodyByForm[formName] || '').trim();
     if (!customDescription) {
       toast({
@@ -8089,6 +8125,8 @@ function ApplicationDetailPageContent() {
           scope: rejectScope,
           targetFileKey: targetFileKey || null,
           targetFileLabel: targetFileLabel || null,
+          portalLoginUrl: applicantPortalLoginUrl,
+          portalPathUrl: applicantPathwayUrl,
         };
         const rawUploads = Array.isArray((form as any)?.uploadedFiles) ? (form as any).uploadedFiles : [];
         const normalizedUploads = rawUploads
@@ -11933,9 +11971,29 @@ function ApplicationDetailPageContent() {
                                             const applicantPortalLoginUrl = 'https://connectcalaim.com/login';
                                             const previewSubject = `Action needed: Please redo ${req.title}`;
                                             const descriptionValue = String(rejectEmailBodyByForm[req.title] || '');
+                                            const latestHistoryEntry = Array.isArray((formInfo as any)?.revisionHistory)
+                                              ? (formInfo as any).revisionHistory[0]
+                                              : null;
+                                            const previousReason = String(latestHistoryEntry?.reason || '').trim();
+                                            const parseLinkFromReason = (reason: string, marker: string) => {
+                                              const line = reason
+                                                .split('\n')
+                                                .map((value) => value.trim())
+                                                .find((value) => value.toLowerCase().startsWith(marker.toLowerCase()));
+                                              if (!line) return '';
+                                              return String(line.slice(marker.length).trim()).replace(/[)>.,;]+$/g, '');
+                                            };
+                                            const previousLoginUrl =
+                                              String(latestHistoryEntry?.portalLoginUrl || '').trim() ||
+                                              parseLinkFromReason(previousReason, 'Login:');
+                                            const previousPathUrl =
+                                              String(latestHistoryEntry?.portalPathUrl || '').trim() ||
+                                              parseLinkFromReason(previousReason, 'Go directly to your application:');
+                                            const useSameLink = rejectUseSameLinkByForm[req.title] ?? true;
                                             const loginInstructionsPreview =
                                               'Log in to the application portal and update this form so we can continue processing.\n\n' +
-                                              `Login: ${applicantPortalLoginUrl}`;
+                                              `${useSameLink && previousPathUrl ? `Go directly to your application: ${previousPathUrl}\n` : ''}` +
+                                              `Login: ${useSameLink && previousLoginUrl ? previousLoginUrl : applicantPortalLoginUrl}`;
                                             return (
                                               <div className="rounded-md border bg-white p-3 text-xs space-y-2">
                                                 <div className="font-medium text-foreground">Email preview (Primary contact)</div>
@@ -11959,6 +12017,28 @@ function ApplicationDetailPageContent() {
                                                     This description is required and appears above the login instructions.
                                                   </p>
                                                 </div>
+                                                {previousLoginUrl ? (
+                                                  <div className="rounded-md border border-amber-200 bg-amber-50/60 p-2">
+                                                    <div className="flex items-center gap-2">
+                                                      <Checkbox
+                                                        id={`reuse-revision-link-${req.id}`}
+                                                        checked={useSameLink}
+                                                        onCheckedChange={(checked) =>
+                                                          setRejectUseSameLinkByForm((prev) => ({
+                                                            ...prev,
+                                                            [req.title]: checked !== false,
+                                                          }))
+                                                        }
+                                                      />
+                                                      <Label htmlFor={`reuse-revision-link-${req.id}`} className="text-[11px] font-medium">
+                                                        Send same link as last revision email
+                                                      </Label>
+                                                    </div>
+                                                    <div className="mt-1 text-[11px] text-muted-foreground break-all">
+                                                      {previousLoginUrl}
+                                                    </div>
+                                                  </div>
+                                                ) : null}
                                                 <div className="space-y-1">
                                                   <span className="font-medium">Login instructions (always included)</span>
                                                   <pre className="whitespace-pre-wrap rounded bg-muted/60 p-2 text-[11px] leading-relaxed">
@@ -12035,6 +12115,7 @@ function ApplicationDetailPageContent() {
                                               onClick={() =>
                                                 handleRejectFormRedo(req.title, true, {
                                                   resetCard: false,
+                                                  useSameLink: rejectUseSameLinkByForm[req.title] ?? true,
                                                 })
                                               }
                                             >

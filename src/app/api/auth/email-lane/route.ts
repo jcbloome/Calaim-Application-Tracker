@@ -41,16 +41,16 @@ export async function POST(request: NextRequest) {
         uid ? adminDb.collection('roles_super_admin').doc(uid).get() : Promise.resolve(null as any),
       ]);
 
-    const isSwLaneAccount =
-      Boolean(claims.socialWorker) || Boolean(swEmailDoc?.exists) || Boolean(swUidDoc?.exists) || !swByEmailSnap.empty;
-    const isAdminLaneAccount =
+    const isSwLaneByRoleOnly =
+      Boolean(swEmailDoc?.exists) || Boolean(swUidDoc?.exists) || !swByEmailSnap.empty;
+    const isAdminLaneByRoleOnly =
       isHardcodedAdminEmail(email) ||
-      Boolean(claims.admin) ||
-      Boolean(claims.superAdmin) ||
       Boolean(adminEmailDoc?.exists) ||
       Boolean(superAdminEmailDoc?.exists) ||
       Boolean(adminUidDoc?.exists) ||
       Boolean(superAdminUidDoc?.exists);
+    const isSwLaneAccount = Boolean(claims.socialWorker) || isSwLaneByRoleOnly;
+    const isAdminLaneAccount = Boolean(claims.admin) || Boolean(claims.superAdmin) || isAdminLaneByRoleOnly;
 
     const reservedLane = isAdminLaneAccount ? 'admin' : isSwLaneAccount ? 'sw' : null;
     return NextResponse.json({
@@ -59,6 +59,8 @@ export async function POST(request: NextRequest) {
       uid: uid || null,
       isAdminLaneAccount,
       isSwLaneAccount,
+      isAdminLaneByRoleOnly,
+      isSwLaneByRoleOnly,
       isUserLaneAllowed: !isAdminLaneAccount && !isSwLaneAccount,
       reservedLane,
     });
