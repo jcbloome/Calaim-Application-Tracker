@@ -186,7 +186,10 @@ function LoginPageContent() {
         laneData = null;
       }
       const isSwReserved = Boolean(laneData?.isSwLaneAccount ?? claims.socialWorker);
-      const isAdminReservedByRole = Boolean(laneData?.isAdminLaneByRoleOnly);
+      const isAdminReservedByRole = Boolean(
+        laneData?.shouldBlockUserLaneForAdmin ??
+        laneData?.isAdminLaneByRoleOnly
+      );
       if (isSwReserved) {
         await auth.signOut().catch(() => null);
         setError('This email is assigned to Social Worker login. Please sign in at /sw-login.');

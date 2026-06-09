@@ -338,8 +338,9 @@ export default function MyApplicationsPage() {
   useEffect(() => {
     if (isUserLoading) return;
     if (!user) router.push('/login');
-    if (user && (isAdmin || isSuperAdmin)) router.push('/admin');
-  }, [user, isUserLoading, router, isAdmin, isSuperAdmin]);
+    // Keep this route member-first. Some invited family accounts can carry stale
+    // admin-like markers and should still be able to access their own applications.
+  }, [user, isUserLoading, router]);
 
   useEffect(() => {
     const claimStartedApps = async () => {
@@ -372,7 +373,7 @@ export default function MyApplicationsPage() {
 
   const isPageLoading = isUserLoading || isLoadingApplications;
 
-  if (isUserLoading || !user || isAdmin || isSuperAdmin) {
+  if (isUserLoading || !user) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] px-4 text-center">
         <Loader2 className="h-8 w-8 animate-spin" />

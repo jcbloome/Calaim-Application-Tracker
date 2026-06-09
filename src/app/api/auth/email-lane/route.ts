@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const [swEmailDoc, swByEmailSnap, adminEmailDoc, superAdminEmailDoc, swUidDoc, adminUidDoc, superAdminUidDoc] =
+    const [swEmailDoc, swByEmailSnap, adminEmailDoc, superAdminEmailDoc, swUidDoc, adminUidDoc, superAdminUidDoc, userUidDoc] =
       await Promise.all([
         adminDb.collection('socialWorkers').doc(email).get(),
         adminDb.collection('socialWorkers').where('email', '==', email).limit(1).get(),
@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
         uid ? adminDb.collection('socialWorkers').doc(uid).get() : Promise.resolve(null as any),
         uid ? adminDb.collection('roles_admin').doc(uid).get() : Promise.resolve(null as any),
         uid ? adminDb.collection('roles_super_admin').doc(uid).get() : Promise.resolve(null as any),
+        uid ? adminDb.collection('users').doc(uid).get() : Promise.resolve(null as any),
       ]);
 
     const isSwLaneByRoleOnly =
@@ -49,10 +50,23 @@ export async function POST(request: NextRequest) {
       Boolean(superAdminEmailDoc?.exists) ||
       Boolean(adminUidDoc?.exists) ||
       Boolean(superAdminUidDoc?.exists);
+    const userData = userUidDoc?.exists ? (userUidDoc.data() as Record<string, any>) : {};
+    const roleLabel = clean(userData?.role, 120).toLowerCase();
+    const isStaffProfile =
+      Boolean(userData?.isStaff) ||
+      roleLabel.includes('admin') ||
+      roleLabel.includes('super') ||
+      roleLabel.includes('social worker') ||
+      roleLabel.includes('staff');
+    const shouldBlockUserLaneForAdmin =
+      isHardcodedAdminEmail(email) ||
+      Boolean(claims.superAdmin) ||
+      Boolean(claims.admin && isStaffProfile) ||
+      Boolean(isAdminLaneByRoleOnly && isStaffProfile);
     const isSwLaneAccount = Boolean(claims.socialWorker) || isSwLaneByRoleOnly;
     const isAdminLaneAccount = Boolean(claims.admin) || Boolean(claims.superAdmin) || isAdminLaneByRoleOnly;
 
-    const reservedLane = isAdminLaneAccount ? 'admin' : isSwLaneAccount ? 'sw' : null;
+    const reservedLane = shouldBlockUserLaneForAdmin ? 'admin' : isSwLaneAccount ? 'sw' : null;
     return NextResponse.json({
       success: true,
       email,
@@ -61,7 +75,9 @@ export async function POST(request: NextRequest) {
       isSwLaneAccount,
       isAdminLaneByRoleOnly,
       isSwLaneByRoleOnly,
-      isUserLaneAllowed: !isAdminLaneAccount && !isSwLaneAccount,
+      isStaffProfile,
+      shouldBlockUserLaneForAdmin,
+      isUserLaneAllowed: !shouldBlockUserLaneForAdmin && !isSwLaneAccount,
       reservedLane,
     });
   } catch (error: any) {
