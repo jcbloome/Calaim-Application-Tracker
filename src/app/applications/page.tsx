@@ -344,7 +344,7 @@ export default function MyApplicationsPage() {
 
   useEffect(() => {
     const claimStartedApps = async () => {
-      if (!auth || !user || isUserLoading || isAdmin || isSuperAdmin || hasAttemptedClaim) return;
+      if (!auth || !user || isUserLoading || hasAttemptedClaim) return;
       setHasAttemptedClaim(true);
       try {
         const token = await auth.currentUser?.getIdToken();
@@ -369,7 +369,7 @@ export default function MyApplicationsPage() {
       }
     };
     claimStartedApps();
-  }, [auth, user, isUserLoading, isAdmin, isSuperAdmin, hasAttemptedClaim, toast]);
+  }, [auth, user, isUserLoading, hasAttemptedClaim, toast]);
 
   const isPageLoading = isUserLoading || isLoadingApplications;
 

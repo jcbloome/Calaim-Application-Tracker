@@ -341,16 +341,18 @@ function PathwayPageContent() {
   
   const docRef = useMemoFirebase(() => {
     if (!firestore || !applicationId) return null;
-    
-    // Admin-created applications are stored directly in the applications collection
-    if (isAdminCreatedApp) {
+
+    // Only staff should read directly from the admin collection.
+    // Invited family members can have admin_app_* IDs too, but their source of truth
+    // for portal access is users/{uid}/applications/{applicationId}.
+    if (isAdminCreatedApp && (isAdmin || isSuperAdmin)) {
       return doc(firestore, 'applications', applicationId);
     }
     
     // Regular user applications are stored in user subcollections
     if (!user) return null;
     return doc(firestore, `users/${user.uid}/applications`, applicationId);
-  }, [firestore, applicationId, user, isAdminCreatedApp]);
+  }, [firestore, applicationId, user, isAdminCreatedApp, isAdmin, isSuperAdmin]);
 
   useEffect(() => {
     if (!docRef) {
