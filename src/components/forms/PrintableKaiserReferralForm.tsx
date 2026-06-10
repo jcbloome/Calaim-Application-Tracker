@@ -685,11 +685,12 @@ export function PrintableKaiserReferralForm({
       }
 
       let remoteDraft: any = null;
-      if (lineValue(applicationId)) {
+      if (lineValue(applicationId) || lineValue(draftStorageKey)) {
         try {
           const params = new URLSearchParams({
             applicationId: lineValue(applicationId),
             userId: lineValue(userId),
+            draftKey: lineValue(draftStorageKey),
           });
           const response = await fetch(`/api/forms/kaiser-referral/autosave?${params.toString()}`, {
             cache: 'no-store',
@@ -718,8 +719,8 @@ export function PrintableKaiserReferralForm({
     };
   }, [applicationId, userId, draftStorageKey, shouldSkipDraftHydration]);
 
-  const saveDraftNow = React.useCallback(async () => {
-    if (!isDraftHydrated) return;
+  const saveDraftNow = React.useCallback(async (): Promise<boolean> => {
+    if (!isDraftHydrated) return false;
     const savedAtIso = new Date().toISOString();
     const draft = {
       ...autosavePayload,
@@ -728,28 +729,31 @@ export function PrintableKaiserReferralForm({
     setAutosaveStatus('saving');
     try {
       window.localStorage.setItem(draftStorageKey, JSON.stringify(draft));
-      if (lineValue(applicationId)) {
-        const response = await fetch('/api/forms/kaiser-referral/autosave', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            applicationId: lineValue(applicationId),
-            userId: lineValue(userId),
-            draft,
-          }),
-        });
-        if (!response.ok) {
-          const result = await response.json().catch(() => ({}));
-          throw new Error(String(result?.error || 'Failed to autosave draft.'));
-        }
+      const response = await fetch('/api/forms/kaiser-referral/autosave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: lineValue(applicationId),
+          userId: lineValue(userId),
+          memberClientId: lineValue(memberClientId),
+          referralContext: lineValue(referralContext),
+          draftKey: lineValue(draftStorageKey),
+          draft,
+        }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(String(result?.error || 'Failed to autosave draft.'));
       }
       setLastAutosavedAtIso(savedAtIso);
       setAutosaveStatus('saved');
+      return true;
     } catch (error) {
       console.warn('[kaiser-referral] autosave failed:', error);
       setAutosaveStatus('error');
+      return false;
     }
-  }, [applicationId, autosavePayload, draftStorageKey, isDraftHydrated, userId]);
+  }, [applicationId, autosavePayload, draftStorageKey, isDraftHydrated, memberClientId, referralContext, userId]);
 
   React.useEffect(() => {
     if (!isDraftHydrated) return;
@@ -758,6 +762,15 @@ export function PrintableKaiserReferralForm({
     }, 700);
     return () => window.clearTimeout(handle);
   }, [isDraftHydrated, saveDraftNow]);
+
+  const ensureDraftSavedBeforeAction = React.useCallback(
+    async (actionLabel: string) => {
+      const saved = await saveDraftNow();
+      if (saved) return true;
+      return window.confirm(`Could not save a backup draft before ${actionLabel}. Continue anyway?`);
+    },
+    [saveDraftNow]
+  );
 
   const buildPacketPdfBlob = async () => {
     if (!packetRef.current) {
@@ -814,11 +827,15 @@ export function PrintableKaiserReferralForm({
       window.alert('Member phone number is required before sending to Kaiser Intake.');
       return;
     }
-    setIsPdfConfirmedForSend(true);
-    setHasSentTestEmail(false);
-    setLastTestEmailSentTo('');
-    // Open on next tick to avoid Radix outside-click close race from the same button click.
-    window.setTimeout(() => setEmailPreviewOpen(true), 0);
+    void (async () => {
+      const canProceed = await ensureDraftSavedBeforeAction('opening the send preview');
+      if (!canProceed) return;
+      setIsPdfConfirmedForSend(true);
+      setHasSentTestEmail(false);
+      setLastTestEmailSentTo('');
+      // Open on next tick to avoid Radix outside-click close race from the same button click.
+      window.setTimeout(() => setEmailPreviewOpen(true), 0);
+    })();
   };
 
   const buildAttachmentBlob = async () => {
@@ -841,6 +858,8 @@ export function PrintableKaiserReferralForm({
       window.alert('Referrer email is required to send a pre-send test email.');
       return;
     }
+    const canProceed = await ensureDraftSavedBeforeAction('sending test email');
+    if (!canProceed) return;
     setIsSendingTestEmail(true);
     try {
       const formSnapshot = {
@@ -927,6 +946,8 @@ export function PrintableKaiserReferralForm({
       );
       if (!proceedWithoutTest) return;
     }
+    const canProceed = await ensureDraftSavedBeforeAction('sending to Kaiser Intake');
+    if (!canProceed) return;
     setIsSendingToKaiser(true);
     try {
       const formSnapshot = {
@@ -1167,7 +1188,7 @@ export function PrintableKaiserReferralForm({
                 disabled={!isDraftHydrated || autosaveStatus === 'saving'}
                 onClick={() => void saveDraftNow()}
               >
-                Save
+                Save Draft Now
               </Button>
             </div>
           </div>
@@ -1181,7 +1202,13 @@ export function PrintableKaiserReferralForm({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void onOpenPdfPreview?.()}
+                onClick={() => {
+                  void (async () => {
+                    const canProceed = await ensureDraftSavedBeforeAction('opening PDF preview');
+                    if (!canProceed) return;
+                    await onOpenPdfPreview?.();
+                  })();
+                }}
                 disabled={!isPdfPreviewStepEnabled || isGeneratingPdfPreview || !onOpenPdfPreview}
               >
                 {isGeneratingPdfPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -1190,7 +1217,13 @@ export function PrintableKaiserReferralForm({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void onDownloadPdfPreview?.()}
+                onClick={() => {
+                  void (async () => {
+                    const canProceed = await ensureDraftSavedBeforeAction('downloading PDF');
+                    if (!canProceed) return;
+                    await onDownloadPdfPreview?.();
+                  })();
+                }}
                 disabled={!isPdfPreviewStepEnabled || isGeneratingPdfPreview || !onDownloadPdfPreview}
               >
                 {isGeneratingPdfPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
