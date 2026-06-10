@@ -124,7 +124,9 @@ function resolveReopenGeneratorUrl(row: EmailLogEntry): string {
     setIfValue('userId', snapshot.userId);
     setIfValue('taskId', snapshot.taskId);
     setIfValue('memberClientId', snapshot.memberClientId);
-    setIfValue('referralContext', snapshot.referralContext || 'email_log_reopen');
+    // Force reopen context so the printable page restores submitted snapshot values
+    // instead of hydrating local autosave draft state.
+    setIfValue('referralContext', 'email_log_reopen');
     setIfValue('memberName', snapshot.memberName);
     setIfValue('memberDob', snapshot.memberDob);
     setIfValue('memberPhone', snapshot.memberPhone);

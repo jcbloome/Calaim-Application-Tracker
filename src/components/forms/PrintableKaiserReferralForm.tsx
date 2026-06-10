@@ -438,7 +438,6 @@ export function PrintableKaiserReferralForm({
   const [lastAutosavedAtIso, setLastAutosavedAtIso] = React.useState('');
   const memberName = formValues.memberName;
   const referrerRelationship = lineValue(formValues.referrerRelationship).toLowerCase();
-  const hasKaiserPlan = lineValue(prefill.healthPlan).toLowerCase().includes('kaiser');
   const referralDate = formValues.referralDate;
   const memberAddress = formValues.memberAddress;
   const currentLocationAddress = formValues.currentLocationAddress;
@@ -493,6 +492,10 @@ export function PrintableKaiserReferralForm({
     const memberKey = lineValue(memberClientId || prefill.memberMrn || prefill.memberName) || 'member';
     return `kaiser-referral-draft:${appKey}:${userKey}:${memberKey}`.toLowerCase();
   }, [applicationId, userId, memberClientId, prefill.memberMrn, prefill.memberName]);
+  const shouldSkipDraftHydration = React.useMemo(() => {
+    const context = lineValue(referralContext).toLowerCase();
+    return context === 'email_log_reopen' || context === 'submitted_view_reopen';
+  }, [referralContext]);
   const autosavePayload = React.useMemo(
     () => ({
       formValues,
@@ -565,6 +568,10 @@ export function PrintableKaiserReferralForm({
   }, [formValues, onFormValuesChange]);
 
   React.useEffect(() => {
+    if (shouldSkipDraftHydration) {
+      setIsDraftHydrated(true);
+      return;
+    }
     let cancelled = false;
     const parseSavedAt = (value: unknown) => {
       const parsed = new Date(String(value || ''));
@@ -709,7 +716,7 @@ export function PrintableKaiserReferralForm({
     return () => {
       cancelled = true;
     };
-  }, [applicationId, userId, draftStorageKey]);
+  }, [applicationId, userId, draftStorageKey, shouldSkipDraftHydration]);
 
   const saveDraftNow = React.useCallback(async () => {
     if (!isDraftHydrated) return;
@@ -1454,8 +1461,8 @@ export function PrintableKaiserReferralForm({
 
           <div className="mt-2 border-2 border-black bg-[#d9e8f7] p-2 text-[13px] leading-5">
             <div className="font-semibold">Is the person being referred a Kaiser Permanente (KP) Medi-Cal Member?*</div>
-            <div><Checkbox checked={hasKaiserPlan} /> Yes, this is a Kaiser Permanente Medi-Cal Member</div>
-            <div><Checkbox checked={!hasKaiserPlan} /> No, STOP, do NOT proceed. Please send referral to their assigned Medi-Cal Managed Care Plan</div>
+            <div><Checkbox checked /> Yes, this is a Kaiser Permanente Medi-Cal Member</div>
+            <div><Checkbox checked={false} /> No, STOP, do NOT proceed. Please send referral to their assigned Medi-Cal Managed Care Plan</div>
           </div>
 
           <div className="mt-2 text-[18px] font-bold leading-none">Referral Source Information</div>
