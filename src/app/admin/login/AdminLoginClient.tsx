@@ -140,19 +140,35 @@ export default function AdminLoginClient() {
       const userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
 
       const idToken = await userCredential.user.getIdToken();
-      const sessionResponse = await fetch('/api/auth/admin-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
-      });
+      try {
+        const sessionResponse = await fetch('/api/auth/admin-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        });
 
-      if (!sessionResponse.ok) {
-        const sessionData = await sessionResponse.json().catch(() => ({}));
-        const sessionError = sessionData?.error || 'Admin access not granted.';
-        await auth.signOut();
-        setError(sessionError);
-        setIsLoading(false);
-        return;
+        if (!sessionResponse.ok) {
+          const sessionData = await sessionResponse.json().catch(() => ({}));
+          const sessionError = sessionData?.error || 'Admin access not granted.';
+          await auth.signOut();
+          setError(sessionError);
+          setIsLoading(false);
+          return;
+        }
+      } catch (sessionFetchError) {
+        // Network-level failures (e.g. temporary API reachability issues) throw here.
+        // Allow login to continue only when the user already has admin claims.
+        console.error('[ADMIN_LOGIN] Failed to establish admin session via API:', sessionFetchError);
+        const existingTokenResult = await userCredential.user.getIdTokenResult().catch(() => null);
+        const existingClaims = (existingTokenResult?.claims || {}) as Record<string, any>;
+        const hasAdminClaim = Boolean(existingClaims.admin) || Boolean(existingClaims.superAdmin);
+
+        if (!hasAdminClaim) {
+          await auth.signOut();
+          setError('Unable to reach the admin session service. Please try again in a moment.');
+          setIsLoading(false);
+          return;
+        }
       }
 
       // Force refresh to pick up custom claims (admin)

@@ -1265,6 +1265,8 @@ function PathwayPageContent() {
   }
   
   const isReadOnly = application.status === 'Completed & Submitted' || application.status === 'Approved';
+  const canStaffManageUploads = Boolean(isAdmin || isSuperAdmin);
+  const isUploadLockedByReadOnly = isReadOnly && !canStaffManageUploads;
   const memberCounty = String(
     application.currentCounty ||
     application.customaryCounty ||
@@ -1477,7 +1479,7 @@ function PathwayPageContent() {
     const formInfo = formStatusMap.get(req.title);
     const isCompleted = formInfo?.status === 'Completed' && !hasOpenRevisionRequest(formInfo);
     const reviewState = getRequirementReviewState(formInfo);
-    const canEditUploadedDocument = !isReadOnly && reviewState !== 'reviewed';
+    const canEditUploadedDocument = canStaffManageUploads || (!isReadOnly && reviewState !== 'reviewed');
     const missingGuidance = getRequirementMissingGuidance(req as any, reviewState);
     const uploadReceipt = uploadReceiptByRequirement[req.title];
     const href = req.href ? `${req.href}${req.href.includes('?') ? '&' : '?'}applicationId=${applicationId}` : '#';
@@ -1495,7 +1497,7 @@ function PathwayPageContent() {
       return `/forms/waivers/printable?${params.toString()}`;
     })();
     
-    if (isReadOnly) {
+    if (isReadOnly && !(canStaffManageUploads && req.type === 'Upload')) {
        if (req.id === 'cs-summary') {
          return (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -1860,24 +1862,44 @@ function PathwayPageContent() {
                       {renderUploadReceipt()}
                       <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                         {(isAdmin || isSuperAdmin) && staffDownloadUrl ? (
-                          <div className="flex items-center justify-between gap-2">
-                            <a
-                              href={staffDownloadUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <a
+                                href={staffDownloadUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
+                              >
+                                {formInfo?.fileName || 'Completed'}
+                              </a>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                                onClick={() => handleFileRemove(formInfo!)}
+                              >
+                                <X className="h-4 w-4" />
+                                <span className="sr-only">Remove file</span>
+                              </Button>
+                            </div>
+                            <Label
+                              htmlFor={`${req.id}-admin-replace`}
+                              className={cn(
+                                "flex h-9 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-slate-50 text-slate-900 text-xs font-medium ring-offset-background transition-colors hover:bg-slate-100",
+                                isUploading && "opacity-50 pointer-events-none"
+                              )}
                             >
-                              {formInfo?.fileName || 'Completed'}
-                            </a>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
-                              onClick={() => handleFileRemove(formInfo!)}
-                            >
-                              <X className="h-4 w-4" />
-                              <span className="sr-only">Remove file</span>
-                            </Button>
+                              {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                              <span>{isUploading ? `Replacing... ${currentProgress?.toFixed(0)}%` : 'Upload Revised Document'}</span>
+                            </Label>
+                            <Input
+                              id={`${req.id}-admin-replace`}
+                              type="file"
+                              className="sr-only"
+                              onChange={(e) => handleFileUpload(e, req.title, formInfo)}
+                              disabled={isUploading}
+                              multiple={isMultiple}
+                            />
                           </div>
                         ) : (
                           <div className="space-y-2">
@@ -1937,11 +1959,11 @@ function PathwayPageContent() {
                     <p className="text-xs text-muted-foreground">
                       Accepted: PDF, Word, JPG, PNG (max 10MB). You can replace files anytime before submit.
                     </p>
-                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-slate-50 text-slate-900 text-sm font-medium ring-offset-background transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
+                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-slate-50 text-slate-900 text-sm font-medium ring-offset-background transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isUploadLockedByReadOnly) && "opacity-50 pointer-events-none")}>
                       {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                       <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
                     </Label>
-                    <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isReadOnly} multiple={isMultiple} />
+                    <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isUploadLockedByReadOnly} multiple={isMultiple} />
                   </div>
                 );
              }
@@ -1952,24 +1974,44 @@ function PathwayPageContent() {
                       {renderUploadReceipt()}
                       <div className="min-w-0 max-w-full overflow-hidden p-2 rounded-md bg-green-50 border border-green-200 text-sm">
                         {(isAdmin || isSuperAdmin) && staffDownloadUrl ? (
-                          <div className="flex items-center justify-between gap-2">
-                            <a
-                              href={staffDownloadUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <a
+                                href={staffDownloadUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="min-w-0 flex-1 truncate text-green-800 font-medium hover:underline"
+                              >
+                                {formInfo?.fileName || 'Completed'}
+                              </a>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
+                                onClick={() => handleFileRemove(formInfo!)}
+                              >
+                                <X className="h-4 w-4" />
+                                <span className="sr-only">Remove file</span>
+                              </Button>
+                            </div>
+                            <Label
+                              htmlFor={`${req.id}-admin-replace`}
+                              className={cn(
+                                "flex h-9 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-slate-50 text-slate-900 text-xs font-medium ring-offset-background transition-colors hover:bg-slate-100",
+                                isUploading && "opacity-50 pointer-events-none"
+                              )}
                             >
-                              {formInfo?.fileName || 'Completed'}
-                            </a>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 shrink-0 text-red-500 hover:bg-red-100 hover:text-red-600"
-                              onClick={() => handleFileRemove(formInfo!)}
-                            >
-                              <X className="h-4 w-4" />
-                              <span className="sr-only">Remove file</span>
-                            </Button>
+                              {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                              <span>{isUploading ? `Replacing... ${currentProgress?.toFixed(0)}%` : 'Upload Revised Document'}</span>
+                            </Label>
+                            <Input
+                              id={`${req.id}-admin-replace`}
+                              type="file"
+                              className="sr-only"
+                              onChange={(e) => handleFileUpload(e, req.title, formInfo)}
+                              disabled={isUploading}
+                              multiple={isMultiple}
+                            />
                           </div>
                         ) : (
                           <div className="space-y-2">
@@ -2035,11 +2077,11 @@ function PathwayPageContent() {
                            </Link>
                        </Button>
                     )}
-                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isReadOnly) && "opacity-50 pointer-events-none")}>
+                    <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isUploadLockedByReadOnly) && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                         <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
                     </Label>
-                    <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isReadOnly} multiple={isMultiple} />
+                    <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isUploadLockedByReadOnly} multiple={isMultiple} />
                 </div>
             );
         default:
@@ -2051,7 +2093,7 @@ function PathwayPageContent() {
   const consolidatedProgress = uploadProgress['consolidated-medical-upload'];
   const isAnyConsolidatedChecked = Object.values(consolidatedUploadChecks).some(v => v);
   const userPrimaryCardsCount =
-    visiblePathwayRequirements.length + (!isReadOnly && consolidatedMedicalDocuments.length > 0 ? 1 : 0);
+    visiblePathwayRequirements.length + (!isUploadLockedByReadOnly && consolidatedMedicalDocuments.length > 0 ? 1 : 0);
   const showUserPlaceholderCard = userPrimaryCardsCount % 2 === 1;
 
   return (
@@ -2367,7 +2409,7 @@ function PathwayPageContent() {
                     )
                 })}
 
-                {!isReadOnly && consolidatedMedicalDocuments.length > 0 && (
+                {!isUploadLockedByReadOnly && consolidatedMedicalDocuments.length > 0 && (
                     <Card key="consolidated-medical" className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
                         <CardHeader className="pb-4">
                             <div className="flex justify-between items-start gap-4">
@@ -2388,7 +2430,7 @@ function PathwayPageContent() {
                                             onCheckedChange={(checked) => {
                                                 setConsolidatedUploadChecks(prev => ({ ...prev, [doc.name]: !!checked }))
                                             }}
-                                            disabled={isReadOnly || formStatusMap.get(doc.name)?.status === 'Completed'}
+                                            disabled={isUploadLockedByReadOnly || formStatusMap.get(doc.name)?.status === 'Completed'}
                                         />
                                         <label htmlFor={doc.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                                             {doc.name}
@@ -2396,11 +2438,11 @@ function PathwayPageContent() {
                                     </div>
                                 ))}
                             </div>
-                            <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || isReadOnly || !isAnyConsolidatedChecked) && "opacity-50 pointer-events-none")}>
+                            <Label htmlFor="consolidated-upload" className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isConsolidatedUploading || isUploadLockedByReadOnly || !isAnyConsolidatedChecked) && "opacity-50 pointer-events-none")}>
                                 {isConsolidatedUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
                                 <span>{isConsolidatedUploading ? `Uploading... ${consolidatedProgress?.toFixed(0)}%` : 'Upload Consolidated Documents'}</span>
                             </Label>
-                            <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isReadOnly || !isAnyConsolidatedChecked} multiple />
+                            <Input id="consolidated-upload" type="file" className="sr-only" onChange={handleConsolidatedUpload} disabled={isConsolidatedUploading || isUploadLockedByReadOnly || !isAnyConsolidatedChecked} multiple />
                         </CardContent>
                     </Card>
                 )}

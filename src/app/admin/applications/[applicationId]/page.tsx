@@ -10599,18 +10599,14 @@ function ApplicationDetailPageContent() {
                           </div>
                         </div>
                       ) : null}
-                      {!hasViewableFile && (
-                        <>
-                          {isUploading && (
-                            <Progress value={currentProgress} className="h-1 w-full" />
-                          )}
-                          <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
-                              {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                              <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
-                          </Label>
-                          <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading} multiple={isMultiple} />
-                        </>
+                      {isUploading && (
+                        <Progress value={currentProgress} className="h-1 w-full" />
                       )}
+                      <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
+                          {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                          <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload Revised File(s)'}</span>
+                      </Label>
+                      <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title, formInfo)} disabled={isUploading} multiple={isMultiple} />
                     </div>
                  )
              }
