@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import { NextRequest, NextResponse } from 'next/server';
 import { PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
+import path from 'path';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,10 @@ const DEFAULT_TEMPLATE_URL = '';
 const PUBLIC_TEMPLATE_CANDIDATE_PATHS = [
   '/Templates/Kaiser%20Referral%20Form.pdf',
   '/templates/Kaiser%20Referral%20Form.pdf',
+];
+const PUBLIC_TEMPLATE_CANDIDATE_FILES = [
+  path.join(process.cwd(), 'public', 'Templates', 'Kaiser Referral Form.pdf'),
+  path.join(process.cwd(), 'public', 'templates', 'Kaiser Referral Form.pdf'),
 ];
 const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
 const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
@@ -132,6 +137,19 @@ async function loadTemplatePdfBuffer(req: NextRequest) {
         ok: false as const,
         error: `Template URL fetch failed: ${String(e?.message || discoveredUrl)}`,
       };
+    }
+  }
+
+  // Repo-hosted fallback (filesystem) for published environments:
+  // if template is committed under /public/Templates, read it directly from disk.
+  for (const candidateFile of PUBLIC_TEMPLATE_CANDIDATE_FILES) {
+    try {
+      const bytes = await fs.readFile(candidateFile);
+      if (bytes?.length) {
+        return { ok: true as const, buffer: bytes, source: `public-file:${candidateFile}` };
+      }
+    } catch {
+      // keep trying candidate files
     }
   }
 
