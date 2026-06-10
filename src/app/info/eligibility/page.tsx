@@ -64,7 +64,7 @@ export default function InfoEligibilityPage() {
         <div className="container mx-auto max-w-4xl px-4 py-8 sm:px-6 space-y-6">
             <div className="mb-10">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-                Program Information Page 4
+                Program Information Page 5
               </h1>
               <div className="mt-4">
                 <GlossaryDialog />
@@ -87,7 +87,7 @@ export default function InfoEligibilityPage() {
           ))}
            <div className="mt-8 w-full border-t pt-4">
                 <div className="text-left mb-2">
-                    <span className="text-sm text-muted-foreground">Page 4 of 4</span>
+                    <span className="text-sm text-muted-foreground">Page 5 of 5</span>
                 </div>
                 <div className="flex items-center justify-between">
                     <Link href="/info/financial" className="text-sm font-medium text-primary hover:underline">

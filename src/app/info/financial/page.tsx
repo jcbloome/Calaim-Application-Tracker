@@ -14,41 +14,6 @@ import { GlossaryDialog } from '@/components/GlossaryDialog';
 
 const infoSections = [
   {
-    title: 'Non-Medical Out-of-Home Care (NMOHC) Payment',
-    content: [
-      "NMOHC is a payment supplement that boosts a person's monthly SSI check because they live in a licensed assisted living home rather than an apartment or house.",
-      'In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state recognizes that costs are much higher than someone living independently. To help cover this, the person moves from the "Independent Living" rate to the "NMOHC" rate.',
-      <div key="nmohc-1">
-        <strong>1. Confirm Financial Eligibility (The "Paper" Test)</strong>
-        <p>Since NMOHC is part of the SSI program, you can verify the financial requirements now.</p>
-        <ul className="list-disc pl-5 mt-2 space-y-1">
-          <li>Income: For 2026, total "countable" monthly income must be less than $1,626.07.</li>
-          <li>Assets: As of January 1, 2026, asset limits are reinstated. An individual must have less than $2,000 in countable resources ($3,000 for a couple).</li>
-          <li>Note: One car and the primary home are usually excluded from this limit.</li>
-        </ul>
-      </div>,
-      <div key="nmohc-2" className="mt-4">
-        <strong>2. Verification with Social Security (The "Pre-Move" Call)</strong>
-        <p>Visit a local Social Security office in person for a living arrangement interview to confirm NMOHC eligibility and the supplement amount.</p>
-        <ul className="list-disc pl-5 mt-2 space-y-1">
-          <li>Tell them the person plans to move into a licensed RCFE.</li>
-          <li>Ask for the new SSI payment calculation based on the 2026 NMOHC rate.</li>
-        </ul>
-      </div>,
-    ],
-  },
-  {
-    title: '"Room and Board" and "Assisted Living" Payments',
-    content: [
-      "The MCP member is responsible for paying the RCFE the 'room and board' portion and the MCP is responsible for paying the RCFE the 'assisted living' portion.",
-      `For members eligible for SSI/SSP and the 2026 Non-Medical Out of Home Care payment (NMOHC), SSI/SSP is bumped up to $1,626.07. The member usually retains $182 for personal needs expenses and the RCFE receives the $1,444.07 balance as payment for "room and board". Also, members eligible for the NMOHC will pay at least $1,447.00 to the RCFE. Members who receive more than this amount can pay more for 'room and board' for a private room or to open up RCFEs in more expensive areas.`,
-      "Members not eligible for the NMOHC will still have a 'room and board' obligation but the amount could be flexible depending on the RCFE and the assessed tiered level.",
-      "Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a 'room and board' payment from the member (or their family).",
-      'Working with CalAIM is at the discretion of the RCFEs. Many RCFEs, especially in more expensive areas, most likely will not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas.',
-      `The "assisted living" payment paid by the MCP is a fixed rate based on level of care but may not align with market rate in certain counties or for all RCFEs. Supplementing the "room and board" to arrive at market rate is at the discretion of the families.`,
-    ],
-  },
-  {
     title: 'Share of Cost (SOC)',
     content: [
       'Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.',
@@ -113,29 +78,16 @@ const infoSections = [
                 <span className="font-semibold">The Strategy:</span> increasing room and board obligations on the
                 admission agreement (minus the $182 personal needs allowance) may reduce countable income.
               </li>
-            </ul>
-          </div>
-
-          <div>
-            <div className="font-semibold text-gray-900">2. The "Medical Expense" Spend-Down (Paperwork Fix)</div>
-            <div>
-              When board-and-care deduction is unavailable because CalAIM is paying for care, a spend-down strategy
-              can still reduce SOC by documenting incurred medical or remedial expenses.
-            </div>
-            <ul className="mt-2 list-disc pl-5 space-y-1">
               <li>
-                <span className="font-semibold">Remedial care expenses:</span> the RCFE amount above standard room
-                and board may be treated as remedial care expense.
-              </li>
-              <li>
-                <span className="font-semibold">How to report:</span> submit RCFE invoices to County Social Services
-                (DPSS) as incurred medical expenses. Member out-of-pocket payments count toward SOC.
+                <span className="font-semibold">Practical rule of thumb:</span> paying about 90% of monthly income
+                toward room and board can eliminate SOC. This method can only be implemented once the member has moved
+                into assisted living.
               </li>
             </ul>
           </div>
 
           <div>
-            <div className="font-semibold text-gray-900">3. Purchase Supplemental Insurance (Often the Cleanest Fix)</div>
+            <div className="font-semibold text-gray-900">2. Purchase Supplemental Insurance (Often the Cleanest Fix)</div>
             <div>
               Lower gross countable income before SOC calculation by documenting deductible premiums and insurance
               deductions.
@@ -151,6 +103,24 @@ const infoSections = [
               </li>
             </ul>
           </div>
+
+          <div>
+            <div className="font-semibold text-gray-900">3. Use Spousal Impoverishment Protections (HCBS Waiver)</div>
+            <div>
+              Married couples or registered domestic partners may reduce SOC by applying HCBS spousal protections.
+            </div>
+            <ul className="mt-2 list-disc pl-5 space-y-1">
+              <li>
+                <span className="font-semibold">Spousal deeming protection:</span> the community spouse&apos;s income is excluded; SOC is based on the applicant spouse&apos;s countable income.
+              </li>
+              <li>
+                <span className="font-semibold">MMMNA allocation:</span> if the community spouse&apos;s income is below <span className="font-semibold">$4,066.50</span> (2026 MMMNA), income can be allocated to reach that floor.
+              </li>
+              <li>
+                <span className="font-semibold">SOC outcome:</span> once county staff apply these protections correctly, SOC is often lowered substantially and may be reduced to $0.
+              </li>
+            </ul>
+          </div>
         </div>
 
         <div className="mt-4 font-semibold text-gray-900">Summary of Where to Go</div>
@@ -162,10 +132,6 @@ const infoSections = [
           <li>
             <span className="font-semibold">Revised admission agreement:</span> showing higher room and board
             obligation up to available income.
-          </li>
-          <li>
-            <span className="font-semibold">Medical receipts:</span> out-of-pocket costs (incontinence supplies,
-            OTC meds, transportation, etc.).
           </li>
           <li>
             <span className="font-semibold">Insurance proof:</span> monthly supplemental premium documentation.
@@ -225,17 +191,10 @@ const infoSections = [
       </div>,
     ],
   },
-  {
-    title: 'Benefitscal.com',
-    content: [
-      'A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.',
-      <>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">www.benefitscal.com</a> for current SOC verification and more information.</>,
-    ],
-  },
 ];
 
 export default function InfoFinancialPage() {
-  const orderedInfoSections = [infoSections[2], infoSections[3], infoSections[0], infoSections[1]];
+  const orderedInfoSections = [infoSections[0]];
 
   return (
     <>
@@ -244,7 +203,7 @@ export default function InfoFinancialPage() {
         <div className="container mx-auto max-w-4xl px-4 py-8 sm:px-6 space-y-6">
           <div className="mb-10">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-              Program Information Page 3
+              Program Information Page 4
             </h1>
             <div className="mt-4">
               <GlossaryDialog />
@@ -267,10 +226,10 @@ export default function InfoFinancialPage() {
           ))}
           <div className="mt-8 w-full border-t pt-4">
             <div className="text-left mb-2">
-              <span className="text-sm text-muted-foreground">Page 3 of 4</span>
+              <span className="text-sm text-muted-foreground">Page 4 of 5</span>
             </div>
             <div className="flex items-center justify-between">
-              <Link href="/info/details" className="text-sm font-medium text-primary hover:underline">
+              <Link href="/info/payments" className="text-sm font-medium text-primary hover:underline">
                 <ArrowLeft className="mr-1 h-4 w-4 inline" /> Previous
               </Link>
               <Link href="/info/eligibility" className="text-sm font-medium text-primary hover:underline">

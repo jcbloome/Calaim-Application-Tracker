@@ -135,19 +135,6 @@ export function PrintableProgramInfoFormVietnamese({
 
         <div className="p-4 print:p-6 border print:border-black">
           <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
-            Phan dong gop chi phi (SOC)
-          </h3>
-          <div className="mt-3 p-3 print:p-3 bg-yellow-50 print:bg-white border print:border-black">
-            <h4 className="font-semibold text-gray-900 print:text-black mb-2">Thong tin ve SOC:</h4>
-            <p className="text-sm print:text-xs text-gray-700 print:text-black">
-              SOC thuong phat sinh neu thanh vien nhan hon <strong>$1,800/thang</strong>, tuy nhien con so nay co the khac
-              theo quận va hoan canh cu the. Nguoi dang o SNF co the tam thoi khong thay SOC, nhung co the thay doi khi chuyen ra cong dong.
-            </p>
-          </div>
-        </div>
-
-        <div className="p-4 print:p-6 border print:border-black">
-          <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
             Benefitscal.com
           </h3>
           <p className="text-sm print:text-xs text-gray-700 print:text-black mb-2">
@@ -177,6 +164,28 @@ export function PrintableProgramInfoFormVietnamese({
             Thoi gian xu ly ho so CalAIM phu thuoc vao chuong trinh bao hiem va do phuc tap cua ca. Health Net thuong mat 14-30 ngay lam viec,
             trong khi Kaiser co the mat 30-45 ngay lam viec. Truong hop khan co the duoc uu tien neu co du ho so y te.
           </p>
+        </div>
+
+        <div className="p-4 print:p-6 bg-cyan-50 print:bg-white border print:border-black">
+          <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
+            Thanh toan Cham soc Ngoai nha Khong y te (NMOHC)
+          </h3>
+          <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
+            <p>NMOHC la khoan bo sung giup tang muc SSI hang thang khi thanh vien song tai co so song ho tro co giay phep thay vi nha rieng/can ho.</p>
+            <p>Neu song tai RCFE, tieu bang cong nhan chi phi sinh hoat cao hon va dieu chinh muc chi tra tu muc "doc lap" sang muc NMOHC.</p>
+            <p><strong>1. Xac nhan dieu kien tai chinh (kiem tra giay to)</strong></p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Thu nhap: nam 2026, tong thu nhap "tinh vao" phai duoi $1,626.07/thang.</li>
+              <li>Tai san: tu 01/01/2026, tai san tinh vao phai duoi $2,000 (ca nhan) hoac $3,000 (vo/chong).</li>
+              <li>Luu y: thuong 1 xe hoi va nha chinh duoc loai tru khoi gioi han tai san.</li>
+            </ul>
+            <p><strong>2. Xac minh voi So An sinh Xa hoi (truoc khi chuyen)</strong></p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Den van phong SSA de phong van ve hinh thuc cu tru.</li>
+              <li>Thong bao ke hoach chuyen vao RCFE co giay phep.</li>
+              <li>Yeu cau tinh lai muc SSI theo NMOHC nam 2026.</li>
+            </ul>
+          </div>
         </div>
 
         <div className="p-4 print:p-6 bg-yellow-50 print:bg-white border print:border-black">
@@ -218,15 +227,46 @@ export function PrintableProgramInfoFormVietnamese({
           </h3>
           <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
             <p>SOC giong nhu khoan khau tru hang thang cua Medi-Cal: so tien thanh vien co the phai tu chi tra truoc khi Medi-Cal bat dau thanh toan.</p>
-            <p className="font-semibold text-blue-700 print:text-black mb-2">
-              SOC thuong bat dau khi thanh vien co thu nhap hon $1,800/thang, nhung co the khac theo quận va hoan canh.
-            </p>
             <p className="font-semibold text-red-700 print:text-black">
               Thanh vien khong the nop ho so CalAIM khi con SOC. Can giam SOC ve $0 truoc khi du dieu kien.
             </p>
             <p>
               De tim hieu cach giam SOC, truy cap <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">https://canhr.org/understanding-the-share-of-cost-for-medi-cal/</a> hoac lien he nhan vien phu trach ho so.
             </p>
+            <div className="mt-3 rounded border border-zinc-300 bg-white p-3">
+              <h4 className="font-semibold text-gray-900 print:text-black">Cac chien luoc bo sung giam SOC</h4>
+              <div className="mt-2 space-y-3">
+                <div>
+                  <p className="font-semibold">1. Dieu chinh "thu nhap vuot muc" cho an o</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><strong>Tran SSI:</strong> nguoi nhan SSI co muc an o bi gioi han (khoang $1,444.07 nam 2026).</li>
+                    <li><strong>Ngoai le khong-SSI:</strong> neu co thu nhap khac SSI, RCFE co the tinh muc co ban cong phi hop dong.</li>
+                    <li><strong>Chien luoc:</strong> tang nghia vu an o trong hop dong (tru $182 chi phi ca nhan) co the giam thu nhap tinh SOC.</li>
+                    <li><strong>Quy tac thuc te:</strong> dong khoang 90% thu nhap hang thang cho an o co the dua SOC ve 0; ap dung sau khi da chuyen vao co so song ho tro.</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-semibold">2. Mua bao hiem bo sung</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Phi bao hiem nha khoa/thi luc/suc khoe co the duoc huyen khau tru.</li>
+                    <li>Dam bao phi Medicare Part B/D duoc nhan vien xet duyet ghi nhan day du.</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-semibold">3. Ap dung bao ve "spousal impoverishment" (HCBS)</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><strong>Loai tru thu nhap vo/chong song trong cong dong:</strong> SOC dua tren thu nhap tinh vao cua nguoi nop don.</li>
+                    <li><strong>MMMNA:</strong> neu thu nhap vo/chong trong cong dong thap hon <strong>$4,066.50</strong> (MMMNA 2026), co the phan bo thu nhap de dat muc nay.</li>
+                    <li><strong>Ket qua SOC:</strong> khi huyen ap dung dung quy dinh, SOC thuong giam manh va co the ve $0.</li>
+                  </ul>
+                </div>
+              </div>
+              <h4 className="mt-4 font-semibold text-gray-900 print:text-black">Tom tat ho so can nop</h4>
+              <ul className="mt-1 list-disc pl-5 space-y-1">
+                <li><strong>Hop dong nhap co so da chinh sua:</strong> the hien nghia vu dong gop an o.</li>
+                <li><strong>Chung tu bao hiem:</strong> tai lieu phi bao hiem bo sung hang thang.</li>
+              </ul>
+            </div>
           </div>
         </div>
 

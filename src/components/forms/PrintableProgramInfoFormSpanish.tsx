@@ -129,22 +129,6 @@ export function PrintableProgramInfoFormSpanish({
           </p>
         </div>
 
-        {/* Participación en el Costo (SOC) */}
-        <div className="p-4 print:p-6 border print:border-black">
-          <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
-            Participación en el Costo (SOC)
-          </h3>
-          <div className="mt-3 p-3 print:p-3 bg-yellow-50 print:bg-white border print:border-black">
-            <h4 className="font-semibold text-gray-900 print:text-black mb-2">Información sobre Participación en el Costo (SOC):</h4>
-            <p className="text-sm print:text-xs text-gray-700 print:text-black">
-              La Participación en el Costo generalmente se activa si un miembro recibe más de <strong>$1,800/mes</strong>, 
-              aunque este número puede variar por condado y por circunstancias particulares. Los miembros en SNFs pueden no 
-              mostrar un SOC ya que la instalación recibe la mayor parte de sus ingresos, pero esto puede cambiar al hacer 
-              la transición a la vida comunitaria.
-            </p>
-          </div>
-        </div>
-
         {/* Benefitscal.com */}
         <div className="p-4 print:p-6 border print:border-black">
           <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
@@ -176,6 +160,35 @@ export function PrintableProgramInfoFormSpanish({
           <p className="text-sm print:text-xs text-gray-700 print:text-black">
             El tiempo típico de procesamiento para las solicitudes de CalAIM varía según el plan de salud y la complejidad del caso. Health Net generalmente procesa las solicitudes dentro de 14-30 días hábiles, mientras que Kaiser puede tomar 30-45 días hábiles. Los casos urgentes pueden ser expeditados con documentación médica apropiada.
           </p>
+        </div>
+
+        {/* NMOHC */}
+        <div className="p-4 print:p-6 bg-cyan-50 print:bg-white border print:border-black">
+          <h3 className="text-lg font-semibold text-gray-900 print:text-black mb-4">
+            Pago de Atención No Médica Fuera del Hogar (NMOHC)
+          </h3>
+          <div className="space-y-3 text-sm print:text-xs text-gray-700 print:text-black">
+            <p>
+              NMOHC es un complemento de pago que aumenta el cheque mensual de SSI de una persona porque vive
+              en un hogar de vida asistida con licencia en lugar de un apartamento o casa.
+            </p>
+            <p>
+              En California, si una persona vive en un RCFE, el estado reconoce que los costos son más altos
+              que para alguien que vive de forma independiente.
+            </p>
+            <p><strong>1. Confirmar elegibilidad financiera (prueba de documentación)</strong></p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Ingresos: para 2026, el ingreso mensual "contable" total debe ser menor a $1,626.07.</li>
+              <li>Activos: desde el 1 de enero de 2026, una persona debe tener menos de $2,000 en recursos contables ($3,000 para pareja).</li>
+              <li>Nota: normalmente, un auto y la vivienda principal están excluidos de este límite.</li>
+            </ul>
+            <p><strong>2. Verificación con Seguro Social (antes de la mudanza)</strong></p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>Visite una oficina local del Seguro Social para entrevista de arreglo de vivienda.</li>
+              <li>Indique que la persona planea mudarse a un RCFE con licencia.</li>
+              <li>Solicite el cálculo de SSI con la tarifa NMOHC 2026.</li>
+            </ul>
+          </div>
         </div>
 
         {/* Room and Board / Assisted Living Payments */}
@@ -233,9 +246,6 @@ export function PrintableProgramInfoFormSpanish({
               Una Participación en el Costo (SOC) es como un deducible mensual para Medi-Cal. Es la cantidad de dinero que 
               puede tener que pagar cada mes hacia servicios médicos antes de que su cobertura de Medi-Cal comience a pagar.
             </p>
-            <p className="font-semibold text-blue-700 print:text-black mb-2">
-              El SOC generalmente se activa si un miembro recibe más de $1,800/mes, aunque puede variar por condado y circunstancias.
-            </p>
             <p className="font-semibold text-red-700 print:text-black">
               Los miembros no pueden aplicar para CalAIM con un SOC. Debe ser eliminado antes de ser elegible para aplicar.
             </p>
@@ -243,6 +253,40 @@ export function PrintableProgramInfoFormSpanish({
               Para información sobre cómo eliminar la participación en el costo, visite el sitio web de California Advocates for Nursing Home 
               Reform (CANHR) en <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer" className="text-blue-600 print:text-blue-800 hover:underline">https://canhr.org/understanding-the-share-of-cost-for-medi-cal/</a> o contacte a su trabajador de caso.
             </p>
+            <div className="mt-3 rounded border border-zinc-300 bg-white p-3">
+              <h4 className="font-semibold text-gray-900 print:text-black">Estrategias adicionales para reducir SOC</h4>
+              <div className="mt-2 space-y-3">
+                <div>
+                  <p className="font-semibold">1. Ajuste por "ingreso excedente" en alojamiento y comida</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><strong>Límite SSI:</strong> para residentes con SSI, alojamiento y comida está limitado (aprox. $1,444.07 en 2026).</li>
+                    <li><strong>Excepción no-SSI:</strong> si hay ingresos distintos a SSI, el RCFE puede cobrar monto base más cargos contractuales.</li>
+                    <li><strong>Estrategia:</strong> aumentar la obligación de alojamiento/comida en el contrato (menos $182 de gastos personales) puede reducir ingresos contables.</li>
+                    <li><strong>Regla práctica:</strong> pagar cerca de 90% del ingreso mensual para alojamiento/comida puede eliminar SOC; esto aplica una vez que la persona ya vive en vida asistida.</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-semibold">2. Comprar seguro suplementario</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Primas dentales/visión/salud pueden ser deducibles por el condado.</li>
+                    <li>Verifique que primas de Medicare Parte B/D estén incluidas por el trabajador de elegibilidad.</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-semibold">3. Usar protecciones de empobrecimiento conyugal (HCBS)</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><strong>Exclusión de ingresos del cónyuge en comunidad:</strong> el SOC se calcula con ingreso contable del cónyuge solicitante.</li>
+                    <li><strong>Asignación MMMNA:</strong> si ingreso del cónyuge en comunidad es menor de <strong>$4,066.50</strong> (MMMNA 2026), se puede asignar ingreso para llegar a ese piso.</li>
+                    <li><strong>Resultado SOC:</strong> al aplicar correctamente estas protecciones, el SOC suele bajar significativamente y puede llegar a $0.</li>
+                  </ul>
+                </div>
+              </div>
+              <h4 className="mt-4 font-semibold text-gray-900 print:text-black">Resumen: dónde acudir</h4>
+              <ul className="mt-1 list-disc pl-5 space-y-1">
+                <li><strong>Acuerdo de admisión revisado:</strong> mostrando obligación de alojamiento/comida.</li>
+                <li><strong>Comprobante de seguro:</strong> documentación de primas suplementarias mensuales.</li>
+              </ul>
+            </div>
           </div>
         </div>
 

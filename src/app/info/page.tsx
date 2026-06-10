@@ -104,7 +104,7 @@ export default function InfoPage() {
             ))}
             <div className="mt-8 w-full border-t pt-4">
                 <div className="text-left mb-2">
-                    <span className="text-sm text-muted-foreground">Page 1 of 4</span>
+                    <span className="text-sm text-muted-foreground">Page 1 of 5</span>
                 </div>
                 <div className="flex justify-end">
                     <Link href="/info/details" className="text-sm font-medium text-primary hover:underline">

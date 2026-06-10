@@ -82,9 +82,9 @@ export default function InfoDetailsPage() {
                 </CardHeader>
                     <CardContent className="prose prose-sm max-w-none text-gray-700">
                         {section.content.map((paragraph, pIndex) => (
-                        <p key={pIndex} className="mb-4 last:mb-0">
+                        <div key={pIndex} className="mb-4 last:mb-0">
                             {paragraph}
-                        </p>
+                        </div>
                         ))}
                         {section.list && (
                         <ul className="list-disc pl-5 space-y-2 mt-4">
@@ -98,13 +98,13 @@ export default function InfoDetailsPage() {
             ))}
             <div className="mt-8 w-full border-t pt-4">
                     <div className="text-left mb-2">
-                        <span className="text-sm text-muted-foreground">Page 2 of 4</span>
+                        <span className="text-sm text-muted-foreground">Page 2 of 5</span>
                     </div>
                     <div className="flex items-center justify-between">
                         <Link href="/info" className="text-sm font-medium text-primary hover:underline">
                             <ArrowLeft className="mr-1 h-4 w-4 inline" /> Previous
                         </Link>
-                        <Link href="/info/financial" className="text-sm font-medium text-primary hover:underline">
+                        <Link href="/info/payments" className="text-sm font-medium text-primary hover:underline">
                             Next <ArrowRight className="ml-1 h-4 w-4 inline" />
                         </Link>
                     </div>

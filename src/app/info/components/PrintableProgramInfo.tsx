@@ -78,94 +78,6 @@ export function PrintableProgramInfo() {
                 </li>
             </ul>
 
-            <SectionTitle>Share of Cost (SOC)</SectionTitle>
-            <p>Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.</p>
-            <p>A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It's the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay.</p>
-            <p>This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.</p>
-            <div style={{ backgroundColor: '#dbeafe', padding: '12px', border: '1px solid #3b82f6', borderRadius: '6px', margin: '12px 0' }}>
-              <p><strong>SOC is usually triggered if a member receives more than $1,800/month</strong>, although this number can vary by county and by particular circumstances.</p>
-            </div>
-            <p>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">California Advocates for Nursing Home Reform (CANHR)</a>.</p>
-
-            <SubTitle>Eliminating Medi-Cal Share of Cost: The Key to CalAIM</SubTitle>
-            <p>
-              If you have Medi-Cal with a Share of Cost, you may be missing out on life-changing benefits. Programs like CalAIM
-              (which provides care coordination and placement in residential care homes) generally require members to have{' '}
-              <strong>Full-Scope, $0 Share of Cost</strong> Medi-Cal.
-            </p>
-            <p>
-              For many seniors and disabled individuals, a monthly income above <strong>$1,856</strong> (the 2026 limit)
-              triggers a high Share of Cost. However, California's <strong>250% Working Disabled Program (WDP)</strong> offers
-              a legal way to eliminate that cost and keep more of your money.
-            </p>
-
-            <SubTitle>How the 250% Working Disabled Program Works</SubTitle>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                <strong>Higher income allowed:</strong> up to <strong>$3,260</strong> per month with a <strong>$0 monthly premium</strong> and <strong>$0 Share of Cost</strong>.
-              </li>
-              <li>
-                <strong>Broad definition of "work":</strong> no traditional full-time job required. "Working" can include part-time tasks like pet sitting, consulting for a neighbor, or even recycling. No minimum hours required.
-              </li>
-              <li>
-                <strong>Income protection:</strong> most disability-related income (like SSDI or private disability) is not counted toward the limit. Even if SSDI converted to Social Security Retirement, it may still be exempt.
-              </li>
-              <li>
-                <strong>CalAIM ready:</strong> once Share of Cost is $0, you can qualify for CalAIM services, including Enhanced Care Management and Community Supports for care home placement.
-              </li>
-            </ul>
-
-            <SubTitle>Additional SOC Reduction Strategies (County Eligibility Process)</SubTitle>
-            <div className="space-y-4">
-              <div>
-                <p><strong>1. The "Excess Income" Room and Board Adjustment</strong></p>
-                <p>Under California law (and often reflected in RCFE Admission Agreements), there is a distinction between what an SSI recipient pays and what a private-pay or high-income resident pays.</p>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li><strong>The SSI Rate Cap:</strong> For residents on SSI, the room and board rate is strictly capped (currently around $1,444.07 for 2026).</li>
-                  <li><strong>The Non-SSI Exception:</strong> If a member has income other than SSI, the facility may charge the basic room and board rate plus an additional amount, depending on the admission agreement.</li>
-                  <li><strong>The Strategy:</strong> Increasing room and board on the admission agreement to match available income (minus the $182 personal needs allowance) can reduce countable income.</li>
-                </ul>
-              </div>
-
-              <div>
-                <p><strong>2. The "Medical Expense" Spend-Down (Paperwork Fix)</strong></p>
-                <p>When board-and-care deduction is not available because CalAIM is paying for care, a spend-down strategy can still reduce SOC by documenting incurred medical or remedial expenses.</p>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li><strong>Remedial care expenses:</strong> The RCFE amount above standard room and board may be treated as remedial care expense.</li>
-                  <li><strong>How to report:</strong> Submit RCFE invoices to County Social Services (DPSS) as incurred medical expenses. Member out-of-pocket payments count toward SOC.</li>
-                </ul>
-              </div>
-
-              <div>
-                <p><strong>3. Purchase Supplemental Insurance (Often the Cleanest Fix)</strong></p>
-                <p>Lower gross countable income before county SOC calculation by documenting deductible premiums and insurance deductions.</p>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li><strong>Dental/Vision/Health premiums:</strong> Monthly premium amounts are deductible by the county.</li>
-                  <li><strong>Medicare Part B/D:</strong> Ensure all premiums are being captured by the county eligibility worker.</li>
-                </ul>
-              </div>
-            </div>
-
-            <SubTitle>Summary of Where to Go</SubTitle>
-            <p>You must take the following to the <strong>County Social Services Eligibility Worker</strong> (not the health plan):</p>
-            <ul className="list-disc pl-5 space-y-1">
-              <li><strong>Revised admission agreement:</strong> showing higher room and board obligation up to available income.</li>
-              <li><strong>Medical receipts:</strong> out-of-pocket costs (incontinence supplies, OTC meds, transportation, etc.).</li>
-              <li><strong>Insurance proof:</strong> monthly supplemental premium documentation.</li>
-            </ul>
-            <div style={{ backgroundColor: '#ecfeff', padding: '12px', border: '1px solid #0891b2', borderRadius: '6px', margin: '12px 0' }}>
-              <p><strong>Crucial note:</strong> Once county deductions are entered and the case reflects zero SOC, the CalAIM managed care plan typically sees eligibility updates in about 24-48 hours.</p>
-            </div>
-
-            <SubTitle>Who to Contact for Help</SubTitle>
-            <p>1. <strong>HICAP (Health Insurance Counseling &amp; Advocacy Program)</strong><br />Free, unbiased counseling on Medicare and Medi-Cal. Experts at the Working Disabled Program.<br /><strong>Phone:</strong> <a href="tel:18004340222">1-800-434-0222</a><br /><strong>Website:</strong> <a href="https://aging.ca.gov/hicap" target="_blank" rel="noopener noreferrer">aging.ca.gov/hicap</a></p>
-            <p>2. <strong>Health Consumer Alliance (HCA)</strong><br />Free legal assistance for Californians struggling with Medi-Cal eligibility or high Share of Cost.<br /><strong>Phone:</strong> <a href="tel:18888043536">1-888-804-3536</a><br /><strong>Website:</strong> <a href="https://healthconsumer.org" target="_blank" rel="noopener noreferrer">healthconsumer.org</a></p>
-            <p>3. <strong>Your Local County Social Services (DPSS)</strong><br />Contact your local county eligibility worker and ask for an <strong>"evaluation for the 250% Working Disabled Program."</strong><br /><strong>Online Portal:</strong> <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">BenefitsCal.com</a></p>
-
-            <SectionTitle>Benefitscal.com</SectionTitle>
-            <p>A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.</p>
-            <p>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">www.benefitscal.com</a> for current SOC verification and more information.</p>
-
             <SectionTitle>Non-Medical Out-of-Home Care (NMOHC) Payment</SectionTitle>
             <p>NMOHC is a payment supplement that boosts a person's monthly SSI check because they live in a licensed assisted living home rather than an apartment or house.</p>
             <p>In California, if a person lives in a Residential Care Facility for the Elderly (RCFE), the state recognizes that costs are much higher than someone living independently. To help cover this, the person moves from the "Independent Living" rate to the "NMOHC" rate.</p>
@@ -190,6 +102,82 @@ export function PrintableProgramInfo() {
             <p>Members who cannot pay any room and board portion usually are not eligible for the CS since program requirements mandate a 'room and board' payment from the member (or their family).</p>
             <p>Working with CalAIM is at the discretion of the RCFEs. Many RCFEs, especially in more expensive areas, most likely will not participate in CalAIM. Families looking to place members in expensive real estate areas should have the realistic expectation that CalAIM RCFEs might only be located in more affordable areas.</p>
             <p>The "assisted living" payment paid by the MCP is a fixed rate based on level of care but may not align with market rate in certain counties or for all RCFEs. Supplementing the "room and board" to arrive at market rate is at the discretion of the families.</p>
+
+            <SectionTitle>Share of Cost (SOC)</SectionTitle>
+            <p>Members cannot apply for CalAIM with a SOC. It must be eliminated before becoming eligible to apply for CalAIM.</p>
+            <p>A Share of Cost (SOC) is like a monthly deductible for Medi-Cal. It&apos;s the amount of money you may have to pay each month towards medical-related services or supplies before your Medi-Cal coverage begins to pay.</p>
+            <p>This happens when your income is above the limit for free Medi-Cal but you still qualify for the program.</p>
+            <p>Read more about eliminating share of cost at the <a href="https://canhr.org/understanding-the-share-of-cost-for-medi-cal/" target="_blank" rel="noopener noreferrer">California Advocates for Nursing Home Reform (CANHR)</a>.</p>
+
+            <SubTitle>Eliminating Medi-Cal Share of Cost: The Key to CalAIM</SubTitle>
+            <p>
+              If you have Medi-Cal with a Share of Cost, you may be missing out on life-changing benefits. Programs like CalAIM
+              (which provides care coordination and placement in residential care homes) generally require members to have{' '}
+              <strong>Full-Scope, $0 Share of Cost</strong> Medi-Cal.
+            </p>
+            <p>
+              For many seniors and disabled individuals, a monthly income above <strong>$1,856</strong> (the 2026 limit)
+              triggers a high Share of Cost. However, California&apos;s <strong>250% Working Disabled Program (WDP)</strong> offers
+              a legal way to eliminate that cost and keep more of your money.
+            </p>
+
+            <SubTitle>How the 250% Working Disabled Program Works</SubTitle>
+            <ul className="list-disc pl-5 space-y-2">
+              <li><strong>Higher income allowed:</strong> up to <strong>$3,260</strong> per month with a <strong>$0 monthly premium</strong> and <strong>$0 Share of Cost</strong>.</li>
+              <li><strong>Broad definition of "work":</strong> no traditional full-time job required. "Working" can include part-time tasks like pet sitting, consulting for a neighbor, or even recycling. No minimum hours required.</li>
+              <li><strong>Income protection:</strong> most disability-related income (like SSDI or private disability) is not counted toward the limit. Even if SSDI converted to Social Security Retirement, it may still be exempt.</li>
+              <li><strong>CalAIM ready:</strong> once Share of Cost is $0, you can qualify for CalAIM services, including Enhanced Care Management and Community Supports for care home placement.</li>
+            </ul>
+
+            <SubTitle>Additional SOC Reduction Strategies (County Eligibility Process)</SubTitle>
+            <div className="space-y-4">
+              <div>
+                <p><strong>1. The "Excess Income" Room and Board Adjustment</strong></p>
+                <p>Under California law (and often reflected in RCFE Admission Agreements), there is a distinction between what an SSI recipient pays and what a private-pay or high-income resident pays.</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li><strong>The SSI Rate Cap:</strong> For residents on SSI, the room and board rate is strictly capped (currently around $1,444.07 for 2026).</li>
+                  <li><strong>The Non-SSI Exception:</strong> If a member has income other than SSI, the facility may charge the basic room and board rate plus an additional amount, depending on the admission agreement.</li>
+                  <li><strong>The Strategy:</strong> Increasing room and board on the admission agreement to match available income (minus the $182 personal needs allowance) can reduce countable income.</li>
+                  <li><strong>Practical rule of thumb:</strong> paying about 90% of monthly income toward room and board can eliminate SOC. This method can only be implemented once the member has moved into assisted living.</li>
+                </ul>
+              </div>
+              <div>
+                <p><strong>2. Purchase Supplemental Insurance (Often the Cleanest Fix)</strong></p>
+                <p>Lower gross countable income before county SOC calculation by documenting deductible premiums and insurance deductions.</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li><strong>Dental/Vision/Health premiums:</strong> Monthly premium amounts are deductible by the county.</li>
+                  <li><strong>Medicare Part B/D:</strong> Ensure all premiums are being captured by the county eligibility worker.</li>
+                </ul>
+              </div>
+              <div>
+                <p><strong>3. Use Spousal Impoverishment Protections (HCBS Waiver)</strong></p>
+                <p>Married couples or registered domestic partners may reduce SOC by applying HCBS spousal protections.</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li><strong>Spousal deeming protection:</strong> the community spouse&apos;s income is excluded; SOC is based on the applicant spouse&apos;s countable income.</li>
+                  <li><strong>MMMNA allocation:</strong> if the community spouse&apos;s income is below <strong>$4,066.50</strong> (2026 MMMNA), income can be allocated to reach that floor.</li>
+                  <li><strong>SOC outcome:</strong> once county staff apply these protections correctly, SOC is often lowered substantially and may be reduced to $0.</li>
+                </ul>
+              </div>
+            </div>
+
+            <SubTitle>Summary of Where to Go</SubTitle>
+            <p>You must take the following to the <strong>County Social Services Eligibility Worker</strong> (not the health plan):</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li><strong>Revised admission agreement:</strong> showing higher room and board obligation up to available income.</li>
+              <li><strong>Insurance proof:</strong> monthly supplemental premium documentation.</li>
+            </ul>
+            <div style={{ backgroundColor: '#ecfeff', padding: '12px', border: '1px solid #0891b2', borderRadius: '6px', margin: '12px 0' }}>
+              <p><strong>Crucial note:</strong> Once county deductions are entered and the case reflects zero SOC, the CalAIM managed care plan typically sees eligibility updates in about 24-48 hours.</p>
+            </div>
+
+            <SubTitle>Who to Contact for Help</SubTitle>
+            <p>1. <strong>HICAP (Health Insurance Counseling &amp; Advocacy Program)</strong><br />Free, unbiased counseling on Medicare and Medi-Cal. Experts at the Working Disabled Program.<br /><strong>Phone:</strong> <a href="tel:18004340222">1-800-434-0222</a><br /><strong>Website:</strong> <a href="https://aging.ca.gov/hicap" target="_blank" rel="noopener noreferrer">aging.ca.gov/hicap</a></p>
+            <p>2. <strong>Health Consumer Alliance (HCA)</strong><br />Free legal assistance for Californians struggling with Medi-Cal eligibility or high Share of Cost.<br /><strong>Phone:</strong> <a href="tel:18888043536">1-888-804-3536</a><br /><strong>Website:</strong> <a href="https://healthconsumer.org" target="_blank" rel="noopener noreferrer">healthconsumer.org</a></p>
+            <p>3. <strong>Your Local County Social Services (DPSS)</strong><br />Contact your local county eligibility worker and ask for an <strong>"evaluation for the 250% Working Disabled Program."</strong><br /><strong>Online Portal:</strong> <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">BenefitsCal.com</a></p>
+
+            <SectionTitle>Benefitscal.com</SectionTitle>
+            <p>A one stop shop to apply and review Medi-Cal benefits including possible share of cost information and to add for the member an authorized representative/power of attorney.</p>
+            <p>Visit <a href="https://www.benefitscal.com" target="_blank" rel="noopener noreferrer">www.benefitscal.com</a> for current SOC verification and more information.</p>
 
             <SectionTitle>Individual Service Plan (ISP)</SectionTitle>
             <p>An Individual Service Plan (ISP) is a comprehensive assessment conducted by the Managed Care Plan's (MCP) clinical team to determine the member's care needs and to approve them for the program. The ISP assessment is a critical step for getting the MCP's authorization. The ISP is either done virtually (Health Net) or in-person (Kaiser) by a Connections' MSW/RN to administer a tool to determine level of care (the amount the MCP will pay for the 'assisted living' portion). For Health Net, the tiered level is determined by Connections. For Kaiser, the tiered level is determined by Kaiser.</p>
