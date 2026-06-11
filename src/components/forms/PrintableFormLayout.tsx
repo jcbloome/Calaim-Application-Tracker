@@ -210,7 +210,7 @@ export function PrintableFormLayout({
                 <div className="flex items-center gap-4">
                   <div className="print:hidden">
                     <Image
-                      src="/calaimlogopdf.png"
+                      src="/api/assets/connections-logo"
                       alt="Connect CalAIM Logo"
                       width={210}
                       height={60}

@@ -48,7 +48,7 @@ export default function SWVisitVerificationError({
         <div className="container mx-auto px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <Link href="/sw-portal" className="shrink-0">
             <Image
-              src="/calaimlogopdf.png"
+              src="/api/assets/connections-logo"
               alt="Connect CalAIM Logo"
               width={240}
               height={67}

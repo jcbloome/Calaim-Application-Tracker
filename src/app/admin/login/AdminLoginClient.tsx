@@ -270,7 +270,7 @@ export default function AdminLoginClient() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Image
-            src="/calaimlogopdf.png"
+            src="/api/assets/connections-logo"
             alt="Connect CalAIM Logo"
             width={300}
             height={84}

@@ -1753,7 +1753,7 @@ function SWVisitVerificationContent() {
           <div className="flex items-center gap-3 overflow-x-auto whitespace-nowrap">
             <Link href="/sw-portal/roster" className="shrink-0">
               <Image
-                src="/calaimlogopdf.png"
+                src="/api/assets/connections-logo"
                 alt="Connect CalAIM Logo"
                 width={240}
                 height={67}

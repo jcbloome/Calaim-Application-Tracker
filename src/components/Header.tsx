@@ -111,7 +111,7 @@ export function Header() {
       <div className="container mx-auto flex items-center justify-between h-20 px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2 font-bold text-lg text-primary flex-shrink-0">
           <Image
-              src="/calaimlogopdf.png"
+              src="/api/assets/connections-logo"
               alt="Connect CalAIM Logo"
               width={240}
               height={67}

@@ -139,7 +139,7 @@ export default function SWPortalLayout({ children }: { children: ReactNode }) {
             <div className="flex items-center gap-3">
               <Link href="/sw-portal/home" className="shrink-0">
                 <Image
-                  src="/calaimlogopdf.png"
+                  src="/api/assets/connections-logo"
                   alt="Connect CalAIM Logo"
                   width={240}
                   height={67}

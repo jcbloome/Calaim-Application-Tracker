@@ -698,48 +698,22 @@ function PathwayPageContent() {
     setUploadProgress(prev => ({ ...prev, [requirementTitle]: 0 }));
     
     try {
-        // If this is a revision upload, remove the prior file first so the new
-        // upload replaces the original document in the pathway record.
-        const existingUploadPaths = [
-          String(replaceExistingForm?.filePath || '').trim(),
-          ...((Array.isArray((replaceExistingForm as any)?.uploadedFiles)
-            ? (replaceExistingForm as any).uploadedFiles
-            : []
-          )
-            .map((item: any) => String(item?.filePath || '').trim())
-            .filter(Boolean)),
-        ].filter(Boolean);
-        if (existingUploadPaths.length > 0) {
-          try {
-            await Promise.all(
-              existingUploadPaths.map((path) => deleteObject(ref(storage, path)).catch(() => undefined))
-            );
-          } catch {
-            // Best effort only. Continue so metadata still points to the newest file.
-          }
-        }
         console.log('Attempting upload with user:', user?.email, 'applicationId:', applicationId);
         const { uploadResults, uploadFailures } = await doUpload(files, requirementTitle);
         console.log('Upload results:', uploadResults);
 
         if (uploadResults.length > 0) {
             const existingFormInfo = replaceExistingForm || (formStatusMap.get(requirementTitle) as FormStatusType | undefined);
-            const shouldMergeWithExisting =
-              !replaceExistingForm &&
-              Boolean(existingFormInfo) &&
-              hasOpenRevisionRequest(existingFormInfo);
-            const preservedExistingUploads = shouldMergeWithExisting
-              ? ((Array.isArray((existingFormInfo as any)?.uploadedFiles)
-                  ? (existingFormInfo as any).uploadedFiles
-                  : []
-                )
-                  .map((entry: any) => ({
-                    fileName: String(entry?.fileName || '').trim(),
-                    filePath: String(entry?.filePath || '').trim(),
-                    downloadURL: null,
-                  }))
-                  .filter((entry: any) => Boolean(entry.fileName || entry.filePath)))
-              : [];
+            const preservedExistingUploads = ((Array.isArray((existingFormInfo as any)?.uploadedFiles)
+                ? (existingFormInfo as any).uploadedFiles
+                : []
+              )
+                .map((entry: any) => ({
+                  fileName: String(entry?.fileName || '').trim(),
+                  filePath: String(entry?.filePath || '').trim(),
+                  downloadURL: null,
+                }))
+                .filter((entry: any) => Boolean(entry.fileName || entry.filePath)));
             const combinedUploads = [...preservedExistingUploads, ...uploadResults.map((entry, index) => ({
               fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
               filePath: entry.path,
@@ -1961,7 +1935,7 @@ function PathwayPageContent() {
                     </p>
                     <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-slate-50 text-slate-900 text-sm font-medium ring-offset-background transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isUploadLockedByReadOnly) && "opacity-50 pointer-events-none")}>
                       {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                      <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
+                      <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Add File(s)'}</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isUploadLockedByReadOnly} multiple={isMultiple} />
                   </div>
@@ -2079,7 +2053,7 @@ function PathwayPageContent() {
                     )}
                     <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", (isUploading || isUploadLockedByReadOnly) && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                        <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
+                        <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Add File(s)'}</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading || isUploadLockedByReadOnly} multiple={isMultiple} />
                 </div>

@@ -1837,7 +1837,7 @@ function AdminHeader() {
         <div className="flex items-center gap-4 min-w-0 flex-1">
           <Link href="/admin" className="shrink-0">
             <Image
-              src="/calaimlogopdf.png"
+              src="/api/assets/connections-logo"
               alt="Connect CalAIM Logo"
               width={240}
               height={67}

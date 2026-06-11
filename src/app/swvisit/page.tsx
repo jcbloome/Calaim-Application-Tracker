@@ -76,7 +76,7 @@ export default function SocialWorkerPortal() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Image
-                src="/calaimlogopdf.png"
+                src="/api/assets/connections-logo"
                 alt="Connect CalAIM Logo"
                 width={200}
                 height={56}

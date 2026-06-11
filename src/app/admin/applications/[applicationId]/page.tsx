@@ -5693,7 +5693,11 @@ function ApplicationDetailPageContent() {
       });
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, requirementTitle: string) => {
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    requirementTitle: string,
+    replaceExistingForm?: FormStatusType
+  ) => {
     if (!event.target.files?.length) return;
     const files = Array.from(event.target.files);
     
@@ -5707,19 +5711,33 @@ function ApplicationDetailPageContent() {
           if (result) uploadResults.push(result);
         }
         if (uploadResults.length > 0) {
-            const primaryUpload = uploadResults[0];
+            const existingFormInfo =
+              replaceExistingForm || (formStatusMap.get(requirementTitle) as FormStatusType | undefined);
+            const preservedExistingUploads = (Array.isArray((existingFormInfo as any)?.uploadedFiles)
+              ? (existingFormInfo as any).uploadedFiles
+              : []
+            )
+              .map((entry: any) => ({
+                fileName: String(entry?.fileName || '').trim(),
+                filePath: String(entry?.filePath || '').trim(),
+                downloadURL: String(entry?.downloadURL || '').trim() || null,
+              }))
+              .filter((entry: any) => Boolean(entry.fileName || entry.filePath));
+            const newUploads = uploadResults.map((entry) => ({
+              fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
+              filePath: entry.path,
+              downloadURL: entry.downloadURL,
+            }));
+            const combinedUploads = [...preservedExistingUploads, ...newUploads];
+            const primaryUpload = combinedUploads[0] || newUploads[0];
             await handleFormStatusUpdate([{
                 name: requirementTitle,
                 status: 'Completed',
-                type: 'Upload',
-                fileName: uploadResults.map((entry) => entry.fileName).join(', '),
-                filePath: primaryUpload.path,
-                downloadURL: primaryUpload.downloadURL,
-                uploadedFiles: uploadResults.map((entry) => ({
-                  fileName: entry.fileName,
-                  filePath: entry.path,
-                  downloadURL: entry.downloadURL,
-                })),
+                type: existingFormInfo?.type || 'Upload',
+                fileName: combinedUploads.map((entry) => String(entry.fileName || '').trim()).filter(Boolean).join(', '),
+                filePath: String((primaryUpload as any)?.filePath || '').trim() || null,
+                downloadURL: (primaryUpload as any)?.downloadURL || null,
+                uploadedFiles: combinedUploads,
                 dateCompleted: Timestamp.now(),
             }]);
             toast({ title: 'Upload Successful', description: `${requirementTitle} has been uploaded.` });
@@ -10604,7 +10622,7 @@ function ApplicationDetailPageContent() {
                       )}
                       <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
                           {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                          <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload Revised File(s)'}</span>
+                          <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Add File(s)'}</span>
                       </Label>
                       <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title, formInfo)} disabled={isUploading} multiple={isMultiple} />
                     </div>
@@ -10682,7 +10700,7 @@ function ApplicationDetailPageContent() {
                     ) : null}
                     <Label htmlFor={req.id} className={cn("flex h-10 w-full cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-primary text-primary-foreground text-sm font-medium ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", isUploading && "opacity-50 pointer-events-none")}>
                         {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                        <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Upload File(s)'}</span>
+                        <span>{isUploading ? `Uploading... ${currentProgress?.toFixed(0)}%` : 'Add File(s)'}</span>
                     </Label>
                     <Input id={req.id} type="file" className="sr-only" onChange={(e) => handleFileUpload(e, req.title)} disabled={isUploading} multiple={isMultiple} />
                     {req.id !== 'eligibility-screenshot' ? (
