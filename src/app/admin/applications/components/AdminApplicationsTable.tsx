@@ -1010,7 +1010,7 @@ export const AdminApplicationsTable = ({
               </TableHead>
             )}
             <TableHead>Member</TableHead>
-            <TableHead>Status</TableHead>
+            <TableHead className="w-[190px] min-w-[190px]">Status</TableHead>
             <TableHead className="hidden lg:table-cell">Plan & Pathway</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -1185,18 +1185,18 @@ export const AdminApplicationsTable = ({
                     )}
                   </div>
                 </TableCell>
-                <TableCell>
-                  <div className="space-y-1">
-                    <Badge variant="outline" className={getBadgeVariant(app.status)}>
+                <TableCell className="w-[190px] min-w-[190px] align-top">
+                  <div className="space-y-1 min-w-[170px]">
+                    <Badge variant="outline" className={cn('whitespace-nowrap', getBadgeVariant(app.status))}>
                       {app.status}
                     </Badge>
                     {isKaiserCompleted ? (
-                      <Badge variant="outline" className="bg-emerald-100 text-emerald-800 border-emerald-200">
+                      <Badge variant="outline" className="bg-emerald-100 text-emerald-800 border-emerald-200 whitespace-nowrap">
                         Complete (Kaiser)
                       </Badge>
                     ) : null}
                     {isKaiserOnHold ? (
-                      <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300">
+                      <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 whitespace-nowrap">
                         On Hold
                       </Badge>
                     ) : null}
