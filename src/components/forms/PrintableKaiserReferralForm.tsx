@@ -855,7 +855,7 @@ export function PrintableKaiserReferralForm({
 
   const handleSendTestEmail = async () => {
     if (!testRecipientEmail || !testRecipientEmail.includes('@')) {
-      window.alert('Referrer email is required to send a pre-send test email.');
+      window.alert('A valid logged-in staff email is required to send a pre-send test email.');
       return;
     }
     const canProceed = await ensureDraftSavedBeforeAction('sending test email');
@@ -1101,10 +1101,10 @@ export function PrintableKaiserReferralForm({
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
               <div className="font-semibold">Recommended before final send</div>
               <div className="mt-1">
-                Send a test email to the current referrer email first so staff can verify email text and PDF formatting.
+                Send a test email to the logged-in staff email first so staff can verify email text and PDF formatting.
               </div>
               <div className="mt-1">
-                Test recipient: <span className="font-semibold">{testRecipientEmail || 'Missing referrer email'}</span>
+                Test recipient: <span className="font-semibold">{testRecipientEmail || 'Missing logged-in staff email'}</span>
               </div>
               {hasSentTestEmail ? (
                 <div className="mt-1 text-emerald-700">
