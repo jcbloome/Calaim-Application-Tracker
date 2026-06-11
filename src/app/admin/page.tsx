@@ -17,12 +17,6 @@ import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { Checkbox } from '@/components/ui/checkbox';
 
-const normalizeLookup = (value: unknown) =>
-  String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-
 export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
@@ -236,36 +230,68 @@ export default function AdminDashboardPage() {
         }
       }
 
-      // Documents needing acknowledgement.
+      // Document uploads (timestamped per uploaded file when available).
       forms.forEach((form: any, idx: number) => {
         const isCompleted = form?.status === 'Completed';
         const isSummary = form?.name === 'CS Member Summary' || form?.name === 'CS Summary';
         if (!isCompleted || isSummary) return;
-        if (form?.acknowledged) return;
-        const createdAtMs = (() => {
-          const v = form.dateCompleted || form.uploadedAt || app.pendingDocReviewUpdatedAt || app.lastDocumentUpload || app.lastUpdated || app.lastModified || app.createdAt;
-          try {
-            return v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
-          } catch {
-            return Date.now();
-          }
-        })();
-        if (createdAtMs < cutoff) return;
-        const byName = String(form.uploadedByName || form.uploadedByEmail || app.referrerName || app.referrerEmail || '').trim() || 'User';
-        items.push({
-          key: `doc-${app.id}-${idx}-${createdAtMs}`,
-          kind: 'doc',
-          createdAtMs,
-          memberName,
-          pathway,
-          healthPlan,
-          itemName: String(form.name || 'Document'),
-          byName,
-          applicationId: app.id,
-          openHref: buildAppUrl(app.id, appUserId),
-          appUserId,
-          appPath,
-          formIndex: idx,
+        const rawUploads = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
+        const uploads = rawUploads.length > 0
+          ? rawUploads
+          : [{
+              fileName: String(form?.fileName || '').trim(),
+              filePath: String(form?.filePath || '').trim(),
+              uploadedAtIso: form?.dateCompleted || form?.uploadedAt || app.pendingDocReviewUpdatedAt || app.lastDocumentUpload || app.lastUpdated || app.lastModified || app.createdAt,
+              uploadedByName: form?.uploadedByName || form?.uploadedByEmail || app.referrerName || app.referrerEmail || '',
+            }];
+
+        uploads.forEach((upload: any, uploadIdx: number) => {
+          const createdAtMs = (() => {
+            const v =
+              upload?.uploadedAtIso ||
+              upload?.uploadedAt ||
+              upload?.createdAt ||
+              form?.dateCompleted ||
+              form?.uploadedAt ||
+              app.pendingDocReviewUpdatedAt ||
+              app.lastDocumentUpload ||
+              app.lastUpdated ||
+              app.lastModified ||
+              app.createdAt;
+            try {
+              return v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+            } catch {
+              return Date.now();
+            }
+          })();
+          if (createdAtMs < cutoff) return;
+
+          const fileName = String(upload?.fileName || '').trim();
+          const byName = String(
+            upload?.uploadedByName ||
+            upload?.uploadedByEmail ||
+            form?.uploadedByName ||
+            form?.uploadedByEmail ||
+            app.referrerName ||
+            app.referrerEmail ||
+            ''
+          ).trim() || 'User';
+
+          items.push({
+            key: `doc-${app.id}-${idx}-${uploadIdx}-${createdAtMs}`,
+            kind: 'doc',
+            createdAtMs,
+            memberName,
+            pathway,
+            healthPlan,
+            itemName: fileName || String(form.name || 'Document'),
+            byName,
+            applicationId: app.id,
+            openHref: buildAppUrl(app.id, appUserId),
+            appUserId,
+            appPath,
+            formIndex: idx,
+          });
         });
       });
     });
@@ -380,74 +406,17 @@ export default function AdminDashboardPage() {
   }, [logEndDate, logFilterMode, logMonth, logPlanFilter, logSort.dir, logSort.key, logStartDate, newItemLog]);
 
   const groupedDashboardLog = useMemo(() => {
-    type LogItem = (typeof filteredAndSortedLog)[number];
-    type GroupedLogRow = {
-      rowKey: string;
-      kind: LogItem['kind'];
-      memberName: string;
-      healthPlan: string;
-      pathway: string;
-      byName: string;
-      createdAtMs: number;
-      openHref: string;
-      items: LogItem[];
-    };
-
-    const groupedDocs = new Map<string, GroupedLogRow>();
-    const rows: GroupedLogRow[] = [];
-
-    filteredAndSortedLog.forEach((item) => {
-      if (item.kind !== 'doc') {
-        rows.push({
-          rowKey: item.key,
-          kind: item.kind,
-          memberName: item.memberName,
-          healthPlan: item.healthPlan,
-          pathway: item.pathway,
-          byName: item.byName,
-          createdAtMs: item.createdAtMs,
-          openHref: item.openHref,
-          items: [item],
-        });
-        return;
-      }
-
-      const groupKey = [
-        normalizeLookup(item.memberName),
-        normalizeLookup(item.healthPlan),
-        normalizeLookup(item.pathway),
-      ].join('|');
-
-      const existing = groupedDocs.get(groupKey);
-      if (!existing) {
-        groupedDocs.set(groupKey, {
-          rowKey: `doc-group-${groupKey}`,
-          kind: 'doc',
-          memberName: item.memberName,
-          healthPlan: item.healthPlan,
-          pathway: item.pathway,
-          byName: item.byName,
-          createdAtMs: item.createdAtMs,
-          openHref: item.openHref,
-          items: [item],
-        });
-        return;
-      }
-
-      existing.items.push(item);
-      if (item.createdAtMs > existing.createdAtMs) {
-        existing.createdAtMs = item.createdAtMs;
-        existing.byName = item.byName;
-        existing.openHref = item.openHref;
-      }
-    });
-
-    const docRows = Array.from(groupedDocs.values()).map((row) => ({
-      ...row,
-      items: [...row.items].sort((a, b) => b.createdAtMs - a.createdAtMs),
+    return filteredAndSortedLog.map((item) => ({
+      rowKey: item.key,
+      kind: item.kind,
+      memberName: item.memberName,
+      healthPlan: item.healthPlan,
+      pathway: item.pathway,
+      byName: item.byName,
+      createdAtMs: item.createdAtMs,
+      openHref: item.openHref,
+      items: [item],
     }));
-
-    return [...rows, ...docRows].sort((a, b) => b.createdAtMs - a.createdAtMs);
   }, [filteredAndSortedLog]);
 
   const csSummaryStats = useMemo(() => {
@@ -749,7 +718,7 @@ export default function AdminDashboardPage() {
           <div>
             <CardTitle>New items log</CardTitle>
             <CardDescription>
-              Live list of items that need review/processing (CS summaries, documents, eligibility checks, and standalone upload intakes).
+              Ongoing timestamped log of new activity, including each document upload, with direct links to each member's application pathway.
             </CardDescription>
           </div>
           <Button variant="outline" onClick={() => fetchApps()} disabled={isLoadingApps}>
@@ -920,7 +889,6 @@ export default function AdminDashboardPage() {
                 <tbody>
                   {groupedDashboardLog.map((row) => {
                     const e = row.items[0];
-                    const isDocGroup = row.kind === 'doc';
                     const allSeen = row.items.every((item) => Boolean(seenMap[item.key]));
                     const byNames = Array.from(new Set(row.items.map((item) => String(item.byName || '').trim()).filter(Boolean)));
                     return (
@@ -934,42 +902,27 @@ export default function AdminDashboardPage() {
                       <td className="py-2 pr-3">{row.healthPlan || '-'}</td>
                       <td className="py-2 pr-3">{row.pathway || '-'}</td>
                       <td className="py-2 pr-3">
-                        {isDocGroup ? (
-                          <div className="space-y-1">
-                            {row.items.map((item, idx) => (
-                              <div key={`${item.key}-${idx}`} className="flex flex-wrap items-center gap-2">
-                                <span>{item.itemName}</span>
-                                <Badge variant="outline" className="bg-red-50 border-red-200 text-red-800">
-                                  Flagged
-                                </Badge>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <>
-                            <Badge
-                              variant="outline"
-                              className={
-                                e.kind === 'doc'
-                                  ? 'bg-green-50 border-green-200 text-green-800'
-                                  : e.kind === 'cs'
-                                    ? 'bg-amber-50 border-amber-200 text-amber-800'
-                                    : e.kind === 'elig'
-                                      ? 'bg-purple-50 border-purple-200 text-purple-800'
-                                      : 'bg-orange-50 border-orange-200 text-orange-800'
-                              }
-                            >
-                              {e.kind === 'doc'
-                                ? 'Document'
-                                : e.kind === 'cs'
-                                  ? 'CS Summary'
-                                  : e.kind === 'elig'
-                                    ? 'Eligibility'
-                                    : 'Standalone'}
-                            </Badge>
-                            <span className="ml-2">{e.itemName}</span>
-                          </>
-                        )}
+                        <Badge
+                          variant="outline"
+                          className={
+                            e.kind === 'doc'
+                              ? 'bg-green-50 border-green-200 text-green-800'
+                              : e.kind === 'cs'
+                                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                : e.kind === 'elig'
+                                  ? 'bg-purple-50 border-purple-200 text-purple-800'
+                                  : 'bg-orange-50 border-orange-200 text-orange-800'
+                          }
+                        >
+                          {e.kind === 'doc'
+                            ? 'Document Upload'
+                            : e.kind === 'cs'
+                              ? 'CS Summary'
+                              : e.kind === 'elig'
+                                ? 'Eligibility'
+                                : 'Standalone'}
+                        </Badge>
+                        <span className="ml-2">{e.itemName}</span>
                       </td>
                       <td className="py-2 pr-3">{byNames.join(', ') || row.byName || '-'}</td>
                       <td className="py-2 pr-3 text-center">

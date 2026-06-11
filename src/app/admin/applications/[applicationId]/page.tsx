@@ -5721,12 +5721,15 @@ function ApplicationDetailPageContent() {
                 fileName: String(entry?.fileName || '').trim(),
                 filePath: String(entry?.filePath || '').trim(),
                 downloadURL: String(entry?.downloadURL || '').trim() || null,
+                uploadedAtIso: String(entry?.uploadedAtIso || '').trim() || null,
               }))
               .filter((entry: any) => Boolean(entry.fileName || entry.filePath));
+            const uploadTimeIso = new Date().toISOString();
             const newUploads = uploadResults.map((entry) => ({
               fileName: String(entry.fileName || '').trim() || entry.path.split('/').pop() || 'Uploaded file',
               filePath: entry.path,
               downloadURL: entry.downloadURL,
+              uploadedAtIso: uploadTimeIso,
             }));
             const combinedUploads = [...preservedExistingUploads, ...newUploads];
             const primaryUpload = combinedUploads[0] || newUploads[0];
