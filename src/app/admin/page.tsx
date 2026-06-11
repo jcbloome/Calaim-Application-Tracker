@@ -17,6 +17,32 @@ import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { Checkbox } from '@/components/ui/checkbox';
 
+const getCompactPlanLabel = (plan: string) => {
+  const normalized = String(plan || '').trim().toLowerCase();
+  if (normalized.includes('kaiser')) return 'K';
+  if (normalized.includes('health net') || normalized.includes('healthnet')) return 'H';
+  return '-';
+};
+
+const getCompactPathwayLabel = (pathway: string) => {
+  const normalized = String(pathway || '').trim().toLowerCase();
+  if (!normalized) return '-';
+  if (normalized.includes('diversion')) return 'Diversion';
+  if (normalized.includes('transition')) return 'Transition';
+  return String(pathway || '').trim();
+};
+
+const getCompactDocumentItemLabel = (formName: string, fileName: string) => {
+  const form = String(formName || '').trim().toLowerCase();
+  const file = String(fileName || '').trim().toLowerCase();
+  const combined = `${form} ${file}`;
+
+  if (combined.includes('602')) return '602 Upload';
+  if (combined.includes('med') || combined.includes('medicine')) return 'Med List Upload';
+  if (combined.includes('proof of income') || combined.includes('income')) return 'Income Upload';
+  return 'Document Upload';
+};
+
 export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
@@ -284,7 +310,7 @@ export default function AdminDashboardPage() {
             memberName,
             pathway,
             healthPlan,
-            itemName: fileName || String(form.name || 'Document'),
+            itemName: getCompactDocumentItemLabel(String(form?.name || ''), fileName),
             byName,
             applicationId: app.id,
             openHref: buildAppUrl(app.id, appUserId),
@@ -899,8 +925,8 @@ export default function AdminDashboardPage() {
                       <td className="py-2 pr-3">
                         <div className="font-medium">{row.memberName}</div>
                       </td>
-                      <td className="py-2 pr-3">{row.healthPlan || '-'}</td>
-                      <td className="py-2 pr-3">{row.pathway || '-'}</td>
+                      <td className="py-2 pr-3">{getCompactPlanLabel(row.healthPlan)}</td>
+                      <td className="py-2 pr-3">{getCompactPathwayLabel(row.pathway)}</td>
                       <td className="py-2 pr-3">
                         <Badge
                           variant="outline"
