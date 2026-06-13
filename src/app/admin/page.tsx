@@ -4,7 +4,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, AlertTriangle, BellRing, Clock3 } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAdmin } from '@/hooks/use-admin';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
 import { useSearchParams } from 'next/navigation';
+import { isCsSummaryFormName, isExcludedFromReviewQueue, isPendingDocumentReview } from '@/lib/review-queue';
 
 const getCompactPlanLabel = (plan: string) => {
   const normalized = String(plan || '').trim().toLowerCase();
@@ -43,10 +44,15 @@ const getCompactDocumentItemLabel = (formName: string, fileName: string) => {
   return 'Document Upload';
 };
 
-const getDashboardActionHref = (plan?: 'kaiser' | 'health-net', kind?: 'docs' | 'cs') => {
+const getDashboardActionHref = (
+  plan?: 'kaiser' | 'health-net',
+  kind?: 'docs' | 'cs' | 'elig' | 'standalone',
+  scope?: 'review'
+) => {
   const params = new URLSearchParams();
   if (plan) params.set('plan', plan);
   if (kind) params.set('kind', kind);
+  if (scope) params.set('scope', scope);
   const query = params.toString();
   return `/admin${query ? `?${query}` : ''}#new-items-log`;
 };
@@ -75,16 +81,41 @@ export default function AdminDashboardPage() {
   const [logStartDate, setLogStartDate] = useState<string>('');
   const [logEndDate, setLogEndDate] = useState<string>('');
   const [logPlanFilter, setLogPlanFilter] = useState<'all' | 'health-net' | 'kaiser'>('all');
+  const [logKindFilter, setLogKindFilter] = useState<'all' | 'docs' | 'cs' | 'elig' | 'standalone'>('all');
+  const [logScopeFilter, setLogScopeFilter] = useState<'all' | 'review'>('all');
 
   useEffect(() => {
     const plan = String(searchParams.get('plan') || '').trim().toLowerCase();
-    if (!plan) return;
-    if (plan.includes('health-net') || plan.includes('health net') || plan.includes('healthnet')) {
+    if (!plan) {
+      setLogPlanFilter('all');
+    } else if (plan.includes('health-net') || plan.includes('health net') || plan.includes('healthnet')) {
       setLogPlanFilter('health-net');
-      return;
-    }
-    if (plan.includes('kaiser')) {
+    } else if (plan.includes('kaiser')) {
       setLogPlanFilter('kaiser');
+    } else {
+      setLogPlanFilter('all');
+    }
+
+    const kind = String(searchParams.get('kind') || '').trim().toLowerCase();
+    if (kind === 'docs' || kind === 'cs' || kind === 'elig' || kind === 'standalone') {
+      setLogKindFilter(kind);
+    } else {
+      setLogKindFilter('all');
+    }
+
+    const scope = String(searchParams.get('scope') || '').trim().toLowerCase();
+    if (scope === 'review') {
+      setLogScopeFilter('review');
+    } else {
+      setLogScopeFilter('all');
+    }
+
+    // When arriving from an action badge, show all matching review items (not just current month).
+    const hasActionFilter = Boolean(plan || kind || scope);
+    if (hasActionFilter) {
+      setLogFilterMode('range');
+      setLogStartDate('');
+      setLogEndDate('');
     }
   }, [searchParams]);
 
@@ -198,10 +229,9 @@ export default function AdminDashboardPage() {
       appUserId?: string | null;
       appPath?: string;
       formIndex?: number;
+      needsReview: boolean;
+      reviewLabel?: string;
     }> = [];
-
-    const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-    const cutoff = Date.now() - WINDOW_MS;
 
     (allApplications || []).forEach((app: any) => {
       const forms = Array.isArray(app.forms) ? app.forms : [];
@@ -212,18 +242,18 @@ export default function AdminDashboardPage() {
       const appPath = app.appPath;
 
       // CS Summary needs review.
-      const summaryIndex = forms.findIndex((f: any) => (f.name === 'CS Member Summary' || f.name === 'CS Summary') && f.status === 'Completed');
+      const summaryIndex = forms.findIndex((f: any) => isCsSummaryFormName(f?.name) && f.status === 'Completed');
       if (summaryIndex >= 0 && !app.applicationChecked) {
         const form = forms[summaryIndex] || {};
         const createdAtMs = (() => {
           const v = form.dateCompleted || app.csSummaryCompletedAt || app.lastUpdated || app.lastModified || app.createdAt;
           try {
-            return v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+            const ms = v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+            return Number.isFinite(ms) ? ms : Date.now();
           } catch {
             return Date.now();
           }
         })();
-        if (createdAtMs >= cutoff) {
         const byName = String(app.csSummarySubmittedByName || app.csSummarySubmittedByEmail || app.referrerName || app.referrerEmail || form.uploadedByName || form.uploadedByEmail || '').trim() || 'User';
         items.push({
           key: `cs-${app.id}-${summaryIndex}-${createdAtMs}`,
@@ -239,15 +269,17 @@ export default function AdminDashboardPage() {
           appUserId,
           appPath,
           formIndex: summaryIndex,
+          needsReview: true,
+          reviewLabel: 'CS Member Summary',
         });
-        }
       }
 
       // Document uploads (timestamped per uploaded file when available).
       forms.forEach((form: any, idx: number) => {
         const isCompleted = form?.status === 'Completed';
-        const isSummary = form?.name === 'CS Member Summary' || form?.name === 'CS Summary';
-        if (!isCompleted || isSummary) return;
+        const isSummary = isCsSummaryFormName(form?.name);
+        const isExcluded = isExcludedFromReviewQueue(form?.name);
+        if (!isCompleted || isSummary || isExcluded) return;
         const rawUploads = Array.isArray(form?.uploadedFiles) ? form.uploadedFiles : [];
         const uploads = rawUploads.length > 0
           ? rawUploads
@@ -272,12 +304,19 @@ export default function AdminDashboardPage() {
               app.lastModified ||
               app.createdAt;
             try {
-              return v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+              const ms = v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+              return Number.isFinite(ms) ? ms : Date.now();
             } catch {
               return Date.now();
             }
           })();
-          if (createdAtMs < cutoff) return;
+          const needsReview = isPendingDocumentReview(form);
+          // Keep older rows when still requiring review so badge counts and log rows stay in sync.
+          if (!needsReview) {
+            const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+            const cutoff = Date.now() - WINDOW_MS;
+            if (createdAtMs < cutoff) return;
+          }
 
           const fileName = String(upload?.fileName || '').trim();
           const byName = String(
@@ -304,6 +343,8 @@ export default function AdminDashboardPage() {
             appUserId,
             appPath,
             formIndex: idx,
+            needsReview,
+            reviewLabel: String(form?.name || '').trim() || 'Document',
           });
         });
       });
@@ -318,13 +359,12 @@ export default function AdminDashboardPage() {
       const createdAtMs = (() => {
         const v = check?.timestamp || check?.createdAt || check?.requestedAt;
         try {
-          return v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+          const ms = v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+          return Number.isFinite(ms) ? ms : Date.now();
         } catch {
           return Date.now();
         }
       })();
-      if (createdAtMs < cutoff) return;
-
       const memberName = String(check?.memberName || `${check?.memberFirstName || ''} ${check?.memberLastName || ''}`.trim()).trim() || 'Unknown Member';
       const healthPlan = String(check?.healthPlan || '').trim();
       const byName = String(check?.requesterName || `${check?.requesterFirstName || ''} ${check?.requesterLastName || ''}`.trim()).trim() || 'Requester';
@@ -339,6 +379,8 @@ export default function AdminDashboardPage() {
         itemName: 'Eligibility check',
         byName,
         openHref: `/admin/eligibility-checks?checkId=${encodeURIComponent(String(check?.id || '').trim())}`,
+        needsReview: true,
+        reviewLabel: 'Eligibility check',
       });
     });
 
@@ -350,13 +392,12 @@ export default function AdminDashboardPage() {
       const createdAtMs = (() => {
         const v = row?.createdAt || row?.updatedAt;
         try {
-          return v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+          const ms = v?.toMillis?.() || v?.toDate?.()?.getTime?.() || new Date(v).getTime();
+          return Number.isFinite(ms) ? ms : Date.now();
         } catch {
           return Date.now();
         }
       })();
-      if (createdAtMs < cutoff) return;
-
       const memberName = String(row?.memberName || `${row?.memberFirstName || ''} ${row?.memberLastName || ''}`.trim()).trim() || 'Unknown Member';
       const healthPlan = String(row?.healthPlan || '').trim();
       const byName = String(row?.uploaderName || row?.uploaderEmail || '').trim() || 'Uploader';
@@ -372,13 +413,14 @@ export default function AdminDashboardPage() {
         itemName,
         byName,
         openHref: `/admin/standalone-uploads?focus=${encodeURIComponent(String(row?.id || '').trim())}`,
+        needsReview: true,
+        reviewLabel: itemName,
       });
     });
 
     return items
       .filter((i) => Number.isFinite(i.createdAtMs))
-      .sort((a, b) => b.createdAtMs - a.createdAtMs)
-      .slice(0, 100);
+      .sort((a, b) => b.createdAtMs - a.createdAtMs);
   }, [allApplications, eligibilityChecks, standaloneUploads]);
 
   const filteredAndSortedLog = useMemo(() => {
@@ -405,7 +447,41 @@ export default function AdminDashboardPage() {
       return ms >= startMs && ms <= endMs;
     };
 
-    const items = (newItemLog || []).filter((e) => inDateRange(e.createdAtMs) && matchesPlanFilter(e.healthPlan));
+    const matchesKindFilter = (kind: string) => {
+      if (logKindFilter === 'all') return true;
+      if (logKindFilter === 'docs') return kind === 'doc';
+      if (logKindFilter === 'cs') return kind === 'cs';
+      if (logKindFilter === 'elig') return kind === 'elig';
+      if (logKindFilter === 'standalone') return kind === 'standalone';
+      return true;
+    };
+
+    const filteredItems = (newItemLog || []).filter(
+      (e) => inDateRange(e.createdAtMs) && matchesPlanFilter(e.healthPlan) && matchesKindFilter(e.kind)
+    );
+
+    const reviewScopedItems =
+      logScopeFilter === 'review' ? filteredItems.filter((e) => e.needsReview) : filteredItems;
+
+    const items =
+      logScopeFilter === 'review' && logKindFilter === 'docs'
+        ? Array.from(
+            reviewScopedItems
+              .filter((e) => e.kind === 'doc')
+              .reduce((acc, item) => {
+                const groupKey = `${String(item.applicationId || item.openHref)}::${String(item.formIndex ?? item.reviewLabel ?? item.itemName)}`;
+                const prev = acc.get(groupKey);
+                if (!prev || item.createdAtMs > prev.createdAtMs) {
+                  acc.set(groupKey, {
+                    ...item,
+                    itemName: item.reviewLabel || item.itemName,
+                  });
+                }
+                return acc;
+              }, new Map<string, (typeof reviewScopedItems)[number]>())
+              .values()
+          )
+        : reviewScopedItems;
 
     const dirMul = logSort.dir === 'asc' ? 1 : -1;
     const norm = (v: any) => String(v || '').trim().toLowerCase();
@@ -416,7 +492,7 @@ export default function AdminDashboardPage() {
       if (logSort.key === 'by') return norm(a.byName).localeCompare(norm(b.byName)) * dirMul;
       return 0;
     });
-  }, [logEndDate, logFilterMode, logMonth, logPlanFilter, logSort.dir, logSort.key, logStartDate, newItemLog]);
+  }, [logEndDate, logFilterMode, logKindFilter, logMonth, logPlanFilter, logScopeFilter, logSort.dir, logSort.key, logStartDate, newItemLog]);
 
   const groupedDashboardLog = useMemo(() => {
     return filteredAndSortedLog.map((item) => ({
@@ -444,9 +520,7 @@ export default function AdminDashboardPage() {
 
     allApplications.forEach((app) => {
       const forms = app.forms || [];
-      const hasCompletedSummary = forms.some((form: any) =>
-        (form.name === 'CS Member Summary' || form.name === 'CS Summary') && form.status === 'Completed'
-      );
+      const hasCompletedSummary = forms.some((form: any) => isCsSummaryFormName(form?.name) && form.status === 'Completed');
       if (!hasCompletedSummary) return;
 
       result.received += 1;
@@ -478,15 +552,16 @@ export default function AdminDashboardPage() {
       const forms = app.forms || [];
       forms.forEach((form: any) => {
         const isCompleted = form.status === 'Completed';
-        const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
-        if (!isCompleted || isSummary) return;
+        const isSummary = isCsSummaryFormName(form?.name);
+        const isExcluded = isExcludedFromReviewQueue(form?.name);
+        if (!isCompleted || isSummary || isExcluded) return;
 
         result.received += 1;
         const plan = String(app.healthPlan || '').toLowerCase();
         const isKaiser = plan.includes('kaiser');
         const isHn = plan.includes('health net');
 
-        if (!form.acknowledged) {
+        if (isPendingDocumentReview(form)) {
           result.needsReview += 1;
           if (isKaiser) result.kaiserNeedsReview += 1;
           if (isHn) result.hnNeedsReview += 1;
@@ -515,83 +590,6 @@ export default function AdminDashboardPage() {
 
     return result;
   }, [eligibilityChecks]);
-
-  const healthNetReadyForAuth = useMemo(() => {
-    const rows: Array<{
-      id: string;
-      memberName: string;
-      appHref: string;
-      assignedStaff: string;
-      readyAtMs: number;
-      reminderLevel: 'fresh' | 'due' | 'overdue';
-      daysReady: number;
-    }> = [];
-
-    (allApplications || []).forEach((app: any) => {
-      const plan = String(app?.healthPlan || '').trim().toLowerCase();
-      if (!plan.includes('health net')) return;
-      const forms = Array.isArray(app?.forms) ? app.forms : [];
-      const nonSummaryForms = forms.filter((form: any) => {
-        const name = String(form?.name || '').trim().toLowerCase();
-        return name !== 'cs member summary' && name !== 'cs summary';
-      });
-      if (nonSummaryForms.length === 0) return;
-
-      const hasCompletedSummary = forms.some((form: any) => {
-        const name = String(form?.name || '').trim().toLowerCase();
-        return (name === 'cs member summary' || name === 'cs summary') && String(form?.status || '').trim() === 'Completed';
-      });
-      if (!hasCompletedSummary) return;
-      if (!Boolean(app?.applicationChecked)) return;
-
-      const allNonSummaryCompleted = nonSummaryForms.every((form: any) => String(form?.status || '').trim() === 'Completed');
-      if (!allNonSummaryCompleted) return;
-
-      const pendingReview = nonSummaryForms.some((form: any) => !Boolean(form?.acknowledged));
-      if (pendingReview) return;
-
-      const ownerUid = app?.appUserId || app?.userId || null;
-      const appHref = ownerUid
-        ? `/admin/applications/${app.id}?userId=${encodeURIComponent(String(ownerUid))}`
-        : `/admin/applications/${app.id}`;
-      const memberName = `${String(app?.memberFirstName || '').trim()} ${String(app?.memberLastName || '').trim()}`.trim() || 'Unknown Member';
-      const assignedStaff = String(app?.assignedStaffName || app?.assignedStaff || 'Staff unassigned').trim();
-      const readyAtMs = Math.max(
-        ...nonSummaryForms.map((form: any) =>
-          toMs(form?.acknowledgedDate || form?.dateCompleted || form?.uploadedAt || form?.lastUpdated)
-        ),
-        toMs(app?.lastUpdated),
-        toMs(app?.applicationCheckedDate)
-      );
-      const daysReady = readyAtMs > 0 ? Math.floor((Date.now() - readyAtMs) / (24 * 60 * 60 * 1000)) : 0;
-      const reminderLevel: 'fresh' | 'due' | 'overdue' =
-        daysReady >= 7 ? 'overdue' : daysReady >= 3 ? 'due' : 'fresh';
-
-      rows.push({
-        id: String(app.id || '').trim(),
-        memberName,
-        appHref,
-        assignedStaff,
-        readyAtMs,
-        reminderLevel,
-        daysReady,
-      });
-    });
-
-    return rows.sort((a, b) => b.readyAtMs - a.readyAtMs);
-  }, [allApplications]);
-
-  const healthNetReadyReminderStats = useMemo(() => {
-    return healthNetReadyForAuth.reduce(
-      (acc, row) => {
-        if (row.reminderLevel === 'overdue') acc.overdue += 1;
-        else if (row.reminderLevel === 'due') acc.due += 1;
-        else acc.fresh += 1;
-        return acc;
-      },
-      { fresh: 0, due: 0, overdue: 0 }
-    );
-  }, [healthNetReadyForAuth]);
 
   if (isAdminLoading || isLoadingApps) {
     return (
@@ -636,14 +634,14 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <Link
-              href={getDashboardActionHref(undefined, 'cs')}
+              href={getDashboardActionHref(undefined, 'cs', 'review')}
               className="inline-block text-2xl font-bold hover:underline"
               aria-label="View CS summaries needing review"
             >
               {csSummaryStats.needsReview}
             </Link>
             <div className="flex flex-wrap gap-2 text-xs">
-              <Link href={getDashboardActionHref('health-net', 'cs')} aria-label="View Health Net CS summaries needing review">
+              <Link href={getDashboardActionHref('health-net', 'cs', 'review')} aria-label="View Health Net CS summaries needing review">
                 <Badge
                   variant="outline"
                   className="bg-green-100 text-green-800 border-green-200 cursor-pointer hover:opacity-90"
@@ -651,7 +649,7 @@ export default function AdminDashboardPage() {
                   HN(CS) {csSummaryStats.hnNeedsReview}
                 </Badge>
               </Link>
-              <Link href={getDashboardActionHref('kaiser', 'cs')} aria-label="View Kaiser CS summaries needing review">
+              <Link href={getDashboardActionHref('kaiser', 'cs', 'review')} aria-label="View Kaiser CS summaries needing review">
                 <Badge
                   variant="outline"
                   className="bg-blue-100 text-blue-800 border-blue-200 cursor-pointer hover:opacity-90"
@@ -669,14 +667,14 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <Link
-              href={getDashboardActionHref(undefined, 'docs')}
+              href={getDashboardActionHref(undefined, 'docs', 'review')}
               className="inline-block text-2xl font-bold hover:underline"
               aria-label="View documents needing review"
             >
               {documentStats.needsReview}
             </Link>
             <div className="flex flex-wrap gap-2 text-xs">
-              <Link href={getDashboardActionHref('health-net', 'docs')} aria-label="View Health Net documents needing review">
+              <Link href={getDashboardActionHref('health-net', 'docs', 'review')} aria-label="View Health Net documents needing review">
                 <Badge
                   variant="outline"
                   className="bg-green-100 text-green-800 border-green-200 cursor-pointer hover:opacity-90"
@@ -684,7 +682,7 @@ export default function AdminDashboardPage() {
                   HN(D) {documentStats.hnNeedsReview}
                 </Badge>
               </Link>
-              <Link href={getDashboardActionHref('kaiser', 'docs')} aria-label="View Kaiser documents needing review">
+              <Link href={getDashboardActionHref('kaiser', 'docs', 'review')} aria-label="View Kaiser documents needing review">
                 <Badge
                   variant="outline"
                   className="bg-blue-100 text-blue-800 border-blue-200 cursor-pointer hover:opacity-90"
@@ -804,6 +802,8 @@ export default function AdminDashboardPage() {
                 setLogMonth(`${d.getFullYear()}-${mm}`);
                 setLogStartDate('');
                 setLogEndDate('');
+                setLogKindFilter('all');
+                setLogScopeFilter('all');
               }}
             >
               Reset
@@ -836,9 +836,78 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
+            <div className="flex flex-col gap-1">
+              <div className="text-xs text-muted-foreground">Item Type</div>
+              <div className="inline-flex rounded-md border bg-background p-1">
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logKindFilter === 'all' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogKindFilter('all')}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logKindFilter === 'docs' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogKindFilter('docs')}
+                >
+                  Docs
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logKindFilter === 'cs' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogKindFilter('cs')}
+                >
+                  CS
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logKindFilter === 'elig' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogKindFilter('elig')}
+                >
+                  Elig
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logKindFilter === 'standalone' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogKindFilter('standalone')}
+                >
+                  Standalone
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <div className="text-xs text-muted-foreground">Scope</div>
+              <div className="inline-flex rounded-md border bg-background p-1">
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logScopeFilter === 'all' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogScopeFilter('all')}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 text-xs rounded ${logScopeFilter === 'review' ? 'bg-muted font-medium' : ''}`}
+                  onClick={() => setLogScopeFilter('review')}
+                >
+                  Needs review
+                </button>
+              </div>
+            </div>
+
             <div className="ml-auto text-xs text-muted-foreground">
               Showing <span className="font-medium text-foreground">{groupedDashboardLog.length}</span> rows
             </div>
+          </div>
+
+          <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+            <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+            <span>
+              <span className="font-medium text-foreground">Needs review</span> icon marks items requiring review action.
+              {logScopeFilter === 'review' ? ' Showing only items that currently need review.' : ''}
+            </span>
           </div>
 
           {groupedDashboardLog.length === 0 ? (
@@ -914,6 +983,11 @@ export default function AdminDashboardPage() {
                       <td className="py-2 pr-3">{getCompactPlanLabel(row.healthPlan)}</td>
                       <td className="py-2 pr-3">{getCompactPathwayLabel(row.pathway)}</td>
                       <td className="py-2 pr-3">
+                        {e.needsReview ? (
+                          <span className="mr-2 inline-flex align-middle" title="Needs review">
+                            <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                          </span>
+                        ) : null}
                         <Badge
                           variant="outline"
                           className={
@@ -946,81 +1020,6 @@ export default function AdminDashboardPage() {
                   )})}
                 </tbody>
               </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BellRing className="h-4 w-4 text-green-700" />
-            Health Net Authorization Readiness
-          </CardTitle>
-          <CardDescription>
-            Members where CS summary + required documents are complete and reviewed, so assigned Health Net staff can submit authorization requests.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-3 flex flex-wrap gap-2 text-xs">
-            <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200">
-              Ready now {healthNetReadyReminderStats.fresh}
-            </Badge>
-            <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200">
-              Reminder due {healthNetReadyReminderStats.due}
-            </Badge>
-            <Badge variant="outline" className="bg-red-50 text-red-800 border-red-200">
-              Overdue {healthNetReadyReminderStats.overdue}
-            </Badge>
-          </div>
-          {healthNetReadyForAuth.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No Health Net members are fully ready yet.</div>
-          ) : (
-            <div className="space-y-2">
-              {healthNetReadyForAuth.slice(0, 25).map((row) => {
-                const reminderIcon =
-                  row.reminderLevel === 'overdue' ? (
-                    <AlertTriangle className="h-4 w-4 text-red-600" />
-                  ) : row.reminderLevel === 'due' ? (
-                    <Clock3 className="h-4 w-4 text-amber-600" />
-                  ) : (
-                    <BellRing className="h-4 w-4 text-emerald-600" />
-                  );
-                const reminderLabel =
-                  row.reminderLevel === 'overdue'
-                    ? `Overdue (${row.daysReady}d)`
-                    : row.reminderLevel === 'due'
-                      ? `Reminder due (${row.daysReady}d)`
-                      : `Ready (${row.daysReady}d)`;
-                return (
-                  <div key={`${row.id}-${row.readyAtMs}`} className="flex items-center justify-between rounded-md border px-3 py-2">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{row.memberName}</div>
-                      <div className="text-xs text-muted-foreground">Assigned: {row.assignedStaff || 'Staff unassigned'}</div>
-                    </div>
-                    <div className="ml-3 flex items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={
-                          row.reminderLevel === 'overdue'
-                            ? 'bg-red-50 text-red-800 border-red-200'
-                            : row.reminderLevel === 'due'
-                              ? 'bg-amber-50 text-amber-800 border-amber-200'
-                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        }
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          {reminderIcon}
-                          {reminderLabel}
-                        </span>
-                      </Badge>
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={row.appHref}>Open</Link>
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           )}
         </CardContent>

@@ -84,6 +84,7 @@ import { format } from 'date-fns';
 import ActivityLog from '@/components/admin/ActivityLog';
 import { KAISER_STATUS_PROGRESSION, getKaiserStatusesInOrder, getKaiserStatusProgress } from '@/lib/kaiser-status-progression';
 import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
+import { countPendingDocumentReviews } from '@/lib/review-queue';
 
 const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
 
@@ -2894,13 +2895,7 @@ function ApplicationDetailPageContent() {
         };
       });
 
-      const pendingDocReviewCount = updatedForms.filter((form: any) => {
-        const isCompleted = form?.status === 'Completed';
-        const name = String(form?.name || '').trim();
-        const summary = name === 'CS Member Summary' || name === 'CS Summary';
-        const acknowledged = Boolean(form?.acknowledged);
-        return isCompleted && !summary && !acknowledged;
-      }).length;
+      const pendingDocReviewCount = countPendingDocumentReviews(updatedForms);
 
       const patch: Record<string, any> = {
         forms: updatedForms,
@@ -5221,13 +5216,7 @@ function ApplicationDetailPageContent() {
       });
 
       const updatedForms = Array.from(existingForms.values());
-      const pendingDocReviewCount = updatedForms.filter((form: any) => {
-        const isCompleted = form?.status === 'Completed';
-        const name = String(form?.name || '').trim();
-        const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
-        const acknowledged = Boolean(form?.acknowledged);
-        return isCompleted && !isSummary && !acknowledged;
-      }).length;
+      const pendingDocReviewCount = countPendingDocumentReviews(updatedForms);
       
       try {
           await setDoc(docRef, {
@@ -6591,11 +6580,7 @@ function ApplicationDetailPageContent() {
   const assignedStaffName = String((application as any)?.assignedStaffName || '').trim();
   const assignedStaffId = String((application as any)?.assignedStaffId || '').trim();
   const assignedStaffEmail = String((application as any)?.assignedStaffEmail || '').trim();
-  const unacknowledgedDocsCount = (application.forms || []).filter((form: any) => {
-    const isCompleted = form?.status === 'Completed';
-    const isSummary = form?.name === 'CS Member Summary' || form?.name === 'CS Summary';
-    return isCompleted && !isSummary && !form?.acknowledged;
-  }).length;
+  const unacknowledgedDocsCount = countPendingDocumentReviews(application.forms || []);
   const isRequiresRevision = String((application as any)?.status || '').trim().toLowerCase() === 'requires revision';
   const referralSubmission = (application as any)?.kaiserReferralSubmission || {};
   const referralStep5 = (application as any)?.kaiserReferralStep5 || {};
@@ -7896,13 +7881,7 @@ function ApplicationDetailPageContent() {
         } as FormStatusType);
       }
 
-      const pendingDocReviewCount = updatedForms.filter((form: any) => {
-        const isCompleted = form?.status === 'Completed';
-        const name = String(form?.name || '').trim();
-        const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
-        const acknowledged = Boolean(form?.acknowledged);
-        return isCompleted && !isSummary && !acknowledged;
-      }).length;
+      const pendingDocReviewCount = countPendingDocumentReviews(updatedForms);
 
       await setDoc(docRef, {
         forms: updatedForms,
@@ -8225,13 +8204,7 @@ function ApplicationDetailPageContent() {
         throw new Error('Could not find this form on the application.');
       }
 
-      const pendingDocReviewCount = updatedForms.filter((form: any) => {
-        const isCompleted = form?.status === 'Completed';
-        const name = String(form?.name || '').trim();
-        const summary = name === 'CS Member Summary' || name === 'CS Summary';
-        const acknowledged = Boolean(form?.acknowledged);
-        return isCompleted && !summary && !acknowledged;
-      }).length;
+      const pendingDocReviewCount = countPendingDocumentReviews(updatedForms);
 
       const nextEligibilityUploads =
         shouldResetCard && rejectScope === 'file' && targetEligibilityUploadId
@@ -11149,6 +11122,24 @@ function ApplicationDetailPageContent() {
             <CardDescription className="text-sm">
               MRN: {memberMrnDisplay} | Birthdate: {memberDobDisplay}
             </CardDescription>
+            <div>
+              {(() => {
+                const pathwayLabel = String((application as any)?.pathway || '').trim();
+                const pathwayLower = pathwayLabel.toLowerCase();
+                const isDiversion = pathwayLower.includes('diversion');
+                const isTransition = pathwayLower.includes('transition');
+                const badgeClass = isDiversion
+                  ? 'bg-amber-50 border-amber-200 text-amber-900'
+                  : isTransition
+                    ? 'bg-sky-50 border-sky-200 text-sky-900'
+                    : 'bg-slate-100 border-slate-300 text-slate-900';
+                return (
+                  <Badge variant="outline" className={badgeClass}>
+                    {pathwayLabel || 'Pathway not set'}
+                  </Badge>
+                );
+              })()}
+            </div>
             {isDraftLikeApplication ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                 <div>Skeleton application mode is on. You can convert to a normal application once CS Summary is complete.</div>

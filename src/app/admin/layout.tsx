@@ -98,6 +98,7 @@ import {
   isPriorityOrUrgent,
   normalizePriorityLabel
 } from '@/lib/notification-utils';
+import { isCsSummaryFormName, isPendingDocumentReview } from '@/lib/review-queue';
 
 // Temporary operational pause:
 // Suspend webhook-driven Caspio note assignments from Action Items counters.
@@ -112,6 +113,7 @@ const adminNavLinks = [
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
       { href: '/admin', label: 'Activity Log', icon: Activity },
       { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
+      { href: '/admin/health-net-auth-requests', label: 'Health Net Auth Requests', icon: BellRing },
       { href: '/admin/applications/intake-processing', label: 'Application Intake Processing', icon: FolderSync },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },
       { href: '/admin/incomplete-cs-summary', label: 'Incomplete CS Summary', icon: FileText },
@@ -312,10 +314,14 @@ function AdminHeader() {
     >;
   }>({ lastSentAt: 0, timer: null, pending: new Map() });
 
-  const getDashboardActionHref = (plan?: 'kaiser' | 'health-net', kind?: 'docs' | 'cs') => {
+  const getDashboardActionHref = (
+    plan?: 'kaiser' | 'health-net',
+    kind?: 'docs' | 'cs' | 'elig' | 'standalone'
+  ) => {
     const params = new URLSearchParams();
     if (plan) params.set('plan', plan);
     if (kind) params.set('kind', kind);
+    if (kind) params.set('scope', 'review');
     const query = params.toString();
     return `/admin${query ? `?${query}` : ''}#new-items-log`;
   };
@@ -713,11 +719,7 @@ function AdminHeader() {
         const assignedStaffKey = getAssignedStaffKeyFromApp(app, assignedStaffLabel);
 
         const forms = app.forms || [];
-        const nonSummaryPendingDocs = forms.filter((form: any) => {
-          const isCompleted = form?.status === 'Completed';
-          const isSummary = form?.name === 'CS Member Summary' || form?.name === 'CS Summary';
-          return isCompleted && !isSummary && !form?.acknowledged;
-        });
+        const nonSummaryPendingDocs = forms.filter((form: any) => isPendingDocumentReview(form));
         const unacknowledgedDocsCount = nonSummaryPendingDocs.length;
         const isRequiresRevision = String(app?.status || '').trim().toLowerCase() === 'requires revision';
         const hasRevisionPhase = forms.some((form: any) => {
@@ -750,8 +752,8 @@ function AdminHeader() {
         }
 
         // CS Summary needs review: completed CS Summary + not checked.
-        const hasCompletedSummary = forms.some((form: any) =>
-          (form.name === 'CS Member Summary' || form.name === 'CS Summary') && form.status === 'Completed'
+        const hasCompletedSummary = forms.some(
+          (form: any) => isCsSummaryFormName(form?.name) && form.status === 'Completed'
         );
         const reviewed = Boolean(app.applicationChecked);
         if (hasCompletedSummary && !reviewed) {
@@ -772,9 +774,7 @@ function AdminHeader() {
 
         // Documents need review: any non-CS form completed + not acknowledged.
         forms.forEach((form: any) => {
-          const isCompleted = form.status === 'Completed';
-          const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
-          const isPending = isCompleted && !isSummary && !form.acknowledged;
+          const isPending = isPendingDocumentReview(form);
           if (!isPending) return;
 
           uploadCount += 1;
@@ -1332,7 +1332,7 @@ function AdminHeader() {
         label: 'E',
         count: eligibilityPendingCount,
         dot: 'bg-amber-600',
-        href: '/admin/eligibility-checks',
+        href: getDashboardActionHref(undefined, 'elig'),
         title: 'Pending eligibility checks',
       },
       {
@@ -1340,7 +1340,7 @@ function AdminHeader() {
         label: 'Standalone',
         count: standalonePendingCount,
         dot: 'bg-sky-600',
-        href: '/admin/standalone-uploads',
+        href: getDashboardActionHref(undefined, 'standalone'),
         title: 'Standalone uploads pending intake review',
       },
       {
@@ -1478,7 +1478,7 @@ function AdminHeader() {
       items.push({
         key: 'standalone',
         label: sLabel,
-        href: '/admin/standalone-uploads',
+        href: getDashboardActionHref(undefined, 'standalone'),
         dot: 'bg-sky-600',
         title: 'Standalone upload intakes requiring triage',
       });

@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useAdmin } from '@/hooks/use-admin';
 import { ApplicationTrackerInline } from '@/components/admin/ApplicationTrackerInline';
+import { countPendingDocumentReviews, isCsSummaryFormName, isPendingDocumentReview } from '@/lib/review-queue';
 
 type ApplicationStatusType = Application['status'];
 type IncomingDocumentSummary = {
@@ -65,19 +66,14 @@ const getBadgeVariant = (status: ApplicationStatusType) => {
 
 const getCsSummaryNeedsReview = (app: WithId<Application & FormValues>) => {
   const forms = app.forms || [];
-  const hasCompletedSummary = forms.some((form: any) =>
-    (form.name === 'CS Member Summary' || form.name === 'CS Summary') && form.status === 'Completed'
-  );
+  const hasCompletedSummary = forms.some((form: any) => isCsSummaryFormName(form?.name) && form.status === 'Completed');
   return hasCompletedSummary && !app.applicationChecked;
 };
 
 const getCsSummaryCompletedAt = (app: WithId<Application & FormValues>): Date | null => {
   const forms = app.forms || [];
   const completedSummary = forms.find(
-    (form: any) =>
-      (form.name === 'CS Member Summary' || form.name === 'CS Summary') &&
-      form.status === 'Completed' &&
-      form.dateCompleted
+    (form: any) => isCsSummaryFormName(form?.name) && form.status === 'Completed' && form.dateCompleted
   ) as any;
 
   const raw = completedSummary?.dateCompleted;
@@ -96,12 +92,7 @@ const isNewCsSummary = (app: WithId<Application & FormValues>) => {
 };
 
 const getUnacknowledgedDocsCount = (app: WithId<Application & FormValues>) => {
-  const forms = app.forms || [];
-  return forms.filter((form: any) => {
-    const isCompleted = form.status === 'Completed';
-    const isSummary = form.name === 'CS Member Summary' || form.name === 'CS Summary';
-    return isCompleted && !isSummary && !form.acknowledged;
-  }).length;
+  return countPendingDocumentReviews(app.forms || []);
 };
 
 const normalizeLookup = (value: unknown) =>
@@ -181,14 +172,7 @@ const getIncomingDocumentSummaries = (
 ): IncomingDocumentSummary[] => {
   const forms = Array.isArray((app as any)?.forms) ? ((app as any).forms as any[]) : [];
   return forms
-    .filter((form: any) => {
-      const isCompleted = String(form?.status || '').trim() === 'Completed';
-      if (!isCompleted) return false;
-      const formName = String(form?.name || '').trim();
-      const isSummary = formName === 'CS Member Summary' || formName === 'CS Summary';
-      if (isSummary) return false;
-      return form?.acknowledged !== true;
-    })
+    .filter((form: any) => isPendingDocumentReview(form))
     .map((form: any) => {
       const formName = String(form?.name || '').trim();
       const fileName = String(form?.fileName || '').trim();

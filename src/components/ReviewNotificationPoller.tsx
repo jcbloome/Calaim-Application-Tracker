@@ -102,6 +102,7 @@ const toMs = (value: any): number => {
 const getDashboardActionHref = (kind?: 'docs' | 'cs') => {
   const params = new URLSearchParams();
   if (kind) params.set('kind', kind);
+  if (kind) params.set('scope', 'review');
   const query = params.toString();
   return `/admin${query ? `?${query}` : ''}#new-items-log`;
 };

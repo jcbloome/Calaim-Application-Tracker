@@ -38,6 +38,7 @@ import { useUser, useFirestore, useMemoFirebase, useStorage } from '@/firebase';
 import { useAdmin } from '@/hooks/use-admin';
 import { doc, setDoc, serverTimestamp, Timestamp, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { countPendingDocumentReviews } from '@/lib/review-queue';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -496,13 +497,7 @@ function PathwayPageContent() {
       });
 
       const updatedForms = Array.from(existingForms.values());
-      const pendingDocReviewCount = updatedForms.filter((form: any) => {
-        const isCompleted = form?.status === 'Completed';
-        const name = String(form?.name || '').trim();
-        const isSummary = name === 'CS Member Summary' || name === 'CS Summary';
-        const acknowledged = Boolean(form?.acknowledged);
-        return isCompleted && !isSummary && !acknowledged;
-      }).length;
+      const pendingDocReviewCount = countPendingDocumentReviews(updatedForms);
       
       try {
           const baseUpdate: Record<string, any> = {
@@ -2097,6 +2092,24 @@ function PathwayPageContent() {
                 <CardDescription className="text-sm">
                   MRN: {memberMrnDisplay} | Birthdate: {memberBirthdateDisplay}
                 </CardDescription>
+                <div>
+                  {(() => {
+                    const pathwayLabel = String(application.pathway || '').trim();
+                    const pathwayLower = pathwayLabel.toLowerCase();
+                    const isDiversion = pathwayLower.includes('diversion');
+                    const isTransition = pathwayLower.includes('transition');
+                    const badgeClass = isDiversion
+                      ? 'bg-amber-50 border-amber-200 text-amber-900'
+                      : isTransition
+                        ? 'bg-sky-50 border-sky-200 text-sky-900'
+                        : 'bg-slate-100 border-slate-300 text-slate-900';
+                    return (
+                      <Badge variant="outline" className={badgeClass}>
+                        {pathwayLabel || 'Pathway not set'}
+                      </Badge>
+                    );
+                  })()}
+                </div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <CardDescription>
                     Submitted by {application.referrerName || user?.displayName} | {application.pathway} ({healthPlanWithRegion})
