@@ -8922,7 +8922,9 @@ function ApplicationDetailPageContent() {
       if (!res.ok || !data?.success) {
         throw new Error(data?.message || data?.details || `Confirm failed (HTTP ${res.status})`);
       }
-      if (!data?.found || !String(data?.member?.clientId2 || '').trim()) {
+      const retrievedClientId2 = String(data?.member?.clientId2 || '').trim();
+      const retrievedKaiserStatus = String(data?.member?.kaiserStatus || '').trim();
+      if (!data?.found) {
         if (existingClientId2 && alreadyMarkedPushed) {
           const patch = {
             clientId2: existingClientId2,
@@ -8956,12 +8958,47 @@ function ApplicationDetailPageContent() {
         toast({
           variant: 'destructive',
           title: 'Not found in Caspio',
-          description: 'No matching pushed Caspio record with client_ID2 was found for this application yet.',
+          description: String(data?.message || 'No matching pushed Caspio record was found for this application yet.'),
         });
         return;
       }
-      const retrievedClientId2 = String(data.member.clientId2 || '').trim();
-      const retrievedKaiserStatus = String(data?.member?.kaiserStatus || '').trim();
+
+      if (!retrievedClientId2) {
+        if (retrievedKaiserStatus) {
+          const manualLockUntilMs = Date.now() + 5 * 60 * 1000;
+          const statusOnlyPatch = {
+            kaiserStatus: retrievedKaiserStatus,
+            Kaiser_Status: retrievedKaiserStatus,
+            kaiserStatusManualLockUntilMs: manualLockUntilMs,
+            kaiserStatusSyncSource: 'manual-confirm-refresh',
+            lastUpdated: serverTimestamp(),
+          } as Record<string, any>;
+          await setDoc(docRef, statusOnlyPatch, { merge: true });
+          setApplication((prev) =>
+            prev
+              ? ({
+                  ...prev,
+                  ...statusOnlyPatch,
+                } as any)
+              : prev
+          );
+          toast({
+            title: 'Kaiser Status synced',
+            description: `Matched Caspio member and updated Kaiser Status: ${retrievedKaiserStatus}. Client_ID2 is still missing in Caspio.`,
+            className: 'bg-amber-100 text-amber-900 border-amber-200',
+          });
+          return;
+        }
+
+        toast({
+          variant: 'destructive',
+          title: 'Client_ID2 missing in Caspio',
+          description:
+            String(data?.message || 'Matched Caspio member record has no client_ID2 yet. Please verify the Caspio member row.'),
+        });
+        return;
+      }
+
       const shouldMarkComplete = isKaiserCompletionStatus(retrievedKaiserStatus);
       const manualLockUntilMs = Date.now() + 5 * 60 * 1000;
       const patch = {

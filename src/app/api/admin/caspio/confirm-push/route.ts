@@ -41,6 +41,18 @@ const clientIdsMatch = (a: unknown, b: unknown) => {
   return Boolean(left && right && left === right);
 };
 
+const normalizeText = (value: unknown) =>
+  clean(value)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const valuesMatch = (a: unknown, b: unknown) => {
+  const left = normalizeText(a);
+  const right = normalizeText(b);
+  return Boolean(left && right && left === right);
+};
+
 const fetchMemberCandidates = async (
   baseUrl: string,
   token: string,
@@ -200,6 +212,107 @@ const fetchMemberByClientId2ByScan = async (
   return [] as Array<Record<string, any>>;
 };
 
+const extractCandidateFieldValues = (row: Record<string, any>, mode: 'mrn' | 'medical') => {
+  const entries = Object.entries(row || {});
+  return entries
+    .filter(([key]) => {
+      const normalizedKey = normalizeText(key).replace(/[_\s-]+/g, '');
+      if (mode === 'mrn') {
+        return normalizedKey.includes('mrn') || normalizedKey.includes('medicalrecord');
+      }
+      return (
+        normalizedKey.includes('medicalnumber') ||
+        normalizedKey.includes('medicalnum') ||
+        normalizedKey.includes('medical') ||
+        normalizedKey.includes('medical') ||
+        normalizedKey.includes('medcal') ||
+        normalizedKey.includes('medi') ||
+        normalizedKey.includes('mcpcin') ||
+        normalizedKey === 'cin'
+      );
+    })
+    .map(([, value]) => clean(value))
+    .filter(Boolean);
+};
+
+const rowMatchesPlan = (row: Record<string, any>, expectedHealthPlan: string) => {
+  const expected = normalizeText(expectedHealthPlan);
+  if (!expected.includes('kaiser')) return true;
+
+  const planCandidates = [
+    row?.CalAIM_MCO,
+    row?.healthPlan,
+    row?.HealthPlan,
+    row?.plan,
+    row?.Plan,
+  ]
+    .map((value) => normalizeText(value))
+    .filter(Boolean);
+
+  if (planCandidates.length === 0) return true;
+  return planCandidates.some((value) => value.includes('kaiser'));
+};
+
+const fetchMemberCandidatesByHintScan = async (
+  baseUrl: string,
+  token: string,
+  hints: {
+    firstName: string;
+    lastName: string;
+    healthPlan: string;
+    mediCalNum: string;
+    mrn: string;
+  }
+) => {
+  const pageSize = 200;
+  const maxPages = 25;
+
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const url =
+      `${baseUrl}/tables/${MEMBERS_TABLE}/records` +
+      `?q.orderBy=${encodeURIComponent('PK_ID DESC')}` +
+      `&q.pageSize=${pageSize}` +
+      `&q.pageNumber=${pageNumber}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    });
+    if (!response.ok) continue;
+    const json = await response.json().catch(() => ({} as any));
+    const rows = Array.isArray(json?.Result) ? (json.Result as Array<Record<string, any>>) : [];
+    if (rows.length === 0) break;
+
+    const match = rows.find((row) => {
+      if (!rowMatchesPlan(row, hints.healthPlan)) return false;
+
+      const rowFirst = clean(row?.Senior_First || row?.memberFirstName || row?.First_Name || row?.firstName);
+      const rowLast = clean(row?.Senior_Last || row?.memberLastName || row?.Last_Name || row?.lastName);
+      const nameMatch = valuesMatch(rowFirst, hints.firstName) && valuesMatch(rowLast, hints.lastName);
+
+      const rowMrnCandidates = extractCandidateFieldValues(row, 'mrn');
+      const mrnMatch =
+        Boolean(hints.mrn) &&
+        rowMrnCandidates.some((value) => valuesMatch(value, hints.mrn));
+
+      const rowMedicalCandidates = extractCandidateFieldValues(row, 'medical');
+      const medicalMatch =
+        Boolean(hints.mediCalNum) &&
+        rowMedicalCandidates.some((value) => valuesMatch(value, hints.mediCalNum));
+
+      return nameMatch || mrnMatch || medicalMatch;
+    });
+
+    if (match) return [match];
+    if (rows.length < pageSize) break;
+  }
+
+  return [] as Array<Record<string, any>>;
+};
+
 const resolveKaiserStatusFromLookup = async (
   baseUrl: string,
   token: string,
@@ -322,6 +435,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (
+      candidates.length === 0 &&
+      (Boolean(hintedMrn) || Boolean(hintedMediCalNum) || (Boolean(firstName) && Boolean(lastName)))
+    ) {
+      candidates = await fetchMemberCandidatesByHintScan(baseUrl, token, {
+        firstName,
+        lastName,
+        healthPlan,
+        mediCalNum: hintedMediCalNum,
+        mrn: hintedMrn,
+      });
+    }
+
     const row = candidates.find((candidate) => getRowClientId2(candidate)) || candidates[0] || null;
     if (!row) {
       return NextResponse.json({
@@ -335,7 +461,8 @@ export async function POST(request: NextRequest) {
     const preferredKaiserStatus = await resolvePreferredKaiserStatus(baseUrl, token, row);
     return NextResponse.json({
       success: true,
-      found: Boolean(clientId2),
+      found: true,
+      hasClientId2: Boolean(clientId2),
       message: clientId2
         ? 'Matching Caspio member found.'
         : 'Member record found but client_ID2 is blank.',

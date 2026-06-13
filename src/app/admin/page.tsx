@@ -15,7 +15,7 @@ import type { FormValues } from '@/app/forms/cs-summary-form/schema';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { errorEmitter, FirestorePermissionError } from '@/firebase';
-import { Checkbox } from '@/components/ui/checkbox';
+import { useSearchParams } from 'next/navigation';
 
 const getCompactPlanLabel = (plan: string) => {
   const normalized = String(plan || '').trim().toLowerCase();
@@ -43,17 +43,25 @@ const getCompactDocumentItemLabel = (formName: string, fileName: string) => {
   return 'Document Upload';
 };
 
+const getDashboardActionHref = (plan?: 'kaiser' | 'health-net', kind?: 'docs' | 'cs') => {
+  const params = new URLSearchParams();
+  if (plan) params.set('plan', plan);
+  if (kind) params.set('kind', kind);
+  const query = params.toString();
+  return `/admin${query ? `?${query}` : ''}#new-items-log`;
+};
+
 export default function AdminDashboardPage() {
   const { user, isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
 
   const [allApplications, setAllApplications] = useState<WithId<Application & FormValues>[]>([]);
   const [isLoadingApps, setIsLoadingApps] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [standaloneUploads, setStandaloneUploads] = useState<any[]>([]);
   const [eligibilityChecks, setEligibilityChecks] = useState<any[]>([]);
-  const [seenMap, setSeenMap] = useState<Record<string, boolean>>({});
   const [logSort, setLogSort] = useState<{ key: 'time' | 'member' | 'by'; dir: 'asc' | 'desc' }>({
     key: 'time',
     dir: 'desc',
@@ -68,38 +76,17 @@ export default function AdminDashboardPage() {
   const [logEndDate, setLogEndDate] = useState<string>('');
   const [logPlanFilter, setLogPlanFilter] = useState<'all' | 'health-net' | 'kaiser'>('all');
 
-  const seenStorageKey = useMemo(() => {
-    if (!user?.uid) return null;
-    return `admin:new-items-seen:${user.uid}`;
-  }, [user?.uid]);
-
   useEffect(() => {
-    if (!seenStorageKey) return;
-    try {
-      const raw = localStorage.getItem(seenStorageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Record<string, boolean>;
-      if (parsed && typeof parsed === 'object') {
-        setSeenMap(parsed);
-      }
-    } catch {
-      // ignore
+    const plan = String(searchParams.get('plan') || '').trim().toLowerCase();
+    if (!plan) return;
+    if (plan.includes('health-net') || plan.includes('health net') || plan.includes('healthnet')) {
+      setLogPlanFilter('health-net');
+      return;
     }
-  }, [seenStorageKey]);
-
-  const setSeen = (key: string, value: boolean) => {
-    setSeenMap((prev) => {
-      const next = { ...(prev || {}), [key]: value };
-      if (seenStorageKey) {
-        try {
-          localStorage.setItem(seenStorageKey, JSON.stringify(next));
-        } catch {
-          // ignore
-        }
-      }
-      return next;
-    });
-  };
+    if (plan.includes('kaiser')) {
+      setLogPlanFilter('kaiser');
+    }
+  }, [searchParams]);
 
   const fetchApps = useCallback(async () => {
     if (isAdminLoading || !firestore || !isAdmin) {
@@ -649,14 +636,14 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <Link
-              href="/admin/applications?review=cs"
+              href={getDashboardActionHref(undefined, 'cs')}
               className="inline-block text-2xl font-bold hover:underline"
               aria-label="View CS summaries needing review"
             >
               {csSummaryStats.needsReview}
             </Link>
             <div className="flex flex-wrap gap-2 text-xs">
-              <Link href="/admin/applications?plan=health-net&review=cs" aria-label="View Health Net CS summaries needing review">
+              <Link href={getDashboardActionHref('health-net', 'cs')} aria-label="View Health Net CS summaries needing review">
                 <Badge
                   variant="outline"
                   className="bg-green-100 text-green-800 border-green-200 cursor-pointer hover:opacity-90"
@@ -664,7 +651,7 @@ export default function AdminDashboardPage() {
                   HN(CS) {csSummaryStats.hnNeedsReview}
                 </Badge>
               </Link>
-              <Link href="/admin/applications?plan=kaiser&review=cs" aria-label="View Kaiser CS summaries needing review">
+              <Link href={getDashboardActionHref('kaiser', 'cs')} aria-label="View Kaiser CS summaries needing review">
                 <Badge
                   variant="outline"
                   className="bg-blue-100 text-blue-800 border-blue-200 cursor-pointer hover:opacity-90"
@@ -682,14 +669,14 @@ export default function AdminDashboardPage() {
           </CardHeader>
           <CardContent>
             <Link
-              href="/admin/applications?review=docs"
+              href={getDashboardActionHref(undefined, 'docs')}
               className="inline-block text-2xl font-bold hover:underline"
               aria-label="View documents needing review"
             >
               {documentStats.needsReview}
             </Link>
             <div className="flex flex-wrap gap-2 text-xs">
-              <Link href="/admin/applications?plan=health-net&review=docs" aria-label="View Health Net documents needing review">
+              <Link href={getDashboardActionHref('health-net', 'docs')} aria-label="View Health Net documents needing review">
                 <Badge
                   variant="outline"
                   className="bg-green-100 text-green-800 border-green-200 cursor-pointer hover:opacity-90"
@@ -697,7 +684,7 @@ export default function AdminDashboardPage() {
                   HN(D) {documentStats.hnNeedsReview}
                 </Badge>
               </Link>
-              <Link href="/admin/applications?plan=kaiser&review=docs" aria-label="View Kaiser documents needing review">
+              <Link href={getDashboardActionHref('kaiser', 'docs')} aria-label="View Kaiser documents needing review">
                 <Badge
                   variant="outline"
                   className="bg-blue-100 text-blue-800 border-blue-200 cursor-pointer hover:opacity-90"
@@ -740,6 +727,7 @@ export default function AdminDashboardPage() {
       </div>
 
       <Card>
+        <div id="new-items-log" />
         <CardHeader className="flex items-center justify-between flex-row">
           <div>
             <CardTitle>New items log</CardTitle>
@@ -908,14 +896,12 @@ export default function AdminDashboardPage() {
                         {logSort.key === 'by' ? (logSort.dir === 'asc' ? '▲' : '▼') : null}
                       </button>
                     </th>
-                    <th className="text-center py-2 pr-3">Seen (local)</th>
                     <th className="text-right py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {groupedDashboardLog.map((row) => {
                     const e = row.items[0];
-                    const allSeen = row.items.every((item) => Boolean(seenMap[item.key]));
                     const byNames = Array.from(new Set(row.items.map((item) => String(item.byName || '').trim()).filter(Boolean)));
                     return (
                     <tr key={row.rowKey} className="border-t">
@@ -951,15 +937,6 @@ export default function AdminDashboardPage() {
                         <span className="ml-2">{e.itemName}</span>
                       </td>
                       <td className="py-2 pr-3">{byNames.join(', ') || row.byName || '-'}</td>
-                      <td className="py-2 pr-3 text-center">
-                        <Checkbox
-                          checked={allSeen}
-                          onCheckedChange={(checked) => {
-                            row.items.forEach((item) => setSeen(item.key, Boolean(checked)));
-                          }}
-                          aria-label={`Mark seen for ${row.memberName}`}
-                        />
-                      </td>
                       <td className="py-2 text-right whitespace-nowrap space-x-2">
                         <Button asChild size="sm" variant="outline">
                           <Link href={row.openHref}>Open</Link>
@@ -971,9 +948,6 @@ export default function AdminDashboardPage() {
               </table>
             </div>
           )}
-          <div className="pt-3 text-xs text-muted-foreground">
-            “Seen (local)” only affects your personal dashboard checkmark. Action-item counts remain until CS/doc items are reviewed in the application.
-          </div>
         </CardContent>
       </Card>
 

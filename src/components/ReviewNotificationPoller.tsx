@@ -99,6 +99,13 @@ const toMs = (value: any): number => {
   }
 };
 
+const getDashboardActionHref = (kind?: 'docs' | 'cs') => {
+  const params = new URLSearchParams();
+  if (kind) params.set('kind', kind);
+  const query = params.toString();
+  return `/admin${query ? `?${query}` : ''}#new-items-log`;
+};
+
 export function ReviewNotificationPoller() {
   const { user } = useUser();
   const warnedRef = useRef<{ missingRecipient: boolean; queryError: boolean }>({ missingRecipient: false, queryError: false });
@@ -257,9 +264,9 @@ export function ReviewNotificationPoller() {
       const message = parts.length > 0 ? parts.join(' • ') : 'New items require review.';
 
       const actionUrl = csIsNew
-        ? '/admin/applications?review=cs'
+        ? getDashboardActionHref('cs')
         : docsIsNew
-          ? '/admin/applications?review=docs'
+          ? getDashboardActionHref('docs')
           : eligIsNew
             ? '/admin/eligibility-checks'
             : alftIsNew

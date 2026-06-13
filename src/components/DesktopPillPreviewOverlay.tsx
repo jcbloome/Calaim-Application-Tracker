@@ -32,6 +32,13 @@ const parseMs = (value?: string) => {
   return Number.isNaN(ms) ? 0 : ms;
 };
 
+const getDashboardActionHref = (kind?: 'docs' | 'cs') => {
+  const params = new URLSearchParams();
+  if (kind) params.set('kind', kind);
+  const query = params.toString();
+  return `/admin${query ? `?${query}` : ''}#new-items-log`;
+};
+
 export function DesktopPillPreviewOverlay() {
   const router = useRouter();
   const [open, setOpen] = useState(true);
@@ -68,7 +75,7 @@ export function DesktopPillPreviewOverlay() {
   const accent =
     kind === 'docs' ? '#16a34a' : kind === 'cs' ? '#f97316' : '#7c3aed';
   const typeLabel = kind === 'docs' ? 'Documents' : kind === 'cs' ? 'CS Summary' : 'Interoffice note';
-  const openLabel = kind === 'docs' || kind === 'cs' ? 'Go to Applications' : 'Go to Notes';
+  const openLabel = kind === 'docs' || kind === 'cs' ? 'Go to Activity Dashboard' : 'Go to Notes';
 
   if (!open) return null;
 
@@ -157,7 +164,7 @@ export function DesktopPillPreviewOverlay() {
           <div style={{ display: 'flex', gap: 6, marginTop: 10, alignItems: 'center' }}>
             <button
               onClick={() => {
-                const url = active?.actionUrl || (kind === 'docs' ? '/admin/applications?review=docs' : kind === 'cs' ? '/admin/applications?review=cs' : '/admin/my-notes');
+                const url = active?.actionUrl || (kind === 'docs' ? getDashboardActionHref('docs') : kind === 'cs' ? getDashboardActionHref('cs') : '/admin/my-notes');
                 router.push(url);
               }}
               style={btn(true)}

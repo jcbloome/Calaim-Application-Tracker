@@ -120,6 +120,13 @@ const incomingLabelForKind = (kind?: string, priority?: string) => {
   return 'Incoming member note';
 };
 
+const getDashboardActionHref = (kind?: 'docs' | 'cs') => {
+  const params = new URLSearchParams();
+  if (kind) params.set('kind', kind);
+  const query = params.toString();
+  return `/admin${query ? `?${query}` : ''}#new-items-log`;
+};
+
 export default function DesktopNotificationWindowClient() {
   const { user } = useUser();
   const firestore = useFirestore();
@@ -339,9 +346,9 @@ export default function DesktopNotificationWindowClient() {
     const kind = String(active?.kind || '').toLowerCase();
     const url =
       kind === 'cs'
-          ? String(active?.actionUrl || pillState?.actionUrl || '/admin/applications?review=cs')
+          ? String(active?.actionUrl || pillState?.actionUrl || getDashboardActionHref('cs'))
           : kind === 'docs'
-            ? String(active?.actionUrl || pillState?.actionUrl || '/admin/applications?review=docs')
+            ? String(active?.actionUrl || pillState?.actionUrl || getDashboardActionHref('docs'))
             : (active?.noteId
                 ? `/admin/my-notes?noteId=${encodeURIComponent(String(active.noteId))}`
                 : '/admin/my-notes');
@@ -832,9 +839,9 @@ export default function DesktopNotificationWindowClient() {
                 onClick={handleOpen}
               >
                 {String(active?.kind || '').toLowerCase() === 'cs'
-                    ? 'Open CS review'
+                    ? 'Open Activity Dashboard'
                     : String(active?.kind || '').toLowerCase() === 'docs'
-                      ? 'Open docs review'
+                      ? 'Open Activity Dashboard'
                       : 'Open My Notes'}
               </button>
             </div>

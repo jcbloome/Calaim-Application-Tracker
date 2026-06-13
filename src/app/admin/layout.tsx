@@ -312,6 +312,14 @@ function AdminHeader() {
     >;
   }>({ lastSentAt: 0, timer: null, pending: new Map() });
 
+  const getDashboardActionHref = (plan?: 'kaiser' | 'health-net', kind?: 'docs' | 'cs') => {
+    const params = new URLSearchParams();
+    if (plan) params.set('plan', plan);
+    if (kind) params.set('kind', kind);
+    const query = params.toString();
+    return `/admin${query ? `?${query}` : ''}#new-items-log`;
+  };
+
   const toMs = (value: any): number => {
     if (!value) return 0;
     try {
@@ -857,7 +865,7 @@ function AdminHeader() {
 
         if (isCs) {
           // Standalone CS uploads are not application records yet.
-          // Keep them under Standalone so CS(x) always maps to /admin/applications?review=cs results.
+          // Keep them under Standalone so CS(x) still routes into dashboard action items.
           standaloneCount += 1;
           standaloneLatestMs = Math.max(standaloneLatestMs, ms);
           standaloneNotes.push({ message: `${memberName} — ${docType || 'CS Summary'}`, timestampMs: ms, url, author });
@@ -1026,7 +1034,7 @@ function AdminHeader() {
       }
 
       if (csIsNew && allowCsPopup) {
-        const actionUrl = '/admin/applications?review=cs';
+        const actionUrl = getDashboardActionHref(undefined, 'cs');
         const items = csNotes
           .sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0))
           .slice(0, 6);
@@ -1115,7 +1123,7 @@ function AdminHeader() {
                 ? `${totalUploads} upload${totalUploads === 1 ? '' : 's'} to acknowledge`
                 : `${appCount} applications have new uploads • ${totalUploads} uploads to acknowledge`;
 
-            const primaryUrl = appCount === 1 ? items[0]?.url : '/admin/applications?review=docs';
+            const primaryUrl = appCount === 1 ? items[0]?.url : getDashboardActionHref(undefined, 'docs');
             const fromLabel = appCount === 1 ? (items[0]?.uploader || 'User') : 'Multiple';
 
             // Do NOT trigger the Electron review pill for non-CS document uploads.
@@ -1146,7 +1154,7 @@ function AdminHeader() {
               animation: 'slide',
               onClick: () => {
                 if (typeof window === 'undefined') return;
-                window.location.href = primaryUrl || '/admin/applications?review=docs';
+                window.location.href = primaryUrl || getDashboardActionHref(undefined, 'docs');
               }
             });
           };
@@ -1292,7 +1300,7 @@ function AdminHeader() {
         label: 'HN(D)',
         count: hnDocCount,
         dot: 'bg-green-600',
-        href: '/admin/applications?plan=health-net&review=docs',
+        href: getDashboardActionHref('health-net', 'docs'),
         title: 'Health Net documents awaiting review/acknowledgement',
       },
       {
@@ -1300,7 +1308,7 @@ function AdminHeader() {
         label: 'HN(CS)',
         count: hnCsCount,
         dot: 'bg-green-600',
-        href: '/admin/applications?plan=health-net&review=cs',
+        href: getDashboardActionHref('health-net', 'cs'),
         title: 'Health Net CS Summary forms awaiting review',
       },
       {
@@ -1308,7 +1316,7 @@ function AdminHeader() {
         label: 'K(D)',
         count: kaiserDocCount,
         dot: 'bg-blue-600',
-        href: '/admin/applications?plan=kaiser&review=docs',
+        href: getDashboardActionHref('kaiser', 'docs'),
         title: 'Kaiser documents awaiting review/acknowledgement',
       },
       {
@@ -1316,7 +1324,7 @@ function AdminHeader() {
         label: 'K(CS)',
         count: kaiserCsCount,
         dot: 'bg-blue-600',
-        href: '/admin/applications?plan=kaiser&review=cs',
+        href: getDashboardActionHref('kaiser', 'cs'),
         title: 'Kaiser CS Summary forms awaiting review',
       },
       {
@@ -1442,7 +1450,7 @@ function AdminHeader() {
       items.push({
         key: 'cs',
         label: csLabel,
-        href: '/admin/applications?review=cs',
+        href: getDashboardActionHref(undefined, 'cs'),
         dot: 'bg-orange-500',
         title: 'CS Summary items requiring review',
       });
@@ -1451,7 +1459,7 @@ function AdminHeader() {
       items.push({
         key: 'docs',
         label: dLabel,
-        href: '/admin/applications?review=docs',
+        href: getDashboardActionHref(undefined, 'docs'),
         dot: 'bg-green-600',
         title: 'Uploaded documents requiring acknowledgement',
       });
@@ -1460,7 +1468,7 @@ function AdminHeader() {
       items.push({
         key: 'my-docs',
         label: `My Docs(${myAssignedDocActionCount})`,
-        href: '/admin/applications?review=docs',
+        href: getDashboardActionHref(undefined, 'docs'),
         dot: 'bg-emerald-600',
         isNew: true,
         title: 'Documents assigned to you that still require review acknowledgement',
@@ -1499,7 +1507,7 @@ function AdminHeader() {
       items.push({
         key: 'john-docs',
         label: `John Docs(${johnDocActionCount})`,
-        href: '/admin/applications?review=docs',
+        href: getDashboardActionHref(undefined, 'docs'),
         dot: 'bg-rose-600',
         isNew: true,
         title: 'Document actions pending for John (ALFT manager)',
@@ -1509,7 +1517,7 @@ function AdminHeader() {
       items.push({
         key: 'kaiser-manager-docs',
         label: `Kaiser Mgr Actions(${kaiserManagerDocActionCount})`,
-        href: '/admin/applications?review=docs&plan=kaiser',
+        href: getDashboardActionHref('kaiser', 'docs'),
         dot: 'bg-red-600',
         isNew: true,
         title: 'Open pending Kaiser document actions for Kaiser managers (Jason / Deydry)',
@@ -1618,7 +1626,7 @@ function AdminHeader() {
             )}
           >
             <Link
-              href={`/admin/applications?review=docs&plan=${encodeURIComponent(plan.toLowerCase())}&staff=${encodeURIComponent(row.staff)}`}
+              href={getDashboardActionHref(plan === 'Kaiser' ? 'kaiser' : 'health-net', 'docs')}
               className="flex w-full flex-col items-start gap-1"
             >
               <div className="flex w-full items-center justify-between gap-2">
