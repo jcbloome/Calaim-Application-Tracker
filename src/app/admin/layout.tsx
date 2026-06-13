@@ -110,7 +110,7 @@ const adminNavLinks = [
     isSubmenu: true,
     submenuItems: [
       { href: '/admin/applications/create', label: 'Create Application', icon: UserPlus },
-      { href: '/admin', label: 'Activity Dashboard', icon: Activity },
+      { href: '/admin', label: 'Activity Log', icon: Activity },
       { href: '/admin/applications', label: 'Applications', icon: FolderKanban },
       { href: '/admin/applications/intake-processing', label: 'Application Intake Processing', icon: FolderSync },
       { href: '/admin/missing-documents', label: 'Missing Documents', icon: FolderKanban },

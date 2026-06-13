@@ -39,12 +39,25 @@ function toDateLabel(value: any): string {
   return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
 }
 
+function toDateValue(value: any): Date | null {
+  if (!value) return null;
+  const date =
+    typeof value?.toDate === 'function'
+      ? value.toDate()
+      : value instanceof Date
+        ? value
+        : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function AdminEmailLogsPageContent() {
   const { isAdmin, isUserLoading } = useAdmin();
   const firestore = useFirestore();
   const [logs, setLogs] = useState<EmailLogEntry[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'failure'>('all');
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [openDetailsById, setOpenDetailsById] = useState<Record<string, boolean>>({});
 
@@ -75,6 +88,21 @@ function AdminEmailLogsPageContent() {
     return logs.filter((row) => {
       const status = String(row.status || '').toLowerCase();
       if (statusFilter !== 'all' && status !== statusFilter) return false;
+
+      if (dateFrom || dateTo) {
+        const createdAt = toDateValue(row.createdAt);
+        if (!createdAt) return false;
+        const createdMs = createdAt.getTime();
+        if (dateFrom) {
+          const fromMs = new Date(`${dateFrom}T00:00:00`).getTime();
+          if (!Number.isNaN(fromMs) && createdMs < fromMs) return false;
+        }
+        if (dateTo) {
+          const toMs = new Date(`${dateTo}T23:59:59.999`).getTime();
+          if (!Number.isNaN(toMs) && createdMs > toMs) return false;
+        }
+      }
+
       if (!needle) return true;
       const hay = [
         String(row.from || ''),
@@ -94,7 +122,7 @@ function AdminEmailLogsPageContent() {
         .toLowerCase();
       return hay.includes(needle);
     });
-  }, [logs, search, statusFilter]);
+  }, [dateFrom, dateTo, logs, search, statusFilter]);
 
   if (isUserLoading) {
     return <div className="p-6 text-sm text-muted-foreground">Loading...</div>;
@@ -147,6 +175,32 @@ function AdminEmailLogsPageContent() {
               placeholder="Search recipient, subject, template, error..."
               className="min-w-[260px] max-w-md"
             />
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-[160px]"
+              aria-label="Start date"
+            />
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-[160px]"
+              aria-label="End date"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDateFrom('');
+                setDateTo('');
+              }}
+              disabled={!dateFrom && !dateTo}
+            >
+              Clear Dates
+            </Button>
           </div>
 
           {isLoading ? (
