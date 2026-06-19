@@ -29,9 +29,12 @@ type SendPayload = {
 };
 
 const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
+const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
+const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
 const PDF_RETENTION_URL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 
 function sanitizePathComponent(value: unknown) {
@@ -46,11 +49,19 @@ function sanitizePathComponent(value: unknown) {
 function getKaiserReferralCcRecipients() {
   return Array.from(
     new Set(
-      [ILS_CC_EMAIL, ALBERTO_COPY_EMAIL, DEYDRY_COPY_EMAIL]
+      [KAISER_REFERRALS_COPY_EMAIL, ILS_CC_EMAIL, ALBERTO_COPY_EMAIL, DEYDRY_COPY_EMAIL]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
     )
   );
+}
+
+function resolveKaiserIntakeEmail(regionRaw: unknown): string {
+  const normalizedRegion = String(regionRaw || '').trim().toLowerCase();
+  if (normalizedRegion === 'kaiser north' || normalizedRegion === 'north') {
+    return KAISER_NORTH_INTAKE_EMAIL;
+  }
+  return KAISER_SOUTH_INTAKE_EMAIL;
 }
 
 function getKaiserReferralCcRecipientsWithSubmitter(submitterEmail?: string) {
@@ -185,14 +196,15 @@ export async function POST(request: NextRequest) {
   };
   try {
     const body = (await request.json()) as SendPayload;
-    const to = String(body?.to || '').trim();
+    const requestedTo = String(body?.to || '').trim();
     const region = String(body?.region || '').trim();
+    const to = resolveKaiserIntakeEmail(region);
     const pdfBase64 = String(body?.pdfBase64 || '').trim();
     const fileName = String(body?.fileName || 'kaiser_referral.pdf').trim();
     const testSend = Boolean(body?.testSend);
-    failureLogTo = to || 'unknown';
+    failureLogTo = to || requestedTo || 'unknown';
 
-    if (!to || !pdfBase64) {
+    if (!pdfBase64) {
       await logKaiserReferralEmail({
         status: 'failure',
         from: KAISER_REFERRAL_FROM,

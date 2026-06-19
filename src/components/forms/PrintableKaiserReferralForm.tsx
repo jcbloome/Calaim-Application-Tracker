@@ -207,10 +207,16 @@ const DEFAULT_REFERRER_PHONE = '800-330-5993';
 const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
 const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
 const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
+const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
 const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
-const KAISER_REFERRAL_CC_RECIPIENTS = [ILS_CC_EMAIL, ALBERTO_COPY_EMAIL, DEYDRY_COPY_EMAIL];
+const KAISER_REFERRAL_CC_RECIPIENTS = [
+  KAISER_REFERRALS_COPY_EMAIL,
+  ILS_CC_EMAIL,
+  ALBERTO_COPY_EMAIL,
+  DEYDRY_COPY_EMAIL,
+];
 
 function normalizeCountyName(value: unknown): string {
   return String(value || '')
