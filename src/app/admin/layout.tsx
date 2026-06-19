@@ -2584,7 +2584,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         ) : (
           <div className="flex flex-col min-h-screen">
             <AdminHeader />
-            <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden">
+            <main className="flex-grow min-w-0 p-4 sm:p-6 md:p-8 bg-slate-50/50 overflow-x-hidden [&_.container]:max-w-none [&_.container]:w-full">
               {children}
             </main>
           </div>

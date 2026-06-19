@@ -999,8 +999,7 @@ function AdminApplicationsPageContent() {
           </div>
         </div>
         
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            <div className="xl:col-span-2">
+        <div className="w-full">
                  <Card>
                     <CardHeader>
                         <div className="mb-1 grid grid-cols-1 gap-2 sm:grid-cols-4">
@@ -1194,7 +1193,6 @@ function AdminApplicationsPageContent() {
                       />
                     </CardContent>
                 </Card>
-            </div>
         </div>
     </div>
   );
