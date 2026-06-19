@@ -92,6 +92,43 @@ const parseMemberName = (rawValue: unknown): { firstName: string; lastName: stri
   };
 };
 
+const TRAILING_NON_NAME_TOKENS = new Set([
+  'mrn',
+  'cin',
+  'plan',
+  'id',
+  'member',
+  'name',
+  'dob',
+  'age',
+  'phone',
+  'email',
+  'snp',
+  'hmo',
+  'ppo',
+  'epo',
+  'pos',
+  'mmp',
+  'dsnp',
+  'd-snp',
+  'planid',
+]);
+
+const stripTrailingNonNameTokens = (rawLastName: unknown) => {
+  const tokens = String(rawLastName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  while (tokens.length > 0) {
+    const token = String(tokens[tokens.length - 1] || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '');
+    if (!TRAILING_NON_NAME_TOKENS.has(token)) break;
+    tokens.pop();
+  }
+  return tokens.join(' ').trim();
+};
+
 const sanitizeParsedName = (name: { firstName: string; lastName: string }) => {
   const blockedTokens = new Set([
     'mrn',
@@ -106,7 +143,7 @@ const sanitizeParsedName = (name: { firstName: string; lastName: string }) => {
     'email',
   ]);
   const first = String(name.firstName || '').trim();
-  const last = String(name.lastName || '').trim();
+  const last = stripTrailingNonNameTokens(name.lastName);
   if (!first) return { firstName: '', lastName: '' };
   if (blockedTokens.has(first.toLowerCase())) return { firstName: '', lastName: '' };
   if (blockedTokens.has(last.toLowerCase())) return { firstName: first, lastName: '' };
@@ -247,6 +284,90 @@ const extractPhonesFromLines = (lines: string[]) => {
   };
 };
 
+const extractCareManagerFromLines = (lines: string[], flattened: string) => {
+  const phonePattern = /\(\d{3}\)\s*\d{3}[-.\s]?\d{4}|\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b|\b\d{10}\b/g;
+  const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+  const stopLinePattern =
+    /\b(?:authorization|special\s*instructions|provider|member\s*information|page\s+\d+\s+of|contact\s*person)\b/i;
+
+  let careManagerName = '';
+  let careManagerPhone = '';
+  let careManagerEmail = '';
+
+  const inlinePhoneMatch = flattened.match(
+    /care\s*manager[\s\S]{0,180}?((?:\(\d{3}\)\s*\d{3}[-.\s]?\d{4})|(?:\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b)|(?:\b\d{10}\b))/i
+  );
+  if (inlinePhoneMatch?.[1]) {
+    const normalized = normalizePhoneDigits(inlinePhoneMatch[1]);
+    if (normalized.length === 10) careManagerPhone = formatPhoneDashed(normalized);
+  }
+  const inlineEmailMatch = flattened.match(/care\s*manager[\s\S]{0,180}?([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i);
+  if (inlineEmailMatch?.[1]) {
+    careManagerEmail = String(inlineEmailMatch[1]).trim().toLowerCase();
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] || '').replace(/\s+/g, ' ').trim();
+    if (!line || !/care\s*manager/i.test(line)) continue;
+
+    const blockLines: string[] = [];
+    for (let j = i; j < Math.min(lines.length, i + 6); j++) {
+      const next = String(lines[j] || '').replace(/\s+/g, ' ').trim();
+      if (!next) continue;
+      if (j > i && stopLinePattern.test(next)) break;
+      blockLines.push(next);
+    }
+    const joined = blockLines.join(' ');
+
+    if (!careManagerPhone) {
+      const phoneMatch = joined.match(phonePattern);
+      const normalized = normalizePhoneDigits(phoneMatch?.[0] || '');
+      if (normalized.length === 10) careManagerPhone = formatPhoneDashed(normalized);
+    }
+
+    if (!careManagerEmail) {
+      const emailMatch = joined.match(emailPattern);
+      if (emailMatch?.[0]) careManagerEmail = String(emailMatch[0]).trim().toLowerCase();
+    }
+
+    const nameMatch =
+      joined.match(/care\s*manager\s*[:#-]?\s*name\s*[:#-]?\s*([A-Za-z][A-Za-z .'-]{2,80})/i) ||
+      joined.match(/care\s*manager\s*[:#-]?\s*([A-Za-z][A-Za-z .'-]{2,80})/i) ||
+      joined.match(/\bname\s*[:#-]?\s*([A-Za-z][A-Za-z .'-]{2,80})\s*(?:phone|email|$)/i);
+
+    if (!careManagerName && nameMatch?.[1]) {
+      const cleaned = String(nameMatch[1] || '')
+        .replace(/\b(?:phone|email)\b[\s\S]*$/i, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      careManagerName = toNameCase(cleaned);
+    }
+
+    if (!careManagerName) {
+      for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
+        const next = String(lines[j] || '').replace(/\s+/g, ' ').trim();
+        if (!next) continue;
+        if (stopLinePattern.test(next)) break;
+        if (phonePattern.test(next) || emailPattern.test(next)) continue;
+        if (/^(?:name|phone|email)\s*[:#-]?\s*$/i.test(next)) continue;
+        const candidate = next.replace(/^(?:name)\s*[:#-]?\s*/i, '').trim();
+        if (candidate) {
+          careManagerName = toNameCase(candidate);
+          break;
+        }
+      }
+    }
+
+    if (careManagerName || careManagerPhone || careManagerEmail) break;
+  }
+
+  return {
+    careManagerName,
+    careManagerPhone,
+    careManagerEmail,
+  };
+};
+
 const findNextNonEmptyLine = (lines: string[], startIndex: number) => {
   for (let i = startIndex; i < lines.length; i++) {
     const value = String(lines[i] || '').replace(/\s+/g, ' ').trim();
@@ -283,7 +404,7 @@ const extractMemberTableFieldsFromLines = (lines: string[]) => {
         if (namePart) {
           const parsedName = parseMemberName(namePart);
           if (parsedName.firstName) result.memberFirstName = toNameCase(parsedName.firstName);
-          if (parsedName.lastName) result.memberLastName = toNameCase(parsedName.lastName);
+          if (parsedName.lastName) result.memberLastName = toNameCase(stripTrailingNonNameTokens(parsedName.lastName));
         }
 
         const tokens = valueLine.split(/\s+/).filter(Boolean);
@@ -567,6 +688,9 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
   const city = String(next.memberCustomaryCity || '').trim();
   const state = String(next.memberCustomaryState || '').trim();
   const zip = String(next.memberCustomaryZip || '').trim();
+  const aptCityStateZipMatch = street.match(
+    /^(\d{1,6})\s*,\s*([A-Za-z .'-]+)\s*,\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/i
+  );
 
   const zipOnly = /^\d{5}(?:-\d{4})?$/.test(street);
   if (street !== String(next.memberCustomaryAddress || '').trim()) {
@@ -582,6 +706,13 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
   if (cityStateOnlyMatch) {
     if (!city) next.memberCustomaryCity = cityStateOnlyMatch[1].trim();
     if (!state) next.memberCustomaryState = cityStateOnlyMatch[2].trim().toUpperCase();
+    next.memberCustomaryAddress = '';
+  }
+  if (aptCityStateZipMatch) {
+    if (!city) next.memberCustomaryCity = aptCityStateZipMatch[2].trim();
+    if (!state) next.memberCustomaryState = aptCityStateZipMatch[3].trim().toUpperCase();
+    if (!zip) next.memberCustomaryZip = aptCityStateZipMatch[4].trim();
+    // This line is unit + city/state/zip, not a true street address.
     next.memberCustomaryAddress = '';
   }
 
@@ -613,6 +744,7 @@ const inferStreetFromCityStateContext = (params: {
 
   const cityStatePattern = new RegExp(`^${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*,\\s*${state}(?:\\s+\\d{5}(?:-\\d{4})?)?$`, 'i');
   const cityStateAnywherePattern = new RegExp(`\\b${city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b.*\\b${state}\\b`, 'i');
+  const aptCityStateZipPattern = /^(\d{1,6})\s*,\s*[A-Za-z .'-]+\s*,\s*[A-Za-z]{2}(?:\s+\d{5}(?:-\d{4})?)?$/i;
   const zipOnlyPattern = /^\d{5}(?:-\d{4})?$/;
   const looksLikeStreet = (value: string) =>
     /\d/.test(value) &&
@@ -626,7 +758,13 @@ const inferStreetFromCityStateContext = (params: {
       const previous = normalizedLines[j];
       if (!previous || zipOnlyPattern.test(previous)) continue;
       const cleaned = stripContactInfoFromAddressLine(previous);
-      if (looksLikeStreet(cleaned)) return cleaned;
+      if (looksLikeStreet(cleaned)) {
+        const unitMatch = current.match(aptCityStateZipPattern);
+        if (unitMatch?.[1] && /\b(?:apt|unit|#)\s*$/i.test(cleaned)) {
+          return `${cleaned} ${unitMatch[1]}`.replace(/\s{2,}/g, ' ').trim();
+        }
+        return cleaned;
+      }
     }
   }
 
@@ -724,12 +862,14 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
 
   const parsedName = sanitizeParsedName(parseMemberName(memberNameRaw));
   const tableFields = extractMemberTableFieldsFromLines(lines);
+  const careManagerFields = extractCareManagerFromLines(lines, flattened);
   let updates: Record<string, string> = {};
   if (tableFields.memberFirstName || parsedName.firstName) {
     updates.memberFirstName = toNameCase(tableFields.memberFirstName || parsedName.firstName || '');
   }
   if (tableFields.memberLastName || parsedName.lastName) {
-    updates.memberLastName = toNameCase(tableFields.memberLastName || parsedName.lastName || '');
+    const sanitizedLast = stripTrailingNonNameTokens(tableFields.memberLastName || parsedName.lastName || '');
+    updates.memberLastName = toNameCase(sanitizedLast);
   }
   if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
   const resolvedMediCalNum = memberMediCalNum || normalizeMediCalNumber(tableFields.memberMediCalNum || '');
@@ -761,6 +901,9 @@ const extractServiceRequestFieldsLegacy = (params: { text: string; fileName: str
   if (tableFields.memberEmail || memberEmail) {
     updates.memberEmail = String(tableFields.memberEmail || memberEmail || '').trim().toLowerCase();
   }
+  if (careManagerFields.careManagerName) updates.careManagerName = careManagerFields.careManagerName;
+  if (careManagerFields.careManagerPhone) updates.careManagerPhone = careManagerFields.careManagerPhone;
+  if (careManagerFields.careManagerEmail) updates.careManagerEmail = careManagerFields.careManagerEmail;
   updates = normalizeAddressFieldPlacement(updates);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
     const inferredStreet = inferStreetFromCityStateContext({
@@ -876,6 +1019,7 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
 
   const parsedName = sanitizeParsedName(parseMemberName(memberNameRaw));
   const tableFields = extractMemberTableFieldsFromLines(lines);
+  const careManagerFields = extractCareManagerFromLines(lines, flattened);
   const parsedAddress = parseAddressParts(memberAddress);
 
   let updates: Partial<{
@@ -899,13 +1043,17 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
     memberCustomaryCounty: string;
     contactPhone: string;
     contactEmail: string;
+    careManagerName: string;
+    careManagerPhone: string;
+    careManagerEmail: string;
   }> = {};
 
   if (tableFields.memberFirstName || parsedName.firstName) {
     updates.memberFirstName = toNameCase(tableFields.memberFirstName || parsedName.firstName || '');
   }
   if (tableFields.memberLastName || parsedName.lastName) {
-    updates.memberLastName = toNameCase(tableFields.memberLastName || parsedName.lastName || '');
+    const sanitizedLast = stripTrailingNonNameTokens(tableFields.memberLastName || parsedName.lastName || '');
+    updates.memberLastName = toNameCase(sanitizedLast);
   }
   if (memberMrn || tableFields.memberMrn) updates.memberMrn = memberMrn || tableFields.memberMrn || '';
   const resolvedMediCalNum = memberMediCalNum || normalizeMediCalNumber(tableFields.memberMediCalNum || '');
@@ -955,6 +1103,9 @@ const extractServiceRequestFields = (params: { text: string; fileName: string })
   if (tableFields.memberEmail || memberEmail) {
     updates.memberEmail = String(tableFields.memberEmail || memberEmail || '').trim().toLowerCase();
   }
+  if (careManagerFields.careManagerName) updates.careManagerName = careManagerFields.careManagerName;
+  if (careManagerFields.careManagerPhone) updates.careManagerPhone = careManagerFields.careManagerPhone;
+  if (careManagerFields.careManagerEmail) updates.careManagerEmail = careManagerFields.careManagerEmail;
   updates = normalizeAddressFieldPlacement(updates as Record<string, string>);
   if (!updates.memberCustomaryAddress && (updates.memberCustomaryCity || updates.memberCustomaryState)) {
     const inferredStreet = inferStreetFromCityStateContext({
@@ -1004,6 +1155,9 @@ const getEmptyMemberData = () => ({
   contactLastName: '',
   contactPhone: '',
   contactEmail: '',
+  careManagerName: '',
+  careManagerPhone: '',
+  careManagerEmail: '',
   contactRelationship: '',
   eligibilityCheckStatus: 'Pending',
   notes: '',
@@ -1079,6 +1233,9 @@ type KaiserIlsImportRow = {
   memberEmail: string;
   contactPhone: string;
   contactEmail: string;
+  careManagerName: string;
+  careManagerPhone: string;
+  careManagerEmail: string;
   eligibilityCheckStatus: 'Pending' | 'CalAIM Eligible' | 'Not CalAIM Eligible';
   authorizationNumberT2038: string;
   authorizationStartT2038: string;
@@ -1608,7 +1765,7 @@ export default function CreateApplicationPage() {
           const fullNameRaw = getSpreadsheetValue(raw, ['Member Name', 'Senior_Last_First_ID', 'Name']);
           const parsedName = parseMemberName(fullNameRaw);
           const memberFirstName = toNameCase(memberFirstNameRaw || parsedName.firstName);
-          const memberLastName = toNameCase(memberLastNameRaw || parsedName.lastName);
+          const memberLastName = toNameCase(stripTrailingNonNameTokens(memberLastNameRaw || parsedName.lastName));
           const memberMrn = getSpreadsheetValue(raw, ['Member MRN', 'MCP_CIN', 'MRN', 'CIN']);
           const memberMediCalNum = normalizeMediCalNumber(
             getSpreadsheetValue(raw, ['Medi-Cal Number', 'MediCal Number', 'Member Medi-Cal Number', 'CIN', 'MCP_CIN'])
@@ -1637,6 +1794,9 @@ export default function CreateApplicationPage() {
           const memberPhone = getSpreadsheetValue(raw, ['Member Phone Number', 'Member Phone', 'Phone', 'Member_Phone']);
           const contactPhone = getSpreadsheetValue(raw, ['Cell Phone', 'Contact Phone', 'Best Contact Phone', 'Secondary Phone']);
           const contactEmail = getSpreadsheetValue(raw, ['Email', 'Contact Email', 'Best Contact Email', 'Member Email']);
+          const careManagerName = getSpreadsheetValue(raw, ['Care Manager', 'Care Manager Name', 'Case Manager', 'Case Manager Name']);
+          const careManagerPhone = getSpreadsheetValue(raw, ['Care Manager Phone', 'Case Manager Phone', 'Care Manager Contact', 'Case Manager Contact']);
+          const careManagerEmail = getSpreadsheetValue(raw, ['Care Manager Email', 'Case Manager Email']);
           const eligibilityCheckStatus = normalizeEligibilityStatus(
             getSpreadsheetValue(raw, ['Eligibility Check Result', 'CalAIM Status', 'CalAIM_Eligibility', 'calaimTrackingStatus'])
           );
@@ -1668,6 +1828,11 @@ export default function CreateApplicationPage() {
               ? formatPhoneDashed(normalizePhoneDigits(contactPhone))
               : '',
             contactEmail: String(contactEmail || '').trim().toLowerCase(),
+            careManagerName: toNameCase(String(careManagerName || '').trim()),
+            careManagerPhone: normalizePhoneDigits(careManagerPhone)
+              ? formatPhoneDashed(normalizePhoneDigits(careManagerPhone))
+              : '',
+            careManagerEmail: String(careManagerEmail || '').trim().toLowerCase(),
             eligibilityCheckStatus,
             authorizationNumberT2038,
             authorizationStartT2038,
@@ -1837,6 +2002,9 @@ export default function CreateApplicationPage() {
             memberEmail: row.memberEmail || '',
             contactPhone: row.contactPhone || '',
             contactEmail: row.contactEmail || '',
+            careManagerName: row.careManagerName || '',
+            careManagerPhone: row.careManagerPhone || '',
+            careManagerEmail: row.careManagerEmail || '',
             Authorization_Number_T038: row.authorizationNumberT2038 || '',
             Authorization_Start_T2038: row.authorizationStartT2038 || '',
             Authorization_End_T2038: row.authorizationEndT2038 || '',
@@ -1849,9 +2017,9 @@ export default function CreateApplicationPage() {
             referrerPhone: '',
             bestContactFirstName: '',
             bestContactLastName: '',
-            bestContactPhone: row.contactPhone || '',
+            bestContactPhone: row.contactPhone || row.careManagerPhone || '',
             bestContactRelationship: '',
-            bestContactEmail: row.contactEmail || row.memberEmail || '',
+            bestContactEmail: row.contactEmail || row.careManagerEmail || row.memberEmail || '',
             calaimTrackingStatus: normalizeEligibilityStatus(row.eligibilityCheckStatus),
             intakeType: 'kaiser_auth_received_via_ils',
             intakeSource: 'ils_spreadsheet_batch',
@@ -2380,6 +2548,9 @@ export default function CreateApplicationPage() {
             memberEmail: String(normalizedPatch.memberEmail || '').trim().toLowerCase(),
             contactPhone: String(normalizedPatch.contactPhone || '').trim(),
             contactEmail: '',
+            careManagerName: String(normalizedPatch.careManagerName || '').trim(),
+            careManagerPhone: String(normalizedPatch.careManagerPhone || '').trim(),
+            careManagerEmail: String(normalizedPatch.careManagerEmail || '').trim().toLowerCase(),
             eligibilityCheckStatus: normalizeEligibilityStatus((memberData as any)?.eligibilityCheckStatus),
             authorizationNumberT2038: String(normalizedPatch.Authorization_Number_T038 || '').trim(),
             authorizationStartT2038: toMmDdYyyy(normalizedPatch.Authorization_Start_T2038 || ''),
@@ -2527,6 +2698,9 @@ export default function CreateApplicationPage() {
               memberDob: memberData.memberDob || '',
               memberPhone: memberData.memberPhone || '',
               memberEmail: memberData.memberEmail || '',
+              careManagerName: memberData.careManagerName || '',
+              careManagerPhone: memberData.careManagerPhone || '',
+              careManagerEmail: memberData.careManagerEmail || '',
               Authorization_Number_T038: memberData.Authorization_Number_T038 || '',
               Authorization_Start_T2038: memberData.Authorization_Start_T2038 || '',
               Authorization_End_T2038: memberData.Authorization_End_T2038 || '',
@@ -2557,11 +2731,11 @@ export default function CreateApplicationPage() {
 
         // Primary contact for member outreach
         isPrimaryContactSameAsReferrer: false,
-        bestContactFirstName: memberData.contactFirstName || '',
-        bestContactLastName: memberData.contactLastName || '',
-        bestContactPhone: memberData.contactPhone || memberData.memberPhone || '',
+        bestContactFirstName: memberData.contactFirstName || parseMemberName(memberData.careManagerName || '').firstName || '',
+        bestContactLastName: memberData.contactLastName || parseMemberName(memberData.careManagerName || '').lastName || '',
+        bestContactPhone: memberData.contactPhone || memberData.careManagerPhone || memberData.memberPhone || '',
         bestContactRelationship: memberData.contactRelationship || '',
-        bestContactEmail: memberData.contactEmail || '',
+        bestContactEmail: memberData.contactEmail || memberData.careManagerEmail || '',
 
         intakeType,
         intakeSource: isKaiserAuthReceived ? 'ils_single_authorization_sheet' : 'family_call',
@@ -3682,6 +3856,37 @@ export default function CreateApplicationPage() {
                       const formattedPhone = formatMemberPhoneWithDashes(e.target.value);
                       setMemberData({ ...memberData, memberPhone: formattedPhone });
                     }}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="careManagerName">Care Manager Name</Label>
+                  <Input
+                    id="careManagerName"
+                    value={memberData.careManagerName || ''}
+                    onChange={(e) => setMemberData({ ...memberData, careManagerName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="careManagerPhone">Care Manager Phone</Label>
+                  <Input
+                    id="careManagerPhone"
+                    type="tel"
+                    value={memberData.careManagerPhone || ''}
+                    onChange={(e) => {
+                      const formattedPhone = formatMemberPhoneWithDashes(e.target.value);
+                      setMemberData({ ...memberData, careManagerPhone: formattedPhone });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="careManagerEmail">Care Manager Email</Label>
+                  <Input
+                    id="careManagerEmail"
+                    type="email"
+                    value={memberData.careManagerEmail || ''}
+                    onChange={(e) =>
+                      setMemberData({ ...memberData, careManagerEmail: String(e.target.value || '').trim().toLowerCase() })
+                    }
                   />
                 </div>
                 <div>

@@ -289,6 +289,25 @@ const canonicalizeApplicationData = (raw: Record<string, any>) => {
     'repPhone',
     'contactPhone',
   ]) || fromNormalized('best contact phone'));
+  setIfMissing('careManagerName', pickFirstNonEmpty(app, [
+    'careManagerName',
+    'caseManagerName',
+    'Care_Manager_Name',
+    'Care_Manager',
+    'caseManager',
+    'careManager',
+  ]) || fromNormalized('care manager name') || fromNormalized('care manager') || fromNormalized('case manager'));
+  setIfMissing('careManagerPhone', pickFirstNonEmpty(app, [
+    'careManagerPhone',
+    'caseManagerPhone',
+    'Care_Manager_Phone',
+    'caseManagerContact',
+  ]) || fromNormalized('care manager phone') || fromNormalized('case manager phone'));
+  setIfMissing('careManagerEmail', pickFirstNonEmpty(app, [
+    'careManagerEmail',
+    'caseManagerEmail',
+    'Care_Manager_Email',
+  ]) || fromNormalized('care manager email') || fromNormalized('case manager email'));
   setIfMissing('healthPlan', pickFirstNonEmpty(app, [
     'healthPlan',
     'CalAIM_MCO',
@@ -1022,17 +1041,50 @@ export async function POST(request: NextRequest) {
       applicationData?.SNF_Diversion_Reason ||
       applicationData?.SNF_Diversion_Notes
     );
-    const combinedPushNotes = (() => {
+    const careManagerName = clean(
+      applicationData?.careManagerName ||
+      applicationData?.caseManagerName ||
+      applicationData?.Care_Manager_Name ||
+      applicationData?.Care_Manager ||
+      applicationData?.careManager
+    );
+    const careManagerPhone = clean(
+      applicationData?.careManagerPhone ||
+      applicationData?.caseManagerPhone ||
+      applicationData?.Care_Manager_Phone
+    );
+    const careManagerEmail = clean(
+      applicationData?.careManagerEmail ||
+      applicationData?.caseManagerEmail ||
+      applicationData?.Care_Manager_Email
+    );
+    const careManagerNotesLine = (() => {
+      if (!careManagerName) return '';
+      const contactBits = [
+        careManagerPhone ? `Phone: ${careManagerPhone}` : '',
+        careManagerEmail ? `Email: ${careManagerEmail}` : '',
+      ].filter(Boolean);
+      if (contactBits.length === 0) return `ILS Care Manager: ${careManagerName}`;
+      return `ILS Care Manager: ${careManagerName} (${contactBits.join(' | ')})`;
+    })();
+    const basePushNotes = (() => {
+      const noteBlocks: string[] = [];
       if (preAssessmentNotes && snfDiversionReasonNotes) {
         if (normalizeFieldName(preAssessmentNotes) === normalizeFieldName(snfDiversionReasonNotes)) {
-          return preAssessmentNotes;
+          noteBlocks.push(preAssessmentNotes);
+        } else {
+          noteBlocks.push(`${preAssessmentNotes}\n\nSNF Diversion Reason: ${snfDiversionReasonNotes}`);
         }
-        return `${preAssessmentNotes}\n\nSNF Diversion Reason: ${snfDiversionReasonNotes}`;
+      } else if (preAssessmentNotes) {
+        noteBlocks.push(preAssessmentNotes);
+      } else if (snfDiversionReasonNotes) {
+        noteBlocks.push(`SNF Diversion Reason: ${snfDiversionReasonNotes}`);
       }
-      if (preAssessmentNotes) return preAssessmentNotes;
-      if (snfDiversionReasonNotes) return `SNF Diversion Reason: ${snfDiversionReasonNotes}`;
-      return '';
+      return noteBlocks.join('\n\n').trim();
     })();
+    const combinedPushNotes = basePushNotes
+      ? [basePushNotes, careManagerNotesLine].filter(Boolean).join('\n\n').trim()
+      : '';
     const isDraftLikeForPush =
       clean(applicationData?.status).toLowerCase() === 'draft' ||
       Boolean(applicationData?.createdByAdmin) ||

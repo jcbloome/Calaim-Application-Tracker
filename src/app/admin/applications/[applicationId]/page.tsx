@@ -11203,6 +11203,38 @@ function ApplicationDetailPageContent() {
                 </div>
                 <div><strong>Submission Status:</strong> <span className="font-semibold">{application.status}</span></div>
             </div>
+            {(() => {
+              const careManagerName = String(
+                (application as any)?.careManagerName ||
+                (application as any)?.caseManagerName ||
+                (application as any)?.Care_Manager_Name ||
+                (application as any)?.Care_Manager ||
+                ''
+              ).trim();
+              const careManagerPhone = String(
+                (application as any)?.careManagerPhone ||
+                (application as any)?.caseManagerPhone ||
+                (application as any)?.Care_Manager_Phone ||
+                ''
+              ).trim();
+              const careManagerEmail = String(
+                (application as any)?.careManagerEmail ||
+                (application as any)?.caseManagerEmail ||
+                (application as any)?.Care_Manager_Email ||
+                ''
+              ).trim();
+              if (!careManagerName && !careManagerPhone && !careManagerEmail) return null;
+              return (
+                <div className="rounded-md border border-indigo-200 bg-indigo-50/60 p-3">
+                  <div className="text-sm font-medium text-indigo-900">ILS Care Manager</div>
+                  <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+                    <div><span className="font-medium">Name:</span> {careManagerName || '—'}</div>
+                    <div><span className="font-medium">Phone:</span> {careManagerPhone || '—'}</div>
+                    <div><span className="font-medium">Email:</span> {careManagerEmail || '—'}</div>
+                  </div>
+                </div>
+              );
+            })()}
             {isKaiserPlan && hasT2038AuthorizationSummary ? (
               <div className="rounded-md border border-sky-200 bg-sky-50/60 p-3">
                 <div className="text-sm font-medium text-sky-900">Parsed T2038 Authorization</div>
