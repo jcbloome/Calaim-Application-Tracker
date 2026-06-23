@@ -652,6 +652,21 @@ const parseAddressParts = (rawValue: unknown) => {
   }
 
   const commaParts = cleaned.split(',').map((p) => p.trim()).filter(Boolean);
+  if (commaParts.length === 2) {
+    const cityStateZip = commaParts[1].match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    if (cityStateZip) {
+      const city = commaParts[0];
+      const state = String(cityStateZip[1] || '').toUpperCase();
+      const zip = String(cityStateZip[2] || '');
+      return {
+        street: '',
+        city,
+        state: /^[A-Za-z]{2}$/.test(state) ? state : '',
+        zip,
+        county: inferredCounty || inferCountyFromCityZip({ city, zip }),
+      };
+    }
+  }
   if (commaParts.length >= 4) {
     const street = commaParts[0];
     const city = commaParts[1];
@@ -688,6 +703,7 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
   const city = String(next.memberCustomaryCity || '').trim();
   const state = String(next.memberCustomaryState || '').trim();
   const zip = String(next.memberCustomaryZip || '').trim();
+  const cityStateZipOnlyMatch = street.match(/^([A-Za-z .'-]+)\s*,\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/i);
   const aptCityStateZipMatch = street.match(
     /^(\d{1,6})\s*,\s*([A-Za-z .'-]+)\s*,\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/i
   );
@@ -706,6 +722,12 @@ const normalizeAddressFieldPlacement = <T extends Record<string, string>>(update
   if (cityStateOnlyMatch) {
     if (!city) next.memberCustomaryCity = cityStateOnlyMatch[1].trim();
     if (!state) next.memberCustomaryState = cityStateOnlyMatch[2].trim().toUpperCase();
+    next.memberCustomaryAddress = '';
+  }
+  if (cityStateZipOnlyMatch) {
+    if (!city) next.memberCustomaryCity = cityStateZipOnlyMatch[1].trim();
+    if (!state) next.memberCustomaryState = cityStateZipOnlyMatch[2].trim().toUpperCase();
+    if (!zip) next.memberCustomaryZip = cityStateZipOnlyMatch[3].trim();
     next.memberCustomaryAddress = '';
   }
   if (aptCityStateZipMatch) {
