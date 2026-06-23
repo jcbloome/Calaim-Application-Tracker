@@ -547,8 +547,6 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
     const resend = getResendClient();
     if (!resend) throw new Error('Resend API key is not configured.');
 
-    const bccList = await getBccRecipients();
-
     try {
         const emailHtml = await renderAsync(StaffAssignmentEmail({
             staffName,
@@ -566,7 +564,6 @@ export const sendStaffAssignmentEmail = async (payload: StaffAssignmentPayload) 
             resend,
             from: 'CalAIM Pathfinder <noreply@carehomefinders.com>',
             to: [to],
-            bcc: bccList,
             subject: `New CalAIM Member Assignment: ${memberName}`,
             html: emailHtml,
             template: 'staff_assignment',

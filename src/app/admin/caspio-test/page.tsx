@@ -316,6 +316,8 @@ export default function CaspioTestPage() {
   } | null>(null);
   const [hasLoadedCloudDrafts, setHasLoadedCloudDrafts] = useState(false);
   const [isApplyingCloudDrafts, setIsApplyingCloudDrafts] = useState(false);
+  const [isRecoveringFirebaseDrafts, setIsRecoveringFirebaseDrafts] = useState(false);
+  const [autoRecoveryAttempted, setAutoRecoveryAttempted] = useState(false);
   const [fieldSearchQuery, setFieldSearchQuery] = useState('');
   const [caspioFieldSearchQuery, setCaspioFieldSearchQuery] = useState('');
   const draftKey = 'calaim_cs_caspio_mapping_draft';
@@ -399,9 +401,50 @@ export default function CaspioTestPage() {
   useEffect(() => {
     if (!firestore || !user?.uid) return;
     const draftsRef = doc(firestore, 'users', user.uid, 'admin_settings', 'caspio_field_mapping');
+    const sharedMappingRef = doc(firestore, 'admin-settings', 'caspio-field-mapping');
     const readCloudDrafts = async () => {
       setIsApplyingCloudDrafts(true);
       try {
+        let sharedLockedRestored = false;
+        const applyLockedMappings = (mappings: Record<string, any>, meta: Record<string, any> | null) => {
+          setLockedMappings(mappings);
+          setFieldMappings(mappings);
+          const count = Object.keys(mappings).length;
+          setLockedMappingCount(count);
+          setHasLockedMappings(count > 0);
+          setCurrentDraftMappings(null);
+          setHasDraftMappings(false);
+          setLockedDraftMeta(meta);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(lockedKey, JSON.stringify(mappings));
+            localStorage.removeItem(draftKey);
+            if (meta) {
+              localStorage.setItem(lockedDraftMetaKey, JSON.stringify(meta));
+            } else {
+              localStorage.removeItem(lockedDraftMetaKey);
+            }
+          }
+        };
+
+        const restoreSharedLockedMapping = async () => {
+          const sharedSnap = await getDoc(sharedMappingRef);
+          if (!sharedSnap.exists()) return false;
+          const sharedData = (sharedSnap.data() || {}) as Record<string, any>;
+          const sharedLocked =
+            sharedData.lockedMappings && typeof sharedData.lockedMappings === 'object'
+              ? sharedData.lockedMappings
+              : null;
+          if (!sharedLocked || Object.keys(sharedLocked).length === 0) return false;
+          const sharedMeta = {
+            draftName: String(sharedData.lockedDraftName || '').trim() || undefined,
+            savedAtIso: String(sharedData.lockedDraftSavedAtIso || '').trim() || undefined,
+            lockedAtIso: String(sharedData.lockedAtIso || '').trim() || undefined,
+          };
+          applyLockedMappings(sharedLocked, sharedMeta);
+          sharedLockedRestored = true;
+          return true;
+        };
+
         const snap = await getDoc(draftsRef);
         if (!snap.exists()) {
           // One-time migration: if local drafts exist, seed Firestore with them.
@@ -471,6 +514,11 @@ export default function CaspioTestPage() {
               );
             }
           }
+          try {
+            await restoreSharedLockedMapping();
+          } catch (sharedError) {
+            console.warn('Failed to restore shared locked mapping:', sharedError);
+          }
           return;
         }
 
@@ -485,17 +533,7 @@ export default function CaspioTestPage() {
           : null;
 
         if (cloudLocked && Object.keys(cloudLocked).length > 0) {
-          setLockedMappings(cloudLocked);
-          setFieldMappings(cloudLocked);
-          const count = Object.keys(cloudLocked).length;
-          setLockedMappingCount(count);
-          setHasLockedMappings(count > 0);
-          setCurrentDraftMappings(null);
-          setHasDraftMappings(false);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(lockedKey, JSON.stringify(cloudLocked));
-            localStorage.removeItem(draftKey);
-          }
+          applyLockedMappings(cloudLocked, cloudLockedMeta);
         } else if (cloudCurrent && Object.keys(cloudCurrent).length > 0) {
           setFieldMappings(cloudCurrent);
           setCurrentDraftMappings(cloudCurrent);
@@ -503,12 +541,20 @@ export default function CaspioTestPage() {
           if (typeof window !== 'undefined') {
             localStorage.setItem(draftKey, JSON.stringify(cloudCurrent));
           }
+        } else {
+          try {
+            await restoreSharedLockedMapping();
+          } catch (sharedError) {
+            console.warn('Failed to restore shared locked mapping:', sharedError);
+          }
         }
 
         setNamedDrafts(cloudNamed);
         setNamedDraftMeta(cloudNamedMeta);
         setLastDraftName(cloudLastName);
-        setLockedDraftMeta(cloudLockedMeta);
+        if (!(cloudLocked && Object.keys(cloudLocked).length > 0) && !sharedLockedRestored) {
+          setLockedDraftMeta(cloudLockedMeta);
+        }
         if (typeof window !== 'undefined') {
           localStorage.setItem(namedDraftsKey, JSON.stringify(cloudNamed));
           localStorage.setItem(namedDraftMetaKey, JSON.stringify(cloudNamedMeta));
@@ -796,6 +842,142 @@ export default function CaspioTestPage() {
       }
     }
   };
+
+  const recoverMappingsFromFirebase = async () => {
+    setIsRecoveringFirebaseDrafts(true);
+    try {
+      if (!auth?.currentUser) {
+        toast({
+          variant: 'destructive',
+          title: 'Admin Session Missing',
+          description: 'Please sign in again, then retry Firebase mapping recovery.',
+        });
+        return;
+      }
+
+      const idToken = await auth.currentUser.getIdToken().catch(() => undefined);
+      if (!idToken) {
+        toast({
+          variant: 'destructive',
+          title: 'Authentication Required',
+          description: 'Could not get an auth token. Please sign out and sign back in.',
+        });
+        return;
+      }
+
+      const runRecovery = async (dryRun: boolean) => {
+        const response = await fetch('/api/admin/caspio/recover-field-mapping', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({ dryRun }),
+        });
+        const data = await response.json().catch(() => ({}));
+        return { response, data };
+      };
+
+      let { response, data } = await runRecovery(false);
+      if ((!response.ok || !data?.success) && /permission|insufficient|denied/i.test(String(data?.error || ''))) {
+        // If write-back is blocked by IAM, attempt a dry-run read recovery and apply locally.
+        const dryRunResult = await runRecovery(true);
+        response = dryRunResult.response;
+        data = dryRunResult.data;
+      }
+
+      if (!response.ok || !data?.success) {
+        const detailLines = Array.isArray(data?.details) ? data.details.filter(Boolean) : [];
+        const detailSuffix = detailLines.length > 0 ? ` ${detailLines[0]}` : '';
+        const hintSuffix = String(data?.permissionHint || '').trim();
+        throw new Error((data?.error || 'No recoverable Firebase mapping drafts were found.') + detailSuffix + (hintSuffix ? ` ${hintSuffix}` : ''));
+      }
+
+      const recoveredLocked =
+        data?.lockedMappings && typeof data.lockedMappings === 'object' ? data.lockedMappings : null;
+      if (!recoveredLocked || Object.keys(recoveredLocked).length === 0) {
+        throw new Error('Recovered mapping is empty.');
+      }
+
+      const recoveredNamedDrafts =
+        data?.namedDrafts && typeof data.namedDrafts === 'object' ? data.namedDrafts : {};
+      const recoveredNamedDraftMeta =
+        data?.namedDraftMeta && typeof data.namedDraftMeta === 'object' ? data.namedDraftMeta : {};
+      const recoveredLastDraftName = String(data?.lastDraftName || '').trim();
+      const recoveredDraftName = String(data?.recoveredDraftName || '').trim() || 'Recovered Firebase Draft';
+      const recoveredSavedAtIso = String(data?.recoveredSavedAtIso || '').trim();
+      const recoveredMeta = {
+        draftName: recoveredDraftName,
+        savedAtIso: recoveredSavedAtIso || undefined,
+        lockedAtIso: new Date().toISOString(),
+      };
+
+      setLockedMappings(recoveredLocked);
+      setFieldMappings(recoveredLocked);
+      setCurrentDraftMappings(null);
+      setHasDraftMappings(false);
+      const count = Object.keys(recoveredLocked).length;
+      setLockedMappingCount(count);
+      setHasLockedMappings(count > 0);
+      setLockedDraftMeta(recoveredMeta);
+      setNamedDrafts(recoveredNamedDrafts);
+      setNamedDraftMeta(recoveredNamedDraftMeta);
+      setLastDraftName(recoveredLastDraftName || recoveredDraftName);
+      setSelectedDraftName('');
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(lockedKey, JSON.stringify(recoveredLocked));
+        localStorage.removeItem(draftKey);
+        localStorage.setItem(namedDraftsKey, JSON.stringify(recoveredNamedDrafts));
+        localStorage.setItem(namedDraftMetaKey, JSON.stringify(recoveredNamedDraftMeta));
+        localStorage.setItem(lastDraftNameKey, recoveredLastDraftName || recoveredDraftName);
+        localStorage.setItem(lockedDraftMetaKey, JSON.stringify(recoveredMeta));
+      }
+
+      const persistenceWarning = String(data?.persistenceWarning || '').trim();
+      if (persistenceWarning) {
+        toast({
+          title: 'Recovered (Local Session)',
+          description: `${persistenceWarning} Mapping is loaded locally on this laptop now.`,
+        });
+      } else {
+        toast({
+          title: 'Firebase Mapping Recovered',
+          description: `Recovered ${count} mapped fields from Firebase and locked them for pushes.`,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Recovery Failed',
+        description: error?.message || 'Could not recover mapping drafts from Firebase.',
+      });
+    } finally {
+      setIsRecoveringFirebaseDrafts(false);
+    }
+  };
+
+  useEffect(() => {
+    if (autoRecoveryAttempted) return;
+    if (!hasLoadedCloudDrafts || isApplyingCloudDrafts) return;
+    if (isRecoveringFirebaseDrafts) return;
+    if (lockedMappings && Object.keys(lockedMappings).length > 0) return;
+    if (currentDraftMappings && Object.keys(currentDraftMappings).length > 0) return;
+    if (Object.keys(namedDrafts).length > 0) return;
+    if (!auth?.currentUser) return;
+
+    setAutoRecoveryAttempted(true);
+    void recoverMappingsFromFirebase();
+  }, [
+    auth?.currentUser,
+    autoRecoveryAttempted,
+    currentDraftMappings,
+    hasLoadedCloudDrafts,
+    isApplyingCloudDrafts,
+    isRecoveringFirebaseDrafts,
+    lockedMappings,
+    namedDrafts,
+  ]);
 
   const refreshCaspioFields = async () => {
     // Rate limiting: prevent calls within 5 seconds of each other
@@ -1712,6 +1894,17 @@ export default function CaspioTestPage() {
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        void recoverMappingsFromFirebase();
+                      }}
+                      disabled={isRecoveringFirebaseDrafts || isApplyingCloudDrafts}
+                    >
+                      {isRecoveringFirebaseDrafts ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Recover Firebase Drafts
+                    </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant={lockedMappings ? 'default' : 'outline'} size="sm">

@@ -18,13 +18,17 @@ if (!admin.apps.length) {
     let credential;
     
     // Try to get credentials from environment variable first
-    if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    const inlineServiceAccountJson =
+      process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
+      process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    if (inlineServiceAccountJson) {
       try {
-        const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+        const serviceAccount = JSON.parse(inlineServiceAccountJson);
         credential = admin.credential.cert(serviceAccount);
-        logInfo('🔧 Using credentials from GOOGLE_APPLICATION_CREDENTIALS_JSON');
+        logInfo('🔧 Using credentials from inline service account JSON env var');
       } catch (parseError) {
-        logWarn('⚠️ Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON:', parseError);
+        logWarn('⚠️ Failed to parse inline service account JSON env var:', parseError);
       }
     }
 
