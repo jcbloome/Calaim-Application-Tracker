@@ -977,8 +977,8 @@ export const AdminApplicationsTable = ({
 
   return (
     <>
-      {/* Desktop Table View */}
-      <div className="hidden lg:block w-full overflow-x-auto">
+      {/* Desktop Table View (extra-wide only to avoid squeezed medium screens) */}
+      <div className="hidden xl:block w-full overflow-x-auto">
         <Table>
         <TableHeader>
           <TableRow>
@@ -995,7 +995,7 @@ export const AdminApplicationsTable = ({
             )}
             <TableHead>Member</TableHead>
             <TableHead className="w-[190px] min-w-[190px]">Status</TableHead>
-            <TableHead className="hidden lg:table-cell">Plan & Pathway</TableHead>
+            <TableHead className="hidden xl:table-cell">Plan & Pathway</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -1196,7 +1196,7 @@ export const AdminApplicationsTable = ({
                     ) : null}
                   </div>
                 </TableCell>
-                 <TableCell className="hidden lg:table-cell">
+                 <TableCell className="hidden xl:table-cell">
                     <div className="flex items-center gap-2">
                       <span>{app.healthPlan}</span>
                     </div>
@@ -1308,8 +1308,8 @@ export const AdminApplicationsTable = ({
       </Table>
       </div>
 
-      {/* Mobile Single-Line View */}
-      <div className="lg:hidden space-y-2">
+      {/* Responsive card view (mobile + tablet + smaller laptops) */}
+      <div className="xl:hidden space-y-3">
         {isLoading ? (
           <div className="text-center py-8">Loading applications...</div>
         ) : groupedApplications.length > 0 ? (
@@ -1354,7 +1354,7 @@ export const AdminApplicationsTable = ({
 
             return (
               <div key={group.key} className={cn(
-                "bg-white border rounded-lg p-3 shadow-sm",
+                "bg-white border rounded-xl p-3 sm:p-4 shadow-sm",
                 isNew && "border-l-4 border-l-blue-400 bg-blue-50",
                 isRecentlyUpdated && "border-l-4 border-l-amber-400 bg-amber-50"
               )}>
@@ -1467,7 +1467,7 @@ export const AdminApplicationsTable = ({
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
                     <Badge variant="outline" className={getBadgeVariant(app.status)}>
                       {app.status}
                     </Badge>

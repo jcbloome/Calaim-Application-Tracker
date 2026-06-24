@@ -1064,8 +1064,8 @@ function AdminApplicationsPageContent() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                      <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border bg-muted/50 p-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
-                        <div className="md:col-span-2 xl:col-span-2 2xl:col-span-2">
+                      <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl border bg-muted/50 p-3 sm:p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                        <div className="md:col-span-2 xl:col-span-3 2xl:col-span-2">
                           <Input
                             placeholder="Search application/member name, MCP/plan, MRN, auth #, app ID..."
                             value={memberFilter}
@@ -1156,13 +1156,13 @@ function AdminApplicationsPageContent() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <Button variant="ghost" onClick={clearFilters} className="whitespace-nowrap">Clear</Button>
+                        <Button variant="ghost" onClick={clearFilters} className="w-full sm:w-auto whitespace-nowrap">Clear</Button>
                         <Button
                           variant={summaryViewFilter === 'all' ? 'secondary' : 'outline'}
                           onClick={() =>
                             applySummaryViewFilter(summaryViewFilter === 'all' ? 'non-complete' : 'all')
                           }
-                          className="whitespace-nowrap"
+                          className="w-full sm:w-auto whitespace-nowrap"
                         >
                           {summaryViewFilter === 'all'
                             ? `Hide Complete (${completedApplicationsCount})`
