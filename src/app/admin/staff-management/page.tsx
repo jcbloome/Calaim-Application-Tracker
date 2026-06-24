@@ -136,22 +136,23 @@ export default function StaffManagementPage() {
             const [adminRolesSnap, superAdminRolesSnap, usersSnap] = await Promise.all([
                 getDocs(collection(firestore, 'roles_admin')).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_admin', operation: 'list' }));
-                    throw e;
+                    return null;
                 }),
                 getDocs(collection(firestore, 'roles_super_admin')).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_super_admin', operation: 'list' }));
-                    throw e;
+                    return null;
                 }),
                 getDocs(collection(firestore, 'users')).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'users', operation: 'list' }));
-                    throw e;
+                    return null;
                 })
             ]);
 
-            const adminIds = new Set(adminRolesSnap.docs.map(d => d.id));
-            const superAdminIds = new Set(superAdminRolesSnap.docs.map(d => d.id));
+            const usersDocs = usersSnap?.docs || [];
+            const adminIds = new Set((adminRolesSnap?.docs || []).map(d => d.id));
+            const superAdminIds = new Set((superAdminRolesSnap?.docs || []).map(d => d.id));
 
-            const users = usersSnap.docs.reduce((acc, doc) => {
+            const users = usersDocs.reduce((acc, doc) => {
                 acc[doc.id] = doc.data();
                 return acc;
             }, {} as Record<string, any>);
@@ -163,7 +164,7 @@ export default function StaffManagementPage() {
                 return acc;
             }, {} as Record<string, string>);
 
-            const staffFlagIds = usersSnap.docs
+            const staffFlagIds = usersDocs
                 .filter(d => Boolean((d.data() as any)?.isStaff))
                 .map(d => d.id);
 
@@ -366,7 +367,7 @@ export default function StaffManagementPage() {
             const [notificationsSnap, adminAccessSnap, reviewSnap, appAccessSnap, ilsAccessSnap] = await Promise.all([
                 getDoc(doc(firestore, 'system_settings', 'notifications')).catch(e => {
                     errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'system_settings/notifications', operation: 'get' }));
-                    throw e;
+                    return null;
                 }),
                 getDoc(doc(firestore, 'system_settings', 'admin_access')).catch(() => null),
                 getDoc(doc(firestore, 'system_settings', 'review_notifications')).catch(() => null),

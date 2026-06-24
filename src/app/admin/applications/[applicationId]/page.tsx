@@ -12373,13 +12373,13 @@ function ApplicationDetailPageContent() {
               Keep this page focused. Open tools only when needed.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2">
+          <CardContent className="flex min-w-0 flex-col gap-2 [&_.qa-trigger]:h-auto [&_.qa-trigger]:w-full [&_.qa-trigger]:min-w-0 [&_.qa-trigger]:justify-start [&_.qa-trigger]:gap-2 [&_.qa-trigger]:py-2 [&_.qa-trigger]:text-left [&_.qa-trigger]:whitespace-normal [&_.qa-trigger]:break-words [&_.qa-trigger_svg]:shrink-0 [&_.qa-trigger_.qa-label]:min-w-0 [&_.qa-trigger_.qa-label]:whitespace-normal [&_.qa-trigger_.qa-label]:break-words">
             <div className="order-[900]">
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="qa-trigger">
                   <List className="h-4 w-4" />
-                  Application Log
+                  <span className="qa-label">Application Log</span>
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-6xl max-h-[85vh] overflow-auto">
@@ -12396,9 +12396,9 @@ function ApplicationDetailPageContent() {
             <div className="order-[910]">
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="qa-trigger">
                   <Eye className="h-4 w-4" />
-                  Member portal login log
+                  <span className="qa-label">Member portal login log</span>
                   <Badge variant="outline" className="ml-auto text-[10px]">
                     {filteredMemberPortalLoginLog.length} logins
                   </Badge>
@@ -12541,7 +12541,7 @@ function ApplicationDetailPageContent() {
               });
               return (
                 <div className="space-y-2">
-                  <Button asChild variant="outline" className="w-full justify-start gap-2 border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100">
+                  <Button asChild variant="outline" className="qa-trigger border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100">
                     <Link
                       href={`/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`}
                       target="_blank"
@@ -12551,7 +12551,7 @@ function ApplicationDetailPageContent() {
                       }}
                     >
                       <FileText className="h-4 w-4 shrink-0" />
-                      Generate Kaiser Referral Form (Pre-Filled)
+                      <span className="qa-label">Generate Kaiser Referral Form (Pre-Filled)</span>
                     </Link>
                   </Button>
                   {kaiserReferralFormGeneratedAtLabel ? (
@@ -12591,9 +12591,9 @@ function ApplicationDetailPageContent() {
             <div className="order-[-60]">
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="qa-trigger">
                   <CheckCircle2 className="h-4 w-4" />
-                  Eligibility check & uploads
+                  <span className="qa-label">Eligibility check & uploads</span>
                   {isCalaimEligible ? (
                     <Badge className="ml-auto border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
                       Eligible
@@ -13073,9 +13073,9 @@ function ApplicationDetailPageContent() {
             <div className="order-[-50]">
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="qa-trigger">
                   <User className="h-4 w-4" />
-                  Assigned staff
+                  <span className="qa-label">Assigned staff</span>
                   <Badge variant={assignedStaffName ? 'default' : 'outline'} className="ml-auto text-[10px]">
                     {assignedStaffName ? 'Assigned' : 'Unassigned'}
                   </Badge>
@@ -13118,18 +13118,18 @@ function ApplicationDetailPageContent() {
             <PushToCaspioDialog
               application={application}
               buttonVariant="outline"
-              buttonClassName="w-full justify-start gap-2"
+              buttonClassName="qa-trigger"
             />
             </div>
             <div className="order-[-30]">
             <Button
               variant="ghost"
-              className="w-full justify-start gap-2 -mt-1"
+              className="qa-trigger -mt-1"
               onClick={() => void confirmCaspioPushAndRetrieveClientId2()}
               disabled={isConfirmingCaspioPush}
             >
               {isConfirmingCaspioPush ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-              Update Kaiser Status + retrieve Client_ID2
+              <span className="qa-label">Update Kaiser Status + retrieve Client_ID2</span>
             </Button>
             </div>
             <div className="order-[-20]">
@@ -13171,15 +13171,15 @@ function ApplicationDetailPageContent() {
             <IntroductoryEmailDialog
               application={application}
               buttonVariant="outline"
-              buttonClassName="w-full justify-start gap-2"
+              buttonClassName="qa-trigger"
             />
             </div>
 
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="qa-trigger">
                   <Target className="h-4 w-4" />
-                  Application progression
+                  <span className="qa-label">Application progression</span>
                   <span className="ml-auto flex items-center gap-2">
                     <Badge variant="outline" className="text-xs">
                       {String((application as any)?.assignedStaffName || '').trim() || 'Unassigned'}
@@ -13688,9 +13688,9 @@ function ApplicationDetailPageContent() {
 
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="qa-trigger">
                   <UploadCloud className="h-4 w-4" />
-                  Authorization uploads
+                  <span className="qa-label">Authorization uploads</span>
                 </Button>
               </DialogTrigger>
               {latestAuthorizationUploadLabel ? (
@@ -13879,9 +13879,9 @@ function ApplicationDetailPageContent() {
 
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="qa-trigger">
                   <FileText className="h-4 w-4" />
-                  Individual service plans (ISP)
+                  <span className="qa-label">Individual service plans (ISP)</span>
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
@@ -13948,9 +13948,9 @@ function ApplicationDetailPageContent() {
 
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="qa-trigger">
                   <Wrench className="h-4 w-4" />
-                  Admin actions
+                  <span className="qa-label">Admin actions</span>
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-4xl max-h-[85vh] overflow-auto">
