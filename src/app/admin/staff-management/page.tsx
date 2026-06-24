@@ -135,15 +135,15 @@ export default function StaffManagementPage() {
         try {
             const [adminRolesSnap, superAdminRolesSnap, usersSnap] = await Promise.all([
                 getDocs(collection(firestore, 'roles_admin')).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_admin', operation: 'list' }));
+                    console.warn('Staff management: roles_admin read denied, continuing with limited data.');
                     return null;
                 }),
                 getDocs(collection(firestore, 'roles_super_admin')).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'roles_super_admin', operation: 'list' }));
+                    console.warn('Staff management: roles_super_admin read denied, continuing with limited data.');
                     return null;
                 }),
                 getDocs(collection(firestore, 'users')).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'users', operation: 'list' }));
+                    console.warn('Staff management: users read denied, continuing with limited data.');
                     return null;
                 })
             ]);
@@ -366,7 +366,7 @@ export default function StaffManagementPage() {
         try {
             const [notificationsSnap, adminAccessSnap, reviewSnap, appAccessSnap, ilsAccessSnap] = await Promise.all([
                 getDoc(doc(firestore, 'system_settings', 'notifications')).catch(e => {
-                    errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'system_settings/notifications', operation: 'get' }));
+                    console.warn('Staff management: notifications settings read denied, using defaults.');
                     return null;
                 }),
                 getDoc(doc(firestore, 'system_settings', 'admin_access')).catch(() => null),
