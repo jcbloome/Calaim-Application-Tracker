@@ -323,6 +323,7 @@ export default function CaspioTestPage() {
   const [cloudDraftSyncState, setCloudDraftSyncState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [cloudDraftLastSavedAtLabel, setCloudDraftLastSavedAtLabel] = useState('');
   const [cloudDraftSyncError, setCloudDraftSyncError] = useState('');
+  const [cloudDraftSyncWarning, setCloudDraftSyncWarning] = useState('');
   const cloudDraftSyncRequestRef = useRef(0);
   const draftKey = 'calaim_cs_caspio_mapping_draft';
   const lockedKey = 'calaim_cs_caspio_mapping';
@@ -585,11 +586,13 @@ export default function CaspioTestPage() {
           setCloudDraftSyncState('saved');
           setCloudDraftLastSavedAtLabel(new Date(cloudUpdatedAtMs).toLocaleString());
           setCloudDraftSyncError('');
+          setCloudDraftSyncWarning('');
         }
       } catch (error) {
         console.warn('Failed to load cloud mapping drafts:', error);
         setCloudDraftSyncState('error');
         setCloudDraftSyncError('Could not load cloud draft state.');
+        setCloudDraftSyncWarning('');
       } finally {
         setIsApplyingCloudDrafts(false);
         setHasLoadedCloudDrafts(true);
@@ -606,6 +609,7 @@ export default function CaspioTestPage() {
     const saveRequestId = ++cloudDraftSyncRequestRef.current;
     setCloudDraftSyncState('saving');
     setCloudDraftSyncError('');
+    setCloudDraftSyncWarning('');
     const saveCloudDrafts = async () => {
       const payload = {
         lockedMappings: lockedMappings || null,
@@ -620,34 +624,43 @@ export default function CaspioTestPage() {
         updatedAt: serverTimestamp(),
       };
       await setDoc(draftsRef, payload, { merge: true });
+      let sharedWarning = '';
       if (lockedMappings && Object.keys(lockedMappings).length > 0) {
-        await setDoc(
-          sharedMappingRef,
-          {
-            lockedMappings,
-            lockedDraftName: String(lockedDraftMeta?.draftName || '').trim() || null,
-            lockedDraftSavedAtIso: String(lockedDraftMeta?.savedAtIso || '').trim() || null,
-            lockedAtIso: String(lockedDraftMeta?.lockedAtIso || '').trim() || null,
-            updatedByUid: user.uid,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
+        try {
+          await setDoc(
+            sharedMappingRef,
+            {
+              lockedMappings,
+              lockedDraftName: String(lockedDraftMeta?.draftName || '').trim() || null,
+              lockedDraftSavedAtIso: String(lockedDraftMeta?.savedAtIso || '').trim() || null,
+              lockedAtIso: String(lockedDraftMeta?.lockedAtIso || '').trim() || null,
+              updatedByUid: user.uid,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } catch (error) {
+          console.warn('Shared lock sync skipped (permission or network issue):', error);
+          sharedWarning = 'Personal cloud draft saved. Shared locked mapping sync is currently unavailable.';
+        }
       }
+      return { sharedWarning };
     };
     void saveCloudDrafts()
-      .then(() => {
+      .then(({ sharedWarning }) => {
         if (saveRequestId !== cloudDraftSyncRequestRef.current) return;
         const nowLabel = new Date().toLocaleString();
         setCloudDraftSyncState('saved');
         setCloudDraftLastSavedAtLabel(nowLabel);
         setCloudDraftSyncError('');
+        setCloudDraftSyncWarning(sharedWarning || '');
       })
       .catch((error) => {
         if (saveRequestId !== cloudDraftSyncRequestRef.current) return;
         console.warn('Failed to save cloud mapping drafts:', error);
         setCloudDraftSyncState('error');
         setCloudDraftSyncError('Cloud save failed. Check network/session and try again.');
+        setCloudDraftSyncWarning('');
       });
   }, [
     currentDraftMappings,
@@ -1910,6 +1923,9 @@ export default function CaspioTestPage() {
                               ? (cloudDraftSyncError || 'Cloud save failed.')
                               : 'Not saved to cloud yet.'}
                     </p>
+                    {cloudDraftSyncWarning ? (
+                      <p className="text-xs text-amber-700 mt-1">{cloudDraftSyncWarning}</p>
+                    ) : null}
                     {!lockedMappings ? (
                       <p className="text-xs text-amber-700 mt-1">
                         Lock mappings to set the version used by all future Caspio pushes.
