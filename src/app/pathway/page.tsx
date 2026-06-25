@@ -295,7 +295,7 @@ function PathwayPageContent() {
   const focusRequirementIdParam = String(searchParams.get('focus') || '').trim();
   const modeParam = String(searchParams.get('mode') || '').trim().toLowerCase();
   const { user, isUserLoading } = useUser();
-  const { isAdmin, isSuperAdmin } = useAdmin();
+  const { isAdmin, isSuperAdmin, isLoading: isAdminLoading } = useAdmin();
   const firestore = useFirestore();
   const storage = useStorage();
   const { toast } = useToast();
@@ -330,6 +330,7 @@ function PathwayPageContent() {
   const [swInviteSaving, setSwInviteSaving] = useState(false);
 
   const isAdminCreatedApp = applicationId?.startsWith('admin_app_');
+  const canUseAdminCollection = Boolean(isAdminCreatedApp && (isAdmin || isSuperAdmin));
 
   const getSafeForms = (value: unknown): FormStatusType[] => {
     if (!Array.isArray(value)) return [];
@@ -346,18 +347,18 @@ function PathwayPageContent() {
     // Only staff should read directly from the admin collection.
     // Invited family members can have admin_app_* IDs too, but their source of truth
     // for portal access is users/{uid}/applications/{applicationId}.
-    if (isAdminCreatedApp && (isAdmin || isSuperAdmin)) {
+    if (canUseAdminCollection) {
       return doc(firestore, 'applications', applicationId);
     }
     
     // Regular user applications are stored in user subcollections
     if (!user) return null;
     return doc(firestore, `users/${user.uid}/applications`, applicationId);
-  }, [firestore, applicationId, user, isAdminCreatedApp, isAdmin, isSuperAdmin]);
+  }, [firestore, applicationId, user, canUseAdminCollection]);
 
   useEffect(() => {
     if (!docRef) {
-      if (!isUserLoading || isAdminCreatedApp) setIsLoading(false);
+      if (!isUserLoading && (!isAdminCreatedApp || !isAdminLoading)) setIsLoading(false);
       return;
     }
 
@@ -377,12 +378,12 @@ function PathwayPageContent() {
     });
 
     return () => unsubscribe();
-  }, [docRef, isUserLoading]);
+  }, [docRef, isUserLoading, isAdminCreatedApp, isAdminLoading]);
 
   useEffect(() => {
-    if (!isLoading && !application && (!isUserLoading || isAdminCreatedApp)) {
+    if (!isLoading && !application && !isUserLoading && (!isAdminCreatedApp || !isAdminLoading)) {
       // For admin-created applications, redirect to admin applications page
-      if (isAdminCreatedApp) {
+      if (canUseAdminCollection) {
         router.push('/admin/applications');
       } else {
         const id = String(applicationId || '').trim();
@@ -393,7 +394,7 @@ function PathwayPageContent() {
         }
       }
     }
-  }, [isLoading, application, isUserLoading, router, isAdminCreatedApp]);
+  }, [isLoading, application, isUserLoading, router, isAdminCreatedApp, isAdminLoading, canUseAdminCollection, applicationId]);
 
   useEffect(() => {
     const safeForms = getSafeForms(application?.forms);
