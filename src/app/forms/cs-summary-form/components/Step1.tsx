@@ -5,7 +5,7 @@ import { useFormContext } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type FormValues } from '../schema';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { PhoneInput } from '@/components/ui/phone-input';
@@ -111,6 +111,7 @@ export default function Step1({
   const memberEmail = watch('memberEmail');
   const [isMemberLanguageOther, setIsMemberLanguageOther] = useState(false);
   const isPrimaryContactAutoFilled = isPrimaryContactSameAsReferrer || isPrimaryContactSameAsMember;
+  const wasPrimaryContactSameAsMemberRef = useRef(false);
 
   const copyRepFromPrimaryContact = () => {
     setValue('repFirstName', String(getValues('bestContactFirstName') || '').trim());
@@ -272,6 +273,21 @@ export default function Step1({
     setValue,
     clearErrors,
   ]);
+
+  useEffect(() => {
+    const wasAutoFilledFromMember = wasPrimaryContactSameAsMemberRef.current;
+    // Clear member-derived prefill when user unchecks "same as member",
+    // but do not wipe if they're switching to "same as submitting user".
+    if (wasAutoFilledFromMember && !isPrimaryContactSameAsMember && !isPrimaryContactSameAsReferrer) {
+      setValue('bestContactFirstName', '');
+      setValue('bestContactLastName', '');
+      setValue('bestContactRelationship', '');
+      setValue('bestContactPhone', '');
+      setValue('bestContactEmail', '');
+      setValue('bestContactLanguage', '');
+    }
+    wasPrimaryContactSameAsMemberRef.current = Boolean(isPrimaryContactSameAsMember);
+  }, [isPrimaryContactSameAsMember, isPrimaryContactSameAsReferrer, setValue]);
 
   useEffect(() => {
     if (!forceSeparatePrimaryContactFromSubmitter) return;
