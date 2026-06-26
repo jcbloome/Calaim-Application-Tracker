@@ -257,6 +257,12 @@ function CsSummaryFormComponent() {
             String((data as any)?.id || '').startsWith('admin_app_') ||
             Boolean(internalApplicationId?.startsWith('admin_app_'));
           const isStaffDraftFlowDetected = isAdminView && isSkeletonSeed;
+          const normalizedIntakeType = String((data as any)?.intakeType || '').trim().toLowerCase();
+          const normalizedIntakeSource = String((data as any)?.intakeSource || '').trim().toLowerCase();
+          const isIlsGeneratedDraft =
+            normalizedIntakeType === 'kaiser_auth_received_via_ils' ||
+            normalizedIntakeSource === 'ils_single_authorization_sheet' ||
+            normalizedIntakeSource === 'ils_spreadsheet_batch';
 
           const nextData = { ...(data as any) } as Record<string, unknown>;
           if (isStaffDraftFlowDetected) {
@@ -264,10 +270,40 @@ function CsSummaryFormComponent() {
               currentUser: user,
               appData: data as Record<string, unknown>,
             });
-            nextData.referrerFirstName = staffIdentity.firstName || String((data as any)?.referrerFirstName || '');
-            nextData.referrerLastName = staffIdentity.lastName || String((data as any)?.referrerLastName || '');
-            nextData.referrerEmail = staffIdentity.email || String((data as any)?.referrerEmail || '');
-            nextData.referrerRelationship = 'Staff';
+            if (isIlsGeneratedDraft) {
+              const careManagerName = String((data as any)?.careManagerName || '').trim();
+              const careManagerNameParts = careManagerName.split(/\s+/).filter(Boolean);
+              const careManagerFirstName = careManagerNameParts[0] || '';
+              const careManagerLastName = careManagerNameParts.slice(1).join(' ');
+              const existingReferrerRelationship = String((data as any)?.referrerRelationship || '').trim();
+
+              nextData.referrerFirstName =
+                String((data as any)?.referrerFirstName || '').trim() ||
+                String((data as any)?.contactFirstName || '').trim() ||
+                careManagerFirstName;
+              nextData.referrerLastName =
+                String((data as any)?.referrerLastName || '').trim() ||
+                String((data as any)?.contactLastName || '').trim() ||
+                careManagerLastName;
+              nextData.referrerEmail =
+                String((data as any)?.referrerEmail || '').trim() ||
+                String((data as any)?.contactEmail || '').trim() ||
+                String((data as any)?.careManagerEmail || '').trim();
+              nextData.referrerPhone =
+                String((data as any)?.referrerPhone || '').trim() ||
+                String((data as any)?.contactPhone || '').trim() ||
+                String((data as any)?.careManagerPhone || '').trim();
+              nextData.referrerRelationship =
+                existingReferrerRelationship &&
+                existingReferrerRelationship.toLowerCase() !== 'staff'
+                  ? existingReferrerRelationship
+                  : 'ILS Referral';
+            } else {
+              nextData.referrerFirstName = staffIdentity.firstName || String((data as any)?.referrerFirstName || '');
+              nextData.referrerLastName = staffIdentity.lastName || String((data as any)?.referrerLastName || '');
+              nextData.referrerEmail = staffIdentity.email || String((data as any)?.referrerEmail || '');
+              nextData.referrerRelationship = 'Staff';
+            }
             nextData.agency = String((data as any)?.agency || '').trim() || 'Connections Care Home Consultants';
             nextData.isPrimaryContactSameAsReferrer = false;
           }
