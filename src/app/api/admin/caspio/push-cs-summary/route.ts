@@ -1342,7 +1342,11 @@ export async function POST(request: NextRequest) {
         if (existingRow) existingRowMatchSource = 'medi_cal';
       }
     }
-    if (!existingRow) {
+    // Name-only matching can accidentally update the wrong Caspio record when members share names.
+    // Default to create-new behavior unless explicitly enabled by the caller.
+    const allowNameOnlyMatch =
+      String((applicationData as any)?.allowNameOnlyCaspioMatch || '').trim().toLowerCase() === 'true';
+    if (!existingRow && allowNameOnlyMatch) {
       const where = `${firstNameField}='${esc(firstName)}' AND ${lastNameField}='${esc(lastName)}'`;
       existingRow = await trySearchMember(where);
       if (existingRow) existingRowMatchSource = 'name';
