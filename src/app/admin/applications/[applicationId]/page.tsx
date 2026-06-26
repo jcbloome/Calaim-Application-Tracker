@@ -87,6 +87,20 @@ import { sendStaffAssignmentEmail } from '@/app/actions/send-email';
 import { countPendingDocumentReviews } from '@/lib/review-queue';
 
 const DEFAULT_SOCIAL_WORKER_HOLD_VALUE = '🔴 Hold';
+const REQUIRED_PRE_PUSH_KAISER_STATUSES = [
+  'T2038 Received, Need First Contact',
+  'T2038 Received, doc collection',
+] as const;
+const normalizeStatusToken = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+const REQUIRED_PRE_PUSH_KAISER_STATUS_TOKENS = new Set(
+  REQUIRED_PRE_PUSH_KAISER_STATUSES.map((status) => normalizeStatusToken(status))
+);
+const isRequiredPrePushKaiserStatus = (value: unknown) =>
+  REQUIRED_PRE_PUSH_KAISER_STATUS_TOKENS.has(normalizeStatusToken(value));
 
 function toMillisSafe(value: unknown): number {
   try {
@@ -1014,6 +1028,8 @@ function PushToCaspioDialog({
     const isKaiserHealthPlan = String((application as any)?.healthPlan || '').trim().toLowerCase().includes('kaiser');
     const caspioCalAIMStatus = String((application as any)?.caspioCalAIMStatus || '').trim();
     const requestedKaiserStatus = String((application as any)?.kaiserStatus || '').trim();
+    const isRequiredKaiserStatusSelectedForPush =
+      !isKaiserHealthPlan || isRequiredPrePushKaiserStatus(requestedKaiserStatus);
     const requestedSocialWorkerHold = String(
       (application as any)?.holdForSocialWorkerStatus ||
       (application as any)?.Hold_For_Social_Worker_Visit ||
@@ -1099,7 +1115,12 @@ function PushToCaspioDialog({
       { key: 'memberMrn', label: 'Member MRN', required: false, ready: Boolean(toClean((application as any)?.memberMrn)) },
       { key: 'diagnosticCode', label: 'Diagnostic code', required: false, ready: Boolean(toClean((application as any)?.Diagnostic_Code)) },
       { key: 'caspioCalAIMStatus', label: 'CalAIM Status for Caspio', required: true, ready: Boolean(derivedCaspioCalAIMStatus) },
-      { key: 'kaiserStatus', label: 'Kaiser Status', required: isKaiserHealthPlan, ready: Boolean(requestedKaiserStatus) },
+      {
+        key: 'kaiserStatus',
+        label: 'Kaiser Status',
+        required: isKaiserHealthPlan,
+        ready: isRequiredKaiserStatusSelectedForPush,
+      },
       { key: 'socialWorkerHold', label: 'SW Hold for Caspio', required: true, ready: Boolean(requestedSocialWorkerHold) },
       {
         key: 'contactPerson',
@@ -1287,6 +1308,15 @@ function PushToCaspioDialog({
                 variant: 'destructive',
                 title: 'Staff assignment required',
                 description: 'Assign staff before pushing this application to Caspio.',
+            });
+            return;
+        }
+        if (isKaiserHealthPlan && !isRequiredKaiserStatusSelectedForPush) {
+            toast({
+                variant: 'destructive',
+                title: 'Kaiser status required for Caspio push',
+                description:
+                  'Before pushing, set Kaiser Status to either "T2038 Received, Need First Contact" or "T2038 Received, doc collection".',
             });
             return;
         }
@@ -11624,7 +11654,7 @@ function ApplicationDetailPageContent() {
                                   </SelectContent>
                                 </Select>
                                 <p className="text-xs text-muted-foreground">
-                                  Draft-only status before Caspio push.
+                                  Before Caspio push, Kaiser status must be either "T2038 Received, Need First Contact" or "T2038 Received, doc collection".
                                 </p>
                               </>
                             ) : (

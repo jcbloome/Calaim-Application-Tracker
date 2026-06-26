@@ -117,6 +117,15 @@ const MONTHLY_INCOME_FIELD = 'Monthly_Income';
 const MCO_AND_TIER_FIELD = 'MCO_and_Tier';
 const DEFAULT_KAISER_TIER_VALUE = 'Kaiser-0';
 const KAISER_STATUS_FIELD = 'Kaiser_Status';
+const REQUIRED_PRE_PUSH_KAISER_STATUSES = [
+  'T2038 Received, Need First Contact',
+  'T2038 Received, doc collection',
+] as const;
+const REQUIRED_PRE_PUSH_KAISER_STATUS_NORMALIZED = new Set(
+  REQUIRED_PRE_PUSH_KAISER_STATUSES.map((status) => normalizeFieldName(status))
+);
+const isRequiredPrePushKaiserStatus = (status: string) =>
+  REQUIRED_PRE_PUSH_KAISER_STATUS_NORMALIZED.has(normalizeFieldName(status));
 const UNKNOWN_CONTACT_PLACEHOLDER = 'Unknown';
 const KAISER_STAFF_ASSIGNMENT_FIELD_CANDIDATES = [
   'Kaiser_User_Assignment',
@@ -1166,6 +1175,17 @@ export async function POST(request: NextRequest) {
           success: false,
           code: 'missing-kaiser-status',
           message: 'Select Kaiser Status on the main application page before pushing this Kaiser application.',
+        },
+        { status: 400 }
+      );
+    }
+    if (isKaiserApplication && !isRequiredPrePushKaiserStatus(requestedKaiserStatus)) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'invalid-kaiser-status',
+          message:
+            'Before pushing to Caspio, Kaiser Status must be either "T2038 Received, Need First Contact" or "T2038 Received, doc collection".',
         },
         { status: 400 }
       );
