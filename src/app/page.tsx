@@ -25,6 +25,7 @@ export default function HomePage() {
                   alt="CalAIM Wolf Mascot"
                   width={160}
                   height={160}
+                  unoptimized
                   className="w-full h-full object-cover rounded-full transition-transform duration-300 group-hover:scale-110"
                   priority
                 />
