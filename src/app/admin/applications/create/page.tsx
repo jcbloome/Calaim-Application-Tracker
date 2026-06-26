@@ -2706,6 +2706,12 @@ export default function CreateApplicationPage() {
       const applicationId = `admin_app_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       const applicationRef = doc(firestore, 'applications', applicationId);
       
+      const ilsReferrerName = parseMemberName(memberData.careManagerName || '');
+      const ilsReferrerFirstName = memberData.contactFirstName || ilsReferrerName.firstName || '';
+      const ilsReferrerLastName = memberData.contactLastName || ilsReferrerName.lastName || '';
+      const ilsReferrerEmail = memberData.contactEmail || memberData.careManagerEmail || '';
+      const ilsReferrerPhone = memberData.contactPhone || memberData.careManagerPhone || memberData.memberPhone || '';
+
       // Create the application document with initial member and contact information
       const baseApplication: Record<string, unknown> = {
         // Member information
@@ -2743,12 +2749,13 @@ export default function CreateApplicationPage() {
             }
           : {}),
 
-        // Submitting user for draft intake (staff)
-        referrerFirstName: submittingStaff.firstName || '',
-        referrerLastName: submittingStaff.lastName || '',
-        referrerEmail: submittingStaff.email || '',
-        referrerPhone: submittingStaff.phone || memberData.contactPhone || memberData.memberPhone || '',
-        referrerRelationship: 'Staff',
+        // Referrer details
+        // For ILS auth intake, do not default referrer to submitting staff.
+        referrerFirstName: isKaiserAuthReceived ? ilsReferrerFirstName : (submittingStaff.firstName || ''),
+        referrerLastName: isKaiserAuthReceived ? ilsReferrerLastName : (submittingStaff.lastName || ''),
+        referrerEmail: isKaiserAuthReceived ? ilsReferrerEmail : (submittingStaff.email || ''),
+        referrerPhone: isKaiserAuthReceived ? ilsReferrerPhone : (submittingStaff.phone || memberData.contactPhone || memberData.memberPhone || ''),
+        referrerRelationship: isKaiserAuthReceived ? 'ILS Referral' : 'Staff',
         agency: 'Connections Care Home Consultants',
 
         // Primary contact for member outreach
