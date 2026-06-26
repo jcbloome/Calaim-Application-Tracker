@@ -331,7 +331,7 @@ export default function PrintablePackagePage() {
                             <Alert className="mb-4">
                                 <AlertCircle className="h-4 w-4" />
                                 <AlertDescription>
-                                    You need to sign in to upload documents. <Link href="/auth/signin" className="underline text-blue-600">Sign in here</Link>.
+                                    You need to sign in to upload documents. <Link href="/login?redirect=%2Fapplications&forceLogin=1" className="underline text-blue-600">Sign in here</Link>.
                                 </AlertDescription>
                             </Alert>
                         )}

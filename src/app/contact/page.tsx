@@ -19,7 +19,7 @@ export default function ContactPage() {
             <div className="flex justify-center mb-6">
               <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full flex items-center justify-center shadow-xl overflow-hidden">
                 <Image
-                  src="/wolf mascotsmall.jpg"
+                  src="/wolf-mascot-small.jpg"
                   alt="CalAIM Wolf Mascot"
                   width={128}
                   height={128}
