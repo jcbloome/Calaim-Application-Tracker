@@ -86,6 +86,7 @@ export default function Step1({
   const confirmMemberMrn = watch('confirmMemberMrn');
   const hasLegalRep = watch('hasLegalRep');
   const isPrimaryContactSameAsReferrer = watch('isPrimaryContactSameAsReferrer');
+  const isPrimaryContactSameAsMember = watch('isPrimaryContactSameAsMember');
   const bestContactFirstName = watch('bestContactFirstName');
   const bestContactLastName = watch('bestContactLastName');
   const bestContactRelationship = watch('bestContactRelationship');
@@ -104,7 +105,12 @@ export default function Step1({
   const referrerEmail = watch('referrerEmail');
   const agency = watch('agency');
   const submitterAlsoReceivesDocRequests = watch('submitterAlsoReceivesDocRequests');
+  const memberFirstName = watch('memberFirstName');
+  const memberLastName = watch('memberLastName');
+  const memberPhone = watch('memberPhone');
+  const memberEmail = watch('memberEmail');
   const [isMemberLanguageOther, setIsMemberLanguageOther] = useState(false);
+  const isPrimaryContactAutoFilled = isPrimaryContactSameAsReferrer || isPrimaryContactSameAsMember;
 
   const copyRepFromPrimaryContact = () => {
     setValue('repFirstName', String(getValues('bestContactFirstName') || '').trim());
@@ -235,6 +241,34 @@ export default function Step1({
     referrerRelationship,
     referrerPhone,
     referrerEmail,
+    setValue,
+    clearErrors,
+  ]);
+
+  // When marked as same-as-member, keep primary-contact fields synced to member values.
+  useEffect(() => {
+    if (!isPrimaryContactSameAsMember) return;
+    setValue('bestContactFirstName', String(memberFirstName || '').trim());
+    setValue('bestContactLastName', String(memberLastName || '').trim());
+    setValue('bestContactRelationship', 'Self');
+    setValue('bestContactPhone', String(memberPhone || '').trim());
+    setValue('bestContactEmail', String(memberEmail || '').trim());
+    setValue('bestContactLanguage', String(memberLanguage || '').trim());
+    clearErrors([
+      'bestContactFirstName',
+      'bestContactLastName',
+      'bestContactRelationship',
+      'bestContactPhone',
+      'bestContactEmail',
+      'bestContactLanguage',
+    ]);
+  }, [
+    isPrimaryContactSameAsMember,
+    memberFirstName,
+    memberLastName,
+    memberPhone,
+    memberEmail,
+    memberLanguage,
     setValue,
     clearErrors,
   ]);
@@ -974,63 +1008,95 @@ export default function Step1({
                   <div className="mt-1">{submitterDocRequestPreview}</div>
                 ) : null}
               </div>
-              {!forceSeparatePrimaryContactFromSubmitter ? (
+              <div className="space-y-3">
+                {!forceSeparatePrimaryContactFromSubmitter ? (
+                  <FormField
+                    control={control}
+                    name="isPrimaryContactSameAsReferrer"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={(checked) => {
+                              const enabled = checked === true;
+                              field.onChange(enabled);
+                              if (enabled) setValue('isPrimaryContactSameAsMember', false);
+                            }}
+                          />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                          <FormLabel className="text-sm font-medium">
+                            Primary contact is the same as the submitting user
+                          </FormLabel>
+                          <FormDescription className="text-xs text-muted-foreground">
+                            Check this to copy submitting-user details into Primary Contact (recipient of status/document updates)
+                          </FormDescription>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Draft intake mode: submitting user is staff. Add whatever primary-contact details you have now, relationship and other fields can be completed later.
+                  </p>
+                )}
                 <FormField
                   control={control}
-                  name="isPrimaryContactSameAsReferrer"
+                  name="isPrimaryContactSameAsMember"
                   render={({ field }) => (
                     <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                       <FormControl>
                         <Checkbox
                           checked={field.value}
-                          onCheckedChange={(checked) => field.onChange(checked === true)}
+                          onCheckedChange={(checked) => {
+                            const enabled = checked === true;
+                            field.onChange(enabled);
+                            if (enabled) setValue('isPrimaryContactSameAsReferrer', false);
+                          }}
                         />
                       </FormControl>
                       <div className="space-y-1 leading-none">
                         <FormLabel className="text-sm font-medium">
-                          Primary contact is the same as the submitting user
+                          Primary contact is the same as member
                         </FormLabel>
                         <FormDescription className="text-xs text-muted-foreground">
-                          Check this to copy submitting-user details into Primary Contact (recipient of status/document updates)
+                          Check this to copy member details into Primary Contact (relationship will be set to Self).
                         </FormDescription>
                       </div>
                     </FormItem>
                   )}
                 />
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Draft intake mode: submitting user is staff. Add whatever primary-contact details you have now; relationship and other fields can be completed later.
-                </p>
-              )}
+              </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactFirstName" render={({ field }) => (
-                      <FormItem><FormLabel>First Name {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>First Name {!isPrimaryContactAutoFilled && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactAutoFilled} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={control} name="bestContactLastName" render={({ field }) => (
-                      <FormItem><FormLabel>Last Name {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>Last Name {!isPrimaryContactAutoFilled && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactAutoFilled} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                   )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={control} name="bestContactRelationship" render={({ field }) => (
-                    <FormItem><FormLabel>Relationship {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Relationship {!isPrimaryContactAutoFilled && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactAutoFilled} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
                  <FormField control={control} name="bestContactLanguage" render={({ field }) => (
-                    <FormItem><FormLabel>Language {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Language {!isPrimaryContactAutoFilled && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={isPrimaryContactAutoFilled} onChange={e => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField control={control} name="bestContactPhone" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Phone {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel>
-                        <FormControl><PhoneInput {...field} disabled={isPrimaryContactSameAsReferrer} /></FormControl>
+                        <FormLabel>Phone {!isPrimaryContactAutoFilled && <span className="text-destructive">*</span>}</FormLabel>
+                        <FormControl><PhoneInput {...field} disabled={isPrimaryContactAutoFilled} /></FormControl>
                         <FormMessage />
                       </FormItem>
                   )} />
                   <FormField control={control} name="bestContactEmail" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email {!isPrimaryContactSameAsReferrer && <span className="text-destructive">*</span>}</FormLabel>
-                        <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={isPrimaryContactSameAsReferrer} /></FormControl>
+                        <FormLabel>Email {!isPrimaryContactAutoFilled && <span className="text-destructive">*</span>}</FormLabel>
+                        <FormControl><Input type="text" inputMode="email" {...field} value={field.value ?? ''} disabled={isPrimaryContactAutoFilled} /></FormControl>
                         <FormDescription>If no email, enter "N/A".</FormDescription>
                         <FormMessage />
                       </FormItem>

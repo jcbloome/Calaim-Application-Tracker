@@ -28,6 +28,7 @@ const steps = [
       'memberMediCalNum', 'confirmMemberMediCalNum', 'memberDob', 'sex', 'memberPhone', 'memberEmail',
       'Authorization_Number_T038', 'Authorization_Start_T2038', 'Authorization_End_T2038', 'Diagnostic_Code',
       'referrerFirstName', 'referrerLastName', 'referrerPhone', 'referrerRelationship', 'agency', 'submitterAlsoReceivesDocRequests',
+      'isPrimaryContactSameAsReferrer', 'isPrimaryContactSameAsMember',
       'bestContactFirstName', 'bestContactLastName', 'bestContactRelationship', 'bestContactPhone', 'bestContactEmail', 'bestContactLanguage',
       'secondaryContactFirstName', 'secondaryContactLastName', 'secondaryContactRelationship', 'secondaryContactPhone', 'secondaryContactEmail', 'secondaryContactLanguage',
       'hasLegalRep', 'repFirstName', 'repLastName', 'repRelationship', 'repPhone', 'repEmail'
@@ -148,6 +149,7 @@ function CsSummaryFormComponent() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       isPrimaryContactSameAsReferrer: false,
+      isPrimaryContactSameAsMember: false,
       submitterAlsoReceivesDocRequests: false,
       copyAddress: false,
       ispContactIsMember: false,

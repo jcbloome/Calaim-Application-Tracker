@@ -81,6 +81,7 @@ export const formSchema = z.object({
 
     // Step 1 - Primary Contact Person
     isPrimaryContactSameAsReferrer: z.boolean().optional().nullable().transform(val => val === true),
+    isPrimaryContactSameAsMember: z.boolean().optional().nullable().transform(val => val === true),
     bestContactFirstName: optionalString,
     bestContactLastName: optionalString,
     bestContactRelationship: optionalString,
@@ -216,7 +217,7 @@ export const formSchema = z.object({
       }
     }
 
-    if (!data.isPrimaryContactSameAsReferrer) {
+    if (!data.isPrimaryContactSameAsReferrer && !data.isPrimaryContactSameAsMember) {
       if (!String(data.bestContactFirstName ?? '').trim()) {
         ctx.addIssue({ code: 'custom', message: ' ', path: ['bestContactFirstName'] });
       }
