@@ -21,7 +21,7 @@ export default function HomePage() {
             <div className="relative group">
               <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 rounded-full flex items-center justify-center shadow-2xl overflow-hidden bg-white ring-4 ring-blue-100 transition-all duration-300 group-hover:ring-blue-200 group-hover:shadow-3xl group-hover:scale-105">
                 <Image
-                  src="/wolf-mascot-small.jpg"
+                  src="/api/assets/wolf-mascot"
                   alt="CalAIM Wolf Mascot"
                   width={160}
                   height={160}
