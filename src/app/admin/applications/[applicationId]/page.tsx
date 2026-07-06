@@ -7457,6 +7457,8 @@ function ApplicationDetailPageContent() {
         },
         body: JSON.stringify({
           zipFileName: toZipName(),
+          memberFirstName: String((application as any)?.memberFirstName || '').trim(),
+          memberLastName: String((application as any)?.memberLastName || '').trim(),
           entries: payloadEntries,
         }),
         signal: controller.signal,

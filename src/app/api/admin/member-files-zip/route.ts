@@ -286,6 +286,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const entries = Array.isArray(body?.entries) ? (body.entries as ZipEntry[]) : [];
     const zipFileName = sanitizeName(String(body?.zipFileName || '').trim() || 'member-files.zip', 'member-files.zip');
+    const memberFirstName = sanitizeName(String(body?.memberFirstName || '').trim(), '');
+    const memberLastName = sanitizeName(String(body?.memberLastName || '').trim(), '');
 
     if (!entries.length) {
       return NextResponse.json({ success: false, error: 'No files provided for ZIP' }, { status: 400 });
@@ -301,7 +303,6 @@ export async function POST(request: NextRequest) {
     const bucket = getStorage().bucket();
 
     for (const entry of entries) {
-      const category = sanitizeName(String(entry?.category || '').trim() || 'Application files', 'Application files');
       const documentName = sanitizeName(String(entry?.documentName || '').trim() || 'file', 'file');
       const fileName = sanitizeName(String(entry?.fileName || '').trim() || documentName, documentName);
       const downloadURL = String(entry?.downloadURL || '').trim();
@@ -360,8 +361,13 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        const baseName = ensureExtension(fileName, mimeType);
-        const zipName = `${category} - ${baseName}`;
+        const sourceNameWithExt = ensureExtension(fileName, mimeType);
+        const extMatch = sourceNameWithExt.match(/(\.[a-z0-9]{2,8})$/i);
+        const extension = extMatch?.[1] || '';
+        const memberPrefix = [memberLastName, memberFirstName].filter(Boolean).join(' ').trim();
+        const baseLabel = [memberPrefix || 'Member', documentName || 'Document'].filter(Boolean).join(' - ').trim();
+        const baseName = sanitizeName(`${baseLabel}${extension}`, `${documentName || 'document'}${extension || ''}`);
+        const zipName = baseName;
         const key = zipName.toLowerCase();
         const dupCount = usedNames.get(key) || 0;
         usedNames.set(key, dupCount + 1);
