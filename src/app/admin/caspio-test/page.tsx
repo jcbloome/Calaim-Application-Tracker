@@ -171,6 +171,19 @@ const extractCsSummaryFieldTemplateFromSchema = (): Record<string, string> => {
   }
 };
 
+const stripUndefinedDeep = (value: any): any => {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedDeep(item)).filter((item) => item !== undefined);
+  }
+  if (value && typeof value === 'object') {
+    const cleanedEntries = Object.entries(value)
+      .map(([key, nested]) => [key, stripUndefinedDeep(nested)] as const)
+      .filter(([, nested]) => nested !== undefined);
+    return Object.fromEntries(cleanedEntries);
+  }
+  return value === undefined ? undefined : value;
+};
+
 // CalAIM Members Table Field Names (loaded from Caspio)
 const caspioMembersFieldNames: string[] = [];
 
@@ -611,7 +624,7 @@ export default function CaspioTestPage() {
     setCloudDraftSyncError('');
     setCloudDraftSyncWarning('');
     const saveCloudDrafts = async () => {
-      const payload = {
+      const payload = stripUndefinedDeep({
         lockedMappings: lockedMappings || null,
         currentDraftMappings: lockedMappings
           ? null
@@ -622,7 +635,7 @@ export default function CaspioTestPage() {
         lockedDraftMeta: lockedDraftMeta || null,
         updatedByUid: user.uid,
         updatedAt: serverTimestamp(),
-      };
+      });
       await setDoc(draftsRef, payload, { merge: true });
       let sharedWarning = '';
       if (lockedMappings && Object.keys(lockedMappings).length > 0) {
