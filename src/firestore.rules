@@ -53,6 +53,16 @@ service cloud.firestore {
             allow read, list, write: if isAdmin() || isOwner(userId);
         }
       }
+
+      // Per-admin Caspio mapping drafts/settings synced across devices.
+      match /admin_settings/{docId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Shared admin settings used for locked Caspio mapping.
+    match /admin-settings/{docId} {
+      allow read, write: if isAdmin();
     }
     
     // --- COLLECTION GROUP RULES ---

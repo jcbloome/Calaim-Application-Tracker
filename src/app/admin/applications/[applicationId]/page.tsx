@@ -3751,7 +3751,7 @@ function ApplicationDetailPageContent() {
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
     Boolean((application as any)?.createdByAdmin);
-  const showPrePushNotesSection = isDraftLikeApplication && (isKaiserPlan || isHealthNetPlan);
+  const showPrePushNotesSection = isKaiserPlan || isHealthNetPlan;
   const showDraftKaiserStatusSection = isDraftLikeApplication && isKaiserPlan;
   const showKaiserAuthorizationTypeCard = isKaiserPlan || isDraftLikeApplication;
   const swPortalInviteSentAtLabel = (() => {
@@ -12573,19 +12573,32 @@ function ApplicationDetailPageContent() {
               });
               return (
                 <div className="space-y-2">
-                  <Button asChild variant="outline" className="qa-trigger border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100">
-                    <Link
-                      href={`/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => {
-                        void logKaiserReferralFormGenerated();
-                      }}
+                  {isKaiserAuthReceivedIntake ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="qa-trigger border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-100"
+                      disabled
+                      title="Authorization already received at intake"
                     >
                       <FileText className="h-4 w-4 shrink-0" />
                       <span className="qa-label">Generate Kaiser Referral Form (Pre-Filled)</span>
-                    </Link>
-                  </Button>
+                    </Button>
+                  ) : (
+                    <Button asChild variant="outline" className="qa-trigger border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100">
+                      <Link
+                        href={`/forms/kaiser-referral/printable?${qaReferralQuery.toString()}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => {
+                          void logKaiserReferralFormGenerated();
+                        }}
+                      >
+                        <FileText className="h-4 w-4 shrink-0" />
+                        <span className="qa-label">Generate Kaiser Referral Form (Pre-Filled)</span>
+                      </Link>
+                    </Button>
+                  )}
                   {kaiserReferralFormGeneratedAtLabel ? (
                     <div className="rounded-md border border-blue-200 bg-blue-50/70 p-2 text-xs text-blue-900">
                       Referral form generated at {kaiserReferralFormGeneratedAtLabel}
