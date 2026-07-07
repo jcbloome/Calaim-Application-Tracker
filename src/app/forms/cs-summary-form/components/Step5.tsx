@@ -28,6 +28,7 @@ export default function Step5({
   const ispContactSameAsPrimary = watch('ispContactSameAsPrimary');
   const ispSecondaryContactSameAsPrimary = watch('ispSecondaryContactSameAsPrimary');
   const ispLocationSameAsCurrent = watch('ispLocationSameAsCurrent');
+  const rcfeSameAsCurrentLocation = watch('rcfeSameAsCurrentLocation');
   const memberFirstName = watch('memberFirstName');
   const memberLastName = watch('memberLastName');
   const memberPhone = watch('memberPhone');
@@ -130,6 +131,31 @@ export default function Step5({
   }, [
     ispLocationSameAsCurrent,
     currentLocation,
+    currentLocationName,
+    currentAddress,
+    currentCity,
+    currentState,
+    currentZip,
+    setValue,
+    clearErrors,
+  ]);
+
+  useEffect(() => {
+    if (!rcfeSameAsCurrentLocation) return;
+    setValue('rcfeName', String(currentLocationName || '').trim());
+    const mergedAddress = [
+      String(currentAddress || '').trim(),
+      String(currentCity || '').trim(),
+      String(currentState || '').trim(),
+      String(currentZip || '').trim(),
+    ]
+      .filter(Boolean)
+      .join(', ');
+    setValue('rcfeAddress', mergedAddress);
+    setValue('rcfePreferredCities', String(currentCity || '').trim());
+    clearErrors(['rcfeName', 'rcfeAddress', 'rcfePreferredCities']);
+  }, [
+    rcfeSameAsCurrentLocation,
     currentLocationName,
     currentAddress,
     currentCity,
@@ -497,30 +523,47 @@ export default function Step5({
             <h3 className="font-medium">Preferred Facility Details</h3>
             <p className="text-sm text-muted-foreground">
               If a facility has not been chosen, you can leave these fields blank. If "Yes" is selected above, facility/admin
-              details are required except administrator phone and email, which can be completed later.
+              details can be completed as available. Administrator first/last name, phone, and email are optional.
             </p>
+            <FormField
+              control={control}
+              name="rcfeSameAsCurrentLocation"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3">
+                  <FormControl>
+                    <Checkbox checked={Boolean(field.value)} onCheckedChange={(checked) => field.onChange(checked === true)} />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel className="text-sm font-medium">Same as current location</FormLabel>
+                    <FormDescription className="text-xs text-muted-foreground">
+                      Auto-fills Facility Name, Facility Address, and Preferred RCFE Cities from Section 6 current location fields.
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField control={control} name="rcfeName" render={({ field }) => (
-                <FormItem><FormLabel>Facility Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Facility Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(rcfeSameAsCurrentLocation)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={control} name="rcfeAddress" render={({ field }) => (
-                <FormItem><FormLabel>Facility Address {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Facility Address {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(rcfeSameAsCurrentLocation)} onChange={(e) => field.onChange(formatAddress(e.target.value))} /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
             <FormField control={control} name="rcfePreferredCities" render={({ field }) => (
               <FormItem>
                 <FormLabel>Preferred RCFE Cities {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel>
-                <FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl>
+                <FormControl><Input {...field} value={field.value ?? ''} disabled={Boolean(rcfeSameAsCurrentLocation)} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl>
                 <FormDescription>Example: Los Angeles, Long Beach, Pasadena</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField control={control} name="rcfeAdminFirstName" render={({ field }) => (
-                <FormItem><FormLabel>Administrator First Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Administrator First Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={control} name="rcfeAdminLastName" render={({ field }) => (
-                <FormItem><FormLabel>Administrator Last Name {hasPrefRCFE === 'Yes' && <span className="text-destructive">*</span>}</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Administrator Last Name</FormLabel><FormControl><Input {...field} value={field.value ?? ''} onChange={(e) => field.onChange(formatName(e.target.value))} /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

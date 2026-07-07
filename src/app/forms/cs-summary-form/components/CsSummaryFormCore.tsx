@@ -47,6 +47,7 @@ const steps = [
       'snfDiversionReason',
       'preAssessmentCareNeedsNotes',
       'onALWWaitlist', 'hasPrefRCFE',
+      'rcfeSameAsCurrentLocation',
       'rcfeName', 'rcfeAddress', 'rcfePreferredCities',
       'rcfeAdminFirstName', 'rcfeAdminLastName', 'rcfeAdminPhone', 'rcfeAdminEmail'
   ]},
@@ -156,6 +157,7 @@ function CsSummaryFormComponent() {
       ispContactSameAsPrimary: false,
       ispSecondaryContactSameAsPrimary: false,
       ispLocationSameAsCurrent: false,
+      rcfeSameAsCurrentLocation: false,
     }
   });
 

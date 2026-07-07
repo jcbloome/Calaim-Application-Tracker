@@ -154,6 +154,7 @@ export const formSchema = z.object({
     preAssessmentCareNeedsNotes: optionalString,
     onALWWaitlist: z.enum(['Yes', 'No', 'Unknown'], { errorMap: () => ({ message: ' ' }) }),
     hasPrefRCFE: z.enum(['Yes', 'No'], { errorMap: () => ({ message: ' ' }) }),
+    rcfeSameAsCurrentLocation: z.boolean().optional().nullable().transform(val => val === true),
     rcfeName: optionalString,
     rcfeAddress: optionalString,
     rcfePreferredCities: optionalString,
