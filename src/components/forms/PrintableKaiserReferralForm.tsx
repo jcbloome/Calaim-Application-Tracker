@@ -205,18 +205,24 @@ const DEFAULT_REFERRER_ADDRESS = '1763 East Sandalwood Drive, Palm Springs, CA 9
 const DEFAULT_REFERRER_EMAIL = 'deydry@carehomefinders.com';
 const DEFAULT_REFERRER_PHONE = '800-330-5993';
 const DEFAULT_REFERRER_RELATIONSHIP = 'Community Support (CalAIM)';
-const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
-const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
+const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
-const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
 const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_CC_RECIPIENTS = [
   KAISER_REFERRALS_COPY_EMAIL,
-  ILS_CC_EMAIL,
   ALBERTO_COPY_EMAIL,
   DEYDRY_COPY_EMAIL,
 ];
+const KAISER_NORTH_COUNTIES = new Set([
+  'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
+  'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',
+  'sanjoaquin', 'stanislaus', 'merced', 'madera', 'fresno', 'kings',
+  'butte', 'shasta', 'tehama', 'glenn', 'colusa', 'humboldt', 'delnorte', 'siskiyou', 'trinity',
+  'mendocino', 'lake', 'lassen', 'modoc', 'plumas',
+]);
+type KaiserRegion = 'Kaiser North' | 'Kaiser South';
 
 function normalizeCountyName(value: unknown): string {
   return String(value || '')
@@ -229,16 +235,22 @@ function normalizeCountyName(value: unknown): string {
 function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser South' | '' {
   const normalized = normalizeCountyName(county);
   if (!normalized) return '';
+  return KAISER_NORTH_COUNTIES.has(normalized) ? 'Kaiser North' : 'Kaiser South';
+}
 
-  const kaiserNorthCounties = new Set([
-    'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
-    'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',
-    'sanjoaquin', 'stanislaus', 'merced', 'madera', 'fresno', 'kings',
-    'butte', 'shasta', 'tehama', 'glenn', 'colusa', 'humboldt', 'delnorte', 'siskiyou', 'trinity',
-    'mendocino', 'lake', 'lassen', 'modoc', 'plumas',
-  ]);
-
-  return kaiserNorthCounties.has(normalized) ? 'Kaiser North' : 'Kaiser South';
+function getKaiserRegionFromAddress(address: unknown): KaiserRegion | '' {
+  const normalizedAddress = String(address || '').trim().toLowerCase().replace(/[^a-z\s]/g, ' ');
+  if (!normalizedAddress) return '';
+  const paddedAddress = ` ${normalizedAddress} `;
+  for (const county of KAISER_NORTH_COUNTIES) {
+    if (paddedAddress.includes(` ${county} county `) || paddedAddress.includes(` ${county} `)) {
+      return 'Kaiser North';
+    }
+  }
+  if (paddedAddress.includes(' county ')) {
+    return 'Kaiser South';
+  }
+  return '';
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -439,6 +451,7 @@ export function PrintableKaiserReferralForm({
   const [emailDescription, setEmailDescription] = React.useState(
     'Please review the attached referral form for authorization request processing.'
   );
+  const [addressRegionManuallyVerified, setAddressRegionManuallyVerified] = React.useState(false);
   const [isDraftHydrated, setIsDraftHydrated] = React.useState(false);
   const [autosaveStatus, setAutosaveStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastAutosavedAtIso, setLastAutosavedAtIso] = React.useState('');
@@ -464,8 +477,27 @@ export function PrintableKaiserReferralForm({
     );
   }, [referrerEmail]);
   const memberCounty = lineValue(prefill.memberCounty);
-  const kaiserRegion = getKaiserRegionFromCounty(memberCounty);
+  const countyDerivedRegion = getKaiserRegionFromCounty(memberCounty);
+  const [selectedKaiserRegion, setSelectedKaiserRegion] = React.useState<KaiserRegion>(() =>
+    countyDerivedRegion === 'Kaiser North' ? 'Kaiser North' : 'Kaiser South'
+  );
+  const addressDerivedRegion = React.useMemo(
+    () => getKaiserRegionFromAddress(memberAddress || currentLocationAddress),
+    [memberAddress, currentLocationAddress]
+  );
+  const kaiserRegion = selectedKaiserRegion;
   const kaiserIntakeEmail = kaiserRegion === 'Kaiser North' ? KAISER_NORTH_INTAKE_EMAIL : KAISER_SOUTH_INTAKE_EMAIL;
+  const regionAddressValidationError = React.useMemo(() => {
+    const normalizedAddress = lineValue(memberAddress || currentLocationAddress);
+    if (!normalizedAddress) return 'Member mailing address is required before sending to Kaiser.';
+    if (addressDerivedRegion && addressDerivedRegion !== selectedKaiserRegion) {
+      return `Selected region (${selectedKaiserRegion}) does not match the mailing address region (${addressDerivedRegion}).`;
+    }
+    if (!addressDerivedRegion && !addressRegionManuallyVerified) {
+      return 'Address region could not be auto-verified. Please verify and confirm manually before sending.';
+    }
+    return '';
+  }, [addressDerivedRegion, addressRegionManuallyVerified, currentLocationAddress, memberAddress, selectedKaiserRegion]);
   const currentLivingLocationLabel = React.useMemo(() => {
     if (currentLivingLocation === 'A') return 'A - Skilled Nursing Facility (SNF)';
     if (currentLivingLocation === 'B') return 'B - At home or in public subsidized housing';
@@ -509,8 +541,18 @@ export function PrintableKaiserReferralForm({
       isStep3Confirmed,
       currentLivingLocation,
       section1AlfUsage: requiredSection1AlfUsage,
+      selectedKaiserRegion,
+      addressRegionManuallyVerified,
     }),
-    [formValues, emailDescription, isStep3Confirmed, currentLivingLocation, requiredSection1AlfUsage]
+    [
+      formValues,
+      emailDescription,
+      isStep3Confirmed,
+      currentLivingLocation,
+      requiredSection1AlfUsage,
+      selectedKaiserRegion,
+      addressRegionManuallyVerified,
+    ]
   );
   const lastAutosavedAtLabel = React.useMemo(() => {
     const raw = String(lastAutosavedAtIso || '').trim();
@@ -531,6 +573,10 @@ export function PrintableKaiserReferralForm({
       alfTransitions: true,
     }));
   }, [requiredSection1AlfUsage]);
+
+  React.useEffect(() => {
+    setAddressRegionManuallyVerified(false);
+  }, [memberAddress, currentLocationAddress, selectedKaiserRegion]);
 
   React.useEffect(() => {
     if (!onCaregiverChange) return;
@@ -674,6 +720,15 @@ export function PrintableKaiserReferralForm({
       if (Object.prototype.hasOwnProperty.call(draft, 'currentLivingLocation')) {
         const raw = String((draft as any).currentLivingLocation || '').trim();
         if (raw === 'A' || raw === 'B' || raw === 'C') setCurrentLivingLocation(raw);
+      }
+      if (Object.prototype.hasOwnProperty.call(draft, 'selectedKaiserRegion')) {
+        const raw = String((draft as any).selectedKaiserRegion || '').trim();
+        if (raw === 'Kaiser North' || raw === 'Kaiser South') {
+          setSelectedKaiserRegion(raw);
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(draft, 'addressRegionManuallyVerified')) {
+        setAddressRegionManuallyVerified(Boolean((draft as any).addressRegionManuallyVerified));
       }
       const savedAtIso = String((draft as any).savedAtIso || '').trim();
       if (savedAtIso) setLastAutosavedAtIso(savedAtIso);
@@ -864,6 +919,10 @@ export function PrintableKaiserReferralForm({
       window.alert('A valid logged-in staff email is required to send a pre-send test email.');
       return;
     }
+    if (regionAddressValidationError) {
+      window.alert(regionAddressValidationError);
+      return;
+    }
     const canProceed = await ensureDraftSavedBeforeAction('sending test email');
     if (!canProceed) return;
     setIsSendingTestEmail(true);
@@ -897,6 +956,8 @@ export function PrintableKaiserReferralForm({
         submitterEmail: lineValue(submitterEmail),
         healthPlan: lineValue(prefill.healthPlan),
         memberCounty: lineValue(memberCounty),
+        kaiserRegion: lineValue(selectedKaiserRegion),
+        addressRegionVerified: !regionAddressValidationError,
         alft22Choice: lineValue(currentLivingLocation),
         section1AlfUsage: lineValue(requiredSection1AlfUsage),
         kaiserAuthAlreadyReceived: requiresKaiserReferralSendFlow ? '0' : '1',
@@ -909,12 +970,14 @@ export function PrintableKaiserReferralForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: kaiserIntakeEmail,
-          region: kaiserRegion || 'Kaiser South',
+          region: selectedKaiserRegion || 'Kaiser South',
           applicationId: String(applicationId || ''),
           userId: String(userId || ''),
           memberName: memberName || 'Member',
+          memberAddress: lineValue(formValues.memberAddress || formValues.currentLocationAddress),
           memberMrn: formValues.memberMrn || '',
           memberCounty: memberCounty || '',
+          addressRegionManuallyVerified: Boolean(addressRegionManuallyVerified),
           referrerName: referrerName || '',
           referrerEmail: referrerEmail || '',
           submitterName,
@@ -946,6 +1009,10 @@ export function PrintableKaiserReferralForm({
   };
 
   const handleSendToKaiserIntake = async () => {
+    if (regionAddressValidationError) {
+      window.alert(regionAddressValidationError);
+      return;
+    }
     if (!hasSentTestEmail) {
       const proceedWithoutTest = window.confirm(
         'No test email has been sent yet. Do you want to continue and send directly to Kaiser Intake?'
@@ -985,6 +1052,8 @@ export function PrintableKaiserReferralForm({
         submitterEmail: lineValue(submitterEmail),
         healthPlan: lineValue(prefill.healthPlan),
         memberCounty: lineValue(memberCounty),
+        kaiserRegion: lineValue(selectedKaiserRegion),
+        addressRegionVerified: !regionAddressValidationError,
         alft22Choice: lineValue(currentLivingLocation),
         section1AlfUsage: lineValue(requiredSection1AlfUsage),
         kaiserAuthAlreadyReceived: requiresKaiserReferralSendFlow ? '0' : '1',
@@ -998,12 +1067,14 @@ export function PrintableKaiserReferralForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: kaiserIntakeEmail,
-          region: kaiserRegion || 'Kaiser South',
+          region: selectedKaiserRegion || 'Kaiser South',
           applicationId: String(applicationId || ''),
           userId: String(userId || ''),
           memberName: memberName || 'Member',
+          memberAddress: lineValue(formValues.memberAddress || formValues.currentLocationAddress),
           memberMrn: formValues.memberMrn || '',
           memberCounty: memberCounty || '',
+          addressRegionManuallyVerified: Boolean(addressRegionManuallyVerified),
           referrerName: referrerName || '',
           referrerEmail: referrerEmail || '',
           submitterName,
@@ -1098,11 +1169,50 @@ export function PrintableKaiserReferralForm({
             ) : null}
             <div>
               <div className="text-xs text-muted-foreground">To</div>
-              <div>{kaiserIntakeEmail}</div>
+              <div className="space-y-2">
+                <select
+                  value={selectedKaiserRegion}
+                  onChange={(event) => setSelectedKaiserRegion(event.target.value as KaiserRegion)}
+                  className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                  disabled={isSendingToKaiser || isSendingTestEmail}
+                >
+                  <option value="Kaiser North">Kaiser Northern California ({KAISER_NORTH_INTAKE_EMAIL})</option>
+                  <option value="Kaiser South">Kaiser Southern California ({KAISER_SOUTH_INTAKE_EMAIL})</option>
+                </select>
+                <div>{kaiserIntakeEmail}</div>
+              </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">CC</div>
               <div>{ccRecipients.join(', ')}</div>
+            </div>
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+              <div>
+                Mailing address check:{' '}
+                <span className="font-semibold">{lineValue(memberAddress || currentLocationAddress) || 'Not provided'}</span>
+              </div>
+              <div className="mt-1">
+                Address-derived region:{' '}
+                <span className="font-semibold">{addressDerivedRegion || 'Unable to detect automatically'}</span>
+              </div>
+              {!addressDerivedRegion ? (
+                <label className="mt-2 flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={addressRegionManuallyVerified}
+                    onChange={(event) => setAddressRegionManuallyVerified(event.target.checked)}
+                    disabled={isSendingToKaiser || isSendingTestEmail}
+                  />
+                  <span>I verified this member mailing address belongs to the selected Kaiser region.</span>
+                </label>
+              ) : null}
+              {regionAddressValidationError ? (
+                <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-red-700">
+                  {regionAddressValidationError}
+                </div>
+              ) : (
+                <div className="mt-2 text-emerald-700">Address-region check passed.</div>
+              )}
             </div>
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
               <div className="font-semibold">Recommended before final send</div>
@@ -1154,7 +1264,8 @@ export function PrintableKaiserReferralForm({
                 isSendingToKaiser ||
                 isSendingTestEmail ||
                 !isPdfConfirmedForSend ||
-                (overrideResubmit && !overrideReason.trim())
+                (overrideResubmit && !overrideReason.trim()) ||
+                Boolean(regionAddressValidationError)
               }
             >
               {isSendingToKaiser ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
@@ -1175,6 +1286,38 @@ export function PrintableKaiserReferralForm({
       controlsPlacement="bottom"
       extraControlsBelow={
         <div className="space-y-3">
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 space-y-2">
+            <div className="font-semibold">Kaiser Intake Routing</div>
+            <div className="grid gap-2 md:grid-cols-2 md:items-end">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-blue-900">Kaiser intake region</span>
+                <select
+                  value={selectedKaiserRegion}
+                  onChange={(event) => setSelectedKaiserRegion(event.target.value as KaiserRegion)}
+                  className="w-full rounded-md border border-blue-200 bg-white px-2 py-1 text-sm text-slate-900"
+                >
+                  <option value="Kaiser North">Kaiser Northern California ({KAISER_NORTH_INTAKE_EMAIL})</option>
+                  <option value="Kaiser South">Kaiser Southern California ({KAISER_SOUTH_INTAKE_EMAIL})</option>
+                </select>
+              </label>
+              <div className="space-y-1">
+                <div>
+                  <span className="font-medium">To:</span> {kaiserIntakeEmail}
+                </div>
+                <div>
+                  <span className="font-medium">Always copied:</span> {KAISER_REFERRALS_COPY_EMAIL}
+                </div>
+                <div>
+                  <span className="font-medium">Address check:</span>{' '}
+                  {regionAddressValidationError ? (
+                    <span className="text-red-700">{regionAddressValidationError}</span>
+                  ) : (
+                    <span className="text-emerald-700">Ready</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span>
@@ -1480,8 +1623,8 @@ export function PrintableKaiserReferralForm({
                 <div className="bg-[#0d2b78] text-white font-bold px-2 py-0.5 border-r border-black">Northern California</div>
                 <div className="bg-[#0d2b78] text-white font-bold px-2 py-0.5">Southern California</div>
                 <div className="bg-[#0d2b78] text-white font-bold px-2 py-0.5 border-r border-t border-black">Email Referrals</div>
-                <div className="px-2 py-0.5 border-r border-t border-black text-[#0b58aa] underline">REGMCDURNs-KPNC@KP.org</div>
-                <div className="px-2 py-0.5 border-t border-black text-[#0b58aa] underline">RegCareCoordCaseMgmt@KP.org</div>
+                <div className="px-2 py-0.5 border-r border-t border-black text-[#0b58aa] underline">regmcdurns-kpnc@kp.org</div>
+                <div className="px-2 py-0.5 border-t border-black text-[#0b58aa] underline">RegCareCoorCaseMgmt@kp.org</div>
                 <div className="bg-[#0d2b78] text-white font-bold px-2 py-0.5 border-r border-t border-black">Provider Portal</div>
                 <div className="px-2 py-0.5 border-r border-t border-black text-[#0b58aa] underline">NCAL - Provider Portal</div>
                 <div className="px-2 py-0.5 border-t border-black text-[#0b58aa] underline">SCal Provider Portal</div>
@@ -2179,12 +2322,12 @@ export function PrintableKaiserReferralForm({
             <div className="grid grid-cols-1 gap-2 pt-2 md:grid-cols-2">
               <div className="border border-black p-3">
                 <div className="font-semibold">Northern California</div>
-                <div className="font-mono text-xs">REGMCDURNs-KPNC@KP.org</div>
+                <div className="font-mono text-xs">regmcdurns-kpnc@kp.org</div>
                 <div className="text-[10px]">Provider Portal: NCAL - Provider Portal</div>
               </div>
               <div className="border border-black p-3">
                 <div className="font-semibold">Southern California</div>
-                <div className="font-mono text-xs">RegCareCoordCaseMgmt@KP.org</div>
+                <div className="font-mono text-xs">RegCareCoorCaseMgmt@kp.org</div>
                 <div className="text-[10px]">Provider Portal: SCal Provider Portal</div>
               </div>
             </div>

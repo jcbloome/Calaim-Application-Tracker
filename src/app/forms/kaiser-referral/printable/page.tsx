@@ -7,8 +7,8 @@ import { PrintableKaiserReferralForm } from '@/components/forms/PrintableKaiserR
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/firebase/provider';
 
-const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
-const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
+const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
 const DEFAULT_REFERRER_NAME = 'deydry@carehomefinders.com';
 const DEFAULT_REFERRER_ORGANIZATION = 'Connections Care Home Consultants, LLC';
 const DEFAULT_REFERRER_NPI = '1508537325';

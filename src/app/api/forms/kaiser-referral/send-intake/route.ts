@@ -5,6 +5,8 @@ import admin, { adminDb, adminStorage } from '@/firebase-admin';
 type SendPayload = {
   to: string;
   region: string;
+  memberAddress?: string;
+  addressRegionManuallyVerified?: boolean;
   applicationId?: string;
   userId?: string;
   taskId?: string;
@@ -28,14 +30,49 @@ type SendPayload = {
   formSnapshot?: Record<string, unknown>;
 };
 
-const ILS_CC_EMAIL = 'ils-calaim@ilshealth.com';
 const KAISER_REFERRALS_COPY_EMAIL = 'kpreferrals@ilshealth.com';
 const ALBERTO_COPY_EMAIL = 'alberto@carehomefinders.com';
 const DEYDRY_COPY_EMAIL = 'deydry@carehomefinders.com';
 const KAISER_REFERRAL_FROM = 'Connections CalAIM <noreply@carehomefinders.com>';
-const KAISER_NORTH_INTAKE_EMAIL = 'REGMCDURNs-KPNC@KP.org';
-const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoordCaseMgmt@KP.org';
+const KAISER_NORTH_INTAKE_EMAIL = 'regmcdurns-kpnc@kp.org';
+const KAISER_SOUTH_INTAKE_EMAIL = 'RegCareCoorCaseMgmt@kp.org';
 const PDF_RETENTION_URL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
+const KAISER_NORTH_COUNTIES = new Set([
+  'alameda', 'contracosta', 'marin', 'napa', 'sanfrancisco', 'sanmateo', 'santaclara', 'solano', 'sonoma',
+  'sacramento', 'yolo', 'placer', 'eldorado', 'sutter', 'yuba', 'amador', 'nevada',
+  'sanjoaquin', 'stanislaus', 'merced', 'madera', 'fresno', 'kings',
+  'butte', 'shasta', 'tehama', 'glenn', 'colusa', 'humboldt', 'delnorte', 'siskiyou', 'trinity',
+  'mendocino', 'lake', 'lassen', 'modoc', 'plumas',
+]);
+
+function normalizeCountyName(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/ county$/i, '')
+    .replace(/[^a-z]/g, '');
+}
+
+function getKaiserRegionFromCounty(county: unknown): 'Kaiser North' | 'Kaiser South' | '' {
+  const normalized = normalizeCountyName(county);
+  if (!normalized) return '';
+  return KAISER_NORTH_COUNTIES.has(normalized) ? 'Kaiser North' : 'Kaiser South';
+}
+
+function getKaiserRegionFromAddress(address: unknown): 'Kaiser North' | 'Kaiser South' | '' {
+  const normalizedAddress = String(address || '').trim().toLowerCase().replace(/[^a-z\s]/g, ' ');
+  if (!normalizedAddress) return '';
+  const paddedAddress = ` ${normalizedAddress} `;
+  for (const county of KAISER_NORTH_COUNTIES) {
+    if (paddedAddress.includes(` ${county} county `) || paddedAddress.includes(` ${county} `)) {
+      return 'Kaiser North';
+    }
+  }
+  if (paddedAddress.includes(' county ')) {
+    return 'Kaiser South';
+  }
+  return '';
+}
 
 function sanitizePathComponent(value: unknown) {
   return String(value || '')
@@ -49,7 +86,7 @@ function sanitizePathComponent(value: unknown) {
 function getKaiserReferralCcRecipients() {
   return Array.from(
     new Set(
-      [KAISER_REFERRALS_COPY_EMAIL, ILS_CC_EMAIL, ALBERTO_COPY_EMAIL, DEYDRY_COPY_EMAIL]
+      [KAISER_REFERRALS_COPY_EMAIL, ALBERTO_COPY_EMAIL, DEYDRY_COPY_EMAIL]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
     )
@@ -242,6 +279,8 @@ export async function POST(request: NextRequest) {
     const memberName = String(body?.memberName || 'Member').trim();
     const memberMrn = String(body?.memberMrn || '').trim();
     const memberCounty = String(body?.memberCounty || '').trim();
+    const memberAddress = String(body?.memberAddress || '').trim();
+    const addressRegionManuallyVerified = Boolean(body?.addressRegionManuallyVerified);
     const referrerName = String(body?.referrerName || '').trim();
     const referrerEmail = String(body?.referrerEmail || '').trim();
     const submitterName = String(body?.submitterName || '').trim();
@@ -249,6 +288,28 @@ export async function POST(request: NextRequest) {
     const resolvedSubmitterName = submitterName || 'Unknown staff';
     const resolvedSubmitterEmail = submitterEmail || 'Unknown staff email';
     const ccRecipients = getKaiserReferralCcRecipientsWithSubmitter(submitterEmail);
+    const selectedRegion = String(region || '').trim().toLowerCase() === 'kaiser north' ? 'Kaiser North' : 'Kaiser South';
+    const countyRegion = getKaiserRegionFromCounty(memberCounty);
+    const addressRegion = getKaiserRegionFromAddress(memberAddress);
+    const derivedRegion = addressRegion || countyRegion;
+    if (derivedRegion && derivedRegion !== selectedRegion) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Selected region (${selectedRegion}) does not match member address/county (${derivedRegion}).`,
+        },
+        { status: 400 }
+      );
+    }
+    if (!derivedRegion && !addressRegionManuallyVerified) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Please verify member mailing address region before sending.',
+        },
+        { status: 400 }
+      );
+    }
     failureLogCc = ccRecipients;
     const testRecipientEmail = String(body?.testRecipientEmail || '').trim().toLowerCase();
     const appId = String(body?.applicationId || '').trim();
@@ -273,6 +334,10 @@ export async function POST(request: NextRequest) {
       memberName: memberName || 'Unknown member',
       memberMrn: memberMrn || 'Unknown MRN',
       memberCounty: memberCounty || 'N/A',
+      memberAddress: memberAddress || 'N/A',
+      countyRegion: countyRegion || null,
+      addressRegion: addressRegion || null,
+      addressRegionManuallyVerified,
       submitterName: resolvedSubmitterName,
       submitterEmail: resolvedSubmitterEmail,
       referrerName: referrerName || 'N/A',
@@ -335,6 +400,11 @@ export async function POST(request: NextRequest) {
       memberName: memberName || 'Unknown member',
       memberMrn: memberMrn || 'Unknown MRN',
       memberCounty: memberCounty || null,
+      memberAddress: memberAddress || null,
+      selectedRegion,
+      countyRegion: countyRegion || null,
+      addressRegion: addressRegion || null,
+      addressRegionManuallyVerified,
       submitterName: resolvedSubmitterName,
       submitterEmail: resolvedSubmitterEmail,
       referrerName: referrerName || 'N/A',
