@@ -21,7 +21,14 @@ export function AuthGuard({ children, require2FA = false, loginPath }: AuthGuard
   const router = useRouter();
 
   useEffect(() => {
-    if (!user || isUserLoading) return;
+    if (isUserLoading) return;
+    if (!user) {
+      // Auth check finished and no session exists.
+      // Do not keep the guard in a perpetual loading state.
+      setIsChecking(false);
+      setIs2FAVerified(false);
+      return;
+    }
 
     const check2FAStatus = async () => {
       if (!require2FA) {
