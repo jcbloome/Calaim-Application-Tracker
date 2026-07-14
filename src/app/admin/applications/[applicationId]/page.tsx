@@ -3747,12 +3747,14 @@ function ApplicationDetailPageContent() {
     'T2038 Received, Need First Contact',
     'T2038 Received, Unreachable',
     'T2038 Received, doc collection',
+    'T2038, Not Requested, Doc Collection',
   ] as const;
   const isDraftLikeApplication =
     String((application as any)?.status || '').trim().toLowerCase() === 'draft' ||
     Boolean((application as any)?.createdByAdmin);
   const showPrePushNotesSection = isKaiserPlan || isHealthNetPlan;
   const showDraftKaiserStatusSection = isDraftLikeApplication && isKaiserPlan;
+  const showManualKaiserStatusSection = isKaiserPlan;
   const showKaiserAuthorizationTypeCard = isKaiserPlan || isDraftLikeApplication;
   const swPortalInviteSentAtLabel = (() => {
     const ms = toMillisSafe((application as any)?.swPortalInviteSentAt);
@@ -8751,12 +8753,16 @@ function ApplicationDetailPageContent() {
   };
 
   const updateDraftKaiserStatus = async (status: string) => {
-    if (!docRef || !application || !showDraftKaiserStatusSection) return;
+    if (!docRef || !application || !isKaiserPlan) return;
     const normalized = String(status || '').trim();
     if (!normalized) return;
     try {
+      const manualLockUntilMs = Date.now() + 5 * 60 * 1000;
       await persistApplicationPatch({
         kaiserStatus: normalized,
+        Kaiser_Status: normalized,
+        kaiserStatusManualLockUntilMs: manualLockUntilMs,
+        kaiserStatusSyncSource: 'manual-pathway-selection',
         lastUpdated: serverTimestamp(),
       });
       setApplication((prev) =>
@@ -8764,12 +8770,15 @@ function ApplicationDetailPageContent() {
           ? ({
               ...prev,
               kaiserStatus: normalized,
+              Kaiser_Status: normalized,
+              kaiserStatusManualLockUntilMs: manualLockUntilMs,
+              kaiserStatusSyncSource: 'manual-pathway-selection',
             } as any)
           : prev
       );
       toast({
         title: 'Kaiser status saved',
-        description: `Draft Kaiser status set to "${normalized}".`,
+        description: `Kaiser status set to "${normalized}".`,
         className: 'bg-green-100 text-green-900 border-green-200',
       });
     } catch (error: any) {
@@ -11638,14 +11647,14 @@ function ApplicationDetailPageContent() {
                         {isKaiserPlan ? (
                           <div className="space-y-2 rounded-md border bg-background p-3">
                             <Label className="text-xs font-medium text-muted-foreground">Kaiser Status</Label>
-                            {showDraftKaiserStatusSection ? (
+                            {showManualKaiserStatusSection ? (
                               <>
                                 <Select
                                   value={kaiserStatusPickerValue || prePushKaiserStatusOptions[0]}
                                   onValueChange={(value) => void updateDraftKaiserStatus(value)}
                                 >
                                   <SelectTrigger className="h-9">
-                                    <SelectValue placeholder="Select draft Kaiser status" />
+                                    <SelectValue placeholder="Select Kaiser status" />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {prePushKaiserStatusOptions.map((option) => (

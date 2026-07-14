@@ -1173,6 +1173,7 @@ const getEmptyMemberData = () => ({
   Authorization_Start_T2038: '',
   Authorization_End_T2038: '',
   Diagnostic_Code: '',
+  kaiserStatus: '',
   contactFirstName: '',
   contactLastName: '',
   contactPhone: '',
@@ -1403,6 +1404,15 @@ export default function CreateApplicationPage() {
   const ilsDuplicateIndexWarningShownRef = useRef(false);
   const createApplicationRef = useRef<() => Promise<string | null> | string | null>(() => null);
   const [memberData, setMemberData] = useState(getEmptyMemberData);
+  const PRE_PUSH_KAISER_STATUS_OPTIONS = useMemo(
+    () =>
+      [
+        'T2038 Received, Need First Contact',
+        'T2038 Received, doc collection',
+        'T2038, Not Requested, Doc Collection',
+      ] as const,
+    []
+  );
 
   useEffect(() => {
     const loadLockedMapping = async () => {
@@ -1479,6 +1489,15 @@ export default function CreateApplicationPage() {
     };
     void loadKaiserStaff();
   }, [firestore, intakeType]);
+
+  useEffect(() => {
+    if (intakeType !== 'kaiser_auth_received_via_ils') return;
+    if (String(memberData.kaiserStatus || '').trim()) return;
+    setMemberData((prev) => ({
+      ...prev,
+      kaiserStatus: 'T2038 Received, doc collection',
+    }));
+  }, [intakeType, memberData.kaiserStatus]);
 
   useEffect(() => {
     const loadActionItemCount = async () => {
@@ -2800,7 +2819,9 @@ export default function CreateApplicationPage() {
         ...baseApplication,
         healthPlan: isKaiserAuthReceived ? 'Kaiser' : '',
         pathway: '',
-        kaiserStatus: isKaiserAuthReceived ? 'T2038 Received, doc collection' : '',
+        kaiserStatus: isKaiserAuthReceived
+          ? (String(memberData.kaiserStatus || '').trim() || 'T2038 Received, doc collection')
+          : '',
         caspioCalAIMStatus: isKaiserAuthReceived ? 'Authorized' : '',
         allowDraftCaspioPush: isKaiserAuthReceived ? true : false,
         forms: isKaiserAuthReceived ? currentAuthForms : [],
@@ -3991,6 +4012,27 @@ export default function CreateApplicationPage() {
                     value={memberData.Diagnostic_Code || ''}
                     onChange={(e) => setMemberData({ ...memberData, Diagnostic_Code: e.target.value })}
                   />
+                </div>
+                <div>
+                  <Label htmlFor="kaiserStatus">Kaiser Status</Label>
+                  <Select
+                    value={String(memberData.kaiserStatus || '').trim() || PRE_PUSH_KAISER_STATUS_OPTIONS[1]}
+                    onValueChange={(value) => setMemberData({ ...memberData, kaiserStatus: value })}
+                  >
+                    <SelectTrigger id="kaiserStatus">
+                      <SelectValue placeholder="Select Kaiser status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRE_PUSH_KAISER_STATUS_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Required for Caspio push. Use "T2038 Received, doc collection" when authorization is already received.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="Authorization_Start_T2038">Authorization Start T2038</Label>
