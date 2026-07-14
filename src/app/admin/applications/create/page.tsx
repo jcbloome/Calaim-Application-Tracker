@@ -1216,21 +1216,14 @@ const normalizeMemberPatch = (patch: Record<string, unknown>) => {
   return normalized;
 };
 
-const withAutoCountyFromCity = (patch: Record<string, string>) => {
+const withoutCurrentAddressPrefill = (patch: Record<string, string>) => {
   const next = { ...patch };
-  const existingCounty = String(next.memberCustomaryCounty || '').trim();
-  if (existingCounty) return next;
-
-  const parsedAddress = parseAddressParts(next.memberCustomaryAddress || '');
-  const resolvedCity = String(next.memberCustomaryCity || '').trim() || parsedAddress.city || '';
-  const resolvedZip = String(next.memberCustomaryZip || '').trim() || parsedAddress.zip || '';
-  const inferredCounty =
-    inferCountyFromCityZip({ city: resolvedCity, zip: resolvedZip }) || String(parsedAddress.county || '').trim();
-
-  if (!inferredCounty) return next;
-  if (!String(next.memberCustomaryCity || '').trim() && resolvedCity) next.memberCustomaryCity = resolvedCity;
-  if (!String(next.memberCustomaryZip || '').trim() && resolvedZip) next.memberCustomaryZip = resolvedZip;
-  next.memberCustomaryCounty = inferredCounty;
+  next.memberCustomaryLocation = '';
+  next.memberCustomaryAddress = '';
+  next.memberCustomaryCity = '';
+  next.memberCustomaryState = '';
+  next.memberCustomaryZip = '';
+  next.memberCustomaryCounty = '';
   return next;
 };
 
@@ -2260,26 +2253,18 @@ export default function CreateApplicationPage() {
     }
   };
 
-  // Contact phone formatting function (xxx-xxx-xxxx)
-  const formatPhoneNumber = (value: string) => {
-    // Remove all non-numeric characters
-    const phoneNumber = value.replace(/\D/g, '');
-    
-    // Limit to 10 digits
-    const limitedPhoneNumber = phoneNumber.substring(0, 10);
-    
-    // Format as xxx-xxx-xxxx
-    if (limitedPhoneNumber.length <= 3) return limitedPhoneNumber;
-    if (limitedPhoneNumber.length <= 6) {
-      return `${limitedPhoneNumber.substring(0, 3)}-${limitedPhoneNumber.substring(3)}`;
-    }
-    return `${limitedPhoneNumber.substring(0, 3)}-${limitedPhoneNumber.substring(3, 6)}-${limitedPhoneNumber.substring(6)}`;
-  };
-
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formattedPhone = formatPhoneNumber(e.currentTarget.value || '');
+    const formattedPhone = formatPhoneDashed(e.currentTarget.value || '');
     setMemberData((prev) => ({ ...prev, contactPhone: formattedPhone }));
   };
+
+  useEffect(() => {
+    const current = String(memberData.contactPhone || '');
+    const formatted = formatPhoneDashed(current);
+    if (formatted !== current) {
+      setMemberData((prev) => ({ ...prev, contactPhone: formatted }));
+    }
+  }, [memberData.contactPhone]);
 
   const formatMemberPhoneWithDashes = (value: string) => {
     const phoneNumber = value.replace(/\D/g, '');
@@ -2415,7 +2400,7 @@ export default function CreateApplicationPage() {
         }
 
         const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
-        const sanitizedPatch = withAutoCountyFromCity({ ...normalizedPatch, contactEmail: '' });
+        const sanitizedPatch = withoutCurrentAddressPrefill({ ...normalizedPatch, contactEmail: '' });
         const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
         setSingleAuthContactPreview(contactPreview);
         setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
@@ -2447,7 +2432,7 @@ export default function CreateApplicationPage() {
       }
 
       const normalizedPatch = normalizeMemberPatch(updates as Record<string, unknown>);
-      const sanitizedPatch = withAutoCountyFromCity({ ...normalizedPatch, contactEmail: '' });
+      const sanitizedPatch = withoutCurrentAddressPrefill({ ...normalizedPatch, contactEmail: '' });
       const contactPreview = extractSingleAuthContactPreview(sanitizedPatch);
       setSingleAuthContactPreview(contactPreview);
       setMemberData((prev) => ({ ...prev, ...sanitizedPatch }));
@@ -2559,7 +2544,7 @@ export default function CreateApplicationPage() {
             continue;
           }
           const parsed = extractServiceRequestFields({ text, fileName: file.name });
-          const normalizedPatch = withAutoCountyFromCity(
+          const normalizedPatch = withoutCurrentAddressPrefill(
             normalizeMemberPatch((parsed?.updates || {}) as Record<string, unknown>)
           );
           const parsedName = sanitizeParsedName({
@@ -4105,7 +4090,7 @@ export default function CreateApplicationPage() {
                   onChange={handlePhoneChange}
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Tip: You can type numbers with or without dashes (for example, 6613541234 or 661-354-1234).
+                  Tip: Use xxx-xxx-xxxx format (you can type with or without dashes).
                 </p>
               </div>
               <div>
@@ -4183,7 +4168,7 @@ export default function CreateApplicationPage() {
                   : 'Please fill in all required fields (marked with *) before creating the application draft.'}
               </p>
               {memberData.contactPhone && memberData.contactPhone.replace(/\D/g, '').length > 0 && memberData.contactPhone.replace(/\D/g, '').length < 10 && (
-                <p className="text-red-500">Contact phone number must be 10 digits (xxx.xxx.xxxx)</p>
+                <p className="text-red-500">Contact phone number must be 10 digits (xxx-xxx-xxxx)</p>
               )}
               {intakeType === 'kaiser_auth_received_via_ils' && memberData.memberPhone && memberData.memberPhone.replace(/\D/g, '').length > 0 && memberData.memberPhone.replace(/\D/g, '').length < 10 && (
                 <p className="text-red-500">Member phone number must be 10 digits (xxx.xxx.xxxx)</p>
